@@ -1669,6 +1669,41 @@ export default function App() {
       });
   }, [canUseVault, vaultDocRef]);
 
+  /**
+   * The config panel edits `config` live — every field's onChange writes straight
+   * through. That was fine while both footer buttons did the same thing, which
+   * is to say it was never fine: "Cancel" and "Save Changes" were both bare
+   * `setIsConfigOpen(false)`, so a cancelled edit was already saved and the Save
+   * button did nothing at all.
+   *
+   * Rather than rewrite every field to a draft object, the committed value is
+   * snapshotted when the panel opens and restored if the user leaves by any
+   * route other than Save — the footer Cancel, the X, or the backdrop.
+   *
+   * Explicit key actions (unlock, sync) refresh the snapshot themselves: those
+   * are deliberate button presses with their own confirmation, and undoing one
+   * because the panel was later dismissed would be its own surprise.
+   */
+  const configSnapshotRef = useRef<ReportConfig | null>(null);
+
+  useEffect(() => {
+    if (isConfigOpen) configSnapshotRef.current = config;
+    // `config` intentionally omitted: the snapshot must be the value as it was
+    // when the panel opened, not follow edits made while it is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConfigOpen]);
+
+  const dismissConfigWithoutSaving = () => {
+    if (configSnapshotRef.current) setConfig(configSnapshotRef.current);
+    configSnapshotRef.current = null;
+    setIsConfigOpen(false);
+  };
+
+  const saveConfigAndClose = () => {
+    configSnapshotRef.current = null;
+    setIsConfigOpen(false);
+  };
+
   const handleCheckKey = async () => {
     setKeyCheck(null);
     setVaultBusy(true);
@@ -1725,6 +1760,12 @@ export default function App() {
     try {
       const key = await decryptApiKey(vaultRecord, passphrase);
       setConfig((prev) => ({ ...prev, customApiKey: key }));
+      // Unlocking is a deliberate action with its own confirmation below, so it
+      // survives a later Cancel — fold it into the snapshot the panel would
+      // otherwise restore.
+      if (configSnapshotRef.current) {
+        configSnapshotRef.current = { ...configSnapshotRef.current, customApiKey: key };
+      }
       setPassphrase('');
       setVaultNotice({ tone: 'ok', text: 'Key unlocked for this session.' });
     } catch (err: any) {
@@ -3055,7 +3096,7 @@ export default function App() {
             initial="hidden"
             animate="visible"
             exit="hidden"
-            onClick={() => setIsConfigOpen(false)}
+            onClick={dismissConfigWithoutSaving}
             className="fixed inset-0 bg-black/50 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4"
           >
             <motion.div
@@ -3074,7 +3115,7 @@ export default function App() {
                   <span className="material-symbols-outlined text-secondary">tune</span>
                   Report Configuration
                 </h3>
-                <button onClick={() => setIsConfigOpen(false)} className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center">
+                <button onClick={dismissConfigWithoutSaving} aria-label="Close without saving" className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center">
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
@@ -3333,13 +3374,13 @@ export default function App() {
               </div>
               <div className="p-6 border-t border-outline-variant bg-surface-container-low flex justify-end gap-3 flex-shrink-0">
                 <button
-                  onClick={() => setIsConfigOpen(false)}
+                  onClick={dismissConfigWithoutSaving}
                   className="px-5 py-2.5 text-sm font-semibold text-on-surface-variant hover:text-foreground transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => setIsConfigOpen(false)}
+                  onClick={saveConfigAndClose}
                   className="px-5 py-2.5 bg-secondary-container text-white text-sm font-semibold rounded-xl hover:bg-secondary transition-colors cursor-pointer shadow-sm"
                 >
                   Save Changes
