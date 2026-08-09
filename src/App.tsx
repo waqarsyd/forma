@@ -64,7 +64,7 @@ import { collection, onSnapshot, query, setDoc, doc, deleteDoc, getDoc } from 'f
 import { User } from 'firebase/auth';
 import LoginPage from './components/LoginPage';
 import UserAvatar from './components/UserAvatar';
-import MobileNav from './components/MobileNav';
+import LandingPage from './components/LandingPage';
 import FeaturesPage from './components/FeaturesPage';
 import DocsPage from './components/DocsPage';
 import ContactPage from './components/ContactPage';
@@ -92,7 +92,7 @@ interface ChatMessage {
    * Set when the turn this message asked for failed. A failed chat turn used to
    * leave the user's message sitting in the transcript with no reply and no
    * marker, while the explanation appeared in a small note pinned under the
-   * composer — two things that were never visually connected.
+   * composer â€” two things that were never visually connected.
    */
   error?: string;
 }
@@ -265,7 +265,7 @@ const DebugConsole = ({
  *
  * Uploads used to be sent at whatever size the user happened to have: a phone
  * photo or a large screenshot went to Google whole, and base64 added another
- * third on top. That is paid twice — once uploading, once as prefill before
+ * third on top. That is paid twice â€” once uploading, once as prefill before
  * the model writes a single token.
  *
  * The cap is deliberately generous. Past roughly this many pixels the extra
@@ -299,7 +299,7 @@ const MAX_TEXT_ITEMS_PER_PAGE = 400;
 
 /**
  * Rolling cap on the in-app debug console. The array previously grew for the
- * lifetime of the tab with no bound and no trimming — only a manual Clear.
+ * lifetime of the tab with no bound and no trimming â€” only a manual Clear.
  */
 const MAX_DEBUG_LOGS = 500;
 
@@ -371,7 +371,7 @@ async function extractPdfPageText(
       );
     }
 
-    // A scanned PDF is pixels in a wrapper — no text layer to recover.
+    // A scanned PDF is pixels in a wrapper â€” no text layer to recover.
     if (lines.length === 0) return null;
 
     const truncated = omitted > 0
@@ -379,7 +379,7 @@ async function extractPdfPageText(
       : '';
 
     const text = (
-      `PDF page ${pageNumber} — text layer extracted from the file itself. ` +
+      `PDF page ${pageNumber} â€” text layer extracted from the file itself. ` +
       `These strings and coordinates are EXACT and take priority over anything read from the page image.\n` +
       `Page is ${Math.round(base.width * PT_TO_REPORT_UNITS)} x ${Math.round(pageHeightPt * PT_TO_REPORT_UNITS)} report units. ` +
       `Coordinates are already in report units (hundredths of an inch), origin top-left.\n` +
@@ -410,14 +410,14 @@ async function renderPdfPage(page: any): Promise<string | null> {
 
   await page.render({ canvasContext: context, viewport, canvas: canvas as any }).promise;
 
-  // Route through the same optimiser as uploaded images — at this scale a page
+  // Route through the same optimiser as uploaded images â€” at this scale a page
   // can exceed the edge cap, which it never did at 1.5.
   return optimizeImageDataUrl(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
 }
 
 /**
  * Turn one dropped or picked file into the parts that get sent. Unsupported
- * and oversized files produce a notice rather than being silently ignored —
+ * and oversized files produce a notice rather than being silently ignored â€”
  * previously dropping a .docx did nothing at all, with no feedback.
  */
 async function ingestFile(file: File): Promise<IngestResult> {
@@ -447,20 +447,20 @@ async function ingestFile(file: File): Promise<IngestResult> {
 
         const extracted = await extractPdfPageText(page, n);
         if (extracted) {
-          out.texts.push({ id: `${Date.now()}-${name}-p${n}`, label: `${name} · page ${n} text`, text: extracted.text });
+          out.texts.push({ id: `${Date.now()}-${name}-p${n}`, label: `${name} Â· page ${n} text`, text: extracted.text });
           // The per-page string cap used to drop the tail of a dense page in
           // silence, so missing accuracy at the bottom of a busy page looked
           // like a model failure. Say it out loud instead.
           if (extracted.omitted > 0) {
             out.notices.push(
-              `"${name}" page ${n} has more text than can be read exactly — ${extracted.omitted} ` +
+              `"${name}" page ${n} has more text than can be read exactly â€” ${extracted.omitted} ` +
               `${extracted.omitted === 1 ? 'string was' : 'strings were'} left out, and that part of the page ` +
               `will be read from the image instead.`
             );
           }
         } else if (n === 1) {
           out.notices.push(
-            `"${name}" has no text layer — it looks like a scan, so text will be read from the image and may be less exact.`
+            `"${name}" has no text layer â€” it looks like a scan, so text will be read from the image and may be less exact.`
           );
         }
       }
@@ -525,7 +525,7 @@ function readAsDataUrl(file: File): Promise<string> {
 /**
  * Shrink an oversized image, leaving small ones exactly as they are. Returns
  * the original on any failure, and never returns something larger than it was
- * given — so this can only ever help.
+ * given â€” so this can only ever help.
  */
 async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
   try {
@@ -542,7 +542,7 @@ async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
     const longest = Math.max(w, h);
     const oversized = longest > MAX_IMAGE_EDGE;
 
-    // Already modest in both dimensions and weight — leave it completely alone.
+    // Already modest in both dimensions and weight â€” leave it completely alone.
     if (!oversized && dataUrl.length < REENCODE_THRESHOLD_BYTES) return dataUrl;
 
     const ratio = oversized ? MAX_IMAGE_EDGE / longest : 1;
@@ -555,7 +555,7 @@ async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    // JPEG carries no alpha, so paint the sheet white first — otherwise a
+    // JPEG carries no alpha, so paint the sheet white first â€” otherwise a
     // transparent screenshot background would come out black.
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -579,7 +579,7 @@ async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
  *
  * The "Specs & REPX" tab used to render only the markdown specification, so
  * the XML that Forma actually produces could never be inspected before it was
- * downloaded — a malformed report only revealed itself once DevExpress refused
+ * downloaded â€” a malformed report only revealed itself once DevExpress refused
  * to open it. This shows the real thing, checks that it parses, and lets it be
  * copied straight into the designer.
  * ------------------------------------------------------------------ */
@@ -661,7 +661,7 @@ const RepxViewer = ({ xml }: { xml: string }) => {
 
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-on-surface-variant font-mono">
-            {lines.length} lines · {xml.length.toLocaleString()} chars
+            {lines.length} lines Â· {xml.length.toLocaleString()} chars
           </span>
           <button
             onClick={handleCopy}
@@ -703,8 +703,8 @@ const RepxViewer = ({ xml }: { xml: string }) => {
  *
  * The model reports the rectangle in fractions (0..1) because it does not know
  * the file's true pixel size, so everything is multiplied up by naturalWidth /
- * naturalHeight here. Returns null on anything unexpected — a bad rect, a
- * non-image upload, a decode failure — and the caller falls back to the
+ * naturalHeight here. Returns null on anything unexpected â€” a bad rect, a
+ * non-image upload, a decode failure â€” and the caller falls back to the
  * placeholder rather than showing a broken image.
  */
 async function cropSourceRegion(
@@ -738,7 +738,7 @@ async function cropSourceRegion(
     if (w <= 0 || h <= 0) return null;
 
     // Almost the whole page in one dimension, or over half its area, is not a
-    // logo — it is the model failing to isolate one.
+    // logo â€” it is the model failing to isolate one.
     if (w > 0.9 || h > 0.9 || w * h > 0.5) {
       console.warn(
         `Ignoring sourceRect for "${label}": it covers ${Math.round(w * 100)}%x${Math.round(h * 100)}% ` +
@@ -758,14 +758,14 @@ async function cropSourceRegion(
 
     // The crop should be roughly the shape of the box it will be drawn into.
     // A wildly different aspect means the rectangle is not this element's
-    // artwork — typically a full-width band grabbed for a small square logo.
+    // artwork â€” typically a full-width band grabbed for a small square logo.
     if (elementAspect && elementAspect > 0) {
       const cropAspect = sw / sh;
       const ratio = cropAspect / elementAspect;
       if (ratio > 4 || ratio < 0.25) {
         console.warn(
           `Ignoring sourceRect for "${label}": crop is ${cropAspect.toFixed(2)}:1 but the ` +
-          `element is ${elementAspect.toFixed(2)}:1 — the rectangle does not match this picture.`
+          `element is ${elementAspect.toFixed(2)}:1 â€” the rectangle does not match this picture.`
         );
         return null;
       }
@@ -862,7 +862,7 @@ const MockupImage = ({
 const MockupTable = ({ el, scaleFont }: { el: ReportElement; scaleFont: number }) => {
   const rows = el.rows || [];
 
-  // Nothing to draw — an older layout, or the model omitted the rows. Show an
+  // Nothing to draw â€” an older layout, or the model omitted the rows. Show an
   // empty ruled box rather than the invented "Data Row 1" placeholder, which
   // used to make an empty result look like real content.
   if (rows.length === 0) {
@@ -977,7 +977,7 @@ const ReportMockup = ({
 }) => {
   // The report page is an absolutely-positioned pixel grid (coordinates come
   // straight from the REPX units), so it cannot reflow. Instead we measure the
-  // available width and scale the whole page down to fit — the geometry stays
+  // available width and scale the whole page down to fit â€” the geometry stays
   // byte-identical, only the presentation shrinks.
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -1051,7 +1051,7 @@ const ReportMockup = ({
                     key={eIdx}
                     // Everything inside the sheet is drawn against --paper, so
                     // it uses paper-relative colours rather than the themed
-                    // tokens — the rendered report must look identical in both
+                    // tokens â€” the rendered report must look identical in both
                     // themes, and a flipping token would invert or vanish here.
                     className="absolute flex overflow-hidden"
                     style={{
@@ -1121,267 +1121,6 @@ const ReportMockup = ({
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
-const LandingPage = ({
-  onEnterWorkspace,
-  onSignIn,
-  onSignUp,
-  user,
-  logOut,
-  isDarkMode,
-  setIsDarkMode,
-}: {
-  onEnterWorkspace: () => void;
-  onSignIn: () => void;
-  onSignUp: () => void;
-  user: User | null;
-  logOut: () => void;
-  isDarkMode: boolean;
-  setIsDarkMode: (val: boolean) => void;
-}) => {
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-        setShowProfileMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  return (
-    <div className="font-body-lg text-body-lg bg-surface text-on-surface min-h-screen flex flex-col">
-      {/* TopNavBar */}
-      <header className="w-full sticky top-0 z-50 bg-surface-container-lowest/80 backdrop-blur-md border-b border-outline-variant">
-        <nav className="flex justify-between items-center px-margin-desktop py-4 max-w-container-max mx-auto">
-          <div className="flex items-center gap-4">
-            <Logo size={32} />
-            <div className="flex flex-col">
-              <span className="font-display-lg text-title-md font-bold text-primary">Forma</span>
-              <span className="font-label-caps text-[10px] tracking-widest text-on-surface-variant uppercase hidden lg:block">Show it. Build it. Ship it.</span>
-            </div>
-          </div>
-          <div className="hidden md:flex items-center gap-8">
-            <a className="text-secondary font-bold border-b-2 border-secondary pb-1 font-title-md text-body-sm transition-colors duration-200" href="#">Product</a>
-            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="#features">Features</a>
-            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="#docs">Docs</a>
-            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="#contact">Contact</a>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-4">
-            <MobileNav active="Product" signedIn={!!user} />
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="w-10 h-10 flex items-center justify-center rounded-full border border-outline-variant hover:bg-secondary/10 hover:border-secondary text-on-surface-variant hover:text-secondary transition-all active:scale-95 cursor-pointer mr-1 select-none"
-              title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                {isDarkMode ? 'light_mode' : 'dark_mode'}
-              </span>
-            </button>
-            {user ? (
-              <div className="flex items-center gap-4 relative" ref={profileMenuRef}>
-                <div
-                  onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="flex items-center gap-2.5 px-3 py-1.5 bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/30 rounded-full select-none cursor-pointer transition-colors"
-                >
-                  <UserAvatar user={user} />
-                  <span className="font-label-caps text-[11px] text-on-surface-variant font-semibold hidden lg:inline max-w-[120px] truncate">
-                    {user.displayName || user.email?.split('@')[0]}
-                  </span>
-                  <span className="hidden lg:inline"><span className="material-symbols-outlined text-[16px] text-on-surface-variant select-none">
-                    {showProfileMenu ? 'expand_less' : 'expand_more'}
-                  </span></span>
-                </div>
-                <button
-                  onClick={onEnterWorkspace}
-                  className="hidden lg:inline-block whitespace-nowrap font-label-caps text-on-surface-variant text-body-sm px-4 py-2 hover:text-secondary hover:bg-surface-container-low rounded-full transition-all active:scale-95 cursor-pointer"
-                >
-                  Workspace
-                </button>
-
-                {showProfileMenu && (
-                  <div className="absolute right-0 top-full mt-2 w-56 bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-2xl shadow-2xl z-50 overflow-hidden py-2">
-                    <div className="px-4 py-3 border-b border-outline-variant/30 flex flex-col text-left">
-                      <span className="text-xs font-bold text-on-surface truncate">
-                        {user.displayName || 'Developer User'}
-                      </span>
-                      <span className="text-[10px] text-on-surface-variant truncate font-mono mt-0.5">
-                        {user.email || 'developer@example.com'}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        logOut();
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-error-container text-error hover:text-error transition-colors text-left text-xs font-semibold font-label-caps cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">logout</span>
-                      Sign Out
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="hidden md:flex items-center gap-2">
-                <button
-                  onClick={onSignIn}
-                  className="whitespace-nowrap font-label-caps text-on-surface-variant px-4 py-2 hover:text-secondary transition-colors transition-transform active:scale-95 cursor-pointer"
-                >
-                  Sign In
-                </button>
-                <button
-                  onClick={onSignUp}
-                  className="whitespace-nowrap bg-secondary-container text-white px-4 sm:px-6 py-2 font-label-caps transition-all hover:bg-secondary active:scale-95 rounded-full shadow-lg shadow-secondary-container/20 cursor-pointer"
-                >
-                  Sign Up
-                </button>
-              </div>
-            )}
-          </div>
-        </nav>
-      </header>
-      <main className="flex-grow">
-        {/* Compact Hero Section */}
-        <section className="relative pt-24 pb-36 hero-gradient overflow-hidden">
-          <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:24px_24px] opacity-50"></div>
-          <div className="max-w-container-max mx-auto px-margin-desktop text-center">
-
-            <h1 className="font-display-lg text-display-lg md:text-[64px] font-bold mb-8 tracking-tight text-on-surface leading-tight">
-              Show it. Build it. <span className="text-secondary">Ship it.</span>
-            </h1>
-            <p className="font-body-lg text-body-lg md:text-xl text-on-surface-variant max-w-3xl mx-auto mb-12 leading-relaxed">
-              An intelligent workspace designed to turn loose ideas and sketches into high-fidelity DevExpress layouts and report design specs instantly.
-            </p>
-            <div className="flex flex-col sm:flex-row justify-center gap-4">
-              <button
-                onClick={onEnterWorkspace}
-                className="bg-secondary-container text-white px-10 py-4 font-label-caps transition-all hover:bg-secondary active:scale-95 rounded-full shadow-xl shadow-secondary-container/25 text-body-lg cursor-pointer"
-              >
-                Get Started Now
-              </button>
-              <a
-                href="#docs"
-                className="border border-outline-variant text-on-surface px-8 py-4 font-label-caps transition-all hover:bg-black hover:text-white active:scale-95 rounded-full flex items-center justify-center gap-2 cursor-pointer text-sm font-semibold"
-              //className="border border-black text-on-surface px-8 py-4 font-label-caps transition-all hover:bg-black hover:text-white active:scale-95 rounded-full flex items-center justify-center gap-2 cursor-pointer"
-              >
-                View Documentation <span className="material-symbols-outlined text-[18px]">menu_book</span>
-              </a>
-            </div>
-          </div>
-        </section>
-
-        {/* Feature-First Workflow Overlap */}
-        <section className="relative -mt-20 z-10 px-margin-desktop pb-32">
-          <div className="max-w-container-max mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
-              {/* Feature 1: Show it */}
-              <div className="bg-surface-container-lowest border border-outline-variant p-10 relative hover:border-secondary transition-all group duration-500 rounded-3xl shadow-lg hover:shadow-2xl">
-                <div className="absolute top-8 right-8 port-indicator"></div>
-                <div className="mb-8 w-14 h-14 bg-secondary-fixed flex items-center justify-center rounded-2xl">
-                  <span className="material-symbols-outlined text-secondary text-3xl" style={{ fontVariationSettings: '"FILL" 1' }}>upload_file</span>
-                </div>
-                <span className="font-code-sm text-secondary mb-3 block tracking-widest">01 SHOW IT</span>
-                <h3 className="font-title-md text-headline-lg-mobile mb-4 text-on-surface">Visual Ingestion</h3>
-                <p className="font-body-sm text-body-lg text-on-surface-variant">
-                  Upload images, sketches, or PDFs. Our engine handles multi-format ingestion with pixel-perfect resolution.
-                </p>
-              </div>
-
-              {/* Feature 2: Build it */}
-              <div className="bg-surface-container-lowest border border-outline-variant p-10 relative hover:border-secondary transition-all group duration-500 rounded-3xl shadow-lg hover:shadow-2xl">
-                <div className="absolute top-8 right-8 port-indicator"></div>
-                <div className="mb-8 w-14 h-14 bg-secondary-fixed flex items-center justify-center rounded-2xl">
-                  <span className="material-symbols-outlined text-secondary text-3xl" style={{ fontVariationSettings: '"FILL" 1' }}>auto_awesome</span>
-                </div>
-                <span className="font-code-sm text-secondary mb-3 block tracking-widest">02 BUILD IT</span>
-                <h3 className="font-title-md text-headline-lg-mobile mb-4 text-on-surface">Structural Parsing</h3>
-                <p className="font-body-sm text-body-lg text-on-surface-variant">
-                  AI parses inputs, calculates metrics, and generates interactive code with specifications using proprietary algorithms.
-                </p>
-              </div>
-
-              {/* Feature 3: Ship it */}
-              <div className="bg-surface-container-lowest border border-outline-variant p-10 relative hover:border-secondary transition-all group duration-500 rounded-3xl shadow-lg hover:shadow-2xl">
-                <div className="absolute top-8 right-8 port-indicator"></div>
-                <div className="mb-8 w-14 h-14 bg-secondary-fixed flex items-center justify-center rounded-2xl">
-                  <span className="material-symbols-outlined text-secondary text-3xl" style={{ fontVariationSettings: '"FILL" 1' }}>download</span>
-                </div>
-                <span className="font-code-sm text-secondary mb-3 block tracking-widest">03 SHIP IT</span>
-                <h3 className="font-title-md text-headline-lg-mobile mb-4 text-on-surface">Native Export</h3>
-                <p className="font-body-sm text-body-lg text-on-surface-variant">
-                  Download validated native DevExpress .REPX files or detailed specs ready for immediate production deployment.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* CTAs / Final Punch */}
-        <section className="py-24 bg-[#040d1b] text-white text-center">
-          <div className="max-w-container-max mx-auto px-margin-desktop">
-            <h2 className="font-headline-lg text-headline-lg font-bold mb-6">Let's build something precise.</h2>
-            <p className="font-body-lg text-on-primary-container max-w-2xl mx-auto mb-10 opacity-80">
-              Join teams using Forma to transform designs into production-ready reports and ship faster.
-            </p>
-            <button
-              onClick={onEnterWorkspace}
-              className="bg-secondary-container text-white px-12 py-4 font-label-caps transition-all hover:bg-secondary active:scale-95 rounded-full shadow-2xl shadow-black/20 text-body-lg cursor-pointer"
-            >
-              Launch Workspace
-            </button>
-          </div>
-        </section>
-      </main>
-
-      {/* Footer */}
-      <footer className="w-full bg-surface-container-lowest dark:bg-card border-t border-outline-variant py-10 mt-auto">
-        <div className="max-w-container-max mx-auto px-margin-desktop flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 text-[11px] text-on-surface-variant font-sans">
-
-          {/* Left side: Logo, brand, tagline */}
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2 select-none shrink-0">
-              <Logo size={20} />
-              <span className="font-bold text-sm text-secondary-container">Forma</span>
-            </div>
-            <div className="h-6 w-px bg-outline-variant/40 hidden sm:block"></div>
-            <p className="font-body-sm text-[12px] leading-relaxed text-on-surface-variant max-w-[340px]">
-              © 2026 Forma. All rights reserved.<br />Designed & Built by <strong className="text-secondary-container font-bold">Waqar Sayyed</strong>
-            </p>
-          </div>
-          {/* Middle side: Navigation links */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 select-none text-[12px]">
-            <a href="#" className="hover:text-primary transition-all duration-200 hover:scale-105">Product</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#features" className="hover:text-primary transition-all duration-200 hover:scale-105">Features</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#docs" className="hover:text-primary transition-all duration-200 hover:scale-105">Docs</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#contact" className="hover:text-primary transition-all duration-200 hover:scale-105">Contact</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Privacy</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Terms</a>
-          </div>
-
-          {/* Right side: Copyright */}
-          <div className="flex items-center gap-6 flex-wrap lg:justify-end">
-            {/* Verified Stack removed as per request */}
-          </div>
-        </div>
-      </footer>
-      {/* Sub Footer */}
-      <div className="w-full bg-surface dark:bg-card py-4 border-t border-outline-variant/30 text-center select-none shrink-0">
-        <span className="text-[10px] uppercase font-mono text-on-surface-variant">
-          Crafting the future of report generation.
-        </span>
-      </div>
-    </div>
-  );
-};
-
 export interface SavedReport {
   id: string;
   name: string;
@@ -1407,7 +1146,7 @@ export default function App() {
   const [mobilePane, setMobilePane] = useState<'chat' | 'canvas'>('chat');
   const [isDragging, setIsDragging] = useState(false);
   /**
-   * Save confirmation. This used to be a native `alert()` — modal, unstyled, and
+   * Save confirmation. This used to be a native `alert()` â€” modal, unstyled, and
    * the only thing in the app that broke out of its own visual language. It sits
    * beside the composer with the other notices and clears itself.
    */
@@ -1421,11 +1160,11 @@ export default function App() {
   const lastCompletedStepIndexRef = useRef<number>(0);
   const [analyzingStep, setAnalyzingStep] = useState<string>('');
   const [analyzingProgress, setAnalyzingProgress] = useState<number>(0);
-  /** Characters of model output received so far — 0 until streaming begins. */
+  /** Characters of model output received so far â€” 0 until streaming begins. */
   const [streamChars, setStreamChars] = useState<number>(0);
   /**
    * Non-visual attachments: PDF text layers and .repx contents. Kept separate
-   * from `previews` so that stays image-only — thumbnails, `sourceRect`
+   * from `previews` so that stays image-only â€” thumbnails, `sourceRect`
    * cropping and saved-report `images` all depend on that.
    */
   const [attachmentTexts, setAttachmentTexts] = useState<TextAttachment[]>([]);
@@ -1505,7 +1244,7 @@ export default function App() {
   }, []);
 
   // On phones the result lands in the hidden pane, so surface it automatically.
-  // Desktop is unaffected — both panes are visible there.
+  // Desktop is unaffected â€” both panes are visible there.
   useEffect(() => {
     if (result) setMobilePane('canvas');
   }, [result]);
@@ -1516,14 +1255,14 @@ export default function App() {
    * than through `handleLogOut`.
    *
    * `previousUidRef` distinguishes "was signed in, now is not" from the initial
-   * null every signed-out visitor gets on load — only the former is a sign-out,
+   * null every signed-out visitor gets on load â€” only the former is a sign-out,
    * and only the former should wipe the workspace. Clearing on the initial null
    * would throw away a signed-out user's work every time the page mounted.
    */
   const previousUidRef = useRef<string | null>(null);
   /**
    * The auth subscription is set up once, so it cannot close over
-   * `handleClearChat` directly — it would capture the first render's copy and go
+   * `handleClearChat` directly â€” it would capture the first render's copy and go
    * stale. The ref is refreshed after every render, below where that handler is
    * defined.
    */
@@ -1594,7 +1333,7 @@ export default function App() {
     const storedKey = readSessionKey() || legacyKey;
     // The model is detected from the key at request time, so modelName is left
     // unset. A stored 'selectedAiModel' from the old dropdown would pin a
-    // retired id (gemini-2.5-flash) and defeat detection — drop it.
+    // retired id (gemini-2.5-flash) and defeat detection â€” drop it.
     try { localStorage.removeItem('selectedAiModel'); } catch { /* storage disabled */ }
     return {
       version: '23.2',
@@ -1627,7 +1366,7 @@ export default function App() {
   useEffect(() => {
     // sessionStorage, not localStorage: the key is a live credential, and a
     // tab-scoped store is erased by the browser itself. A beforeunload handler
-    // would not be — crashes, force-quit and mobile tab eviction all skip it.
+    // would not be â€” crashes, force-quit and mobile tab eviction all skip it.
     if (config.customApiKey) {
       cacheKeyForSession(config.customApiKey);
     } else {
@@ -1652,7 +1391,7 @@ export default function App() {
     [user]
   );
 
-  // Does this account have a stored key? Only the existence is fetched here —
+  // Does this account have a stored key? Only the existence is fetched here â€”
   // decrypting needs the passphrase, which the user supplies on demand.
   useEffect(() => {
     if (!canUseVault) {
@@ -1670,7 +1409,7 @@ export default function App() {
   }, [canUseVault, vaultDocRef]);
 
   /**
-   * The config panel edits `config` live — every field's onChange writes straight
+   * The config panel edits `config` live â€” every field's onChange writes straight
    * through. That was fine while both footer buttons did the same thing, which
    * is to say it was never fine: "Cancel" and "Save Changes" were both bare
    * `setIsConfigOpen(false)`, so a cancelled edit was already saved and the Save
@@ -1678,7 +1417,7 @@ export default function App() {
    *
    * Rather than rewrite every field to a draft object, the committed value is
    * snapshotted when the panel opens and restored if the user leaves by any
-   * route other than Save — the footer Cancel, the X, or the backdrop.
+   * route other than Save â€” the footer Cancel, the X, or the backdrop.
    *
    * Explicit key actions (unlock, sync) refresh the snapshot themselves: those
    * are deliberate button presses with their own confirmation, and undoing one
@@ -1761,7 +1500,7 @@ export default function App() {
       const key = await decryptApiKey(vaultRecord, passphrase);
       setConfig((prev) => ({ ...prev, customApiKey: key }));
       // Unlocking is a deliberate action with its own confirmation below, so it
-      // survives a later Cancel — fold it into the snapshot the panel would
+      // survives a later Cancel â€” fold it into the snapshot the panel would
       // otherwise restore.
       if (configSnapshotRef.current) {
         configSnapshotRef.current = { ...configSnapshotRef.current, customApiKey: key };
@@ -1838,30 +1577,30 @@ export default function App() {
   }, [isAnalyzing, isPaused]);
 
   /**
-   * These two used to print hardcoded strings — "Latency Nominal at 24ms",
-   * "Local Database state: Online" — and probe nothing, so their output read as
+   * These two used to print hardcoded strings â€” "Latency Nominal at 24ms",
+   * "Local Database state: Online" â€” and probe nothing, so their output read as
    * a signal while measuring nothing at all. Everything below is now observed at
    * the moment the button is pressed.
    */
   const handleRunDiagnostics = async () => {
-    console.log("Running diagnostics…");
-    // Never log the key itself — DebugConsole captures every console.* call.
+    console.log("Running diagnosticsâ€¦");
+    // Never log the key itself â€” DebugConsole captures every console.* call.
     console.log("API key: " + (config.customApiKey ? "present for this session" : "not set"));
     console.log("Resolved model: " + (readCachedModel() || "not yet detected"));
-    // Written as `import.meta.env` on purpose — Vite substitutes that exact
+    // Written as `import.meta.env` on purpose â€” Vite substitutes that exact
     // expression at transform time; `import.meta?.env` defeats the replacement.
-    console.log("Mock mode: " + (((import.meta as any).env ?? {}).VITE_FORMA_MOCK === 'true' ? "ON — Gemini is not being called" : "off"));
+    console.log("Mock mode: " + (((import.meta as any).env ?? {}).VITE_FORMA_MOCK === 'true' ? "ON â€” Gemini is not being called" : "off"));
 
     const started = performance.now();
     try {
       const res = await fetch('/api/health', { cache: 'no-store' });
       console.log(`Server /api/health: ${res.status} in ${Math.round(performance.now() - started)}ms`);
     } catch (err) {
-      console.error(`Server /api/health: unreachable after ${Math.round(performance.now() - started)}ms — ${String(err)}`);
+      console.error(`Server /api/health: unreachable after ${Math.round(performance.now() - started)}ms â€” ${String(err)}`);
     }
 
-    console.log("Saved projects: " + savedReports.length + (user ? ' (synced to your account)' : ' (local only — signed out)'));
-    console.log("Key vault available: " + (isVaultAvailable() ? "yes" : "no — needs a secure context"));
+    console.log("Saved projects: " + savedReports.length + (user ? ' (synced to your account)' : ' (local only â€” signed out)'));
+    console.log("Key vault available: " + (isVaultAvailable() ? "yes" : "no â€” needs a secure context"));
   };
 
   const handleCheckSystemHealth = () => {
@@ -1869,7 +1608,7 @@ export default function App() {
     console.log(`- Operational mode: ${isAnalyzing ? (isPaused ? 'paused mid-run' : 'generating') : isChatting ? 'chat turn in flight' : 'idle'}`);
     console.log(`- Network: ${navigator.onLine ? 'online' : 'OFFLINE'}`);
     console.log(`- Attachments staged: ${previews.length} image(s), ${attachmentTexts.length} text part(s)`);
-    console.log(`- Result loaded: ${result ? `yes — "${result.title ?? 'untitled'}", REPX ${result.repxContent?.length ?? 0} chars` : 'no'}`);
+    console.log(`- Result loaded: ${result ? `yes â€” "${result.title ?? 'untitled'}", REPX ${result.repxContent?.length ?? 0} chars` : 'no'}`);
     console.log(`- Debug log entries: ${logs.length}/${MAX_DEBUG_LOGS}`);
     const mem = (performance as any).memory;
     if (mem?.usedJSHeapSize) {
@@ -1877,7 +1616,7 @@ export default function App() {
     }
   };
 
-  // Save confirmations are transient — they replace an alert the user had to
+  // Save confirmations are transient â€” they replace an alert the user had to
   // dismiss, so they must not need dismissing either.
   useEffect(() => {
     if (!saveNotice) return;
@@ -1892,7 +1631,7 @@ export default function App() {
     const originalDebug = console.debug;
 
     // Every argument has to survive serialisation, because this runs *inside* the
-    // patched console.* — anything thrown here surfaces at the caller's
+    // patched console.* â€” anything thrown here surfaces at the caller's
     // console.log line, not in this panel. JSON.stringify throws on a cycle, and
     // cyclic arguments are ordinary: DOM nodes, React synthetic events, Firebase
     // objects and most SDK errors all self-reference.
@@ -1920,7 +1659,7 @@ export default function App() {
 
     // Entries are buffered and flushed asynchronously rather than written
     // straight to state. Calling setLogs inline meant that any library logging
-    // *during render* updated App's state while a child was mid-render — React's
+    // *during render* updated App's state while a child was mid-render â€” React's
     // "Cannot update a component while rendering a different component". Motion's
     // useReducedMotion warning did exactly that on every load. A microtask runs
     // after the current render pass completes, so the setState is legal there.
@@ -2021,7 +1760,7 @@ export default function App() {
   /**
    * How far the simulated opening phase is allowed to climb. Nothing during
    * upload, model detection or the model's silent thinking pass reports real
-   * progress, so this stretch is guesswork and must stay visibly small —
+   * progress, so this stretch is guesswork and must stay visibly small â€”
    * leaving the rest of the bar for output that genuinely arrived.
    */
   const PRE_STREAM_CEILING = 14;
@@ -2029,7 +1768,7 @@ export default function App() {
   /**
    * Progress only ever moves forward. The opening phase is simulated and the
    * streamed phase is real, and without this guard the handover snapped the
-   * bar backwards — the simulation had already climbed while the model was
+   * bar backwards â€” the simulation had already climbed while the model was
    * still thinking, then the first real chunk reported a much lower figure.
    */
   const advanceProgress = useCallback((next: number) => {
@@ -2039,8 +1778,8 @@ export default function App() {
   /**
    * Real progress, fed by the streamed response.
    *
-   * The simulated interval still covers the opening phase — model detection,
-   * upload, and the model's own thinking produce no signal at all — but it is
+   * The simulated interval still covers the opening phase â€” model detection,
+   * upload, and the model's own thinking produce no signal at all â€” but it is
    * capped low (see PRE_STREAM_CEILING) so this can take over without the bar
    * ever going backwards. Shared by both handleGenerate and handleResume so
    * the two cannot drift apart.
@@ -2071,7 +1810,7 @@ export default function App() {
     root.classList.toggle('dark', isDarkMode);
 
     // The inline bootstrap in index.html already painted the correct theme, so
-    // mount must not animate — only a genuine change should.
+    // mount must not animate â€” only a genuine change should.
     if (isFirstThemeRun.current) {
       isFirstThemeRun.current = false;
       return;
@@ -2087,13 +1826,13 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [isDarkMode]);
 
-  // The only place a theme choice is persisted — an explicit user action.
+  // The only place a theme choice is persisted â€” an explicit user action.
   const setTheme = useCallback((val: boolean) => {
     setIsDarkMode(val);
     try {
       localStorage.setItem('darkMode', JSON.stringify(val));
     } catch {
-      /* storage disabled — the choice still applies for this session */
+      /* storage disabled â€” the choice still applies for this session */
     }
   }, []);
 
@@ -2203,7 +1942,7 @@ export default function App() {
   /**
    * Firestore failures used to vanish. `handleFirestoreError` logs and then
    * re-throws, and both call sites are `catch` blocks in async handlers with
-   * nothing above them — so a rules rejection became an unhandled promise
+   * nothing above them â€” so a rules rejection became an unhandled promise
    * rejection and the user saw nothing at all.
    *
    * This keeps the diagnostic logging and swallows the re-throw, then shows a
@@ -2240,8 +1979,8 @@ export default function App() {
         // own JPEG quality is ~4.7 MB against a 1 MiB document ceiling. Writing
         // it produced an opaque backend rejection and the save simply failed.
         //
-        // So: try it whole, and if it will not fit, keep the part that matters —
-        // the spec, layout and REPX — and say plainly that the images were left
+        // So: try it whole, and if it will not fit, keep the part that matters â€”
+        // the spec, layout and REPX â€” and say plainly that the images were left
         // behind. A saved report without its source thumbnails still reopens and
         // still exports; a failed save leaves the user with nothing.
         let messagesJson = JSON.stringify(messages);
@@ -2272,12 +2011,12 @@ export default function App() {
         });
         setSaveNotice(
           imagesDropped
-            ? 'Saved to your projects — the uploaded images were too large to sync, so the spec and REPX were saved without them.'
+            ? 'Saved to your projects â€” the uploaded images were too large to sync, so the spec and REPX were saved without them.'
             : 'Saved to your projects.'
         );
       } catch (err) {
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${reportId}`,
-          'That project could not be saved to your account. It is still open here — try again in a moment.');
+          'That project could not be saved to your account. It is still open here â€” try again in a moment.');
       }
     } else {
       const newReport: SavedReport = {
@@ -2311,7 +2050,7 @@ export default function App() {
         await deleteDoc(doc(db, 'users', user.uid, 'reports', id));
       } catch (err) {
         reportFirestoreFailure(err, OperationType.DELETE, `users/${user.uid}/reports/${id}`,
-          'That project could not be deleted from your account. It is still listed — try again in a moment.');
+          'That project could not be deleted from your account. It is still listed â€” try again in a moment.');
       }
     } else {
       setSavedReports(prev => {
@@ -2330,7 +2069,7 @@ export default function App() {
     }
     setUser(null);
     // Signing out must not leave a live credential behind for the next person at
-    // this browser. The encrypted copy in Firestore is untouched — signing back
+    // this browser. The encrypted copy in Firestore is untouched â€” signing back
     // in and entering the passphrase restores it.
     setConfig((prev) => ({ ...prev, customApiKey: '' }));
     clearSessionKey();
@@ -2355,7 +2094,7 @@ export default function App() {
    * landing/marketing return *and* from the workspace return, and each used to
    * carry its own copy of this element with a **different** `onClose`: the
    * workspace copy hardcoded `#workspace` while the other restored
-   * `lastViewHash`. Restoring `lastViewHash` is correct in both cases — it is
+   * `lastViewHash`. Restoring `lastViewHash` is correct in both cases â€” it is
    * already `'#workspace'` whenever the workspace opened the dialog, because the
    * `#login` / `#signup` branches of the hash effect deliberately leave it
    * alone. Keep this single copy; two copies drifted once already.
@@ -2503,7 +2242,7 @@ export default function App() {
       }
       console.error('Error during report generation:', err);
 
-      // No key configured is a setup step, not a failure — send the user straight
+      // No key configured is a setup step, not a failure â€” send the user straight
       // to the place they can fix it instead of showing a dead-end error.
       if (err instanceof MissingApiKeyError) {
         setError('Add your own Gemini API key in Settings to generate reports.');
@@ -2576,7 +2315,7 @@ export default function App() {
   /**
    * `overridePrompt` exists for the retry affordance on a failed message, which
    * re-sends that message's own text rather than whatever is in the composer.
-   * Every call site passes it explicitly — never wire this straight to onClick,
+   * Every call site passes it explicitly â€” never wire this straight to onClick,
    * or the click event arrives as the prompt.
    */
   const handleGenerate = async (overridePrompt?: string) => {
@@ -2623,7 +2362,7 @@ export default function App() {
      * answers the message and decides whether a report was actually being
      * asked for.
      * ---------------------------------------------------------------- */
-    // Any attachment — a page image or text lifted out of a PDF/.repx — is an
+    // Any attachment â€” a page image or text lifted out of a PDF/.repx â€” is an
     // unambiguous request to build something, so it skips the chat turn.
     if (currentPreviews.length === 0 && currentTexts.length === 0) {
       setIsChatting(true);
@@ -2644,7 +2383,7 @@ export default function App() {
           return;
         }
 
-        // The user does want a report built from their description — fall
+        // The user does want a report built from their description â€” fall
         // through to generation below, after acknowledging.
         setMessages(prev => [...prev, {
           id: (Date.now() + 1).toString(),
@@ -2764,7 +2503,7 @@ export default function App() {
       }
       console.error('Error during report generation:', err);
 
-      // No key configured is a setup step, not a failure — send the user straight
+      // No key configured is a setup step, not a failure â€” send the user straight
       // to the place they can fix it instead of showing a dead-end error.
       if (err instanceof MissingApiKeyError) {
         setError('Add your own Gemini API key in Settings to generate reports.');
@@ -2807,7 +2546,7 @@ export default function App() {
 
   /**
    * The uploads a `sourceRect` can be cropped from. Live uploads win, but a
-   * report reloaded from history has an empty `previews` — its images survive
+   * report reloaded from history has an empty `previews` â€” its images survive
    * on the user chat message, so fall back to those and keep logo cropping
    * working after a reload. Order matches the parts sent to the model, so
    * `sourceImageIndex` lines up either way.
@@ -2948,7 +2687,7 @@ export default function App() {
               {/* No responsive class on the icon: Material Symbols ships its own
                   `display` from an unlayered <link>, which beats Tailwind's
                   layered `hidden` utility regardless of breakpoint. The
-                  `lg:hidden` that used to sit here had never once applied — the
+                  `lg:hidden` that used to sit here had never once applied â€” the
                   desktop button always rendered icon *and* label, like its two
                   siblings. Wrap the icon in a plain span if you ever do need to
                   hide one responsively. */}
@@ -3022,7 +2761,7 @@ export default function App() {
               >
                 {/* Below sm only the icon remains: at 91px the label was both the
                     widest thing in the bar and the only text that wrapped.
-                    The icon carries no responsive class on purpose — Material
+                    The icon carries no responsive class on purpose â€” Material
                     Symbols sets its own `display`, which beats Tailwind's `hidden`
                     (see the same dead `lg:hidden` on the save icon above), and
                     showing it at every width matches the sibling pills anyway. */}
@@ -3045,7 +2784,7 @@ export default function App() {
                       <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-pulse"></span>
                     </div>
                     <div className="space-y-1">
-                      {/* Save and New leave the bar below sm — at 320px the full
+                      {/* Save and New leave the bar below sm â€” at 320px the full
                           control set overlapped itself. They live here instead, so
                           the actions stay reachable rather than disappearing. */}
                       <button
@@ -3214,7 +2953,7 @@ export default function App() {
                     hardcoded model ids rot. Google retires models "for new users", so
                     the old gemini-2.5-flash default 404'd for every freshly created key
                     while the dropdown still advertised models (3.5 Flash/Pro) that never
-                    existed for most accounts. The model is now detected from the key —
+                    existed for most accounts. The model is now detected from the key â€”
                     see resolveModel() in geminiService.ts. */}
 
                 {/* API Config */}
@@ -3281,12 +3020,12 @@ export default function App() {
                       >
                         Google AI Studio
                       </a>
-                      . Your key goes straight from this browser to Google — it never reaches our servers.
+                      . Your key goes straight from this browser to Google â€” it never reaches our servers.
                       It is kept for this browser tab only and is erased when you close it.
                     </p>
                   </div>
 
-                  {/* Zero-knowledge sync — signed-in users only */}
+                  {/* Zero-knowledge sync â€” signed-in users only */}
                   {canUseVault && (
                     <div className="mt-5 pt-4 border-t border-outline-variant">
                       <h4 className="text-xs font-mono font-bold text-on-surface-variant mb-1 uppercase tracking-wider">
@@ -3317,7 +3056,7 @@ export default function App() {
                               disabled={vaultBusy}
                               className="u-tap u-transition-fast u-press u-focus-ring px-3 py-1.5 bg-secondary-container text-white text-[11px] font-semibold rounded-full hover:bg-secondary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              {vaultBusy ? 'Working…' : 'Unlock key'}
+                              {vaultBusy ? 'Workingâ€¦' : 'Unlock key'}
                             </button>
                             <button
                               type="button"
@@ -3350,7 +3089,7 @@ export default function App() {
                           />
                           <p className="text-[10px] text-error mt-2 leading-snug">
                             Write this passphrase down. It is never sent to us, so if you forget it your stored
-                            key cannot be recovered — you would need to delete it and add your API key again.
+                            key cannot be recovered â€” you would need to delete it and add your API key again.
                           </p>
                           <button
                             type="button"
@@ -3358,7 +3097,7 @@ export default function App() {
                             disabled={vaultBusy}
                             className="u-tap u-transition-fast u-press u-focus-ring mt-2 px-3 py-1.5 bg-secondary-container text-white text-[11px] font-semibold rounded-full hover:bg-secondary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {vaultBusy ? 'Encrypting…' : 'Encrypt & sync to my account'}
+                            {vaultBusy ? 'Encryptingâ€¦' : 'Encrypt & sync to my account'}
                           </button>
                         </>
                       )}
@@ -3552,7 +3291,7 @@ export default function App() {
                   ) : (
                     <span className="flex items-center gap-2.5">
                       <span className="material-symbols-outlined animate-spin text-secondary text-[16px] select-none">autorenew</span>
-                      <span className="text-[11px] text-on-surface-variant">Thinking…</span>
+                      <span className="text-[11px] text-on-surface-variant">Thinkingâ€¦</span>
                     </span>
                   )}
                 </motion.div>
@@ -3615,7 +3354,7 @@ export default function App() {
                   </div>
 
                   {/* Current stage, plus the live output readout once the model
-                      is actually writing — the one number here that is measured
+                      is actually writing â€” the one number here that is measured
                       rather than estimated. */}
                   <div className="flex items-baseline justify-between gap-3 w-full">
                     <p className={`text-[11px] text-on-surface-variant leading-tight truncate ${!isPaused && 'animate-pulse'}`}>
@@ -3641,7 +3380,7 @@ export default function App() {
                   )}
 
                   {/* Measured on a live run: the model spent 4,770 thinking
-                      tokens — roughly 68 of 80 seconds — before emitting a single
+                      tokens â€” roughly 68 of 80 seconds â€” before emitting a single
                       character. Nothing is streaming yet, so the bar is honestly
                       pinned at PRE_STREAM_CEILING for that whole stretch and
                       looks hung. Rather than invent movement, say what is
@@ -3649,7 +3388,7 @@ export default function App() {
                       worth explaining. */}
                   {!isPaused && streamChars === 0 && elapsedTime >= 20_000 && (
                     <p className="mt-2 text-[10px] leading-snug text-on-surface-variant/70" role="status">
-                      The model is still reasoning — it writes nothing until it has planned the
+                      The model is still reasoning â€” it writes nothing until it has planned the
                       whole layout, so the bar holds here until output starts arriving.
                     </p>
                   )}
@@ -3701,7 +3440,7 @@ export default function App() {
                       <button
                         onClick={() => removeFile(idx)}
                         aria-label="Remove attachment"
-                        /* Always visible on touch devices — there is no hover
+                        /* Always visible on touch devices â€” there is no hover
                            there, so the old opacity-0 made this unreachable. */
                         className="u-transition-fast u-press u-focus-ring absolute -top-2 -right-2 w-6 h-6 bg-surface-container-lowest dark:bg-card border border-outline-variant hover:bg-red-500 hover:text-white hover:border-red-500 text-on-surface-variant rounded-full shadow opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 cursor-pointer flex items-center justify-center"
                       >
@@ -3713,7 +3452,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Text pulled out of the files themselves — a PDF's text layer or
+            {/* Text pulled out of the files themselves â€” a PDF's text layer or
                 an uploaded .repx. These carry exact strings and coordinates,
                 so they are shown as their own chips rather than hidden. */}
             {attachmentTexts.length > 0 && (
@@ -3722,7 +3461,7 @@ export default function App() {
                   <span
                     key={t.id}
                     className="group flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full border border-primary/30 bg-primary/5 text-[10px] text-on-surface-variant max-w-full"
-                    title={`${t.label} — exact text extracted from the file`}
+                    title={`${t.label} â€” exact text extracted from the file`}
                   >
                     <span className="material-symbols-outlined text-[13px] text-primary shrink-0">description</span>
                     <span className="truncate max-w-[160px]">{t.label}</span>
@@ -3741,7 +3480,7 @@ export default function App() {
             {isIngesting && (
               <p className="text-[10px] text-on-surface-variant px-2 flex items-center gap-1.5">
                 <span className="material-symbols-outlined animate-spin text-[13px]">autorenew</span>
-                Reading files…
+                Reading filesâ€¦
               </p>
             )}
 
@@ -3824,7 +3563,7 @@ export default function App() {
                 )}
               </button>
             </div>
-            {/* The key gates the entire workspace — chat and generation alike —
+            {/* The key gates the entire workspace â€” chat and generation alike â€”
                 so say so plainly rather than letting the first attempt fail. */}
             {!hasApiKey && (
               <button
@@ -3835,18 +3574,18 @@ export default function App() {
                 {/* Signing out clears the session key, but the encrypted copy in
                     the account survives. Telling a returning user to "add your
                     API key" when the app already knows they have one stored made
-                    the vault look broken — they had no way to learn that
+                    the vault look broken â€” they had no way to learn that
                     unlocking was even an option. */}
                 {vaultRecord ? (
                   <span className="text-[11px] text-on-surface-variant leading-snug">
                     <strong className="text-on-surface">Unlock your stored API key.</strong>{' '}
-                    This account has an encrypted key saved. Click here and enter your passphrase —
+                    This account has an encrypted key saved. Click here and enter your passphrase â€”
                     it never left your browser, so only you can unlock it.
                   </span>
                 ) : (
                   <span className="text-[11px] text-on-surface-variant leading-snug">
                     <strong className="text-on-surface">Add your Gemini API key to begin.</strong>{' '}
-                    Nothing in the workspace can run without it — Forma ships no key of its own.
+                    Nothing in the workspace can run without it â€” Forma ships no key of its own.
                     Click here to open Settings.
                   </span>
                 )}
@@ -3872,8 +3611,8 @@ export default function App() {
                   <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                     {/* Hidden below sm rather than truncated. The tab row beside
                         it is shrink-0, so on a phone the title was left with a few
-                        pixels and rendered as a single letter and a full stop —
-                        "M." for "Mock Invoice Report" — which carries nothing. The
+                        pixels and rendered as a single letter and a full stop â€”
+                        "M." for "Mock Invoice Report" â€” which carries nothing. The
                         tabs and Export are the useful controls at that width. */}
                     <div className="hidden sm:flex items-center gap-2 min-w-0">
                       <span className="material-symbols-outlined text-secondary shrink-0">space_dashboard</span>
@@ -3940,7 +3679,7 @@ export default function App() {
                         exit="hidden"
                         className="bg-surface-container-lowest dark:bg-card p-4 sm:p-8 rounded-2xl shadow-2xl border border-outline-variant max-w-4xl mx-auto w-full overflow-x-auto"
                       >
-                        {/* Specification / REPX switch — the tab is named for both. */}
+                        {/* Specification / REPX switch â€” the tab is named for both. */}
                         <div className="flex items-center gap-1 mb-5 p-1 bg-surface-container-low rounded-full border border-outline-variant w-fit">
                           {([
                             { id: 'spec', label: 'Specification', icon: ScrollText },
@@ -3991,7 +3730,7 @@ export default function App() {
                         ? `Engine Status: Processing / ${analyzingStep || 'Analyzing...'}`
                         : isPaused
                           ? 'Engine Status: Paused / Idle'
-                          : 'Engine Status: Idle • Ready for Input'
+                          : 'Engine Status: Idle â€¢ Ready for Input'
                       }
                     </span>
                   </div>
@@ -4062,7 +3801,7 @@ export default function App() {
                         ? `Engine Status: Processing / ${analyzingStep || 'Analyzing...'}`
                         : isPaused
                           ? 'Engine Status: Paused / Idle'
-                          : 'Engine Status: Idle • Ready for Input'
+                          : 'Engine Status: Idle â€¢ Ready for Input'
                       }
                     </span>
                   </div>
@@ -4073,7 +3812,7 @@ export default function App() {
         </div>
       </main>
 
-      {/* Mobile pane switcher — replaces the side-by-side split below md. */}
+      {/* Mobile pane switcher â€” replaces the side-by-side split below md. */}
       <nav
         className="md:hidden flex-shrink-0 grid grid-cols-2 border-t border-outline-variant bg-surface-container-lowest dark:bg-card"
         role="tablist"
