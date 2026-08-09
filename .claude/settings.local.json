@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npm run *)",
+      "PowerShell(npm ls *)",
+      "PowerShell(& \"<home>\\\\.claude\\\\jobs\\\\ef7ceebe\\\\tmp\\\\tokenize.ps1\")",
+      "PowerShell(foreach \\($n in 1745,1761,1777,1793\\) { \"--- around line $n ---\"; Get-Content src\\\\App.tsx | Select-Object -Skip \\($n-3\\) -First 12 | ForEach-Object { \"  \" + $_.Trim\\(\\) } ; \"\" })",
+      "PowerShell($h = \\(Invoke-WebRequest -Uri 'http://localhost:3000/' -UseBasicParsing -TimeoutSec 15\\).Content; $h -split \"`n\" | Select-String -Pattern '<script|<link|href=|src=' | ForEach-Object { '  ' + $_.Line.Trim\\(\\) })",
+      "PowerShell($x = \\(Invoke-WebRequest -Uri 'http://localhost:3000/src/services/geminiService.ts' -UseBasicParsing -TimeoutSec 30\\).Content; $i = $x.IndexOf\\('let currentApiKey'\\); $x.Substring\\([Math]::Max\\(0,$i-200\\), 420\\))",
+      "PowerShell($m = \\(Invoke-WebRequest -Uri 'http://localhost:3000/src/main.tsx' -UseBasicParsing -TimeoutSec 15\\).Content; if \\($m -match 'process'\\) { 'main.tsx mentions process' } else { 'main.tsx: no process reference' }; '--- any global process shim in index.html? ---'; $h = \\(Invoke-WebRequest -Uri 'http://localhost:3000/' -UseBasicParsing\\).Content; if \\($h -match 'process'\\) { \\($h -split \"`n\" | Select-String 'process' | ForEach-Object { '  ' + $_.Line.Trim\\(\\) }\\) } else { '  none' })",
+      "PowerShell($c = \\(Invoke-WebRequest -Uri 'http://localhost:3000/@vite/client' -UseBasicParsing -TimeoutSec 15\\).Content; if \\($c -match 'process'\\) { \\($c -split \"`n\" | Select-String 'process' | Select-Object -First 5 | ForEach-Object { '  ' + $_.Line.Trim\\(\\) }\\) } else { '  /@vite/client: no process shim' }; '--- full raw index.html ---'; \\(Invoke-WebRequest -Uri 'http://localhost:3000/' -UseBasicParsing\\).Content)",
+      "PowerShell(node '<home>\\\\AppData\\\\Local\\\\Temp\\\\11\\\\claude\\\\<project>\\\\5977e315-7b76-475b-bc65-b5552c63ba85\\\\scratchpad\\\\fix-mojibake.mjs')",
+      "PowerShell(node '<home>\\\\AppData\\\\Local\\\\Temp\\\\11\\\\claude\\\\<project>\\\\5977e315-7b76-475b-bc65-b5552c63ba85\\\\scratchpad\\\\locate-run.mjs')",
+      "PowerShell(New-Item *)",
+      "PowerShell(node '<home>\\\\AppData\\\\Local\\\\Temp\\\\11\\\\claude\\\\<project>\\\\5977e315-7b76-475b-bc65-b5552c63ba85\\\\scratchpad\\\\fix-mojibake.mjs' --write)",
+      "PowerShell(Get-Process *)"
+    ]
+  }
+}

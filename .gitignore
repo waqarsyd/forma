@@ -1,0 +1,33 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Editor state, not project data: a single ~22 MB .pbtxt that nothing reads and
+# nothing builds from. It matched no pattern here before, so a first `git add .`
+# would have committed it and put 22 MB into every clone forever.
+.antigravity/
+
+# Credentials pasted into the working tree by mistake. A Gemini key was once
+# committed here via envPrefix and revoked by Google's secret scanner; a plain
+# key.txt in the repo root is the same accident with fewer steps. These patterns
+# are a backstop, not permission — keys belong in the app's Settings dialog,
+# which stores them in sessionStorage and never on disk.
+key.txt
+*.key
+*apikey*
+*api-key*
+secrets.json
+
+# Firebase CLI/emulator working files. `firestore-debug.log` and
+# `firebase-debug.log` are already covered by *.log above; `.firebase/` holds
+# deploy caches and emulator exports and is not.
+#
+# `.firebaserc` is deliberately NOT ignored — it names the deploy target
+# (forma-201ba) and holds no credentials. Ignoring it is how a fresh clone or a
+# CI run ends up deploying to whatever project the CLI last happened to select.
+.firebase/

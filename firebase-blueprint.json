@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "SavedReport": {
+      "title": "Saved Report",
+      "description": "A saved report layout and REPX configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "targetFormat": { "type": "string", "enum": ["web", "winforms", "wpf"] },
+        "repxContent": { "type": "string" },
+        "layout": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "name", "targetFormat", "repxContent", "layout", "content", "timestamp", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/reports/{reportId}": {
+      "schema": "SavedReport",
+      "description": "User's saved reports"
+    }
+  }
+}

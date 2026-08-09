@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/logo.png" />
+  <script>
+    // Resolve the theme before first paint so a dark-mode user never sees a
+    // flash of the light theme. Mirrors the resolution order in App.tsx:
+    // a saved preference wins, otherwise fall back to the OS setting.
+    // Kept inline and dependency-free on purpose — a module import would run
+    // after paint and reintroduce the flash.
+    (function () {
+      try {
+        var saved = localStorage.getItem('darkMode');
+        var dark = saved !== null
+          ? JSON.parse(saved)
+          : window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', !!dark);
+      } catch (e) {
+        /* private mode / storage disabled — fall through to light */
+      }
+    })();
+  </script>
+  <title>Forma</title>
+  <!-- Font Families: Hanken Grotesk, Inter, JetBrains Mono -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap"
+    rel="stylesheet" />
+  <!-- Material Symbols Outlined -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+    rel="stylesheet" />
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>

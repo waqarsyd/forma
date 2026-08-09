@@ -1,0 +1,116 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitive Definition
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+
+    // Validation Blueprint for SavedReport
+    // `hasOnly` as well as `hasAll`: the previous `keys().size() >= 6` accepted
+    // the six required fields *plus anything else*, so a modified client could
+    // append arbitrary extra fields to a document under its own account. The
+    // vault blueprint below already pinned its shape this way; this one did not.
+    // handleSaveReport writes exactly these six, so nothing legitimate is lost.
+    function isValidSavedReport(data) {
+      return data.keys().hasOnly(['id', 'name', 'timestamp', 'messages', 'result', 'userId'])
+        && data.keys().hasAll(['id', 'name', 'timestamp', 'messages', 'result', 'userId'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 256
+        && data.messages is string
+        && data.result is string
+        // Bounded to something a clock could plausibly produce, so a client
+        // cannot write a timestamp that permanently pins a report to the top of
+        // the list. Firestore's own 1 MiB document ceiling is what bounds
+        // `messages`/`result`; see the note in CLAUDE.md about image payloads.
+        && data.timestamp is number && data.timestamp > 0 && data.timestamp < 4102444800000
+        && data.userId == request.auth.uid;
+    }
+
+    // Validation Blueprint for the encrypted Gemini key vault.
+    //
+    // This document holds AES-GCM ciphertext produced in the user's browser by
+    // src/services/keyVault.ts, plus the public PBKDF2/AES parameters needed to
+    // derive the same key again. The passphrase never leaves the browser, so a
+    // plaintext API key must never appear here — rules cannot prove a blob is
+    // encrypted, but they can pin the shape and bound the size so this path
+    // cannot be repurposed as general storage.
+    function isValidKeyVault(data) {
+      return data.keys().hasOnly(['v', 'ciphertext', 'iv', 'salt', 'iterations'])
+        && data.keys().hasAll(['v', 'ciphertext', 'iv', 'salt', 'iterations'])
+        && data.v is number
+        && data.ciphertext is string && data.ciphertext.size() > 0 && data.ciphertext.size() <= 2048
+        && data.iv is string && data.iv.size() <= 64
+        && data.salt is string && data.salt.size() <= 64
+        // Reject a weakened iteration count written by a tampered client.
+        && data.iterations is number && data.iterations >= 100000;
+    }
+
+    // Split by operation on purpose. The previous single `allow read, write`
+    // ended in `request.method == 'delete' || isValidKeyVault(incoming())`, and
+    // `incoming()` is `request.resource.data` — which exists only on writes.
+    // On a read the expression dereferenced a null `request.resource`, the rule
+    // errored, and the read was denied. App.tsx does exactly one thing with this
+    // document on load: `getDoc`. So the stored-key check always failed, was
+    // swallowed into a console.warn, and the UI reported "no stored key" even
+    // when one existed — making a synced key impossible to restore.
+    //
+    // No `list` clause: the app only ever addresses the single `geminiKey` doc,
+    // so there is no reason to permit enumerating the collection.
+    match /users/{userId}/vault/{vaultId} {
+      allow get: if isSignedIn()
+        && isValidId(userId)
+        && isValidId(vaultId)
+        && userId == request.auth.uid;
+
+      allow delete: if isSignedIn()
+        && isValidId(userId)
+        && isValidId(vaultId)
+        && userId == request.auth.uid;
+
+      allow create, update: if isSignedIn()
+        && isValidId(userId)
+        && isValidId(vaultId)
+        && userId == request.auth.uid
+        && isValidKeyVault(incoming());
+    }
+
+    match /users/{userId}/reports/{reportId} {
+      allow read: if isSignedIn() && userId == request.auth.uid;
+      
+      allow list: if isSignedIn() && userId == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(userId)
+        && isValidId(reportId)
+        && userId == request.auth.uid
+        && isValidSavedReport(incoming())
+        && incoming().id == reportId;
+
+      allow update: if isSignedIn() 
+        && isValidId(userId)
+        && isValidId(reportId)
+        && userId == request.auth.uid
+        && existing().userId == request.auth.uid
+        && isValidSavedReport(incoming())
+        && incoming().userId == existing().userId
+        && incoming().id == existing().id;
+
+      allow delete: if isSignedIn() 
+        && isValidId(userId)
+        && isValidId(reportId)
+        && userId == request.auth.uid
+        && existing().userId == request.auth.uid;
+    }
+  }
+}

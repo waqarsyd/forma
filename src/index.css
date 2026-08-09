@@ -1,0 +1,591 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+/* Tailwind v4 defaults `dark:` to prefers-color-scheme. The theme toggle sets a
+   `.dark` class on <html>, so bind the variant to that class instead — this is
+   what makes every `dark:` utility in the app follow the toggle rather than the
+   operating system. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-user-msg: var(--user-msg);
+  --color-user-msg-border: var(--user-msg-border);
+  --font-sans: "Roboto", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Roboto Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* ------------------------------------------------------------------
+     MOTION TOKENS — single source of truth.
+     Mirrored in src/lib/motion.ts for Framer Motion transitions; change
+     both together. Do not hardcode durations or eases in components.
+     ------------------------------------------------------------------ */
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1); /* enter / general */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);         /* leave */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* playful overshoot */
+
+  /* Landing-page / Material palette.
+     Every entry is an indirection to a custom property defined under
+     `:root` (light) and `.dark` (dark) in @layer base. Do NOT put a literal
+     colour here — a literal cannot be overridden by the .dark class and the
+     token silently freezes to one theme. */
+  --color-on-primary-container: var(--on-primary-container);
+  --color-primary-fixed-dim: var(--primary-fixed-dim);
+  --color-error: var(--error);
+  --color-on-primary-fixed: var(--on-primary-fixed);
+  --color-inverse-on-surface: var(--inverse-on-surface);
+  --color-on-tertiary-fixed-variant: var(--on-tertiary-fixed-variant);
+  --color-on-primary: var(--on-primary);
+  --color-on-tertiary: var(--on-tertiary);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-surface: var(--surface);
+  --color-secondary-fixed: var(--secondary-fixed);
+  --color-surface-variant: var(--surface-variant);
+  --color-on-error-container: var(--on-error-container);
+  --color-on-secondary-container: var(--on-secondary-container);
+  --color-on-secondary-fixed-variant: var(--on-secondary-fixed-variant);
+  --color-secondary-fixed-dim: var(--secondary-fixed-dim);
+  --color-primary-container: var(--primary-container);
+  --color-on-tertiary-fixed: var(--on-tertiary-fixed);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-error-container: var(--error-container);
+  --color-tertiary-fixed: var(--tertiary-fixed);
+  --color-on-tertiary-container: var(--on-tertiary-container);
+  --color-on-primary-fixed-variant: var(--on-primary-fixed-variant);
+  --color-secondary-container: var(--secondary-container);
+  --color-tertiary-fixed-dim: var(--tertiary-fixed-dim);
+  --color-surface-container: var(--surface-container);
+  --color-surface-bright: var(--surface-bright);
+  --color-on-secondary-fixed: var(--on-secondary-fixed);
+  --color-outline-variant: var(--outline-variant);
+  --color-secondary: var(--secondary);
+  --color-inverse-surface: var(--inverse-surface);
+  --color-tertiary: var(--tertiary);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-outline: var(--outline);
+  --color-surface-dim: var(--surface-dim);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-tint: var(--surface-tint);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-on-background: var(--on-background);
+  --color-inverse-primary: var(--inverse-primary);
+  --color-primary-fixed: var(--primary-fixed);
+  --color-on-secondary: var(--on-secondary);
+  --color-on-surface: var(--on-surface);
+  --color-on-error: var(--on-error);
+  --color-surface-container-high: var(--surface-container-high);
+
+  /* Status colours. `error` above is the Material entry; these complete the
+     semantic set so components stop reaching for raw green/red. */
+  --color-success: var(--success);
+  --color-on-success: var(--on-success);
+
+  /* The report preview represents a printed page, so it stays white in BOTH
+     themes — the AI-authored element colours assume a white ground, and a
+     dark "sheet" would misrepresent the exported .repx. Deliberately
+     theme-invariant; a token rather than a bare bg-white so the intent is
+     explicit and it stays inside the token system. */
+  --color-paper: var(--paper);
+  --color-on-paper: var(--on-paper);
+
+  /* Custom Spacings and Margins */
+  --spacing-margin-desktop: 40px;
+  --spacing-margin-mobile: 16px;
+  --spacing-gutter: 24px;
+  --spacing-container-max: 1440px;
+  --spacing-base: 8px;
+
+  /* Fonts */
+  --font-title-md: "Hanken Grotesk", sans-serif;
+  --font-headline-lg-mobile: "Hanken Grotesk", sans-serif;
+  --font-code-sm: "JetBrains Mono", monospace;
+  --font-body-lg: "Inter", sans-serif;
+  --font-body-sm: "Inter", sans-serif;
+  --font-headline-lg: "Hanken Grotesk", sans-serif;
+  --font-label-caps: "JetBrains Mono", monospace;
+  --font-display-lg: "Hanken Grotesk", sans-serif;
+
+  /* Font Sizes and line heights */
+  --text-title-md: 20px;
+  --text-title-md--line-height: 28px;
+
+  --text-headline-lg-mobile: 24px;
+  --text-headline-lg-mobile--line-height: 32px;
+
+  --text-code-sm: 13px;
+  --text-code-sm--line-height: 18px;
+
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 20px;
+
+  --text-headline-lg: 32px;
+  --text-headline-lg--line-height: 40px;
+
+  --text-label-caps: 12px;
+  --text-label-caps--line-height: 16px;
+  --text-label-caps--letter-spacing: 0.05em;
+
+  --text-display-lg: 48px;
+  --text-display-lg--line-height: 56px;
+  --text-display-lg--letter-spacing: -0.02em;
+}
+
+@layer base {
+  :root {
+    /* Durations. Tailwind v4 has no --duration-* theme namespace, so these are
+       plain custom properties consumed by the .u-* helpers and, where a one-off
+       is needed, via duration-[var(--duration-base)]. */
+    --duration-fast: 150ms;
+    --duration-base: 220ms;
+    --duration-slow: 300ms;
+
+    --background: #FCFCFC;
+    --foreground: #0F172A;
+    --card: #F1F5F9; /* Slate low-contrast surface container */
+    --card-foreground: #0F172A;
+    --muted: #FFF0E8; /* Soft peach brand secondary container */
+    --muted-foreground: #9E3000; /* Warm rust-orange */
+    --border: #E2E8F0; /* Clean slate-200 dividers */
+    --input: #FFF0E8;
+    --primary: #FF5E00; /* Vibrant trademark orange */
+    --primary-foreground: #FFFFFF;
+    --user-msg: #FFE5D9;
+    --user-msg-border: #FFBCA0;
+
+    /* Material palette — light. These values are unchanged from when they
+       lived inline in @theme, so light mode renders identically. */
+    --surface: #f8f9ff;
+    --surface-dim: #cbdbf5;
+    --surface-bright: #f8f9ff;
+    --surface-variant: #d3e4fe;
+    --surface-tint: #565f70;
+    --surface-container-lowest: #ffffff;
+    --surface-container-low: #eff4ff;
+    --surface-container: #e5eeff;
+    --surface-container-high: #dce9ff;
+    --surface-container-highest: #d3e4fe;
+    --on-surface: #0b1c30;
+    --on-surface-variant: #45474c;
+    --on-background: #0b1c30;
+    --outline: #75777d;
+    --outline-variant: #c5c6cc;
+    --inverse-surface: #213145;
+    --inverse-on-surface: #eaf1ff;
+    --inverse-primary: #bec7db;
+
+    --primary-container: #1a2332;
+    --on-primary: #ffffff;
+    --on-primary-container: #818a9d;
+    --primary-fixed: #dae3f7;
+    --primary-fixed-dim: #bec7db;
+    --on-primary-fixed: #131c2a;
+    --on-primary-fixed-variant: #3e4758;
+
+    --secondary: #a04100;
+    --secondary-container: #fe6b00; /* brand CTA — identical in both themes */
+    --on-secondary: #ffffff;
+    --on-secondary-container: #572000;
+    --secondary-fixed: #ffdbcc;
+    --secondary-fixed-dim: #ffb693;
+    --on-secondary-fixed: #351000;
+    --on-secondary-fixed-variant: #7a3000;
+
+    --tertiary: #090d0f;
+    --tertiary-container: #1f2325;
+    --on-tertiary: #ffffff;
+    --on-tertiary-container: #868a8c;
+    --tertiary-fixed: #e0e3e5;
+    --tertiary-fixed-dim: #c4c7c9;
+    --on-tertiary-fixed: #181c1e;
+    --on-tertiary-fixed-variant: #434749;
+
+    --error: #ba1a1a;
+    --error-container: #ffdad6;
+    --on-error: #ffffff;
+    --on-error-container: #93000a;
+    --success: #16a34a;
+    --on-success: #ffffff;
+
+    --paper: #ffffff;
+    --on-paper: #0b1c30;
+  }
+
+  .dark {
+    --background: #090D14; /* Luxury deep navy slate */
+    --foreground: #F1F5F9;
+    --card: #111823; /* Dark slate-navy container level 1 */
+    --card-foreground: #F1F5F9;
+    --muted: #24140E; /* Dark peach carbon secondary */
+    --muted-foreground: #FFA37A; /* Radiative peach cream */
+    --border: #1E293B; /* Crisp slate-700 dividers */
+    --input: #24140E;
+    --primary: #FF6C1A; /* Hyper orange brand highlight */
+    --primary-foreground: #3A0F00;
+    --user-msg: #1E293B;
+    --user-msg-border: #334155;
+
+    /* Material palette — dark. Surfaces ladder upward from the page
+       background, matching the navy-slate ramp above. */
+    --surface: #090d14; /* matches --background, and the value the components
+                           were already hand-coding as their dark surface */
+    --surface-dim: #070b11;
+    --surface-bright: #1a2332;
+    --surface-variant: #253248;
+    --surface-tint: #bec7db;
+    --surface-container-lowest: #05080d;
+    --surface-container-low: #111823;
+    --surface-container: #151d2a;
+    --surface-container-high: #1a2332;
+    --surface-container-highest: #253248;
+    --on-surface: #e8eef7;
+    --on-surface-variant: #a1a5af; /* the value already hardcoded app-wide */
+    --on-background: #e8eef7;
+    --outline: #8b8e96;
+    --outline-variant: #334155;
+    --inverse-surface: #eaf1ff;
+    --inverse-on-surface: #0b1c30;
+    --inverse-primary: #3e4758;
+
+    --primary-container: #253248;
+    --on-primary: #ffffff;
+    --on-primary-container: #bec7db;
+    --primary-fixed: #1a2332;
+    --primary-fixed-dim: #131c2a;
+    --on-primary-fixed: #dae3f7;
+    --on-primary-fixed-variant: #bec7db;
+
+    --secondary: #ffa37a;
+    --secondary-container: #fe6b00; /* unchanged: brand CTA reads on both */
+    --on-secondary: #ffffff;
+    --on-secondary-container: #572000; /* held: the container colour is the
+                                          same orange, so the contrast-checked
+                                          light pairing still applies */
+    --secondary-fixed: #7a3000;
+    --secondary-fixed-dim: #a04100;
+    --on-secondary-fixed: #ffdbcc;
+    --on-secondary-fixed-variant: #ffb693;
+
+    --tertiary: #e0e3e5;
+    --tertiary-container: #434749;
+    --on-tertiary: #181c1e;
+    --on-tertiary-container: #c4c7c9;
+    --tertiary-fixed: #434749;
+    --tertiary-fixed-dim: #2b2f31;
+    --on-tertiary-fixed: #e0e3e5;
+    --on-tertiary-fixed-variant: #c4c7c9;
+
+    --error: #ffb4ab;
+    --error-container: #93000a;
+    --on-error: #690005;
+    --on-error-container: #ffdad6;
+    --success: #4ade80;
+    --on-success: #052e16;
+
+    /* Intentionally identical to light — see the note in @theme. */
+    --paper: #ffffff;
+    --on-paper: #0b1c30;
+  }
+}
+
+body {
+  font-family: "Roboto", sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar for modern feel */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* ====================================================================
+   SHARED INTERACTION HELPERS
+   Micro-interactions are CSS, not JS — compositor-only, no React work.
+   Compose these instead of writing per-component transition/duration.
+   ==================================================================== */
+@layer components {
+  /* Default transition for hover/focus/colour changes. */
+  .u-transition {
+    transition-property: color, background-color, border-color, fill, stroke,
+      opacity, box-shadow, transform, filter;
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-standard);
+  }
+  .u-transition-fast {
+    transition-property: color, background-color, border-color, fill, stroke,
+      opacity, box-shadow, transform, filter;
+    transition-duration: var(--duration-fast);
+    transition-timing-function: var(--ease-standard);
+  }
+
+  /* Press feedback for any clickable element. */
+  .u-press {
+    transition: transform var(--duration-fast) var(--ease-standard);
+  }
+  .u-press:active {
+    transform: scale(0.97);
+  }
+  .u-press:disabled,
+  .u-press[aria-disabled='true'] {
+    transform: none;
+  }
+
+  /* Keyboard-only focus ring that reads on both themes. */
+  .u-focus-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--primary);
+  }
+
+  /* Minimum comfortable touch target (WCAG 2.5.5). Applied on coarse
+     pointers only so dense desktop toolbars keep their compact sizing. */
+  @media (pointer: coarse) {
+    .u-tap {
+      min-width: 44px;
+      min-height: 44px;
+    }
+  }
+
+  /* Loading placeholder for the AI pipeline steps. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--border);
+  }
+  /* The highlight is derived from --foreground, not --background: against the
+     --border track, a background-derived sweep is *lighter* than the track in
+     light mode but *darker* than it in dark mode, so the shimmer disappeared
+     exactly where it was needed. --foreground inverts with the theme, so the
+     sweep stays a lift on both. */
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--foreground) 14%, transparent),
+      transparent
+    );
+    animation: skeleton-shimmer 1.6s infinite;
+  }
+
+  @keyframes skeleton-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Canvas backdrop — referenced by the workspace but previously undefined. */
+  .dot-grid {
+    background-image: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--foreground) 12%, transparent) 1px,
+      transparent 1px
+    );
+    background-size: 22px 22px;
+  }
+}
+
+/* ====================================================================
+   REDUCED MOTION — handled once, globally, for every CSS transition,
+   CSS animation and Web-Animations-driven effect. Framer Motion
+   components additionally check useReducedMotion() for layout-affecting
+   animations. Transforms still settle on their final value.
+   ==================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ====================================================================
+   THEME SWITCH TRANSITION
+   Applied to <html> by the theme effect only for the length of the flip,
+   then removed. Scoping it to a temporary class (rather than a permanent
+   global `*` rule) means steady-state hover/focus behaviour is untouched —
+   elements keep exactly the transitions they already had.
+
+   Reuses --duration-base / --ease-standard: the same tokens behind
+   .u-transition and DURATION.base / EASE.standard in src/lib/motion.ts.
+   No new timing values. The reduced-motion block above already zeroes
+   this, since it targets * with !important.
+   ==================================================================== */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition-property: background-color, border-color, color, fill, stroke,
+    box-shadow;
+  transition-duration: var(--duration-base);
+  transition-timing-function: var(--ease-standard);
+}
+
+/* ====================================================================
+   MARKDOWN SPEC VIEW
+   The generated report specification renders here. Written against the
+   semantic tokens rather than @tailwindcss/typography so there is only
+   one colour system in the project — the plugin ships its own
+   --tw-prose-* palette that would have to be re-mapped token by token.
+   ==================================================================== */
+.markdown-body {
+  color: var(--color-on-surface);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+.markdown-body > *:first-child { margin-top: 0; }
+.markdown-body > *:last-child { margin-bottom: 0; }
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  color: var(--color-on-surface);
+  font-family: var(--font-title-md);
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 1.6em 0 0.6em;
+}
+.markdown-body h1 { font-size: 1.75rem; }
+.markdown-body h2 {
+  font-size: 1.35rem;
+  border-bottom: 1px solid var(--color-outline-variant);
+  padding-bottom: 0.3em;
+}
+.markdown-body h3 { font-size: 1.1rem; }
+.markdown-body h4 { font-size: 1rem; }
+.markdown-body p { margin: 0 0 1em; }
+.markdown-body a {
+  color: var(--color-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-body strong { color: var(--color-on-surface); font-weight: 700; }
+.markdown-body ul,
+.markdown-body ol { margin: 0 0 1em; padding-left: 1.5em; }
+.markdown-body ul { list-style: disc; }
+.markdown-body ol { list-style: decimal; }
+.markdown-body li { margin: 0.3em 0; }
+.markdown-body li::marker { color: var(--color-on-surface-variant); }
+.markdown-body blockquote {
+  margin: 0 0 1em;
+  padding: 0.5em 1em;
+  border-left: 3px solid var(--color-secondary-container);
+  background-color: var(--color-surface-container-low);
+  color: var(--color-on-surface-variant);
+}
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--color-outline-variant);
+  margin: 1.75em 0;
+}
+.markdown-body code {
+  font-family: var(--font-code-sm);
+  font-size: 0.85em;
+  background-color: var(--color-surface-container);
+  color: var(--color-on-surface);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  border: 1px solid var(--color-outline-variant);
+}
+.markdown-body pre {
+  background-color: var(--color-surface-container-low);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 12px;
+  padding: 1em;
+  overflow-x: auto;
+  margin: 0 0 1em;
+}
+/* A fenced block owns its own frame; the inline chrome would double up. */
+.markdown-body pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1em;
+  font-size: 0.875rem;
+  display: block;
+  overflow-x: auto;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--color-outline-variant);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.markdown-body th {
+  background-color: var(--color-surface-container);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+.markdown-body tr:nth-child(even) td {
+  background-color: var(--color-surface-container-low);
+}
+
+/* Landing Page Specific Rules */
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+.bento-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 24px;
+}
+.glass-panel {
+    background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-outline-variant);
+}
+.port-indicator {
+    width: 4px;
+    height: 4px;
+    background-color: var(--color-secondary-container);
+}
+.hero-gradient {
+    background: radial-gradient(
+      circle at top,
+      var(--color-primary-fixed) 0%,
+      var(--color-surface) 70%
+    );
+}
