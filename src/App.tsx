@@ -6,12 +6,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Image as ImageIcon,
-  X,
-  Trash2,
-  Terminal,
   ScrollText,
   CodeXml,
-  Info,
   AlertCircle,
   AlertTriangle,
   Copy,
@@ -34,7 +30,6 @@ import {
   StreamProgress,
   ChatTurn,
   AttachmentPart,
-  readCachedModel,
 } from './services/geminiService';
 import {
   encryptApiKey,
@@ -92,180 +87,18 @@ interface ChatMessage {
    * Set when the turn this message asked for failed. A failed chat turn used to
    * leave the user's message sitting in the transcript with no reply and no
    * marker, while the explanation appeared in a small note pinned under the
-   * composer â€” two things that were never visually connected.
+   * composer ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â two things that were never visually connected.
    */
   error?: string;
 }
 
-interface DebugLog {
-  id: string;
-  type: 'log' | 'error' | 'warn' | 'debug';
-  message: string;
-  timestamp: Date;
-  count: number;
-}
-
-const DebugConsole = ({
-  logs,
-  onClose,
-  onClear,
-  isStaging,
-  setIsStaging,
-  onRunDiagnostics,
-  onCheckSystemHealth
-}: {
-  logs: DebugLog[];
-  onClose: () => void;
-  onClear: () => void;
-  isStaging: boolean;
-  setIsStaging: (val: boolean) => void;
-  onRunDiagnostics: () => void;
-  onCheckSystemHealth: () => void;
-}) => {
-  const [filter, setFilter] = useState<DebugLog['type'] | 'all'>('all');
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs]);
-
-  const filteredLogs = logs.filter(log => filter === 'all' || log.type === filter);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      className="fixed bottom-6 right-6 w-[min(500px,calc(100vw-3rem))] h-[min(600px,calc(100vh-6rem))] bg-card border border-border shadow-2xl rounded-3xl overflow-hidden z-[100] flex flex-col"
-    >
-      <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-muted/50 shrink-0">
-        <div className="flex items-center gap-2">
-          <CodeXml size={18} className="text-primary" />
-          <h3 className="font-bold text-sm truncate">Debug Console</h3>
-          <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
-            {logs.length}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={onClear}
-            className="p-1.5 text-muted-foreground hover:text-error hover:bg-red-500/10 rounded-lg transition-all"
-            title="Clear Logs"
-          >
-            <Trash2 size={16} />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all"
-          >
-            <X size={18} />
-          </button>
-        </div>
-      </div>
-
-      <div className="px-4 py-2 border-b border-border flex gap-2 overflow-x-auto no-scrollbar bg-card shrink-0">
-        {(['all', 'log', 'warn', 'error', 'debug'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => setFilter(t)}
-            className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all border ${filter === t
-              ? 'bg-primary text-primary-foreground border-primary'
-              : 'bg-muted text-muted-foreground border-transparent hover:border-border'
-              }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* Embedded Diagnostic & Environment Controls */}
-      <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-3 bg-muted/20 shrink-0 text-[11px] font-mono select-none">
-        <div className="flex gap-1.5">
-          <button
-            onClick={onRunDiagnostics}
-            className="px-2.5 py-1 bg-primary/10 text-primary hover:bg-primary/20 rounded font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
-            title="Run Diagnostics"
-          >
-            <span className="material-symbols-outlined text-[14px]">bug_report</span>
-            Diag
-          </button>
-          <button
-            onClick={onCheckSystemHealth}
-            className="px-2.5 py-1 bg-primary/10 text-primary hover:bg-primary/20 rounded font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
-            title="Check System Health"
-          >
-            <span className="material-symbols-outlined text-[14px]">activity</span>
-            Health
-          </button>
-        </div>
-
-        <div
-          onClick={() => {
-            const next = !isStaging;
-            setIsStaging(next);
-            console.log("Environment Switched: " + (next ? "Staging" : "Production"));
-          }}
-          className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-        >
-          <span className="text-on-surface-variant font-bold">ENV: {isStaging ? 'STAGING' : 'PROD'}</span>
-          <div className={`w-8 h-4 rounded-full relative transition-colors ${isStaging ? 'bg-secondary-container' : 'bg-outline-variant'}`}>
-            <div className={`absolute top-0.5 w-3 h-3 bg-surface-container-lowest rounded-full transition-all ${isStaging ? 'right-0.5' : 'left-0.5'}`} />
-          </div>
-        </div>
-      </div>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 font-mono text-[11px] space-y-1 bg-background/50">
-        {filteredLogs.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-2 opacity-50">
-            <Terminal size={32} />
-            <p>No logs to display</p>
-          </div>
-        ) : (
-          filteredLogs.map(log => (
-            <div key={log.id} className="group flex gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50">
-              <div className="mt-0.5">
-                {log.type === 'error' && <AlertCircle size={14} className="text-error" />}
-                {log.type === 'warn' && <AlertTriangle size={14} className="text-yellow-500" />}
-                {log.type === 'log' && <Info size={14} className="text-blue-500" />}
-                {log.type === 'debug' && <Terminal size={14} className="text-purple-500" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`uppercase text-[9px] font-black ${log.type === 'error' ? 'text-error' :
-                    log.type === 'warn' ? 'text-yellow-500' :
-                      log.type === 'log' ? 'text-blue-500' : 'text-purple-500'
-                    }`}>
-                    {log.type}
-                  </span>
-                  <span className="text-muted-foreground/50 text-[9px]">
-                    {log.timestamp.toLocaleTimeString()}
-                  </span>
-                  {log.count > 1 && (
-                    <span className="bg-muted text-muted-foreground text-[9px] px-1.5 rounded-sm font-bold">
-                      x{log.count}
-                    </span>
-                  )}
-                </div>
-                <div className="text-foreground/90 break-words whitespace-pre-wrap leading-relaxed">
-                  {log.message}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </motion.div>
-  );
-};
 
 /* ------------------------------------------------------------------ *
  * Upload optimisation
  *
  * Uploads used to be sent at whatever size the user happened to have: a phone
  * photo or a large screenshot went to Google whole, and base64 added another
- * third on top. That is paid twice â€” once uploading, once as prefill before
+ * third on top. That is paid twice ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â once uploading, once as prefill before
  * the model writes a single token.
  *
  * The cap is deliberately generous. Past roughly this many pixels the extra
@@ -296,12 +129,6 @@ const PDF_RENDER_SCALE = 2.5;
 const PT_TO_REPORT_UNITS = 100 / 72;
 /** Cap on extracted strings per page, so a dense page cannot flood the prompt. */
 const MAX_TEXT_ITEMS_PER_PAGE = 400;
-
-/**
- * Rolling cap on the in-app debug console. The array previously grew for the
- * lifetime of the tab with no bound and no trimming â€” only a manual Clear.
- */
-const MAX_DEBUG_LOGS = 500;
 
 /**
  * Firestore's hard ceiling is 1,048,576 bytes per document. This leaves headroom
@@ -371,7 +198,7 @@ async function extractPdfPageText(
       );
     }
 
-    // A scanned PDF is pixels in a wrapper â€” no text layer to recover.
+    // A scanned PDF is pixels in a wrapper ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â no text layer to recover.
     if (lines.length === 0) return null;
 
     const truncated = omitted > 0
@@ -379,7 +206,7 @@ async function extractPdfPageText(
       : '';
 
     const text = (
-      `PDF page ${pageNumber} â€” text layer extracted from the file itself. ` +
+      `PDF page ${pageNumber} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â text layer extracted from the file itself. ` +
       `These strings and coordinates are EXACT and take priority over anything read from the page image.\n` +
       `Page is ${Math.round(base.width * PT_TO_REPORT_UNITS)} x ${Math.round(pageHeightPt * PT_TO_REPORT_UNITS)} report units. ` +
       `Coordinates are already in report units (hundredths of an inch), origin top-left.\n` +
@@ -410,14 +237,14 @@ async function renderPdfPage(page: any): Promise<string | null> {
 
   await page.render({ canvasContext: context, viewport, canvas: canvas as any }).promise;
 
-  // Route through the same optimiser as uploaded images â€” at this scale a page
+  // Route through the same optimiser as uploaded images ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â at this scale a page
   // can exceed the edge cap, which it never did at 1.5.
   return optimizeImageDataUrl(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
 }
 
 /**
  * Turn one dropped or picked file into the parts that get sent. Unsupported
- * and oversized files produce a notice rather than being silently ignored â€”
+ * and oversized files produce a notice rather than being silently ignored ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
  * previously dropping a .docx did nothing at all, with no feedback.
  */
 async function ingestFile(file: File): Promise<IngestResult> {
@@ -447,20 +274,20 @@ async function ingestFile(file: File): Promise<IngestResult> {
 
         const extracted = await extractPdfPageText(page, n);
         if (extracted) {
-          out.texts.push({ id: `${Date.now()}-${name}-p${n}`, label: `${name} Â· page ${n} text`, text: extracted.text });
+          out.texts.push({ id: `${Date.now()}-${name}-p${n}`, label: `${name} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· page ${n} text`, text: extracted.text });
           // The per-page string cap used to drop the tail of a dense page in
           // silence, so missing accuracy at the bottom of a busy page looked
           // like a model failure. Say it out loud instead.
           if (extracted.omitted > 0) {
             out.notices.push(
-              `"${name}" page ${n} has more text than can be read exactly â€” ${extracted.omitted} ` +
+              `"${name}" page ${n} has more text than can be read exactly ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ${extracted.omitted} ` +
               `${extracted.omitted === 1 ? 'string was' : 'strings were'} left out, and that part of the page ` +
               `will be read from the image instead.`
             );
           }
         } else if (n === 1) {
           out.notices.push(
-            `"${name}" has no text layer â€” it looks like a scan, so text will be read from the image and may be less exact.`
+            `"${name}" has no text layer ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it looks like a scan, so text will be read from the image and may be less exact.`
           );
         }
       }
@@ -525,7 +352,7 @@ function readAsDataUrl(file: File): Promise<string> {
 /**
  * Shrink an oversized image, leaving small ones exactly as they are. Returns
  * the original on any failure, and never returns something larger than it was
- * given â€” so this can only ever help.
+ * given ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â so this can only ever help.
  */
 async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
   try {
@@ -542,7 +369,7 @@ async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
     const longest = Math.max(w, h);
     const oversized = longest > MAX_IMAGE_EDGE;
 
-    // Already modest in both dimensions and weight â€” leave it completely alone.
+    // Already modest in both dimensions and weight ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â leave it completely alone.
     if (!oversized && dataUrl.length < REENCODE_THRESHOLD_BYTES) return dataUrl;
 
     const ratio = oversized ? MAX_IMAGE_EDGE / longest : 1;
@@ -555,7 +382,7 @@ async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    // JPEG carries no alpha, so paint the sheet white first â€” otherwise a
+    // JPEG carries no alpha, so paint the sheet white first ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â otherwise a
     // transparent screenshot background would come out black.
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -579,7 +406,7 @@ async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
  *
  * The "Specs & REPX" tab used to render only the markdown specification, so
  * the XML that Forma actually produces could never be inspected before it was
- * downloaded â€” a malformed report only revealed itself once DevExpress refused
+ * downloaded ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â a malformed report only revealed itself once DevExpress refused
  * to open it. This shows the real thing, checks that it parses, and lets it be
  * copied straight into the designer.
  * ------------------------------------------------------------------ */
@@ -661,7 +488,7 @@ const RepxViewer = ({ xml }: { xml: string }) => {
 
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-on-surface-variant font-mono">
-            {lines.length} lines Â· {xml.length.toLocaleString()} chars
+            {lines.length} lines ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {xml.length.toLocaleString()} chars
           </span>
           <button
             onClick={handleCopy}
@@ -703,8 +530,8 @@ const RepxViewer = ({ xml }: { xml: string }) => {
  *
  * The model reports the rectangle in fractions (0..1) because it does not know
  * the file's true pixel size, so everything is multiplied up by naturalWidth /
- * naturalHeight here. Returns null on anything unexpected â€” a bad rect, a
- * non-image upload, a decode failure â€” and the caller falls back to the
+ * naturalHeight here. Returns null on anything unexpected ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â a bad rect, a
+ * non-image upload, a decode failure ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â and the caller falls back to the
  * placeholder rather than showing a broken image.
  */
 async function cropSourceRegion(
@@ -738,7 +565,7 @@ async function cropSourceRegion(
     if (w <= 0 || h <= 0) return null;
 
     // Almost the whole page in one dimension, or over half its area, is not a
-    // logo â€” it is the model failing to isolate one.
+    // logo ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it is the model failing to isolate one.
     if (w > 0.9 || h > 0.9 || w * h > 0.5) {
       console.warn(
         `Ignoring sourceRect for "${label}": it covers ${Math.round(w * 100)}%x${Math.round(h * 100)}% ` +
@@ -758,14 +585,14 @@ async function cropSourceRegion(
 
     // The crop should be roughly the shape of the box it will be drawn into.
     // A wildly different aspect means the rectangle is not this element's
-    // artwork â€” typically a full-width band grabbed for a small square logo.
+    // artwork ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â typically a full-width band grabbed for a small square logo.
     if (elementAspect && elementAspect > 0) {
       const cropAspect = sw / sh;
       const ratio = cropAspect / elementAspect;
       if (ratio > 4 || ratio < 0.25) {
         console.warn(
           `Ignoring sourceRect for "${label}": crop is ${cropAspect.toFixed(2)}:1 but the ` +
-          `element is ${elementAspect.toFixed(2)}:1 â€” the rectangle does not match this picture.`
+          `element is ${elementAspect.toFixed(2)}:1 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the rectangle does not match this picture.`
         );
         return null;
       }
@@ -862,7 +689,7 @@ const MockupImage = ({
 const MockupTable = ({ el, scaleFont }: { el: ReportElement; scaleFont: number }) => {
   const rows = el.rows || [];
 
-  // Nothing to draw â€” an older layout, or the model omitted the rows. Show an
+  // Nothing to draw ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â an older layout, or the model omitted the rows. Show an
   // empty ruled box rather than the invented "Data Row 1" placeholder, which
   // used to make an empty result look like real content.
   if (rows.length === 0) {
@@ -977,7 +804,7 @@ const ReportMockup = ({
 }) => {
   // The report page is an absolutely-positioned pixel grid (coordinates come
   // straight from the REPX units), so it cannot reflow. Instead we measure the
-  // available width and scale the whole page down to fit â€” the geometry stays
+  // available width and scale the whole page down to fit ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the geometry stays
   // byte-identical, only the presentation shrinks.
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -1051,7 +878,7 @@ const ReportMockup = ({
                     key={eIdx}
                     // Everything inside the sheet is drawn against --paper, so
                     // it uses paper-relative colours rather than the themed
-                    // tokens â€” the rendered report must look identical in both
+                    // tokens ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the rendered report must look identical in both
                     // themes, and a flipping token would invert or vanish here.
                     className="absolute flex overflow-hidden"
                     style={{
@@ -1146,7 +973,7 @@ export default function App() {
   const [mobilePane, setMobilePane] = useState<'chat' | 'canvas'>('chat');
   const [isDragging, setIsDragging] = useState(false);
   /**
-   * Save confirmation. This used to be a native `alert()` â€” modal, unstyled, and
+   * Save confirmation. This used to be a native `alert()` ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â modal, unstyled, and
    * the only thing in the app that broke out of its own visual language. It sits
    * beside the composer with the other notices and clears itself.
    */
@@ -1160,11 +987,11 @@ export default function App() {
   const lastCompletedStepIndexRef = useRef<number>(0);
   const [analyzingStep, setAnalyzingStep] = useState<string>('');
   const [analyzingProgress, setAnalyzingProgress] = useState<number>(0);
-  /** Characters of model output received so far â€” 0 until streaming begins. */
+  /** Characters of model output received so far ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â 0 until streaming begins. */
   const [streamChars, setStreamChars] = useState<number>(0);
   /**
    * Non-visual attachments: PDF text layers and .repx contents. Kept separate
-   * from `previews` so that stays image-only â€” thumbnails, `sourceRect`
+   * from `previews` so that stays image-only ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â thumbnails, `sourceRect`
    * cropping and saved-report `images` all depend on that.
    */
   const [attachmentTexts, setAttachmentTexts] = useState<TextAttachment[]>([]);
@@ -1173,7 +1000,6 @@ export default function App() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [result, setResult] = useState<DesignResult | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isStaging, setIsStaging] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [loginInitialMode, setLoginInitialMode] = useState<'signin' | 'signup'>('signin');
@@ -1244,7 +1070,7 @@ export default function App() {
   }, []);
 
   // On phones the result lands in the hidden pane, so surface it automatically.
-  // Desktop is unaffected â€” both panes are visible there.
+  // Desktop is unaffected ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â both panes are visible there.
   useEffect(() => {
     if (result) setMobilePane('canvas');
   }, [result]);
@@ -1255,14 +1081,14 @@ export default function App() {
    * than through `handleLogOut`.
    *
    * `previousUidRef` distinguishes "was signed in, now is not" from the initial
-   * null every signed-out visitor gets on load â€” only the former is a sign-out,
+   * null every signed-out visitor gets on load ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â only the former is a sign-out,
    * and only the former should wipe the workspace. Clearing on the initial null
    * would throw away a signed-out user's work every time the page mounted.
    */
   const previousUidRef = useRef<string | null>(null);
   /**
    * The auth subscription is set up once, so it cannot close over
-   * `handleClearChat` directly â€” it would capture the first render's copy and go
+   * `handleClearChat` directly ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it would capture the first render's copy and go
    * stale. The ref is refreshed after every render, below where that handler is
    * defined.
    */
@@ -1333,7 +1159,7 @@ export default function App() {
     const storedKey = readSessionKey() || legacyKey;
     // The model is detected from the key at request time, so modelName is left
     // unset. A stored 'selectedAiModel' from the old dropdown would pin a
-    // retired id (gemini-2.5-flash) and defeat detection â€” drop it.
+    // retired id (gemini-2.5-flash) and defeat detection ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â drop it.
     try { localStorage.removeItem('selectedAiModel'); } catch { /* storage disabled */ }
     return {
       version: '23.2',
@@ -1366,7 +1192,7 @@ export default function App() {
   useEffect(() => {
     // sessionStorage, not localStorage: the key is a live credential, and a
     // tab-scoped store is erased by the browser itself. A beforeunload handler
-    // would not be â€” crashes, force-quit and mobile tab eviction all skip it.
+    // would not be ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â crashes, force-quit and mobile tab eviction all skip it.
     if (config.customApiKey) {
       cacheKeyForSession(config.customApiKey);
     } else {
@@ -1391,7 +1217,7 @@ export default function App() {
     [user]
   );
 
-  // Does this account have a stored key? Only the existence is fetched here â€”
+  // Does this account have a stored key? Only the existence is fetched here ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
   // decrypting needs the passphrase, which the user supplies on demand.
   useEffect(() => {
     if (!canUseVault) {
@@ -1409,7 +1235,7 @@ export default function App() {
   }, [canUseVault, vaultDocRef]);
 
   /**
-   * The config panel edits `config` live â€” every field's onChange writes straight
+   * The config panel edits `config` live ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â every field's onChange writes straight
    * through. That was fine while both footer buttons did the same thing, which
    * is to say it was never fine: "Cancel" and "Save Changes" were both bare
    * `setIsConfigOpen(false)`, so a cancelled edit was already saved and the Save
@@ -1417,7 +1243,7 @@ export default function App() {
    *
    * Rather than rewrite every field to a draft object, the committed value is
    * snapshotted when the panel opens and restored if the user leaves by any
-   * route other than Save â€” the footer Cancel, the X, or the backdrop.
+   * route other than Save ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the footer Cancel, the X, or the backdrop.
    *
    * Explicit key actions (unlock, sync) refresh the snapshot themselves: those
    * are deliberate button presses with their own confirmation, and undoing one
@@ -1500,7 +1326,7 @@ export default function App() {
       const key = await decryptApiKey(vaultRecord, passphrase);
       setConfig((prev) => ({ ...prev, customApiKey: key }));
       // Unlocking is a deliberate action with its own confirmation below, so it
-      // survives a later Cancel â€” fold it into the snapshot the panel would
+      // survives a later Cancel ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â fold it into the snapshot the panel would
       // otherwise restore.
       if (configSnapshotRef.current) {
         configSnapshotRef.current = { ...configSnapshotRef.current, customApiKey: key };
@@ -1552,8 +1378,6 @@ export default function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
   const isFirstThemeRun = useRef(true);
-  const [logs, setLogs] = useState<DebugLog[]>([]);
-  const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const startTimeRef = useRef<number | null>(null);
 
@@ -1576,47 +1400,7 @@ export default function App() {
     };
   }, [isAnalyzing, isPaused]);
 
-  /**
-   * These two used to print hardcoded strings â€” "Latency Nominal at 24ms",
-   * "Local Database state: Online" â€” and probe nothing, so their output read as
-   * a signal while measuring nothing at all. Everything below is now observed at
-   * the moment the button is pressed.
-   */
-  const handleRunDiagnostics = async () => {
-    console.log("Running diagnosticsâ€¦");
-    // Never log the key itself â€” DebugConsole captures every console.* call.
-    console.log("API key: " + (config.customApiKey ? "present for this session" : "not set"));
-    console.log("Resolved model: " + (readCachedModel() || "not yet detected"));
-    // Written as `import.meta.env` on purpose â€” Vite substitutes that exact
-    // expression at transform time; `import.meta?.env` defeats the replacement.
-    console.log("Mock mode: " + (((import.meta as any).env ?? {}).VITE_FORMA_MOCK === 'true' ? "ON â€” Gemini is not being called" : "off"));
-
-    const started = performance.now();
-    try {
-      const res = await fetch('/api/health', { cache: 'no-store' });
-      console.log(`Server /api/health: ${res.status} in ${Math.round(performance.now() - started)}ms`);
-    } catch (err) {
-      console.error(`Server /api/health: unreachable after ${Math.round(performance.now() - started)}ms â€” ${String(err)}`);
-    }
-
-    console.log("Saved projects: " + savedReports.length + (user ? ' (synced to your account)' : ' (local only â€” signed out)'));
-    console.log("Key vault available: " + (isVaultAvailable() ? "yes" : "no â€” needs a secure context"));
-  };
-
-  const handleCheckSystemHealth = () => {
-    console.log("System health:");
-    console.log(`- Operational mode: ${isAnalyzing ? (isPaused ? 'paused mid-run' : 'generating') : isChatting ? 'chat turn in flight' : 'idle'}`);
-    console.log(`- Network: ${navigator.onLine ? 'online' : 'OFFLINE'}`);
-    console.log(`- Attachments staged: ${previews.length} image(s), ${attachmentTexts.length} text part(s)`);
-    console.log(`- Result loaded: ${result ? `yes â€” "${result.title ?? 'untitled'}", REPX ${result.repxContent?.length ?? 0} chars` : 'no'}`);
-    console.log(`- Debug log entries: ${logs.length}/${MAX_DEBUG_LOGS}`);
-    const mem = (performance as any).memory;
-    if (mem?.usedJSHeapSize) {
-      console.log(`- JS heap: ${Math.round(mem.usedJSHeapSize / 1048576)}MB used of ${Math.round(mem.jsHeapSizeLimit / 1048576)}MB`);
-    }
-  };
-
-  // Save confirmations are transient â€” they replace an alert the user had to
+  // Save confirmations are transient ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â they replace an alert the user had to
   // dismiss, so they must not need dismissing either.
   useEffect(() => {
     if (!saveNotice) return;
@@ -1624,124 +1408,6 @@ export default function App() {
     return () => clearTimeout(t);
   }, [saveNotice]);
 
-  useEffect(() => {
-    const originalLog = console.log;
-    const originalError = console.error;
-    const originalWarn = console.warn;
-    const originalDebug = console.debug;
-
-    // Every argument has to survive serialisation, because this runs *inside* the
-    // patched console.* â€” anything thrown here surfaces at the caller's
-    // console.log line, not in this panel. JSON.stringify throws on a cycle, and
-    // cyclic arguments are ordinary: DOM nodes, React synthetic events, Firebase
-    // objects and most SDK errors all self-reference.
-    const safeStringify = (arg: any): string => {
-      if (typeof arg !== 'object' || arg === null) return String(arg);
-      try {
-        return JSON.stringify(arg, null, 2) ?? String(arg);
-      } catch {
-        // Second pass drops the back-references rather than the whole object, so
-        // a cyclic payload still logs its useful properties.
-        try {
-          const seen = new WeakSet();
-          return JSON.stringify(arg, (_key, value) => {
-            if (typeof value === 'object' && value !== null) {
-              if (seen.has(value)) return '[Circular]';
-              seen.add(value);
-            }
-            return value;
-          }, 2) ?? String(arg);
-        } catch {
-          return String(arg);
-        }
-      }
-    };
-
-    // Entries are buffered and flushed asynchronously rather than written
-    // straight to state. Calling setLogs inline meant that any library logging
-    // *during render* updated App's state while a child was mid-render â€” React's
-    // "Cannot update a component while rendering a different component". Motion's
-    // useReducedMotion warning did exactly that on every load. A microtask runs
-    // after the current render pass completes, so the setState is legal there.
-    let pending: DebugLog[] = [];
-    let flushScheduled = false;
-
-    const mergeInto = (list: DebugLog[], entry: DebugLog): DebugLog[] => {
-      const last = list[list.length - 1];
-      if (last && last.message === entry.message && last.type === entry.type) {
-        return [...list.slice(0, -1), { ...last, count: last.count + 1, timestamp: entry.timestamp }];
-      }
-      // Bounded so a long session or a chatty loop cannot grow this without
-      // limit; the panel only ever shows the recent tail anyway.
-      const next = [...list, entry];
-      return next.length > MAX_DEBUG_LOGS ? next.slice(next.length - MAX_DEBUG_LOGS) : next;
-    };
-
-    const flush = () => {
-      flushScheduled = false;
-      if (pending.length === 0) return;
-      const batch = pending;
-      pending = [];
-      setLogs(prev => batch.reduce(mergeInto, prev));
-    };
-
-    const addLog = (type: DebugLog['type'], ...args: any[]) => {
-      const message = args.map(safeStringify).join(' ');
-
-      // Ignore the Vite websocket error to keep the log clean
-      if (message.includes('[vite] failed to connect to websocket')) return;
-
-      pending.push({
-        id: Math.random().toString(36).slice(2, 11),
-        type,
-        message,
-        timestamp: new Date(),
-        count: 1
-      });
-
-      if (!flushScheduled) {
-        flushScheduled = true;
-        queueMicrotask(flush);
-      }
-    };
-
-    console.log = (...args) => {
-      originalLog(...args);
-      addLog('log', ...args);
-    };
-    console.error = (...args) => {
-      originalError(...args);
-      addLog('error', ...args);
-    };
-    console.warn = (...args) => {
-      originalWarn(...args);
-      addLog('warn', ...args);
-    };
-    console.debug = (...args) => {
-      originalDebug(...args);
-      addLog('debug', ...args);
-    };
-
-    const handleError = (event: ErrorEvent) => {
-      addLog('error', `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`);
-    };
-
-    const handleRejection = (event: PromiseRejectionEvent) => {
-      addLog('error', `Unhandled Rejection: ${event.reason}`);
-    };
-
-    window.addEventListener('error', handleError);
-    window.addEventListener('unhandledrejection', handleRejection);
-
-    return () => {
-      console.log = originalLog;
-      console.error = originalError;
-      console.warn = originalWarn;
-      console.debug = originalDebug;
-      window.removeEventListener('error', handleError);
-      window.removeEventListener('unhandledrejection', handleRejection);
-    };
-  }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1760,7 +1426,7 @@ export default function App() {
   /**
    * How far the simulated opening phase is allowed to climb. Nothing during
    * upload, model detection or the model's silent thinking pass reports real
-   * progress, so this stretch is guesswork and must stay visibly small â€”
+   * progress, so this stretch is guesswork and must stay visibly small ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
    * leaving the rest of the bar for output that genuinely arrived.
    */
   const PRE_STREAM_CEILING = 14;
@@ -1768,7 +1434,7 @@ export default function App() {
   /**
    * Progress only ever moves forward. The opening phase is simulated and the
    * streamed phase is real, and without this guard the handover snapped the
-   * bar backwards â€” the simulation had already climbed while the model was
+   * bar backwards ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the simulation had already climbed while the model was
    * still thinking, then the first real chunk reported a much lower figure.
    */
   const advanceProgress = useCallback((next: number) => {
@@ -1778,8 +1444,8 @@ export default function App() {
   /**
    * Real progress, fed by the streamed response.
    *
-   * The simulated interval still covers the opening phase â€” model detection,
-   * upload, and the model's own thinking produce no signal at all â€” but it is
+   * The simulated interval still covers the opening phase ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â model detection,
+   * upload, and the model's own thinking produce no signal at all ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â but it is
    * capped low (see PRE_STREAM_CEILING) so this can take over without the bar
    * ever going backwards. Shared by both handleGenerate and handleResume so
    * the two cannot drift apart.
@@ -1810,7 +1476,7 @@ export default function App() {
     root.classList.toggle('dark', isDarkMode);
 
     // The inline bootstrap in index.html already painted the correct theme, so
-    // mount must not animate â€” only a genuine change should.
+    // mount must not animate ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â only a genuine change should.
     if (isFirstThemeRun.current) {
       isFirstThemeRun.current = false;
       return;
@@ -1826,13 +1492,13 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [isDarkMode]);
 
-  // The only place a theme choice is persisted â€” an explicit user action.
+  // The only place a theme choice is persisted ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â an explicit user action.
   const setTheme = useCallback((val: boolean) => {
     setIsDarkMode(val);
     try {
       localStorage.setItem('darkMode', JSON.stringify(val));
     } catch {
-      /* storage disabled â€” the choice still applies for this session */
+      /* storage disabled ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the choice still applies for this session */
     }
   }, []);
 
@@ -1942,7 +1608,7 @@ export default function App() {
   /**
    * Firestore failures used to vanish. `handleFirestoreError` logs and then
    * re-throws, and both call sites are `catch` blocks in async handlers with
-   * nothing above them â€” so a rules rejection became an unhandled promise
+   * nothing above them ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â so a rules rejection became an unhandled promise
    * rejection and the user saw nothing at all.
    *
    * This keeps the diagnostic logging and swallows the re-throw, then shows a
@@ -1979,8 +1645,8 @@ export default function App() {
         // own JPEG quality is ~4.7 MB against a 1 MiB document ceiling. Writing
         // it produced an opaque backend rejection and the save simply failed.
         //
-        // So: try it whole, and if it will not fit, keep the part that matters â€”
-        // the spec, layout and REPX â€” and say plainly that the images were left
+        // So: try it whole, and if it will not fit, keep the part that matters ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
+        // the spec, layout and REPX ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â and say plainly that the images were left
         // behind. A saved report without its source thumbnails still reopens and
         // still exports; a failed save leaves the user with nothing.
         let messagesJson = JSON.stringify(messages);
@@ -2011,12 +1677,12 @@ export default function App() {
         });
         setSaveNotice(
           imagesDropped
-            ? 'Saved to your projects â€” the uploaded images were too large to sync, so the spec and REPX were saved without them.'
+            ? 'Saved to your projects ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the uploaded images were too large to sync, so the spec and REPX were saved without them.'
             : 'Saved to your projects.'
         );
       } catch (err) {
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${reportId}`,
-          'That project could not be saved to your account. It is still open here â€” try again in a moment.');
+          'That project could not be saved to your account. It is still open here ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â try again in a moment.');
       }
     } else {
       const newReport: SavedReport = {
@@ -2050,7 +1716,7 @@ export default function App() {
         await deleteDoc(doc(db, 'users', user.uid, 'reports', id));
       } catch (err) {
         reportFirestoreFailure(err, OperationType.DELETE, `users/${user.uid}/reports/${id}`,
-          'That project could not be deleted from your account. It is still listed â€” try again in a moment.');
+          'That project could not be deleted from your account. It is still listed ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â try again in a moment.');
       }
     } else {
       setSavedReports(prev => {
@@ -2069,7 +1735,7 @@ export default function App() {
     }
     setUser(null);
     // Signing out must not leave a live credential behind for the next person at
-    // this browser. The encrypted copy in Firestore is untouched â€” signing back
+    // this browser. The encrypted copy in Firestore is untouched ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â signing back
     // in and entering the passphrase restores it.
     setConfig((prev) => ({ ...prev, customApiKey: '' }));
     clearSessionKey();
@@ -2094,7 +1760,7 @@ export default function App() {
    * landing/marketing return *and* from the workspace return, and each used to
    * carry its own copy of this element with a **different** `onClose`: the
    * workspace copy hardcoded `#workspace` while the other restored
-   * `lastViewHash`. Restoring `lastViewHash` is correct in both cases â€” it is
+   * `lastViewHash`. Restoring `lastViewHash` is correct in both cases ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it is
    * already `'#workspace'` whenever the workspace opened the dialog, because the
    * `#login` / `#signup` branches of the hash effect deliberately leave it
    * alone. Keep this single copy; two copies drifted once already.
@@ -2242,7 +1908,7 @@ export default function App() {
       }
       console.error('Error during report generation:', err);
 
-      // No key configured is a setup step, not a failure â€” send the user straight
+      // No key configured is a setup step, not a failure ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â send the user straight
       // to the place they can fix it instead of showing a dead-end error.
       if (err instanceof MissingApiKeyError) {
         setError('Add your own Gemini API key in Settings to generate reports.');
@@ -2315,7 +1981,7 @@ export default function App() {
   /**
    * `overridePrompt` exists for the retry affordance on a failed message, which
    * re-sends that message's own text rather than whatever is in the composer.
-   * Every call site passes it explicitly â€” never wire this straight to onClick,
+   * Every call site passes it explicitly ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â never wire this straight to onClick,
    * or the click event arrives as the prompt.
    */
   const handleGenerate = async (overridePrompt?: string) => {
@@ -2362,7 +2028,7 @@ export default function App() {
      * answers the message and decides whether a report was actually being
      * asked for.
      * ---------------------------------------------------------------- */
-    // Any attachment â€” a page image or text lifted out of a PDF/.repx â€” is an
+    // Any attachment ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â a page image or text lifted out of a PDF/.repx ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â is an
     // unambiguous request to build something, so it skips the chat turn.
     if (currentPreviews.length === 0 && currentTexts.length === 0) {
       setIsChatting(true);
@@ -2383,7 +2049,7 @@ export default function App() {
           return;
         }
 
-        // The user does want a report built from their description â€” fall
+        // The user does want a report built from their description ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â fall
         // through to generation below, after acknowledging.
         setMessages(prev => [...prev, {
           id: (Date.now() + 1).toString(),
@@ -2503,7 +2169,7 @@ export default function App() {
       }
       console.error('Error during report generation:', err);
 
-      // No key configured is a setup step, not a failure â€” send the user straight
+      // No key configured is a setup step, not a failure ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â send the user straight
       // to the place they can fix it instead of showing a dead-end error.
       if (err instanceof MissingApiKeyError) {
         setError('Add your own Gemini API key in Settings to generate reports.');
@@ -2546,7 +2212,7 @@ export default function App() {
 
   /**
    * The uploads a `sourceRect` can be cropped from. Live uploads win, but a
-   * report reloaded from history has an empty `previews` â€” its images survive
+   * report reloaded from history has an empty `previews` ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â its images survive
    * on the user chat message, so fall back to those and keep logo cropping
    * working after a reload. Order matches the parts sent to the model, so
    * `sourceImageIndex` lines up either way.
@@ -2687,7 +2353,7 @@ export default function App() {
               {/* No responsive class on the icon: Material Symbols ships its own
                   `display` from an unlayered <link>, which beats Tailwind's
                   layered `hidden` utility regardless of breakpoint. The
-                  `lg:hidden` that used to sit here had never once applied â€” the
+                  `lg:hidden` that used to sit here had never once applied ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the
                   desktop button always rendered icon *and* label, like its two
                   siblings. Wrap the icon in a plain span if you ever do need to
                   hide one responsively. */}
@@ -2761,7 +2427,7 @@ export default function App() {
               >
                 {/* Below sm only the icon remains: at 91px the label was both the
                     widest thing in the bar and the only text that wrapped.
-                    The icon carries no responsive class on purpose â€” Material
+                    The icon carries no responsive class on purpose ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â Material
                     Symbols sets its own `display`, which beats Tailwind's `hidden`
                     (see the same dead `lg:hidden` on the save icon above), and
                     showing it at every width matches the sibling pills anyway. */}
@@ -2784,7 +2450,7 @@ export default function App() {
                       <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-pulse"></span>
                     </div>
                     <div className="space-y-1">
-                      {/* Save and New leave the bar below sm â€” at 320px the full
+                      {/* Save and New leave the bar below sm ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â at 320px the full
                           control set overlapped itself. They live here instead, so
                           the actions stay reachable rather than disappearing. */}
                       <button
@@ -2807,16 +2473,6 @@ export default function App() {
                       >
                         <span className="material-symbols-outlined text-on-surface-variant text-[18px] group-hover:text-secondary">add</span>
                         <span className="font-body-sm text-[13px]">New Process</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          setIsDebugOpen(!isDebugOpen);
-                        }}
-                        className="w-full flex items-center gap-3 p-2 hover:bg-surface-container rounded-xl transition-colors group cursor-pointer text-left text-on-surface"
-                      >
-                        <span className="material-symbols-outlined text-on-surface-variant text-[18px] group-hover:text-secondary">code_xml</span>
-                        <span className="font-body-sm text-[13px]">Debug Console</span>
                       </button>
                     </div>
                   </div>
@@ -2953,7 +2609,7 @@ export default function App() {
                     hardcoded model ids rot. Google retires models "for new users", so
                     the old gemini-2.5-flash default 404'd for every freshly created key
                     while the dropdown still advertised models (3.5 Flash/Pro) that never
-                    existed for most accounts. The model is now detected from the key â€”
+                    existed for most accounts. The model is now detected from the key ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
                     see resolveModel() in geminiService.ts. */}
 
                 {/* API Config */}
@@ -3020,12 +2676,12 @@ export default function App() {
                       >
                         Google AI Studio
                       </a>
-                      . Your key goes straight from this browser to Google â€” it never reaches our servers.
+                      . Your key goes straight from this browser to Google ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it never reaches our servers.
                       It is kept for this browser tab only and is erased when you close it.
                     </p>
                   </div>
 
-                  {/* Zero-knowledge sync â€” signed-in users only */}
+                  {/* Zero-knowledge sync ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â signed-in users only */}
                   {canUseVault && (
                     <div className="mt-5 pt-4 border-t border-outline-variant">
                       <h4 className="text-xs font-mono font-bold text-on-surface-variant mb-1 uppercase tracking-wider">
@@ -3056,7 +2712,7 @@ export default function App() {
                               disabled={vaultBusy}
                               className="u-tap u-transition-fast u-press u-focus-ring px-3 py-1.5 bg-secondary-container text-white text-[11px] font-semibold rounded-full hover:bg-secondary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              {vaultBusy ? 'Workingâ€¦' : 'Unlock key'}
+                              {vaultBusy ? 'WorkingÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦' : 'Unlock key'}
                             </button>
                             <button
                               type="button"
@@ -3089,7 +2745,7 @@ export default function App() {
                           />
                           <p className="text-[10px] text-error mt-2 leading-snug">
                             Write this passphrase down. It is never sent to us, so if you forget it your stored
-                            key cannot be recovered â€” you would need to delete it and add your API key again.
+                            key cannot be recovered ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â you would need to delete it and add your API key again.
                           </p>
                           <button
                             type="button"
@@ -3097,7 +2753,7 @@ export default function App() {
                             disabled={vaultBusy}
                             className="u-tap u-transition-fast u-press u-focus-ring mt-2 px-3 py-1.5 bg-secondary-container text-white text-[11px] font-semibold rounded-full hover:bg-secondary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {vaultBusy ? 'Encryptingâ€¦' : 'Encrypt & sync to my account'}
+                            {vaultBusy ? 'EncryptingÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦' : 'Encrypt & sync to my account'}
                           </button>
                         </>
                       )}
@@ -3291,7 +2947,7 @@ export default function App() {
                   ) : (
                     <span className="flex items-center gap-2.5">
                       <span className="material-symbols-outlined animate-spin text-secondary text-[16px] select-none">autorenew</span>
-                      <span className="text-[11px] text-on-surface-variant">Thinkingâ€¦</span>
+                      <span className="text-[11px] text-on-surface-variant">ThinkingÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦</span>
                     </span>
                   )}
                 </motion.div>
@@ -3354,7 +3010,7 @@ export default function App() {
                   </div>
 
                   {/* Current stage, plus the live output readout once the model
-                      is actually writing â€” the one number here that is measured
+                      is actually writing ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the one number here that is measured
                       rather than estimated. */}
                   <div className="flex items-baseline justify-between gap-3 w-full">
                     <p className={`text-[11px] text-on-surface-variant leading-tight truncate ${!isPaused && 'animate-pulse'}`}>
@@ -3380,7 +3036,7 @@ export default function App() {
                   )}
 
                   {/* Measured on a live run: the model spent 4,770 thinking
-                      tokens â€” roughly 68 of 80 seconds â€” before emitting a single
+                      tokens ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â roughly 68 of 80 seconds ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â before emitting a single
                       character. Nothing is streaming yet, so the bar is honestly
                       pinned at PRE_STREAM_CEILING for that whole stretch and
                       looks hung. Rather than invent movement, say what is
@@ -3388,7 +3044,7 @@ export default function App() {
                       worth explaining. */}
                   {!isPaused && streamChars === 0 && elapsedTime >= 20_000 && (
                     <p className="mt-2 text-[10px] leading-snug text-on-surface-variant/70" role="status">
-                      The model is still reasoning â€” it writes nothing until it has planned the
+                      The model is still reasoning ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it writes nothing until it has planned the
                       whole layout, so the bar holds here until output starts arriving.
                     </p>
                   )}
@@ -3440,7 +3096,7 @@ export default function App() {
                       <button
                         onClick={() => removeFile(idx)}
                         aria-label="Remove attachment"
-                        /* Always visible on touch devices â€” there is no hover
+                        /* Always visible on touch devices ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â there is no hover
                            there, so the old opacity-0 made this unreachable. */
                         className="u-transition-fast u-press u-focus-ring absolute -top-2 -right-2 w-6 h-6 bg-surface-container-lowest dark:bg-card border border-outline-variant hover:bg-red-500 hover:text-white hover:border-red-500 text-on-surface-variant rounded-full shadow opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 cursor-pointer flex items-center justify-center"
                       >
@@ -3452,7 +3108,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Text pulled out of the files themselves â€” a PDF's text layer or
+            {/* Text pulled out of the files themselves ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â a PDF's text layer or
                 an uploaded .repx. These carry exact strings and coordinates,
                 so they are shown as their own chips rather than hidden. */}
             {attachmentTexts.length > 0 && (
@@ -3461,7 +3117,7 @@ export default function App() {
                   <span
                     key={t.id}
                     className="group flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full border border-primary/30 bg-primary/5 text-[10px] text-on-surface-variant max-w-full"
-                    title={`${t.label} â€” exact text extracted from the file`}
+                    title={`${t.label} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â exact text extracted from the file`}
                   >
                     <span className="material-symbols-outlined text-[13px] text-primary shrink-0">description</span>
                     <span className="truncate max-w-[160px]">{t.label}</span>
@@ -3480,7 +3136,7 @@ export default function App() {
             {isIngesting && (
               <p className="text-[10px] text-on-surface-variant px-2 flex items-center gap-1.5">
                 <span className="material-symbols-outlined animate-spin text-[13px]">autorenew</span>
-                Reading filesâ€¦
+                Reading filesÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦
               </p>
             )}
 
@@ -3563,7 +3219,7 @@ export default function App() {
                 )}
               </button>
             </div>
-            {/* The key gates the entire workspace â€” chat and generation alike â€”
+            {/* The key gates the entire workspace ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â chat and generation alike ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
                 so say so plainly rather than letting the first attempt fail. */}
             {!hasApiKey && (
               <button
@@ -3574,18 +3230,18 @@ export default function App() {
                 {/* Signing out clears the session key, but the encrypted copy in
                     the account survives. Telling a returning user to "add your
                     API key" when the app already knows they have one stored made
-                    the vault look broken â€” they had no way to learn that
+                    the vault look broken ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â they had no way to learn that
                     unlocking was even an option. */}
                 {vaultRecord ? (
                   <span className="text-[11px] text-on-surface-variant leading-snug">
                     <strong className="text-on-surface">Unlock your stored API key.</strong>{' '}
-                    This account has an encrypted key saved. Click here and enter your passphrase â€”
+                    This account has an encrypted key saved. Click here and enter your passphrase ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
                     it never left your browser, so only you can unlock it.
                   </span>
                 ) : (
                   <span className="text-[11px] text-on-surface-variant leading-snug">
                     <strong className="text-on-surface">Add your Gemini API key to begin.</strong>{' '}
-                    Nothing in the workspace can run without it â€” Forma ships no key of its own.
+                    Nothing in the workspace can run without it ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â Forma ships no key of its own.
                     Click here to open Settings.
                   </span>
                 )}
@@ -3611,8 +3267,8 @@ export default function App() {
                   <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                     {/* Hidden below sm rather than truncated. The tab row beside
                         it is shrink-0, so on a phone the title was left with a few
-                        pixels and rendered as a single letter and a full stop â€”
-                        "M." for "Mock Invoice Report" â€” which carries nothing. The
+                        pixels and rendered as a single letter and a full stop ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
+                        "M." for "Mock Invoice Report" ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â which carries nothing. The
                         tabs and Export are the useful controls at that width. */}
                     <div className="hidden sm:flex items-center gap-2 min-w-0">
                       <span className="material-symbols-outlined text-secondary shrink-0">space_dashboard</span>
@@ -3679,7 +3335,7 @@ export default function App() {
                         exit="hidden"
                         className="bg-surface-container-lowest dark:bg-card p-4 sm:p-8 rounded-2xl shadow-2xl border border-outline-variant max-w-4xl mx-auto w-full overflow-x-auto"
                       >
-                        {/* Specification / REPX switch â€” the tab is named for both. */}
+                        {/* Specification / REPX switch ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the tab is named for both. */}
                         <div className="flex items-center gap-1 mb-5 p-1 bg-surface-container-low rounded-full border border-outline-variant w-fit">
                           {([
                             { id: 'spec', label: 'Specification', icon: ScrollText },
@@ -3730,7 +3386,7 @@ export default function App() {
                         ? `Engine Status: Processing / ${analyzingStep || 'Analyzing...'}`
                         : isPaused
                           ? 'Engine Status: Paused / Idle'
-                          : 'Engine Status: Idle â€¢ Ready for Input'
+                          : 'Engine Status: Idle ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Ready for Input'
                       }
                     </span>
                   </div>
@@ -3801,7 +3457,7 @@ export default function App() {
                         ? `Engine Status: Processing / ${analyzingStep || 'Analyzing...'}`
                         : isPaused
                           ? 'Engine Status: Paused / Idle'
-                          : 'Engine Status: Idle â€¢ Ready for Input'
+                          : 'Engine Status: Idle ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Ready for Input'
                       }
                     </span>
                   </div>
@@ -3812,7 +3468,7 @@ export default function App() {
         </div>
       </main>
 
-      {/* Mobile pane switcher â€” replaces the side-by-side split below md. */}
+      {/* Mobile pane switcher ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â replaces the side-by-side split below md. */}
       <nav
         className="md:hidden flex-shrink-0 grid grid-cols-2 border-t border-outline-variant bg-surface-container-lowest dark:bg-card"
         role="tablist"
@@ -3917,21 +3573,6 @@ export default function App() {
               </div>
             </motion.div>
           </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Debug Console Overlay */}
-      <AnimatePresence>
-        {isDebugOpen && (
-          <DebugConsole
-            logs={logs}
-            onClose={() => setIsDebugOpen(false)}
-            onClear={() => setLogs([])}
-            isStaging={isStaging}
-            setIsStaging={setIsStaging}
-            onRunDiagnostics={handleRunDiagnostics}
-            onCheckSystemHealth={handleCheckSystemHealth}
-          />
         )}
       </AnimatePresence>
 
