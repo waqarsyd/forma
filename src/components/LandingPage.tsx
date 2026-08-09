@@ -243,21 +243,21 @@ const LandingPage = ({
             </div>
             <div className="h-6 w-px bg-outline-variant/40 hidden sm:block"></div>
             <p className="font-body-sm text-[12px] leading-relaxed text-on-surface-variant max-w-[340px]">
-              Â© 2026 Forma. All rights reserved.<br />Designed & Built by <strong className="text-secondary-container font-bold">Waqar Sayyed</strong>
+              © 2026 Forma. All rights reserved.<br />Designed & Built by <strong className="text-secondary-container font-bold">Waqar Sayyed</strong>
             </p>
           </div>
           {/* Middle side: Navigation links */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 select-none text-[12px]">
             <a href="/" className="hover:text-primary transition-all duration-200 hover:scale-105">Product</a>
-            <span className="text-outline-variant text-[21px] font-bold">â€¢</span>
+            <span className="text-outline-variant text-[21px] font-bold">•</span>
             <a href="/features" className="hover:text-primary transition-all duration-200 hover:scale-105">Features</a>
-            <span className="text-outline-variant text-[21px] font-bold">â€¢</span>
+            <span className="text-outline-variant text-[21px] font-bold">•</span>
             <a href="/docs" className="hover:text-primary transition-all duration-200 hover:scale-105">Docs</a>
-            <span className="text-outline-variant text-[21px] font-bold">â€¢</span>
+            <span className="text-outline-variant text-[21px] font-bold">•</span>
             <a href="/contact" className="hover:text-primary transition-all duration-200 hover:scale-105">Contact</a>
-            <span className="text-outline-variant text-[21px] font-bold">â€¢</span>
+            <span className="text-outline-variant text-[21px] font-bold">•</span>
             <a href="/" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Privacy</a>
-            <span className="text-outline-variant text-[21px] font-bold">â€¢</span>
+            <span className="text-outline-variant text-[21px] font-bold">•</span>
             <a href="/" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Terms</a>
           </div>
 
