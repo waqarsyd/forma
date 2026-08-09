@@ -142,6 +142,22 @@
 }
 
 @layer base {
+  /* Edge and IE draw their own reveal/clear controls *inside* a password input.
+     Every password field in this app already ships a toggle of its own — the
+     API key row in the config modal, and both password fields in the auth
+     dialog — so the native control appears as a second, differently-styled eye
+     sitting next to ours. Two reveal buttons on one field is confusing enough
+     that a user reported it as a bug.
+
+     Suppressed rather than adopted: the app's toggle carries the aria-label and
+     aria-pressed state, and stays in sync across the password/confirm pair,
+     which the native control does not. Chrome and Firefox render nothing here,
+     so this only affects Edge. */
+  input[type='password']::-ms-reveal,
+  input[type='password']::-ms-clear {
+    display: none;
+  }
+
   :root {
     /* Durations. Tailwind v4 has no --duration-* theme namespace, so these are
        plain custom properties consumed by the .u-* helpers and, where a one-off
