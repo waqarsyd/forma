@@ -124,7 +124,7 @@ export default function ContactPage({
             </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-8">
             <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary dark:hover:text-secondary-container transition-colors duration-200" href="/">Product</a>
             <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary dark:hover:text-secondary-container transition-colors duration-200" href="/features">Features</a>
             <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary dark:hover:text-secondary-container transition-colors duration-200" href="/docs">Docs</a>
@@ -188,7 +188,7 @@ export default function ContactPage({
                 )}
               </div>
             ) : (
-              <div className="hidden md:flex items-center gap-2">
+              <div className="hidden lg:flex items-center gap-2">
                 <button
                   onClick={onSignIn}
                   className="whitespace-nowrap font-label-caps text-on-surface-variant px-4 py-2 hover:text-secondary dark:hover:text-secondary-container transition-colors transition-transform active:scale-95 cursor-pointer"

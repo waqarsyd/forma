@@ -58,7 +58,7 @@ const LandingPage = ({
               <span className="font-label-caps text-[10px] tracking-widest text-on-surface-variant uppercase hidden lg:block">Show it. Build it. Ship it.</span>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-8">
             <a className="text-secondary font-bold border-b-2 border-secondary pb-1 font-title-md text-body-sm transition-colors duration-200" href="/">Product</a>
             <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="/features">Features</a>
             <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="/docs">Docs</a>
@@ -120,7 +120,7 @@ const LandingPage = ({
                 )}
               </div>
             ) : (
-              <div className="hidden md:flex items-center gap-2">
+              <div className="hidden lg:flex items-center gap-2">
                 <button
                   onClick={onSignIn}
                   className="whitespace-nowrap font-label-caps text-on-surface-variant px-4 py-2 hover:text-secondary transition-colors transition-transform active:scale-95 cursor-pointer"

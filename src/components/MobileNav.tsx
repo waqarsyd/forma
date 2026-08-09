@@ -12,8 +12,11 @@ const LINKS = [
 /**
  * Hamburger + slide-down sheet for the marketing headers.
  *
- * The desktop nav in these pages is `hidden md:flex`, which previously left
- * phones with no navigation at all. This renders only below md.
+ * The desktop nav in these pages is `hidden lg:flex`, which previously left
+ * phones with no navigation at all. This renders below lg, so it covers tablets
+ * too — the desktop header used to appear at `md`, where the wordmark and the
+ * first nav link ended up 5px apart and read as one phrase ("Forma Product").
+ * The full header only fits from about 820px, so `lg` is where it belongs.
  *
  * It is a full-screen fixed sheet rather than a dropdown so it does not depend
  * on the surrounding header's positioning — the four headers differ slightly.
@@ -37,7 +40,7 @@ export default function MobileNav({ active, signedIn }: { active?: string; signe
   }, [open]);
 
   return (
-    <div className="md:hidden">
+    <div className="lg:hidden">
       <button
         onClick={() => setOpen(true)}
         aria-label="Open menu"
