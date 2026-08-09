@@ -3,10 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { backdropVariants, transition } from '../lib/motion';
 
 const LINKS = [
-  { label: 'Product', hash: '#' },
-  { label: 'Features', hash: '#features' },
-  { label: 'Docs', hash: '#docs' },
-  { label: 'Contact', hash: '#contact' },
+  { label: 'Product', path: '/' },
+  { label: 'Features', path: '/features' },
+  { label: 'Docs', path: '/docs' },
+  { label: 'Contact', path: '/contact' },
 ] as const;
 
 /**
@@ -84,7 +84,7 @@ export default function MobileNav({ active, signedIn }: { active?: string; signe
                 return (
                   <a
                     key={link.label}
-                    href={link.hash}
+                    href={link.path}
                     onClick={() => setOpen(false)}
                     aria-current={isActive ? 'page' : undefined}
                     className={`u-tap u-transition-fast u-focus-ring flex items-center rounded-xl px-4 py-3 font-title-md text-body-sm ${
@@ -106,7 +106,7 @@ export default function MobileNav({ active, signedIn }: { active?: string; signe
               {signedIn && (
                 <div className="mt-3 pt-3 border-t border-outline-variant/40 flex flex-col gap-2">
                   <a
-                    href="#workspace"
+                    href="/workspace"
                     onClick={() => setOpen(false)}
                     className="u-tap u-transition-fast u-focus-ring flex items-center justify-center rounded-full px-4 py-3 font-label-caps text-body-sm bg-secondary-container text-white shadow-lg shadow-secondary-container/20 hover:bg-secondary"
                   >
@@ -118,14 +118,14 @@ export default function MobileNav({ active, signedIn }: { active?: string; signe
               {!signedIn && (
                 <div className="mt-3 pt-3 border-t border-outline-variant/40 flex flex-col gap-2">
                   <a
-                    href="#login"
+                    href="/login"
                     onClick={() => setOpen(false)}
                     className="u-tap u-transition-fast u-focus-ring flex items-center justify-center rounded-full px-4 py-3 font-label-caps text-body-sm border border-outline-variant text-on-surface-variant hover:text-secondary hover:border-secondary"
                   >
                     Sign In
                   </a>
                   <a
-                    href="#signup"
+                    href="/signup"
                     onClick={() => setOpen(false)}
                     className="u-tap u-transition-fast u-focus-ring flex items-center justify-center rounded-full px-4 py-3 font-label-caps text-body-sm bg-secondary-container text-white shadow-lg shadow-secondary-container/20 hover:bg-secondary"
                   >

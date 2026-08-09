@@ -4,6 +4,7 @@ import { transition, modalVariants } from '../lib/motion';
 import { Eye, EyeOff, X } from 'lucide-react';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, sendPasswordReset } from '../services/firebase';
 import Logo from './Logo';
+import { currentPath, navigate, onRouteChange } from '../lib/router';
 
 interface LoginPageProps {
   onClose: () => void;
@@ -137,22 +138,21 @@ export default function LoginPage({ onClose, onSuccess, initialMode = 'signin' }
   const switchMode = (next: 'signin' | 'signup') => {
     setMode(next);
     resetFormState();
-    window.location.hash = next === 'signup' ? 'signup' : 'login';
+    navigate(next === 'signup' ? '/signup' : '/login');
   };
 
   // Depends on `mode` so the "did it actually change?" test can live here rather
   // than inside the setState updater, which StrictMode double-invokes and which
   // must stay pure.
   useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash;
-      const next = hash === '#login' ? 'signin' : hash === '#signup' ? 'signup' : null;
+    const applyRoute = () => {
+      const path = currentPath();
+      const next = path === '/login' ? 'signin' : path === '/signup' ? 'signup' : null;
       if (!next || next === mode) return;
       setMode(next);
       resetFormState();
     };
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
+    return onRouteChange(applyRoute);
   }, [mode]);
 
   /**
@@ -721,9 +721,9 @@ export default function LoginPage({ onClose, onSuccess, initialMode = 'signin' }
 
           {/* Right side: Privacy, Terms, and Verified Stack */}
           <div className="flex items-center justify-center gap-4 flex-wrap lg:justify-end select-none text-[12px]">
-            <a href="#" className="u-focus-ring u-transition-fast hover:text-primary rounded px-1 py-0.5">Privacy</a>
+            <a href="/" className="u-focus-ring u-transition-fast hover:text-primary rounded px-1 py-0.5">Privacy</a>
             <span className="text-outline-variant text-[21px] font-bold" aria-hidden="true">•</span>
-            <a href="#" className="u-focus-ring u-transition-fast hover:text-primary rounded px-1 py-0.5">Terms</a>
+            <a href="/" className="u-focus-ring u-transition-fast hover:text-primary rounded px-1 py-0.5">Terms</a>
             <span className="text-outline-variant text-[21px] font-bold" aria-hidden="true">•</span>
             <div className="flex items-center gap-1.5 text-outline/70 font-mono text-[9px] uppercase tracking-wider font-bold select-none">
               <svg className="w-3.5 h-3.5 text-outline/70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">

@@ -164,7 +164,17 @@ Removed with it: the `DebugLog` type, the `logs`/`isDebugOpen` state, `MAX_DEBUG
 
 **`ReportMockup` is a scaled pixel sheet, not a responsive layout.** Every coordinate from `layout` is multiplied by `0.96` and set as an absolute `left/top/width/height`; the page cannot reflow, so a `ResizeObserver` measures the viewport and applies `transform: scale()` to the whole sheet, with an outer stage div sized to the post-scale footprint so nothing overlaps. Everything inside the sheet is drawn against the **theme-invariant `--paper` / `--on-paper` tokens** — deliberately identical in `:root` and `.dark`, since a rendered report must look the same in both themes. Using `bg-card`/`text-foreground` or any other flipping token inside the sheet is a bug, not a shortcut.
 
-**Routing is `window.location.hash`**, driven by one `useEffect` on `hashchange` that maps `#workspace | #login | #signup | #features | #docs | #contact` (and `''` = landing) onto boolean state. There is no router library. Any new page needs a branch there *and* a `setLastViewHash` update if it should be restorable after login.
+**Routing is real paths** — `/features`, `/docs`, `/contact`, `/login`, `/signup`, `/workspace`, and `/` for the landing page. It was `window.location.hash` until 2026-08-09, which showed a `#` in the address bar on every page and a bare `/#` on the home page.
+
+`src/lib/router.ts` is the whole implementation and there is still no router library: `currentPath()`, `navigate()`, and `onRouteChange()` over ~40 lines. Three things about it are load-bearing:
+
+- **`pushState` fires no event.** Only the back/forward buttons emit `popstate`, so `navigate()` dispatches a custom `forma:routechange`; `onRouteChange` subscribes to both. Calling `history.pushState` directly instead of `navigate()` will move the URL without re-rendering.
+- **Deep links depend on the server.** Vite runs with `appType: "spa"` in development and `server.ts` has an `app.get('*')` fallback in production, so `/features` returns index.html. On a host without that fallback, every deep link 404s — which is the reason hash routing existed in the first place.
+- **Links are plain `<a href="/...">`.** One delegated click handler in `App.tsx` intercepts them, so anchors stay right-clickable and middle-clickable. Modified clicks, `target="_blank"` and downloads are left to the browser.
+
+`migrateLegacyHashUrl()` rewrites an old `#features` bookmark to `/features` via `replaceState` (no extra history entry), strips a bare trailing `#`, and drops unknown fragments. It runs at boot *and* on `hashchange`, because a legacy link followed from inside the app is a same-document change that never remounts. Note a bare `#` reports `location.hash === ''`, so that case has to be read off `href`.
+
+Any new page needs a branch in the route effect *and* a `setLastViewPath` update if it should be restorable after login.
 
 Two pieces of view state shape the workspace: `activeTab: 'spec' | 'ui'` switches the result pane between the markdown spec and the `ReportMockup`, and `mobilePane: 'chat' | 'canvas'` turns the two panes into tabs below `md` (ignored at `md`+, where both render). A finished result force-flips `mobilePane` to `canvas` so phone users see it. A third, `specView: 'spec' | 'repx'`, chooses between the markdown write-up and `RepxViewer` inside the spec tab — that tab was named "Specs & REPX" from the start but rendered only the markdown until the viewer was added.
 

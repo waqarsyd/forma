@@ -64,6 +64,7 @@ import FeaturesPage from './components/FeaturesPage';
 import DocsPage from './components/DocsPage';
 import ContactPage from './components/ContactPage';
 import Logo from './components/Logo';
+import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
@@ -1003,8 +1004,8 @@ export default function App() {
   const menuRef = useRef<HTMLDivElement>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [loginInitialMode, setLoginInitialMode] = useState<'signin' | 'signup'>('signin');
-  const [currentHash, setCurrentHash] = useState(window.location.hash);
-  const [lastViewHash, setLastViewHash] = useState('');
+  const [currentRoute, setCurrentRoute] = useState(currentPath());
+  const [lastViewPath, setLastViewPath] = useState('/');
 
   const [showWorkspaceProfile, setShowWorkspaceProfile] = useState(false);
   const workspaceProfileRef = useRef<HTMLDivElement>(null);
@@ -1019,42 +1020,91 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Synchronize location hash with showWorkspace and showLogin states to support browser back/forward navigation
+  /**
+   * Route -> view state, and back/forward support.
+   *
+   * Paths, not hashes: the address bar reads `/features` rather than
+   * `/#features`. `migrateLegacyHashUrl` runs first so an old bookmarked
+   * `/#features` is rewritten in place before anything renders.
+   */
   useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash;
-      setCurrentHash(hash);
-      if (hash === '#workspace') {
-        setShowWorkspace(true);
-        setShowLogin(false);
-        setLastViewHash('#workspace');
-      } else if (hash === '#login') {
-        setShowLogin(true);
-        setLoginInitialMode('signin');
-      } else if (hash === '#signup') {
-        setShowLogin(true);
-        setLoginInitialMode('signup');
-      } else if (hash === '#features') {
-        setShowWorkspace(false);
-        setShowLogin(false);
-        setLastViewHash('#features');
-      } else if (hash === '#docs') {
-        setShowWorkspace(false);
-        setShowLogin(false);
-        setLastViewHash('#docs');
-      } else if (hash === '#contact') {
-        setShowWorkspace(false);
-        setShowLogin(false);
-        setLastViewHash('#contact');
-      } else {
-        setShowWorkspace(false);
-        setShowLogin(false);
-        setLastViewHash('');
+    migrateLegacyHashUrl();
+
+    const applyRoute = () => {
+      const path = currentPath();
+      setCurrentRoute(path);
+      switch (path) {
+        case '/workspace':
+          setShowWorkspace(true);
+          setShowLogin(false);
+          setLastViewPath('/workspace');
+          break;
+        case '/login':
+          setShowLogin(true);
+          setLoginInitialMode('signin');
+          break;
+        case '/signup':
+          setShowLogin(true);
+          setLoginInitialMode('signup');
+          break;
+        case '/features':
+        case '/docs':
+        case '/contact':
+          setShowWorkspace(false);
+          setShowLogin(false);
+          setLastViewPath(path);
+          break;
+        default:
+          setShowWorkspace(false);
+          setShowLogin(false);
+          setLastViewPath('/');
+          break;
       }
     };
-    window.addEventListener('hashchange', handleHashChange);
-    handleHashChange();
-    return () => window.removeEventListener('hashchange', handleHashChange);
+
+    // A legacy `#hash` link followed from *within* the app is a same-document
+    // change: no reload, so the boot-time migration above never re-runs. This
+    // catches that case and rewrites it the same way.
+    const onHashChange = () => {
+      migrateLegacyHashUrl();
+      applyRoute();
+    };
+    window.addEventListener('hashchange', onHashChange);
+
+    const unsubscribe = onRouteChange(applyRoute);
+    applyRoute();
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+      unsubscribe();
+    };
+  }, []);
+
+  /**
+   * One delegated handler turns every in-app `<a href="/...">` into a client-side
+   * navigation, so the individual pages keep using plain anchors — which stay
+   * right-clickable, middle-clickable and readable in the status bar, unlike a
+   * button pretending to be a link.
+   *
+   * Modified clicks, new-tab targets and downloads are left to the browser.
+   */
+  useEffect(() => {
+    const onDocumentClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const anchor = (event.target as HTMLElement | null)?.closest?.('a');
+      if (!anchor) return;
+
+      const href = anchor.getAttribute('href');
+      if (!href || !href.startsWith('/')) return;
+      if (anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+
+      event.preventDefault();
+      navigate(href);
+    };
+
+    document.addEventListener('click', onDocumentClick);
+    return () => document.removeEventListener('click', onDocumentClick);
   }, []);
 
   useEffect(() => {
@@ -1759,16 +1809,16 @@ export default function App() {
    * One definition for both render trees. `showLogin` is reachable from the
    * landing/marketing return *and* from the workspace return, and each used to
    * carry its own copy of this element with a **different** `onClose`: the
-   * workspace copy hardcoded `#workspace` while the other restored
-   * `lastViewHash`. Restoring `lastViewHash` is correct in both cases ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it is
-   * already `'#workspace'` whenever the workspace opened the dialog, because the
-   * `#login` / `#signup` branches of the hash effect deliberately leave it
+   * workspace copy hardcoded `/workspace` while the other restored
+   * `lastViewPath`. Restoring `lastViewPath` is correct in both cases ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it is
+   * already `'/workspace'` whenever the workspace opened the dialog, because the
+   * `/login` and `/signup` branches of the route effect deliberately leave it
    * alone. Keep this single copy; two copies drifted once already.
    */
   const handleLoginClose = useCallback(() => {
-    window.location.hash = lastViewHash || '';
+    navigate(lastViewPath || '/');
     setShowLogin(false);
-  }, [lastViewHash]);
+  }, [lastViewPath]);
 
   /**
    * Only ever called by LoginPage after Firebase has actually authenticated. The
@@ -1781,7 +1831,7 @@ export default function App() {
    */
   const handleLoginSuccess = useCallback(() => {
     setShowLogin(false);
-    window.location.hash = 'workspace';
+    navigate('/workspace');
   }, []);
 
   const loginModal = showLogin ? (
@@ -2227,22 +2277,22 @@ export default function App() {
   }, [previews, messages]);
 
   if (!showWorkspace) {
-    const isFeatures = currentHash === '#features';
-    const isDocs = currentHash === '#docs';
-    const isContact = currentHash === '#contact';
+    const isFeatures = currentRoute === '/features';
+    const isDocs = currentRoute === '/docs';
+    const isContact = currentRoute === '/contact';
 
     return (
       <div className="h-full w-full">
         {isFeatures ? (
           <FeaturesPage
             onEnterWorkspace={() => {
-              window.location.hash = 'workspace';
+              navigate('/workspace');
             }}
             onSignIn={() => {
-              window.location.hash = 'login';
+              navigate('/login');
             }}
             onSignUp={() => {
-              window.location.hash = 'signup';
+              navigate('/signup');
             }}
             user={user}
             logOut={handleLogOut}
@@ -2252,13 +2302,13 @@ export default function App() {
         ) : isDocs ? (
           <DocsPage
             onEnterWorkspace={() => {
-              window.location.hash = 'workspace';
+              navigate('/workspace');
             }}
             onSignIn={() => {
-              window.location.hash = 'login';
+              navigate('/login');
             }}
             onSignUp={() => {
-              window.location.hash = 'signup';
+              navigate('/signup');
             }}
             user={user}
             logOut={handleLogOut}
@@ -2268,13 +2318,13 @@ export default function App() {
         ) : isContact ? (
           <ContactPage
             onEnterWorkspace={() => {
-              window.location.hash = 'workspace';
+              navigate('/workspace');
             }}
             onSignIn={() => {
-              window.location.hash = 'login';
+              navigate('/login');
             }}
             onSignUp={() => {
-              window.location.hash = 'signup';
+              navigate('/signup');
             }}
             user={user}
             logOut={handleLogOut}
@@ -2284,13 +2334,13 @@ export default function App() {
         ) : (
           <LandingPage
             onEnterWorkspace={() => {
-              window.location.hash = 'workspace';
+              navigate('/workspace');
             }}
             onSignIn={() => {
-              window.location.hash = 'login';
+              navigate('/login');
             }}
             onSignUp={() => {
-              window.location.hash = 'signup';
+              navigate('/signup');
             }}
             user={user}
             logOut={handleLogOut}
@@ -2311,7 +2361,7 @@ export default function App() {
           <div className="flex items-center gap-3 lg:gap-6 min-w-0">
             <div
               onClick={() => {
-                window.location.hash = '';
+                navigate('/');
               }}
               className="flex items-center gap-3 cursor-pointer hover:opacity-85 transition-opacity shrink-0"
               title="Back to Landing Page"
@@ -2420,7 +2470,7 @@ export default function App() {
             ) : (
               <button
                 onClick={() => {
-                  window.location.hash = 'login';
+                  navigate('/login');
                 }}
                 className="font-label-caps text-body-sm text-on-surface-variant px-2.5 sm:px-4 py-2 hover:bg-surface-container rounded-full transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap"
                 aria-label="Sign in"

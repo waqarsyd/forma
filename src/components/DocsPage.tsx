@@ -17,6 +17,7 @@ import { User } from 'firebase/auth';
 import UserAvatar from './UserAvatar';
 import MobileNav from './MobileNav';
 import Logo from './Logo';
+import { navigate } from '../lib/router';
 
 interface DocsPageProps {
   onEnterWorkspace: () => void;
@@ -275,7 +276,7 @@ export default function DocsPage({
         <nav className="flex justify-between items-center px-margin-desktop py-4 max-w-container-max mx-auto">
           <div className="flex items-center gap-4">
             <div 
-              onClick={() => { window.location.hash = ''; }}
+              onClick={() => { navigate('/'); }}
               className="flex items-center gap-4 cursor-pointer hover:opacity-85 transition-opacity"
             >
               <Logo size={32} />
@@ -287,10 +288,10 @@ export default function DocsPage({
           </div>
           
           <div className="hidden md:flex items-center gap-8">
-            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="#">Product</a>
-            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="#features">Features</a>
-            <a className="text-secondary font-bold border-b-2 border-secondary pb-1 font-title-md text-body-sm transition-colors duration-200" href="#docs">Docs</a>
-            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="#contact">Contact</a>
+            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="/">Product</a>
+            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="/features">Features</a>
+            <a className="text-secondary font-bold border-b-2 border-secondary pb-1 font-title-md text-body-sm transition-colors duration-200" href="/docs">Docs</a>
+            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="/contact">Contact</a>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
@@ -676,17 +677,17 @@ export default function DocsPage({
 
           {/* Middle side: Navigation links */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 select-none text-[12px]">
-            <a href="#" className="hover:text-primary transition-all duration-200 hover:scale-105">Product</a>
+            <a href="/" className="hover:text-primary transition-all duration-200 hover:scale-105">Product</a>
             <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#features" className="hover:text-primary transition-all duration-200 hover:scale-105">Features</a>
+            <a href="/features" className="hover:text-primary transition-all duration-200 hover:scale-105">Features</a>
             <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#docs" className="hover:text-primary transition-all duration-200 hover:scale-105">Docs</a>
+            <a href="/docs" className="hover:text-primary transition-all duration-200 hover:scale-105">Docs</a>
             <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#contact" className="hover:text-primary transition-all duration-200 hover:scale-105">Contact</a>
+            <a href="/contact" className="hover:text-primary transition-all duration-200 hover:scale-105">Contact</a>
             <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Privacy</a>
+            <a href="/" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Privacy</a>
             <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="#" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Terms</a>
+            <a href="/" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Terms</a>
           </div>
 
           {/* Right side: Copyright */}
