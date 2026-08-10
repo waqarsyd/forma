@@ -56,8 +56,8 @@ That's enough to generate reports. Sign-in and cloud sync are optional — signe
 | `npm start` | Serve the production build (run `build` first, from the repo root) |
 | `npm run preview` | Vite preview against `dist/` |
 | `npm run lint` | `tsc --noEmit` |
-| `npm test` | 38 unit tests (Vitest + jsdom) |
-| `npm run test:rules` | 29 Firestore security-rule tests — **needs Java** |
+| `npm test` | Unit tests (Vitest + jsdom) |
+| `npm run test:rules` | Firestore security-rule tests — **needs Java** |
 | `npm run clean` | Remove `dist/` |
 
 ---
