@@ -900,7 +900,11 @@ export default function FeaturesPage({
                   </div>
                   <span className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant font-bold">04 — Modular Section Banding</span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                {/* lg, not md: the bento container above is already md:grid-cols-2,
+                    so splitting here at md too halves an already-halved card and
+                    leaves a 124px column - narrower than the word "segmentation".
+                    At lg the container goes 12-col and the card is wide again. */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
                   <div>
                     <h3 className="text-xl font-bold text-on-surface mb-3">Intelligent layout segmentation</h3>
                     <p className="text-sm text-on-surface-variant leading-relaxed">Automatically divides layouts into the five canonical DevExpress bands, keeping all controls cleanly aligned with zero overlap.</p>
@@ -974,7 +978,8 @@ export default function FeaturesPage({
                       </div>
                       <span className="text-[10px] font-mono uppercase tracking-widest text-white/60 font-bold">06 — Live Exporter</span>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+                    {/* lg for the same reason as BENTO 4 above. */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-end">
                       <div>
                         <h3 className="text-2xl font-bold mb-3 leading-tight">Export anything.<br />Instantly.</h3>
                         <p className="text-white/80 text-sm leading-relaxed">Download REPX files, JSON coordinate maps, or markdown spec sheets in one click. Built for engineers and product managers alike.</p>
