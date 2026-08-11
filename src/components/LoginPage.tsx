@@ -108,7 +108,7 @@ const LABEL =
   'font-code-sm text-[10px] font-medium leading-[1.62] tracking-[0.12em] uppercase text-[color:var(--ink-faint)]';
 
 const fieldClass = (bad: boolean) =>
-  `u-transition h-[46px] w-full rounded-[10px] border px-3.5 font-body-lg text-[14.5px] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:outline-none focus:ring-4 disabled:opacity-60 ${
+  `u-transition h-[46px] w-full rounded-[10px] border px-3.5 font-body-lg text-[14.5px] leading-[normal] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:outline-none focus:ring-4 disabled:opacity-60 ${
     bad
       ? 'border-error/50 bg-error/[0.07] focus:ring-error/15'
       : 'border-outline-variant bg-surface-container-low focus:border-secondary focus:bg-surface-container-lowest dark:focus:bg-card focus:ring-[color:var(--accent-wash)]'
@@ -427,7 +427,7 @@ export default function LoginPage({
                   aria-selected={mode === value}
                   disabled={loading}
                   onClick={() => switchMode(value)}
-                  className={`u-transition cursor-pointer rounded-full px-3 py-2.5 font-body-lg text-[13.5px] font-semibold disabled:pointer-events-none disabled:opacity-60 ${
+                  className={`u-transition cursor-pointer rounded-full px-3 py-[9px] font-body-lg text-[13.5px] font-semibold leading-[normal] disabled:pointer-events-none disabled:opacity-60 ${
                     mode === value
                       ? 'bg-surface-container-lowest dark:bg-card text-on-surface shadow-[var(--shadow-sm)]'
                       : 'text-on-surface-variant hover:text-on-surface'
@@ -509,9 +509,14 @@ export default function LoginPage({
               )}
 
               <div className="grid gap-[7px]">
-                <label htmlFor="auth-email" className={LABEL}>
-                  Email address
-                </label>
+                {/* The label sits in its own flex row, as every label in the
+                    artifact does — the password row needs it for the Forgot
+                    link, and the others match it. */}
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor="auth-email" className={LABEL}>
+                    Email address
+                  </label>
+                </div>
                 <input
                   id="auth-email"
                   name="email"
@@ -546,7 +551,7 @@ export default function LoginPage({
                       type="button"
                       onClick={handlePasswordReset}
                       disabled={loading}
-                      className="u-focus-ring u-transition-fast cursor-pointer rounded px-1 py-0.5 font-code-sm text-[10.5px] tracking-[0.04em] text-secondary hover:underline disabled:pointer-events-none disabled:opacity-50"
+                      className="u-focus-ring u-transition-fast cursor-pointer rounded-md px-1 py-0.5 font-code-sm text-[10.5px] leading-[normal] tracking-[0.04em] text-secondary hover:underline disabled:pointer-events-none disabled:opacity-50"
                     >
                       Forgot password?
                     </button>
@@ -621,24 +626,23 @@ export default function LoginPage({
                 type="submit"
                 disabled={loading}
                 aria-busy={loading}
-                className="u-transition u-press u-focus-ring inline-flex h-[46px] w-full cursor-pointer items-center justify-center gap-2.5 rounded-full bg-secondary-container font-body-lg text-[14.5px] font-semibold text-white shadow-[0_1px_2px_rgba(8,24,43,0.1)] hover:bg-[color:var(--accent-deep)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="u-transition u-press u-focus-ring inline-flex h-[46px] w-full cursor-pointer items-center justify-center gap-2.5 rounded-full bg-secondary-container font-body-lg text-[14.5px] font-semibold leading-[normal] tracking-[-0.005em] text-white shadow-[0_1px_2px_rgba(8,24,43,0.1)] hover:bg-[color:var(--accent-deep)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? (
                   <>
                     <span className="h-[17px] w-[17px] animate-spin rounded-full border-2 border-white border-t-transparent" />
                     <span className="sr-only">Submitting</span>
                   </>
-                ) : signup ? (
-                  'Create account'
                 ) : (
-                  'Sign in'
+                  // Wrapped, matching the artifact's <span id="sendLabel">.
+                  <span>{signup ? 'Create account' : 'Sign in'}</span>
                 )}
               </button>
             </form>
 
             <div className="my-[22px] flex items-center gap-3.5">
               <span className="h-px flex-1 bg-outline-variant" />
-              <span className="whitespace-nowrap font-code-sm text-[9.5px] font-medium tracking-[0.14em] uppercase text-[color:var(--ink-faint)]">
+              <span className="whitespace-nowrap font-code-sm text-[9.5px] tracking-[0.14em] uppercase text-[color:var(--ink-faint)]">
                 {signup ? 'or sign up with' : 'or continue with'}
               </span>
               <span className="h-px flex-1 bg-outline-variant" />
@@ -648,7 +652,7 @@ export default function LoginPage({
               type="button"
               onClick={handleGoogleSignIn}
               disabled={loading}
-              className="u-transition u-press u-focus-ring inline-flex h-[46px] w-full cursor-pointer items-center justify-center gap-2.5 rounded-full border border-outline bg-surface-container-lowest dark:bg-card font-body-lg text-[14.5px] font-semibold text-on-surface hover:border-[color:var(--ink-faint)] hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-60"
+              className="u-transition u-press u-focus-ring inline-flex h-[46px] w-full cursor-pointer items-center justify-center gap-2.5 rounded-full border border-outline bg-surface-container-lowest dark:bg-card font-body-lg text-[14.5px] font-semibold leading-[normal] tracking-[-0.005em] text-on-surface hover:border-[color:var(--ink-faint)] hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-60"
             >
               <svg className="h-[17px] w-[17px] shrink-0" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -656,7 +660,7 @@ export default function LoginPage({
                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
               </svg>
-              {signup ? 'Sign up with Google' : 'Sign in with Google'}
+              <span>{signup ? 'Sign up with Google' : 'Sign in with Google'}</span>
             </button>
           </div>
 
@@ -673,7 +677,7 @@ export default function LoginPage({
               <button
                 type="button"
                 onClick={onClose}
-                className="u-focus-ring cursor-pointer rounded font-semibold text-secondary hover:underline"
+                className="u-focus-ring cursor-pointer font-semibold text-secondary hover:underline"
               >
                 Go straight to the workspace
               </button>

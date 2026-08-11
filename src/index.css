@@ -664,6 +664,17 @@ body {
     --accent-wash: rgba(254, 107, 0, .09);  /* tinted fills */
     --accent-line: rgba(254, 107, 0, .32);  /* tinted rules */
 
+    /* Success / failure panels on the docs, contact and auth surfaces.
+       Literal rgba rather than `bg-success/10`: Tailwind's opacity modifier
+       mixes in oklab and lands on a visibly different colour from the flat
+       alpha these were designed with. */
+    --ok-wash:  rgba(15, 157, 107, .10);
+    --ok-line:  rgba(15, 157, 107, .34);
+    --ok-ink:   #0b7a53;
+    --bad-wash: rgba(186, 26, 26, .09);
+    --bad-line: rgba(186, 26, 26, .34);
+    --bad-ink:  #ba1a1a;
+
     /* Theme-invariant, like --paper / --on-paper: the rule around a drawn
        sheet must not flip with the theme any more than the sheet does. */
     --paper-rule: #d3d9e4;
@@ -708,6 +719,13 @@ body {
     --accent-deep: #ff8f43;
     --accent-wash: rgba(255, 125, 33, .12);
     --accent-line: rgba(255, 125, 33, .38);
+
+    --ok-wash:  rgba(52, 211, 153, .12);
+    --ok-line:  rgba(52, 211, 153, .34);
+    --ok-ink:   #34d399;
+    --bad-wash: rgba(255, 109, 109, .12);
+    --bad-line: rgba(255, 109, 109, .34);
+    --bad-ink:  #ff8a8a;
 
     --code-bg: #040910;
     --code-rule: #121c2b;

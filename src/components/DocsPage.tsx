@@ -112,7 +112,7 @@ const FAQS: Array<{ q: string; a: ReactNode }> = [
     ),
   },
   {
-    q: 'Is my design or my key sent to Forma’s servers?',
+    q: "Is my design or my key sent to Forma's servers?",
     a: (
       <p>
         No. Generation runs entirely in your browser and talks to Google directly — there is no generation
@@ -135,7 +135,9 @@ const PROSE = 'font-body-lg text-[15.5px] leading-[1.68] text-on-surface-variant
 function Def({ t, children }: { t: ReactNode; children: ReactNode }) {
   return (
     <div className="grid gap-y-1 border-b border-outline-variant py-3.5 sm:grid-cols-[190px_minmax(0,1fr)] sm:items-baseline sm:gap-x-4">
-      <dt className="font-code-sm text-[12.5px] font-medium leading-[1.5] text-on-surface">{t}</dt>
+      {/* No `leading-`: the artifact's `.defs dt` sets none, so it inherits
+          the body's 1.62 and renders at 20.3px rather than 18.8px. */}
+      <dt className="font-code-sm text-[12.5px] font-medium text-on-surface">{t}</dt>
       <dd className="m-0 font-body-lg text-[13.5px] leading-[1.58] text-on-surface-variant">{children}</dd>
     </div>
   );
@@ -147,19 +149,55 @@ function Note({ label, tone = 'accent', children }: { label: string; tone?: 'acc
     <div
       className={`mt-5 rounded-[10px] border px-[17px] py-[15px] font-body-lg text-[13.5px] leading-[1.62] text-on-surface-variant ${
         safe
-          ? 'border-success/35 bg-success/10'
+          ? 'border-[color:var(--ok-line)] bg-[color:var(--ok-wash)]'
           : 'border-[color:var(--accent-line)] bg-[color:var(--accent-wash)]'
       }`}
     >
       <span
         className={`mb-1.5 block font-code-sm text-[9.5px] font-semibold leading-[1.62] tracking-[0.14em] uppercase ${
-          safe ? 'text-success' : 'text-secondary'
+          safe ? 'text-[color:var(--ok-ink)]' : 'text-secondary'
         }`}
       >
         {label}
       </span>
       {children}
     </div>
+  );
+}
+
+/**
+ * The .repx sample, syntax-coloured with the same four token colours the
+ * artifact uses. Rendered as spans rather than a plain string because the
+ * artifact colours it — a monochrome block is the single most visible
+ * difference between the two.
+ *
+ * Written as tokens rather than parsed: the input is a fixed literal, so a
+ * tokeniser would be machinery with nothing to earn it.
+ */
+const T = { p: '#5d7290', t: '#7cc5de', a: '#a9b8cc', s: '#ff9d5c' };
+const P = ({ c, children }: { c: string; children: ReactNode }) => (
+  <span style={{ color: c }}>{children}</span>
+);
+
+function XmlSample() {
+  return (
+    <>
+      <P c={T.p}>&lt;?</P><P c={T.a}>xml version=</P><P c={T.s}>"1.0"</P> <P c={T.a}>encoding=</P><P c={T.s}>"utf-8"</P><P c={T.p}>?&gt;</P>{'\n'}
+      <P c={T.p}>&lt;</P><P c={T.t}>XtraReportsLayoutSerializer</P> <P c={T.a}>SerializerVersion=</P><P c={T.s}>"23.2.3.0"</P>{'\n'}
+      {'  '}<P c={T.a}>ControlType=</P><P c={T.s}>"DevExpress.XtraReports.UI.XtraReport"</P>{'\n'}
+      {'  '}<P c={T.a}>ReportUnit=</P><P c={T.s}>"HundredthsOfAnInch"</P>{'\n'}
+      {'  '}<P c={T.a}>PageWidth=</P><P c={T.s}>"850"</P> <P c={T.a}>PageHeight=</P><P c={T.s}>"1100"</P><P c={T.p}>&gt;</P>{'\n'}
+      {'  '}<P c={T.p}>&lt;</P><P c={T.t}>Bands</P><P c={T.p}>&gt;</P>{'\n'}
+      {'    '}<P c={T.p}>&lt;</P><P c={T.t}>Item1</P> <P c={T.a}>ControlType=</P><P c={T.s}>"TopMarginBand"</P> <P c={T.a}>HeightF=</P><P c={T.s}>"100"</P> <P c={T.p}>/&gt;</P>{'\n'}
+      {'    '}<P c={T.p}>&lt;</P><P c={T.t}>Item2</P> <P c={T.a}>ControlType=</P><P c={T.s}>"DetailBand"</P> <P c={T.a}>HeightF=</P><P c={T.s}>"640"</P><P c={T.p}>&gt;</P>{'\n'}
+      {'      '}<P c={T.p}>&lt;</P><P c={T.t}>Controls</P><P c={T.p}>&gt;</P>{'\n'}
+      {'        '}<P c={T.p}>&lt;</P><P c={T.t}>Item1</P> <P c={T.a}>ControlType=</P><P c={T.s}>"XRLabel"</P> <P c={T.a}>Text=</P><P c={T.s}>"INVOICE"</P>{'\n'}
+      {'          '}<P c={T.a}>LocationFloat=</P><P c={T.s}>"40,45"</P> <P c={T.a}>SizeF=</P><P c={T.s}>"400,30"</P> <P c={T.p}>/&gt;</P>{'\n'}
+      {'      '}<P c={T.p}>&lt;/</P><P c={T.t}>Controls</P><P c={T.p}>&gt;</P>{'\n'}
+      {'    '}<P c={T.p}>&lt;/</P><P c={T.t}>Item2</P><P c={T.p}>&gt;</P>{'\n'}
+      {'  '}<P c={T.p}>&lt;/</P><P c={T.t}>Bands</P><P c={T.p}>&gt;</P>{'\n'}
+      <P c={T.p}>&lt;/</P><P c={T.t}>XtraReportsLayoutSerializer</P><P c={T.p}>&gt;</P>
+    </>
   );
 }
 
@@ -204,7 +242,10 @@ export default function DocsPage({
   setIsDarkMode,
 }: DocsPageProps) {
   const [query, setQuery] = useState('');
-  const [active, setActive] = useState('start');
+  // Empty rather than 'start': the artifact highlights nothing until its
+  // observer fires, so pre-selecting the first entry was a visible difference
+  // on load.
+  const [active, setActive] = useState('');
   const [helpful, setHelpful] = useState<boolean | null>(null);
   const [sent, setSent] = useState(false);
   const [comment, setComment] = useState('');
@@ -288,7 +329,11 @@ export default function DocsPage({
           </div>
         </section>
 
-        <div className="max-w-container-max mx-auto grid items-start gap-10 px-margin-desktop pt-11 pb-24 lg:grid-cols-[244px_minmax(0,1fr)] lg:gap-14">
+        {/* No horizontal padding, matching the artifact: its `.doc-body`
+            declared `padding: 44px 0 96px`, and that shorthand overrode the
+            `0 32px` it inherited from `.wrap`. The article is therefore 880px
+            here rather than the 816px a padded container would give. */}
+        <div className="max-w-container-max mx-auto grid items-start gap-10 pt-11 pb-24 lg:grid-cols-[244px_minmax(0,1fr)] lg:gap-14">
           {/* ------------------------------------------------- sidebar */}
           <aside className="grid gap-3.5 lg:sticky lg:top-[92px]">
             <div className="relative">
@@ -301,7 +346,7 @@ export default function DocsPage({
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search the docs"
                 aria-label="Search documentation"
-                className="u-transition w-full rounded-full border border-outline-variant bg-surface-container-lowest dark:bg-card py-[11px] pl-9 pr-4 font-body-lg text-[13.5px] leading-[1.5] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:border-secondary focus:outline-none focus:ring-4 focus:ring-[color:var(--accent-wash)]"
+                className="u-transition w-full rounded-full border border-outline-variant bg-surface-container-lowest dark:bg-card py-[11px] pl-9 pr-3.5 font-body-lg text-[13.5px] leading-[1.5] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:border-secondary focus:outline-none focus:ring-4 focus:ring-[color:var(--accent-wash)]"
               />
               {query && (
                 <button
@@ -345,7 +390,7 @@ export default function DocsPage({
               </p>
               <button
                 onClick={onEnterWorkspace}
-                className="u-transition u-press u-focus-ring group inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-secondary-container px-4 py-2.5 font-body-lg text-[14px] font-semibold text-white hover:bg-[color:var(--accent-deep)]"
+                className="u-transition u-press u-focus-ring group inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-secondary-container px-[18px] py-2.5 font-body-lg text-[14px] font-semibold tracking-[-0.005em] text-white hover:bg-[color:var(--accent-deep)]"
               >
                 Open the workspace
                 <IconArrowRight size={14} className="u-transition group-hover:translate-x-[3px]" />
@@ -370,7 +415,9 @@ export default function DocsPage({
                 ].map(([n, h, d]) => (
                   <div key={n} className="rounded-[10px] border border-outline-variant bg-surface-container-low px-[18px] py-4">
                     <div className="font-code-sm text-[10px] font-semibold leading-[1.62] tracking-[0.12em] text-secondary">{n}</div>
-                    <h3 className="mt-1.5 font-display-lg text-[14.5px] font-bold leading-[1.3] tracking-[-0.014em] text-on-surface">{h}</h3>
+                    {/* No `leading-`: the artifact's `.steps h4` sets none, so
+                        it inherits the body's 1.62 and renders at 23.5px. */}
+                    <h3 className="mt-1.5 font-display-lg text-[14.5px] font-bold tracking-[-0.014em] text-on-surface">{h}</h3>
                     <p className="mt-1.5 font-body-lg text-[13px] leading-[1.55] text-on-surface-variant">{d}</p>
                   </div>
                 ))}
@@ -555,21 +602,7 @@ y_top = pageHeight − (baseline + height)`}
                   <span className={`${KICKER} text-secondary`}>parse-checked before download</span>
                 </div>
                 <pre className="m-0 overflow-x-auto bg-[color:var(--code-bg)] p-4 font-code-sm text-[11.5px] leading-[1.75] text-[color:var(--code-ink)]">
-{`<?xml version="1.0" encoding="utf-8"?>
-<XtraReportsLayoutSerializer SerializerVersion="23.2.3.0"
-  ControlType="DevExpress.XtraReports.UI.XtraReport"
-  ReportUnit="HundredthsOfAnInch"
-  PageWidth="850" PageHeight="1100">
-  <Bands>
-    <Item1 ControlType="TopMarginBand" HeightF="100" />
-    <Item2 ControlType="DetailBand" HeightF="640">
-      <Controls>
-        <Item1 ControlType="XRLabel" Text="INVOICE"
-          LocationFloat="40,45" SizeF="400,30" />
-      </Controls>
-    </Item2>
-  </Bands>
-</XtraReportsLayoutSerializer>`}
+                  <XmlSample />
                 </pre>
               </div>
               <p className={`mt-4 ${PROSE}`}>
@@ -678,7 +711,12 @@ y_top = pageHeight − (baseline + height)`}
                         className="u-transition shrink-0 text-[color:var(--ink-faint)] group-open:rotate-180"
                       />
                     </summary>
-                    <div className="px-[18px] pb-4 font-body-lg text-[14px] leading-[1.65] text-on-surface-variant">
+                    {/* The wrapper is 14px, but its paragraphs are 15.5px/1.68.
+                        That is not an inconsistency — in the artifact the <p>
+                        inside .ans is caught by `article p`, which outranks the
+                        wrapper's own font-size, so the answers render larger
+                        than the container that holds them. */}
+                    <div className="px-[18px] pb-4 font-body-lg text-[14px] leading-[1.65] text-on-surface-variant [&>p]:text-[15.5px] [&>p]:leading-[1.68]">
                       {f.a}
                     </div>
                   </details>
@@ -736,7 +774,10 @@ y_top = pageHeight − (baseline + height)`}
                             setHelpful(yes);
                             if (yes) setSent(true);
                           }}
-                          className={`u-transition inline-flex flex-1 cursor-pointer items-center justify-center gap-2.5 rounded-full border px-4 py-3 font-body-lg text-[14px] font-semibold ${
+                          // leading-[normal]: the artifact has no Tailwind
+                          // preflight, so its buttons keep the UA's
+                          // line-height:normal rather than inheriting 1.62.
+                          className={`u-transition inline-flex flex-1 cursor-pointer items-center justify-center gap-2.5 rounded-full border px-4 py-3 font-body-lg text-[14px] font-semibold leading-[normal] ${
                             helpful === yes
                               ? 'border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] text-secondary'
                               : 'border-outline-variant bg-surface-container-low text-on-surface-variant hover:border-[color:var(--ink-faint)] hover:text-on-surface'

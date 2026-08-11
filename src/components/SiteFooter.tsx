@@ -55,15 +55,24 @@ function Column({ heading, links }: { heading: string; links: Link[] }) {
   );
 }
 
-export default function SiteFooter({ onThisPage }: { onThisPage?: Link[] }) {
+/**
+ * `maker` is the second optional column, added for the contact page, which
+ * carries the maintainer's profile links. It sits after Product, and takes the
+ * 1.6fr brand ratio rather than 1.7fr — both values come from the approved
+ * designs for those two pages. A page that passes neither optional column
+ * still gets exactly the three-column footer it had before.
+ */
+export default function SiteFooter({ onThisPage, maker }: { onThisPage?: Link[]; maker?: Link[] }) {
+  const columns = maker
+    ? 'lg:grid-cols-[1.6fr_1fr_1fr_1fr]'
+    : onThisPage
+      ? 'lg:grid-cols-[1.7fr_1fr_1fr_1fr]'
+      : 'lg:grid-cols-[1.7fr_1fr_1fr]';
+
   return (
     <footer className="w-full bg-surface-container-lowest dark:bg-card border-t border-outline-variant pt-12 mt-auto">
       <div className="max-w-container-max mx-auto px-margin-desktop">
-        <div
-          className={`grid grid-cols-2 gap-10 pb-[42px] ${
-            onThisPage ? 'lg:grid-cols-[1.7fr_1fr_1fr_1fr]' : 'lg:grid-cols-[1.7fr_1fr_1fr]'
-          }`}
-        >
+        <div className={`grid grid-cols-2 gap-10 pb-[42px] ${columns}`}>
           <div>
             <a href="/" className="mb-3.5 flex items-center gap-[11px] select-none">
               <Logo size={30} />
@@ -81,6 +90,7 @@ export default function SiteFooter({ onThisPage }: { onThisPage?: Link[] }) {
           </div>
 
           <Column heading="Product" links={PRODUCT} />
+          {maker && <Column heading="The maker" links={maker} />}
           {onThisPage && <Column heading="On this page" links={onThisPage} />}
           <Column heading="Elsewhere" links={ELSEWHERE} />
         </div>

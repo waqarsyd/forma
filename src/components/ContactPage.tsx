@@ -234,7 +234,8 @@ export default function ContactPage({
         setIsDarkMode={setIsDarkMode}
       />
 
-      <main className="flex-grow sheet-grid py-[76px]">
+      {/* 76px top / 104px bottom — the artifact's `padding: 76px 0 104px`. */}
+      <main className="flex-grow sheet-grid pt-[76px] pb-[104px]">
         <div className="max-w-container-max mx-auto px-margin-desktop">
           <div className="flex items-center gap-3 font-code-sm text-[11px] font-medium leading-[1.62] tracking-[0.15em] uppercase text-[color:var(--ink-faint)]">
             <b className="font-medium text-secondary">x 000 · y 0000</b>
@@ -242,7 +243,7 @@ export default function ContactPage({
             <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
           </div>
 
-          <div className="mt-7 grid items-start gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:gap-16">
+          <div className="mt-[26px] grid items-start gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:gap-16">
             {/* ------------------------------------------------ routing */}
             <div>
               <h1 className="font-display-lg text-[clamp(34px,5.2vw,52px)] font-extrabold leading-[1.04] tracking-[-0.038em] text-on-surface text-balance">
@@ -263,7 +264,9 @@ export default function ContactPage({
                     key={t}
                     className="grid gap-y-1.5 border-b border-outline-variant py-[18px] sm:grid-cols-[172px_minmax(0,1fr)] sm:items-baseline sm:gap-x-5"
                   >
-                    <div className="font-display-lg text-[15px] font-bold leading-[1.3] tracking-[-0.016em] text-on-surface">
+                    {/* No `leading-`: the artifact's `.routes .t` sets none and
+                        inherits the body's 1.62, rendering at 24.3px. */}
+                    <div className="font-display-lg text-[15px] font-bold tracking-[-0.016em] text-on-surface">
                       {t}
                     </div>
                     <div className="font-body-lg text-[14px] leading-[1.58] text-on-surface-variant">{d}</div>
@@ -409,7 +412,7 @@ export default function ContactPage({
                       type="submit"
                       disabled={state === 'sending'}
                       aria-busy={state === 'sending'}
-                      className="u-transition u-press u-focus-ring group inline-flex cursor-pointer items-center justify-center gap-[9px] rounded-full bg-secondary-container px-6 py-[13px] font-body-lg text-[14.5px] font-semibold text-white shadow-[0_1px_2px_rgba(8,24,43,0.1)] hover:bg-[color:var(--accent-deep)] disabled:cursor-not-allowed disabled:opacity-60"
+                      className="u-transition u-press u-focus-ring group inline-flex cursor-pointer items-center justify-center gap-[9px] rounded-full bg-secondary-container px-6 py-[13px] font-body-lg text-[14.5px] font-semibold tracking-[-0.005em] text-white shadow-[0_1px_2px_rgba(8,24,43,0.1)] hover:bg-[color:var(--accent-deep)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {state === 'sending' ? (
                         <>
@@ -418,7 +421,7 @@ export default function ContactPage({
                         </>
                       ) : (
                         <>
-                          Send message
+                          <span>Send message</span>
                           <IconArrowRight size={15} className="u-transition group-hover:translate-x-[3px]" />
                         </>
                       )}
@@ -433,7 +436,7 @@ export default function ContactPage({
               </div>
 
               {/* --------------------------------------- the address */}
-              <div className="mt-7 rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[22px] py-5 shadow-[var(--shadow-sm)]">
+              <div className="mt-[30px] rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[22px] py-5 shadow-[var(--shadow-sm)]">
                 <div className="flex items-start gap-3.5">
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] border border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] text-secondary">
                     <IconMail size={17} />
@@ -462,7 +465,10 @@ export default function ContactPage({
                       <button
                         type="button"
                         onClick={() => setRevealed(mailAddress())}
-                        className="u-transition u-press mt-1.5 inline-flex cursor-pointer items-center gap-2 rounded-full border border-outline-variant bg-surface-container-low px-3.5 py-1.5 font-body-lg text-[13px] font-semibold text-on-surface hover:border-secondary hover:bg-[color:var(--accent-wash)] hover:text-secondary"
+                        // py-[7px] and leading-[normal] to match the artifact:
+                        // it has no Tailwind preflight, so its buttons keep the
+                        // UA line-height instead of inheriting 1.62.
+                        className="u-transition u-press mt-1.5 inline-flex cursor-pointer items-center gap-2 rounded-full border border-outline-variant bg-surface-container-low px-3.5 py-[7px] font-body-lg text-[13px] font-semibold leading-[normal] text-on-surface hover:border-secondary hover:bg-[color:var(--accent-wash)] hover:text-secondary"
                       >
                         <IconMail size={14} />
                         Reveal the address
@@ -486,7 +492,7 @@ export default function ContactPage({
               <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
             </div>
 
-            <div className="mt-7 grid items-start gap-9 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)] lg:gap-14">
+            <div className="mt-[26px] grid items-start gap-9 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)] lg:gap-14">
               <div>
                 <div className="flex items-center gap-4">
                   <Logo size={56} className="rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card p-2" alt="" />
@@ -567,7 +573,17 @@ export default function ContactPage({
         </div>
       </main>
 
-      <SiteFooter />
+      {/* The fourth column the artifact's contact footer carries. Still
+          href="#" and greppable — see PROFILES above. */}
+      <SiteFooter
+        maker={[
+          ['GitHub', '#'],
+          ['LinkedIn', '#'],
+          ['Portfolio', '#'],
+          ['Discord', '#'],
+          ['Send a message', '#form'],
+        ]}
+      />
     </div>
   );
 }
