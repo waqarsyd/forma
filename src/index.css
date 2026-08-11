@@ -165,6 +165,7 @@
     --duration-fast: 150ms;
     --duration-base: 220ms;
     --duration-slow: 300ms;
+    --duration-snap: 460ms; /* overshoot needs longer to read; see motion.ts */
 
     --background: #FCFCFC;
     --foreground: #0F172A;
@@ -235,6 +236,10 @@
 
     --paper: #ffffff;
     --on-paper: #0b1c30;
+
+    /* Blueprint grid behind the landing page. Unlike --paper these DO flip. */
+    --sheet-line: rgba(10, 40, 78, 0.055);
+    --sheet-line-fine: rgba(10, 40, 78, 0.028);
   }
 
   .dark {
@@ -311,6 +316,9 @@
     /* Intentionally identical to light — see the note in @theme. */
     --paper: #ffffff;
     --on-paper: #0b1c30;
+
+    --sheet-line: rgba(126, 176, 235, 0.055);
+    --sheet-line-fine: rgba(126, 176, 235, 0.026);
   }
 }
 
@@ -604,4 +612,209 @@ body {
       var(--color-primary-fixed) 0%,
       var(--color-surface) 70%
     );
+}
+
+/* ====================================================================
+   LANDING PAGE PALETTE
+
+   The home page is set as a drafting sheet and carries its own ground,
+   ink and rules — cooler and blue-biased where the app's neutrals are
+   grey. These override the semantic tokens for that subtree only, so
+   every `bg-surface` / `text-on-surface-variant` / `border-outline-
+   variant` in the page resolves to the sheet's value and nothing
+   outside `.landing` changes.
+
+   The one that matters most: --secondary is #a04100 app-wide, a dark
+   brown-orange. The sheet's accent is the brand orange #fe6b00, so it
+   is remapped here rather than every call site reaching for
+   secondary-container instead.
+   ==================================================================== */
+/* These override the `--color-*` theme variables, not the `--surface` /
+   `--on-surface` raw values underneath them. A custom property is computed
+   where it is DECLARED: `--color-surface: var(--surface)` resolves against
+   :root and descendants inherit the finished colour, so redefining
+   `--surface` further down has no effect. Override the end of the chain. */
+.landing {
+    /* The source design sets this on <body>; it changes kerning, so without it
+       every glyph lands a fraction off even where the line breaks agree. */
+    text-rendering: optimizeLegibility;
+
+    /* The source's `body { overflow-x: hidden }`, which contains the two
+       oversized decorative glows on narrow screens. `clip` rather than
+       `hidden`: `hidden` would make this a scroll container and the sticky
+       header would stop sticking. */
+    overflow-x: clip;
+
+    --color-surface: #eef1f7;               /* the sheet */
+    --color-surface-container-lowest: #ffffff;  /* panels */
+    --color-surface-container-low: #f8fafd;     /* panel headers, bars */
+    --color-surface-container-high: #e5eaf3;    /* tracks, skeletons */
+    --color-card: #ffffff;
+    --color-on-surface: #08182b;
+    --color-on-surface-variant: #4a5a70;
+    --color-outline-variant: #d7dee9;       /* --rule: every hairline */
+    --color-outline: #aeb9ca;               /* --rule-strong: outlined buttons */
+    --color-secondary: #fe6b00;
+    --color-secondary-container: #fe6b00;
+    --color-success: #0f9d6b;               /* --ok: deliberately not the accent */
+
+    --ground-2: #e5eaf3;                    /* the alternating section bands */
+    --ink-faint: #8492a6;                   /* eyebrows, captions, the sign-off */
+    --accent-deep: #d95a00;                 /* the filled button's hover */
+    --accent-wash: rgba(254, 107, 0, .09);  /* tinted fills */
+    --accent-line: rgba(254, 107, 0, .32);  /* tinted rules */
+
+    /* Theme-invariant, like --paper / --on-paper: the rule around a drawn
+       sheet must not flip with the theme any more than the sheet does. */
+    --paper-rule: #d3d9e4;
+
+    /* The XML pane. Dark in both themes, but not the SAME dark — it sinks a
+       step further in dark mode so it still reads as inset. */
+    --code-bg: #071120;
+    --code-rule: #16253a;
+    --code-ink: #cadcf2;
+
+    /* The sheet's own elevation. Tailwind's shadow scale is a different
+       ramp — matching by eye put every panel a step too heavy — so the
+       source values are carried across and used as shadow-[var(--…)]. */
+    --shadow-sm: 0 1px 1px rgba(8, 24, 43, .04), 0 4px 12px rgba(8, 24, 43, .05);
+    --shadow-md: 0 1px 2px rgba(8, 24, 43, .06), 0 12px 28px -8px rgba(8, 24, 43, .12);
+    --shadow-lg: 0 2px 4px rgba(8, 24, 43, .07), 0 30px 64px -16px rgba(8, 24, 43, .22);
+    --inset-hi: inset 0 1px 0 rgba(255, 255, 255, .9);
+
+    /* The sheet's own measure. Spacing utilities read the variable at the
+       element, so unlike the colours above these scope directly — the header
+       and footer narrow with the page instead of running wider than it. */
+    --spacing-container-max: 1180px;
+    --spacing-margin-desktop: 32px;
+}
+
+.dark .landing {
+    --color-surface: #05090f;
+    --color-surface-container-lowest: #0c121c;
+    --color-surface-container-low: #101827;
+    --color-surface-container-high: #1b2534;
+    --color-card: #0c121c;
+    --color-on-surface: #e8eef8;
+    --color-on-surface-variant: #9daabd;
+    --color-outline-variant: #1b2534;
+    --color-outline: #2d3b4f;
+    --color-secondary: #ff7d21;
+    --color-secondary-container: #ff7d21;
+    --color-success: #34d399;
+
+    --ground-2: #090e17;
+    --ink-faint: #66748a;
+    --accent-deep: #ff8f43;
+    --accent-wash: rgba(255, 125, 33, .12);
+    --accent-line: rgba(255, 125, 33, .38);
+
+    --code-bg: #040910;
+    --code-rule: #121c2b;
+
+    --shadow-sm: 0 1px 1px rgba(0, 0, 0, .5), 0 4px 12px rgba(0, 0, 0, .4);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, .55), 0 12px 28px -8px rgba(0, 0, 0, .6);
+    --shadow-lg: 0 2px 4px rgba(0, 0, 0, .6), 0 30px 64px -16px rgba(0, 0, 0, .7);
+    --inset-hi: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+
+/* ====================================================================
+   LANDING PAGE FIGURES
+   Keyframe animations and the drafting grid, which have no Framer
+   equivalent worth the weight. Everything that mounts or reveals still
+   goes through the presets in src/lib/motion.ts.
+   ==================================================================== */
+
+/* The blueprint sheet behind the page. 96px is one CSS inch, which is the
+   whole conceit — Forma's unit is hundredths of an inch. */
+.sheet-grid {
+    background-image:
+      linear-gradient(var(--sheet-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--sheet-line) 1px, transparent 1px),
+      linear-gradient(var(--sheet-line-fine) 1px, transparent 1px),
+      linear-gradient(90deg, var(--sheet-line-fine) 1px, transparent 1px);
+    background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
+    background-attachment: fixed;
+}
+
+/* Tailwind's preflight rewrites <sub> to position:relative with line-height:0,
+   so it no longer grows the line box. The source design uses the browser
+   default, where it does — worth two pixels on the y-conversion formula, which
+   is the only <sub> on the page. */
+.landing sub {
+    position: static;
+    bottom: auto;
+    font-size: smaller;
+    line-height: inherit;
+    vertical-align: sub;
+}
+
+/* The alternating section band. 72% is the source value — Tailwind's /70 step
+   lands 1/255 off per channel, which a pixel diff picks up. */
+.band-alt {
+    background: color-mix(in srgb, var(--ground-2) 72%, transparent);
+}
+
+/* The dotted ground the scanned page sits on. */
+.hero-scanpane {
+    background-color: var(--color-surface-container-low);
+    background-image: radial-gradient(var(--color-outline-variant) 1px, transparent 1px);
+    background-size: 13px 13px;
+}
+
+/* The scan line. One pass, driven by the component mounting it. */
+.hero-sweep {
+    position: absolute;
+    left: -2%;
+    width: 104%;
+    height: 2px;
+    top: -4px;
+    background: var(--color-secondary-container);
+    box-shadow:
+      0 0 16px 3px color-mix(in srgb, var(--color-secondary-container) 34%, transparent),
+      0 0 44px 8px color-mix(in srgb, var(--color-secondary-container) 12%, transparent);
+    animation: hero-sweep 1900ms var(--ease-standard) 480ms both;
+}
+@keyframes hero-sweep {
+    0%   { top: -4px; opacity: 0; }
+    6%   { opacity: 1; }
+    92%  { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+}
+
+.hero-caret {
+    display: inline-block;
+    width: 5px;
+    height: 10px;
+    vertical-align: -1px;
+    background: var(--color-secondary-container);
+    animation: hero-caret 900ms steps(1) infinite;
+}
+@keyframes hero-caret {
+    0%, 49%   { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
+/* Drafting registration marks, in place of another rounded card. */
+.reg-marks { position: relative; }
+.reg-marks::before,
+.reg-marks::after {
+    content: "";
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    opacity: 0.4;
+    pointer-events: none;
+}
+.reg-marks::before {
+    top: -1px;
+    left: -1px;
+    border-top: 1.5px solid var(--color-secondary-container);
+    border-left: 1.5px solid var(--color-secondary-container);
+}
+.reg-marks::after {
+    bottom: -1px;
+    right: -1px;
+    border-bottom: 1.5px solid var(--color-secondary-container);
+    border-right: 1.5px solid var(--color-secondary-container);
 }
