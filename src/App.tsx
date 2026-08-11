@@ -1152,7 +1152,13 @@ export default function App() {
       setUser(u);
 
       if (!isSignedIn) {
-        setSavedReports([]);
+        // Signed out means the *device's* projects, not none. This used to be
+        // `setSavedReports([])`, which also ran for the initial null every
+        // signed-out visitor gets on load — so a project saved while signed out
+        // vanished from the list on the next reload while still sitting in
+        // localStorage, and only came back after a sign-in/sign-out cycle.
+        // Matches what handleLogOut does on the explicit path.
+        setSavedReports(JSON.parse(localStorage.getItem('savedReports') || '[]'));
         // A sign-out that happened elsewhere still has to leave this tab clean:
         // the uploads, extracted document text, transcript and generated report
         // all belong to the account that just left.
