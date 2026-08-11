@@ -497,7 +497,16 @@ export default function ContactPage({
             <div className="mt-[26px] grid items-start gap-9 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)] lg:gap-14">
               <div>
                 <div className="flex items-center gap-4">
-                  <Logo size={56} className="rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card p-2" alt="" />
+                  {/* The framing goes on a wrapper, not on Logo. Logo sets its
+                      width and height as INLINE styles on both its span and its
+                      <img>, so `<Logo size={56} className="p-2 border">` made a
+                      56px box whose content area is only 38px — the img kept its
+                      inline 56px height but was shrunk to 38px wide, rendering
+                      the mark squashed. 56px box, 1px border, 38px mark centred
+                      = the 8px padding the design asks for. */}
+                  <span className="grid h-14 w-14 shrink-0 place-items-center rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card">
+                    <Logo size={38} />
+                  </span>
                   <div>
                     <h2 className="font-display-lg text-[27px] font-extrabold leading-[1.1] tracking-[-0.03em] text-on-surface">
                       Waqar Sayyed
