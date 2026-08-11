@@ -89,7 +89,9 @@ export default function SiteFooter({ onThisPage, maker }: { onThisPage?: Link[];
                 designs. */}
             <p className={`mt-2.5 max-w-[36ch] ${NOTE}`}>
               © 2026 Forma. Designed &amp; built by{' '}
-              <strong className="font-bold text-secondary">Waqar Sayyed</strong>.
+              {/* nowrap so the 36ch measure moves the name down as a unit
+                  rather than breaking it across two lines. */}
+              <strong className="font-bold whitespace-nowrap text-secondary">Waqar Sayyed</strong>.
             </p>
           </div>
 
