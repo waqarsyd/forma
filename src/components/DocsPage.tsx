@@ -46,13 +46,15 @@ interface DocsPageProps {
 const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = [
   { id: 'start', n: '01', title: 'Getting started', keys: 'start begin first steps tutorial upload workflow guide' },
   { id: 'key', n: '02', title: 'Your API key', keys: 'key api gemini google studio session vault passphrase encrypt security storage' },
-  { id: 'upload', n: '03', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan' },
-  { id: 'controls', n: '04', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrchart gauge elements supported' },
-  { id: 'repx', n: '05', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download' },
-  { id: 'config', n: '06', title: 'Configuration', keys: 'config configure version paper size letter a4 legal header footer rtl model picker' },
-  { id: 'saving', n: '07', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
-  { id: 'trouble', n: '08', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem' },
-  { id: 'faq', n: '09', title: 'FAQ', keys: 'faq questions common help cost price free visual studio photo' },
+  { id: 'account', n: '03', title: 'Your account', keys: 'account sign in signup register google email password forgot reset sync devices optional' },
+  { id: 'upload', n: '04', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan' },
+  { id: 'run', n: '05', title: 'Running and refining', keys: 'run generate progress streaming pause stop cancel elapsed read result specification mockup refine change iterate conversation' },
+  { id: 'controls', n: '06', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrchart gauge elements supported' },
+  { id: 'repx', n: '07', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download' },
+  { id: 'config', n: '08', title: 'Configuration', keys: 'config configure version paper size letter a4 legal header footer rtl model picker' },
+  { id: 'saving', n: '09', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
+  { id: 'trouble', n: '10', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem' },
+  { id: 'faq', n: '11', title: 'FAQ', keys: 'faq questions common help cost price free visual studio photo' },
 ];
 
 const FAQS: Array<{ q: string; a: ReactNode }> = [
@@ -500,6 +502,51 @@ export default function DocsPage({
               </Note>
             </Article>
 
+            <Article id="account" kicker="Setup" title="Your account" hidden={!matches('account')}>
+              <p className={PROSE}>
+                <strong className="font-semibold text-on-surface">You do not need one.</strong> Forma works fully
+                signed out — your projects are kept in this browser and are still there when you come back. An
+                account adds two things: your projects follow you to another machine, and you can keep an encrypted
+                copy of your API key so you are not pasting it in again on every device.
+              </p>
+
+              <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
+                Creating one
+              </h3>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="With Google">
+                  One click, nothing to remember. This is the quicker route and the one to prefer unless you have a
+                  reason not to.
+                </Def>
+                <Def t="With an email address">
+                  An email and a password of at least six characters. A name is optional — leave it blank and your
+                  email is used instead.
+                </Def>
+                <Def t="Either way">
+                  Signing in never asks for your API key, and your key is never part of a saved project.
+                </Def>
+              </dl>
+
+              <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
+                Forgotten password
+              </h3>
+              <p className={`mt-2 ${PROSE}`}>
+                Enter your email address on the sign-in screen and choose <strong className="font-semibold text-on-surface">Forgot password</strong>.
+                A reset link is sent if an account exists for that address.
+              </p>
+              <Note label="The wording is the same either way">
+                Forma tells you a link is on its way whether or not an account exists for the address you typed. That
+                is deliberate: a message that distinguished the two cases would let anyone use this form to find out
+                which email addresses have accounts here.
+              </Note>
+
+              <Note label="Signing out clears the workspace" tone="safe">
+                Not just the credential. The design you uploaded, the text extracted from it and the generated report
+                are all cleared, so the next person at that browser does not see your work. Ending a session in
+                another tab clears this one too.
+              </Note>
+            </Article>
+
             <Article id="upload" kicker="Input" title="What you can upload" hidden={!matches('upload')}>
               <p className={PROSE}>
                 Files are prepared in your browser before anything is sent — resized, rendered, parsed.
@@ -552,6 +599,96 @@ y_top = pageHeight − (baseline + height)`}
                 <b className="font-bold text-on-surface">400 strings per page</b>, so if accuracy drops off at
                 the bottom of a busy page, that is the cause.
               </Note>
+            </Article>
+
+            <Article id="run" kicker="Guide" title="Running and refining" hidden={!matches('run')}>
+              <p className={PROSE}>
+                Most reports take two or three passes. The first gets the structure, and the ones after it fix the
+                parts that came out wrong. Nothing is thrown away between them.
+              </p>
+
+              <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
+                While it runs
+              </h3>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="The progress bar">
+                  The response is streamed, so the bar tracks output actually received rather than a timer inventing
+                  percentages. It never runs backwards, and only a finished, parsed result reads as complete.
+                </Def>
+                <Def t="Elapsed time">
+                  Real wall-clock, beside the bar. The first request of a session is slower than the rest because it
+                  also works out which model your key can reach.
+                </Def>
+                <Def t="Pause">
+                  Aborts the request in flight and keeps the run so you can re-issue it. Not a loader that hides
+                  while the work carries on.
+                </Def>
+                <Def t="Stop">Aborts the request and resets the workspace.</Def>
+              </dl>
+              <Note label="Cancelling is local">
+                Pause and Stop tear down the connection from your side. Google may still finish generating the
+                response, and if it does, that usage is billed to your key. Cancelling saves you the wait, not
+                necessarily the request.
+              </Note>
+
+              <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
+                Reading the result
+              </h3>
+              <p className={`mt-2 ${PROSE}`}>
+                One request comes back as three things, produced together from a single description so they agree
+                with each other.
+              </p>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="The specification">
+                  A component inventory in markdown — every element, where it sits, its type, its font and its
+                  borders. Useful on its own as the written brief you would otherwise have produced by hand, and
+                  worth reading first: if the specification describes the wrong thing, the layout will too.
+                </Def>
+                <Def t="The mockup">
+                  The layout drawn at true proportions, on a sheet that stays white in both light and dark themes
+                  because a printed report does. Check positions and alignment here rather than in the XML. Charts
+                  are stylised and gauges and barcodes are marked out but not drawn — see{' '}
+                  <a href="#controls" className="font-semibold text-secondary hover:underline">
+                    Supported controls
+                  </a>{' '}
+                  for what that means.
+                </Def>
+                <Def t="The XML">
+                  The DevExpress file itself, syntax-coloured with line numbers and a copy action. Covered in{' '}
+                  <a href="#repx" className="font-semibold text-secondary hover:underline">
+                    The .repx file
+                  </a>
+                  .
+                </Def>
+              </dl>
+
+              <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
+                Asking for changes
+              </h3>
+              <p className={`mt-2 ${PROSE}`}>
+                Say what is wrong rather than describing the whole report again. A follow-up sends the existing
+                layout and XML back with your instruction, so the model edits what you named and leaves the rest of
+                the structure standing.
+              </p>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="Name the region">
+                  <em className="not-italic text-[color:var(--ink-faint)]">"The totals block should sit under the
+                  table, not beside it."</em> Pointing at a part of the page works better than restating the
+                  requirements.
+                </Def>
+                <Def t="One thing at a time">
+                  A short instruction is easier to apply correctly than five bundled together, and it is easier to
+                  tell which one did not take.
+                </Def>
+                <Def t="Say it is a table">
+                  If a grid came back as separate labels, ask for that region to be one table with rows and cells.
+                  It is the most common single correction.
+                </Def>
+                <Def t="Questions stay questions">
+                  A message with no attachment is answered as a conversation — it does not start a generation.
+                  Asking "what does ReportUnit mean?" costs you a sentence, not a report.
+                </Def>
+              </dl>
             </Article>
 
             <Article id="controls" kicker="Reference" title="Supported controls" hidden={!matches('controls')}>
@@ -826,6 +963,8 @@ y_top = pageHeight − (baseline + height)`}
         onThisPage={[
           ['Getting started', '#start'],
           ['Your API key', '#key'],
+          ['Your account', '#account'],
+          ['Running and refining', '#run'],
           ['What you can upload', '#upload'],
           ['The .repx file', '#repx'],
           ['FAQ', '#faq'],

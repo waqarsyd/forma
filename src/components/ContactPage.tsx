@@ -255,6 +255,50 @@ export default function ContactPage({
                 long one without it.
               </p>
 
+              {/* A contact page's first job is to answer the questions that
+                  already have answers. Without this every "the layout came out
+                  wrong" becomes an email, when troubleshooting covers it. */}
+              <div className="mt-7 rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[22px] py-5 shadow-[var(--shadow-sm)]">
+                <div className="font-code-sm text-[9.5px] font-medium leading-[1.62] tracking-[0.14em] uppercase text-[color:var(--ink-faint)]">
+                  Before you write
+                </div>
+                <p className="mt-2 font-body-lg text-[14px] leading-[1.6] text-on-surface-variant">
+                  A lot of what people ask is already written down. Troubleshooting covers the common failures — a
+                  retired model, an exhausted quota, a layout that came back approximate — and the FAQ covers
+                  formats, cost and designer compatibility.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2.5">
+                  <a
+                    href="/docs#trouble"
+                    className="u-transition u-press inline-flex cursor-pointer items-center gap-2 rounded-full border border-outline-variant bg-surface-container-low px-4 py-2 font-body-lg text-[13.5px] font-semibold text-on-surface hover:border-secondary hover:bg-[color:var(--accent-wash)] hover:text-secondary"
+                  >
+                    Troubleshooting
+                    <IconArrowRight size={14} />
+                  </a>
+                  <a
+                    href="/docs#faq"
+                    className="u-transition u-press inline-flex cursor-pointer items-center gap-2 rounded-full border border-outline-variant bg-surface-container-low px-4 py-2 font-body-lg text-[13.5px] font-semibold text-on-surface hover:border-secondary hover:bg-[color:var(--accent-wash)] hover:text-secondary"
+                  >
+                    Read the FAQ
+                    <IconArrowRight size={14} />
+                  </a>
+                  {/* Placeholder until the repository is public — same rule as
+                      the profile links below: marked, never invented. */}
+                  <a
+                    href="#"
+                    data-needs-url
+                    className="u-transition u-press inline-flex cursor-pointer items-center gap-2 rounded-full border border-outline-variant bg-surface-container-low px-4 py-2 font-body-lg text-[13.5px] font-semibold text-on-surface hover:border-secondary hover:bg-[color:var(--accent-wash)] hover:text-secondary"
+                  >
+                    <IconGitHub size={14} />
+                    Open an issue
+                  </a>
+                </div>
+                <p className="mt-3 font-body-lg text-[12.5px] leading-[1.55] text-[color:var(--ink-faint)]">
+                  Forma is open source — a reproducible bug is more useful as an issue on the repository, where it
+                  can be tracked and closed in public, than as a message in one person's inbox.
+                </p>
+              </div>
+
               <h2 className="mt-9 font-code-sm text-[9.5px] font-medium leading-[1.62] tracking-[0.14em] uppercase text-secondary">
                 What to include
               </h2>
