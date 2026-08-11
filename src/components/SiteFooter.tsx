@@ -83,15 +83,15 @@ export default function SiteFooter({ onThisPage, maker }: { onThisPage?: Link[];
             <p className={`max-w-[36ch] ${NOTE}`}>
               An AI report designer for DevExpress. Open source, bring your own key.
             </p>
-            {/* Both paragraphs share the 36ch measure. The second one was
-                missing it and ran the full width of the brand column, which is
-                the one place the shipped footer differed from the approved
-                designs. */}
-            <p className={`mt-2.5 max-w-[36ch] ${NOTE}`}>
+            {/* No max-width here, deliberately. The sign-off runs the full
+                width of the brand column so "built by Waqar Sayyed" stays on
+                one line. A 36ch cap was tried to match the docs and contact
+                designs and reverted: the landing page is the approved
+                reference for this chrome, so the designs follow it, not the
+                other way round. */}
+            <p className={`mt-2.5 ${NOTE}`}>
               © 2026 Forma. Designed &amp; built by{' '}
-              {/* nowrap so the 36ch measure moves the name down as a unit
-                  rather than breaking it across two lines. */}
-              <strong className="font-bold whitespace-nowrap text-secondary">Waqar Sayyed</strong>.
+              <strong className="font-bold text-secondary">Waqar Sayyed</strong>.
             </p>
           </div>
 
