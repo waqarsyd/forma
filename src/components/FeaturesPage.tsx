@@ -17,10 +17,8 @@ import {
   Code2
 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import UserAvatar from './UserAvatar';
-import MobileNav from './MobileNav';
-import Logo from './Logo';
-import { navigate } from '../lib/router';
+import SiteHeader from './SiteHeader';
+import SiteFooter from './SiteFooter';
 
 interface FeaturesPageProps {
   onEnterWorkspace: () => void;
@@ -423,8 +421,6 @@ export default function FeaturesPage({
   isDarkMode,
   setIsDarkMode
 }: FeaturesPageProps) {
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
   const prefersReduced = useReducedMotion();
 
   // Motion does not pause off-screen animations, so every infinite loop on this
@@ -546,15 +542,6 @@ export default function FeaturesPage({
     }, 1000);
   };
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-        setShowProfileMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const handleSimulateParse = () => {
     if (parseStatus === 'analyzing') return;
@@ -591,110 +578,17 @@ export default function FeaturesPage({
   const currentElements = customElements || currentTemplate.elements;
 
   return (
-    <div className="font-body-lg text-body-lg bg-surface text-on-surface min-h-screen flex flex-col">
-      {/* TopNavBar */}
-      <motion.header
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full sticky top-0 z-50 bg-surface-container-lowest/80 backdrop-blur-md border-b border-outline-variant"
-      >
-        <nav className="flex justify-between items-center px-margin-desktop py-4 max-w-container-max mx-auto">
-          <div className="flex items-center gap-4">
-            <div
-              onClick={() => { navigate('/'); }}
-              className="flex items-center gap-4 cursor-pointer hover:opacity-85 transition-opacity"
-            >
-              <Logo size={32} />
-              <div className="flex flex-col">
-                <span className="font-display-lg text-title-md font-bold text-primary">Forma</span>
-                <span className="font-label-caps text-[10px] tracking-widest text-on-surface-variant uppercase hidden lg:block">Show it. Build it. Ship it.</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="hidden lg:flex items-center gap-8">
-            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="/">Product</a>
-            <a className="text-secondary font-bold border-b-2 border-secondary pb-1 font-title-md text-body-sm transition-colors duration-200" href="/features">Features</a>
-            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="/docs">Docs</a>
-            <a className="text-on-surface-variant font-title-md text-body-sm hover:text-secondary transition-colors duration-200" href="/contact">Contact</a>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-4">
-            <MobileNav active="Features" signedIn={!!user} />
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="w-10 h-10 flex items-center justify-center rounded-full border border-outline-variant hover:bg-secondary/10 hover:border-secondary text-on-surface-variant hover:text-secondary transition-all active:scale-95 cursor-pointer mr-1 select-none"
-              title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                {isDarkMode ? 'light_mode' : 'dark_mode'}
-              </span>
-            </button>
-
-            {user ? (
-              <div className="flex items-center gap-4 relative" ref={profileMenuRef}>
-                <div
-                  onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="flex items-center gap-2.5 px-3 py-1.5 bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/30 rounded-full select-none cursor-pointer transition-colors"
-                >
-                  <UserAvatar user={user} />
-                  <span className="font-label-caps text-[11px] text-on-surface-variant font-semibold hidden lg:inline max-w-[120px] truncate">
-                    {user.displayName || user.email?.split('@')[0]}
-                  </span>
-                  <span className="hidden lg:inline"><span className="material-symbols-outlined text-[16px] text-on-surface-variant select-none">
-                    {showProfileMenu ? 'expand_less' : 'expand_more'}
-                  </span></span>
-                </div>
-                <button
-                  onClick={onEnterWorkspace}
-                  className="hidden lg:inline-block whitespace-nowrap font-label-caps text-on-surface-variant text-body-sm px-4 py-2 hover:text-secondary hover:bg-surface-container-low rounded-full transition-all active:scale-95 cursor-pointer"
-                >
-                  Workspace
-                </button>
-
-                {showProfileMenu && (
-                  <div className="absolute right-0 top-full mt-2 w-56 bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-2xl shadow-2xl z-50 overflow-hidden py-2">
-                    <div className="px-4 py-3 border-b border-outline-variant/30 flex flex-col text-left">
-                      <span className="text-xs font-bold text-on-surface truncate">
-                        {user.displayName || 'Developer User'}
-                      </span>
-                      <span className="text-[10px] text-on-surface-variant truncate font-mono mt-0.5">
-                        {user.email || 'developer@example.com'}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        logOut();
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-error-container text-error hover:text-error transition-colors text-left text-xs font-semibold font-label-caps cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">logout</span>
-                      Sign Out
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="hidden lg:flex items-center gap-2">
-                <button
-                  onClick={onSignIn}
-                  className="whitespace-nowrap font-label-caps text-on-surface-variant px-4 py-2 hover:text-secondary transition-colors transition-transform active:scale-95 cursor-pointer"
-                >
-                  Sign In
-                </button>
-                <button
-                  onClick={onSignUp}
-                  className="whitespace-nowrap bg-secondary-container text-white px-4 sm:px-6 py-2 font-label-caps transition-all hover:bg-secondary active:scale-95 rounded-full shadow-lg shadow-secondary-container/20 cursor-pointer"
-                >
-                  Sign Up
-                </button>
-              </div>
-            )}
-          </div>
-        </nav>
-      </motion.header>
+    <div className="landing font-body-lg text-[16px] leading-[1.62] bg-surface text-on-surface min-h-screen flex flex-col">
+      <SiteHeader
+        active="Features"
+        onEnterWorkspace={onEnterWorkspace}
+        onSignIn={onSignIn}
+        onSignUp={onSignUp}
+        user={user}
+        logOut={logOut}
+        isDarkMode={isDarkMode}
+        setIsDarkMode={setIsDarkMode}
+      />
 
       <main className="flex-grow">
         {/* Hero Section with Framer Motion Staggered Entrance */}
@@ -721,7 +615,7 @@ export default function FeaturesPage({
             />
           ))}
 
-          <div className="max-w-6xl mx-auto px-6 text-center relative z-10">
+          <div className="max-w-container-max mx-auto px-margin-desktop text-center relative z-10">
             <motion.span
               variants={fadeInUpVariants}
               className="inline-flex items-center gap-1.5 px-3 py-1 bg-secondary-container/10 border border-secondary-container/20 rounded-full text-xs font-bold text-secondary-container tracking-wide uppercase font-mono mb-4 shadow-sm"
@@ -755,7 +649,7 @@ export default function FeaturesPage({
 
         {/* Visual Specifications Bento Grid with Scroll-Triggered Reveal */}
         <section ref={bentoRef} className="py-20 bg-surface-container-lowest">
-          <div className="max-w-6xl mx-auto px-6">
+          <div className="max-w-container-max mx-auto px-margin-desktop">
             {/* BENTO GRID Container */}
             <motion.div
               variants={bentoGridVariants}
@@ -1022,7 +916,7 @@ export default function FeaturesPage({
           className="py-0 bg-gradient-to-b from-[#0a0f1a] to-[#040d1b] text-white border-t border-slate-900 overflow-hidden"
         >
           {/* Section Header */}
-          <div className="max-w-6xl mx-auto px-6 pt-20 pb-12 text-center">
+          <div className="max-w-container-max mx-auto px-margin-desktop pt-20 pb-12 text-center">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-secondary-container/15 border border-secondary-container/25 rounded-full text-xs font-bold text-secondary-container tracking-wide uppercase font-mono mb-5">
               <Play size={11} fill="#fe6b00" /> Live Studio
             </span>
@@ -1035,7 +929,7 @@ export default function FeaturesPage({
           </div>
 
           {/* Studio Workspace */}
-          <div className="max-w-7xl mx-auto px-6 pb-20">
+          <div className="max-w-container-max mx-auto px-margin-desktop pb-20">
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-0 rounded-2xl border border-slate-800/80 bg-[#0d1322] shadow-2xl shadow-black/60 overflow-hidden min-h-[580px]">
 
               {/* ── PANEL 1: Template Gallery (3 cols) ─────────────────── */}
@@ -1471,7 +1365,7 @@ export default function FeaturesPage({
           <div className="absolute -left-32 -bottom-32 w-80 h-80 bg-secondary-container/8 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute -right-24 -top-24 w-64 h-64 bg-violet-400/8 rounded-full blur-3xl pointer-events-none" />
 
-          <div className="max-w-6xl mx-auto px-6 relative z-10">
+          <div className="max-w-container-max mx-auto px-margin-desktop relative z-10">
             <motion.h2
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -1528,50 +1422,7 @@ export default function FeaturesPage({
         </motion.section>
       </main>
 
-      {/* Footer */}
-      <footer className="w-full bg-surface-container-lowest dark:bg-card border-t border-outline-variant py-10 mt-auto">
-        <div className="max-w-container-max mx-auto px-margin-desktop flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 text-[11px] text-on-surface-variant font-sans">
-
-          {/* Left side: Logo, brand, tagline */}
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2 select-none shrink-0">
-              <Logo size={20} />
-              <span className="font-bold text-sm text-secondary-container">Forma</span>
-            </div>
-            <div className="h-6 w-px bg-outline-variant/40 hidden sm:block"></div>
-            <p className="font-body-sm text-[12px] leading-relaxed text-on-surface-variant max-w-[340px]">
-              © 2026 Forma. All rights reserved.<br />Designed & Built by <strong className="text-secondary-container font-bold">Waqar Sayyed</strong>
-            </p>
-          </div>
-
-          {/* Middle side: Navigation links */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 select-none text-[12px]">
-            <a href="/" className="hover:text-primary transition-all duration-200 hover:scale-105">Product</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="/features" className="hover:text-primary transition-all duration-200 hover:scale-105">Features</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="/docs" className="hover:text-primary transition-all duration-200 hover:scale-105">Docs</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="/contact" className="hover:text-primary transition-all duration-200 hover:scale-105">Contact</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="/" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Privacy</a>
-            <span className="text-outline-variant text-[21px] font-bold">•</span>
-            <a href="/" className="hover:text-primary transition-all duration-200 text-on-surface-variant/70 hover:scale-105">Terms</a>
-          </div>
-
-          {/* Right side: Copyright */}
-          <div className="flex items-center gap-6 flex-wrap lg:justify-end">
-            {/* Verified Stack removed as per request */}
-          </div>
-
-        </div>
-      </footer>
-      {/* Sub Footer */}
-      <div className="w-full bg-surface dark:bg-card py-4 border-t border-outline-variant/30 text-center select-none shrink-0">
-        <span className="text-[10px] uppercase font-mono text-on-surface-variant">
-          Crafting the future of report generation.
-        </span>
-      </div>
+      <SiteFooter />
     </div>
   );
 }

@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
 import Logo from './Logo';
-import UserAvatar from './UserAvatar';
-import MobileNav from './MobileNav';
+import SiteHeader from './SiteHeader';
+import SiteFooter from './SiteFooter';
 import HeroScanner from './landing/HeroScanner';
 import VaultFigure from './landing/VaultFigure';
 import SheetRuler from './landing/SheetRuler';
@@ -10,7 +9,7 @@ import { FigureIngest, FigureStream, FigureExport } from './landing/StepFigures'
 import { Reveal, RevealGroup, RevealItem, SectionHead, Eyebrow, Stat, H2, LEDE, BODY } from './landing/sections';
 import {
   IconSpec, IconLayout, IconCode, IconInvoice, IconGrid, IconPayslip, IconSeal, IconScan, IconRedo,
-  IconArrowRight, IconSun, IconMoon,
+  IconArrowRight,
 } from './landing/icons';
 
 /** Document shapes Forma is built around. */
@@ -150,9 +149,9 @@ const STEPS = [
  * the same props, so the four marketing surfaces now live together in
  * src/components/ and share one shape.
  *
- * Its header is the same pattern as theirs: the tagline is hidden below lg and
- * the auth controls move into MobileNav below md, because at phone widths the
- * full set does not fit and used to overlap.
+ * Header and footer come from SiteHeader / SiteFooter, which all four pages
+ * share. They used to be pasted into each page, and that is how the four
+ * drifted apart while this one was rebuilt against the approved design.
  */
 const LandingPage = ({
   onEnterWorkspace,
@@ -171,19 +170,6 @@ const LandingPage = ({
   isDarkMode: boolean;
   setIsDarkMode: (val: boolean) => void;
 }) => {
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-        setShowProfileMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   return (
     // 16px/1.62 rather than `text-body-lg`, whose 24px line-height is a fixed
     // pixel value that inherits into every descendant regardless of its own
@@ -192,98 +178,16 @@ const LandingPage = ({
     // not set `leading-` explicitly.
     <div className="landing font-body-lg text-[16px] leading-[1.62] bg-surface text-on-surface min-h-screen flex flex-col">
       <SheetRuler />
-      {/* TopNavBar */}
-      <header className="w-full sticky top-0 z-50 bg-surface/[0.84] [backdrop-filter:blur(16px)_saturate(1.5)] border-b border-outline-variant">
-        <nav className="flex h-[68px] gap-6 justify-between items-center px-margin-desktop max-w-container-max mx-auto">
-          <div className="flex items-center gap-[11px]">
-            <Logo size={30} />
-            <div className="flex flex-col">
-              <span className="font-display-lg text-[20px] leading-[1.05] font-extrabold tracking-[-0.03em] text-on-surface">
-                Forma
-              </span>
-              <span className="mt-px font-code-sm text-[8.5px] leading-[1.62] font-medium tracking-[0.2em] text-[color:var(--ink-faint)] uppercase hidden lg:block">Show it &#183; Build it &#183; Ship it</span>
-            </div>
-          </div>
-          <div className="hidden lg:flex items-center gap-1">
-            <a className="u-transition relative rounded-lg px-[13px] py-[7px] font-body-lg text-[14px] leading-[1.62] font-semibold text-on-surface after:absolute after:inset-x-[13px] after:bottom-[3px] after:h-[1.5px] after:bg-secondary" href="/">Product</a>
-            <a className="u-transition rounded-lg px-[13px] py-[7px] font-body-lg text-[14px] leading-[1.62] font-medium text-on-surface-variant hover:bg-on-surface/5 hover:text-on-surface" href="/features">Features</a>
-            <a className="u-transition rounded-lg px-[13px] py-[7px] font-body-lg text-[14px] leading-[1.62] font-medium text-on-surface-variant hover:bg-on-surface/5 hover:text-on-surface" href="/docs">Docs</a>
-            <a className="u-transition rounded-lg px-[13px] py-[7px] font-body-lg text-[14px] leading-[1.62] font-medium text-on-surface-variant hover:bg-on-surface/5 hover:text-on-surface" href="/contact">Contact</a>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <MobileNav active="Product" signedIn={!!user} />
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="u-transition u-press u-focus-ring w-[37px] h-[37px] grid place-items-center rounded-full border border-outline-variant bg-surface-container-lowest/60 hover:border-secondary text-on-surface-variant hover:text-secondary cursor-pointer select-none"
-              title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-            >
-              {/* The mark shows the theme you are in, not the one you would
-                  switch to — the source design's reading. */}
-              {isDarkMode ? <IconMoon size={16} /> : <IconSun size={16} />}
-            </button>
-            {user ? (
-              <div className="flex items-center gap-4 relative" ref={profileMenuRef}>
-                <div
-                  onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="flex items-center gap-2.5 px-3 py-1.5 bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/30 rounded-full select-none cursor-pointer transition-colors"
-                >
-                  <UserAvatar user={user} />
-                  <span className="font-label-caps text-[11px] text-on-surface-variant font-semibold hidden lg:inline max-w-[120px] truncate">
-                    {user.displayName || user.email?.split('@')[0]}
-                  </span>
-                  <span className="hidden lg:inline"><span className="material-symbols-outlined text-[16px] text-on-surface-variant select-none">
-                    {showProfileMenu ? 'expand_less' : 'expand_more'}
-                  </span></span>
-                </div>
-                <button
-                  onClick={onEnterWorkspace}
-                  className="hidden lg:inline-block whitespace-nowrap font-label-caps text-on-surface-variant text-body-sm px-4 py-2 hover:text-secondary hover:bg-surface-container-low rounded-full transition-all active:scale-95 cursor-pointer"
-                >
-                  Workspace
-                </button>
-
-                {showProfileMenu && (
-                  <div className="absolute right-0 top-full mt-2 w-56 bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-2xl shadow-2xl z-50 overflow-hidden py-2">
-                    <div className="px-4 py-3 border-b border-outline-variant/30 flex flex-col text-left">
-                      <span className="text-xs font-bold text-on-surface truncate">
-                        {user.displayName || 'Developer User'}
-                      </span>
-                      <span className="text-[10px] text-on-surface-variant truncate font-mono mt-0.5">
-                        {user.email || 'developer@example.com'}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        logOut();
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-error-container text-error hover:text-error transition-colors text-left text-xs font-semibold font-label-caps cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">logout</span>
-                      Sign Out
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="hidden lg:flex items-center gap-2.5">
-                <button
-                  onClick={onSignIn}
-                  className="u-transition u-press u-focus-ring whitespace-nowrap rounded-full border border-transparent px-[18px] py-[10px] font-body-lg text-[14px] leading-[1.62] tracking-[-0.005em] font-semibold text-on-surface-variant hover:bg-on-surface/5 hover:text-on-surface cursor-pointer"
-                >
-                  Sign in
-                </button>
-                <button
-                  onClick={onSignUp}
-                  className="u-transition u-press u-focus-ring whitespace-nowrap rounded-full border border-transparent bg-secondary-container px-[18px] py-[10px] font-body-lg text-[14px] leading-[1.62] tracking-[-0.005em] font-semibold text-white shadow-[0_1px_2px_rgba(8,24,43,0.1)] hover:bg-[color:var(--accent-deep)] cursor-pointer"
-                >
-                  Sign up
-                </button>
-              </div>
-            )}
-          </div>
-        </nav>
-      </header>
+      <SiteHeader
+        active="Product"
+        onEnterWorkspace={onEnterWorkspace}
+        onSignIn={onSignIn}
+        onSignUp={onSignUp}
+        user={user}
+        logOut={logOut}
+        isDarkMode={isDarkMode}
+        setIsDarkMode={setIsDarkMode}
+      />
       <main className="flex-grow sheet-grid">
         {/* ---------------------------------------------------------- HERO */}
         <section id="top" className="relative overflow-hidden pt-24">
@@ -740,85 +644,15 @@ const LandingPage = ({
         </section>
       </main>
 
-      {/* Footer — four columns: the brand, real pages, in-page anchors, and
-          genuine external links. */}
-      <footer className="w-full bg-surface-container-lowest dark:bg-card border-t border-outline-variant pt-12 mt-auto">
-        <div className="max-w-container-max mx-auto px-margin-desktop">
-          <div className="grid grid-cols-2 gap-10 pb-[42px] lg:grid-cols-[1.7fr_1fr_1fr_1fr]">
-            <div>
-              <a href="/" className="mb-3.5 flex items-center gap-[11px] select-none">
-                <Logo size={30} />
-                <span className="font-display-lg text-[20px] leading-[1.05] font-extrabold tracking-[-0.03em] text-on-surface">
-                  Forma
-                </span>
-              </a>
-              <p className="max-w-[36ch] font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-faint)]">
-                An AI report designer for DevExpress. Open source, bring your own key.
-              </p>
-              <p className="mt-2.5 font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-faint)]">
-                © 2026 Forma. Designed &amp; built by{' '}
-                <strong className="font-bold text-secondary">Waqar Sayyed</strong>.
-              </p>
-            </div>
-
-            {[
-              {
-                h: 'Product',
-                links: [
-                  ['Features', '/features'],
-                  ['Documentation', '/docs'],
-                  ['Contact', '/contact'],
-                  ['Open the workspace', '/workspace'],
-                ],
-              },
-              {
-                h: 'On this page',
-                links: [
-                  ['What you get back', '#artifacts'],
-                  ['Use cases', '#cases'],
-                  ['How it works', '#how'],
-                  ['Precision', '#precision'],
-                  ['Your API key', '#key'],
-                ],
-              },
-              {
-                h: 'Elsewhere',
-                links: [
-                  ['Get a Gemini key', 'https://aistudio.google.com/apikey'],
-                  ['DevExpress Reporting', 'https://www.devexpress.com/products/net/reporting/'],
-                  ['Privacy', '/'],
-                  ['Terms', '/'],
-                ],
-              },
-            ].map((col) => (
-              <div key={col.h}>
-                <h4 className="mb-3.5 font-code-sm text-[9.5px] font-medium leading-[1.62] tracking-[0.15em] uppercase text-[color:var(--ink-faint)]">
-                  {col.h}
-                </h4>
-                {col.links.map(([label, href]) => (
-                  <a
-                    key={label}
-                    href={href}
-                    {...(href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {})}
-                    className="u-transition block py-[5px] font-body-lg text-[14px] leading-[1.62] text-on-surface-variant hover:translate-x-[3px] hover:text-secondary"
-                  >
-                    {label}
-                  </a>
-                ))}
-              </div>
-            ))}
-          </div>
-
-          {/* Sign-off. Sits inside the footer's measure, under a rule that
-              spans the container — not a full-bleed bar. Same line on all five
-              pages; keep them in step. */}
-          <div className="flex justify-center border-t border-outline-variant py-5 text-center select-none">
-            <span className="font-code-sm text-[10.5px] leading-[1.62] font-medium uppercase tracking-[0.14em] text-[color:var(--ink-faint)]">
-              Crafting the future of report generation.
-            </span>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter
+        onThisPage={[
+          ['What you get back', '#artifacts'],
+          ['Use cases', '#cases'],
+          ['How it works', '#how'],
+          ['Precision', '#precision'],
+          ['Your API key', '#key'],
+        ]}
+      />
     </div>
   );
 };
