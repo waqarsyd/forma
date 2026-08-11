@@ -795,6 +795,19 @@ body {
     50%, 100% { opacity: 0; }
 }
 
+/* Inline code inside marketing and documentation copy. Reads --accent-wash,
+   so it only resolves inside a `.landing` subtree — which is every surface
+   that uses it. */
+.doc-code {
+    font-family: var(--font-code-sm);
+    font-size: 0.88em;
+    background: var(--accent-wash);
+    color: var(--color-secondary);
+    border-radius: 4px;
+    padding: 1px 5px;
+    overflow-wrap: anywhere;
+}
+
 /* Drafting registration marks, in place of another rounded card. */
 .reg-marks { position: relative; }
 .reg-marks::before,

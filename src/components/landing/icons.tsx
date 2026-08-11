@@ -90,6 +90,204 @@ export const IconRedo = (p: Props) => (
   </Svg>
 );
 
+/* ---- intake formats ---- */
+export const IconImage = (p: Props) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <circle cx="8.5" cy="9.5" r="1.5" />
+    <path d="m4 17 4.5-4.5 3 3L15 12l5 5" />
+  </Svg>
+);
+export const IconDoc = (p: Props) => (
+  <Svg {...p}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5" />
+  </Svg>
+);
+export const IconStack = (p: Props) => (
+  <Svg {...p}>
+    <path d="m12 3 9 5-9 5-9-5z" />
+    <path d="m3 13 9 5 9-5M3 16.5 12 21l9-4.5" />
+  </Svg>
+);
+
+/* ---- what the layout carries ---- */
+export const IconText = (p: Props) => (
+  <Svg {...p}>
+    <path d="M5 6V4h14v2M12 4v16M9 20h6" />
+  </Svg>
+);
+export const IconBorder = (p: Props) => (
+  <Svg {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="1.5" strokeDasharray="3 3" />
+    <path d="M3 4.5v15" strokeWidth={3.2} />
+  </Svg>
+);
+export const IconChart = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 20V4M4 20h16" />
+    <path d="M8 20v-6M13 20V8M18 20v-9" />
+  </Svg>
+);
+export const IconGauge = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 18a8 8 0 1 1 16 0" />
+    <path d="m12 18 4.5-5.5" />
+  </Svg>
+);
+
+/* ---- running a request ---- */
+export const IconPulse = (p: Props) => (
+  <Svg {...p}>
+    <path d="M2 12h4l3-8 4 16 3-8h6" />
+  </Svg>
+);
+export const IconPause = (p: Props) => (
+  <Svg {...p}>
+    <path d="M9 4v16M15 4v16" strokeWidth={2.4} />
+  </Svg>
+);
+export const IconChat = (p: Props) => (
+  <Svg {...p}>
+    <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8z" />
+  </Svg>
+);
+
+/* ---- output and custody ---- */
+export const IconDownload = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 3v12M7.5 10.5 12 15l4.5-4.5" />
+    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+  </Svg>
+);
+export const IconShieldCheck = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 3 5 6v6c0 4.4 2.9 7.9 7 9 4.1-1.1 7-4.6 7-9V6z" />
+    <path d="m9 12 2 2 4-4" />
+  </Svg>
+);
+export const IconKey = (p: Props) => (
+  <Svg {...p}>
+    <circle cx="8" cy="15" r="4" />
+    <path d="m11 12 8-8M17 6l2 2M15 8l2 2" />
+  </Svg>
+);
+
+/* ---- docs, contact and auth ---- */
+export const IconSearch = (p: Props) => (
+  <Svg strokeWidth={2} {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
+  </Svg>
+);
+export const IconChevronDown = (p: Props) => (
+  <Svg strokeWidth={2} {...p}>
+    <path d="m6 9 6 6 6-6" />
+  </Svg>
+);
+export const IconThumbUp = (p: Props) => (
+  <Svg {...p}>
+    <path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z" />
+    <path d="M7 11l4.5-8a2.2 2.2 0 0 1 3 2.8L13 9h5.5a2 2 0 0 1 2 2.4l-1.4 7A2 2 0 0 1 17 20H7" />
+  </Svg>
+);
+export const IconThumbDown = (p: Props) => (
+  <Svg {...p}>
+    <path d="M17 13V4h3a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1z" />
+    <path d="M17 13l-4.5 8a2.2 2.2 0 0 1-3-2.8L11 15H5.5a2 2 0 0 1-2-2.4l1.4-7A2 2 0 0 1 7 4h10" />
+  </Svg>
+);
+export const IconMail = (p: Props) => (
+  <Svg {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="m3 7 9 6 9-6" />
+  </Svg>
+);
+export const IconWarn = (p: Props) => (
+  <Svg strokeWidth={2.2} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 8v5M12 16.5v.5" />
+  </Svg>
+);
+export const IconInfo = (p: Props) => (
+  <Svg strokeWidth={2} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5M12 7.5v.5" />
+  </Svg>
+);
+export const IconExternal = (p: Props) => (
+  <Svg strokeWidth={2} {...p}>
+    <path d="M7 17 17 7M8 7h9v9" />
+  </Svg>
+);
+export const IconEye = (p: Props) => (
+  <Svg {...p}>
+    <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" />
+    <circle cx="12" cy="12" r="2.6" />
+  </Svg>
+);
+export const IconEyeOff = (p: Props) => (
+  <Svg {...p}>
+    <path d="M3 3l18 18" />
+    <path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6.4 0 10 6 10 6a17 17 0 0 1-3.3 3.9M6.3 8.1A17 17 0 0 0 2 12s3.6 6.5 10 6.5c1.3 0 2.5-.2 3.5-.6" />
+  </Svg>
+);
+export const IconClose = (p: Props) => (
+  <Svg strokeWidth={2} {...p}>
+    <path d="M18 6 6 18M6 6l12 12" />
+  </Svg>
+);
+
+/* ---- brand marks, for the maker's profile links ---- */
+const Brand = ({ size = 19, className = '', d }: Props & { d: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+    <path d={d} />
+  </svg>
+);
+export const IconGitHub = (p: Props) => (
+  <Brand
+    {...p}
+    d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+  />
+);
+export const IconLinkedIn = (p: Props) => (
+  <Brand
+    {...p}
+    d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"
+  />
+);
+export const IconDiscord = (p: Props) => (
+  <Brand
+    {...p}
+    d="M20.317 4.37a19.79 19.79 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.058a.082.082 0 00.031.056 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028 14.09 14.09 0 001.226-1.994.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 01.078-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 01.079.009c.12.099.246.198.373.292a.077.077 0 01-.007.128 12.3 12.3 0 01-1.873.891.077.077 0 00-.04.107c.36.698.772 1.363 1.225 1.993a.076.076 0 00.084.029 19.84 19.84 0 006.002-3.03.077.077 0 00.032-.055c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.029zM8.02 15.331c-1.183 0-2.157-1.086-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.211 0 2.176 1.095 2.157 2.419 0 1.333-.956 2.419-2.157 2.419zm7.975 0c-1.183 0-2.157-1.086-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.211 0 2.176 1.095 2.157 2.419 0 1.333-.946 2.419-2.157 2.419z"
+  />
+);
+export const IconPortfolio = (p: Props) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M3 9h18M8 4v5" />
+    <path d="M11 13h6M11 16h4" />
+  </Svg>
+);
+
+/* ---- status markers ---- */
+export const IconMinus = (p: Props) => (
+  <Svg strokeWidth={3} {...p}>
+    <path d="M6 12h12" />
+  </Svg>
+);
+export const IconDot = (p: Props) => (
+  <svg
+    width={p.size ?? 17}
+    height={p.size ?? 17}
+    viewBox="0 0 24 24"
+    className={p.className}
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="4" fill="currentColor" />
+  </svg>
+);
+
 /* ---- controls ---- */
 export const IconArrowRight = (p: Props) => (
   <Svg strokeWidth={2.2} {...p}>
