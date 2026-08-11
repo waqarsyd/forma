@@ -57,6 +57,11 @@ function Column({ heading, links }: { heading: string; links: Link[] }) {
           key={label}
           href={href}
           {...(href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {})}
+          // A bare "#" is a placeholder waiting for a real destination. Tagging
+          // it here keeps `grep data-needs-url src/` honest — the maker column's
+          // links were placeholders that the grep could not see, which is worse
+          // than not having the convention at all.
+          {...(href === '#' ? { 'data-needs-url': true } : {})}
           className={LINK}
         >
           {label}
