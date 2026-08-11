@@ -83,7 +83,11 @@ export default function SiteFooter({ onThisPage, maker }: { onThisPage?: Link[];
             <p className={`max-w-[36ch] ${NOTE}`}>
               An AI report designer for DevExpress. Open source, bring your own key.
             </p>
-            <p className={`mt-2.5 ${NOTE}`}>
+            {/* Both paragraphs share the 36ch measure. The second one was
+                missing it and ran the full width of the brand column, which is
+                the one place the shipped footer differed from the approved
+                designs. */}
+            <p className={`mt-2.5 max-w-[36ch] ${NOTE}`}>
               © 2026 Forma. Designed &amp; built by{' '}
               <strong className="font-bold text-secondary">Waqar Sayyed</strong>.
             </p>

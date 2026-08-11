@@ -258,7 +258,9 @@ export default function ContactPage({
               <h2 className="mt-9 font-code-sm text-[9.5px] font-medium leading-[1.62] tracking-[0.14em] uppercase text-secondary">
                 What to include
               </h2>
-              <div className="mt-2 border-t border-outline-variant">
+              {/* 34px — the artifact's `.routes { margin-top: 34px }`. This was
+                  mt-2, which put the whole left column 26px too high. */}
+              <div className="mt-[34px] border-t border-outline-variant">
                 {ROUTES.map(([t, d]) => (
                   <div
                     key={t}
@@ -530,7 +532,9 @@ export default function ContactPage({
                       <span className="block font-body-lg text-[14.5px] font-semibold tracking-[-0.012em] text-on-surface">
                         {p.name}
                       </span>
-                      <span className="block font-code-sm text-[11px] leading-[1.45] text-[color:var(--ink-faint)]">
+                      {/* mt-0.5 = the artifact's `margin-top: 2px`. Omitting it
+                          made every profile card 2px short. */}
+                      <span className="mt-0.5 block font-code-sm text-[11px] leading-[1.45] text-[color:var(--ink-faint)]">
                         {p.note}
                       </span>
                     </span>
@@ -558,7 +562,7 @@ export default function ContactPage({
                     <span className="block font-body-lg text-[14.5px] font-semibold tracking-[-0.012em] text-on-surface">
                       Email
                     </span>
-                    <span className="block font-code-sm text-[11px] leading-[1.45] text-[color:var(--ink-faint)]">
+                    <span className="mt-0.5 block font-code-sm text-[11px] leading-[1.45] text-[color:var(--ink-faint)]">
                       the form above, or reveal the address
                     </span>
                   </span>
