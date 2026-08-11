@@ -1845,6 +1845,8 @@ export default function App() {
       initialMode={loginInitialMode}
       onClose={handleLoginClose}
       onSuccess={handleLoginSuccess}
+      isDarkMode={isDarkMode}
+      setIsDarkMode={setIsDarkMode}
     />
   ) : null;
 
