@@ -107,6 +107,13 @@ const AUTH_MESSAGES: Record<string, string> = {
 const LABEL =
   'font-code-sm text-[10px] font-medium leading-[1.62] tracking-[0.12em] uppercase text-[color:var(--ink-faint)]';
 
+/**
+ * Read once at load rather than hardcoded, so the sign-off rolls over on its
+ * own. SiteFooter carries the other copy of this line and does the same;
+ * change them together.
+ */
+const YEAR = new Date().getFullYear();
+
 const fieldClass = (bad: boolean) =>
   `u-transition h-[46px] w-full rounded-[10px] border px-3.5 font-body-lg text-[14.5px] leading-[normal] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:outline-none focus:ring-4 disabled:opacity-60 ${
     bad
@@ -691,7 +698,7 @@ export default function LoginPage({
       <footer className="mt-auto w-full shrink-0 border-t border-outline-variant bg-surface-container-lowest dark:bg-card">
         <div className="mx-auto flex max-w-container-max flex-wrap items-center justify-between gap-x-5 gap-y-3 px-margin-desktop py-[18px]">
           <p className="font-body-lg text-[12.5px] text-[color:var(--ink-faint)]">
-            © 2026 Forma. Designed &amp; built by <b className="font-bold text-secondary">Waqar Sayyed</b>.
+            © {YEAR} Forma. Designed &amp; built by <b className="font-bold text-secondary">Waqar Sayyed</b>.
           </p>
           {/* Marked rather than faked: both of these pointed at "/" before. */}
           <div className="flex items-center gap-[18px]">

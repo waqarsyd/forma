@@ -37,6 +37,17 @@ const LINK =
   'u-transition block py-[5px] font-body-lg text-[14px] leading-[1.62] text-on-surface-variant hover:translate-x-[3px] hover:text-secondary';
 const NOTE = 'font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-faint)]';
 
+/**
+ * Read once when the module loads rather than hardcoded, so the sign-off rolls
+ * over on its own and nobody has to remember it every January. It follows the
+ * visitor's clock, which is the right source here — a copyright line is for
+ * whoever is reading it.
+ *
+ * LoginPage carries its own copy of this sign-off and does the same thing;
+ * change them together.
+ */
+const YEAR = new Date().getFullYear();
+
 function Column({ heading, links }: { heading: string; links: Link[] }) {
   return (
     <div>
@@ -90,7 +101,7 @@ export default function SiteFooter({ onThisPage, maker }: { onThisPage?: Link[];
                 reference for this chrome, so the designs follow it, not the
                 other way round. */}
             <p className={`mt-2.5 ${NOTE}`}>
-              © 2026 Forma. Designed &amp; built by{' '}
+              © {YEAR} Forma. Designed &amp; built by{' '}
               <strong className="font-bold text-secondary">Waqar Sayyed</strong>.
             </p>
           </div>
