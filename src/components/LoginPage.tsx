@@ -102,6 +102,13 @@ const AUTH_MESSAGES: Record<string, string> = {
   'auth/too-many-requests': 'Too many attempts. Wait a few minutes before trying again.',
   'auth/network-request-failed': 'Could not reach the sign-in service. Check your connection and try again.',
   'auth/operation-not-allowed': 'Email and password sign-in is not enabled for this project.',
+  // Google sign-in goes through signInWithPopup, so a popup blocker is one of
+  // the likeliest failures here. Without this it fell through to "Google
+  // sign-in failed. Please try again." — advice that cannot work, because
+  // trying again does exactly the same thing.
+  'auth/popup-blocked': 'Your browser blocked the sign-in window. Allow pop-ups for this site, then try again.',
+  'auth/account-exists-with-different-credential':
+    'An account already exists with this email, created with a different sign-in method. Try the other method.',
 };
 
 const LABEL =
@@ -645,6 +652,22 @@ export default function LoginPage({
                   <span>{signup ? 'Create account' : 'Sign in'}</span>
                 )}
               </button>
+
+              {signup && (
+                // Both destinations are still data-needs-url placeholders, so
+                // this line goes live properly the moment those exist.
+                <p className="font-body-lg text-[12.5px] leading-[1.55] text-[color:var(--ink-faint)]">
+                  By creating an account you agree to the{' '}
+                  <a href="#" data-needs-url className="u-focus-ring font-semibold text-secondary hover:underline">
+                    Terms
+                  </a>{' '}
+                  and the{' '}
+                  <a href="#" data-needs-url className="u-focus-ring font-semibold text-secondary hover:underline">
+                    Privacy policy
+                  </a>
+                  .
+                </p>
+              )}
             </form>
 
             <div className="my-[22px] flex items-center gap-3.5">
@@ -669,6 +692,15 @@ export default function LoginPage({
               </svg>
               <span>{signup ? 'Sign up with Google' : 'Sign in with Google'}</span>
             </button>
+
+            {/* People arrive here having been told Forma needs a Gemini key,
+                and this screen asks for a password. Saying which is which at
+                the point of confusion is cheaper than answering it later. */}
+            <p className="mt-[18px] border-t border-outline-variant pt-4 font-body-lg text-[12.5px] leading-[1.55] text-[color:var(--ink-faint)]">
+              This is a Forma account password —{' '}
+              <b className="font-semibold text-on-surface-variant">not your Gemini API key</b>. The key is only ever
+              entered in the workspace, and signing in never asks for it.
+            </p>
           </div>
 
           {/* An account is optional here, and saying so removes the main reason
@@ -690,6 +722,35 @@ export default function LoginPage({
               </button>
               .
             </p>
+          </div>
+
+          {/* Two things a person needs and could not previously get from this
+              screen: what signing in leaves behind on the machine, and
+              somewhere to go when it will not let them in. Without the second
+              the card is a dead end at exactly the moment someone is stuck. */}
+          <div className="mt-3 rounded-xl border border-outline-variant bg-surface-container-lowest/55 dark:bg-card/55 px-[18px] py-4">
+            <div className="font-code-sm text-[9.5px] font-medium leading-[1.62] tracking-[0.14em] uppercase text-[color:var(--ink-faint)]">
+              Good to know
+            </div>
+            <ul className="mt-2 grid gap-2">
+              <li className="relative pl-[18px] font-body-lg text-[13.5px] leading-[1.55] text-on-surface-variant">
+                <span className="absolute left-0 top-[9px] h-[1.5px] w-2 bg-secondary-container" />
+                You stay signed in on this browser until you sign out. Signing out clears the workspace as well as
+                the credential — the design, the extracted text and the generated report all go.
+              </li>
+              <li className="relative pl-[18px] font-body-lg text-[13.5px] leading-[1.55] text-on-surface-variant">
+                <span className="absolute left-0 top-[9px] h-[1.5px] w-2 bg-secondary-container" />
+                Cannot get in?{' '}
+                <a href="/docs#trouble" className="u-focus-ring font-semibold text-secondary hover:underline">
+                  Troubleshooting
+                </a>{' '}
+                covers the usual causes, or{' '}
+                <a href="/contact" className="u-focus-ring font-semibold text-secondary hover:underline">
+                  send a message
+                </a>
+                .
+              </li>
+            </ul>
           </div>
         </motion.div>
       </div>
