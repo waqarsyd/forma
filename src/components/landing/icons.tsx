@@ -1,11 +1,18 @@
 /**
- * The landing page's icon set.
+ * The app's icon set.
  *
- * Deliberately inline SVG rather than the Material Symbols ligature font the
- * rest of the app uses: this page is a drafting sheet, and these are hairline
- * drawings at the same weight as its rules. Material's filled glyphs read as a
- * different family beside them. Everywhere else in the app, keep using Material
- * Symbols — see the note in CLAUDE.md.
+ * Deliberately inline SVG rather than a ligature font: these surfaces are
+ * drafting sheets, and these are hairline drawings at the same weight as their
+ * rules. Material Symbols' filled glyphs read as a different family beside them.
+ *
+ * This was the *landing page's* set until the workspace was rebuilt on the same
+ * design language; it is now the default for new work anywhere in the app. Add
+ * icons here rather than starting a second set, and match the 1.8 default
+ * stroke — a heavier icon in a toolbar is visible immediately next to a lighter
+ * one in the same row.
+ *
+ * Two consumers still use Material Symbols: `SiteHeader` and `MobileNav`, which
+ * is why the Google Fonts <link> in index.html has to stay. See CLAUDE.md.
  */
 
 type Props = { size?: number; className?: string; strokeWidth?: number };
@@ -319,5 +326,120 @@ export const IconSun = (p: Props) => (
 export const IconMoon = (p: Props) => (
   <Svg {...p}>
     <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5z" />
+  </Svg>
+);
+
+/* ---- workspace ----
+   Added when the workspace moved off Material Symbols. Same 1.8 default weight
+   as everything above, so a workspace toolbar and a marketing page read as one
+   drawing. Where a Material glyph had no counterpart the shape follows the
+   glyph it replaced, not a new invention — `architecture` was a drafting
+   compass, so IconRuler is a compass. */
+export const IconHistory = (p: Props) => (
+  <Svg {...p}>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <path d="M3 3v5h5" />
+    <path d="M12 8v4.5l3.5 2" />
+  </Svg>
+);
+export const IconTrash = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />
+    <path d="M10 11v6M14 11v6" />
+  </Svg>
+);
+export const IconTune = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+    <circle cx="16" cy="7" r="2" />
+    <circle cx="8" cy="17" r="2" />
+  </Svg>
+);
+export const IconSave = (p: Props) => (
+  <Svg {...p}>
+    <path d="M5 3h11l3 3v15H5z" />
+    <path d="M8 3v6h8V3M8 21v-6h8v6" />
+  </Svg>
+);
+export const IconPlus = (p: Props) => (
+  <Svg strokeWidth={2.2} {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Svg>
+);
+export const IconPlay = (p: Props) => (
+  <Svg {...p}>
+    <path d="M7 4.5v15l12-7.5z" />
+  </Svg>
+);
+export const IconArrowUp = (p: Props) => (
+  <Svg strokeWidth={2.4} {...p}>
+    <path d="M12 20V4M6 10l6-6 6 6" />
+  </Svg>
+);
+/* There is deliberately no IconRocket. The `rocket_launch` glyph it would have
+   replaced sat in the "03 SHIP — Export Native" card, directly beside IconRuler's
+   compass, and three attempts at a rocket all reduced to the same
+   triangle-plus-crossbar silhouette as the compass at 22px. The card means
+   export, so it uses IconDownload — the same icon as the Export action, which is
+   the same concept. Silhouette, not detail, is what carries at toolbar sizes. */
+export const IconFolder = (p: Props) => (
+  <Svg {...p}>
+    <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5z" />
+  </Svg>
+);
+export const IconRuler = (p: Props) => (
+  <Svg {...p}>
+    {/* A drafting compass, because the Material glyph it replaces was
+        `architecture`. The legs splay wide on purpose: drawn narrow they closed
+        up into a solid wedge and read as IconRocket. */}
+    <circle cx="12" cy="4.4" r="1.5" />
+    <path d="M11 6.2 5.4 19.6M13 6.2l5.6 13.4" />
+    <path d="M8.4 14.2h7.2" />
+  </Svg>
+);
+export const IconUpload = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5" />
+    <path d="M4 16v3.5h16V16" />
+  </Svg>
+);
+export const IconLogout = (p: Props) => (
+  <Svg {...p}>
+    <path d="M15 4h4.5v16H15" />
+    <path d="M11 8l-4 4 4 4M7 12h9" />
+  </Svg>
+);
+export const IconLogin = (p: Props) => (
+  <Svg {...p}>
+    <path d="M9 4H4.5v16H9" />
+    <path d="M14 8l4 4-4 4M18 12H9" />
+  </Svg>
+);
+export const IconMenu = (p: Props) => (
+  <Svg strokeWidth={2} {...p}>
+    <path d="M4 7h16M4 12h16M4 17h16" />
+  </Svg>
+);
+export const IconCheckCircle = (p: Props) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8 12.5l2.5 2.5L16 9.5" />
+  </Svg>
+);
+export const IconPaperclip = (p: Props) => (
+  <Svg {...p}>
+    <path d="M18 7.5 9.5 16a3 3 0 0 1-4.2-4.2l8-8a4.5 4.5 0 0 1 6.4 6.4l-8.4 8.4a6 6 0 0 1-8.5-8.5l6-6" />
+  </Svg>
+);
+export const IconCopy = (p: Props) => (
+  <Svg {...p}>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+  </Svg>
+);
+export const IconAlert = (p: Props) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7.5v5.5M12 16.2v.3" />
   </Svg>
 );

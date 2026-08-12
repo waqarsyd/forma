@@ -4,16 +4,50 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+/*
+ * The workspace draws from the same hairline set as the marketing pages. It used
+ * to mix two other systems: Material Symbols (40 ligature spans) and lucide
+ * (these eight). Both are gone from this file — see the note in icons.tsx.
+ *
+ * One consequence worth knowing: Material Symbols ships its own `display` from
+ * an unlayered <link>, which beat Tailwind's layered `hidden`, so responsive
+ * classes on those spans silently never applied. Inline SVG has no such problem,
+ * so `hidden sm:inline` on an icon now does what it says.
+ */
 import {
-  Image as ImageIcon,
-  ScrollText,
-  CodeXml,
-  AlertCircle,
-  AlertTriangle,
-  Copy,
-  Check,
-  CheckCircle2
-} from 'lucide-react';
+  IconAlert,
+  IconArrowUp,
+  IconChat,
+  IconCheck,
+  IconCheckCircle,
+  IconChevronDown,
+  IconClose,
+  IconCode,
+  IconCopy,
+  IconDoc,
+  IconDownload,
+  IconEye,
+  IconEyeOff,
+  IconFolder,
+  IconHistory,
+  IconImage,
+  IconLayout,
+  IconLogin,
+  IconLogout,
+  IconMenu,
+  IconPaperclip,
+  IconPause,
+  IconPlay,
+  IconPlus,
+  IconReplay,
+  IconRuler,
+  IconSave,
+  IconSpec,
+  IconTrash,
+  IconTune,
+  IconUpload,
+  IconWarn,
+} from './components/landing/icons';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -469,7 +503,7 @@ const RepxViewer = ({ xml }: { xml: string }) => {
   if (!xml?.trim()) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-        <AlertTriangle className="text-error" size={28} />
+        <IconWarn className="text-error" size={28} />
         <p className="text-sm font-semibold text-on-surface">No REPX was generated for this report.</p>
         <p className="text-xs text-on-surface-variant max-w-sm">
           The model returned a specification but no DevExpress XML. Export will fall back to a
@@ -490,7 +524,7 @@ const RepxViewer = ({ xml }: { xml: string }) => {
               : 'text-[color:var(--bad-ink)] border-[color:var(--bad-line)] bg-[color:var(--bad-wash)]'
           }`}
         >
-          {status.ok ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+          {status.ok ? <IconCheckCircle size={14} /> : <IconAlert size={14} />}
           <span>{status.message}</span>
         </div>
 
@@ -502,7 +536,7 @@ const RepxViewer = ({ xml }: { xml: string }) => {
             onClick={handleCopy}
             className="u-tap u-transition-fast u-press u-focus-ring flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest text-[11px] font-semibold text-on-surface-variant rounded-full cursor-pointer"
           >
-            {copied ? <Check size={13} className="text-[color:var(--ok-ink)]" /> : <Copy size={13} />}
+            {copied ? <IconCheck size={13} className="text-[color:var(--ok-ink)]" /> : <IconCopy size={13} />}
             {copied ? 'Copied' : 'Copy XML'}
           </button>
         </div>
@@ -692,7 +726,7 @@ const MockupImage = ({
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-center bg-on-paper/5">
-      <ImageIcon size={24} className="text-on-paper/40" />
+      <IconImage size={24} className="text-on-paper/40" />
       <span className="text-[10px] text-on-paper/60 mt-1 truncate px-1 max-w-full">{el.content}</span>
     </div>
   );
@@ -2458,7 +2492,7 @@ export default function App() {
                 title="Saved Projects"
                 aria-label={`Saved projects${savedReports.length ? ` (${savedReports.length})` : ''}`}
               >
-                <span className="material-symbols-outlined text-[20px]">history</span>
+                <IconHistory size={20} />
                 {savedReports.length > 0 && !isSidebarOpen && (
                   <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-secondary text-[8px] font-bold text-white rounded-full flex items-center justify-center border border-white">
                     {savedReports.length}
@@ -2482,7 +2516,7 @@ export default function App() {
                   desktop button always rendered icon *and* label, like its two
                   siblings. Wrap the icon in a plain span if you ever do need to
                   hide one responsively. */}
-              <span className="material-symbols-outlined text-[14px]">save</span>
+              <IconSave size={14} />
               <span className="hidden lg:inline">Save Project</span>
             </button>
             <button
@@ -2491,7 +2525,7 @@ export default function App() {
               title="New Process"
               aria-label="New process"
             >
-              <span className="material-symbols-outlined text-[14px]">add</span>
+              <IconPlus size={14} />
               <span className="hidden lg:inline">New Process</span>
             </button>
             <button
@@ -2500,7 +2534,7 @@ export default function App() {
               title="Configure"
               aria-label="Configure"
             >
-              <span className="material-symbols-outlined text-[14px]">tune</span>
+              <IconTune size={14} />
               <span className="hidden lg:inline">Configure</span>
             </button>
             <div className="w-px h-6 bg-outline-variant/30 mx-1 sm:mx-2 hidden sm:block"></div>
@@ -2514,9 +2548,15 @@ export default function App() {
                   <span className="font-label-caps text-[11px] text-on-surface-variant font-semibold hidden sm:inline max-w-[120px] truncate">
                     {user.displayName || user.email?.split('@')[0]}
                   </span>
-                  <span className="material-symbols-outlined text-[14px] text-on-surface-variant select-none hidden sm:inline">
-                    {showWorkspaceProfile ? 'expand_less' : 'expand_more'}
-                  </span>
+                  {/* One chevron rotated, rather than two glyphs: the Material set
+                      had expand_less/expand_more as separate ligatures, but a
+                      rotation animates and cannot drift out of step. */}
+                  <IconChevronDown
+                    size={14}
+                    className={`u-transition-fast text-on-surface-variant select-none hidden sm:inline ${
+                      showWorkspaceProfile ? 'rotate-180' : ''
+                    }`}
+                  />
                 </div>
 
                 {showWorkspaceProfile && (
@@ -2536,7 +2576,7 @@ export default function App() {
                       }}
                       className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-error-container text-error hover:text-error transition-colors text-left text-xs font-semibold font-label-caps cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[16px]">logout</span>
+                      <IconLogout size={16} />
                       Sign Out
                     </button>
                   </div>
@@ -2556,7 +2596,7 @@ export default function App() {
                     Symbols sets its own `display`, which beats Tailwind's `hidden`
                     (see the same dead `lg:hidden` on the save icon above), and
                     showing it at every width matches the sibling pills anyway. */}
-                <span className="material-symbols-outlined text-[20px]">login</span>
+                <IconLogin size={20} />
                 <span className="hidden sm:inline">Sign In</span>
               </button>
             )}
@@ -2565,7 +2605,7 @@ export default function App() {
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 className={`w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full transition-all cursor-pointer ${isMenuOpen ? 'bg-surface-container' : ''}`}
               >
-                <span className="material-symbols-outlined text-[20px]">menu</span>
+                <IconMenu size={20} />
               </button>
               {isMenuOpen && (
                 <div className="absolute right-0 mt-2 w-64 bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-[var(--shadow-lg)] z-50 overflow-hidden">
@@ -2586,7 +2626,7 @@ export default function App() {
                         disabled={!result && messages.length === 0}
                         className="sm:hidden w-full flex items-center gap-3 p-2 hover:bg-surface-container rounded-xl transition-colors group cursor-pointer text-left text-on-surface disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <span className="material-symbols-outlined text-on-surface-variant text-[18px] group-hover:text-secondary">save</span>
+                        <IconSave size={18} className="text-on-surface-variant group-hover:text-secondary" />
                         <span className="font-body-sm text-[13px]">Save Project</span>
                       </button>
                       <button
@@ -2596,7 +2636,7 @@ export default function App() {
                         }}
                         className="sm:hidden w-full flex items-center gap-3 p-2 hover:bg-surface-container rounded-xl transition-colors group cursor-pointer text-left text-on-surface"
                       >
-                        <span className="material-symbols-outlined text-on-surface-variant text-[18px] group-hover:text-secondary">add</span>
+                        <IconPlus size={18} className="text-on-surface-variant group-hover:text-secondary" />
                         <span className="font-body-sm text-[13px]">New Process</span>
                       </button>
                     </div>
@@ -2632,11 +2672,11 @@ export default function App() {
             >
               <div className="flex items-center justify-between p-6 border-b border-outline-variant flex-shrink-0">
                 <h3 className="text-lg font-bold flex items-center gap-2 font-title-md">
-                  <span className="material-symbols-outlined text-secondary">tune</span>
+                  <IconTune size={20} className="text-secondary" />
                   Report Configuration
                 </h3>
                 <button onClick={dismissConfigWithoutSaving} aria-label="Close without saving" className="text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer flex items-center">
-                  <span className="material-symbols-outlined">close</span>
+                  <IconClose size={20} />
                 </button>
               </div>
               <div className="p-6 space-y-5 overflow-y-auto">
@@ -2759,9 +2799,7 @@ export default function App() {
                         className="absolute right-3 text-on-surface-variant hover:text-on-surface cursor-pointer flex items-center"
                         title={showApiKey ? "Hide API Key" : "Show API Key"}
                       >
-                        <span className="material-symbols-outlined text-[18px]">
-                          {showApiKey ? "visibility" : "visibility_off"}
-                        </span>
+                        {showApiKey ? <IconEye size={18} /> : <IconEyeOff size={18} />}
                       </button>
                     </div>
 
@@ -2937,7 +2975,7 @@ export default function App() {
                 onClick={() => setFullScreenImage(null)}
                 className="absolute -top-4 -right-4 bg-surface-container-lowest text-on-surface p-2 rounded-full shadow-[var(--shadow-lg)] hover:bg-surface transition-colors pointer-events-auto cursor-pointer flex items-center"
               >
-                <span className="material-symbols-outlined text-[18px]">close</span>
+                <IconClose size={18} />
               </button>
             </motion.div>
           </div>
@@ -2962,7 +3000,7 @@ export default function App() {
                 className="text-[10px] font-bold text-error hover:text-error flex items-center gap-1 transition-colors cursor-pointer uppercase font-label-caps font-mono"
                 title="Clear All Chat"
               >
-                <span className="material-symbols-outlined text-[13px]">delete</span>
+                <IconTrash size={13} />
                 Clear Chat
               </button>
             </div>
@@ -2974,7 +3012,7 @@ export default function App() {
             {messages.length === 0 && (
               <div className="bg-surface-container-lowest border border-outline-variant p-5 rounded-2xl shadow-[var(--shadow-sm)]">
                 <h4 className="font-title-md text-body-sm font-bold mb-3 flex items-center gap-2 text-on-surface">
-                  <span className="material-symbols-outlined text-secondary text-lg">chat_bubble</span>
+                  <IconChat size={18} className="text-secondary" />
                   Hi there!
                 </h4>
                 <p className="font-body-sm text-[13px] text-on-surface-variant leading-relaxed">
@@ -3003,7 +3041,7 @@ export default function App() {
                             <div key={idx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-outline-variant/50 bg-surface-container-lowest flex items-center justify-center shadow-[var(--shadow-sm)]">
                               {isRepx ? (
                                 <div className="flex flex-col items-center justify-center w-full h-full text-on-surface-variant">
-                                  <span className="material-symbols-outlined text-[18px]">description</span>
+                                  <IconDoc size={18} />
                                   <span className="text-[7px] font-bold uppercase mt-0.5">REPX</span>
                                 </div>
                               ) : (
@@ -3032,7 +3070,7 @@ export default function App() {
                         in a note by the composer that scrolls away from it. */}
                     {msg.error && (
                       <div className="flex items-start gap-1.5 max-w-[90%] text-error" role="alert">
-                        <span className="material-symbols-outlined text-[13px] shrink-0 mt-px">error</span>
+                        <IconAlert size={13} className="shrink-0 mt-px" />
                         <div className="flex flex-col items-start gap-1">
                           <span className="text-[10px] leading-snug">{msg.error}</span>
                           <button
@@ -3071,7 +3109,7 @@ export default function App() {
                     </p>
                   ) : (
                     <span className="flex items-center gap-2.5">
-                      <span className="material-symbols-outlined animate-spin text-secondary text-[16px] select-none">autorenew</span>
+                      <IconReplay size={16} className="animate-spin text-secondary select-none" />
                       <span className="text-[11px] text-on-surface-variant">Thinking…</span>
                     </span>
                   )}
@@ -3095,9 +3133,9 @@ export default function App() {
                   <div className="flex items-center justify-between gap-3 w-full">
                     <div className="flex items-center gap-2.5 min-w-0">
                       {isPaused ? (
-                        <span className="material-symbols-outlined text-[color:var(--ink-faint)] text-[18px] select-none">pause</span>
+                        <IconPause size={18} className="text-[color:var(--ink-faint)] select-none" />
                       ) : (
-                        <span className="material-symbols-outlined animate-spin text-secondary text-[18px] select-none">autorenew</span>
+                        <IconReplay size={18} className="animate-spin text-secondary select-none" />
                       )}
                       <span className="text-xs font-bold text-[color:var(--ink-faint)] truncate">
                         {isPaused ? 'Analysis Paused' : streamChars > 0 ? 'Writing report' : 'Reading your design'}
@@ -3113,7 +3151,7 @@ export default function App() {
                         title="Stop & Reset"
                         aria-label="Stop analysis"
                       >
-                        <span className="material-symbols-outlined text-[16px]">close</span>
+                        <IconClose size={16} />
                       </button>
                     </div>
                   </div>
@@ -3189,7 +3227,7 @@ export default function App() {
                 exit="hidden"
                 className="absolute inset-0 z-30 m-3 rounded-2xl border-2 border-dashed border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 pointer-events-none"
               >
-                <span className="material-symbols-outlined text-secondary text-[34px]">upload_file</span>
+                <IconUpload size={34} className="text-secondary" />
                 <p className="font-label-caps text-[11px] font-bold text-secondary uppercase tracking-wider">Drop to attach</p>
                 <p className="text-[10px] text-on-surface-variant">PNG, JPG, PDF or .repx</p>
               </motion.div>
@@ -3207,7 +3245,7 @@ export default function App() {
                     <div key={idx} className="relative group w-12 h-12 flex-shrink-0 rounded border border-outline-variant shadow-[var(--shadow-sm)] flex items-center justify-center bg-surface-container-lowest">
                       {isRepx ? (
                         <div className="flex flex-col items-center justify-center w-full h-full text-on-surface-variant" title="REPX File">
-                          <span className="material-symbols-outlined text-[18px]">description</span>
+                          <IconDoc size={18} />
                           <span className="text-[8px] font-bold mt-0.5 uppercase">REPX</span>
                         </div>
                       ) : (
@@ -3225,7 +3263,7 @@ export default function App() {
                            there, so the old opacity-0 made this unreachable. */
                         className="u-transition-fast u-press u-focus-ring absolute -top-2 -right-2 w-6 h-6 bg-surface-container-lowest border border-outline-variant hover:bg-red-500 hover:text-white hover:border-red-500 text-on-surface-variant rounded-full shadow-[var(--shadow-sm)] opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 cursor-pointer flex items-center justify-center"
                       >
-                        <span className="material-symbols-outlined text-[12px]">close</span>
+                        <IconClose size={12} />
                       </button>
                     </div>
                   );
@@ -3244,14 +3282,14 @@ export default function App() {
                     className="group flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full border border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] text-[10px] text-on-surface-variant max-w-full"
                     title={`${t.label} — exact text extracted from the file`}
                   >
-                    <span className="material-symbols-outlined text-[13px] text-secondary shrink-0">description</span>
+                    <IconDoc size={13} className="text-secondary shrink-0" />
                     <span className="truncate max-w-[160px]">{t.label}</span>
                     <button
                       onClick={() => removeTextAttachment(t.id)}
                       aria-label={`Remove ${t.label}`}
                       className="u-transition-fast u-focus-ring shrink-0 w-4 h-4 rounded-full hover:bg-error hover:text-white flex items-center justify-center cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[11px]">close</span>
+                      <IconClose size={11} />
                     </button>
                   </span>
                 ))}
@@ -3260,7 +3298,7 @@ export default function App() {
 
             {isIngesting && (
               <p className="text-[10px] text-on-surface-variant px-2 flex items-center gap-1.5">
-                <span className="material-symbols-outlined animate-spin text-[13px]">autorenew</span>
+                <IconReplay size={13} className="animate-spin" />
                 Reading files…
               </p>
             )}
@@ -3271,7 +3309,7 @@ export default function App() {
               <div className="flex flex-col gap-1 px-1">
                 {uploadNotices.map((notice, i) => (
                   <p key={i} className="text-[10px] text-on-surface-variant leading-snug flex items-start gap-1.5">
-                    <AlertTriangle size={11} className="text-secondary shrink-0 mt-px" />
+                    <IconWarn size={11} className="text-secondary shrink-0 mt-px" />
                     <span>{notice}</span>
                   </p>
                 ))}
@@ -3280,7 +3318,7 @@ export default function App() {
 
             {saveNotice && (
               <p className="text-[10px] text-on-surface-variant leading-snug flex items-start gap-1.5 px-1" role="status">
-                <span className="material-symbols-outlined text-[13px] text-[color:var(--ok-ink)] shrink-0">check_circle</span>
+                <IconCheckCircle size={13} className="text-[color:var(--ok-ink)] shrink-0" />
                 <span>{saveNotice}</span>
               </p>
             )}
@@ -3293,7 +3331,7 @@ export default function App() {
                   title="Attach files"
                   aria-label="Attach files"
                 >
-                  <span className="material-symbols-outlined text-[20px]">attach_file</span>
+                  <IconPaperclip size={20} />
                 </button>
                 <input
                   type="file"
@@ -3335,12 +3373,12 @@ export default function App() {
               >
                 {isAnalyzing || isPaused ? (
                   isPaused ? (
-                    <span className="material-symbols-outlined text-[20px]">play_arrow</span>
+                    <IconPlay size={20} />
                   ) : (
-                    <span className="material-symbols-outlined text-[20px]">pause</span>
+                    <IconPause size={20} />
                   )
                 ) : (
-                  <span className="material-symbols-outlined text-[20px]">arrow_upward</span>
+                  <IconArrowUp size={20} />
                 )}
               </button>
             </div>
@@ -3351,7 +3389,7 @@ export default function App() {
                 onClick={() => setIsConfigOpen(true)}
                 className="u-transition-fast u-focus-ring w-full flex items-start gap-2 text-left px-3 py-2.5 rounded-xl border border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] hover:bg-[color:var(--accent-line)] cursor-pointer"
               >
-                <AlertCircle size={14} className="text-secondary shrink-0 mt-0.5" />
+                <IconAlert size={14} className="text-secondary shrink-0 mt-0.5" />
                 {/* Signing out clears the session key, but the encrypted copy in
                     the account survives. Telling a returning user to "add your
                     API key" when the app already knows they have one stored made
@@ -3396,7 +3434,7 @@ export default function App() {
                         "M." for "Mock Invoice Report" — which carries nothing. The
                         tabs and Export are the useful controls at that width. */}
                     <div className="hidden sm:flex items-center gap-2 min-w-0">
-                      <span className="material-symbols-outlined text-secondary shrink-0">space_dashboard</span>
+                      <IconLayout size={20} className="text-secondary shrink-0" />
                       <span className="font-semibold text-sm tracking-normal text-on-surface truncate" title={result.title || 'Generated Report'}>{result.title || 'Generated Report'}</span>
                     </div>
                     <div className="flex bg-surface-container-low p-1 rounded-full border border-outline-variant shrink-0" role="tablist">
@@ -3428,7 +3466,7 @@ export default function App() {
                       onClick={downloadDesign}
                       className="u-tap u-transition-fast u-press u-focus-ring px-4 sm:px-5 py-1.5 bg-secondary-container hover:bg-secondary text-white font-label-caps text-[11px] flex items-center gap-2 rounded-full cursor-pointer shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
                     >
-                      <span className="material-symbols-outlined text-[14px]">download</span>
+                      <IconDownload size={14} />
                       <span className="hidden sm:inline">Export .REPX</span>
                       <span className="sm:hidden">Export</span>
                     </button>
@@ -3463,8 +3501,8 @@ export default function App() {
                         {/* Specification / REPX switch — the tab is named for both. */}
                         <div className="flex items-center gap-1 mb-5 p-1 bg-surface-container-low rounded-full border border-outline-variant w-fit">
                           {([
-                            { id: 'spec', label: 'Specification', icon: ScrollText },
-                            { id: 'repx', label: 'REPX XML', icon: CodeXml },
+                            { id: 'spec', label: 'Specification', icon: IconSpec },
+                            { id: 'repx', label: 'REPX XML', icon: IconCode },
                           ] as const).map((view) => (
                             <button
                               key={view.id}
@@ -3544,21 +3582,21 @@ export default function App() {
                     <div className="grid grid-cols-3 gap-6">
                       <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all group border-b-4 border-b-[color:var(--accent-line)]">
                         <div className="w-10 h-10 bg-[color:var(--accent-wash)] flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
-                          <span className="material-symbols-outlined text-secondary text-[22px]">publish</span>
+                          <IconUpload size={22} className="text-secondary" />
                         </div>
                         <span className="font-code-sm text-[11px] text-secondary font-bold block mb-1">01 SHOW</span>
                         <span className="text-[12px] text-on-surface-variant font-body-sm">Ingest Mockup</span>
                       </div>
                       <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all group border-b-4 border-b-[color:var(--accent-line)]">
                         <div className="w-10 h-10 bg-[color:var(--accent-wash)] flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
-                          <span className="material-symbols-outlined text-secondary text-[22px]">architecture</span>
+                          <IconRuler size={22} className="text-secondary" />
                         </div>
                         <span className="font-code-sm text-[11px] text-secondary font-bold block mb-1">02 BUILD</span>
                         <span className="text-[12px] text-on-surface-variant font-body-sm">Parse Geometry</span>
                       </div>
                       <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all group border-b-4 border-b-[color:var(--accent-line)]">
                         <div className="w-10 h-10 bg-[color:var(--accent-wash)] flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
-                          <span className="material-symbols-outlined text-secondary text-[22px]">rocket_launch</span>
+                          <IconDownload size={22} className="text-secondary" />
                         </div>
                         <span className="font-code-sm text-[11px] text-secondary font-bold block mb-1">03 SHIP</span>
                         <span className="text-[12px] text-on-surface-variant font-body-sm">Export Native</span>
@@ -3600,8 +3638,8 @@ export default function App() {
         aria-label="Workspace panes"
       >
         {([
-          { id: 'chat', label: 'Chat', icon: 'chat_bubble' },
-          { id: 'canvas', label: 'Canvas', icon: 'space_dashboard' },
+          { id: 'chat', label: 'Chat', icon: IconChat },
+          { id: 'canvas', label: 'Canvas', icon: IconLayout },
         ] as const).map((pane) => {
           const isActive = mobilePane === pane.id;
           return (
@@ -3614,7 +3652,7 @@ export default function App() {
                 isActive ? 'text-secondary' : 'text-on-surface-variant'
               }`}
             >
-              <span className="material-symbols-outlined text-[18px]">{pane.icon}</span>
+              <pane.icon size={18} />
               {pane.label}
               {pane.id === 'canvas' && result && !isActive && (
                 <span className="w-1.5 h-1.5 rounded-full bg-secondary" aria-hidden="true" />
@@ -3655,7 +3693,7 @@ export default function App() {
             >
               <div className="p-4 border-b border-outline-variant flex items-center justify-between">
                 <div className="flex items-center gap-2 text-on-surface font-bold font-title-md">
-                  <span className="material-symbols-outlined text-secondary">history</span>
+                  <IconHistory size={20} className="text-secondary" />
                   <h2>My Projects</h2>
                 </div>
                 <button
@@ -3663,13 +3701,13 @@ export default function App() {
                   className="u-tap u-transition-fast u-press u-focus-ring p-2 text-on-surface-variant hover:bg-surface-container rounded-full cursor-pointer flex items-center justify-center"
                   aria-label="Close projects panel"
                 >
-                  <span className="material-symbols-outlined">close</span>
+                  <IconClose size={20} />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {savedReports.length === 0 ? (
                   <div className="text-center text-on-surface-variant py-8 font-sans">
-                    <span className="material-symbols-outlined text-[32px] mb-2 opacity-50 block">folder_open</span>
+                    <IconFolder size={32} className="mb-2 opacity-50 block mx-auto" />
                     <p className="text-xs">No saved projects yet.</p>
                   </div>
                 ) : (
@@ -3690,7 +3728,7 @@ export default function App() {
                            fades in on hover for pointer devices. */
                         className="u-tap u-transition-fast u-press u-focus-ring absolute top-2 right-2 p-2 text-on-surface-variant opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 hover:text-error hover:bg-red-500/10 rounded-full cursor-pointer flex items-center justify-center"
                       >
-                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                        <IconTrash size={16} />
                       </button>
                     </div>
                   ))
