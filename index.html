@@ -23,7 +23,39 @@
       }
     })();
   </script>
-  <title>Forma</title>
+  <!-- "Show it. Build it. Ship it." is the tagline and lives in the hero and the
+       header lockup. These slots carry the *descriptor* instead: they are read by
+       search engines and link-preview scrapers, neither of which has the hero's
+       lede underneath to explain what "show it" means. Keep the wording in sync
+       with LandingPage's lede, which is where it was lifted from. -->
+  <title>Forma — Screenshot to DevExpress .repx</title>
+  <meta name="description"
+    content="Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer." />
+
+  <!-- Link previews. og:image is root-relative on purpose: the Open Graph spec
+       asks for an absolute URL, but the only host value this project has is
+       APP_URL in .env, which is NOT VITE_-prefixed and therefore never reaches
+       the client (vite.config.ts allowlists VITE_* only). Baking in a literal
+       host would be wrong on every other deployment, and Vite's %VITE_*% HTML
+       replacement leaves the placeholder text in the output when the variable is
+       unset — a visibly broken URL. Root-relative resolves correctly against the
+       page origin in Slack, Facebook, X and LinkedIn, and degrades to no preview
+       image rather than a wrong one.
+
+       twitter:card is "summary", not "summary_large_image": the asset is the
+       256x256 square mark, and the large-image card would letterbox it. A proper
+       1200x630 card would be a real improvement — it does not exist yet. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Forma" />
+  <meta property="og:title" content="Forma — Screenshot to DevExpress .repx" />
+  <meta property="og:description"
+    content="Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer." />
+  <meta property="og:image" content="/logo.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Forma — Screenshot to DevExpress .repx" />
+  <meta name="twitter:description"
+    content="Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer." />
+  <meta name="twitter:image" content="/logo.png" />
   <!-- Font Families: Hanken Grotesk, Inter, JetBrains Mono -->
   <link
     href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap"
