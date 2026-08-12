@@ -48,6 +48,9 @@ import {
   IconUpload,
   IconWarn,
 } from './components/landing/icons';
+/* `landing/` is the shared marketing design system, not a private folder — see
+   CLAUDE.md. Eyebrow is reused here rather than restating its markup. */
+import { Eyebrow } from './components/landing/sections';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -1001,6 +1004,49 @@ export interface SavedReport {
   timestamp: string;
   messages: ChatMessage[];
   result: DesignResult | null;
+}
+
+/**
+ * The canvas's status line.
+ *
+ * There were two of these, byte-identical, one inside each branch of the
+ * canvas's result/empty `AnimatePresence` — so every change had to be made twice
+ * and kept in step by hand. It is the same bar in both states, so it is now one
+ * component rendered once *outside* that switch: the branches animate, the
+ * status line does not, which is also more honest, since the engine state is a
+ * property of the app rather than of whichever pane happens to be showing.
+ *
+ * The three states are mutually exclusive and ordered deliberately —
+ * processing wins over paused wins over idle.
+ */
+function CanvasStatusBar({
+  isAnalyzing,
+  isPaused,
+  analyzingStep,
+}: {
+  isAnalyzing: boolean;
+  isPaused: boolean;
+  analyzingStep: string;
+}) {
+  const processing = isAnalyzing && !isPaused;
+  return (
+    <div className="h-10 bg-surface-container-lowest border-t border-outline-variant flex items-center justify-center px-6 flex-shrink-0 select-none">
+      <span className="font-code-sm text-[10px] tracking-[0.2em] text-on-surface-variant uppercase flex items-center gap-2">
+        {processing ? (
+          <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping" />
+        ) : isPaused ? (
+          <span className="w-1.5 h-1.5 bg-[color:var(--ink-faint)] rounded-full" />
+        ) : (
+          <span className="w-1.5 h-1.5 bg-success rounded-full" />
+        )}
+        {processing
+          ? `Engine Status: Processing / ${analyzingStep || 'Analyzing...'}`
+          : isPaused
+            ? 'Engine Status: Paused / Idle'
+            : 'Engine Status: Idle • Ready for Input'}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -2465,7 +2511,12 @@ export default function App() {
      */
     <div className="sheet h-screen flex flex-col bg-surface text-on-surface font-sans overflow-hidden">
       {/* TopNavBar */}
-      <header className="w-full h-16 bg-surface-container-lowest border-b border-outline-variant flex-shrink-0 z-50">
+      {/* Height and material are copied from SiteHeader deliberately: h-[68px]
+          with the same translucent fill and blur. Crossing from a marketing page
+          into the workspace used to shift the bar 4px shorter and change it from
+          a translucent sheet to opaque white, which read as landing on a
+          different site. If you change one, change the other. */}
+      <header className="w-full h-[68px] bg-surface/[0.84] [backdrop-filter:blur(16px)_saturate(1.5)] border-b border-outline-variant flex-shrink-0 z-50">
         <nav className="flex justify-between items-center gap-2 px-3 sm:px-6 h-full w-full">
           <div className="flex items-center gap-3 lg:gap-6 min-w-0">
             <div
@@ -2986,7 +3037,7 @@ export default function App() {
       <main className="flex-grow flex overflow-hidden relative">
         {/* Integrated Left Sidebar */}
         <aside
-          className={`${mobilePane === 'chat' ? 'flex' : 'hidden'} md:flex relative w-full md:w-80 md:flex-shrink-0 border-r border-outline-variant flex-col bg-surface-container-low u-transition ${isDragging ? 'ring-2 ring-inset ring-[color:var(--accent-line)] bg-[color:var(--accent-wash)]' : ''}`}
+          className={`${mobilePane === 'chat' ? 'flex' : 'hidden'} md:flex relative w-full md:w-80 lg:w-96 md:flex-shrink-0 border-r border-outline-variant flex-col bg-surface-container-low u-transition ${isDragging ? 'ring-2 ring-inset ring-[color:var(--accent-line)] bg-[color:var(--accent-wash)]' : ''}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -3423,7 +3474,11 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="h-full flex flex-col overflow-hidden"
+                /* flex-1 min-h-0, not h-full: the status bar is a sibling below
+                   this now, so h-full would size to the whole column and push it
+                   off the bottom. min-h-0 is what lets the scroll area inside
+                   actually shrink rather than growing the flex item. */
+                className="flex-1 min-h-0 flex flex-col overflow-hidden"
               >
                 {/* Result header navigation toolbar */}
                 <div className="bg-surface-container-lowest px-3 sm:px-6 py-3 border-b border-outline-variant flex flex-wrap items-center justify-between gap-y-2 gap-x-3 shrink-0 shadow-[var(--shadow-sm)] z-10">
@@ -3474,7 +3529,7 @@ export default function App() {
                 </div>
 
                 {/* Technical report content dotted canvas */}
-                <div className="flex-1 overflow-auto p-3 sm:p-6 bg-surface-bright flex justify-center items-start dot-grid">
+                <div className="flex-1 overflow-auto p-3 sm:p-6 bg-surface-bright flex justify-center items-start sheet-grid">
                   <AnimatePresence mode="wait" initial={false}>
                     {activeTab === 'ui' && result.layout ? (
                       <motion.div
@@ -3485,9 +3540,14 @@ export default function App() {
                         exit="hidden"
                         className="w-full flex justify-center"
                       >
-                        <div className="w-full max-w-5xl shadow-[var(--shadow-lg)] rounded-2xl overflow-hidden border border-outline-variant bg-paper">
-                          <ReportMockup layout={result.layout} sourceImages={mockupSourceImages} />
-                        </div>
+                        {/* No wrapper frame here. ReportMockup already draws its
+                            own panel — border, radius, shadow and the grey inset
+                            around the page — so this div's border, shadow,
+                            rounding and `bg-paper` stacked a second frame around
+                            the first: white, then grey, then white, with two
+                            borders and two shadows. It owns its own max-width
+                            too. */}
+                        <ReportMockup layout={result.layout} sourceImages={mockupSourceImages} />
                       </motion.div>
                     ) : (
                       <motion.div
@@ -3534,100 +3594,79 @@ export default function App() {
                   </AnimatePresence>
                 </div>
 
-                {/* Bottom Technical Status Bar (Active) */}
-                <div className="h-10 bg-surface-container-lowest border-t border-outline-variant flex items-center justify-center px-6 flex-shrink-0 select-none">
-                  <div className="flex items-center gap-4">
-                    <span className="font-code-sm text-[10px] tracking-[0.2em] text-on-surface-variant uppercase flex items-center gap-2">
-                      {isAnalyzing && !isPaused ? (
-                        <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping"></span>
-                      ) : isPaused ? (
-                        <span className="w-1.5 h-1.5 bg-[color:var(--ink-faint)] rounded-full"></span>
-                      ) : (
-                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                      )}
-                      {isAnalyzing && !isPaused
-                        ? `Engine Status: Processing / ${analyzingStep || 'Analyzing...'}`
-                        : isPaused
-                          ? 'Engine Status: Paused / Idle'
-                          : 'Engine Status: Idle • Ready for Input'
-                      }
-                    </span>
-                  </div>
-                </div>
               </motion.div>
             ) : (
               <motion.div
                 key="empty"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="h-full flex flex-col overflow-hidden"
+                className="flex-1 min-h-0 flex flex-col overflow-hidden"
               >
-                {/* Dotted Grid Canvas */}
-                <div className="flex-1 relative dot-grid p-12 overflow-auto flex items-center justify-center">
-                  <div className="max-w-xl w-full text-center">
-                    <div className="relative inline-block mb-10 group">
-                      <div className="w-24 h-24 bg-surface-container-lowest border border-outline-variant shadow-[var(--shadow-lg)] rounded-3xl flex items-center justify-center mx-auto relative z-10 transition-transform group-hover:scale-105">
-                        <Logo size={56} alt="Forma" />
+                {/* `sheet-grid`, not `dot-grid`: the dotted ground was drawn from
+                    the shadcn-family `--foreground`, and it is the same two-scale
+                    drafting grid the marketing pages and the OG card use. */}
+                <div className="flex-1 relative sheet-grid p-8 sm:p-12 overflow-auto flex items-center justify-center">
+                  <div className="max-w-xl w-full">
+                    {/* The eyebrow is the shared marketing primitive, not a
+                        restatement of its markup — the coordinate reads in the
+                        report's own hundredths-of-an-inch grid. */}
+                    <Eyebrow coord="x 000 · y 0000">Canvas</Eyebrow>
+
+                    <div className="relative mt-8 mb-9 w-fit">
+                      <div className="w-20 h-20 bg-surface-container-lowest border border-outline-variant shadow-[var(--shadow-md)] rounded-2xl flex items-center justify-center relative z-10">
+                        <Logo size={44} alt="Forma" />
                       </div>
-                      {/* Background glow effect */}
-                      <div className="absolute inset-0 bg-secondary blur-3xl opacity-30 -z-0"></div>
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 -z-0 rounded-2xl bg-secondary opacity-20 blur-2xl"
+                      />
                     </div>
 
-                    <h3 className="font-headline-lg text-display-lg font-bold text-on-surface dark:text-white mb-6 tracking-tight">Ready to Process</h3>
-                    <p className="font-body-lg text-on-surface-variant mb-12 max-w-md mx-auto">
-                      Waiting for input in the chat interface. Enter a prompt or upload an image to begin.
+                    <h3 className="font-display-lg text-[40px] leading-[1.02] font-extrabold tracking-[-0.035em] text-on-surface">
+                      Ready to process
+                    </h3>
+                    <p className="mt-4 mb-10 max-w-md font-body-lg text-[15px] leading-[1.6] text-on-surface-variant">
+                      Upload a design in the chat pane — a screenshot, a PDF, or an existing{' '}
+                      <span className="font-code-sm text-[13.5px]">.repx</span> — and the spec, mockup
+                      and XML land here.
                     </p>
 
-                    {/* Process Steps Visualization */}
-                    <div className="grid grid-cols-3 gap-6">
-                      <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all group border-b-4 border-b-[color:var(--accent-line)]">
-                        <div className="w-10 h-10 bg-[color:var(--accent-wash)] flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
-                          <IconUpload size={22} className="text-secondary" />
+                    {/* The pipeline, and it is the app's own three-beat tagline:
+                        show it, build it, ship it. Mapped rather than written out
+                        three times — these were three copies of one card that had
+                        to be edited in lockstep. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {([
+                        { n: '01', step: 'Show', icon: IconUpload, label: 'Ingest the design' },
+                        { n: '02', step: 'Build', icon: IconRuler, label: 'Read the geometry' },
+                        { n: '03', step: 'Ship', icon: IconDownload, label: 'Export native REPX' },
+                      ] as const).map((s) => (
+                        <div
+                          key={s.n}
+                          className="u-transition group rounded-2xl border border-outline-variant border-b-2 border-b-[color:var(--accent-line)] bg-surface-container-lowest p-5 text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
+                        >
+                          <div className="u-transition mb-4 flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--accent-wash)] group-hover:bg-[color:var(--accent-line)]">
+                            <s.icon size={19} className="text-secondary" />
+                          </div>
+                          <span className="mb-1 block font-code-sm text-[10.5px] font-medium tracking-[0.15em] uppercase text-secondary">
+                            {s.n} {s.step}
+                          </span>
+                          <span className="font-body-lg text-[13px] leading-[1.5] text-on-surface-variant">
+                            {s.label}
+                          </span>
                         </div>
-                        <span className="font-code-sm text-[11px] text-secondary font-bold block mb-1">01 SHOW</span>
-                        <span className="text-[12px] text-on-surface-variant font-body-sm">Ingest Mockup</span>
-                      </div>
-                      <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all group border-b-4 border-b-[color:var(--accent-line)]">
-                        <div className="w-10 h-10 bg-[color:var(--accent-wash)] flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
-                          <IconRuler size={22} className="text-secondary" />
-                        </div>
-                        <span className="font-code-sm text-[11px] text-secondary font-bold block mb-1">02 BUILD</span>
-                        <span className="text-[12px] text-on-surface-variant font-body-sm">Parse Geometry</span>
-                      </div>
-                      <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all group border-b-4 border-b-[color:var(--accent-line)]">
-                        <div className="w-10 h-10 bg-[color:var(--accent-wash)] flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
-                          <IconDownload size={22} className="text-secondary" />
-                        </div>
-                        <span className="font-code-sm text-[11px] text-secondary font-bold block mb-1">03 SHIP</span>
-                        <span className="text-[12px] text-on-surface-variant font-body-sm">Export Native</span>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 </div>
 
-                {/* Bottom Technical Status Bar (Operational) */}
-                <div className="h-10 bg-surface-container-lowest border-t border-outline-variant flex items-center justify-center px-6 flex-shrink-0 select-none">
-                  <div className="flex items-center gap-4">
-                    <span className="font-code-sm text-[10px] tracking-[0.2em] text-on-surface-variant uppercase flex items-center gap-2">
-                      {isAnalyzing && !isPaused ? (
-                        <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping"></span>
-                      ) : isPaused ? (
-                        <span className="w-1.5 h-1.5 bg-[color:var(--ink-faint)] rounded-full"></span>
-                      ) : (
-                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                      )}
-                      {isAnalyzing && !isPaused
-                        ? `Engine Status: Processing / ${analyzingStep || 'Analyzing...'}`
-                        : isPaused
-                          ? 'Engine Status: Paused / Idle'
-                          : 'Engine Status: Idle • Ready for Input'
-                      }
-                    </span>
-                  </div>
-                </div>
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* One status line for both branches, outside the switch — see
+              CanvasStatusBar. It used to be duplicated inside each. */}
+          <CanvasStatusBar isAnalyzing={isAnalyzing} isPaused={isPaused} analyzingStep={analyzingStep} />
         </div>
       </main>
 

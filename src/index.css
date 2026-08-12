@@ -443,15 +443,12 @@ body {
     }
   }
 
-  /* Canvas backdrop — referenced by the workspace but previously undefined. */
-  .dot-grid {
-    background-image: radial-gradient(
-      circle,
-      color-mix(in srgb, var(--foreground) 12%, transparent) 1px,
-      transparent 1px
-    );
-    background-size: 22px 22px;
-  }
+  /* `.dot-grid` was the workspace canvas backdrop: a 22px dot field drawn from
+     the shadcn-family `--foreground`. Both canvas surfaces now use `.sheet-grid`
+     — the same two-scale drafting grid as the marketing pages and the OG card —
+     so the workspace and the sheet share one ground instead of two unrelated
+     textures. Nothing referenced it after that, so it is gone rather than left
+     as dead CSS pointing at a token family the app no longer uses. */
 }
 
 /* ====================================================================
