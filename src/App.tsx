@@ -957,6 +957,40 @@ export interface SavedReport {
   result: DesignResult | null;
 }
 
+/**
+ * Per-route document titles.
+ *
+ * `index.html` can only carry one title, so every route used to show the home
+ * page's — a browser with six Forma tabs open showed six identical ones, and a
+ * bookmark or history entry recorded nothing about which page it came from.
+ *
+ * Two things here are deliberate:
+ *
+ * 1. **`/` must stay byte-identical to the `<title>` in `index.html`.** That tag
+ *    is what search engines and link-preview scrapers read (they do not run this
+ *    code), and it is also what paints before the bundle loads. Any difference
+ *    would rewrite the title a moment after first paint for no reason. If you
+ *    change one, change both — same rule as the theme bootstrap.
+ *
+ * 2. **The page name leads, the brand trails.** Tab strips truncate the end, so
+ *    "Docs — Forma" survives being narrowed to a favicon-plus-two-words while
+ *    "Forma — Docs" degrades to "Forma…" on every tab. The names match the
+ *    header nav and the login page's own tab labels rather than inventing
+ *    synonyms.
+ *
+ * An unrecognised path falls back to `/`, which is what the route effect's
+ * `default` branch already renders.
+ */
+const ROUTE_TITLES: Record<string, string> = {
+  '/': 'Forma — Screenshot to DevExpress .repx',
+  '/features': 'Features — Forma',
+  '/docs': 'Docs — Forma',
+  '/contact': 'Contact — Forma',
+  '/login': 'Sign in — Forma',
+  '/signup': 'Create account — Forma',
+  '/workspace': 'Workspace — Forma',
+};
+
 export default function App() {
   const [showWorkspace, setShowWorkspace] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -1033,6 +1067,10 @@ export default function App() {
     const applyRoute = () => {
       const path = currentPath();
       setCurrentRoute(path);
+      // Set here rather than in a render pass or a per-page effect: this runs on
+      // boot, on navigate() and on back/forward, which is every way the route can
+      // change, and one writer cannot disagree with another about the same tab.
+      document.title = ROUTE_TITLES[path] ?? ROUTE_TITLES['/'];
       switch (path) {
         case '/workspace':
           setShowWorkspace(true);
