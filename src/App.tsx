@@ -412,12 +412,19 @@ async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
  * copied straight into the designer.
  * ------------------------------------------------------------------ */
 
+/*
+ * Syntax colours for the REPX pane. Deliberately theme-INVARIANT: the pane sits
+ * on `--code-bg`, which is dark in both themes (the same treatment the docs and
+ * features pages give their code blocks), so a `dark:` variant would light the
+ * text up against a background that never lightened. These are the former
+ * dark-mode values, used unconditionally.
+ */
 const XML_TOKEN_CLASS: Record<string, string> = {
-  tag: 'text-sky-600 dark:text-sky-400',
-  attr: 'text-violet-600 dark:text-violet-400',
-  value: 'text-emerald-700 dark:text-emerald-400',
-  punct: 'text-on-surface-variant/60',
-  meta: 'text-on-surface-variant/50 italic',
+  tag: 'text-sky-400',
+  attr: 'text-violet-400',
+  value: 'text-emerald-400',
+  punct: 'text-[color:var(--code-ink-faint)]',
+  meta: 'text-[color:var(--code-ink-faint)] italic',
 };
 
 /** Clipboard write with a fallback for non-secure contexts (plain HTTP on a LAN IP). */
@@ -479,8 +486,8 @@ const RepxViewer = ({ xml }: { xml: string }) => {
         <div
           className={`flex items-center gap-2 text-[11px] font-semibold px-3 py-1.5 rounded-full border ${
             status.ok
-              ? 'text-primary border-primary/30 bg-primary/5'
-              : 'text-error border-error/30 bg-error/5'
+              ? 'text-[color:var(--ok-ink)] border-[color:var(--ok-line)] bg-[color:var(--ok-wash)]'
+              : 'text-[color:var(--bad-ink)] border-[color:var(--bad-line)] bg-[color:var(--bad-wash)]'
           }`}
         >
           {status.ok ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
@@ -495,18 +502,23 @@ const RepxViewer = ({ xml }: { xml: string }) => {
             onClick={handleCopy}
             className="u-tap u-transition-fast u-press u-focus-ring flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest text-[11px] font-semibold text-on-surface-variant rounded-full cursor-pointer"
           >
-            {copied ? <Check size={13} className="text-primary" /> : <Copy size={13} />}
+            {copied ? <Check size={13} className="text-[color:var(--ok-ink)]" /> : <Copy size={13} />}
             {copied ? 'Copied' : 'Copy XML'}
           </button>
         </div>
       </div>
 
       {/* Source */}
-      <div className="rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-[#0d1117] overflow-auto max-h-[65vh]">
-        <pre className="text-[11px] leading-relaxed font-mono p-4 min-w-max">
+      {/* The XML pane is one of the things the sheet's --code-* tokens exist for.
+          It used `bg-surface-container-lowest dark:bg-[#0d1117]` — white in light
+          mode with a hardcoded dark twin. It is now dark in both themes like the
+          docs and features code blocks, which is why nothing inside it may use a
+          token that flips: the gutter and the row hover are fixed values too. */}
+      <div className="rounded-xl border border-[color:var(--code-rule)] bg-[color:var(--code-bg)] overflow-auto max-h-[65vh]">
+        <pre className="text-[11px] leading-relaxed font-mono p-4 min-w-max text-[color:var(--code-ink)]">
           {lines.map((line, i) => (
-            <div key={i} className="flex hover:bg-on-surface/5">
-              <span className="select-none text-on-surface-variant/40 pr-4 text-right tabular-nums shrink-0 w-10">
+            <div key={i} className="flex hover:bg-white/5">
+              <span className="select-none text-[color:var(--code-ink-faint)] pr-4 text-right tabular-nums shrink-0 w-10">
                 {i + 1}
               </span>
               <span className="whitespace-pre">
@@ -789,7 +801,7 @@ const MockupChart = ({ el }: { el: ReportElement }) => {
   return (
     <div className="w-full h-full flex items-end gap-1 px-2 pb-2 bg-on-paper/4">
       {pct.map((h, i) => (
-        <div key={i} className="flex-1 bg-primary/40 rounded-t-sm" style={{ height: `${h}%` }}></div>
+        <div key={i} className="flex-1 bg-[color:var(--paper-accent-soft)] rounded-t-sm" style={{ height: `${h}%` }}></div>
       ))}
     </div>
   );
@@ -830,9 +842,9 @@ const ReportMockup = ({
   }, [pageWidth]);
 
   return (
-    <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden w-full max-w-5xl mx-auto my-4 sm:my-8 font-sans flex flex-col">
+    <div className="bg-surface-container-lowest border border-outline-variant shadow-[var(--shadow-sm)] rounded-xl overflow-hidden w-full max-w-5xl mx-auto my-4 sm:my-8 font-sans flex flex-col">
       {/* Report Page Area */}
-      <div className="p-3 sm:p-8 bg-muted/10 relative overflow-hidden">
+      <div className="p-3 sm:p-8 bg-surface relative overflow-hidden">
         <div ref={viewportRef} className="w-full">
           {/* Stage reserves the post-scale footprint so nothing overlaps.
               Deliberately NOT transitioned: width/height are layout properties
@@ -843,7 +855,7 @@ const ReportMockup = ({
           >
         {/* The Page */}
         <div
-          className="bg-paper text-on-paper shadow-md absolute top-0 left-0 overflow-hidden ring-1 ring-border"
+          className="bg-paper text-on-paper shadow-[var(--shadow-md)] absolute top-0 left-0 overflow-hidden ring-1 ring-[color:var(--paper-rule)]"
           style={{
             width: pageWidth,
             minHeight: pageHeight,
@@ -929,7 +941,7 @@ const ReportMockup = ({
                     {isChart && <MockupChart el={el} />}
 
                     {isGauge && (
-                      <div className="w-full h-full flex items-center justify-center rounded-full border-4 border-t-primary border-r-primary border-b-on-paper/10 border-l-on-paper/10 bg-on-paper/4">
+                      <div className="w-full h-full flex items-center justify-center rounded-full border-4 border-t-[color:var(--paper-accent)] border-r-[color:var(--paper-accent)] border-b-on-paper/10 border-l-on-paper/10 bg-on-paper/4">
                         <span className="text-xs font-bold truncate px-1">{el.content}</span>
                       </div>
                     )}
@@ -2400,9 +2412,26 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground font-sans overflow-hidden">
+    /*
+     * `sheet` is what makes this surface part of the same design as the five
+     * marketing pages: it supplies the sheet palette (see the SHEET PALETTE
+     * block in index.css), so every `bg-surface*` / `text-on-surface*` /
+     * `border-outline-variant` below resolves to the sheet's cool greys and
+     * `text-secondary` resolves to the brand orange #fe6b00 instead of the
+     * app-wide #a04100 brown.
+     *
+     * Deliberately `sheet` and NOT `landing`: that class adds `overflow-x: clip`
+     * and a 1180px measure, both of which are wrong for a full-bleed h-screen
+     * frame. The two selectors were split for exactly this reason.
+     *
+     * The root must also carry real colours rather than the shadcn-family
+     * `bg-background` / `text-foreground` it used to: those tokens are not
+     * remapped by the sheet scope, so the root stayed #FCFCFC while every
+     * descendant moved to sheet grey.
+     */
+    <div className="sheet h-screen flex flex-col bg-surface text-on-surface font-sans overflow-hidden">
       {/* TopNavBar */}
-      <header className="w-full h-16 bg-surface-container-lowest dark:bg-card border-b border-outline-variant flex-shrink-0 z-50">
+      <header className="w-full h-16 bg-surface-container-lowest border-b border-outline-variant flex-shrink-0 z-50">
         <nav className="flex justify-between items-center gap-2 px-3 sm:px-6 h-full w-full">
           <div className="flex items-center gap-3 lg:gap-6 min-w-0">
             <div
@@ -2417,7 +2446,7 @@ export default function App() {
                   survives. The wordmark used to stay and, having nothing to shrink
                   or truncate against, painted straight over the round buttons. */}
               <div className="hidden sm:flex flex-col min-w-0">
-                <span className="font-display-lg text-title-md font-bold text-primary leading-tight">Forma</span>
+                <span className="font-display-lg text-title-md font-bold text-on-surface leading-tight">Forma</span>
                 <span className="font-label-caps text-[9px] tracking-widest text-on-surface-variant uppercase leading-none hidden sm:block">Show it. Build it. Ship it.</span>
               </div>
             </div>
@@ -2425,7 +2454,7 @@ export default function App() {
             <div className="flex items-center gap-4 select-none">
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="u-tap u-transition-fast u-focus-ring u-press flex items-center justify-center w-10 h-10 rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container cursor-pointer relative"
+                className="u-tap u-transition-fast u-focus-ring u-press flex items-center justify-center w-10 h-10 rounded-full text-on-surface-variant hover:text-secondary hover:bg-surface-container cursor-pointer relative"
                 title="Saved Projects"
                 aria-label={`Saved projects${savedReports.length ? ` (${savedReports.length})` : ''}`}
               >
@@ -2467,7 +2496,7 @@ export default function App() {
             </button>
             <button
               onClick={() => setIsConfigOpen(true)}
-              className="u-tap u-transition-fast u-press u-focus-ring px-2.5 sm:px-3 lg:px-5 py-1.5 bg-secondary-container text-white font-label-caps text-[11px] flex items-center gap-2 rounded-full shadow-sm hover:shadow cursor-pointer"
+              className="u-tap u-transition-fast u-press u-focus-ring px-2.5 sm:px-3 lg:px-5 py-1.5 bg-secondary-container text-white font-label-caps text-[11px] flex items-center gap-2 rounded-full shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] cursor-pointer"
               title="Configure"
               aria-label="Configure"
             >
@@ -2491,7 +2520,7 @@ export default function App() {
                 </div>
 
                 {showWorkspaceProfile && (
-                  <div className="absolute right-0 mt-2 w-56 bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-2xl shadow-2xl z-50 overflow-hidden py-2">
+                  <div className="absolute right-0 mt-2 w-56 bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-[var(--shadow-lg)] z-50 overflow-hidden py-2">
                     <div className="px-4 py-3 border-b border-outline-variant/30 flex flex-col text-left">
                       <span className="text-xs font-bold text-on-surface truncate">
                         {user.displayName || 'Developer User'}
@@ -2539,7 +2568,7 @@ export default function App() {
                 <span className="material-symbols-outlined text-[20px]">menu</span>
               </button>
               {isMenuOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-2xl shadow-2xl z-50 overflow-hidden">
+                <div className="absolute right-0 mt-2 w-64 bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-[var(--shadow-lg)] z-50 overflow-hidden">
                   <div className="p-4 space-y-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-label-caps text-[9px] tracking-widest text-secondary uppercase font-bold">Developer Settings</span>
@@ -2599,14 +2628,14 @@ export default function App() {
               role="dialog"
               aria-modal="true"
               aria-label="Report configuration"
-              className="bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]"
+              className="bg-surface-container-lowest border border-outline-variant rounded-t-2xl sm:rounded-2xl shadow-[var(--shadow-lg)] w-full sm:max-w-md overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]"
             >
               <div className="flex items-center justify-between p-6 border-b border-outline-variant flex-shrink-0">
                 <h3 className="text-lg font-bold flex items-center gap-2 font-title-md">
                   <span className="material-symbols-outlined text-secondary">tune</span>
                   Report Configuration
                 </h3>
-                <button onClick={dismissConfigWithoutSaving} aria-label="Close without saving" className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center">
+                <button onClick={dismissConfigWithoutSaving} aria-label="Close without saving" className="text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer flex items-center">
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
@@ -2616,7 +2645,7 @@ export default function App() {
                   <select
                     value={config.version}
                     onChange={(e) => setConfig({ ...config, version: e.target.value })}
-                    className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest dark:bg-card text-sm font-sans"
+                    className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
                   >
                     <option value="24.1">v24.1</option>
                     <option value="23.2">v23.2</option>
@@ -2629,7 +2658,7 @@ export default function App() {
                   <select
                     value={config.unit}
                     onChange={(e) => setConfig({ ...config, unit: e.target.value })}
-                    className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest dark:bg-card text-sm font-sans"
+                    className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
                   >
                     <option value="HundredthsOfAnInch">HundredthsOfAnInch</option>
                     <option value="TenthsOfAMillimeter">TenthsOfAMillimeter</option>
@@ -2641,7 +2670,7 @@ export default function App() {
                   <select
                     value={config.pageSize}
                     onChange={(e) => setConfig({ ...config, pageSize: e.target.value })}
-                    className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest dark:bg-card text-sm font-sans"
+                    className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
                   >
                     <option value="Letter">Letter</option>
                     <option value="A4">A4</option>
@@ -2669,7 +2698,7 @@ export default function App() {
                         value={config.header?.title || ''}
                         onChange={(e) => setConfig({ ...config, header: { ...config.header, title: e.target.value } })}
                         placeholder="e.g., Monthly Sales Report"
-                        className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest dark:bg-card text-sm font-sans"
+                        className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
                       />
                     </div>
                   </div>
@@ -2695,7 +2724,7 @@ export default function App() {
                         value={config.footer?.customText || ''}
                         onChange={(e) => setConfig({ ...config, footer: { ...config.footer, customText: e.target.value } })}
                         placeholder="e.g., Confidential Document"
-                        className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest dark:bg-card text-sm font-sans"
+                        className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
                       />
                     </div>
                   </div>
@@ -2722,12 +2751,12 @@ export default function App() {
                           setKeyCheck(null);
                         }}
                         placeholder="AIzaSy..."
-                        className="w-full p-2.5 pr-10 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest dark:bg-card text-sm font-sans"
+                        className="w-full p-2.5 pr-10 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
                       />
                       <button
                         type="button"
                         onClick={() => setShowApiKey(!showApiKey)}
-                        className="absolute right-3 text-on-surface-variant hover:text-foreground cursor-pointer flex items-center"
+                        className="absolute right-3 text-on-surface-variant hover:text-on-surface cursor-pointer flex items-center"
                         title={showApiKey ? "Hide API Key" : "Show API Key"}
                       >
                         <span className="material-symbols-outlined text-[18px]">
@@ -2757,7 +2786,7 @@ export default function App() {
                     </div>
 
                     {keyCheck && (
-                      <p className={`text-[10px] mt-2 leading-snug ${keyCheck.tone === 'ok' ? 'text-primary' : 'text-error'}`}>
+                      <p className={`text-[10px] mt-2 leading-snug ${keyCheck.tone === 'ok' ? 'text-[color:var(--ok-ink)]' : 'text-[color:var(--bad-ink)]'}`}>
                         {keyCheck.text}
                       </p>
                     )}
@@ -2768,7 +2797,7 @@ export default function App() {
                         href="https://aistudio.google.com/apikey"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="underline hover:text-foreground"
+                        className="underline hover:text-on-surface"
                       >
                         Google AI Studio
                       </a>
@@ -2799,7 +2828,7 @@ export default function App() {
                             onChange={(e) => setPassphrase(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockKey(); }}
                             placeholder="Unlock your stored key"
-                            className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest dark:bg-card text-sm font-sans"
+                            className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
                           />
                           <div className="flex items-center gap-2 mt-2">
                             <button
@@ -2830,14 +2859,14 @@ export default function App() {
                             value={passphrase}
                             onChange={(e) => setPassphrase(e.target.value)}
                             placeholder="At least 8 characters"
-                            className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest dark:bg-card text-sm font-sans"
+                            className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
                           />
                           <input
                             type="password"
                             value={passphraseConfirm}
                             onChange={(e) => setPassphraseConfirm(e.target.value)}
                             placeholder="Confirm passphrase"
-                            className="w-full mt-2 p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest dark:bg-card text-sm font-sans"
+                            className="w-full mt-2 p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
                           />
                           <p className="text-[10px] text-error mt-2 leading-snug">
                             Write this passphrase down. It is never sent to us, so if you forget it your stored
@@ -2855,7 +2884,7 @@ export default function App() {
                       )}
 
                       {vaultNotice && (
-                        <p className={`text-[10px] mt-2 leading-snug ${vaultNotice.tone === 'ok' ? 'text-primary' : 'text-error'}`}>
+                        <p className={`text-[10px] mt-2 leading-snug ${vaultNotice.tone === 'ok' ? 'text-[color:var(--ok-ink)]' : 'text-[color:var(--bad-ink)]'}`}>
                           {vaultNotice.text}
                         </p>
                       )}
@@ -2866,13 +2895,13 @@ export default function App() {
               <div className="p-6 border-t border-outline-variant bg-surface-container-low flex justify-end gap-3 flex-shrink-0">
                 <button
                   onClick={dismissConfigWithoutSaving}
-                  className="px-5 py-2.5 text-sm font-semibold text-on-surface-variant hover:text-foreground transition-colors cursor-pointer"
+                  className="px-5 py-2.5 text-sm font-semibold text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={saveConfigAndClose}
-                  className="px-5 py-2.5 bg-secondary-container text-white text-sm font-semibold rounded-xl hover:bg-secondary transition-colors cursor-pointer shadow-sm"
+                  className="px-5 py-2.5 bg-secondary-container text-white text-sm font-semibold rounded-xl hover:bg-secondary transition-colors cursor-pointer shadow-[var(--shadow-sm)]"
                 >
                   Save Changes
                 </button>
@@ -2902,11 +2931,11 @@ export default function App() {
               <img
                 src={fullScreenImage}
                 alt="Full screen preview"
-                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl pointer-events-auto"
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-[var(--shadow-lg)] pointer-events-auto"
               />
               <button
                 onClick={() => setFullScreenImage(null)}
-                className="absolute -top-4 -right-4 bg-surface-container-lowest text-on-surface p-2 rounded-full shadow-lg hover:bg-surface transition-colors pointer-events-auto cursor-pointer flex items-center"
+                className="absolute -top-4 -right-4 bg-surface-container-lowest text-on-surface p-2 rounded-full shadow-[var(--shadow-lg)] hover:bg-surface transition-colors pointer-events-auto cursor-pointer flex items-center"
               >
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
@@ -2919,7 +2948,7 @@ export default function App() {
       <main className="flex-grow flex overflow-hidden relative">
         {/* Integrated Left Sidebar */}
         <aside
-          className={`${mobilePane === 'chat' ? 'flex' : 'hidden'} md:flex relative w-full md:w-80 md:flex-shrink-0 border-r border-outline-variant flex-col bg-surface-container-low u-transition ${isDragging ? 'ring-2 ring-inset ring-primary bg-primary/5' : ''}`}
+          className={`${mobilePane === 'chat' ? 'flex' : 'hidden'} md:flex relative w-full md:w-80 md:flex-shrink-0 border-r border-outline-variant flex-col bg-surface-container-low u-transition ${isDragging ? 'ring-2 ring-inset ring-[color:var(--accent-line)] bg-[color:var(--accent-wash)]' : ''}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -2943,7 +2972,7 @@ export default function App() {
           <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6">
             {/* Hi there Card */}
             {messages.length === 0 && (
-              <div className="bg-surface-container-lowest dark:bg-card border border-outline-variant p-5 rounded-2xl shadow-sm">
+              <div className="bg-surface-container-lowest border border-outline-variant p-5 rounded-2xl shadow-[var(--shadow-sm)]">
                 <h4 className="font-title-md text-body-sm font-bold mb-3 flex items-center gap-2 text-on-surface">
                   <span className="material-symbols-outlined text-secondary text-lg">chat_bubble</span>
                   Hi there!
@@ -2971,7 +3000,7 @@ export default function App() {
                         {msg.images.map((src, idx) => {
                           const isRepx = src.startsWith('data:application/xml') || src.startsWith('data:text/');
                           return (
-                            <div key={idx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-outline-variant/50 bg-surface-container-lowest flex items-center justify-center shadow-sm">
+                            <div key={idx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-outline-variant/50 bg-surface-container-lowest flex items-center justify-center shadow-[var(--shadow-sm)]">
                               {isRepx ? (
                                 <div className="flex flex-col items-center justify-center w-full h-full text-on-surface-variant">
                                   <span className="material-symbols-outlined text-[18px]">description</span>
@@ -2991,9 +3020,9 @@ export default function App() {
                       </div>
                     )}
                     {msg.text && (
-                      <div className={`px-4 py-2.5 text-xs leading-relaxed shadow-sm ${msg.role === 'user'
+                      <div className={`px-4 py-2.5 text-xs leading-relaxed shadow-[var(--shadow-sm)] ${msg.role === 'user'
                         ? 'bg-secondary-container/10 border border-secondary/20 rounded-2xl text-on-surface-variant w-fit max-w-[90%]'
-                        : 'bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-2xl text-on-surface-variant w-fit max-w-[90%]'
+                        : 'bg-surface-container-lowest border border-outline-variant rounded-2xl text-on-surface-variant w-fit max-w-[90%]'
                         }`}>
                         <p className="whitespace-pre-wrap">{msg.text}</p>
                       </div>
@@ -3033,7 +3062,7 @@ export default function App() {
                   animate="visible"
                   exit="hidden"
                   aria-live="polite"
-                  className="w-fit max-w-[90%] bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-2xl shadow-sm px-4 py-2.5"
+                  className="w-fit max-w-[90%] bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-[var(--shadow-sm)] px-4 py-2.5"
                 >
                   {streamingReply ? (
                     <p className="text-xs leading-relaxed text-on-surface-variant whitespace-pre-wrap">
@@ -3059,18 +3088,18 @@ export default function App() {
                   animate="visible"
                   exit="hidden"
                   aria-live="polite"
-                  className={`flex flex-col gap-2 w-full bg-surface-container-lowest dark:bg-card p-4 rounded-xl border shadow-sm relative overflow-hidden group u-transition ${isPaused ? 'border-primary/30' : 'border-outline-variant'
+                  className={`flex flex-col gap-2 w-full bg-surface-container-lowest p-4 rounded-xl border shadow-[var(--shadow-sm)] relative overflow-hidden group u-transition ${isPaused ? 'border-[color:var(--ink-faint)]/40' : 'border-outline-variant'
                     }`}
                 >
                   {/* Header: state, elapsed time, stop */}
                   <div className="flex items-center justify-between gap-3 w-full">
                     <div className="flex items-center gap-2.5 min-w-0">
                       {isPaused ? (
-                        <span className="material-symbols-outlined text-primary text-[18px] select-none">pause</span>
+                        <span className="material-symbols-outlined text-[color:var(--ink-faint)] text-[18px] select-none">pause</span>
                       ) : (
                         <span className="material-symbols-outlined animate-spin text-secondary text-[18px] select-none">autorenew</span>
                       )}
-                      <span className="text-xs font-bold text-primary truncate">
+                      <span className="text-xs font-bold text-[color:var(--ink-faint)] truncate">
                         {isPaused ? 'Analysis Paused' : streamChars > 0 ? 'Writing report' : 'Reading your design'}
                       </span>
                     </div>
@@ -3080,7 +3109,7 @@ export default function App() {
                       </span>
                       <button
                         onClick={handleStop}
-                        className="u-tap u-transition-fast u-press u-focus-ring p-1.5 text-on-surface-variant hover:text-error hover:bg-muted rounded-full z-20 flex items-center justify-center cursor-pointer"
+                        className="u-tap u-transition-fast u-press u-focus-ring p-1.5 text-on-surface-variant hover:text-error hover:bg-surface-container rounded-full z-20 flex items-center justify-center cursor-pointer"
                         title="Stop & Reset"
                         aria-label="Stop analysis"
                       >
@@ -3093,9 +3122,9 @@ export default function App() {
                       animates on the layout thread every frame of a run that
                       lasts the whole generation. Identical visual result. */}
                   <div className="flex items-center gap-2.5 w-full mt-0.5">
-                    <div className="relative flex-1 h-1.5 rounded-full bg-secondary-fixed overflow-hidden">
+                    <div className="relative flex-1 h-1.5 rounded-full bg-surface-container-high overflow-hidden">
                       <motion.div
-                        className={`h-full w-full origin-left rounded-full ${isPaused ? 'bg-primary' : 'bg-secondary'}`}
+                        className={`h-full w-full origin-left rounded-full ${isPaused ? 'bg-[color:var(--ink-faint)]' : 'bg-secondary'}`}
                         animate={{ scaleX: analyzingProgress / 100 }}
                         transition={transition.slow}
                       />
@@ -3158,24 +3187,24 @@ export default function App() {
                 initial="hidden"
                 animate="visible"
                 exit="hidden"
-                className="absolute inset-0 z-30 m-3 rounded-2xl border-2 border-dashed border-primary bg-primary/10 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 pointer-events-none"
+                className="absolute inset-0 z-30 m-3 rounded-2xl border-2 border-dashed border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 pointer-events-none"
               >
-                <span className="material-symbols-outlined text-primary text-[34px]">upload_file</span>
-                <p className="font-label-caps text-[11px] font-bold text-primary uppercase tracking-wider">Drop to attach</p>
+                <span className="material-symbols-outlined text-secondary text-[34px]">upload_file</span>
+                <p className="font-label-caps text-[11px] font-bold text-secondary uppercase tracking-wider">Drop to attach</p>
                 <p className="text-[10px] text-on-surface-variant">PNG, JPG, PDF or .repx</p>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* Upload and input pill shape at sidebar bottom */}
-          <div className="p-3 sm:p-6 border-t border-outline-variant bg-surface-container-lowest/50 dark:bg-card/30 backdrop-blur-sm flex flex-col gap-3">
+          <div className="p-3 sm:p-6 border-t border-outline-variant bg-surface-container-lowest/50 backdrop-blur-sm flex flex-col gap-3">
             {/* Attached file staging indicators */}
             {previews.length > 0 && (
               <div className="flex gap-2 overflow-x-auto pb-2 px-1 no-scrollbar">
                 {previews.map((src, idx) => {
                   const isRepx = src.startsWith('data:application/xml') || src.startsWith('data:text/');
                   return (
-                    <div key={idx} className="relative group w-12 h-12 flex-shrink-0 rounded border border-outline-variant shadow-sm flex items-center justify-center bg-surface-container-lowest dark:bg-card">
+                    <div key={idx} className="relative group w-12 h-12 flex-shrink-0 rounded border border-outline-variant shadow-[var(--shadow-sm)] flex items-center justify-center bg-surface-container-lowest">
                       {isRepx ? (
                         <div className="flex flex-col items-center justify-center w-full h-full text-on-surface-variant" title="REPX File">
                           <span className="material-symbols-outlined text-[18px]">description</span>
@@ -3194,7 +3223,7 @@ export default function App() {
                         aria-label="Remove attachment"
                         /* Always visible on touch devices — there is no hover
                            there, so the old opacity-0 made this unreachable. */
-                        className="u-transition-fast u-press u-focus-ring absolute -top-2 -right-2 w-6 h-6 bg-surface-container-lowest dark:bg-card border border-outline-variant hover:bg-red-500 hover:text-white hover:border-red-500 text-on-surface-variant rounded-full shadow opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 cursor-pointer flex items-center justify-center"
+                        className="u-transition-fast u-press u-focus-ring absolute -top-2 -right-2 w-6 h-6 bg-surface-container-lowest border border-outline-variant hover:bg-red-500 hover:text-white hover:border-red-500 text-on-surface-variant rounded-full shadow-[var(--shadow-sm)] opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 cursor-pointer flex items-center justify-center"
                       >
                         <span className="material-symbols-outlined text-[12px]">close</span>
                       </button>
@@ -3212,10 +3241,10 @@ export default function App() {
                 {attachmentTexts.map((t) => (
                   <span
                     key={t.id}
-                    className="group flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full border border-primary/30 bg-primary/5 text-[10px] text-on-surface-variant max-w-full"
+                    className="group flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full border border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] text-[10px] text-on-surface-variant max-w-full"
                     title={`${t.label} — exact text extracted from the file`}
                   >
-                    <span className="material-symbols-outlined text-[13px] text-primary shrink-0">description</span>
+                    <span className="material-symbols-outlined text-[13px] text-secondary shrink-0">description</span>
                     <span className="truncate max-w-[160px]">{t.label}</span>
                     <button
                       onClick={() => removeTextAttachment(t.id)}
@@ -3242,7 +3271,7 @@ export default function App() {
               <div className="flex flex-col gap-1 px-1">
                 {uploadNotices.map((notice, i) => (
                   <p key={i} className="text-[10px] text-on-surface-variant leading-snug flex items-start gap-1.5">
-                    <AlertTriangle size={11} className="text-primary shrink-0 mt-px" />
+                    <AlertTriangle size={11} className="text-secondary shrink-0 mt-px" />
                     <span>{notice}</span>
                   </p>
                 ))}
@@ -3251,16 +3280,16 @@ export default function App() {
 
             {saveNotice && (
               <p className="text-[10px] text-on-surface-variant leading-snug flex items-start gap-1.5 px-1" role="status">
-                <span className="material-symbols-outlined text-[13px] text-primary shrink-0">check_circle</span>
+                <span className="material-symbols-outlined text-[13px] text-[color:var(--ok-ink)] shrink-0">check_circle</span>
                 <span>{saveNotice}</span>
               </p>
             )}
 
-            <div className="flex items-center gap-2 sm:gap-3 p-1.5 bg-surface-container-lowest dark:bg-card rounded-full border border-outline-variant shadow-sm u-transition focus-within:border-secondary focus-within:ring-2 focus-within:ring-secondary/20 group">
+            <div className="flex items-center gap-2 sm:gap-3 p-1.5 bg-surface-container-lowest rounded-full border border-outline-variant shadow-[var(--shadow-sm)] u-transition focus-within:border-secondary focus-within:ring-2 focus-within:ring-secondary/20 group">
               <div className="flex-1 flex items-center gap-2 pl-2 sm:pl-3 min-w-0">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="u-transition-fast u-press u-focus-ring shrink-0 w-9 h-9 rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container flex items-center justify-center cursor-pointer"
+                  className="u-transition-fast u-press u-focus-ring shrink-0 w-9 h-9 rounded-full text-on-surface-variant hover:text-secondary hover:bg-surface-container flex items-center justify-center cursor-pointer"
                   title="Attach files"
                   aria-label="Attach files"
                 >
@@ -3301,7 +3330,7 @@ export default function App() {
                 disabled={(!isAnalyzing && !isPaused) && (!hasApiKey || isChatting || isIngesting || (previews.length === 0 && attachmentTexts.length === 0 && !prompt))}
                 aria-label={isAnalyzing ? 'Pause analysis' : isPaused ? 'Resume analysis' : 'Generate report'}
                 className={`u-transition u-press u-focus-ring shrink-0 text-white p-2 rounded-full w-11 h-11 flex items-center justify-center cursor-pointer disabled:opacity-50 disabled:pointer-events-none hover:brightness-110 ${
-                  isPaused ? 'bg-primary' : isAnalyzing ? 'bg-yellow-600' : 'bg-secondary-container'
+                  isPaused ? 'bg-[color:var(--ink-faint)]' : isAnalyzing ? 'bg-yellow-600' : 'bg-secondary-container'
                 }`}
               >
                 {isAnalyzing || isPaused ? (
@@ -3320,9 +3349,9 @@ export default function App() {
             {!hasApiKey && (
               <button
                 onClick={() => setIsConfigOpen(true)}
-                className="u-transition-fast u-focus-ring w-full flex items-start gap-2 text-left px-3 py-2.5 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 cursor-pointer"
+                className="u-transition-fast u-focus-ring w-full flex items-start gap-2 text-left px-3 py-2.5 rounded-xl border border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] hover:bg-[color:var(--accent-line)] cursor-pointer"
               >
-                <AlertCircle size={14} className="text-primary shrink-0 mt-0.5" />
+                <AlertCircle size={14} className="text-secondary shrink-0 mt-0.5" />
                 {/* Signing out clears the session key, but the encrypted copy in
                     the account survives. Telling a returning user to "add your
                     API key" when the app already knows they have one stored made
@@ -3359,7 +3388,7 @@ export default function App() {
                 className="h-full flex flex-col overflow-hidden"
               >
                 {/* Result header navigation toolbar */}
-                <div className="bg-surface-container-lowest dark:bg-card px-3 sm:px-6 py-3 border-b border-outline-variant flex flex-wrap items-center justify-between gap-y-2 gap-x-3 shrink-0 shadow-sm z-10">
+                <div className="bg-surface-container-lowest px-3 sm:px-6 py-3 border-b border-outline-variant flex flex-wrap items-center justify-between gap-y-2 gap-x-3 shrink-0 shadow-[var(--shadow-sm)] z-10">
                   <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                     {/* Hidden below sm rather than truncated. The tab row beside
                         it is shrink-0, so on a phone the title was left with a few
@@ -3385,7 +3414,7 @@ export default function App() {
                           {activeTab === tab.id && (
                             <motion.span
                               layoutId="canvas-tab-pill"
-                              className="absolute inset-0 bg-surface-container-lowest dark:bg-card shadow-sm rounded-full"
+                              className="absolute inset-0 bg-surface-container-lowest shadow-[var(--shadow-sm)] rounded-full"
                               transition={transition.base}
                             />
                           )}
@@ -3397,7 +3426,7 @@ export default function App() {
                   <div className="flex gap-2 shrink-0">
                     <button
                       onClick={downloadDesign}
-                      className="u-tap u-transition-fast u-press u-focus-ring px-4 sm:px-5 py-1.5 bg-secondary-container hover:bg-secondary text-white font-label-caps text-[11px] flex items-center gap-2 rounded-full cursor-pointer shadow-sm hover:shadow"
+                      className="u-tap u-transition-fast u-press u-focus-ring px-4 sm:px-5 py-1.5 bg-secondary-container hover:bg-secondary text-white font-label-caps text-[11px] flex items-center gap-2 rounded-full cursor-pointer shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
                     >
                       <span className="material-symbols-outlined text-[14px]">download</span>
                       <span className="hidden sm:inline">Export .REPX</span>
@@ -3418,7 +3447,7 @@ export default function App() {
                         exit="hidden"
                         className="w-full flex justify-center"
                       >
-                        <div className="w-full max-w-5xl shadow-2xl rounded-2xl overflow-hidden border border-outline-variant bg-paper">
+                        <div className="w-full max-w-5xl shadow-[var(--shadow-lg)] rounded-2xl overflow-hidden border border-outline-variant bg-paper">
                           <ReportMockup layout={result.layout} sourceImages={mockupSourceImages} />
                         </div>
                       </motion.div>
@@ -3429,7 +3458,7 @@ export default function App() {
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
-                        className="bg-surface-container-lowest dark:bg-card p-4 sm:p-8 rounded-2xl shadow-2xl border border-outline-variant max-w-4xl mx-auto w-full overflow-x-auto"
+                        className="bg-surface-container-lowest p-4 sm:p-8 rounded-2xl shadow-[var(--shadow-lg)] border border-outline-variant max-w-4xl mx-auto w-full overflow-x-auto"
                       >
                         {/* Specification / REPX switch — the tab is named for both. */}
                         <div className="flex items-center gap-1 mb-5 p-1 bg-surface-container-low rounded-full border border-outline-variant w-fit">
@@ -3468,13 +3497,13 @@ export default function App() {
                 </div>
 
                 {/* Bottom Technical Status Bar (Active) */}
-                <div className="h-10 bg-surface-container-lowest dark:bg-card border-t border-outline-variant flex items-center justify-center px-6 flex-shrink-0 select-none">
+                <div className="h-10 bg-surface-container-lowest border-t border-outline-variant flex items-center justify-center px-6 flex-shrink-0 select-none">
                   <div className="flex items-center gap-4">
                     <span className="font-code-sm text-[10px] tracking-[0.2em] text-on-surface-variant uppercase flex items-center gap-2">
                       {isAnalyzing && !isPaused ? (
                         <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping"></span>
                       ) : isPaused ? (
-                        <span className="w-1.5 h-1.5 bg-primary rounded-full"></span>
+                        <span className="w-1.5 h-1.5 bg-[color:var(--ink-faint)] rounded-full"></span>
                       ) : (
                         <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
                       )}
@@ -3499,11 +3528,11 @@ export default function App() {
                 <div className="flex-1 relative dot-grid p-12 overflow-auto flex items-center justify-center">
                   <div className="max-w-xl w-full text-center">
                     <div className="relative inline-block mb-10 group">
-                      <div className="w-24 h-24 bg-surface-container-lowest border border-outline-variant shadow-2xl rounded-3xl flex items-center justify-center mx-auto relative z-10 transition-transform group-hover:scale-105">
+                      <div className="w-24 h-24 bg-surface-container-lowest border border-outline-variant shadow-[var(--shadow-lg)] rounded-3xl flex items-center justify-center mx-auto relative z-10 transition-transform group-hover:scale-105">
                         <Logo size={56} alt="Forma" />
                       </div>
                       {/* Background glow effect */}
-                      <div className="absolute inset-0 bg-secondary-fixed blur-3xl opacity-30 -z-0"></div>
+                      <div className="absolute inset-0 bg-secondary blur-3xl opacity-30 -z-0"></div>
                     </div>
 
                     <h3 className="font-headline-lg text-display-lg font-bold text-on-surface dark:text-white mb-6 tracking-tight">Ready to Process</h3>
@@ -3513,22 +3542,22 @@ export default function App() {
 
                     {/* Process Steps Visualization */}
                     <div className="grid grid-cols-3 gap-6">
-                      <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-sm hover:shadow-md transition-all group border-b-4 border-b-secondary-fixed">
-                        <div className="w-10 h-10 bg-secondary-fixed/50 flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
+                      <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all group border-b-4 border-b-[color:var(--accent-line)]">
+                        <div className="w-10 h-10 bg-[color:var(--accent-wash)] flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
                           <span className="material-symbols-outlined text-secondary text-[22px]">publish</span>
                         </div>
                         <span className="font-code-sm text-[11px] text-secondary font-bold block mb-1">01 SHOW</span>
                         <span className="text-[12px] text-on-surface-variant font-body-sm">Ingest Mockup</span>
                       </div>
-                      <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-sm hover:shadow-md transition-all group border-b-4 border-b-secondary-fixed">
-                        <div className="w-10 h-10 bg-secondary-fixed/50 flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
+                      <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all group border-b-4 border-b-[color:var(--accent-line)]">
+                        <div className="w-10 h-10 bg-[color:var(--accent-wash)] flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
                           <span className="material-symbols-outlined text-secondary text-[22px]">architecture</span>
                         </div>
                         <span className="font-code-sm text-[11px] text-secondary font-bold block mb-1">02 BUILD</span>
                         <span className="text-[12px] text-on-surface-variant font-body-sm">Parse Geometry</span>
                       </div>
-                      <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-sm hover:shadow-md transition-all group border-b-4 border-b-secondary-fixed">
-                        <div className="w-10 h-10 bg-secondary-fixed/50 flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
+                      <div className="bg-surface-container-lowest/80 backdrop-blur-sm border border-outline-variant p-6 rounded-[2rem] text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all group border-b-4 border-b-[color:var(--accent-line)]">
+                        <div className="w-10 h-10 bg-[color:var(--accent-wash)] flex items-center justify-center mb-4 rounded-xl group-hover:scale-110 transition-transform">
                           <span className="material-symbols-outlined text-secondary text-[22px]">rocket_launch</span>
                         </div>
                         <span className="font-code-sm text-[11px] text-secondary font-bold block mb-1">03 SHIP</span>
@@ -3539,13 +3568,13 @@ export default function App() {
                 </div>
 
                 {/* Bottom Technical Status Bar (Operational) */}
-                <div className="h-10 bg-surface-container-lowest dark:bg-card border-t border-outline-variant flex items-center justify-center px-6 flex-shrink-0 select-none">
+                <div className="h-10 bg-surface-container-lowest border-t border-outline-variant flex items-center justify-center px-6 flex-shrink-0 select-none">
                   <div className="flex items-center gap-4">
                     <span className="font-code-sm text-[10px] tracking-[0.2em] text-on-surface-variant uppercase flex items-center gap-2">
                       {isAnalyzing && !isPaused ? (
                         <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping"></span>
                       ) : isPaused ? (
-                        <span className="w-1.5 h-1.5 bg-primary rounded-full"></span>
+                        <span className="w-1.5 h-1.5 bg-[color:var(--ink-faint)] rounded-full"></span>
                       ) : (
                         <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
                       )}
@@ -3566,7 +3595,7 @@ export default function App() {
 
       {/* Mobile pane switcher — replaces the side-by-side split below md. */}
       <nav
-        className="md:hidden flex-shrink-0 grid grid-cols-2 border-t border-outline-variant bg-surface-container-lowest dark:bg-card"
+        className="md:hidden flex-shrink-0 grid grid-cols-2 border-t border-outline-variant bg-surface-container-lowest"
         role="tablist"
         aria-label="Workspace panes"
       >
@@ -3622,7 +3651,7 @@ export default function App() {
               role="dialog"
               aria-modal="true"
               aria-label="My projects"
-              className="w-full max-w-sm bg-surface-container-lowest dark:bg-card h-full shadow-2xl flex flex-col border-l border-outline-variant"
+              className="w-full max-w-sm bg-surface-container-lowest h-full shadow-[var(--shadow-lg)] flex flex-col border-l border-outline-variant"
             >
               <div className="p-4 border-b border-outline-variant flex items-center justify-between">
                 <div className="flex items-center gap-2 text-on-surface font-bold font-title-md">
