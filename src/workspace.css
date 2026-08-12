@@ -1,0 +1,1066 @@
+/* -----------------------------------------------------------------------------
+   PREFLIGHT COMPENSATION
+
+   Kept separate from the ported block below, because these rules exist only to
+   cancel a difference the app's environment introduces — they restore the value
+   the artifact actually computed, they do not change its design.
+
+   The artifact ran without Tailwind's preflight, so its buttons and inputs kept
+   the UA's `line-height: normal`. Under preflight they inherit the root's 1.55
+   instead, which made every pill 3px taller: 11px x 1.55 = 17.05px of line box
+   against the UA's ~13px, measured as 33px against the artifact's 30px. That in
+   turn pushed the action row from 59px to 62px.
+
+   CLAUDE.md records this exact failure from the marketing-page ports ("Inherited
+   line-height. The artifact has no Tailwind preflight, so its buttons and inputs
+   keep the UA's line-height: normal while ours inherited the body's 1.62").
+   ----------------------------------------------------------------------------- */
+.wb-root button,
+.wb-root input,
+.wb-root select,
+.wb-root textarea {
+  line-height: normal;
+}
+
+/* The shell must own the viewport, and its first row must take the slack.
+   The artifact declares `min-height: 100vh` with implicit auto rows, while
+   `.wb-thread`, `.wb-list` and `.wb-bench-body` all declare `overflow: auto` —
+   which can only do anything against a bounded height. So the artifact asks for
+   panes that scroll internally and never gets them; its row simply grows.
+
+   That was invisible there because its content was fixed and happened to roughly
+   fill the viewport. With real content it fails in both directions: an empty
+   workspace left a 283px dead band under the status bar (shell 657px of 940),
+   and a loaded report pushed the document to 1137px and the status bar off
+   screen entirely. Measured, not guessed.
+
+   `height` + an explicit `minmax(0, 1fr)` row gives the panes the bounded height
+   their own overflow already asks for. `min-height: 0` on the columns is what
+   lets a flex child shrink below its content instead of forcing the row taller. */
+.wb-shell {
+  height: 100vh;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.wb-rail,
+.wb-review,
+.wb-bench {
+  min-height: 0;
+}
+
+/* A disabled pill has to read as disabled. The artifact carries `[disabled]`
+   styling for the send button only, because it always had a report loaded and so
+   never rendered a disabled Save or Export — in the app both are disabled until
+   there is something to save. Values are the same design's own, taken from its
+   earlier pill rule: 45% opacity and a not-allowed cursor, with hover suppressed
+   so a dead control does not respond to the pointer. */
+.wb-pill:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.wb-pill:disabled:hover {
+  background: none;
+  color: var(--ink-2);
+}
+.wb-pill--accent:disabled,
+.wb-pill--accent:disabled:hover {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* The rail's mark is an anchor now (it is the route home). `display: block` keeps
+   the wrapping <a> from introducing inline descender space and shifting the logo
+   a pixel or two down — the position must be identical to the artifact's <img>. */
+.wb-rail a.wb-mark {
+  display: block;
+}
+
+/* The signed-out account slot is also a link (straight to /login), so it needs the
+   rail's button chrome. These are `.wb-rail button`'s own declarations applied to
+   an anchor — nothing new, just a different element.
+
+   Note `.wb-signin-btn` from the ported block is deliberately unused: it painted
+   this slot with the accent wash and ring, which is the avatar's treatment AND the
+   `aria-current` treatment for a selected rail section. An accent disc here read
+   as "signed in" and as "active" at once, which is exactly the confusion this
+   change fixes. The rule is left in the verbatim block rather than deleted. */
+.wb-rail a:not(.wb-mark) {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+.wb-rail a:not(.wb-mark):hover {
+  color: var(--ink);
+  background: var(--track);
+}
+
+/* =============================================================================
+   WORKSPACE - ported verbatim from the approved artifact
+   claude.ai/code/artifact/77c5245d-3967-43db-bffb-9751b269e2be
+
+   Produced by a selector-only transform: every declaration below is
+   byte-identical to the artifact's published CSS. Do not hand-tune values here
+   to match the rest of the app - this file is the source of truth for the
+   workspace's appearance and the artifact is its origin.
+
+   Two adaptations, both non-visual:
+     - Class names carry a "wb-" prefix. Three artifact names collide with the
+       app: ".sheet" is the token scope in index.css, and ".skeleton" and
+       ".reg-marks" already exist there. Prefixing avoids the collision without
+       touching a value.
+     - The artifact's token block is absent. The app's ".sheet" scope defines the
+       identical palette, and index.css aliases the artifact's token names onto
+       it so these rules resolve unchanged.
+   ============================================================================= */
+
+
+
+
+
+
+
+
+/* The UA's `[hidden] { display: none }` is an easy rule to beat: any author
+   `display` declaration wins, so `<div class="note-line" hidden>` rendered as an
+   empty flex row — a stray tick with no text under the key field. Restore it
+   with author-level weight. */
+
+
+/* --------------------------------------------------------------------------
+   Devices lifted from the marketing pages so this reads as the same product,
+   not an approximation of it. Values are theirs, not re-derived by eye.
+   -------------------------------------------------------------------------- */
+
+/* Registration marks: 9px accent brackets at opposite corners, 1.5px at 40%
+   opacity. index.css puts these on every raised panel on the home and features
+   pages — it is the single detail that makes a panel read as a drafting plate. */
+.wb-reg-marks { position: relative; }
+.wb-reg-marks::before,
+.wb-reg-marks::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  opacity: .4;
+  pointer-events: none;
+}
+.wb-reg-marks::before { top: -1px; left: -1px; border-top: 1.5px solid var(--accent); border-left: 1.5px solid var(--accent); }
+.wb-reg-marks::after { bottom: -1px; right: -1px; border-bottom: 1.5px solid var(--accent); border-right: 1.5px solid var(--accent); }
+
+/* Eyebrow: accent coordinate, label, then a hairline that fades out. Same
+   composition as sections.tsx — mono 11px at 0.15em. */
+.wb-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 10.5px;
+  line-height: 1.62;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.wb-eyebrow b { font-weight: 500; color: var(--accent); }
+.wb-eyebrow .wb-fade { height: 1px; flex: 1; background: linear-gradient(to right, var(--rule), transparent); }
+
+/* The hero's glow, scaled to this canvas. */
+.wb-glow {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999px;
+  opacity: .5;
+  filter: blur(40px);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 20%, transparent), transparent 58%);
+}
+
+/* One orchestrated arrival rather than scattered effects: the columns rise in
+   sequence, once. Zeroed wholesale by the reduced-motion block at the end. */
+@keyframes wb-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.wb-rise { animation: wb-rise .5s cubic-bezier(.22, 1, .36, 1) both; }
+.wb-rise-1 { animation-delay: .04s; }
+.wb-rise-2 { animation-delay: .10s; }
+.wb-rise-3 { animation-delay: .16s; }
+
+
+
+/* The artifact set these on `body`. Scoped to the workspace root here, because
+   the app shares that body with five marketing pages that set their own measure
+   and type. Same declarations, same values — only the scope differs.
+
+   The unitless line-height matters: a `--text-*` token would carry a fixed pixel
+   line-height that inherits into every descendant. */
+.wb-root {
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--surface);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.wb-root *, .wb-root *::before, .wb-root *::after { box-sizing: border-box; }
+
+.wb-shell { min-height: 100vh; display: grid; grid-template-columns: 56px 340px minmax(0, 1fr); }
+
+/* ------------------------------------------------------------------- rail */
+.wb-rail {
+  background: var(--panel-2);
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 0;
+}
+/* Pills, everywhere. The app's standing rule is that every button is fully
+   rounded — the rail's targets included. */
+.wb-rail button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+/* Margin only. The artifact set width/height here and swapped two <img> tags for
+   the light/dark mark; `Logo.tsx` already does both — it sets its own intrinsic
+   size from `size` and picks the variant off the `.dark` class — so those rules
+   are gone rather than duplicated with a theme mechanism this app does not use. */
+.wb-mark { margin-bottom: 14px; }
+
+.wb-rail button:hover { color: var(--ink); background: var(--track); }
+.wb-rail button[aria-current="true"] {
+  color: var(--accent);
+  background: var(--accent-wash);
+  border-color: var(--accent-line);
+}
+.wb-rail .wb-spacer { flex: 1; }
+.wb-rail .wb-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.wb-root :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --------------------------------------------------------------- review */
+.wb-review { background: var(--panel-2); border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+.wb-col-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 17px 20px 15px;
+  border-bottom: 1px solid var(--rule);
+}
+.wb-col-title { font-family: var(--display); font-weight: 800; font-size: 17px; letter-spacing: -.025em; }
+.wb-kicker {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+/* The persistent action row. "New report" is the equivalent of New chat in any
+   assistant workspace, so it sits above everything, is always visible, and is
+   the only accent-filled control in this column — you can always start over
+   without hunting for it. */
+.wb-actions {
+  display: flex;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+.wb-actions .wb-grow { flex: 1; justify-content: center; }
+
+.wb-panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.wb-thread { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 18px; }
+
+/* search + lists */
+.wb-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 14px 20px 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--panel);
+}
+.wb-search span { flex: 1; font-size: 12.5px; color: var(--ink-faint); }
+.wb-search svg { color: var(--ink-faint); flex: none; }
+
+.wb-list { flex: 1; overflow-y: auto; padding: 8px 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.wb-card {
+  position: relative;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.wb-card:hover { border-color: var(--rule-strong); box-shadow: var(--shadow-sm); }
+.wb-card.wb-is-open { border-color: var(--accent-line); background: var(--accent-wash); }
+.wb-card .wb-nm { font-size: 13px; font-weight: 600; padding-right: 58px; }
+.wb-card .wb-sub {
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.wb-card .wb-row-actions { position: absolute; top: 9px; right: 9px; display: flex; gap: 2px; opacity: 0; transition: opacity .15s ease; }
+.wb-card:hover .wb-row-actions, .wb-card:focus-within .wb-row-actions { opacity: 1; }
+@media (hover: none) { .wb-card .wb-row-actions { opacity: 1; } }
+.wb-row-actions button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.wb-row-actions button:hover { background: var(--track); color: var(--ink); }
+.wb-row-actions button.wb-danger:hover { color: var(--bad-ink); }
+.wb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.wb-group-label {
+  padding: 14px 20px 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.wb-empty { padding: 26px 20px; text-align: center; color: var(--ink-faint); font-size: 12.5px; }
+
+/* Saved state. A workspace has to say whether the work is safe before you start
+   something new, so this reads out rather than being implied by a button. */
+.wb-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ok-ink);
+}
+
+/* Notes keep the spine-and-margin treatment — these are markup on a proof, not
+   chat — but the spine now uses the sheet's rule and accent. */
+.wb-note { display: grid; grid-template-columns: 3px 1fr; gap: 12px; }
+.wb-note .wb-spine { border-radius: 999px; background: var(--rule-strong); }
+.wb-note--me .wb-spine { background: var(--accent); }
+.wb-note .wb-who {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 5px;
+}
+.wb-note--me .wb-who { color: var(--accent); }
+.wb-note p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
+.wb-note p + p { margin-top: 8px; }
+.wb-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 6px 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--accent-wash);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+.wb-attach svg { color: var(--accent); }
+
+.wb-composer { border-top: 1px solid var(--rule); padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+/* One compact row, 44px tall. It was briefly a two-row card — text area over a
+   tools row — which fixed the crushed send button but pushed the box to 94px and
+   the whole composer block to 208px, over a quarter of the column for a
+   single-line prompt. The row is back, but sized properly this time: the button
+   is a real circle, and the paperclip is a control rather than decoration inside
+   the field. Accepted formats moved to its tooltip, which is where a format list
+   belongs. */
+.wb-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow-sm), var(--inset-hi);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.wb-box:focus-within { border-color: var(--accent); box-shadow: var(--shadow-md); }
+.wb-box .wb-line { flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-tool {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.wb-tool:hover { color: var(--ink); background: var(--track); }
+
+/* The send button. A real 32px circle — it was an unstyled <button> for a while,
+   which is why it rendered as a 31x21 rectangle with square corners. */
+.wb-send {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background .15s ease;
+}
+.wb-send:hover { background: var(--accent-deep); }
+/* Disabled reads as inert: a faint track fill with faint ink, not a mid-grey
+   that looks like it is one step from being pressable. */
+.wb-send[disabled] { background: var(--track); color: var(--ink-faint); box-shadow: none; cursor: not-allowed; }
+
+/* Locked: dashed edge, flat, so the box itself says "not yet". */
+.wb-box.wb-is-locked { border-style: dashed; box-shadow: none; background: var(--panel-2); }
+.wb-box.wb-is-locked:focus-within { border-color: var(--rule-strong); box-shadow: none; }
+
+.wb-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 7px 15px;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: .02em;
+  cursor: pointer;
+  background: none;
+  color: var(--ink-2);
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.wb-pill:hover { color: var(--ink); background: var(--track); }
+.wb-pill--accent { background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-sm); }
+.wb-pill--accent:hover { background: var(--accent-deep); color: var(--on-accent); }
+.wb-pill--outline { border-color: var(--rule-strong); }
+.wb-pill--round { width: 34px; height: 34px; padding: 0; justify-content: center; }
+.wb-hint { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--ink-faint); }
+
+/* The key's fine print. Two lines at 9.5px so both fit without wrapping in a
+   340px column — a wrapped clause here costs more height than the clause is
+   worth. */
+.wb-fineprint { display: flex; flex-direction: column; gap: 1px; }
+.wb-fineprint span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.45;
+  letter-spacing: .02em;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-fineprint span:first-child { color: var(--ink-2); }
+
+/* ----------------------------------------------------------------- bench */
+.wb-bench { display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
+.wb-bench-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 13px 22px;
+  border-bottom: 1px solid var(--rule);
+  /* Same translucent-plus-blur material as SiteHeader and the workspace bar. */
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  backdrop-filter: blur(16px) saturate(1.5);
+}
+.wb-doc-id { display: flex; align-items: baseline; gap: 11px; min-width: 0; }
+.wb-doc-id h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -.028em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wb-rev { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+
+/* Segmented pill group, matching the app's result tabs: the selected plate is
+   the raised one. The underline treatment went with the brass. */
+.wb-plates { display: flex; gap: 3px; padding: 4px; border-radius: 999px; border: 1px solid var(--rule); background: var(--panel-2); }
+.wb-plates button {
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+  padding: 5px 15px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  transition: background .15s ease, color .15s ease;
+}
+.wb-plates button:hover { color: var(--ink); }
+.wb-plates button[aria-selected="true"] {
+  background: var(--panel);
+  color: var(--accent);
+  font-weight: 500;
+  box-shadow: var(--shadow-sm);
+}
+
+.wb-bench-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 32px 28px 44px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  /* The two-scale drafting grid: 96px is one CSS inch, 24px the subdivision.
+     Replaces the bench vignette — this is the project's own ground. */
+  background-image:
+    linear-gradient(var(--sheet-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sheet-line) 1px, transparent 1px),
+    linear-gradient(var(--sheet-line-fine) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sheet-line-fine) 1px, transparent 1px);
+  background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
+}
+
+/* The proof, and nothing on it. Band brackets were drawn down the left margin
+   for a while; they are gone deliberately. The page is a report the user will
+   hand to someone, so annotation belongs beside it, not over it — the band
+   structure is in the REPX and the spec, where it can be read without covering
+   the document. The registration marks are the only mark on the plate. */
+.wb-proof-holder { position: relative; width: 100%; max-width: 760px; }
+
+
+
+
+.wb-proof {
+  background: var(--paper);
+  color: var(--on-paper);
+  border: 1px solid var(--paper-rule);
+  border-radius: 4px;
+  box-shadow: var(--shadow-lg), var(--inset-hi);
+  padding: 52px 56px 44px;
+  font-size: 12px;
+}
+.wb-proof-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 34px; }
+.wb-proof h2 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 27px; letter-spacing: -.03em; }
+.wb-proof .wb-sub { color: color-mix(in srgb, var(--on-paper) 55%, transparent); margin-top: 3px; }
+.wb-proof .wb-meta { font-family: var(--mono); font-size: 10px; line-height: 1.8; text-align: right; font-variant-numeric: tabular-nums; }
+.wb-plate-rule { height: 3px; width: 62px; background: var(--paper-accent); margin-top: 16px; border-radius: 2px; }
+.wb-parties { margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; font-size: 11.5px; line-height: 1.7; }
+.wb-parties .wb-lbl {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--on-paper) 48%, transparent);
+  margin-bottom: 6px;
+}
+.wb-rows-wrap { overflow-x: auto; margin-top: 30px; }
+table.wb-rows { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+table.wb-rows th {
+  text-align: left;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 8.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--on-paper) 55%, transparent);
+  padding: 0 12px 8px 0;
+  border-bottom: 1.5px solid var(--on-paper);
+}
+table.wb-rows td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--paper-rule); }
+table.wb-rows .wb-n { text-align: right; font-variant-numeric: tabular-nums; }
+.wb-sum { margin: 18px 0 0 auto; width: 250px; font-size: 11.5px; }
+.wb-sum div { display: flex; justify-content: space-between; padding: 5px 0; font-variant-numeric: tabular-nums; }
+.wb-sum .wb-lab { color: color-mix(in srgb, var(--on-paper) 58%, transparent); }
+.wb-sum .wb-due {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1.5px solid var(--on-paper);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -.02em;
+}
+.wb-proof-foot {
+  margin-top: 34px;
+  padding-top: 15px;
+  border-top: 1px solid var(--paper-rule);
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--on-paper) 46%, transparent);
+}
+
+/* spec + repx sheets sit on the same ground */
+.wb-sheet {
+  width: 100%;
+  max-width: 760px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md), var(--inset-hi);
+  padding: 30px 34px 34px;
+}
+.wb-sheet h3 { margin: 0 0 8px; font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -.03em; text-wrap: balance; }
+.wb-sheet p { margin: 0 0 16px; max-width: 64ch; color: var(--ink-2); font-size: 13.5px; }
+.wb-sheet h4 {
+  margin: 26px 0 10px;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.wb-sheet ul { margin: 0; padding-left: 17px; color: var(--ink-2); font-size: 13px; }
+.wb-sheet li { margin-bottom: 7px; }
+.wb-sheet li b { color: var(--ink); font-weight: 600; }
+.wb-code-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.wb-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--ok-line);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+/* Dark in BOTH themes, like the docs page and the app's REPX pane — so nothing
+   inside may use a token that flips. The syntax colours are fixed. */
+.wb-code {
+  border: 1px solid var(--code-rule);
+  border-radius: 14px;
+  background: var(--code-bg);
+  overflow-x: auto;
+  padding: 15px 17px;
+}
+.wb-code pre { margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.8; color: var(--code-ink); }
+.wb-code .wb-ln { display: inline-block; width: 22px; text-align: right; margin-right: 15px; color: var(--code-ink-faint); user-select: none; }
+.wb-tg { color: #38bdf8; }
+.wb-at { color: #c4b5fd; }
+.wb-vl { color: #34d399; }
+.wb-pn { color: var(--code-ink-faint); }
+
+
+
+/* A stacked bar is the honest chart here: the bands really do partition the page
+   height, so the widths carry the information. */
+.wb-stack { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--track); }
+.wb-stack i { display: block; }
+.wb-legend { display: flex; flex-direction: column; gap: 7px; }
+.wb-legend div { display: flex; align-items: center; gap: 9px; font-size: 12px; }
+.wb-legend .wb-sw { width: 9px; height: 9px; border-radius: 999px; flex: none; }
+.wb-legend .wb-nm { flex: 1; color: var(--ink-2); }
+.wb-legend .wb-amt { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+.wb-tree { display: flex; flex-direction: column; gap: 2px; }
+.wb-node {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.wb-node:hover { background: var(--track); color: var(--ink); }
+.wb-node .wb-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-node .wb-tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.wb-node.wb-child { margin-left: 15px; border-left: 1px solid var(--rule); border-radius: 0 999px 999px 0; padding-left: 13px; }
+.wb-node svg { color: var(--ink-faint); flex: none; }
+
+.wb-check { display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; color: var(--ink-2); }
+.wb-check svg { flex: none; margin-top: 2px; }
+.wb-check.wb-ok svg { color: var(--ok-ink); }
+.wb-check.wb-warn svg { color: var(--accent); }
+.wb-check b { color: var(--ink); font-weight: 600; }
+
+/* ------------------------------------------------------------- status bar */
+.wb-status {
+  grid-column: 1 / -1;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  border-top: 1px solid var(--rule);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.wb-status .wb-live { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); }
+.wb-status .wb-pip { width: 6px; height: 6px; border-radius: 999px; background: var(--ok-ink); }
+.wb-status .wb-push { flex: 1; }
+
+/* ----------------------------------------------------------- generation */
+/* The progress card. Labels and stages are the app's own, and so is the
+   restraint: before any output arrives the bar has nothing real to report, so a
+   skeleton stands in rather than inventing movement, and past 20s the wait gets
+   an explanation instead of a spinner. */
+.wb-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 13px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+.wb-progress.wb-is-paused { border-color: var(--rule-strong); }
+.wb-progress .wb-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.wb-progress .wb-state { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.wb-progress .wb-state b { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.wb-progress .wb-clock { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.wb-progress .wb-acts { display: flex; gap: 2px; }
+.wb-spin { animation: wb-spin 1s linear infinite; color: var(--accent); }
+@keyframes wb-spin { to { transform: rotate(360deg); } }
+
+.wb-track { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
+/* scaleX from a left origin, not width: it is a compositor-only property, so the
+   bar cannot cause layout on every tick. */
+.wb-track i { display: block; height: 100%; width: 100%; border-radius: 999px; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform .25s linear; }
+.wb-progress.wb-is-paused .wb-track i { background: var(--ink-faint); }
+
+.wb-progress .wb-stage { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; color: var(--ink-2); }
+.wb-progress .wb-stage .wb-chars { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wb-progress .wb-why { margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--ink-faint); }
+
+.wb-skeleton { height: 9px; border-radius: 999px; background: var(--track); position: relative; overflow: hidden; }
+.wb-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink-faint) 18%, transparent), transparent);
+  animation: wb-sweep 1.4s ease-in-out infinite;
+}
+@keyframes wb-sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+/* ------------------------------------------------------------- account */
+.wb-pop {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 50;
+  width: 226px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.wb-pop .wb-who { padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+.wb-pop .wb-who b { display: block; font-size: 12.5px; font-weight: 600; }
+.wb-pop .wb-who span { display: block; margin-top: 2px; font-family: var(--mono); font-size: 10px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; }
+.wb-pop button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--body);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  text-align: left;
+}
+.wb-pop button:hover { background: var(--track); color: var(--ink); }
+.wb-pop button.wb-danger:hover { color: var(--bad-ink); }
+
+/* Signed out, the rail's account slot is an invitation rather than initials. */
+.wb-signin-btn { color: var(--accent) !important; background: var(--accent-wash) !important; box-shadow: inset 0 0 0 1px var(--accent-line); }
+
+/* --------------------------------------------------------------- auth */
+.wb-auth-note { font-size: 11.5px; line-height: 1.5; color: var(--ink-2); }
+.wb-auth-note a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.wb-auth-note a:hover { text-decoration: underline; }
+.wb-divider-or { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint); }
+.wb-divider-or::before, .wb-divider-or::after { content: ""; height: 1px; flex: 1; background: var(--rule); }
+.wb-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  cursor: pointer;
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.wb-google:hover { background: var(--track); }
+
+/* ------------------------------------------------------------- key gate */
+/* The key gates the whole workspace, so the composer is disabled rather than
+   failing on submit, and the reason sits under it. Built as a row that reads as
+   a destination — badge, two lines of hierarchy, chevron — rather than the
+   three-line washed paragraph it was, which had no shape and buried the action
+   in the last four words. */
+/* Sized to sit in proportion with the 46px composer above it. It was 73px, with
+   the second line wrapping — a note about a missing key should not be half again
+   the height of the thing it is blocking. Smaller badge, tighter padding, and the
+   detail line shortened so it fits on one. */
+.wb-gate {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 13px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--accent);
+  border-radius: 3px 10px 10px 3px;
+  background: var(--panel);
+  font-family: var(--body);
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.wb-gate:hover { background: var(--accent-wash); border-color: var(--accent-line); border-left-color: var(--accent); }
+.wb-gate .wb-badge-ic {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+.wb-gate .wb-txt { display: flex; flex-direction: column; min-width: 0; }
+.wb-gate .wb-txt b { font-size: 11.5px; font-weight: 600; line-height: 1.35; color: var(--ink); }
+.wb-gate .wb-txt span { font-size: 10.5px; line-height: 1.35; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-gate .wb-chev { color: var(--ink-faint); }
+.wb-gate:hover .wb-chev { color: var(--accent); }
+
+/* --------------------------------------------------------------- modal */
+.wb-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #08182b 52%, transparent);
+  backdrop-filter: blur(2px);
+}
+.wb-modal {
+  width: 100%;
+  max-width: 468px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg), var(--inset-hi);
+  overflow: hidden;
+}
+.wb-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 17px 20px;
+  border-bottom: 1px solid var(--rule);
+}
+.wb-modal-head h2 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 17px; letter-spacing: -.025em; }
+.wb-modal-body { overflow-y: auto; padding: 18px 20px 22px; display: flex; flex-direction: column; gap: 20px; }
+.wb-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--rule); background: var(--panel-2); }
+.wb-fset { display: flex; flex-direction: column; gap: 11px; }
+.wb-fset > .wb-eyebrow { padding-bottom: 2px; }
+.wb-lbl { display: block; margin-bottom: 5px; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+.wb-lbl .wb-req { color: var(--bad-ink); }
+.wb-ctl {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 13px;
+}
+.wb-ctl:focus { outline: none; border-color: var(--accent); }
+.wb-ctl::placeholder { color: var(--ink-faint); }
+/* appearance:none strips the native caret, so the field looked like a text
+   input. The chevron is markup rather than a background image because a data-URI
+   SVG cannot read a theme token for its stroke. */
+select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
+.wb-sel { position: relative; display: block; }
+.wb-sel .wb-caret {
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--ink-faint);
+}
+.wb-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.wb-checkrow { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.wb-checkrow input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.wb-keyrow { display: flex; gap: 8px; align-items: flex-start; }
+.wb-keyrow .wb-wrap { position: relative; flex: 1; }
+.wb-keyrow .wb-peek {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.wb-keyrow .wb-peek:hover { color: var(--ink); background: var(--track); }
+/* Notes under a field. Previously a bare icon-plus-text row, which left the two
+   stacked notes reading as loose sentences with no relationship to the field
+   above. They are now inset blocks with the icon in a tinted disc, and the tint
+   carries the meaning: neutral for information, green for a passed check, accent
+   for something the reader must not miss. The "key goes to Google" line was
+   green, which claimed a success it does not report. */
+.wb-note-line {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.wb-note-line .wb-ic {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--track);
+  color: var(--ink-faint);
+}
+.wb-note-line.wb-ok { border-color: var(--ok-line); background: var(--ok-wash); }
+.wb-note-line.wb-ok .wb-ic { background: color-mix(in srgb, var(--ok-ink) 16%, transparent); color: var(--ok-ink); }
+.wb-note-line.wb-warn { border-color: var(--accent-line); background: var(--accent-wash); }
+.wb-note-line.wb-warn .wb-ic { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.wb-note-line b { color: var(--ink); font-weight: 600; }
+
+.wb-hidden { display: none !important; }
+
+@media (max-width: 1180px) {
+  .wb-shell { grid-template-columns: 56px 300px minmax(0, 1fr); }
+}
+@media (max-width: 880px) {
+  .wb-shell { grid-template-columns: 1fr; }
+  .wb-rail { flex-direction: row; justify-content: flex-start; gap: 4px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--rule); }
+  .wb-mark { margin: 0 10px 0 0; }
+  .wb-review { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .wb-thread { max-height: 240px; }
+  .wb-bench-body { padding: 20px 12px 30px; }
+  .wb-proof { padding: 30px 24px; }
+  .wb-sheet { padding: 22px 18px 26px; }
+}
+/* Scoped to the workspace. In the artifact this was a bare `* { ... !important }`,
+   which is correct for a standalone page and wrong here: imported globally it
+   killed every transition and animation in the whole app, and because headless
+   Chromium reports `prefers-reduced-motion: reduce`, it silently changed how the
+   marketing pages' reveal animations settled — /docs reflowed and its hash moved.
+   The app has its own reduced-motion handling in index.css plus
+   <MotionConfig reducedMotion="user"> in main.tsx, so this must not reach past
+   the workspace. Same declarations, narrower scope. */
+@media (prefers-reduced-motion: reduce) {
+  .wb-root, .wb-root *, .wb-root *::before, .wb-root *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

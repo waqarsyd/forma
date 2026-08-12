@@ -17,12 +17,10 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   IconAlert,
   IconArrowUp,
-  IconChat,
   IconCheck,
   IconCheckCircle,
   IconChevronDown,
   IconClose,
-  IconCode,
   IconCopy,
   IconDoc,
   IconDownload,
@@ -30,28 +28,29 @@ import {
   IconEyeOff,
   IconFolder,
   IconHistory,
+  IconKey,
+  IconMoon,
+  IconSearch,
+  IconShieldCheck,
+  IconSun,
   IconImage,
   IconLayout,
   IconLogin,
   IconLogout,
-  IconMenu,
   IconPaperclip,
   IconPause,
   IconPlay,
   IconPlus,
   IconReplay,
-  IconRuler,
   IconSave,
   IconSpec,
   IconTrash,
   IconTune,
-  IconUpload,
   IconWarn,
 } from './components/landing/icons';
 /* `landing/` is the shared marketing design system, not a private folder — see
    CLAUDE.md. Eyebrow is reused here rather than restating its markup. */
 import { Eyebrow } from './components/landing/sections';
-import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -79,15 +78,11 @@ import {
   purgeLegacyPlaintextKey,
   EncryptedKeyRecord,
 } from './services/keyVault';
-import {
-  DURATION,
-  transition,
-  backdropVariants,
-  modalVariants,
-  drawerVariants,
-  messageVariants,
-  tabPanelVariants,
-} from './lib/motion';
+/* Only DURATION survives here. The workspace's motion is now the artifact's own
+   CSS keyframes and transitions, so the Framer Motion presets it used to import
+   are unused — see the note in CLAUDE.md about this being a deliberate departure
+   for this surface. */
+import { DURATION } from './lib/motion';
 import * as pdfjs from 'pdfjs-dist';
 // @ts-ignore
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
@@ -95,7 +90,6 @@ import { auth, db, logOut, handleFirestoreError, OperationType } from './service
 import { collection, onSnapshot, query, setDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import LoginPage from './components/LoginPage';
-import UserAvatar from './components/UserAvatar';
 import LandingPage from './components/LandingPage';
 import FeaturesPage from './components/FeaturesPage';
 import DocsPage from './components/DocsPage';
@@ -879,7 +873,12 @@ const ReportMockup = ({
   }, [pageWidth]);
 
   return (
-    <div className="bg-surface-container-lowest border border-outline-variant shadow-[var(--shadow-sm)] rounded-xl overflow-hidden w-full max-w-5xl mx-auto my-4 sm:my-8 font-sans flex flex-col">
+    /* The artifact's proof frame, applied to the component that owns the page:
+       1px --paper-rule, 4px radius, --shadow-lg, 760px measure, registration
+       marks. It is here rather than on a wrapper because ReportMockup already
+       draws a frame — nesting it inside the artifact's `.wb-proof` produced two
+       borders and two shadows, the same double-frame this canvas had before. */
+    <div className="wb-reg-marks bg-surface-container-lowest border border-[color:var(--paper-rule)] shadow-[var(--shadow-lg)] rounded-[4px] overflow-hidden w-full max-w-[760px] mx-auto font-sans flex flex-col">
       {/* Report Page Area */}
       <div className="p-3 sm:p-8 bg-surface relative overflow-hidden">
         <div ref={viewportRef} className="w-full">
@@ -1006,48 +1005,6 @@ export interface SavedReport {
   result: DesignResult | null;
 }
 
-/**
- * The canvas's status line.
- *
- * There were two of these, byte-identical, one inside each branch of the
- * canvas's result/empty `AnimatePresence` — so every change had to be made twice
- * and kept in step by hand. It is the same bar in both states, so it is now one
- * component rendered once *outside* that switch: the branches animate, the
- * status line does not, which is also more honest, since the engine state is a
- * property of the app rather than of whichever pane happens to be showing.
- *
- * The three states are mutually exclusive and ordered deliberately —
- * processing wins over paused wins over idle.
- */
-function CanvasStatusBar({
-  isAnalyzing,
-  isPaused,
-  analyzingStep,
-}: {
-  isAnalyzing: boolean;
-  isPaused: boolean;
-  analyzingStep: string;
-}) {
-  const processing = isAnalyzing && !isPaused;
-  return (
-    <div className="h-10 bg-surface-container-lowest border-t border-outline-variant flex items-center justify-center px-6 flex-shrink-0 select-none">
-      <span className="font-code-sm text-[10px] tracking-[0.2em] text-on-surface-variant uppercase flex items-center gap-2">
-        {processing ? (
-          <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping" />
-        ) : isPaused ? (
-          <span className="w-1.5 h-1.5 bg-[color:var(--ink-faint)] rounded-full" />
-        ) : (
-          <span className="w-1.5 h-1.5 bg-success rounded-full" />
-        )}
-        {processing
-          ? `Engine Status: Processing / ${analyzingStep || 'Analyzing...'}`
-          : isPaused
-            ? 'Engine Status: Paused / Idle'
-            : 'Engine Status: Idle • Ready for Input'}
-      </span>
-    </div>
-  );
-}
 
 /**
  * Per-route document titles.
@@ -1083,6 +1040,19 @@ const ROUTE_TITLES: Record<string, string> = {
   '/workspace': 'Workspace — Forma',
 };
 
+/** Which panel the rail's second column is showing. */
+type RailPanel = 'review' | 'projects' | 'history';
+
+/**
+ * Initials for the rail's account button. Two letters at most — the artifact's
+ * avatar is a 30px disc and a third glyph does not fit at that size.
+ */
+function initialsOf(user: { displayName?: string | null; email?: string | null }): string {
+  const source = (user.displayName || user.email || '?').trim();
+  const parts = source.split(/[\s@._-]+/).filter(Boolean);
+  return parts.slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
+}
+
 export default function App() {
   const [showWorkspace, setShowWorkspace] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -1093,11 +1063,9 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [user, setUser] = useState<User | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   // Below md the chat and canvas panes cannot sit side by side (the sidebar
   // alone is wider than a 375px viewport), so they become tabs. At md+ this
   // value is ignored and both panes render.
-  const [mobilePane, setMobilePane] = useState<'chat' | 'canvas'>('chat');
   const [isDragging, setIsDragging] = useState(false);
   /**
    * Save confirmation. This used to be a native `alert()` — modal, unstyled, and
@@ -1126,13 +1094,15 @@ export default function App() {
   const [uploadNotices, setUploadNotices] = useState<string[]>([]);
   const [isIngesting, setIsIngesting] = useState(false);
   const [result, setResult] = useState<DesignResult | null>(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [loginInitialMode, setLoginInitialMode] = useState<'signin' | 'signup'>('signin');
   const [currentRoute, setCurrentRoute] = useState(currentPath());
   const [lastViewPath, setLastViewPath] = useState('/');
 
+  /* Which section the rail is showing. Replaces `isSidebarOpen`: the artifact
+     puts saved projects and recent sessions in the second column rather than a
+     drawer over the canvas. */
+  const [railPanel, setRailPanel] = useState<RailPanel>('review');
   const [showWorkspaceProfile, setShowWorkspaceProfile] = useState(false);
   const workspaceProfileRef = useRef<HTMLDivElement>(null);
 
@@ -1237,23 +1207,6 @@ export default function App() {
     return () => document.removeEventListener('click', onDocumentClick);
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  // On phones the result lands in the hidden pane, so surface it automatically.
-  // Desktop is unaffected — both panes are visible there.
-  useEffect(() => {
-    if (result) setMobilePane('canvas');
-  }, [result]);
 
   /**
    * Auth state, including changes this tab did not initiate: signing out in
@@ -1294,7 +1247,7 @@ export default function App() {
         // all belong to the account that just left.
         if (wasSignedIn) {
           handleClearChatRef.current?.();
-          setIsSidebarOpen(false);
+          setRailPanel('review');
         }
       }
     });
@@ -1890,7 +1843,7 @@ export default function App() {
   const handleLoadReport = (report: SavedReport) => {
     setMessages(report.messages);
     setResult(report.result);
-    setIsSidebarOpen(false);
+    setRailPanel('review');
   };
 
   const handleDeleteReport = async (id: string) => {
@@ -1936,7 +1889,7 @@ export default function App() {
     // out of their PDFs, the chat transcript and the generated report. All of it
     // used to survive sign-out and sit there for whoever used the browser next.
     handleClearChat();
-    setIsSidebarOpen(false);
+    setRailPanel('review');
 
     setSavedReports(JSON.parse(localStorage.getItem('savedReports') || '[]'));
   };
@@ -1967,8 +1920,22 @@ export default function App() {
    */
   const handleLoginSuccess = useCallback(() => {
     setShowLogin(false);
-    navigate('/workspace');
-  }, []);
+    /*
+     * Back to wherever they were, not into the workspace.
+     *
+     * This hardcoded `/workspace`, so signing in from the docs or the home page
+     * threw the person into the editor instead of returning them to what they
+     * were doing — signing in is not a statement of intent to start a report. The
+     * cancel path beside this one already restored `lastViewPath`; only the
+     * success path still forced it, which is the same split CLAUDE.md records
+     * from when two copies of this modal drifted ("one restoring lastViewHash and
+     * the other hardcoding #workspace").
+     *
+     * Someone who signed in *from* the workspace still lands back in it, because
+     * that is what `lastViewPath` holds for them.
+     */
+    navigate(lastViewPath || '/');
+  }, [lastViewPath]);
 
   const loginModal = showLogin ? (
     <LoginPage
@@ -2491,1292 +2458,774 @@ export default function App() {
     );
   }
 
+  /*
+   * The workspace, ported from the approved artifact
+   * (claude.ai/code/artifact/77c5245d-3967-43db-bffb-9751b269e2be).
+   *
+   * Appearance comes entirely from `src/workspace.css`, which is that artifact's
+   * own CSS with only its selector names prefixed. Nothing here should carry a
+   * hand-written colour, size or spacing value: if something looks wrong, the fix
+   * belongs in that file, and the artifact is the reference for what it should be.
+   *
+   * Three places where the artifact had no equivalent and real behaviour wins,
+   * each agreed rather than assumed:
+   *   - The canvas renders `ReportMockup` from the model's own layout, inside the
+   *     artifact's frame. The artifact's page was a fixed fictional statement.
+   *   - Staged attachments, upload notices and errors render here because the app
+   *     has them and the artifact never did. They are absent at rest, so the
+   *     default view still matches.
+   *   - The vault's unlock / sync / forget actions stay inside the artifact's
+   *     "Encrypted sync" group; the artifact only drew the passphrase fields.
+   *
+   * `sheet` supplies the palette (see index.css); `wb-root` the type and ground.
+   */
+  const plate = activeTab === 'ui' ? 'proof' : specView === 'repx' ? 'xml' : 'spec';
+  const showPlate = (next: 'proof' | 'spec' | 'xml') => {
+    if (next === 'proof') { setActiveTab('ui'); return; }
+    setActiveTab('spec');
+    setSpecView(next === 'xml' ? 'repx' : 'spec');
+  };
+  const railBtn = (panel: RailPanel, label: string, icon: React.ReactNode) => (
+    <button
+      data-panel={panel}
+      aria-current={railPanel === panel}
+      title={label}
+      aria-label={label}
+      onClick={() => setRailPanel(panel)}
+    >
+      {icon}
+    </button>
+  );
+
   return (
-    /*
-     * `sheet` is what makes this surface part of the same design as the five
-     * marketing pages: it supplies the sheet palette (see the SHEET PALETTE
-     * block in index.css), so every `bg-surface*` / `text-on-surface*` /
-     * `border-outline-variant` below resolves to the sheet's cool greys and
-     * `text-secondary` resolves to the brand orange #fe6b00 instead of the
-     * app-wide #a04100 brown.
-     *
-     * Deliberately `sheet` and NOT `landing`: that class adds `overflow-x: clip`
-     * and a 1180px measure, both of which are wrong for a full-bleed h-screen
-     * frame. The two selectors were split for exactly this reason.
-     *
-     * The root must also carry real colours rather than the shadcn-family
-     * `bg-background` / `text-foreground` it used to: those tokens are not
-     * remapped by the sheet scope, so the root stayed #FCFCFC while every
-     * descendant moved to sheet grey.
-     */
-    <div className="sheet h-screen flex flex-col bg-surface text-on-surface font-sans overflow-hidden">
-      {/* TopNavBar */}
-      {/* Height and material are copied from SiteHeader deliberately: h-[68px]
-          with the same translucent fill and blur. Crossing from a marketing page
-          into the workspace used to shift the bar 4px shorter and change it from
-          a translucent sheet to opaque white, which read as landing on a
-          different site. If you change one, change the other. */}
-      <header className="w-full h-[68px] bg-surface/[0.84] [backdrop-filter:blur(16px)_saturate(1.5)] border-b border-outline-variant flex-shrink-0 z-50">
-        <nav className="flex justify-between items-center gap-2 px-3 sm:px-6 h-full w-full">
-          <div className="flex items-center gap-3 lg:gap-6 min-w-0">
-            <div
-              onClick={() => {
-                navigate('/');
-              }}
-              className="flex items-center gap-3 cursor-pointer hover:opacity-85 transition-opacity shrink-0"
-              title="Back to Landing Page"
-            >
-              <Logo size={28} />
-              {/* Below sm the action cluster needs the whole bar, so only the mark
-                  survives. The wordmark used to stay and, having nothing to shrink
-                  or truncate against, painted straight over the round buttons. */}
-              <div className="hidden sm:flex flex-col min-w-0">
-                <span className="font-display-lg text-title-md font-bold text-on-surface leading-tight">Forma</span>
-                <span className="font-label-caps text-[9px] tracking-widest text-on-surface-variant uppercase leading-none hidden sm:block">Show it. Build it. Ship it.</span>
-              </div>
-            </div>
-            <div className="h-8 w-px bg-outline-variant/30 hidden sm:block"></div>
-            <div className="flex items-center gap-4 select-none">
-              <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="u-tap u-transition-fast u-focus-ring u-press flex items-center justify-center w-10 h-10 rounded-full text-on-surface-variant hover:text-secondary hover:bg-surface-container cursor-pointer relative"
-                title="Saved Projects"
-                aria-label={`Saved projects${savedReports.length ? ` (${savedReports.length})` : ''}`}
-              >
-                <IconHistory size={20} />
-                {savedReports.length > 0 && !isSidebarOpen && (
-                  <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-secondary text-[8px] font-bold text-white rounded-full flex items-center justify-center border border-white">
-                    {savedReports.length}
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+    <div className="sheet wb-root wb-shell">
+      {/* ============================================================== rail */}
+      <nav className="wb-rail" aria-label="Sections">
+        {/* The mark is a home link, as it is in SiteHeader on all five marketing
+            pages. The artifact drew a plain <img> here, which left the workspace
+            with no route back to the site at all — the previous header had this
+            on the logo lockup ("Back to Landing Page").
+
+            A plain <a href>, not an onClick: the delegated handler in this file
+            turns in-app anchors into client-side navigation, so the link stays
+            right-clickable and middle-clickable. */}
+        <a href="/" className="wb-mark" title="Back to the home page" aria-label="Forma — home page">
+          <Logo size={26} />
+        </a>
+        {railBtn('review', 'Current report', <IconLayout size={19} />)}
+        {railBtn('projects', 'Saved projects', <IconFolder size={19} />)}
+        {railBtn('history', 'Recent', <IconHistory size={19} />)}
+        <button data-open-config title="Configure" aria-label="Configure" onClick={() => setIsConfigOpen(true)}>
+          <IconTune size={19} />
+        </button>
+        <span className="wb-spacer" />
+        <button title="Switch theme" aria-label="Switch theme" onClick={() => setTheme(!isDarkMode)}>
+          {isDarkMode ? <IconSun size={18} /> : <IconMoon size={18} />}
+        </button>
+
+        {/*
+          * Signed in: an accent disc with initials — that treatment means
+          * "identity". Signed out: a plain rail button, because the accent disc is
+          * ALSO what `aria-current` uses for the selected rail section, so an
+          * accent-washed circle here read as "signed in" and as "active" at the
+          * same time. Three meanings sharing one appearance is why this looked
+          * like a logged-in avatar when nobody was logged in.
+          *
+          * Signed out it also navigates straight to /login rather than opening a
+          * menu whose only item is "Sign in".
+          */}
+        {user ? (
+          <>
             <button
-              onClick={handleSaveReport}
-              disabled={!result && messages.length === 0}
-              className="u-tap u-transition-fast u-press u-focus-ring px-2.5 sm:px-3 lg:px-5 py-1.5 bg-surface-container-high font-label-caps text-[11px] text-on-surface-variant rounded-full hover:bg-surface-container-highest cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hidden sm:flex items-center gap-2"
-              title="Save Project"
-              aria-label="Save project"
+              className="wb-avatar"
+              aria-label="Account"
+              aria-expanded={showWorkspaceProfile}
+              title={`${user.displayName || user.email} — account`}
+              onClick={(e) => { e.stopPropagation(); setShowWorkspaceProfile(!showWorkspaceProfile); }}
             >
-              {/* No responsive class on the icon: Material Symbols ships its own
-                  `display` from an unlayered <link>, which beats Tailwind's
-                  layered `hidden` utility regardless of breakpoint. The
-                  `lg:hidden` that used to sit here had never once applied — the
-                  desktop button always rendered icon *and* label, like its two
-                  siblings. Wrap the icon in a plain span if you ever do need to
-                  hide one responsively. */}
-              <IconSave size={14} />
-              <span className="hidden lg:inline">Save Project</span>
+              {initialsOf(user)}
             </button>
-            <button
-              onClick={handleClearChat}
-              className="u-tap u-transition-fast u-press u-focus-ring px-2.5 sm:px-3 lg:px-5 py-1.5 border border-outline-variant font-label-caps text-[11px] text-on-surface-variant hidden sm:flex items-center gap-2 rounded-full hover:bg-surface cursor-pointer"
-              title="New Process"
-              aria-label="New process"
-            >
-              <IconPlus size={14} />
-              <span className="hidden lg:inline">New Process</span>
-            </button>
-            <button
-              onClick={() => setIsConfigOpen(true)}
-              className="u-tap u-transition-fast u-press u-focus-ring px-2.5 sm:px-3 lg:px-5 py-1.5 bg-secondary-container text-white font-label-caps text-[11px] flex items-center gap-2 rounded-full shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] cursor-pointer"
-              title="Configure"
-              aria-label="Configure"
-            >
-              <IconTune size={14} />
-              <span className="hidden lg:inline">Configure</span>
-            </button>
-            <div className="w-px h-6 bg-outline-variant/30 mx-1 sm:mx-2 hidden sm:block"></div>
-            {user ? (
-              <div className="relative" ref={workspaceProfileRef}>
-                <div
-                  onClick={() => setShowWorkspaceProfile(!showWorkspaceProfile)}
-                  className="flex items-center gap-2.5 pr-3 border-r border-outline-variant/30 cursor-pointer select-none hover:opacity-85 transition-opacity"
+
+            {showWorkspaceProfile && (
+              <div className="wb-pop" role="menu" ref={workspaceProfileRef}>
+                <div className="wb-who">
+                  <b>{user.displayName || 'Signed in'}</b>
+                  <span>{user.email}</span>
+                </div>
+                <button
+                  role="menuitem"
+                  className="wb-danger"
+                  onClick={() => { setShowWorkspaceProfile(false); handleLogOut(); }}
                 >
-                  <UserAvatar user={user} />
-                  <span className="font-label-caps text-[11px] text-on-surface-variant font-semibold hidden sm:inline max-w-[120px] truncate">
-                    {user.displayName || user.email?.split('@')[0]}
-                  </span>
-                  {/* One chevron rotated, rather than two glyphs: the Material set
-                      had expand_less/expand_more as separate ligatures, but a
-                      rotation animates and cannot drift out of step. */}
-                  <IconChevronDown
-                    size={14}
-                    className={`u-transition-fast text-on-surface-variant select-none hidden sm:inline ${
-                      showWorkspaceProfile ? 'rotate-180' : ''
-                    }`}
-                  />
-                </div>
-
-                {showWorkspaceProfile && (
-                  <div className="absolute right-0 mt-2 w-56 bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-[var(--shadow-lg)] z-50 overflow-hidden py-2">
-                    <div className="px-4 py-3 border-b border-outline-variant/30 flex flex-col text-left">
-                      <span className="text-xs font-bold text-on-surface truncate">
-                        {user.displayName || 'Developer User'}
-                      </span>
-                      <span className="text-[10px] text-on-surface-variant truncate font-mono mt-0.5">
-                        {user.email || 'developer@example.com'}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setShowWorkspaceProfile(false);
-                        handleLogOut();
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-error-container text-error hover:text-error transition-colors text-left text-xs font-semibold font-label-caps cursor-pointer"
-                    >
-                      <IconLogout size={16} />
-                      Sign Out
-                    </button>
-                  </div>
-                )}
+                  <IconLogout size={15} />
+                  Sign out
+                </button>
               </div>
-            ) : (
-              <button
-                onClick={() => {
-                  navigate('/login');
-                }}
-                className="font-label-caps text-body-sm text-on-surface-variant px-2.5 sm:px-4 py-2 hover:bg-surface-container rounded-full transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap"
-                aria-label="Sign in"
-              >
-                {/* Below sm only the icon remains: at 91px the label was both the
-                    widest thing in the bar and the only text that wrapped.
-                    The icon carries no responsive class on purpose — Material
-                    Symbols sets its own `display`, which beats Tailwind's `hidden`
-                    (see the same dead `lg:hidden` on the save icon above), and
-                    showing it at every width matches the sibling pills anyway. */}
-                <IconLogin size={20} />
-                <span className="hidden sm:inline">Sign In</span>
-              </button>
             )}
-            <div className="relative" ref={menuRef}>
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className={`w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full transition-all cursor-pointer ${isMenuOpen ? 'bg-surface-container' : ''}`}
-              >
-                <IconMenu size={20} />
-              </button>
-              {isMenuOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-[var(--shadow-lg)] z-50 overflow-hidden">
-                  <div className="p-4 space-y-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-label-caps text-[9px] tracking-widest text-secondary uppercase font-bold">Developer Settings</span>
-                      <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-pulse"></span>
-                    </div>
-                    <div className="space-y-1">
-                      {/* Save and New leave the bar below sm — at 320px the full
-                          control set overlapped itself. They live here instead, so
-                          the actions stay reachable rather than disappearing. */}
-                      <button
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          handleSaveReport();
-                        }}
-                        disabled={!result && messages.length === 0}
-                        className="sm:hidden w-full flex items-center gap-3 p-2 hover:bg-surface-container rounded-xl transition-colors group cursor-pointer text-left text-on-surface disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <IconSave size={18} className="text-on-surface-variant group-hover:text-secondary" />
-                        <span className="font-body-sm text-[13px]">Save Project</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          handleClearChat();
-                        }}
-                        className="sm:hidden w-full flex items-center gap-3 p-2 hover:bg-surface-container rounded-xl transition-colors group cursor-pointer text-left text-on-surface"
-                      >
-                        <IconPlus size={18} className="text-on-surface-variant group-hover:text-secondary" />
-                        <span className="font-body-sm text-[13px]">New Process</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </nav>
-      </header>
+          </>
+        ) : (
+          <a href="/login" title="Sign in" aria-label="Sign in">
+            <IconLogin size={19} />
+          </a>
+        )}
+      </nav>
 
-      {/* Configuration Modal */}
-      <AnimatePresence>
-        {isConfigOpen && (
-          <motion.div
-            variants={backdropVariants}
-            initial="hidden"
-            animate="visible"
-            exit="hidden"
-            onClick={dismissConfigWithoutSaving}
-            className="fixed inset-0 bg-black/50 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4"
+      {/* ============================================================ review */}
+      <section
+        className="wb-review wb-rise wb-rise-1"
+        aria-label="Session"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Always present, whichever panel shows: a new report is reachable from
+            anywhere without navigating somewhere else first. */}
+        <div className="wb-actions">
+          <button
+            className="wb-pill wb-pill--accent wb-grow"
+            onClick={() => { handleClearChat(); setRailPanel('review'); }}
           >
-            <motion.div
-              variants={modalVariants}
-              initial="hidden"
-              animate="visible"
-              exit="hidden"
-              onClick={(e) => e.stopPropagation()}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Report configuration"
-              className="bg-surface-container-lowest border border-outline-variant rounded-t-2xl sm:rounded-2xl shadow-[var(--shadow-lg)] w-full sm:max-w-md overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]"
-            >
-              <div className="flex items-center justify-between p-6 border-b border-outline-variant flex-shrink-0">
-                <h3 className="text-lg font-bold flex items-center gap-2 font-title-md">
-                  <IconTune size={20} className="text-secondary" />
-                  Report Configuration
-                </h3>
-                <button onClick={dismissConfigWithoutSaving} aria-label="Close without saving" className="text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer flex items-center">
-                  <IconClose size={20} />
-                </button>
-              </div>
-              <div className="p-6 space-y-5 overflow-y-auto">
-                <div>
-                  <label className="block text-xs font-mono font-bold text-on-surface-variant mb-2">DevExpress Version</label>
-                  <select
-                    value={config.version}
-                    onChange={(e) => setConfig({ ...config, version: e.target.value })}
-                    className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
-                  >
-                    <option value="24.1">v24.1</option>
-                    <option value="23.2">v23.2</option>
-                    <option value="23.1">v23.1</option>
-                    <option value="22.2">v22.2</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-mono font-bold text-on-surface-variant mb-2">Report Unit</label>
-                  <select
-                    value={config.unit}
-                    onChange={(e) => setConfig({ ...config, unit: e.target.value })}
-                    className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
-                  >
-                    <option value="HundredthsOfAnInch">HundredthsOfAnInch</option>
-                    <option value="TenthsOfAMillimeter">TenthsOfAMillimeter</option>
-                    <option value="Pixels">Pixels</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-mono font-bold text-on-surface-variant mb-2">Page Size</label>
-                  <select
-                    value={config.pageSize}
-                    onChange={(e) => setConfig({ ...config, pageSize: e.target.value })}
-                    className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
-                  >
-                    <option value="Letter">Letter</option>
-                    <option value="A4">A4</option>
-                    <option value="Legal">Legal</option>
-                  </select>
-                </div>
+            <IconPlus size={14} />
+            New report
+          </button>
+          <button
+            className="wb-pill wb-pill--outline"
+            title="Search projects"
+            aria-label="Search projects"
+            onClick={() => setRailPanel('projects')}
+          >
+            <IconSearch size={14} />
+          </button>
+        </div>
 
-                {/* Header Config */}
-                <div className="pt-4 border-t border-outline-variant">
-                  <h4 className="text-xs font-mono font-bold text-on-surface-variant mb-3 uppercase tracking-wider">Header Settings</h4>
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-2 text-sm text-on-surface cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={config.header?.showCompanyLogo}
-                        onChange={(e) => setConfig({ ...config, header: { ...config.header, showCompanyLogo: e.target.checked } })}
-                        className="rounded border-outline-variant text-secondary focus:ring-secondary"
-                      />
-                      Include Company Logo
-                    </label>
-                    <div>
-                      <label className="block text-[11px] font-mono text-on-surface-variant mb-1 font-semibold">Report Title</label>
-                      <input
-                        type="text"
-                        value={config.header?.title || ''}
-                        onChange={(e) => setConfig({ ...config, header: { ...config.header, title: e.target.value } })}
-                        placeholder="e.g., Monthly Sales Report"
-                        className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer Config */}
-                <div className="pt-4 border-t border-outline-variant">
-                  <h4 className="text-xs font-mono font-bold text-on-surface-variant mb-3 uppercase tracking-wider">Footer Settings</h4>
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-2 text-sm text-on-surface cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={config.footer?.showPageNumbers}
-                        onChange={(e) => setConfig({ ...config, footer: { ...config.footer, showPageNumbers: e.target.checked } })}
-                        className="rounded border-outline-variant text-secondary focus:ring-secondary"
-                      />
-                      Include Page Numbers
-                    </label>
-                    <div>
-                      <label className="block text-[11px] font-mono text-on-surface-variant mb-1 font-semibold">Custom Footer Text</label>
-                      <input
-                        type="text"
-                        value={config.footer?.customText || ''}
-                        onChange={(e) => setConfig({ ...config, footer: { ...config.footer, customText: e.target.value } })}
-                        placeholder="e.g., Confidential Document"
-                        className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* The model picker used to live here. It has been removed on purpose:
-                    hardcoded model ids rot. Google retires models "for new users", so
-                    the old gemini-2.5-flash default 404'd for every freshly created key
-                    while the dropdown still advertised models (3.5 Flash/Pro) that never
-                    existed for most accounts. The model is now detected from the key —
-                    see resolveModel() in geminiService.ts. */}
-
-                {/* API Config */}
-                <div className="pt-4 border-t border-outline-variant">
-                  <h4 className="text-xs font-mono font-bold text-on-surface-variant mb-3 uppercase tracking-wider">Your Gemini API Key</h4>
-                  <div>
-                    <label className="block text-[11px] font-mono text-on-surface-variant mb-1 font-semibold">API Key <span className="text-error opacity-80">(Required)</span></label>
-                    <div className="relative flex items-center">
-                      <input
-                        type={showApiKey ? "text" : "password"}
-                        value={config.customApiKey || ''}
-                        onChange={(e) => {
-                          setConfig({ ...config, customApiKey: e.target.value });
-                          setKeyCheck(null);
-                        }}
-                        placeholder="AIzaSy..."
-                        className="w-full p-2.5 pr-10 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        className="absolute right-3 text-on-surface-variant hover:text-on-surface cursor-pointer flex items-center"
-                        title={showApiKey ? "Hide API Key" : "Show API Key"}
-                      >
-                        {showApiKey ? <IconEye size={18} /> : <IconEyeOff size={18} />}
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2 mt-2">
-                      <button
-                        type="button"
-                        onClick={handleCheckKey}
-                        disabled={vaultBusy || !config.customApiKey}
-                        className="u-tap u-transition-fast u-press u-focus-ring px-3 py-1.5 bg-surface-container-high text-[11px] font-semibold text-on-surface-variant rounded-full hover:bg-surface-container-highest cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Check key
-                      </button>
-                      {config.customApiKey && (
-                        <button
-                          type="button"
-                          onClick={handleClearKeyFromSession}
-                          className="u-tap u-transition-fast u-press u-focus-ring px-3 py-1.5 text-[11px] font-semibold text-on-surface-variant rounded-full hover:bg-surface-container-high cursor-pointer"
-                        >
-                          Clear from this session
-                        </button>
-                      )}
-                    </div>
-
-                    {keyCheck && (
-                      <p className={`text-[10px] mt-2 leading-snug ${keyCheck.tone === 'ok' ? 'text-[color:var(--ok-ink)]' : 'text-[color:var(--bad-ink)]'}`}>
-                        {keyCheck.text}
-                      </p>
-                    )}
-
-                    <p className="text-[10px] text-on-surface-variant mt-2 leading-snug">
-                      Forma ships with no API key of its own. Get a free key from{' '}
-                      <a
-                        href="https://aistudio.google.com/apikey"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline hover:text-on-surface"
-                      >
-                        Google AI Studio
-                      </a>
-                      . Your key goes straight from this browser to Google — it never reaches our servers.
-                      It is kept for this browser tab only and is erased when you close it.
-                    </p>
-                  </div>
-
-                  {/* Zero-knowledge sync — signed-in users only */}
-                  {canUseVault && (
-                    <div className="mt-5 pt-4 border-t border-outline-variant">
-                      <h4 className="text-xs font-mono font-bold text-on-surface-variant mb-1 uppercase tracking-wider">
-                        Sync Across Devices
-                      </h4>
-                      <p className="text-[10px] text-on-surface-variant mb-3 leading-snug">
-                        Your key is encrypted in this browser with a passphrase before it is saved to your
-                        account. We store only the encrypted result and cannot read it.
-                      </p>
-
-                      {vaultRecord ? (
-                        <>
-                          <label className="block text-[11px] font-mono text-on-surface-variant mb-1 font-semibold">
-                            Passphrase
-                          </label>
-                          <input
-                            type="password"
-                            value={passphrase}
-                            onChange={(e) => setPassphrase(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockKey(); }}
-                            placeholder="Unlock your stored key"
-                            className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
-                          />
-                          <div className="flex items-center gap-2 mt-2">
-                            <button
-                              type="button"
-                              onClick={handleUnlockKey}
-                              disabled={vaultBusy}
-                              className="u-tap u-transition-fast u-press u-focus-ring px-3 py-1.5 bg-secondary-container text-white text-[11px] font-semibold rounded-full hover:bg-secondary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {vaultBusy ? 'Working…' : 'Unlock key'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleForgetStoredKey}
-                              disabled={vaultBusy}
-                              className="u-tap u-transition-fast u-press u-focus-ring px-3 py-1.5 text-[11px] font-semibold text-error rounded-full hover:bg-error/10 cursor-pointer disabled:opacity-50"
-                            >
-                              Delete stored key
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <label className="block text-[11px] font-mono text-on-surface-variant mb-1 font-semibold">
-                            Create a passphrase
-                          </label>
-                          <input
-                            type="password"
-                            value={passphrase}
-                            onChange={(e) => setPassphrase(e.target.value)}
-                            placeholder="At least 8 characters"
-                            className="w-full p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
-                          />
-                          <input
-                            type="password"
-                            value={passphraseConfirm}
-                            onChange={(e) => setPassphraseConfirm(e.target.value)}
-                            placeholder="Confirm passphrase"
-                            className="w-full mt-2 p-2.5 border border-outline-variant rounded-xl focus:border-secondary outline-none bg-surface-container-lowest text-sm font-sans"
-                          />
-                          <p className="text-[10px] text-error mt-2 leading-snug">
-                            Write this passphrase down. It is never sent to us, so if you forget it your stored
-                            key cannot be recovered — you would need to delete it and add your API key again.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={handleSyncKeyToAccount}
-                            disabled={vaultBusy}
-                            className="u-tap u-transition-fast u-press u-focus-ring mt-2 px-3 py-1.5 bg-secondary-container text-white text-[11px] font-semibold rounded-full hover:bg-secondary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {vaultBusy ? 'Encrypting…' : 'Encrypt & sync to my account'}
-                          </button>
-                        </>
-                      )}
-
-                      {vaultNotice && (
-                        <p className={`text-[10px] mt-2 leading-snug ${vaultNotice.tone === 'ok' ? 'text-[color:var(--ok-ink)]' : 'text-[color:var(--bad-ink)]'}`}>
-                          {vaultNotice.text}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="p-6 border-t border-outline-variant bg-surface-container-low flex justify-end gap-3 flex-shrink-0">
-                <button
-                  onClick={dismissConfigWithoutSaving}
-                  className="px-5 py-2.5 text-sm font-semibold text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveConfigAndClose}
-                  className="px-5 py-2.5 bg-secondary-container text-white text-sm font-semibold rounded-xl hover:bg-secondary transition-colors cursor-pointer shadow-[var(--shadow-sm)]"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Full Screen Image Modal */}
-      <AnimatePresence>
-        {fullScreenImage && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setFullScreenImage(null)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-pointer"
-            />
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="relative max-w-5xl max-h-[90vh] flex flex-col items-center justify-center pointer-events-none"
-            >
-              <img
-                src={fullScreenImage}
-                alt="Full screen preview"
-                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-[var(--shadow-lg)] pointer-events-auto"
-              />
-              <button
-                onClick={() => setFullScreenImage(null)}
-                className="absolute -top-4 -right-4 bg-surface-container-lowest text-on-surface p-2 rounded-full shadow-[var(--shadow-lg)] hover:bg-surface transition-colors pointer-events-auto cursor-pointer flex items-center"
-              >
-                <IconClose size={18} />
-              </button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Main Workspace Frame */}
-      <main className="flex-grow flex overflow-hidden relative">
-        {/* Integrated Left Sidebar */}
-        <aside
-          className={`${mobilePane === 'chat' ? 'flex' : 'hidden'} md:flex relative w-full md:w-80 lg:w-96 md:flex-shrink-0 border-r border-outline-variant flex-col bg-surface-container-low u-transition ${isDragging ? 'ring-2 ring-inset ring-[color:var(--accent-line)] bg-[color:var(--accent-wash)]' : ''}`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          {/* Sticky header for Instruction Log & Clear Chat */}
-          {messages.length > 0 && (
-            <div className="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center flex-shrink-0 bg-surface-container-low z-10">
-              <span className="font-label-caps text-on-surface-variant text-[10px] uppercase font-bold tracking-wider">Instruction Log</span>
-              <button
-                onClick={handleClearChat}
-                className="text-[10px] font-bold text-error hover:text-error flex items-center gap-1 transition-colors cursor-pointer uppercase font-label-caps font-mono"
-                title="Clear All Chat"
-              >
-                <IconTrash size={13} />
-                Clear Chat
-              </button>
-            </div>
-          )}
-
-          {/* Scrollable instructions & messages */}
-          <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6">
-            {/* Hi there Card */}
-            {messages.length === 0 && (
-              <div className="bg-surface-container-lowest border border-outline-variant p-5 rounded-2xl shadow-[var(--shadow-sm)]">
-                <h4 className="font-title-md text-body-sm font-bold mb-3 flex items-center gap-2 text-on-surface">
-                  <IconChat size={18} className="text-secondary" />
-                  Hi there!
-                </h4>
-                <p className="font-body-sm text-[13px] text-on-surface-variant leading-relaxed">
-                  Welcome back. Upload your report mockups, sketches, or PDFs and describe what you want to build.
-                </p>
-              </div>
-            )}
-
-            {/* Chat History Flow inside Sidebar */}
-            {messages.length > 0 && (
-              <div className="space-y-4">
-                {messages.map(msg => (
-                  <motion.div
-                    key={msg.id}
-                    variants={messageVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className={`flex flex-col gap-2 w-full ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-                  >
-                    {/* Attached files preview in message bubbles */}
-                    {msg.images && msg.images.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 w-full justify-end">
-                        {msg.images.map((src, idx) => {
-                          const isRepx = src.startsWith('data:application/xml') || src.startsWith('data:text/');
-                          return (
-                            <div key={idx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-outline-variant/50 bg-surface-container-lowest flex items-center justify-center shadow-[var(--shadow-sm)]">
-                              {isRepx ? (
-                                <div className="flex flex-col items-center justify-center w-full h-full text-on-surface-variant">
-                                  <IconDoc size={18} />
-                                  <span className="text-[7px] font-bold uppercase mt-0.5">REPX</span>
-                                </div>
-                              ) : (
-                                <img
-                                  src={src}
-                                  alt="Attached"
-                                  className="w-full h-full object-cover cursor-pointer hover:opacity-85"
-                                  onClick={() => setFullScreenImage(src)}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {msg.text && (
-                      <div className={`px-4 py-2.5 text-xs leading-relaxed shadow-[var(--shadow-sm)] ${msg.role === 'user'
-                        ? 'bg-secondary-container/10 border border-secondary/20 rounded-2xl text-on-surface-variant w-fit max-w-[90%]'
-                        : 'bg-surface-container-lowest border border-outline-variant rounded-2xl text-on-surface-variant w-fit max-w-[90%]'
-                        }`}>
-                        <p className="whitespace-pre-wrap">{msg.text}</p>
-                      </div>
-                    )}
-
-                    {/* The failure belongs next to the turn that failed, not only
-                        in a note by the composer that scrolls away from it. */}
-                    {msg.error && (
-                      <div className="flex items-start gap-1.5 max-w-[90%] text-error" role="alert">
-                        <IconAlert size={13} className="shrink-0 mt-px" />
-                        <div className="flex flex-col items-start gap-1">
-                          <span className="text-[10px] leading-snug">{msg.error}</span>
-                          <button
-                            onClick={() => handleRetryMessage(msg.id)}
-                            disabled={isChatting || isAnalyzing}
-                            className="u-transition-fast u-focus-ring text-[10px] font-label-caps underline underline-offset-2 hover:text-on-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            Try again
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            )}
-
-            {/* A chat turn is short and cheap, so it gets a light typing
-                indicator rather than the full generation card below. Once the
-                first characters land it becomes the answer itself, filling in
-                as it streams. */}
-            <AnimatePresence>
-              {isChatting && !isAnalyzing && (
-                <motion.div
-                  variants={messageVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="hidden"
-                  aria-live="polite"
-                  className="w-fit max-w-[90%] bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-[var(--shadow-sm)] px-4 py-2.5"
-                >
-                  {streamingReply ? (
-                    <p className="text-xs leading-relaxed text-on-surface-variant whitespace-pre-wrap">
-                      {streamingReply}
-                      <span className="inline-block w-1 h-3 ml-0.5 bg-secondary align-middle animate-pulse" />
-                    </p>
-                  ) : (
-                    <span className="flex items-center gap-2.5">
-                      <IconReplay size={16} className="animate-spin text-secondary select-none" />
-                      <span className="text-[11px] text-on-surface-variant">Thinking…</span>
-                    </span>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Analysis Loader / Pause State Card */}
-            <AnimatePresence>
-              {(isAnalyzing || isPaused) && (
-                <motion.div
-                  variants={messageVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="hidden"
-                  aria-live="polite"
-                  className={`flex flex-col gap-2 w-full bg-surface-container-lowest p-4 rounded-xl border shadow-[var(--shadow-sm)] relative overflow-hidden group u-transition ${isPaused ? 'border-[color:var(--ink-faint)]/40' : 'border-outline-variant'
-                    }`}
-                >
-                  {/* Header: state, elapsed time, stop */}
-                  <div className="flex items-center justify-between gap-3 w-full">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      {isPaused ? (
-                        <IconPause size={18} className="text-[color:var(--ink-faint)] select-none" />
-                      ) : (
-                        <IconReplay size={18} className="animate-spin text-secondary select-none" />
-                      )}
-                      <span className="text-xs font-bold text-[color:var(--ink-faint)] truncate">
-                        {isPaused ? 'Analysis Paused' : streamChars > 0 ? 'Writing report' : 'Reading your design'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-[11px] font-mono tabular-nums text-on-surface-variant">
-                        {formatElapsed(elapsedTime)}
-                      </span>
-                      <button
-                        onClick={handleStop}
-                        className="u-tap u-transition-fast u-press u-focus-ring p-1.5 text-on-surface-variant hover:text-error hover:bg-surface-container rounded-full z-20 flex items-center justify-center cursor-pointer"
-                        title="Stop & Reset"
-                        aria-label="Stop analysis"
-                      >
-                        <IconClose size={16} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Bar. scaleX from a left origin rather than width: width
-                      animates on the layout thread every frame of a run that
-                      lasts the whole generation. Identical visual result. */}
-                  <div className="flex items-center gap-2.5 w-full mt-0.5">
-                    <div className="relative flex-1 h-1.5 rounded-full bg-surface-container-high overflow-hidden">
-                      <motion.div
-                        className={`h-full w-full origin-left rounded-full ${isPaused ? 'bg-[color:var(--ink-faint)]' : 'bg-secondary'}`}
-                        animate={{ scaleX: analyzingProgress / 100 }}
-                        transition={transition.slow}
-                      />
-                    </div>
-                    <span className="text-[11px] font-mono tabular-nums font-bold text-on-surface-variant w-9 text-right shrink-0">
-                      {Math.round(analyzingProgress)}%
-                    </span>
-                  </div>
-
-                  {/* Current stage, plus the live output readout once the model
-                      is actually writing — the one number here that is measured
-                      rather than estimated. */}
-                  <div className="flex items-baseline justify-between gap-3 w-full">
-                    <p className={`text-[11px] text-on-surface-variant leading-tight truncate ${!isPaused && 'animate-pulse'}`}>
-                      {isPaused ? `Paused: ${analyzingStep}` : (analyzingStep || 'Generating output...')}
-                    </p>
-                    {streamChars > 0 && !isPaused && (
-                      <span className="text-[10px] font-mono text-on-surface-variant/70 shrink-0 tabular-nums">
-                        {(streamChars / 1024).toFixed(1)} KB
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Before output arrives there is genuinely nothing to report,
-                      so a skeleton stands in. Once the model starts writing the
-                      bar above carries real information and the skeleton would
-                      only add noise. */}
-                  {!isPaused && streamChars === 0 && (
-                    <div className="mt-1 space-y-1.5" aria-hidden="true">
-                      <div className="skeleton h-2.5 w-3/4 rounded-full" />
-                      <div className="skeleton h-2.5 w-full rounded-full" />
-                      <div className="skeleton h-2.5 w-2/3 rounded-full" />
-                    </div>
-                  )}
-
-                  {/* Measured on a live run: the model spent 4,770 thinking
-                      tokens — roughly 68 of 80 seconds — before emitting a single
-                      character. Nothing is streaming yet, so the bar is honestly
-                      pinned at PRE_STREAM_CEILING for that whole stretch and
-                      looks hung. Rather than invent movement, say what is
-                      happening. Only appears once the wait is long enough to be
-                      worth explaining. */}
-                  {!isPaused && streamChars === 0 && elapsedTime >= 20_000 && (
-                    <p className="mt-2 text-[10px] leading-snug text-on-surface-variant/70" role="status">
-                      The model is still reasoning — it writes nothing until it has planned the
-                      whole layout, so the bar holds here until output starts arriving.
-                    </p>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-            <div ref={messagesEndRef} />
+        {/* ------------------------------------------------ current session */}
+        <div className={`wb-panel-body${railPanel === 'review' ? '' : ' wb-hidden'}`}>
+          <div className="wb-col-head">
+            <span className="wb-col-title">Review</span>
+            <span className="wb-kicker">{messages.length === 1 ? '1 note' : `${messages.length} notes`}</span>
           </div>
 
-          {/* Drop-target feedback while dragging files over the chat pane */}
-          <AnimatePresence>
-            {isDragging && (
-              <motion.div
-                variants={backdropVariants}
-                initial="hidden"
-                animate="visible"
-                exit="hidden"
-                className="absolute inset-0 z-30 m-3 rounded-2xl border-2 border-dashed border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 pointer-events-none"
-              >
-                <IconUpload size={34} className="text-secondary" />
-                <p className="font-label-caps text-[11px] font-bold text-secondary uppercase tracking-wider">Drop to attach</p>
-                <p className="text-[10px] text-on-surface-variant">PNG, JPG, PDF or .repx</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <div className="wb-thread">
+            {messages.map((msg) => (
+              <article key={msg.id} className={`wb-note${msg.role === 'user' ? ' wb-note--me' : ''}`}>
+                <span className="wb-spine" />
+                <div>
+                  <div className="wb-who">{msg.role === 'user' ? 'You' : 'Forma'}</div>
+                  {msg.text && <p>{msg.text}</p>}
 
-          {/* Upload and input pill shape at sidebar bottom */}
-          <div className="p-3 sm:p-6 border-t border-outline-variant bg-surface-container-lowest/50 backdrop-blur-sm flex flex-col gap-3">
-            {/* Attached file staging indicators */}
-            {previews.length > 0 && (
-              <div className="flex gap-2 overflow-x-auto pb-2 px-1 no-scrollbar">
-                {previews.map((src, idx) => {
-                  const isRepx = src.startsWith('data:application/xml') || src.startsWith('data:text/');
-                  return (
-                    <div key={idx} className="relative group w-12 h-12 flex-shrink-0 rounded border border-outline-variant shadow-[var(--shadow-sm)] flex items-center justify-center bg-surface-container-lowest">
-                      {isRepx ? (
-                        <div className="flex flex-col items-center justify-center w-full h-full text-on-surface-variant" title="REPX File">
-                          <IconDoc size={18} />
-                          <span className="text-[8px] font-bold mt-0.5 uppercase">REPX</span>
-                        </div>
-                      ) : (
-                        <img
-                          src={src}
-                          alt="Preview"
-                          className="w-full h-full object-cover cursor-pointer rounded hover:opacity-85"
-                          onClick={() => setFullScreenImage(src)}
-                        />
-                      )}
+                  {msg.images && msg.images.length > 0 && (
+                    <span className="wb-attach">
+                      <IconSpec size={13} />
+                      {msg.images.length === 1 ? '1 attachment' : `${msg.images.length} attachments`}
+                    </span>
+                  )}
+
+                  {/* The failure belongs beside the turn that failed. */}
+                  {msg.error && (
+                    <p role="alert" style={{ color: 'var(--bad-ink)' }}>
+                      {msg.error}{' '}
                       <button
-                        onClick={() => removeFile(idx)}
-                        aria-label="Remove attachment"
-                        /* Always visible on touch devices — there is no hover
-                           there, so the old opacity-0 made this unreachable. */
-                        className="u-transition-fast u-press u-focus-ring absolute -top-2 -right-2 w-6 h-6 bg-surface-container-lowest border border-outline-variant hover:bg-red-500 hover:text-white hover:border-red-500 text-on-surface-variant rounded-full shadow-[var(--shadow-sm)] opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 cursor-pointer flex items-center justify-center"
+                        className="wb-pill wb-pill--outline"
+                        onClick={() => handleRetryMessage(msg.id)}
+                        disabled={isChatting || isAnalyzing}
                       >
-                        <IconClose size={12} />
+                        Try again
                       </button>
-                    </div>
-                  );
-                })}
-              </div>
+                    </p>
+                  )}
+                </div>
+              </article>
+            ))}
+
+            {isChatting && !isAnalyzing && (
+              <article className="wb-note" aria-live="polite">
+                <span className="wb-spine" />
+                <div>
+                  <div className="wb-who">Forma</div>
+                  <p>{streamingReply || 'Thinking…'}</p>
+                </div>
+              </article>
             )}
 
-            {/* Text pulled out of the files themselves — a PDF's text layer or
-                an uploaded .repx. These carry exact strings and coordinates,
-                so they are shown as their own chips rather than hidden. */}
-            {attachmentTexts.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 px-1">
-                {attachmentTexts.map((t) => (
-                  <span
-                    key={t.id}
-                    className="group flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full border border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] text-[10px] text-on-surface-variant max-w-full"
-                    title={`${t.label} — exact text extracted from the file`}
-                  >
-                    <IconDoc size={13} className="text-secondary shrink-0" />
-                    <span className="truncate max-w-[160px]">{t.label}</span>
+            {/* Generation. The bar reports only what has actually arrived. */}
+            {(isAnalyzing || isPaused) && (
+              <div className={`wb-progress${isPaused ? ' wb-is-paused' : ''}`} aria-live="polite">
+                <div className="wb-top">
+                  <span className="wb-state">
+                    <span>{isPaused ? <IconPause size={17} /> : <IconReplay size={17} className="wb-spin" />}</span>
+                    <b>{isPaused ? 'Analysis paused' : streamChars > 0 ? 'Writing report' : 'Reading your design'}</b>
+                  </span>
+                  <span className="wb-clock">{formatElapsed(elapsedTime)}</span>
+                  <span className="wb-acts">
                     <button
-                      onClick={() => removeTextAttachment(t.id)}
-                      aria-label={`Remove ${t.label}`}
-                      className="u-transition-fast u-focus-ring shrink-0 w-4 h-4 rounded-full hover:bg-error hover:text-white flex items-center justify-center cursor-pointer"
+                      className="wb-tool"
+                      title={isPaused ? 'Resume' : 'Pause'}
+                      aria-label={isPaused ? 'Resume analysis' : 'Pause analysis'}
+                      onClick={isPaused ? handleResume : handlePause}
                     >
+                      {isPaused ? <IconPlay size={15} /> : <IconPause size={15} />}
+                    </button>
+                    <button className="wb-tool" title="Stop &amp; reset" aria-label="Stop analysis" onClick={handleStop}>
+                      <IconClose size={15} />
+                    </button>
+                  </span>
+                </div>
+
+                <div className="wb-track">
+                  <i style={{ transform: `scaleX(${analyzingProgress / 100})` }} />
+                </div>
+
+                <div className="wb-stage">
+                  <span>{analyzingStep || 'Analyzing input request and images…'}</span>
+                  <span className="wb-chars">{streamChars > 0 ? `${streamChars.toLocaleString()} chars` : ''}</span>
+                </div>
+
+                {/* Before output arrives there is nothing real to report, so a
+                    skeleton stands in rather than a bar that invents movement. */}
+                {!isPaused && streamChars === 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }} aria-hidden="true">
+                    <span className="wb-skeleton" style={{ width: '74%' }} />
+                    <span className="wb-skeleton" style={{ width: '100%' }} />
+                    <span className="wb-skeleton" style={{ width: '64%' }} />
+                  </div>
+                )}
+
+                {/* Only once the wait is long enough to be worth explaining. */}
+                {!isPaused && streamChars === 0 && elapsedTime >= 20_000 && (
+                  <p className="wb-why">
+                    The model is still thinking — it can spend most of a run reasoning before
+                    emitting a character. Nothing is streaming yet, so the bar is honestly
+                    pinned rather than pretending to move.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="wb-composer">
+            {/* Staged intake. The artifact had no slot for these; they are absent
+                at rest, so the default view is unchanged. */}
+            {previews.length > 0 && (
+              <div className="wb-chip-row">
+                {previews.map((src, idx) => (
+                  <span key={idx} className="wb-attach">
+                    <button onClick={() => setFullScreenImage(src)} title="View attachment" aria-label="View attachment">
+                      <IconImage size={13} />
+                    </button>
+                    {`image ${idx + 1}`}
+                    <button onClick={() => removeFile(idx)} title="Remove" aria-label="Remove attachment">
                       <IconClose size={11} />
                     </button>
                   </span>
                 ))}
               </div>
             )}
-
-            {isIngesting && (
-              <p className="text-[10px] text-on-surface-variant px-2 flex items-center gap-1.5">
-                <IconReplay size={13} className="animate-spin" />
-                Reading files…
-              </p>
-            )}
-
-            {/* Anything the intake could not use. Previously an unsupported
-                drop did nothing at all, with no explanation. */}
-            {uploadNotices.length > 0 && (
-              <div className="flex flex-col gap-1 px-1">
-                {uploadNotices.map((notice, i) => (
-                  <p key={i} className="text-[10px] text-on-surface-variant leading-snug flex items-start gap-1.5">
-                    <IconWarn size={11} className="text-secondary shrink-0 mt-px" />
-                    <span>{notice}</span>
-                  </p>
+            {attachmentTexts.length > 0 && (
+              <div className="wb-chip-row">
+                {attachmentTexts.map((att) => (
+                  <span key={att.id} className="wb-attach">
+                    <IconDoc size={13} />
+                    {att.label}
+                    <button onClick={() => removeTextAttachment(att.id)} title="Remove" aria-label="Remove attachment">
+                      <IconClose size={11} />
+                    </button>
+                  </span>
                 ))}
               </div>
             )}
-
+            {uploadNotices.length > 0 && (
+              <div className="wb-note-line wb-warn">
+                <span className="wb-ic"><IconWarn size={13} /></span>
+                <span>{uploadNotices.join(' · ')}</span>
+              </div>
+            )}
+            {error && (
+              <div className="wb-note-line wb-warn" role="alert">
+                <span className="wb-ic"><IconAlert size={13} /></span>
+                <span>{error}</span>
+              </div>
+            )}
             {saveNotice && (
-              <p className="text-[10px] text-on-surface-variant leading-snug flex items-start gap-1.5 px-1" role="status">
-                <IconCheckCircle size={13} className="text-[color:var(--ok-ink)] shrink-0" />
+              <div className="wb-note-line wb-ok" role="status">
+                <span className="wb-ic"><IconCheck size={13} /></span>
                 <span>{saveNotice}</span>
-              </p>
+              </div>
             )}
 
-            <div className="flex items-center gap-2 sm:gap-3 p-1.5 bg-surface-container-lowest rounded-full border border-outline-variant shadow-[var(--shadow-sm)] u-transition focus-within:border-secondary focus-within:ring-2 focus-within:ring-secondary/20 group">
-              <div className="flex-1 flex items-center gap-2 pl-2 sm:pl-3 min-w-0">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="u-transition-fast u-press u-focus-ring shrink-0 w-9 h-9 rounded-full text-on-surface-variant hover:text-secondary hover:bg-surface-container flex items-center justify-center cursor-pointer"
-                  title="Attach files"
-                  aria-label="Attach files"
-                >
-                  <IconPaperclip size={20} />
-                </button>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  className="hidden"
-                  multiple
-                  accept="image/*,application/pdf,.repx"
-                />
-                <input
-                  type="text"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      const isDisabled = (!isAnalyzing && !isPaused) && (previews.length === 0 && !prompt);
-                      if (!isDisabled) {
-                        if (isAnalyzing || isPaused) {
-                          if (isPaused) handleResume(); else handlePause();
-                        } else {
-                          handleGenerate();
-                        }
-                      }
-                    }
-                  }}
-                  placeholder={hasApiKey ? 'Ask a question, or upload a design...' : vaultRecord ? 'Unlock your stored key to start' : 'Add your API key to start'}
-                  disabled={!hasApiKey}
-                  className="bg-transparent border-none focus:ring-0 text-xs w-full py-2 text-on-surface placeholder-on-surface-variant/50 outline-none min-w-0 disabled:cursor-not-allowed"
-                />
-              </div>
+            <div className={`wb-box${hasApiKey ? '' : ' wb-is-locked'}`}>
               <button
-                onClick={isAnalyzing || isPaused ? (isPaused ? handleResume : handlePause) : () => handleGenerate()}
-                disabled={(!isAnalyzing && !isPaused) && (!hasApiKey || isChatting || isIngesting || (previews.length === 0 && attachmentTexts.length === 0 && !prompt))}
-                aria-label={isAnalyzing ? 'Pause analysis' : isPaused ? 'Resume analysis' : 'Generate report'}
-                className={`u-transition u-press u-focus-ring shrink-0 text-white p-2 rounded-full w-11 h-11 flex items-center justify-center cursor-pointer disabled:opacity-50 disabled:pointer-events-none hover:brightness-110 ${
-                  isPaused ? 'bg-[color:var(--ink-faint)]' : isAnalyzing ? 'bg-yellow-600' : 'bg-secondary-container'
-                }`}
+                className="wb-tool"
+                aria-label="Attach a file"
+                title="Attach an image, a PDF or a .repx"
+                onClick={() => fileInputRef.current?.click()}
               >
-                {isAnalyzing || isPaused ? (
-                  isPaused ? (
-                    <IconPlay size={20} />
-                  ) : (
-                    <IconPause size={20} />
-                  )
-                ) : (
-                  <IconArrowUp size={20} />
-                )}
+                <IconPaperclip size={16} />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,application/pdf,.repx"
+                onChange={handleFileChange}
+                className="wb-hidden"
+              />
+              <input
+                className="wb-line"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGenerate(); } }}
+                disabled={!hasApiKey}
+                placeholder={hasApiKey ? 'Describe a change…' : 'Add your API key to start'}
+                aria-label="Describe a change"
+              />
+              <button
+                className="wb-send"
+                aria-label="Send note"
+                /* Wrapped: handleGenerate's first parameter is an optional prompt
+                   override, and passing it bare hands it the click event. */
+                onClick={() => handleGenerate()}
+                disabled={!hasApiKey || isAnalyzing || isIngesting}
+              >
+                <IconArrowUp size={15} />
               </button>
             </div>
-            {/* The key gates the entire workspace — chat and generation alike —
-                so say so plainly rather than letting the first attempt fail. */}
+
             {!hasApiKey && (
-              <button
-                onClick={() => setIsConfigOpen(true)}
-                className="u-transition-fast u-focus-ring w-full flex items-start gap-2 text-left px-3 py-2.5 rounded-xl border border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] hover:bg-[color:var(--accent-line)] cursor-pointer"
-              >
-                <IconAlert size={14} className="text-secondary shrink-0 mt-0.5" />
-                {/* Signing out clears the session key, but the encrypted copy in
-                    the account survives. Telling a returning user to "add your
-                    API key" when the app already knows they have one stored made
-                    the vault look broken — they had no way to learn that
-                    unlocking was even an option. */}
-                {vaultRecord ? (
-                  <span className="text-[11px] text-on-surface-variant leading-snug">
-                    <strong className="text-on-surface">Unlock your stored API key.</strong>{' '}
-                    This account has an encrypted key saved. Click here and enter your passphrase —
-                    it never left your browser, so only you can unlock it.
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-on-surface-variant leading-snug">
-                    <strong className="text-on-surface">Add your Gemini API key to begin.</strong>{' '}
-                    Nothing in the workspace can run without it — Forma ships no key of its own.
-                    Click here to open Settings.
-                  </span>
-                )}
+              <button className="wb-gate" onClick={() => setIsConfigOpen(true)}>
+                <span className="wb-badge-ic"><IconAlert size={12} /></span>
+                <span className="wb-txt">
+                  <b>Add your Gemini API key</b>
+                  <span>Forma ships no key of its own</span>
+                </span>
+                {/* Inline rather than an icon component: the artifact drew a
+                    right-chevron here, and icons.tsx has only the down one.
+                    Rotating it would need a rule in workspace.css, which is meant
+                    to stay byte-identical to the artifact. */}
+                <svg
+                  className="wb-chev"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
               </button>
             )}
-            {error && <p className="text-error text-[10px] font-mono px-2 leading-tight">{error}</p>}
-          </div>
-        </aside>
 
-        {/* Technical Canvas */}
-        <div className={`${mobilePane === 'canvas' ? 'flex' : 'hidden'} md:flex flex-1 min-w-0 flex-col bg-surface-bright overflow-hidden`}>
-          <AnimatePresence mode="wait">
-            {result ? (
-              <motion.div
-                key="result"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                /* flex-1 min-h-0, not h-full: the status bar is a sibling below
-                   this now, so h-full would size to the whole column and push it
-                   off the bottom. min-h-0 is what lets the scroll area inside
-                   actually shrink rather than growing the flex item. */
-                className="flex-1 min-h-0 flex flex-col overflow-hidden"
-              >
-                {/* Result header navigation toolbar */}
-                <div className="bg-surface-container-lowest px-3 sm:px-6 py-3 border-b border-outline-variant flex flex-wrap items-center justify-between gap-y-2 gap-x-3 shrink-0 shadow-[var(--shadow-sm)] z-10">
-                  <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
-                    {/* Hidden below sm rather than truncated. The tab row beside
-                        it is shrink-0, so on a phone the title was left with a few
-                        pixels and rendered as a single letter and a full stop —
-                        "M." for "Mock Invoice Report" — which carries nothing. The
-                        tabs and Export are the useful controls at that width. */}
-                    <div className="hidden sm:flex items-center gap-2 min-w-0">
-                      <IconLayout size={20} className="text-secondary shrink-0" />
-                      <span className="font-semibold text-sm tracking-normal text-on-surface truncate" title={result.title || 'Generated Report'}>{result.title || 'Generated Report'}</span>
-                    </div>
-                    <div className="flex bg-surface-container-low p-1 rounded-full border border-outline-variant shrink-0" role="tablist">
-                      {([
-                        { id: 'ui', label: 'Overview' },
-                        { id: 'spec', label: 'Specs & REPX' },
-                      ] as const).map((tab) => (
-                        <button
-                          key={tab.id}
-                          role="tab"
-                          aria-selected={activeTab === tab.id}
-                          onClick={() => setActiveTab(tab.id)}
-                          className={`u-transition-fast u-focus-ring relative px-3 sm:px-4 py-1 rounded-full text-[11px] font-label-caps cursor-pointer whitespace-nowrap ${activeTab === tab.id ? 'text-secondary font-bold' : 'text-on-surface-variant hover:text-secondary'}`}
-                        >
-                          {activeTab === tab.id && (
-                            <motion.span
-                              layoutId="canvas-tab-pill"
-                              className="absolute inset-0 bg-surface-container-lowest shadow-[var(--shadow-sm)] rounded-full"
-                              transition={transition.base}
-                            />
-                          )}
-                          <span className="relative">{tab.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
+            {/* Shown in both states: whoever is about to paste a key is exactly
+                who needs to know it is not being stored. */}
+            <span className="wb-fineprint">
+              <span>Your key clears when this tab closes</span>
+            </span>
+          </div>
+        </div>
+
+        {/* ------------------------------------------------- saved projects */}
+        <div className={`wb-panel-body${railPanel === 'projects' ? '' : ' wb-hidden'}`}>
+          <div className="wb-col-head">
+            <span className="wb-col-title">Projects</span>
+            <span className="wb-kicker">{savedReports.length} saved</span>
+          </div>
+          <div className="wb-search">
+            <IconSearch size={14} />
+            <span>{savedReports.length ? 'Search by name or content…' : 'Nothing saved yet'}</span>
+          </div>
+          <div className="wb-list">
+            {savedReports.length === 0 ? (
+              <div className="wb-empty">No saved projects yet.</div>
+            ) : (
+              savedReports.map((report) => (
+                <div
+                  key={report.id}
+                  className={`wb-card${result?.title === report.name ? ' wb-is-open' : ''}`}
+                  onClick={() => handleLoadReport(report)}
+                >
+                  <div className="wb-nm">{report.name}</div>
+                  <div className="wb-sub">{new Date(report.timestamp).toLocaleDateString()}</div>
+                  <div className="wb-row-actions">
                     <button
-                      onClick={downloadDesign}
-                      className="u-tap u-transition-fast u-press u-focus-ring px-4 sm:px-5 py-1.5 bg-secondary-container hover:bg-secondary text-white font-label-caps text-[11px] flex items-center gap-2 rounded-full cursor-pointer shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
+                      className="wb-danger"
+                      aria-label={`Delete ${report.name}`}
+                      title="Delete"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteReport(report.id); }}
                     >
-                      <IconDownload size={14} />
-                      <span className="hidden sm:inline">Export .REPX</span>
-                      <span className="sm:hidden">Export</span>
+                      <IconTrash size={14} />
                     </button>
                   </div>
                 </div>
+              ))
+            )}
+          </div>
+        </div>
 
-                {/* Technical report content dotted canvas */}
-                <div className="flex-1 overflow-auto p-3 sm:p-6 bg-surface-bright flex justify-center items-start sheet-grid">
-                  <AnimatePresence mode="wait" initial={false}>
-                    {activeTab === 'ui' && result.layout ? (
-                      <motion.div
-                        key="tab-ui"
-                        variants={tabPanelVariants}
-                        initial="hidden"
-                        animate="visible"
-                        exit="hidden"
-                        className="w-full flex justify-center"
-                      >
-                        {/* No wrapper frame here. ReportMockup already draws its
-                            own panel — border, radius, shadow and the grey inset
-                            around the page — so this div's border, shadow,
-                            rounding and `bg-paper` stacked a second frame around
-                            the first: white, then grey, then white, with two
-                            borders and two shadows. It owns its own max-width
-                            too. */}
-                        <ReportMockup layout={result.layout} sourceImages={mockupSourceImages} />
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="tab-spec"
-                        variants={tabPanelVariants}
-                        initial="hidden"
-                        animate="visible"
-                        exit="hidden"
-                        className="bg-surface-container-lowest p-4 sm:p-8 rounded-2xl shadow-[var(--shadow-lg)] border border-outline-variant max-w-4xl mx-auto w-full overflow-x-auto"
-                      >
-                        {/* Specification / REPX switch — the tab is named for both. */}
-                        <div className="flex items-center gap-1 mb-5 p-1 bg-surface-container-low rounded-full border border-outline-variant w-fit">
-                          {([
-                            { id: 'spec', label: 'Specification', icon: IconSpec },
-                            { id: 'repx', label: 'REPX XML', icon: IconCode },
-                          ] as const).map((view) => (
-                            <button
-                              key={view.id}
-                              onClick={() => setSpecView(view.id)}
-                              aria-selected={specView === view.id}
-                              className={`u-transition-fast u-focus-ring flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-label-caps cursor-pointer ${
-                                specView === view.id
-                                  ? 'bg-surface-container-highest text-secondary font-bold'
-                                  : 'text-on-surface-variant hover:text-secondary'
-                              }`}
-                            >
-                              <view.icon size={13} />
-                              {view.label}
-                            </button>
-                          ))}
-                        </div>
-
-                        {specView === 'repx' ? (
-                          <RepxViewer xml={result.repxContent || ''} />
-                        ) : (
-                          <div className="markdown-body prose prose-indigo dark:prose-invert prose-sm md:prose-base max-w-none">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {result.content}
-                            </ReactMarkdown>
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-              </motion.div>
+        {/* -------------------------------------------------------- recent */}
+        <div className={`wb-panel-body${railPanel === 'history' ? '' : ' wb-hidden'}`}>
+          <div className="wb-col-head">
+            <span className="wb-col-title">Recent</span>
+            <span className="wb-kicker">this week</span>
+          </div>
+          <div className="wb-list" style={{ paddingTop: 0 }}>
+            {savedReports.length === 0 ? (
+              <div className="wb-empty">Nothing yet.</div>
             ) : (
-              <motion.div
-                key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex-1 min-h-0 flex flex-col overflow-hidden"
-              >
-                {/* `sheet-grid`, not `dot-grid`: the dotted ground was drawn from
-                    the shadcn-family `--foreground`, and it is the same two-scale
-                    drafting grid the marketing pages and the OG card use. */}
-                <div className="flex-1 relative sheet-grid p-8 sm:p-12 overflow-auto flex items-center justify-center">
-                  <div className="max-w-xl w-full">
-                    {/* The eyebrow is the shared marketing primitive, not a
-                        restatement of its markup — the coordinate reads in the
-                        report's own hundredths-of-an-inch grid. */}
-                    <Eyebrow coord="x 000 · y 0000">Canvas</Eyebrow>
-
-                    <div className="relative mt-8 mb-9 w-fit">
-                      <div className="w-20 h-20 bg-surface-container-lowest border border-outline-variant shadow-[var(--shadow-md)] rounded-2xl flex items-center justify-center relative z-10">
-                        <Logo size={44} alt="Forma" />
-                      </div>
-                      <div
-                        aria-hidden="true"
-                        className="absolute inset-0 -z-0 rounded-2xl bg-secondary opacity-20 blur-2xl"
-                      />
-                    </div>
-
-                    <h3 className="font-display-lg text-[40px] leading-[1.02] font-extrabold tracking-[-0.035em] text-on-surface">
-                      Ready to process
-                    </h3>
-                    <p className="mt-4 mb-10 max-w-md font-body-lg text-[15px] leading-[1.6] text-on-surface-variant">
-                      Upload a design in the chat pane — a screenshot, a PDF, or an existing{' '}
-                      <span className="font-code-sm text-[13.5px]">.repx</span> — and the spec, mockup
-                      and XML land here.
-                    </p>
-
-                    {/* The pipeline, and it is the app's own three-beat tagline:
-                        show it, build it, ship it. Mapped rather than written out
-                        three times — these were three copies of one card that had
-                        to be edited in lockstep. */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      {([
-                        { n: '01', step: 'Show', icon: IconUpload, label: 'Ingest the design' },
-                        { n: '02', step: 'Build', icon: IconRuler, label: 'Read the geometry' },
-                        { n: '03', step: 'Ship', icon: IconDownload, label: 'Export native REPX' },
-                      ] as const).map((s) => (
-                        <div
-                          key={s.n}
-                          className="u-transition group rounded-2xl border border-outline-variant border-b-2 border-b-[color:var(--accent-line)] bg-surface-container-lowest p-5 text-left shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
-                        >
-                          <div className="u-transition mb-4 flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--accent-wash)] group-hover:bg-[color:var(--accent-line)]">
-                            <s.icon size={19} className="text-secondary" />
-                          </div>
-                          <span className="mb-1 block font-code-sm text-[10.5px] font-medium tracking-[0.15em] uppercase text-secondary">
-                            {s.n} {s.step}
-                          </span>
-                          <span className="font-body-lg text-[13px] leading-[1.5] text-on-surface-variant">
-                            {s.label}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+              savedReports.map((report) => (
+                <div key={report.id} className="wb-card" onClick={() => handleLoadReport(report)}>
+                  <div className="wb-nm">{report.name}</div>
+                  <div className="wb-sub">
+                    {new Date(report.timestamp).toLocaleTimeString()} · {report.messages.length} notes
                   </div>
                 </div>
-
-              </motion.div>
+              ))
             )}
-          </AnimatePresence>
+          </div>
+        </div>
+      </section>
 
-          {/* One status line for both branches, outside the switch — see
-              CanvasStatusBar. It used to be duplicated inside each. */}
-          <CanvasStatusBar isAnalyzing={isAnalyzing} isPaused={isPaused} analyzingStep={analyzingStep} />
+      {/* ============================================================= bench */}
+      <main className="wb-bench">
+        <div className="wb-bench-bar">
+          <div className="wb-doc-id">
+            <h1>{result?.title || 'Untitled report'}</h1>
+            {result && <span className="wb-rev">{result.layout?.sections?.length ?? 0} bands</span>}
+          </div>
+
+          {result && (
+            <div className="wb-plates" role="tablist" aria-label="View">
+              <button role="tab" aria-selected={plate === 'proof'} onClick={() => showPlate('proof')}>Mockup</button>
+              <button role="tab" aria-selected={plate === 'spec'} onClick={() => showPlate('spec')}>Spec</button>
+              <button role="tab" aria-selected={plate === 'xml'} onClick={() => showPlate('xml')}>REPX</button>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {saveNotice && (
+              <span className="wb-saved">
+                <IconCheck size={13} />
+                Saved
+              </span>
+            )}
+            <button
+              className="wb-pill wb-pill--outline"
+              onClick={handleSaveReport}
+              disabled={!result && messages.length === 0}
+            >
+              <IconSave size={14} />
+              Save
+            </button>
+            <button className="wb-pill wb-pill--accent" onClick={downloadDesign} disabled={!result}>
+              <IconDownload size={14} />
+              Export .repx
+            </button>
+          </div>
+        </div>
+
+        <div className="wb-bench-body">
+          {result ? (
+            <>
+              {plate === 'proof' && (
+                <div className="wb-proof-holder wb-rise wb-rise-2">
+                  <div className="wb-glow" style={{ inset: '-90px -70px auto -70px', height: 320 }} aria-hidden="true" />
+                  {/* ReportMockup sits directly in the holder — it carries the
+                      artifact's proof frame itself (see its root), so wrapping it
+                      in `.wb-proof` would draw that frame twice. */}
+                  <ReportMockup layout={result.layout!} sourceImages={mockupSourceImages} />
+                </div>
+              )}
+
+              {plate === 'spec' && (
+                <div className="wb-sheet wb-reg-marks">
+                  <div className="markdown-body">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.content}</ReactMarkdown>
+                  </div>
+                </div>
+              )}
+
+              {plate === 'xml' && (
+                <div className="wb-sheet wb-reg-marks">
+                  <RepxViewer xml={result.repxContent || ''} />
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="wb-proof-holder wb-rise wb-rise-2">
+              <div className="wb-glow" style={{ inset: '-90px -70px auto -70px', height: 320 }} aria-hidden="true" />
+              <div className="wb-sheet wb-reg-marks">
+                <Eyebrow coord="x 000 · y 0000">Canvas</Eyebrow>
+                <h3 style={{ marginTop: 22 }}>Ready to process</h3>
+                <p>
+                  Upload a design in the review pane — a screenshot, a PDF, or an existing{' '}
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>.repx</span> — and the spec,
+                  mockup and XML land here.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
-      {/* Mobile pane switcher — replaces the side-by-side split below md. */}
-      <nav
-        className="md:hidden flex-shrink-0 grid grid-cols-2 border-t border-outline-variant bg-surface-container-lowest"
-        role="tablist"
-        aria-label="Workspace panes"
-      >
-        {([
-          { id: 'chat', label: 'Chat', icon: IconChat },
-          { id: 'canvas', label: 'Canvas', icon: IconLayout },
-        ] as const).map((pane) => {
-          const isActive = mobilePane === pane.id;
-          return (
-            <button
-              key={pane.id}
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setMobilePane(pane.id)}
-              className={`u-tap u-transition-fast u-focus-ring relative flex items-center justify-center gap-2 py-3 font-label-caps text-[11px] font-bold cursor-pointer ${
-                isActive ? 'text-secondary' : 'text-on-surface-variant'
-              }`}
-            >
-              <pane.icon size={18} />
-              {pane.label}
-              {pane.id === 'canvas' && result && !isActive && (
-                <span className="w-1.5 h-1.5 rounded-full bg-secondary" aria-hidden="true" />
-              )}
-              {isActive && (
-                <motion.span
-                  layoutId="mobile-pane-underline"
-                  className="absolute inset-x-4 top-0 h-0.5 bg-secondary rounded-full"
-                  transition={transition.base}
-                />
-              )}
-            </button>
-          );
-        })}
-      </nav>
+      {/* ======================================================= status bar */}
+      <div className="wb-status">
+        <span className="wb-live">
+          <span
+            className="wb-pip"
+            style={{ background: isAnalyzing && !isPaused ? 'var(--warn)' : isPaused ? 'var(--ink-faint)' : 'var(--ok-ink)' }}
+          />
+          {isAnalyzing && !isPaused ? 'Processing' : isPaused ? 'Paused' : 'Idle'}
+        </span>
+        <span>{config.version ? `DevExpress v${config.version}` : ''}</span>
+        <span>{isAnalyzing ? formatElapsed(elapsedTime) : ''}</span>
+        <span className="wb-push" />
+        <span>units 100/in</span>
+        {result?.layout && <span>{result.layout.sections.length} bands</span>}
+      </div>
 
-      {/* Saved Projects Sidebar Drawer */}
-      <AnimatePresence>
-        {isSidebarOpen && (
-          <motion.div
-            variants={backdropVariants}
-            initial="hidden"
-            animate="visible"
-            exit="hidden"
-            onClick={() => setIsSidebarOpen(false)}
-            className="fixed inset-0 bg-black/20 z-50 flex justify-end"
-          >
-            <motion.div
-              variants={drawerVariants}
-              initial="hidden"
-              animate="visible"
-              exit="hidden"
-              onClick={(e) => e.stopPropagation()}
-              role="dialog"
-              aria-modal="true"
-              aria-label="My projects"
-              className="w-full max-w-sm bg-surface-container-lowest h-full shadow-[var(--shadow-lg)] flex flex-col border-l border-outline-variant"
-            >
-              <div className="p-4 border-b border-outline-variant flex items-center justify-between">
-                <div className="flex items-center gap-2 text-on-surface font-bold font-title-md">
-                  <IconHistory size={20} className="text-secondary" />
-                  <h2>My Projects</h2>
-                </div>
-                <button
-                  onClick={() => setIsSidebarOpen(false)}
-                  className="u-tap u-transition-fast u-press u-focus-ring p-2 text-on-surface-variant hover:bg-surface-container rounded-full cursor-pointer flex items-center justify-center"
-                  aria-label="Close projects panel"
-                >
-                  <IconClose size={20} />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {savedReports.length === 0 ? (
-                  <div className="text-center text-on-surface-variant py-8 font-sans">
-                    <IconFolder size={32} className="mb-2 opacity-50 block mx-auto" />
-                    <p className="text-xs">No saved projects yet.</p>
-                  </div>
-                ) : (
-                  savedReports.map(report => (
-                    <div
-                      key={report.id}
-                      className="relative group bg-surface-container-low border border-outline-variant rounded-xl p-4 hover:bg-surface-container transition-colors cursor-pointer"
-                      onClick={() => handleLoadReport(report)}
+      {/* =========================================================== modals */}
+      {isConfigOpen && (
+        <div className="wb-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) dismissConfigWithoutSaving(); }}>
+          <div className="wb-modal wb-reg-marks" role="dialog" aria-modal="true" aria-labelledby="config-title">
+            <div className="wb-modal-head">
+              <h2 id="config-title">Report configuration</h2>
+              <button className="wb-pill wb-pill--round" onClick={dismissConfigWithoutSaving} aria-label="Close without saving">
+                <IconClose size={16} />
+              </button>
+            </div>
+
+            <div className="wb-modal-body">
+              <div className="wb-fset">
+                <div className="wb-eyebrow"><b>x 000</b>Output<span className="wb-fade" /></div>
+                <div>
+                  <label className="wb-lbl" htmlFor="cfg-ver">DevExpress version</label>
+                  <span className="wb-sel">
+                    <select
+                      className="wb-ctl"
+                      id="cfg-ver"
+                      value={config.version}
+                      onChange={(e) => setConfig({ ...config, version: e.target.value })}
                     >
-                      <h3 className="font-semibold text-xs mb-1 truncate pr-8 text-on-surface">{report.name}</h3>
-                      <p className="text-[10px] text-on-surface-variant font-mono">
-                        {new Date(report.timestamp).toLocaleDateString()} at {new Date(report.timestamp).toLocaleTimeString()}
-                      </p>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteReport(report.id); }}
-                        aria-label={`Delete ${report.name}`}
-                        /* Visible by default on touch (no hover to reveal it);
-                           fades in on hover for pointer devices. */
-                        className="u-tap u-transition-fast u-press u-focus-ring absolute top-2 right-2 p-2 text-on-surface-variant opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 hover:text-error hover:bg-red-500/10 rounded-full cursor-pointer flex items-center justify-center"
+                      <option value="24.1">v24.1</option>
+                      <option value="23.2">v23.2</option>
+                      <option value="23.1">v23.1</option>
+                      <option value="22.2">v22.2</option>
+                    </select>
+                    <IconChevronDown size={13} className="wb-caret" />
+                  </span>
+                </div>
+                <div className="wb-grid2">
+                  <div>
+                    <label className="wb-lbl" htmlFor="cfg-unit">Report unit</label>
+                    <span className="wb-sel">
+                      <select
+                        className="wb-ctl"
+                        id="cfg-unit"
+                        value={config.unit}
+                        onChange={(e) => setConfig({ ...config, unit: e.target.value })}
                       >
-                        <IconTrash size={16} />
-                      </button>
-                    </div>
-                  ))
-                )}
+                        <option value="HundredthsOfAnInch">HundredthsOfAnInch</option>
+                        <option value="TenthsOfAMillimeter">TenthsOfAMillimeter</option>
+                        <option value="Pixels">Pixels</option>
+                      </select>
+                      <IconChevronDown size={13} className="wb-caret" />
+                    </span>
+                  </div>
+                  <div>
+                    <label className="wb-lbl" htmlFor="cfg-page">Page size</label>
+                    <span className="wb-sel">
+                      <select
+                        className="wb-ctl"
+                        id="cfg-page"
+                        value={config.pageSize}
+                        onChange={(e) => setConfig({ ...config, pageSize: e.target.value })}
+                      >
+                        <option value="Letter">Letter</option>
+                        <option value="A4">A4</option>
+                        <option value="Legal">Legal</option>
+                      </select>
+                      <IconChevronDown size={13} className="wb-caret" />
+                    </span>
+                  </div>
+                </div>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
+              <div className="wb-fset">
+                <div className="wb-eyebrow"><b>y 0000</b>Header<span className="wb-fade" /></div>
+                <label className="wb-checkrow">
+                  <input
+                    type="checkbox"
+                    checked={!!config.header?.showCompanyLogo}
+                    onChange={(e) => setConfig({ ...config, header: { ...config.header, showCompanyLogo: e.target.checked } })}
+                  />
+                  Include company logo
+                </label>
+                <div>
+                  <label className="wb-lbl" htmlFor="cfg-title">Report title</label>
+                  <input
+                    className="wb-ctl"
+                    id="cfg-title"
+                    type="text"
+                    placeholder="e.g., Monthly Sales Report"
+                    value={config.header?.title || ''}
+                    onChange={(e) => setConfig({ ...config, header: { ...config.header, title: e.target.value } })}
+                  />
+                </div>
+              </div>
+
+              <div className="wb-fset">
+                <div className="wb-eyebrow"><b>y 0474</b>Footer<span className="wb-fade" /></div>
+                <label className="wb-checkrow">
+                  <input
+                    type="checkbox"
+                    checked={!!config.footer?.showPageNumbers}
+                    onChange={(e) => setConfig({ ...config, footer: { ...config.footer, showPageNumbers: e.target.checked } })}
+                  />
+                  Include page numbers
+                </label>
+                <div>
+                  <label className="wb-lbl" htmlFor="cfg-foot">Custom footer text</label>
+                  <input
+                    className="wb-ctl"
+                    id="cfg-foot"
+                    type="text"
+                    placeholder="e.g., Confidential Document"
+                    value={config.footer?.customText || ''}
+                    onChange={(e) => setConfig({ ...config, footer: { ...config.footer, customText: e.target.value } })}
+                  />
+                </div>
+              </div>
+
+              <div className="wb-fset">
+                <div className="wb-eyebrow"><b>key</b>Your Gemini key<span className="wb-fade" /></div>
+                <div>
+                  <label className="wb-lbl" htmlFor="cfg-key">
+                    API key <span className="wb-req">(required)</span>
+                  </label>
+                  <div className="wb-keyrow">
+                    <span className="wb-wrap">
+                      <input
+                        className="wb-ctl"
+                        id="cfg-key"
+                        type={showApiKey ? 'text' : 'password'}
+                        placeholder="AIzaSy…"
+                        style={{ paddingRight: 38 }}
+                        value={config.customApiKey || ''}
+                        onChange={(e) => setConfig({ ...config, customApiKey: e.target.value })}
+                      />
+                      <button
+                        className="wb-peek"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        aria-label={showApiKey ? 'Hide key' : 'Show key'}
+                      >
+                        {showApiKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                      </button>
+                    </span>
+                    <button className="wb-pill wb-pill--outline" onClick={handleCheckKey}>Check key</button>
+                    {hasApiKey && (
+                      <button className="wb-pill" onClick={handleClearKeyFromSession} title="Clear the key from this tab">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {keyCheck && (
+                  <div className={`wb-note-line ${keyCheck.tone === 'ok' ? 'wb-ok' : 'wb-warn'}`}>
+                    <span className="wb-ic">{keyCheck.tone === 'ok' ? <IconCheck size={13} /> : <IconAlert size={13} />}</span>
+                    <span>{keyCheck.text}</span>
+                  </div>
+                )}
+
+                <div className="wb-note-line">
+                  <span className="wb-ic"><IconKey size={13} /></span>
+                  <span>
+                    The key goes from this browser straight to Google. It is held for this tab
+                    only and never written to disk.
+                  </span>
+                </div>
+              </div>
+
+              {canUseVault && (
+                <div className="wb-fset">
+                  <div className="wb-eyebrow"><b>opt in</b>Encrypted sync<span className="wb-fade" /></div>
+                  <div className="wb-grid2">
+                    <div>
+                      <label className="wb-lbl" htmlFor="cfg-pass">Passphrase</label>
+                      <input
+                        className="wb-ctl"
+                        id="cfg-pass"
+                        type="password"
+                        placeholder="At least 8 characters"
+                        value={passphrase}
+                        onChange={(e) => setPassphrase(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="wb-lbl" htmlFor="cfg-pass2">Confirm</label>
+                      <input
+                        className="wb-ctl"
+                        id="cfg-pass2"
+                        type="password"
+                        placeholder="Confirm passphrase"
+                        value={passphraseConfirm}
+                        onChange={(e) => setPassphraseConfirm(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* The artifact drew the fields; these are the actions behind them. */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="wb-pill wb-pill--outline" onClick={handleSyncKeyToAccount} disabled={vaultBusy}>
+                      <IconShieldCheck size={14} />
+                      {vaultRecord ? 'Replace stored key' : 'Store encrypted'}
+                    </button>
+                    {vaultRecord && (
+                      <>
+                        <button className="wb-pill wb-pill--outline" onClick={handleUnlockKey} disabled={vaultBusy}>Unlock</button>
+                        <button className="wb-pill" onClick={handleForgetStoredKey} disabled={vaultBusy}>Forget</button>
+                      </>
+                    )}
+                  </div>
+
+                  {vaultNotice && (
+                    <div className={`wb-note-line ${vaultNotice.tone === 'ok' ? 'wb-ok' : 'wb-warn'}`}>
+                      <span className="wb-ic">{vaultNotice.tone === 'ok' ? <IconCheck size={13} /> : <IconAlert size={13} />}</span>
+                      <span>{vaultNotice.text}</span>
+                    </div>
+                  )}
+
+                  {/* Stated plainly because it is true and unrecoverable. */}
+                  <div className="wb-note-line wb-warn">
+                    <span className="wb-ic"><IconWarn size={13} /></span>
+                    <span>
+                      <b>There is no reset.</b> Your passphrase never leaves this browser, so if you
+                      forget it the stored key cannot be recovered — by you or by anyone running Forma.
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="wb-modal-foot">
+              <button className="wb-pill wb-pill--outline" onClick={dismissConfigWithoutSaving}>Cancel</button>
+              <button className="wb-pill wb-pill--accent" onClick={saveConfigAndClose}>Save configuration</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fullScreenImage && (
+        <div className="wb-backdrop" onMouseDown={() => setFullScreenImage(null)}>
+          <img
+            src={fullScreenImage}
+            alt="Attachment"
+            style={{ maxWidth: '92vw', maxHeight: '88vh', borderRadius: 4, boxShadow: 'var(--shadow-lg)' }}
+          />
+        </div>
+      )}
 
       {loginModal}
     </div>

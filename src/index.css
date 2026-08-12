@@ -1,6 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
+/* The workspace's appearance, lifted verbatim from the approved artifact. Imported
+   AFTER tailwindcss on purpose: its rules are plain CSS rather than utilities, and
+   loading it later keeps preflight from resetting anything it sets. */
+@import "./workspace.css";
+
 /* Tailwind v4 defaults `dark:` to prefers-color-scheme. The theme toggle sets a
    `.dark` class on <html>, so bind the variant to that class instead — this is
    what makes every `dark:` utility in the app follow the toggle rather than the
@@ -729,6 +734,45 @@ body {
     overflow-x: clip;
     --spacing-container-max: 1180px;
     --spacing-margin-desktop: 32px;
+}
+
+/* ====================================================================
+   ARTIFACT TOKEN ALIASES
+
+   `src/workspace.css` is lifted verbatim from the approved workspace
+   artifact, which named its tokens `--surface` / `--panel` / `--ink`
+   rather than the app's `--color-*`. These aliases bridge the two, so
+   that file needs no edits and its declarations stay byte-identical.
+
+   They are aliases, not new colours: each points at a value the sheet
+   scope already defines above, so both themes follow along and there is
+   no second source of truth to keep in step.
+   ==================================================================== */
+.sheet, .landing {
+    --surface: var(--color-surface);
+    --panel: var(--color-surface-container-lowest);
+    --panel-2: var(--color-surface-container-low);
+    --track: var(--color-surface-container-high);
+    --ink: var(--color-on-surface);
+    --ink-2: var(--color-on-surface-variant);
+    --rule: var(--color-outline-variant);
+    --rule-strong: var(--color-outline);
+    --accent: var(--color-secondary);
+
+    /* White on the accent in both themes — the artifact never flipped it. */
+    --on-accent: #ffffff;
+
+    /* The artifact wrote `var(--warn, #d9a95f)` for the processing pip and never
+       defined --warn, so it resolved to that fallback. Declared here so the
+       colour is deliberate rather than an accident of a missing variable. */
+    --warn: #d9a95f;
+
+    /* The artifact inlined these three faces as base64 @font-face. The app already
+       loads the same families via <link> in index.html, so the rendered type is
+       identical and the bundle stays ~127 KB smaller. */
+    --display: var(--font-display-lg);
+    --body: var(--font-body-lg);
+    --mono: var(--font-code-sm);
 }
 
 .dark .sheet, .dark .landing {

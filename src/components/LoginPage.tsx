@@ -713,9 +713,15 @@ export default function LoginPage({
               Forma works fully signed out — your projects are kept in this browser and are still there when
               you come back. An account only adds syncing across machines and the encrypted copy of your API
               key.{' '}
+              {/* Goes to the workspace, which is what it says. It called
+                  `onClose`, and that restores the page you came from — so unless
+                  you happened to arrive from the workspace, this offered the
+                  workspace and delivered something else. Navigating to
+                  `/workspace` also dismisses this screen on its own: the route
+                  effect clears `showLogin` for that path. */}
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => navigate('/workspace')}
                 className="u-focus-ring cursor-pointer font-semibold text-secondary hover:underline"
               >
                 Go straight to the workspace
