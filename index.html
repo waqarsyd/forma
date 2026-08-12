@@ -42,20 +42,31 @@
        page origin in Slack, Facebook, X and LinkedIn, and degrades to no preview
        image rather than a wrong one.
 
-       twitter:card is "summary", not "summary_large_image": the asset is the
-       256x256 square mark, and the large-image card would letterbox it. A proper
-       1200x630 card would be a real improvement — it does not exist yet. -->
+       The image is /og-card.png, a purpose-built 1200x630 card — not the square
+       logo, which the large-image layouts letterboxed. It is generated from
+       assets/source/og-card.html; see CLAUDE.md for the regeneration command and
+       the checks it gates on. Declaring og:image:width/height lets a scraper lay
+       out the card before it has finished downloading it, and twitter:card is
+       "summary_large_image" because there is now an asset with the right aspect
+       ratio to fill it. -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Forma" />
   <meta property="og:title" content="Forma — Screenshot to DevExpress .repx" />
   <meta property="og:description"
     content="Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer." />
-  <meta property="og:image" content="/logo.png" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="/og-card.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt"
+    content="Forma — Show it. Build it. Ship it. Screenshot, PDF or .repx to DevExpress .repx." />
+  <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Forma — Screenshot to DevExpress .repx" />
   <meta name="twitter:description"
     content="Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer." />
-  <meta name="twitter:image" content="/logo.png" />
+  <meta name="twitter:image" content="/og-card.png" />
+  <meta name="twitter:image:alt"
+    content="Forma — Show it. Build it. Ship it. Screenshot, PDF or .repx to DevExpress .repx." />
   <!-- Font Families: Hanken Grotesk, Inter, JetBrains Mono -->
   <link
     href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap"

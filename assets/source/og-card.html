@@ -1,0 +1,279 @@
+<!doctype html>
+<!--
+  Source for public/og-card.png — the 1200x630 link-preview card.
+
+  Lives in assets/source/ rather than public/ for the same reason the
+  full-resolution logo PNGs do: anything in public/ is copied verbatim into
+  dist/, and shipping the generator with the site would be dead weight.
+
+  This is a build input, not a page the app serves. Regenerate with the command
+  recorded in CLAUDE.md (headless Edge + CDP Page.captureScreenshot at exactly
+  1200x630, deviceScaleFactor 1). Two things the generator must check, because
+  both fail silently and produce a plausible-looking wrong card:
+
+    1. The Google Fonts request succeeded. Without Hanken Grotesk the wordmark
+       renders in the fallback sans and the card is off-brand while still
+       looking deliberate. The generator gates on document.fonts.check().
+    2. The logo actually decoded. It is referenced as a file:// sibling, so a
+       move or rename yields a blank square rather than an error.
+
+  Colours are the .landing scoped palette from src/index.css, copied as literals
+  because this file is rendered outside the app and has no access to the tokens.
+  If the sheet's accent or ink changes there, it changes here too.
+-->
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=block"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --sheet: #eef1f7;
+      --paper: #ffffff;
+      --ink: #08182b;
+      --ink-variant: #4a5a70;
+      --ink-faint: #8492a6;
+      --rule: #d7dee9;
+      --accent: #fe6b00;
+      --accent-wash: rgba(254, 107, 0, .09);
+      --accent-line: rgba(254, 107, 0, .32);
+      --sheet-line: rgba(10, 40, 78, 0.055);
+      --sheet-line-fine: rgba(10, 40, 78, 0.028);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    /* Exactly the Open Graph canvas. The screenshot is clipped to this box, so
+       any drift here changes the asset's aspect ratio. */
+    body {
+      width: 1200px;
+      height: 630px;
+      overflow: hidden;
+      background: var(--sheet);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    .card {
+      position: relative;
+      width: 1200px;
+      height: 630px;
+      /* The same two-scale drafting grid as .sheet-grid, without
+         background-attachment: fixed — there is no scrolling viewport here and
+         `fixed` offsets the pattern against the screenshot origin. */
+      background-image:
+        linear-gradient(var(--sheet-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--sheet-line) 1px, transparent 1px),
+        linear-gradient(var(--sheet-line-fine) 1px, transparent 1px),
+        linear-gradient(90deg, var(--sheet-line-fine) 1px, transparent 1px);
+      background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
+      overflow: hidden;
+    }
+
+    /* The decorative glow from the hero, scaled to this canvas. */
+    .glow {
+      position: absolute;
+      top: -240px;
+      right: -200px;
+      width: 760px;
+      height: 760px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(254, 107, 0, .16), transparent 58%);
+      filter: blur(30px);
+    }
+
+    /* Ruler ticks down the left edge — the SheetRuler motif, which is what
+       makes the card read as the same object as the site. */
+    .ruler {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 46px;
+      border-right: 1px solid var(--rule);
+      background: rgba(255, 255, 255, .55);
+    }
+
+    /* The fine ticks at --rule were invisible at this size — the motif read as
+       an empty strip. The 96px ticks step up to --rule-strong and run longer so
+       the two scales are actually distinguishable in a preview thumbnail. */
+    .ruler i {
+      position: absolute;
+      right: 0;
+      height: 1px;
+      background: var(--rule);
+    }
+
+    .ruler i.major {
+      background: #aeb9ca;
+      height: 1px;
+    }
+
+    /* space-between across three blocks — lockup, headline, footer — rather than
+       `margin-top: auto` on the headline, which parked all the slack in one
+       void between the lockup and the headline and left the card visibly
+       bottom-heavy. */
+    .inner {
+      position: absolute;
+      inset: 0 0 0 46px;
+      padding: 58px 74px 52px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .lockup {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .lockup img {
+      display: block;
+      width: 66px;
+      height: 66px;
+    }
+
+    .wordmark {
+      font-family: "Hanken Grotesk", sans-serif;
+      font-weight: 800;
+      font-size: 46px;
+      line-height: 1;
+      letter-spacing: -.03em;
+      color: var(--ink);
+    }
+
+    .eyebrow {
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 500;
+      font-size: 13px;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      margin-top: 4px;
+    }
+
+    h1 {
+      font-family: "Hanken Grotesk", sans-serif;
+      font-weight: 800;
+      font-size: 78px;
+      line-height: .98;
+      letter-spacing: -.042em;
+      color: var(--ink);
+    }
+
+    /* "Ship it." carries the accent and its underline, as in the hero. */
+    h1 .accent {
+      position: relative;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    h1 .accent::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: .12em;
+      height: 5px;
+      border-radius: 2px;
+      background: var(--accent);
+      opacity: .26;
+    }
+
+    .descriptor {
+      margin-top: 30px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 400;
+      font-size: 21px;
+      color: var(--ink-variant);
+    }
+
+    .descriptor .chip {
+      padding: 7px 15px 8px;
+      border: 1px solid var(--accent-line);
+      background: var(--accent-wash);
+      border-radius: 999px;
+      color: #c04f00;
+      font-weight: 500;
+    }
+
+    .descriptor .arrow {
+      color: var(--ink-faint);
+    }
+
+    .rule {
+      height: 1px;
+      background: var(--rule);
+    }
+
+    .feet {
+      margin-top: 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 14px;
+      letter-spacing: .04em;
+      color: var(--ink-faint);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <div class="glow"></div>
+    <div class="ruler" id="ruler"></div>
+
+    <div class="inner">
+      <div class="lockup">
+        <!-- file:// sibling of this file: ../../public/logo.png -->
+        <img src="../../public/logo.png" alt="" id="mark" />
+        <div>
+          <div class="wordmark">Forma</div>
+          <div class="eyebrow">Report designer</div>
+        </div>
+      </div>
+
+      <div class="mid">
+        <h1>Show it. Build it. <span class="accent">Ship it.</span></h1>
+
+        <div class="descriptor">
+          <span>Screenshot, PDF or <span style="font-weight:500">.repx</span></span>
+          <span class="arrow">&#8594;</span>
+          <span class="chip">DevExpress .repx</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="rule"></div>
+        <div class="feet">
+          <span>Spec &#183; Mockup &#183; XtraReports XML</span>
+          <span>Bring your own key</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Ticks every 24px, longer every 96px, matching the grid's two scales.
+    const ruler = document.getElementById('ruler');
+    for (let y = 0; y <= 630; y += 24) {
+      const tick = document.createElement('i');
+      const major = y % 96 === 0;
+      tick.style.top = y + 'px';
+      tick.style.width = major ? '24px' : '11px';
+      if (major) tick.className = 'major';
+      ruler.appendChild(tick);
+    }
+  </script>
+</body>
+
+</html>
