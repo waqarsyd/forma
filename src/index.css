@@ -615,14 +615,18 @@ body {
 }
 
 /* ====================================================================
-   LANDING PAGE PALETTE
+   SHEET PALETTE
 
-   The home page is set as a drafting sheet and carries its own ground,
-   ink and rules — cooler and blue-biased where the app's neutrals are
-   grey. These override the semantic tokens for that subtree only, so
-   every `bg-surface` / `text-on-surface-variant` / `border-outline-
-   variant` in the page resolves to the sheet's value and nothing
-   outside `.landing` changes.
+   A surface drawn as a drafting sheet carries its own ground, ink and
+   rules — cooler and blue-biased where the app's neutrals are grey.
+   These override the semantic tokens for that subtree only, so every
+   `bg-surface` / `text-on-surface-variant` / `border-outline-variant`
+   inside it resolves to the sheet's value and nothing outside a
+   `.sheet` or `.landing` element changes.
+
+   Both selectors, because there are now two kinds of sheet surface: the
+   five marketing pages (`.landing`, which adds the page-only rules
+   below) and the workspace (`.sheet`, which must not have them).
 
    The one that matters most: --secondary is #a04100 app-wide, a dark
    brown-orange. The sheet's accent is the brand orange #fe6b00, so it
@@ -634,17 +638,14 @@ body {
    where it is DECLARED: `--color-surface: var(--surface)` resolves against
    :root and descendants inherit the finished colour, so redefining
    `--surface` further down has no effect. Override the end of the chain. */
-.landing {
-    /* The source design sets this on <body>; it changes kerning, so without it
-       every glyph lands a fraction off even where the line breaks agree. */
-    text-rendering: optimizeLegibility;
-
-    /* The source's `body { overflow-x: hidden }`, which contains the two
-       oversized decorative glows on narrow screens. `clip` rather than
-       `hidden`: `hidden` would make this a scroll container and the sticky
-       header would stop sticking. */
-    overflow-x: clip;
-
+/* `.sheet` is the TOKEN layer — the palette, elevation and code-pane values any
+   surface drawn as a drafting sheet needs. `.landing` is in the same selector
+   list, so the five marketing pages keep `class="landing"` and are unaffected;
+   the workspace adds `class="sheet"` and gets the same palette without the
+   page-only rules, which are in their own `.landing` block below and would
+   actively break a full-bleed surface. Adding a class to the pages instead
+   would have meant editing five files to change nothing. */
+.sheet, .landing {
     --color-surface: #eef1f7;               /* the sheet */
     --color-surface-container-lowest: #ffffff;  /* panels */
     --color-surface-container-low: #f8fafd;     /* panel headers, bars */
@@ -693,14 +694,31 @@ body {
     --shadow-lg: 0 2px 4px rgba(8, 24, 43, .07), 0 30px 64px -16px rgba(8, 24, 43, .22);
     --inset-hi: inset 0 1px 0 rgba(255, 255, 255, .9);
 
-    /* The sheet's own measure. Spacing utilities read the variable at the
-       element, so unlike the colours above these scope directly — the header
-       and footer narrow with the page instead of running wider than it. */
+}
+
+/* Page-only, and deliberately NOT part of `.sheet`. Each one is either measured
+   against the marketing pages specifically or outright wrong for the workspace:
+
+   - `text-rendering` comes from the source design's <body>. It changes kerning,
+     so without it every glyph lands a fraction off even where the line breaks
+     agree — it belongs with the pages whose drift was measured against it.
+   - `overflow-x: clip` is the source's `body { overflow-x: hidden }`, which
+     contains the two oversized decorative glows on narrow screens. `clip` rather
+     than `hidden` because `hidden` would make this a scroll container and the
+     sticky header would stop sticking. On the workspace root — an h-screen flex
+     frame that is already `overflow-hidden` — it only adds a containing block.
+   - The measure narrows the header and footer to the page's own 1180px. Spacing
+     utilities read the variable at the element, so unlike the colours above
+     these scope directly, which is precisely why they must not reach a
+     full-bleed surface. */
+.landing {
+    text-rendering: optimizeLegibility;
+    overflow-x: clip;
     --spacing-container-max: 1180px;
     --spacing-margin-desktop: 32px;
 }
 
-.dark .landing {
+.dark .sheet, .dark .landing {
     --color-surface: #05090f;
     --color-surface-container-lowest: #0c121c;
     --color-surface-container-low: #101827;
