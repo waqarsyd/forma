@@ -2356,8 +2356,39 @@ export default function App() {
     }
   };
 
+  /**
+   * Whether the generated XML is something a designer can actually open.
+   *
+   * A generation can return a *complete* JSON object whose `repxContent` string
+   * is truncated: `layout.sections` is intact, the spec reads normally, and the
+   * XML simply stops mid-element. Observed 2026-08-13 — 896 bytes ending at
+   * `Name=`, which parsed as JSON, rendered a mockup, exported happily, and was
+   * refused by every designer it was given to.
+   *
+   * `RepxViewer` has always run this check; the two routes *out* of the app did
+   * not, so the only warning was on a tab the user had no reason to open. The
+   * failure is silent by construction and this is the cheapest place to make it
+   * loud.
+   */
+  const repxCheck = useMemo(
+    () => (result?.repxContent ? checkRepx(result.repxContent) : null),
+    [result?.repxContent]
+  );
+
+  /** Shared by both exits. Returns true when the caller should stop. */
+  const blockedByInvalidRepx = (): boolean => {
+    if (!repxCheck || repxCheck.ok) return false;
+    setError(
+      `This generation produced REPX that no designer will open — ${repxCheck.message} ` +
+      `That is a bad generation rather than something to repair by hand: generate again, ` +
+      `and simplify the design if it keeps happening. The spec and the mockup are still fine to read.`
+    );
+    return true;
+  };
+
   const downloadDesign = () => {
     if (!result) return;
+    if (blockedByInvalidRepx()) return;
     const element = document.createElement("a");
     const file = new Blob([result.repxContent || result.content], { type: result.repxContent ? 'application/xml' : 'text/plain' });
     element.href = URL.createObjectURL(file);
@@ -2390,6 +2421,7 @@ export default function App() {
    */
   const openInDesigner = async () => {
     if (!result?.repxContent) return;
+    if (blockedByInvalidRepx()) return;
     try {
       await sendToDesigner(result.repxContent, designerFileName(result.title));
     } catch (err) {
