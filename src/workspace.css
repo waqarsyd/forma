@@ -101,6 +101,114 @@
 }
 
 /* =============================================================================
+   FORMA ADDITIONS - surfaces the artifact never had
+
+   The artifact had no file intake, so there is nothing verbatim to preserve for
+   attachments. These rules are new work and live above the ported block rather
+   than inside it, for the same reason the compensation block does: everything
+   below the line stays byte-identical to what was published, and every
+   deviation stays visible at the top.
+
+   `.wb-attach` itself IS in the ported block. It is extended here by additional
+   classes rather than edited there.
+   ============================================================================= */
+
+/* A chip carrying a thumbnail sits tighter on the left than a text-only one. */
+.wb-attach--file { padding-left: 5px; }
+
+.wb-attach-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 210px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.wb-attach-thumb {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  object-fit: cover;
+}
+
+/* Truncate rather than wrap: a long filename must not make the chip two lines
+   tall and shove the composer down. The full name is on the title attribute. */
+.wb-attach-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Thumbnails under a sent message. */
+.wb-attach-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.wb-attach-shot {
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: none;
+  overflow: hidden;
+  line-height: 0;
+  cursor: pointer;
+  transition: border-color .15s ease;
+}
+.wb-attach-shot:hover { border-color: var(--accent); }
+.wb-attach-shot img { display: block; width: 54px; height: 54px; object-fit: cover; }
+
+/* Full-size viewer. The backdrop is a dark wash, so the caption is set against
+   it directly rather than on a panel. */
+.wb-lightbox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.wb-lightbox img {
+  max-width: 92vw;
+  max-height: 82vh;
+  border-radius: 4px;
+  box-shadow: var(--shadow-lg);
+}
+.wb-lightbox figcaption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 92vw;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #eaf1ff;
+}
+.wb-lightbox figcaption span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-lightbox figcaption button {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: #eaf1ff;
+  cursor: pointer;
+}
+.wb-lightbox figcaption button:hover { background: rgba(255, 255, 255, .16); }
+
+/* =============================================================================
    WORKSPACE - ported verbatim from the approved artifact
    claude.ai/code/artifact/77c5245d-3967-43db-bffb-9751b269e2be
 

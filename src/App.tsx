@@ -44,7 +44,6 @@ import {
   IconPlus,
   IconReplay,
   IconSave,
-  IconSpec,
   IconTrash,
   IconTune,
   IconWarn,
@@ -180,6 +179,15 @@ interface TextAttachment {
 
 interface IngestResult {
   images: string[];
+  /**
+   * One label per entry in `images`, same order, same length.
+   *
+   * Kept parallel rather than folded into `images` because that array's shape is
+   * depended on all the way downstream — the request parts, `sourceRect`
+   * cropping, and the `images` persisted on a saved report all expect bare data
+   * URLs. A label is presentation, and it stops here.
+   */
+  imageNames: string[];
   texts: TextAttachment[];
   /** User-facing warnings: skipped files, dropped pages, invalid XML. */
   notices: string[];
@@ -282,7 +290,7 @@ async function renderPdfPage(page: any): Promise<string | null> {
  * previously dropping a .docx did nothing at all, with no feedback.
  */
 async function ingestFile(file: File): Promise<IngestResult> {
-  const out: IngestResult = { images: [], texts: [], notices: [] };
+  const out: IngestResult = { images: [], imageNames: [], texts: [], notices: [] };
   const name = file.name || 'file';
 
   if (file.size > MAX_FILE_BYTES) {
@@ -292,6 +300,7 @@ async function ingestFile(file: File): Promise<IngestResult> {
 
   if (file.type.startsWith('image/')) {
     out.images.push(await optimizeImageDataUrl(await readAsDataUrl(file)));
+    out.imageNames.push(name);
     return out;
   }
 
@@ -304,7 +313,12 @@ async function ingestFile(file: File): Promise<IngestResult> {
       for (let n = 1; n <= readable; n++) {
         const page = await pdf.getPage(n);
         const image = await renderPdfPage(page);
-        if (image) out.images.push(image);
+        if (image) {
+          out.images.push(image);
+          // Page number included: a PDF becomes several thumbnails, and "page 3
+          // of the invoice" is the only way to tell them apart at chip size.
+          out.imageNames.push(`${name} · page ${n}`);
+        }
 
         const extracted = await extractPdfPageText(page, n);
         if (extracted) {
@@ -1058,6 +1072,13 @@ function initialsOf(user: { displayName?: string | null; email?: string | null }
 export default function App() {
   const [showWorkspace, setShowWorkspace] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
+  /**
+   * Display names for `previews`, index for index. Every write to one must write
+   * the other — `removeFile` drops the same index from both, and the three
+   * places that clear `previews` clear this too. They are separate arrays
+   * because only this one is presentation; see `IngestResult.imageNames`.
+   */
+  const [previewNames, setPreviewNames] = useState<string[]>([]);
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [savedReports, setSavedReports] = useState<SavedReport[]>(() => {
@@ -1287,7 +1308,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  /** The attachment being viewed full size, with the name to caption it. */
+  const [fullScreenImage, setFullScreenImage] = useState<{ src: string; name?: string } | null>(null);
   const [config, setConfig] = useState<ReportConfig>(() => {
     // Forma never ships a key of its own, so the only key in play is the user's.
     // It lives in sessionStorage, which the browser clears when the tab closes;
@@ -1682,7 +1704,10 @@ export default function App() {
     try {
       for (const file of accepted) {
         const result = await ingestFile(file);
-        if (result.images.length) setPreviews(prev => [...prev, ...result.images]);
+        if (result.images.length) {
+          setPreviews(prev => [...prev, ...result.images]);
+          setPreviewNames(prev => [...prev, ...result.imageNames]);
+        }
         if (result.texts.length) setAttachmentTexts(prev => [...prev, ...result.texts]);
         notices.push(...result.notices);
       }
@@ -1702,6 +1727,7 @@ export default function App() {
 
   const removeFile = (index: number) => {
     setPreviews(prev => prev.filter((_, i) => i !== index));
+    setPreviewNames(prev => prev.filter((_, i) => i !== index));
   };
 
   const removeTextAttachment = (id: string) => {
@@ -1734,6 +1760,7 @@ export default function App() {
   const handleClearChat = () => {
     setResult(null);
     setPreviews([]);
+    setPreviewNames([]);
     setAttachmentTexts([]);
     setUploadNotices([]);
     setPrompt('');
@@ -2173,6 +2200,7 @@ export default function App() {
     setMessages(prev => [...prev, newUserMsg]);
     setPrompt('');
     setPreviews([]);
+    setPreviewNames([]);
     setAttachmentTexts([]);
     setUploadNotices([]);
 
@@ -2374,6 +2402,20 @@ export default function App() {
     () => (result?.repxContent ? checkRepx(result.repxContent) : null),
     [result?.repxContent]
   );
+
+  /**
+   * Escape closes the attachment viewer. The backdrop already closes on a click,
+   * but the viewer covers the screen and Escape is what a full-bleed overlay is
+   * expected to answer to.
+   */
+  useEffect(() => {
+    if (!fullScreenImage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullScreenImage(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullScreenImage]);
 
   /** Shared by both exits. Returns true when the caller should stop. */
   const blockedByInvalidRepx = (): boolean => {
@@ -2682,10 +2724,30 @@ export default function App() {
                   {msg.text && <p>{msg.text}</p>}
 
                   {msg.images && msg.images.length > 0 && (
-                    <span className="wb-attach">
-                      <IconSpec size={13} />
-                      {msg.images.length === 1 ? '1 attachment' : `${msg.images.length} attachments`}
-                    </span>
+                    // Sent messages showed a count and nothing else, so once a
+                    // message was on the transcript there was no way to check
+                    // what had gone with it. Names are not kept on a message —
+                    // `ChatMessage.images` is data URLs only, and a saved report
+                    // reloads with just those — so the picture is the label.
+                    <div className="wb-attach-strip">
+                      {msg.images.map((src, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          className="wb-attach-shot"
+                          onClick={() =>
+                            setFullScreenImage({
+                              src,
+                              name: `Attachment ${i + 1} of ${msg.images!.length}`,
+                            })
+                          }
+                          title="View attachment"
+                          aria-label={`View attachment ${i + 1}`}
+                        >
+                          <img src={src} alt="" />
+                        </button>
+                      ))}
+                    </div>
                   )}
 
                   {/* The failure belongs beside the turn that failed. */}
@@ -2775,17 +2837,30 @@ export default function App() {
                 at rest, so the default view is unchanged. */}
             {previews.length > 0 && (
               <div className="wb-chip-row">
-                {previews.map((src, idx) => (
-                  <span key={idx} className="wb-attach">
-                    <button onClick={() => setFullScreenImage(src)} title="View attachment" aria-label="View attachment">
-                      <IconImage size={13} />
-                    </button>
-                    {`image ${idx + 1}`}
-                    <button onClick={() => removeFile(idx)} title="Remove" aria-label="Remove attachment">
-                      <IconClose size={11} />
-                    </button>
-                  </span>
-                ))}
+                {previews.map((src, idx) => {
+                  // The chip used to read "image 1" beside a generic icon, which
+                  // told you how many files you had attached and nothing about
+                  // which ones. The thumbnail is the fastest answer; the name is
+                  // the exact one.
+                  const label = previewNames[idx] || `image ${idx + 1}`;
+                  return (
+                    <span key={idx} className="wb-attach wb-attach--file">
+                      <button
+                        type="button"
+                        className="wb-attach-open"
+                        onClick={() => setFullScreenImage({ src, name: label })}
+                        title={`View ${label}`}
+                        aria-label={`View ${label}`}
+                      >
+                        <img className="wb-attach-thumb" src={src} alt="" />
+                        <span className="wb-attach-name">{label}</span>
+                      </button>
+                      <button onClick={() => removeFile(idx)} title={`Remove ${label}`} aria-label={`Remove ${label}`}>
+                        <IconClose size={11} />
+                      </button>
+                    </span>
+                  );
+                })}
               </div>
             )}
             {attachmentTexts.length > 0 && (
@@ -3306,11 +3381,23 @@ export default function App() {
 
       {fullScreenImage && (
         <div className="wb-backdrop" onMouseDown={() => setFullScreenImage(null)}>
-          <img
-            src={fullScreenImage}
-            alt="Attachment"
-            style={{ maxWidth: '92vw', maxHeight: '88vh', borderRadius: 4, boxShadow: 'var(--shadow-lg)' }}
-          />
+          {/* stopPropagation so only the backdrop closes: the image itself is the
+              thing being examined, and closing on a click into it makes zooming
+              or dragging feel broken. Escape closes too — see the effect above. */}
+          <figure className="wb-lightbox" onMouseDown={(e) => e.stopPropagation()}>
+            <img src={fullScreenImage.src} alt={fullScreenImage.name || 'Attachment'} />
+            <figcaption>
+              <span>{fullScreenImage.name || 'Attachment'}</span>
+              <button
+                type="button"
+                onClick={() => setFullScreenImage(null)}
+                title="Close (Esc)"
+                aria-label="Close attachment view"
+              >
+                <IconClose size={13} />
+              </button>
+            </figcaption>
+          </figure>
         </div>
       )}
 
