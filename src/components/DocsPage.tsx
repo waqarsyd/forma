@@ -757,8 +757,9 @@ y_top = pageHeight − (baseline + height)`}
               <p className={PROSE}>What the configuration panel exposes, and what it deliberately does not.</p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="DevExpress version">
-                  24.1, 23.2, 23.1 or 22.2. The generated markup is targeted at the version you pick, so match
-                  your installed SDK.
+                  24.1, 23.2, 23.1, 22.2 or 20.1. The generated markup is targeted at the version you pick, so
+                  match your installed SDK — a layout written for a newer release will not open in an older
+                  designer.
                 </Def>
                 <Def t="Page size">Letter, A4 or Legal, written into the XML along with margins.</Def>
                 <Def t="Header">Whether to include a company logo, and a report title.</Def>

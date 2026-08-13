@@ -3012,6 +3012,12 @@ export default function App() {
                       <option value="23.2">v23.2</option>
                       <option value="23.1">v23.1</option>
                       <option value="22.2">v22.2</option>
+                      {/* 20.1 is here because the target ERP is built against
+                          DevExpress.XtraReports.v20.1 and its templates declare
+                          SerializerVersion 20.1.3.0. A newer .repx does not open
+                          in an older designer, so without this option Forma
+                          cannot produce a file that ERP can edit. */}
+                      <option value="20.1">v20.1</option>
                     </select>
                     <IconChevronDown size={13} className="wb-caret" />
                   </span>

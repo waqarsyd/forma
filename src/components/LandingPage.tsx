@@ -271,7 +271,7 @@ const LandingPage = ({
                 <Stat to={3} label="artifacts per request" />
               </RevealItem>
               <RevealItem className="border-l border-outline-variant px-6 py-6 md:px-[26px]">
-                <Stat to={4} unit="versions" label="DevExpress 24.1 back to 22.2" />
+                <Stat to={5} unit="versions" label="DevExpress 24.1 back to 20.1" />
               </RevealItem>
               <RevealItem className="border-t border-outline-variant px-0 py-6 md:border-l md:border-t-0 md:px-[26px]">
                 <Stat to={8} unit="pages / PDF" label="read and text-extracted per file" />

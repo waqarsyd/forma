@@ -745,6 +745,22 @@ export async function analyzeReportDesign(
     throw new MissingApiKeyError();
   }
 
+  /**
+   * The version the ROOT STRUCTURE example is built with.
+   *
+   * That example used to hardcode 23.2.3.0 while CRITICAL CONFIGURATION stated
+   * the chosen version *below* it — so the model copied the example and every
+   * generation came out 23.2 whatever the dropdown said. A .repx is rejected by
+   * an older designer than the one it declares, which made the setting look
+   * present and do nothing.
+   *
+   * `X.Y.3.0` is the shape both observed real files use: Forma's own output
+   * (23.2.3.0) and the target ERP's template (20.1.3.0). If a build number ever
+   * has to be exact, it belongs in a map keyed by version rather than here.
+   */
+  const targetVersion = config?.version || '23.2';
+  const targetSerializerVersion = `${targetVersion}.3.0`;
+
   const configInstructions = config ? `
   CRITICAL CONFIGURATION:
   - DevExpress Version: ${config.version}
@@ -916,7 +932,7 @@ export async function analyzeReportDesign(
           
           - ROOT STRUCTURE: The entire repxContent MUST be wrapped exactly like this:
             <?xml version="1.0" encoding="utf-8"?>
-            <XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="100, 100, 100, 100" PageWidth="850" PageHeight="1100" Version="23.2">
+            <XtraReportsLayoutSerializer SerializerVersion="${targetSerializerVersion}" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="100, 100, 100, 100" PageWidth="850" PageHeight="1100" Version="${targetVersion}">
               <Bands>
                 <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="100" />
                 <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="100">
