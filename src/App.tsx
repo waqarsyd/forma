@@ -102,6 +102,7 @@ import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { sourceRectFor } from './lib/sourceRect';
 import { pingDesigner, sendToDesigner, designerFileName } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
+import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 
 interface DesignResult {
   content: string;
@@ -1350,7 +1351,8 @@ export default function App() {
     // unset. A stored 'selectedAiModel' from the old dropdown would pin a
     // retired id (gemini-2.5-flash) and defeat detection — drop it.
     try { localStorage.removeItem('selectedAiModel'); } catch { /* storage disabled */ }
-    return {
+
+    const defaults: ReportConfig = {
       version: '23.2',
       unit: 'HundredthsOfAnInch',
       pageSize: 'Letter',
@@ -1362,9 +1364,36 @@ export default function App() {
         showPageNumbers: true,
         customText: ''
       },
-      customApiKey: storedKey
+      customApiKey: ''
     };
+
+    // The document settings are a standing preference — someone targeting
+    // DevExpress 20.1 targets it every session. They used to live in state only,
+    // so every reload silently reset the version to 23.2 and the next export
+    // went out for a designer that would refuse it.
+    //
+    // The key is deliberately applied *after* the merge and never round-trips
+    // through localStorage; see reportConfigStore.ts.
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(CONFIG_STORAGE_KEY); } catch { /* storage disabled */ }
+
+    return { ...mergeStoredConfig(defaults, stored), customApiKey: storedKey };
   });
+
+  /**
+   * Persist the document settings on every change, minus the key.
+   *
+   * `toPersistable` is an allowlist, so a field added to `ReportConfig` later is
+   * not written until someone adds it there on purpose — which is what keeps the
+   * next secret-bearing field from riding along unnoticed.
+   */
+  useEffect(() => {
+    try {
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(toPersistable(config)));
+    } catch {
+      /* storage disabled (private mode, quota) — the setting still holds for this session */
+    }
+  }, [config]);
 
   /**
    * The single gate for the whole workspace. Nothing here can call Google
