@@ -24,6 +24,7 @@ import {
   IconCopy,
   IconDoc,
   IconDownload,
+  IconExternal,
   IconEye,
   IconEyeOff,
   IconFolder,
@@ -100,6 +101,7 @@ import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './li
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { sourceRectFor } from './lib/sourceRect';
+import { pingDesigner, sendToDesigner, designerFileName } from './lib/designerBridge';
 
 interface DesignResult {
   content: string;
@@ -2366,6 +2368,40 @@ export default function App() {
   };
 
   /**
+   * Whether the RepxDesigner companion is running on this machine. Pinged once
+   * on mount; false for everyone who has not installed it, which is the normal
+   * case and is why the button it gates simply does not render rather than
+   * appearing and failing. Same contract as `canUseVault`.
+   */
+  const [designerReady, setDesignerReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    pingDesigner().then((ready) => {
+      if (!cancelled) setDesignerReady(ready);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  /**
+   * Hand the generated XML straight to the local designer — no download, no file
+   * dialog. Only reachable when `designerReady`, and only meaningful when the
+   * model actually returned XML: there is nothing for a report designer to open
+   * in a plain-text fallback.
+   */
+  const openInDesigner = async () => {
+    if (!result?.repxContent) return;
+    try {
+      await sendToDesigner(result.repxContent, designerFileName(result.title));
+    } catch (err) {
+      setError(
+        `Could not reach the report designer on this machine. ` +
+        `Start it with \`RepxDesigner.exe --serve\` and try again. ` +
+        `(${err instanceof Error ? err.message : String(err)})`
+      );
+    }
+  };
+
+  /**
    * The uploads a `sourceRect` can be cropped from. Live uploads win, but a
    * report reloaded from history has an empty `previews` — its images survive
    * on the user chat message, so fall back to those and keep logo cropping
@@ -2918,6 +2954,19 @@ export default function App() {
               <IconSave size={14} />
               Save
             </button>
+            {/* Only when the local companion answered on mount — see
+                designerBridge.ts. Everyone else gets Export and nothing else. */}
+            {designerReady && (
+              <button
+                className="wb-pill wb-pill--outline"
+                onClick={openInDesigner}
+                disabled={!result?.repxContent}
+                title="Open this report in the DevExpress designer on this machine"
+              >
+                <IconExternal size={14} />
+                Open in designer
+              </button>
+            )}
             <button className="wb-pill wb-pill--accent" onClick={downloadDesign} disabled={!result}>
               <IconDownload size={14} />
               Export .repx
