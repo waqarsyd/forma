@@ -1,0 +1,63 @@
+# Persistence and auth
+
+Split out of `CLAUDE.md` on 2026-08-13. The text is unchanged from when it lived there, apart from heading levels. It is incident history — the reason a thing is the way it is, which the code cannot tell you. **Nothing here is loaded automatically**: `CLAUDE.md` routes to this file, and reading its one-line summary of this area is not a substitute for opening it before you change that area.
+
+## Persistence: two divergent shapes
+
+| | Signed in | Signed out |
+|---|---|---|
+| Store | Firestore `users/{uid}/reports/{reportId}` | `localStorage['savedReports']` |
+| `timestamp` | `number` (epoch ms) | ISO string |
+| `messages` / `result` | JSON **strings** | live objects |
+
+That divergence is *on disk only*. The `onSnapshot` handler converts back on read — `timestamp` to an ISO string, `messages`/`result` through `JSON.parse` — so the in-memory `SavedReport` shape is identical on both paths and `handleLoadReport` needs no branch.
+
+`firestore.rules` enforces the flat-string cloud shape (`isValidSavedReport` requires exactly `id, name, timestamp:number, messages:string, result:string, userId == auth.uid`). It uses `hasOnly` as well as `hasAll`, so **any new field written by `handleSaveReport` must be added there or the write is rejected** — the earlier `keys().size() >= 6` accepted arbitrary extra fields and no longer does. `timestamp` is additionally bounded to `> 0 && < 4102444800000`, so a modified client cannot write a far-future value that permanently pins one report to the top of the list. Reads convert back in the `onSnapshot` handler.
+
+**A cloud save is size-budgeted, and it degrades rather than failing.** The transcript carries the user's uploads inline as base64 data URLs, and one alone can dwarf an entire Firestore document — measured, a detailed 2048px photo at the intake's own JPEG quality is ~4.7 MB against Firestore's 1 MiB ceiling. Writing it produced an opaque backend rejection and the save simply failed. `handleSaveReport` now checks `messages` + `result` against **`CLOUD_SAVE_BUDGET_BYTES` (900_000)** — deliberately under 1 MiB, since the limit counts the encoded document, not the JSON string length this approximates it with — and:
+
+1. over budget → re-serialise with `images` stripped from every message, and set `imagesDropped`;
+2. still over budget → don't write at all; tell the user the project is too large to sync and that saving while signed out keeps it on this device.
+
+A saved report without its source thumbnails still reopens and still exports, so keeping the spec, layout and REPX is strictly better than losing the save. The signed-out `localStorage` path has no such budget. If you add anything to the saved payload, it lands inside this budget — and remember `firestore.rules` must gain the field too.
+
+Outcomes reach the user through **`saveNotice`**, a separate state from `error`: it carries "Saved to your projects." or the longer "…the uploaded images were too large to sync" variant, and an effect clears it on a timer. Failures use `setError` via `reportFirestoreFailure` (see below). Keep the two channels distinct — a degraded save is a success, not an error. A stale `firebase-blueprint.json` used to sit in the root documenting a *different* `SavedReport` entity (`targetFormat`, `repxContent`, `layout`, `content`) matching neither the rules nor the code; it is parked at `_not_required/firebase-blueprint.json`.
+
+Firestore is reached via `getFirestore(app, firebaseConfig.firestoreDatabaseId)`, and **the `databaseId` in `firebase-applet-config.json` and `firebase.json` must stay identical** — a mismatch silently talks to the wrong database.
+
+As of 2026-08-09 the project is **`forma-201ba`** on the **`(default)`** database, Standard edition. It was previously the AI Studio project `gen-lang-client-0000000000` on a named Enterprise database; that project had no Firebase enabled and could not be administered, which is why Google sign-in always failed with `auth/unauthorized-domain` (see below). Two consequences of the move: `firebase.json` no longer carries `edition`/`dataAccessMode`, which are Enterprise-only and break a Standard deploy; and **`.firebaserc` is the file that decides the deploy target** — `firebase use <id>` sets only the CLI's own per-directory state, so a stale `.firebaserc` will happily deploy to the old project from a fresh shell or CI. It was stale exactly this way once.
+
+**`firebase-applet-config.json` commits a real `AIzaSy…` string, and that is correct — do not "fix" it.** A Firebase Web API key is a public project identifier, not a secret: it ships in every Firebase web app by design, and `firestore.rules` plus the authorized-domain list are what actually protect the data. It is *not* the same kind of value as the Gemini key whose leak is described above, and the two must not be conflated — removing it or moving it behind an env var breaks Firebase init for no security gain. The rule that matters is the narrower one: no **Gemini** key in any committed file, `.env` included.
+
+**There is no auth fallback, and reintroducing one is not an option.** A failed sign-in is a failure. Until 2026-08-09 both sign-in paths fabricated a user with `uid: 'local-dev-user-id'` / "Local Developer" on two Firebase error codes — `auth/unauthorized-domain` (Google) and `auth/configuration-not-found` (email) — handing out a workspace session with **no credential check of any kind**. It has been removed outright: from `LoginPage.handleGoogleSignIn`, from `LoginPage.handleSubmit`, and from `App.handleLoginSuccess`, which is where the session was actually manufactured. `local-dev-user-id` now survives in `src/` only inside one comment above `handleLoginSuccess` recording what was removed, and grepping the production bundle for it returns nothing.
+
+The history is worth keeping because the same mistake has been made twice here in escalating forms:
+
+1. The email path once matched on **message text** — `err.message?.includes('configuration') || err.message?.includes('network')`. Firebase's `auth/network-request-failed` message contains "network", so **any dropped connection during sign-in signed the visitor in regardless of the password they typed.** That was narrowed to exact codes.
+2. Exact codes were still a bypass. `auth/unauthorized-domain` is precisely what a *deployed* site returns when its domain is missing from Firebase's authorized-domain list — so one configuration slip would have let every visitor who clicked "Sign in with Google" into the workspace. Gating it to `import.meta.env.DEV` was considered and rejected: a credential-free path is a liability whether or not it ships, because it trains the codebase to treat auth failure as recoverable.
+
+Both configuration codes now map to real text in `AUTH_MESSAGES` so a misconfigured project *says so* rather than papering over it. The single `loginModal` definition in `App.tsx` (rendered as `{loginModal}` in both the landing and workspace trees) remains the right structure — two copies drifted once, one restoring `lastViewHash` and the other hardcoding `#workspace`.
+
+**Signing in returns you where you were; it is not a door into the workspace.** `handleLoginSuccess` navigates to `lastViewPath || '/'`, the same expression the modal's cancel path uses — it used to hardcode `/workspace`, so somebody who signed in from `/docs` to save a project was moved somewhere they had not asked to go, and the two adjacent paths disagreed about the same question. Anyone who *does* want the workspace has an explicit "Go straight to the workspace" control on the sign-in screen, which calls `navigate('/workspace')`; before this it was decoration and did nothing. Note when testing that reaching `/login` by a full page load resets React state and so resets `lastViewPath` to `'/'` — exercise the in-app control, or you will be measuring the test rather than the code.
+
+Because that uid can no longer exist, the `user.uid !== 'local-dev-user-id'` guards that used to sit in `handleSaveReport`, `handleDeleteReport`, the `onSnapshot` fetch effect and `canUseVault` are gone too. The branch is simply **signed in → Firestore, signed out → `localStorage`**, and save and delete must keep the same shape as each other so a report is always removed from wherever it was written.
+
+**Signing out clears the documents, not just the credential.** `handleLogOut` used to drop the API key and vault state but leave `messages`, `result`, `previews` and `attachmentTexts` in place — so the next person at that browser saw the previous user's uploaded design, the text extracted from their PDFs, and the generated report. It now calls `handleClearChat()` as well. The same clearing runs from the `onAuthStateChanged` listener when a session ends **elsewhere** (another tab, a revoked token); `previousUidRef` distinguishes that from the initial `null` every signed-out visitor gets on load, which must not wipe their work.
+
+**Form validation lives in one pure `validate(mode, values)` in `LoginPage.tsx`**, returning a `FieldErrors` record rendered under each input, not in the single banner it used to share. Three things about it are deliberate:
+
+- The form carries **`noValidate`**. `required` and `type="email"` are still on the inputs for their `aria-required` / semantic value, but the browser's native bubbles are suppressed so two mechanisms cannot disagree about the same field with different wording.
+- **Nothing renders `err.message`.** Firebase codes go through the `AUTH_MESSAGES` map; the raw message is the `Firebase: Error (auth/…)` envelope, and on sign-in it distinguishes `auth/user-not-found` from `auth/wrong-password`. Both map to one string, and `sendPasswordReset` swallows `auth/user-not-found` entirely, so neither path becomes an account-enumeration oracle. Keep any new code you add to that map on the same side of that line.
+- Checks are ordered so a too-short password reports its own length problem rather than surfacing as "passwords do not match" against a half-typed confirmation, and `validate` is pure so the submit path and any future on-blur path cannot drift.
+
+Email and display name are trimmed **at submit, not in `onChange`** — trimming per keystroke makes the space bar look broken. A whitespace-only display name is rejected rather than reaching `updateProfile` as a blank.
+
+**`handleFirestoreError` re-throws, so never call it bare from a UI handler.** `src/services/firebase.ts` exports it as the shared Firestore error handler, and it does two things worth knowing before you call it: it `console.error`s a JSON blob that includes the signed-in user's uid and email, and then it **throws a new `Error` whose `message` is that same JSON string**. So it is a rethrow, not a swallow.
+
+`handleSaveReport` and `handleDeleteReport` used to call it directly from `catch` blocks in `async` handlers with nothing above them, so a rules rejection became an unhandled promise rejection and the user saw nothing at all — the save just silently didn't happen. Both now go through **`reportFirestoreFailure(err, operation, path, userMessage)`** in `App.tsx`, which wraps the call in its own `try/catch` to absorb the rethrow (the logging is the point; the throw is not) and then `setError(userMessage)` with plain language. Use it for any new Firestore call site, and **never render `err.message` in the UI** — it is a JSON dump containing the user's email, which is exactly why the wrapper takes a separate `userMessage`.
+
+**Expected console noise:** `src/services/firebase.ts` calls `testConnection()` at import time, reading `test/connection` — a path the global deny in `firestore.rules` rejects. The resulting permission error on every page load is normal, not a regression.
+
+`localStorage` keys in use: `savedReports`, `darkMode`. (`selectedAiModel` is gone with the model dropdown, and is actively deleted on boot — a stored `gemini-2.5-flash` would pin a retired model and defeat detection.) **`customGeminiApiKey` is gone** — it held the API key in plaintext on disk, and `purgeLegacyPlaintextKey()` now deletes it on boot. The key lives in `sessionStorage['geminiApiKey:session']` instead; see "Where the user's key lives" above. Nothing that touches the key may be written to `localStorage`.
+
+`handleSaveReport` persists only `messages` and `result`, never `config` — so the key has never leaked into a saved report, and it must stay that way if you extend what gets saved.

@@ -93,7 +93,7 @@ src/
 tests/                 Firestore rules tests (emulator)
 public/                static assets served at / — logos, favicon
 assets/source/         full-resolution logo masters (not deployed)
-docs/                  PRD.md, design/DESIGN.md
+docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident history)
 scripts/               dev + build helpers
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
@@ -120,7 +120,8 @@ Neither suite covers React components or `App.tsx`'s stateful logic. **This is a
 
 Two documents carry the reasoning that the code cannot:
 
-- **[`CLAUDE.md`](CLAUDE.md)** — architecture and incident history. Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the section covering what you're touching before you change it.
+- **[`CLAUDE.md`](CLAUDE.md)** — the entry point: hard constraints, commands, and an index that routes you to the note covering whatever you are about to change.
+- **[`docs/notes/`](docs/notes/)** — four notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.
 - **[`docs/PRD.md`](docs/PRD.md)** — the product specification, kept current against the code.
 
 A few rules worth knowing up front:
