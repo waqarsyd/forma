@@ -85,14 +85,20 @@ Sign-in and cloud storage need a Firebase project. Skip this entirely if you onl
 src/
   App.tsx              workspace, chat, config modal
   main.tsx             entry point
-  index.css            the single stylesheet (Tailwind v4, no config file)
+  index.css            tokens, marketing pages, shared chrome (Tailwind v4, no config file)
+  workspace.css        the workspace shell only — every `wb-` class lives here
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
-                       LoginPage, MobileNav, Logo, UserAvatar
+                       LoginPage, SiteHeader, SiteFooter, MobileNav,
+                       Logo, UserAvatar
+    landing/           figures used by the marketing pages: HeroScanner,
+                       SheetRuler, StepFigures, VaultFigure, sections, icons
   lib/                 router, motion tokens, repx + sourceRect helpers (+ tests)
   services/            geminiService, firebase, keyVault (+ tests)
 tests/                 Firestore rules tests (emulator)
-public/                static assets served at / — logos, favicon
-assets/source/         full-resolution logo masters (not deployed)
+public/                static assets served at / — logos (one doubles as the
+                       favicon) and the pre-rendered og-card.png
+assets/source/         full-resolution logo masters and the og-card source
+                       page they are rendered from (not deployed)
 docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident history)
 scripts/               dev + build helpers
 server.ts              Express server, used in development and production
