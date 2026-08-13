@@ -26,9 +26,11 @@ Saving inside the designer writes back to the same file.
 
 This is the thing most likely to bite. It targets **DevExpress 20.1**, matching the target ERP (`DevExpress.XtraReports.v20.1`, `TargetFrameworkVersion v4.7.2`) and the templates that ship with it — `tagprintscript.repx` declares `SerializerVersion="20.1.3.0"`.
 
-**Forma currently emits `SerializerVersion="23.2.3.0"`**, and its report-configuration dropdown offers 24.1 / 23.2 / 23.1 / 22.2 with no 20.1 option. A file written by a newer DevExpress may not load in an older designer. The tool reads `SerializerVersion` off the file before attempting to load and, on failure, shows it next to the designer's own version — so the mismatch reads as a mismatch rather than as an unexplained crash.
+Forma's configuration dropdown offers 24.1 / 23.2 / 23.1 / 22.2 / **20.1**, and the selected version is written into the generated XML's `SerializerVersion` and `Version`. (It did not used to be: the prompt's ROOT STRUCTURE example hardcoded 23.2.3.0, so the setting was inert. See *`geminiService.ts` is a single mega-prompt* in [`docs/notes/gemini.md`](../../docs/notes/gemini.md).)
 
-If that is what you hit, the fix is on Forma's side: add 20.1 to the version list in the config modal and to the prompt's DevExpress cheat sheet. Editing the XML by hand is not a fix.
+**Verified on 2026-08-13:** generated with v20.1 selected, exported, and opened here in a real DevExpress 20.1 designer with every control present.
+
+The tool still reads `SerializerVersion` off the file before loading and, on failure, shows it next to the designer's own version — so a mismatch reads as a mismatch rather than as an unexplained crash. If you hit one, the fix is on Forma's side, in the config modal and the prompt's cheat sheet together. Editing the XML by hand is not a fix.
 
 ## Not committed
 
