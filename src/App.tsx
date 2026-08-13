@@ -2449,10 +2449,24 @@ export default function App() {
   const [designerReady, setDesignerReady] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    pingDesigner().then((ready) => {
-      if (!cancelled) setDesignerReady(ready);
-    });
-    return () => { cancelled = true; };
+    const check = () => {
+      pingDesigner().then((ready) => {
+        if (!cancelled) setDesignerReady(ready);
+      });
+    };
+
+    check();
+
+    // Re-check when the tab regains focus. Starting the companion is something
+    // the user does *outside* the browser, so a mount-only ping means the button
+    // is still missing when they switch back — which reads as the feature having
+    // been removed rather than as "nothing is listening yet". Coming back to the
+    // tab is exactly the moment to look again.
+    window.addEventListener('focus', check);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', check);
+    };
   }, []);
 
   /**
