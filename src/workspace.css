@@ -146,6 +146,34 @@
   white-space: nowrap;
 }
 
+/* "5 pages" beside a filename in a chip. A multi-page upload is one attachment
+   with a page count, never five chips. */
+.wb-attach-count {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-line);
+  color: var(--ink-2);
+  font-size: 9.5px;
+  letter-spacing: .02em;
+}
+
+/* The same fact on a message thumbnail, where there is no room for words. */
+.wb-attach-pages {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #08182b 78%, transparent);
+  color: #eaf1ff;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 15px;
+  text-align: center;
+}
+
 /* Thumbnails under a sent message. */
 .wb-attach-strip {
   display: flex;
@@ -155,6 +183,7 @@
 }
 
 .wb-attach-shot {
+  position: relative; /* anchors the page-count badge */
   padding: 0;
   border: 1px solid var(--rule);
   border-radius: 6px;
@@ -207,6 +236,15 @@
   cursor: pointer;
 }
 .wb-lightbox figcaption button:hover { background: rgba(255, 255, 255, .16); }
+/* The icon set carries no left/right chevron and adding one for this would mean
+   two arrow families at different weights; the down chevron rotated is the same
+   glyph. `Svg` takes size/className/strokeWidth only, so this is a class rather
+   than an inline transform. */
+.wb-rot-cw { transform: rotate(90deg); }
+.wb-rot-ccw { transform: rotate(-90deg); }
+
+.wb-lightbox figcaption button:disabled { opacity: .35; cursor: default; }
+.wb-lightbox figcaption button:disabled:hover { background: none; }
 
 /* =============================================================================
    WORKSPACE - ported verbatim from the approved artifact

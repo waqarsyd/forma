@@ -101,6 +101,7 @@ import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './li
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { sourceRectFor } from './lib/sourceRect';
 import { pingDesigner, sendToDesigner, designerFileName } from './lib/designerBridge';
+import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
 
 interface DesignResult {
   content: string;
@@ -115,6 +116,13 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   images?: string[];
+  /**
+   * Provenance for `images`, so a sent message groups its attachments the same
+   * way the composer did. Optional on purpose: reports saved before this existed
+   * reload with images and no meta, and `groupAttachments` renders those one per
+   * image rather than dropping them.
+   */
+  imageMeta?: PreviewMeta[];
   result?: DesignResult;
   /**
    * Set when the turn this message asked for failed. A failed chat turn used to
@@ -180,14 +188,15 @@ interface TextAttachment {
 interface IngestResult {
   images: string[];
   /**
-   * One label per entry in `images`, same order, same length.
+   * One entry per image in `images`, same order, same length: which upload it
+   * came from and which page of it.
    *
    * Kept parallel rather than folded into `images` because that array's shape is
    * depended on all the way downstream — the request parts, `sourceRect`
    * cropping, and the `images` persisted on a saved report all expect bare data
-   * URLs. A label is presentation, and it stops here.
+   * URLs. Provenance is presentation, and it stops at the composer.
    */
-  imageNames: string[];
+  imageMeta: PreviewMeta[];
   texts: TextAttachment[];
   /** User-facing warnings: skipped files, dropped pages, invalid XML. */
   notices: string[];
@@ -289,8 +298,8 @@ async function renderPdfPage(page: any): Promise<string | null> {
  * and oversized files produce a notice rather than being silently ignored —
  * previously dropping a .docx did nothing at all, with no feedback.
  */
-async function ingestFile(file: File): Promise<IngestResult> {
-  const out: IngestResult = { images: [], imageNames: [], texts: [], notices: [] };
+async function ingestFile(file: File, uploadId: string): Promise<IngestResult> {
+  const out: IngestResult = { images: [], imageMeta: [], texts: [], notices: [] };
   const name = file.name || 'file';
 
   if (file.size > MAX_FILE_BYTES) {
@@ -300,7 +309,7 @@ async function ingestFile(file: File): Promise<IngestResult> {
 
   if (file.type.startsWith('image/')) {
     out.images.push(await optimizeImageDataUrl(await readAsDataUrl(file)));
-    out.imageNames.push(name);
+    out.imageMeta.push({ uploadId, file: name });
     return out;
   }
 
@@ -315,9 +324,9 @@ async function ingestFile(file: File): Promise<IngestResult> {
         const image = await renderPdfPage(page);
         if (image) {
           out.images.push(image);
-          // Page number included: a PDF becomes several thumbnails, and "page 3
-          // of the invoice" is the only way to tell them apart at chip size.
-          out.imageNames.push(`${name} · page ${n}`);
+          // Same uploadId for every page, so the composer shows one attachment
+          // for the file the user actually dropped rather than one per page.
+          out.imageMeta.push({ uploadId, file: name, page: n });
         }
 
         const extracted = await extractPdfPageText(page, n);
@@ -1073,12 +1082,12 @@ export default function App() {
   const [showWorkspace, setShowWorkspace] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
   /**
-   * Display names for `previews`, index for index. Every write to one must write
-   * the other — `removeFile` drops the same index from both, and the three
-   * places that clear `previews` clear this too. They are separate arrays
-   * because only this one is presentation; see `IngestResult.imageNames`.
+   * Provenance for `previews`, index for index. Every write to one must write
+   * the other — `removeFile` drops the same indices from both, and the places
+   * that clear `previews` clear this too. Separate arrays because only this one
+   * is presentation; see `IngestResult.imageMeta`.
    */
-  const [previewNames, setPreviewNames] = useState<string[]>([]);
+  const [previewMeta, setPreviewMeta] = useState<PreviewMeta[]>([]);
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [savedReports, setSavedReports] = useState<SavedReport[]>(() => {
@@ -1308,8 +1317,25 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
-  /** The attachment being viewed full size, with the name to caption it. */
-  const [fullScreenImage, setFullScreenImage] = useState<{ src: string; name?: string } | null>(null);
+  /**
+   * The attachment being viewed full size. Carries every image of that upload so
+   * a multi-page PDF can be paged through in place — the pages exist, they just
+   * have no business being five separate chips in the composer.
+   */
+  const [fullScreenImage, setFullScreenImage] = useState<
+    { srcs: string[]; index: number; file: string } | null
+  >(null);
+
+  /** Open the viewer on one upload, positioned at `start` within it. */
+  const openAttachment = (indices: number[], start: number, file: string) => {
+    setFullScreenImage({ srcs: indices.map((i) => previews[i]), index: start, file });
+  };
+
+  /** Staged uploads, collapsed back from per-page images. */
+  const previewGroups = useMemo(
+    () => groupAttachments(previewMeta, previews.length),
+    [previewMeta, previews.length]
+  );
   const [config, setConfig] = useState<ReportConfig>(() => {
     // Forma never ships a key of its own, so the only key in play is the user's.
     // It lives in sessionStorage, which the browser clears when the tab closes;
@@ -1702,11 +1728,13 @@ export default function App() {
 
     setIsIngesting(true);
     try {
-      for (const file of accepted) {
-        const result = await ingestFile(file);
+      for (const [i, file] of accepted.entries()) {
+        // Identifies this drop for the life of the staged attachment. Two files
+        // can share a name, so the name cannot be the key — see attachments.ts.
+        const result = await ingestFile(file, `${Date.now()}-${i}-${file.name}`);
         if (result.images.length) {
           setPreviews(prev => [...prev, ...result.images]);
-          setPreviewNames(prev => [...prev, ...result.imageNames]);
+          setPreviewMeta(prev => [...prev, ...result.imageMeta]);
         }
         if (result.texts.length) setAttachmentTexts(prev => [...prev, ...result.texts]);
         notices.push(...result.notices);
@@ -1725,9 +1753,16 @@ export default function App() {
     }
   };
 
-  const removeFile = (index: number) => {
-    setPreviews(prev => prev.filter((_, i) => i !== index));
-    setPreviewNames(prev => prev.filter((_, i) => i !== index));
+  /**
+   * Removes a whole upload, not one page of it. The user attached a file; the
+   * split into pages is ours, so undoing the attachment has to undo all of it —
+   * leaving pages 2..5 of a PDF behind after removing "it" would be its own
+   * kind of broken.
+   */
+  const removeFile = (indices: number[]) => {
+    const drop = new Set(indices);
+    setPreviews(prev => prev.filter((_, i) => !drop.has(i)));
+    setPreviewMeta(prev => prev.filter((_, i) => !drop.has(i)));
   };
 
   const removeTextAttachment = (id: string) => {
@@ -1760,7 +1795,7 @@ export default function App() {
   const handleClearChat = () => {
     setResult(null);
     setPreviews([]);
-    setPreviewNames([]);
+    setPreviewMeta([]);
     setAttachmentTexts([]);
     setUploadNotices([]);
     setPrompt('');
@@ -2194,13 +2229,14 @@ export default function App() {
       id: Date.now().toString(),
       role: 'user',
       text: currentPrompt, // Only use the prompt the user actually typed
-      images: currentPreviews.length > 0 ? currentPreviews : undefined
+      images: currentPreviews.length > 0 ? currentPreviews : undefined,
+      imageMeta: currentPreviews.length > 0 ? previewMeta : undefined
     };
 
     setMessages(prev => [...prev, newUserMsg]);
     setPrompt('');
     setPreviews([]);
-    setPreviewNames([]);
+    setPreviewMeta([]);
     setAttachmentTexts([]);
     setUploadNotices([]);
 
@@ -2412,6 +2448,15 @@ export default function App() {
     if (!fullScreenImage) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setFullScreenImage(null);
+      // Arrows page through a multi-page upload. Clamped rather than wrapping:
+      // wrapping makes it impossible to tell page 1 from page 6 of 6 without
+      // reading the counter.
+      if (e.key === 'ArrowRight') {
+        setFullScreenImage((v) => (v ? { ...v, index: Math.min(v.index + 1, v.srcs.length - 1) } : v));
+      }
+      if (e.key === 'ArrowLeft') {
+        setFullScreenImage((v) => (v ? { ...v, index: Math.max(v.index - 1, 0) } : v));
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -2744,23 +2789,23 @@ export default function App() {
                     // `ChatMessage.images` is data URLs only, and a saved report
                     // reloads with just those — so the picture is the label.
                     <div className="wb-attach-strip">
-                      {msg.images.map((src, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          className="wb-attach-shot"
-                          onClick={() =>
-                            setFullScreenImage({
-                              src,
-                              name: `Attachment ${i + 1} of ${msg.images!.length}`,
-                            })
-                          }
-                          title="View attachment"
-                          aria-label={`View attachment ${i + 1}`}
-                        >
-                          <img src={src} alt="" />
-                        </button>
-                      ))}
+                      {groupAttachments(msg.imageMeta ?? [], msg.images.length).map((group) => {
+                        const label = groupLabel(group);
+                        const srcs = group.indices.map((i) => msg.images![i]);
+                        return (
+                          <button
+                            key={`${group.file}-${group.indices[0]}`}
+                            type="button"
+                            className="wb-attach-shot"
+                            onClick={() => setFullScreenImage({ srcs, index: 0, file: group.file })}
+                            title={`View ${label}`}
+                            aria-label={`View ${label}`}
+                          >
+                            <img src={srcs[0]} alt="" />
+                            {group.pages > 1 && <span className="wb-attach-pages">{group.pages}</span>}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -2851,25 +2896,31 @@ export default function App() {
                 at rest, so the default view is unchanged. */}
             {previews.length > 0 && (
               <div className="wb-chip-row">
-                {previews.map((src, idx) => {
-                  // The chip used to read "image 1" beside a generic icon, which
-                  // told you how many files you had attached and nothing about
-                  // which ones. The thumbnail is the fastest answer; the name is
-                  // the exact one.
-                  const label = previewNames[idx] || `image ${idx + 1}`;
+                {/* One chip per file the user dropped. A 5-page PDF is five
+                    images underneath — the model needs a page each — but showing
+                    five thumbnails for one upload reads as the product having
+                    mangled the file. Pages are reachable inside the viewer. */}
+                {previewGroups.map((group) => {
+                  const label = groupLabel(group);
+                  const first = group.indices[0];
                   return (
-                    <span key={idx} className="wb-attach wb-attach--file">
+                    <span key={`${group.file}-${first}`} className="wb-attach wb-attach--file">
                       <button
                         type="button"
                         className="wb-attach-open"
-                        onClick={() => setFullScreenImage({ src, name: label })}
+                        onClick={() => openAttachment(group.indices, 0, group.file)}
                         title={`View ${label}`}
                         aria-label={`View ${label}`}
                       >
-                        <img className="wb-attach-thumb" src={src} alt="" />
-                        <span className="wb-attach-name">{label}</span>
+                        <img className="wb-attach-thumb" src={previews[first]} alt="" />
+                        <span className="wb-attach-name">{group.file}</span>
+                        {group.pages > 1 && <span className="wb-attach-count">{group.pages} pages</span>}
                       </button>
-                      <button onClick={() => removeFile(idx)} title={`Remove ${label}`} aria-label={`Remove ${label}`}>
+                      <button
+                        onClick={() => removeFile(group.indices)}
+                        title={`Remove ${label}`}
+                        aria-label={`Remove ${label}`}
+                      >
                         <IconClose size={11} />
                       </button>
                     </span>
@@ -3399,9 +3450,46 @@ export default function App() {
               thing being examined, and closing on a click into it makes zooming
               or dragging feel broken. Escape closes too — see the effect above. */}
           <figure className="wb-lightbox" onMouseDown={(e) => e.stopPropagation()}>
-            <img src={fullScreenImage.src} alt={fullScreenImage.name || 'Attachment'} />
+            <img
+              src={fullScreenImage.srcs[fullScreenImage.index]}
+              alt={`${fullScreenImage.file}${
+                fullScreenImage.srcs.length > 1 ? `, page ${fullScreenImage.index + 1}` : ''
+              }`}
+            />
             <figcaption>
-              <span>{fullScreenImage.name || 'Attachment'}</span>
+              {fullScreenImage.srcs.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFullScreenImage((v) => (v ? { ...v, index: Math.max(v.index - 1, 0) } : v))
+                  }
+                  disabled={fullScreenImage.index === 0}
+                  title="Previous page"
+                  aria-label="Previous page"
+                >
+                  <IconChevronDown size={13} className="wb-rot-cw" />
+                </button>
+              )}
+              <span>
+                {fullScreenImage.file}
+                {fullScreenImage.srcs.length > 1 &&
+                  ` · page ${fullScreenImage.index + 1} of ${fullScreenImage.srcs.length}`}
+              </span>
+              {fullScreenImage.srcs.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFullScreenImage((v) =>
+                      v ? { ...v, index: Math.min(v.index + 1, v.srcs.length - 1) } : v
+                    )
+                  }
+                  disabled={fullScreenImage.index === fullScreenImage.srcs.length - 1}
+                  title="Next page"
+                  aria-label="Next page"
+                >
+                  <IconChevronDown size={13} className="wb-rot-ccw" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setFullScreenImage(null)}
