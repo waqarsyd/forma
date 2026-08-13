@@ -31,7 +31,7 @@ That also means **a forgotten passphrase is unrecoverable by design.** There is 
 
 ## Quick start
 
-Requires **Node 20+** (developed on Node 24).
+Requires **Node 20, 22, or 24+** (developed on Node 24.18.1 / npm 11.16.0). "20+" is the wrong shorthand: Vitest supports `^20 || ^22 || >=24`, so the odd-numbered lines **21 and 23 are outside the supported range** even though they are newer than 20.
 
 ```bash
 npm install
@@ -53,10 +53,12 @@ That's enough to generate reports. Sign-in and cloud sync are optional — signe
 | `npm run dev` | Express + Vite middleware on port 3000 |
 | `npm run dev:log` | Same, mirrored to `dev-server.log` |
 | `npm run build` | Client bundle + server bundle into `dist/` |
+| `npm run build:server` | Server bundle only (`dist/server.cjs`, via esbuild) |
 | `npm start` | Serve the production build (run `build` first, from the repo root) |
 | `npm run preview` | Vite preview against `dist/` |
 | `npm run lint` | `tsc --noEmit` |
 | `npm test` | Unit tests (Vitest + jsdom) |
+| `npm run test:watch` | The same suite in watch mode |
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
 | `npm run clean` | Remove `dist/` |
 
@@ -116,7 +118,7 @@ npm run test:rules # security rules, against the Firestore emulator
 
 The unit suite deliberately targets functions whose invariants **fail plausibly rather than loudly** — a transposed crop box puts a logo somewhere believable but wrong; a mis-scanned stream shows a stray character in a chat bubble. Those are the failures that survive manual testing.
 
-The rules suite covers account isolation, document shape, and the encrypted key vault. It needs a JVM because the Firestore emulator is a Java process; install any JDK 17+ and set `JAVA_HOME`.
+The rules suite covers account isolation, document shape, and the encrypted key vault. It needs a JVM because the Firestore emulator is a Java process; a **runtime is enough — no JDK required.** This project was developed against a Temurin **JRE 21**, installed per-user with `JAVA_HOME` and `PATH` set at user scope, so nothing had to go in system-wide and no admin rights were needed.
 
 Neither suite covers React components or `App.tsx`'s stateful logic. **This is a floor, not a net.**
 
