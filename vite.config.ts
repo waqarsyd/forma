@@ -24,6 +24,14 @@ export default defineConfig(() => {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
+      // tools/ holds a .NET project (RepxDesigner). MSBuild rewrites and briefly
+      // locks files under its bin/ and obj/, and chokidar throws EBUSY when it
+      // tries to watch one mid-build — which does not degrade, it takes the dev
+      // server down with an unhandled 'error' event. Observed 2026-08-13: a
+      // build while `npm run dev:log` was running killed it on
+      // obj/Release/RepxDesigner.exe. Nothing under tools/ reaches the client
+      // bundle, so there is nothing there worth watching.
+      watch: { ignored: ['**/tools/**'] },
     },
   };
 });

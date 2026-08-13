@@ -31,3 +31,9 @@ secrets.json
 # (forma-201ba) and holds no credentials. Ignoring it is how a fresh clone or a
 # CI run ends up deploying to whatever project the CLI last happened to select.
 .firebase/
+
+# .NET build output from tools/RepxDesigner. A bare `bin/` would be too broad in
+# a JS repo, so both are scoped to tools/. Release is ~137 MB, because the
+# DevExpress assemblies are copied local so the tool runs standalone.
+tools/**/bin/
+tools/**/obj/
