@@ -64,6 +64,14 @@ Needs DevExpress 20.1 installed at the path in the `.csproj` `HintPath`s. `bin/`
 
 **Stop `--serve` before rebuilding** — MSBuild cannot overwrite a running exe. `vite.config.ts` already excludes `**/tools/**` from its watcher, so a build no longer kills the dev server.
 
+## Start it yourself, from your own desktop
+
+**`--serve` must be launched from the session you are actually looking at.** A Windows process paints on the desktop of whatever session and window station created it, so an instance started by an agent shell, a service, a scheduled task or a second RDP session opens the designer somewhere you cannot see — and nothing reports an error, because from the browser's side it all succeeded: the guards passed, the file was written, the designer was told to open.
+
+Observed 2026-08-13 on this machine, which has interactive desktops in sessions 2, 3 and 4: an instance started from a background shell wrote `%TEMP%\Forma\Job_Card_Report.repx` correctly and opened the designer on a desktop nobody was watching. The symptom is "the button does nothing" with a perfectly good file on disk.
+
+Double-click the exe (or a shortcut with `--serve` in its Target), and check the tray icon is in **your** tray. If the port is taken, an instance is already running somewhere — `Get-Process RepxDesigner | Select-Object Id, SessionId` shows which session owns it.
+
 ## Caveats
 
 - **Windows and DevExpress only.** Forma is a browser app that must keep working without any of this, which is why the button is feature-detected rather than assumed.
