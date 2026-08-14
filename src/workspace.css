@@ -22,6 +22,29 @@
   line-height: normal;
 }
 
+/* A text field and a select declaring the same font, padding and border must
+   come out the same height, and they did not: measured 49px against 36px in the
+   config dialog, which is what made that form look untidy before anything was
+   wrong with its layout.
+
+   Neither value is a mistake in the CSS — they are the two ways a browser sizes
+   a control. A `<select>` uses its own internal metrics; an `<input>` under
+   `line-height: normal` uses the *font's* ascent, descent and line gap, and
+   Inter's are tall enough to give a 13px field a 29px line box. Setting
+   `line-height` does not help: Chromium ignores it for the inner editing box,
+   verified — `line-height: 1` left the field at 49, while swapping the family to
+   `sans-serif` alone brought it to 35.
+
+   So the height is stated outright. 36px is what the select computes to from the
+   artifact's own padding (9 + 9 + 1 + 1 + a 16px line box), which makes this the
+   same kind of rule as the one above: restoring the value the artifact drew,
+   against an environment that renders it differently. Scoped to input/select so
+   a textarea can still grow. */
+.wb-root input.wb-ctl,
+.wb-root select.wb-ctl {
+  height: 36px;
+}
+
 /* The shell must own the viewport, and its first row must take the slack.
    The artifact declares `min-height: 100vh` with implicit auto rows, while
    `.wb-thread`, `.wb-list` and `.wb-bench-body` all declare `overflow: auto` —
@@ -1196,6 +1219,252 @@ select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
   .wb-proof { padding: 30px 24px; }
   .wb-sheet { padding: 22px 18px 26px; }
 }
+/* =============================================================================
+   FORMA ADDITIONS - the resizable review column
+
+   Every other addition sits at the top of this file. This one cannot, and the
+   reason is the cascade rather than a preference: the ported block sets
+   `.wb-shell { grid-template-columns: 56px 340px minmax(0, 1fr) }`, and the
+   1180px query just above narrows it again. Both are single-class selectors, so
+   a rule in the top block would lose to them on position. Winning on
+   specificity instead (`.wb-root.wb-shell`) would also beat the 880px rule and
+   break the stacked layout, which is the one place the column must NOT be a
+   column. Same specificity, later position, and scoped above 880px so the
+   stacked layout is untouched.
+
+   `--wb-review-w` is set inline by `App.tsx`, and is `0px` while the panel is
+   collapsed — a `display: none` section does not release its grid track, so the
+   track has to go to zero as well. With the property unset both rules fall back
+   to the artifact's own widths, so a workspace nobody has resized still renders
+   exactly as the port did.
+   ============================================================================= */
+@media (min-width: 881px) {
+  .wb-shell { grid-template-columns: var(--wb-rail-w, 56px) var(--wb-review-w, 340px) minmax(0, 1fr); }
+  /* The bench is placed by hand for one reason: a `display: none` section is not
+     a grid item at all, so with the panel collapsed auto-placement slid the
+     bench up into the empty second track and it rendered ~50px wide with the
+     toolbar wrapped into a column, while the third track sat empty at 1544px.
+     Zeroing the track is not enough — something has to hold the bench's column
+     while the item that used to precede it does not exist. Scoped above 880px:
+     below it the shell is a single column and a `grid-column: 3` would invent
+     two implicit tracks. */
+  .wb-bench { grid-column: 3; }
+}
+@media (min-width: 881px) and (max-width: 1180px) {
+  .wb-shell { grid-template-columns: var(--wb-rail-w, 56px) var(--wb-review-w, 300px) minmax(0, 1fr); }
+}
+
+/* The handle straddles the column's right border: 7px of hit area for a 1px
+   rule, which is what makes it findable with a mouse without widening anything
+   the eye can see. It is the section's own child rather than a fourth grid item
+   because the shell's three tracks are load-bearing everywhere else. */
+.wb-review { position: relative; }
+.wb-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: col-resize;
+  z-index: 3;
+  /* Without this a touch drag scrolls the panel instead of moving the handle. */
+  touch-action: none;
+}
+/* The paint is inset to the border's own line, so hovering lights up the rule
+   that is already there rather than adding a second one beside it. */
+.wb-resizer::before {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: transparent;
+  transition: background .15s ease;
+}
+.wb-resizer:hover::before,
+.wb-resizer:focus-visible::before,
+.wb-shell[data-resizing='true'] .wb-resizer::before {
+  background: var(--accent);
+}
+/* Held on the shell, not the handle: once the pointer is captured the cursor is
+   over the bench for most of the drag, and a text selection started on the way
+   past would survive the mouseup. */
+.wb-shell[data-resizing='true'] {
+  cursor: col-resize;
+  user-select: none;
+}
+/* ------------------------------------------------------- the expanded rail
+
+   The rail is 56px of centred icons in the artifact, which is learnable only by
+   clicking each one to find out what it does. Expanded it becomes a labelled
+   sidebar: the same targets in the same order, each showing the label it
+   already carried in `aria-label` and `title`.
+
+   The labels are in the markup at both widths and hidden here rather than
+   rendered conditionally — a tree that changes shape on toggle drops focus and
+   replays `wb-rise`, and there is nothing to gain for a span.
+
+   Everything below is scoped to `[data-rail='wide']` on the shell, so the
+   narrow rail is served entirely by the ported rules and stays byte-identical
+   to the artifact. */
+.wb-rail-label,
+.wb-wordmark { display: none; }
+
+@media (min-width: 881px) {
+  /* 9px here and 9px inside each target puts the icons at x=19, against x=18.5
+     centred in the narrow rail. Toggling therefore does not slide the icon
+     column sideways — it only reveals the text to its right. Same reason the
+     mark's margin is 6px: 15px in both states. */
+  .wb-shell[data-rail='wide'] .wb-rail {
+    align-items: stretch;
+    padding: 14px 9px;
+  }
+  /* The mark becomes a lockup: the 26px logo, 10px, the word. `display: flex`
+     has to beat the compensation block's `.wb-rail a.wb-mark { display: block }`
+     — the `[data-rail]` attribute carries enough specificity to do it. */
+  .wb-shell[data-rail='wide'] .wb-rail a.wb-mark {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 14px 6px;
+  }
+  /* `.wb-col-title`'s treatment, which is the workspace's own heading type.
+     Not `SiteHeader`'s 20px lockup: that one is sized for a 68px bar and would
+     tower over a 26px mark in a 208px rail. */
+  .wb-shell[data-rail='wide'] .wb-wordmark {
+    display: block;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 17px;
+    letter-spacing: -.025em;
+    color: var(--ink);
+  }
+
+  /* The artifact's 38px pill, stretched. Same height, same radius, same
+     transition — only the axis changes, from a centred grid to a row. */
+  .wb-shell[data-rail='wide'] .wb-rail button,
+  .wb-shell[data-rail='wide'] .wb-rail a:not(.wb-mark) {
+    width: 100%;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 0 9px;
+    text-align: left;
+  }
+  /* A flex row shrinks its children, and the icons are the one thing that must
+     not move by a pixel between the two widths. */
+  .wb-shell[data-rail='wide'] .wb-rail svg { flex: none; }
+
+  .wb-shell[data-rail='wide'] .wb-rail-label {
+    display: block;
+    font-family: var(--body);
+    font-size: 12.5px;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* The accent disc moves from the button to the initials inside it, and the
+     button itself goes plain. It must not become a full-width accent-washed
+     pill: that is exactly what `aria-current` paints a selected section as, and
+     an account slot wearing the selected-section treatment is the confusion the
+     signed-out slot was already fixed for once. Disc means identity, here as
+     everywhere. 3px of padding puts it at x=13, where it sits in the narrow
+     rail. */
+  .wb-shell[data-rail='wide'] .wb-rail .wb-avatar {
+    width: 100%;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 0 3px;
+    margin-top: 4px;
+    background: none;
+    border-color: transparent;
+    color: var(--ink-2);
+  }
+  .wb-shell[data-rail='wide'] .wb-initials {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--accent-wash);
+    border: 1px solid var(--accent-line);
+    color: var(--accent);
+  }
+}
+
+/* --------------------------------------------------- the config dialog
+
+   Down here for the same cascade reason as the shell rules above: every
+   selector below overrides one from the ported block, and a single-class rule
+   at the top of the file would lose to it on position.
+
+   The dialog was one 468px column carrying five sections, 792px tall in a 900px
+   window and still scrolling — document settings, credentials and the vault all
+   in one run. It is now two columns above 760px: the report on the left, the key
+   and its encrypted copy on the right. That is the split the code already makes
+   (`reportConfigStore`'s allowlist versus `keyVault`), it halves the height, and
+   it is the difference between a form you read and a form you scroll. Under
+   760px it collapses back to the single column, which is the artifact's own
+   arrangement and the only one that fits a phone. */
+.wb-root .wb-modal { max-width: 720px; }
+
+/* The dialog takes focus on open so the keyboard is inside it, and `.wb-root
+   :focus-visible` then painted a 2px accent ring around the whole 720px box —
+   the entire modal outlined in orange, which in dark mode reads as an error
+   state. The ring belongs on controls the user navigated to; this is a
+   container being handed focus programmatically. Every control inside keeps
+   its own ring, and the trap is what makes the focus position legible. */
+.wb-root .wb-modal:focus,
+.wb-root .wb-modal:focus-visible {
+  outline: none;
+}
+.wb-root .wb-modal-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: 20px 22px;
+}
+/* Each column keeps the body's old flex-column behaviour, so the sections
+   inside are spaced exactly as they were. `min-width: 0` because a grid track
+   otherwise refuses to shrink below its widest field. */
+.wb-modal-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .wb-root .wb-modal-body { grid-template-columns: 1fr; }
+}
+
+/* The row was `align-items: flex-start`, which was invisible while the field
+   and the button were both 30px and became a button stuck to the top of a 49px
+   field once they were not. Centred instead, and allowed to wrap: at 372px the
+   field was squeezed to 221px with the button beside it. */
+.wb-root .wb-keyrow {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.wb-root .wb-keyrow .wb-wrap { min-width: 190px; }
+
+/* Nothing to resize or expand once the layout has stacked: the rail is a
+   horizontal row there, and labels in a row would overflow it. The hide toggle
+   survives, because hiding is the one width change that still means something
+   in a single column. */
+@media (max-width: 880px) {
+  .wb-resizer,
+  .wb-rail [data-toggle-rail] { display: none; }
+}
+
 /* Scoped to the workspace. In the artifact this was a bare `* { ... !important }`,
    which is correct for a standalone page and wrong here: imported globally it
    killed every transition and animation in the whole app, and because headless

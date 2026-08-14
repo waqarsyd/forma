@@ -27,8 +27,11 @@ const PRODUCT: Link[] = [
 const ELSEWHERE: Link[] = [
   ['Get a Gemini key', 'https://aistudio.google.com/apikey'],
   ['DevExpress Reporting', 'https://www.devexpress.com/products/net/reporting/'],
-  ['Privacy', '/'],
-  ['Terms', '/'],
+  // Real pages since 2026-08-15. These pointed at '/' — a link that silently
+  // goes home rather than admitting it has nowhere to go, which is the failure
+  // mode `data-needs-url` exists to prevent and this pair slipped past.
+  ['Privacy', '/privacy'],
+  ['Terms', '/terms'],
 ];
 
 const HEADING =

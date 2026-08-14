@@ -654,15 +654,17 @@ export default function LoginPage({
               </button>
 
               {signup && (
-                // Both destinations are still data-needs-url placeholders, so
-                // this line goes live properly the moment those exist.
+                /* Both destinations are real pages as of 2026-08-15. Until then
+                   this sentence asked people to agree to two documents that did
+                   not exist, which is the one thing a consent line must never
+                   do. Do not let either of these fall back to a placeholder. */
                 <p className="font-body-lg text-[12.5px] leading-[1.55] text-[color:var(--ink-faint)]">
                   By creating an account you agree to the{' '}
-                  <a href="#" data-needs-url className="u-focus-ring font-semibold text-secondary hover:underline">
+                  <a href="/terms" className="u-focus-ring font-semibold text-secondary hover:underline">
                     Terms
                   </a>{' '}
                   and the{' '}
-                  <a href="#" data-needs-url className="u-focus-ring font-semibold text-secondary hover:underline">
+                  <a href="/privacy" className="u-focus-ring font-semibold text-secondary hover:underline">
                     Privacy policy
                   </a>
                   .
@@ -767,12 +769,11 @@ export default function LoginPage({
           <p className="font-body-lg text-[12.5px] text-[color:var(--ink-faint)]">
             © {YEAR} Forma. Designed &amp; built by <b className="font-bold text-secondary">Waqar Sayyed</b>.
           </p>
-          {/* Marked rather than faked: both of these pointed at "/" before. */}
           <div className="flex items-center gap-[18px]">
-            <a href="#" data-needs-url className="u-transition-fast font-body-lg text-[12.5px] text-[color:var(--ink-faint)] hover:text-secondary">
+            <a href="/privacy" className="u-transition-fast font-body-lg text-[12.5px] text-[color:var(--ink-faint)] hover:text-secondary">
               Privacy
             </a>
-            <a href="#" data-needs-url className="u-transition-fast font-body-lg text-[12.5px] text-[color:var(--ink-faint)] hover:text-secondary">
+            <a href="/terms" className="u-transition-fast font-body-lg text-[12.5px] text-[color:var(--ink-faint)] hover:text-secondary">
               Terms
             </a>
           </div>

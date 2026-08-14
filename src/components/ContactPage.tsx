@@ -243,22 +243,52 @@ export default function ContactPage({
             <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
           </div>
 
-          <div className="mt-[26px] grid items-start gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:gap-16">
+          {/* ------------------------------------------------------- hero
+
+              The headline carries `FeaturesPage`'s type exactly — `text-display-lg
+              md:text-[70px]`, `leading-[1.0]`, `tracking-[-0.042em]` — and the
+              accented trailing clause is that page's gesture verbatim, down to
+              the underline bar at `bottom-[0.12em]` and its 0.26 opacity. This is
+              the marketing pages' one shared headline treatment; a Contact page
+              drawing it at its own size is the drift `SiteHeader` was extracted
+              to stop.
+
+              **It sits above the grid, and it has to.** At 70px the first clause
+              measures 689px, while the left-hand column beside a 560px form is
+              492px from 1280px up — the container maxes out, so it never grows
+              past that. Inside the grid the clause broke in two and the type had
+              to shrink to stop it; across the container it lands on one line at
+              full size on its own, with no `nowrap` holding it there. That is
+              why there is nothing here but `inline-block`: the other two pages
+              carry exactly this markup, and a class that only this page needs
+              would be the beginning of the next drift. The grid below is
+              unchanged. */}
+          <h1 className="mt-[22px] font-display-lg text-display-lg md:text-[70px] font-extrabold leading-[1.0] tracking-[-0.042em] text-on-surface">
+            <span className="inline-block">Something not working,</span>{' '}
+            <span className="relative inline-block text-secondary">
+              or not making sense?
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-0 bottom-[0.12em] h-1 origin-left rounded-[2px] bg-secondary opacity-[0.26]"
+              />
+            </span>
+          </h1>
+          <p className="mt-6 max-w-[62ch] font-body-lg text-[clamp(17px,1.45vw,19.5px)] leading-[1.55] tracking-[-0.008em] text-on-surface-variant">
+            Forma is open source and looked after by one person, so messages come straight to a real inbox
+            rather than a ticket queue. A short note with the right detail gets a much faster answer than a
+            long one without it.
+          </p>
+
+          <div className="mt-12 grid items-start gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:gap-16">
             {/* ------------------------------------------------ routing */}
             <div>
-              <h1 className="font-display-lg text-[clamp(34px,5.2vw,52px)] font-extrabold leading-[1.04] tracking-[-0.038em] text-on-surface text-balance">
-                Something not working, or not making sense?
-              </h1>
-              <p className="mt-4 max-w-[54ch] font-body-lg text-[clamp(16.5px,1.3vw,18.5px)] leading-[1.58] text-on-surface-variant">
-                Forma is open source and looked after by one person, so messages come straight to a real inbox
-                rather than a ticket queue. A short note with the right detail gets a much faster answer than a
-                long one without it.
-              </p>
-
               {/* A contact page's first job is to answer the questions that
                   already have answers. Without this every "the layout came out
                   wrong" becomes an email, when troubleshooting covers it. */}
-              <div className="mt-7 rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[22px] py-5 shadow-[var(--shadow-sm)]">
+              {/* No top margin: with the headline promoted out of this column,
+                  this card is its first child and must start level with the
+                  form card beside it. */}
+              <div className="rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[22px] py-5 shadow-[var(--shadow-sm)]">
                 <div className="font-code-sm text-[9.5px] font-medium leading-[1.62] tracking-[0.14em] uppercase text-[color:var(--ink-faint)]">
                   Before you write
                 </div>

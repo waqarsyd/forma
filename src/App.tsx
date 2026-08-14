@@ -20,6 +20,8 @@ import {
   IconCheck,
   IconCheckCircle,
   IconChevronDown,
+  IconChevronsLeft,
+  IconChevronsRight,
   IconClose,
   IconCopy,
   IconDoc,
@@ -38,6 +40,7 @@ import {
   IconLayout,
   IconLogin,
   IconLogout,
+  IconPanelLeft,
   IconPaperclip,
   IconPause,
   IconPlay,
@@ -90,10 +93,12 @@ import { auth, db, logOut, handleFirestoreError, OperationType } from './service
 import { collection, onSnapshot, query, setDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import LoginPage from './components/LoginPage';
+import AccountDialog from './components/AccountDialog';
 import LandingPage from './components/LandingPage';
 import FeaturesPage from './components/FeaturesPage';
 import DocsPage from './components/DocsPage';
 import ContactPage from './components/ContactPage';
+import LegalPage, { type LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
@@ -103,6 +108,13 @@ import { sourceRectFor } from './lib/sourceRect';
 import { pingDesigner, sendToDesigner, designerFileName } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
+import {
+  clampReviewWidth,
+  readReviewWidth,
+  REVIEW_DEFAULT_WIDTH,
+  REVIEW_MIN_WIDTH,
+  REVIEW_MAX_WIDTH,
+} from './lib/panelSize';
 
 interface DesignResult {
   content: string;
@@ -1064,10 +1076,67 @@ const ROUTE_TITLES: Record<string, string> = {
   '/login': 'Sign in — Forma',
   '/signup': 'Create account — Forma',
   '/workspace': 'Workspace — Forma',
+  '/terms': 'Terms of use — Forma',
+  '/privacy': 'Privacy policy — Forma',
 };
 
 /** Which panel the rail's second column is showing. */
 type RailPanel = 'review' | 'projects' | 'history';
+
+/**
+ * The review column's own geometry, remembered between sessions.
+ *
+ * Separate keys rather than a slot in `reportConfig`: that object is an
+ * allowlist of settings that describe the *document* and is read back into the
+ * config the model is given (see `reportConfigStore.ts`). How wide someone
+ * likes their panel is not a report setting and must not travel with one.
+ */
+const REVIEW_WIDTH_KEY = 'reviewWidth';
+const REVIEW_COLLAPSED_KEY = 'reviewCollapsed';
+const RAIL_EXPANDED_KEY = 'railExpanded';
+
+/**
+ * Bump when a stored width stops meaning what it meant, and a browser carrying
+ * the old one is worse off than one carrying nothing.
+ *
+ * Epoch 2 retires what the rail's widen button wrote. That button jumped the
+ * column to 1000px and was removed the day it shipped; a browser that had
+ * clicked it was left with a chat column filling two thirds of the window, and
+ * the only way back was a double-click on a 7px divider nobody knows to try.
+ * Persisted state that outlives the control that set it is not a preference,
+ * it is a trap — so it is dropped once, here, rather than left for the user to
+ * discover a gesture for.
+ */
+const REVIEW_WIDTH_EPOCH = '2';
+const REVIEW_WIDTH_EPOCH_KEY = 'reviewWidthEpoch';
+
+/**
+ * The remembered column width, or the default if this browser has not caught up
+ * to the current epoch. Guarded: `localStorage` throws outright in a
+ * locked-down profile, and the workspace still has to open.
+ */
+function rememberedReviewWidth(): number {
+  try {
+    if (localStorage.getItem(REVIEW_WIDTH_EPOCH_KEY) !== REVIEW_WIDTH_EPOCH) {
+      localStorage.removeItem(REVIEW_WIDTH_KEY);
+      localStorage.setItem(REVIEW_WIDTH_EPOCH_KEY, REVIEW_WIDTH_EPOCH);
+      return REVIEW_DEFAULT_WIDTH;
+    }
+    return readReviewWidth(localStorage.getItem(REVIEW_WIDTH_KEY));
+  } catch {
+    return REVIEW_DEFAULT_WIDTH;
+  }
+}
+
+/**
+ * The rail's two widths.
+ *
+ * 56px is the artifact's, and the icons are centred in it. Expanded it shows
+ * the label beside each icon — wide enough for the longest of them at 12.5px
+ * and no wider, because every pixel here comes off the bench.
+ */
+const RAIL_WIDTH = 56;
+const RAIL_EXPANDED_WIDTH = 208;
 
 /**
  * Initials for the rail's account button. Two letters at most — the artifact's
@@ -1137,7 +1206,157 @@ export default function App() {
      drawer over the canvas. */
   const [railPanel, setRailPanel] = useState<RailPanel>('review');
   const [showWorkspaceProfile, setShowWorkspaceProfile] = useState(false);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  /* Bumped when the account panel changes the profile. `updateProfile` mutates
+     the Firebase `User` in place and fires no auth-state event, so this is what
+     makes the rail show the new name without a reload. */
+  const [profileTick, setProfileTick] = useState(0);
+  /* Read through a memo so the tick is a real dependency rather than a state
+     variable nobody consumes: the `user` object's identity never changes on a
+     rename, so `[user]` alone would never recompute this. */
+  const accountName = useMemo(
+    () => user?.displayName || user?.email || 'Signed in',
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user, profileTick],
+  );
   const workspaceProfileRef = useRef<HTMLDivElement>(null);
+
+  /* The column's width and whether it is showing at all. Both persist: a panel
+     you have to re-widen on every reload is one you stop widening. `localStorage`
+     can throw outright in a locked-down profile, so every access is guarded —
+     the workspace must still open, just without the memory. */
+  const [reviewWidth, setReviewWidth] = useState(rememberedReviewWidth);
+  const [isReviewCollapsed, setIsReviewCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(REVIEW_COLLAPSED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  /* The rail's own state. Independent of the column beside it: they are two
+     different objects and hiding one has never meant anything about the other. */
+  const [isRailExpanded, setIsRailExpanded] = useState(() => {
+    try {
+      return localStorage.getItem(RAIL_EXPANDED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const toggleRail = () => {
+    setIsRailExpanded((prev) => {
+      try {
+        localStorage.setItem(RAIL_EXPANDED_KEY, String(!prev));
+      } catch {
+        /* storage disabled — the choice still applies for this session */
+      }
+      return !prev;
+    });
+  };
+
+  const [isResizingReview, setIsResizingReview] = useState(false);
+  /* Where the pointer went down, and how wide the column was then. Deltas from
+     that origin rather than "pointer position minus rail width", so a fast drag
+     cannot slew the column by however far the pointer got ahead of the paint. */
+  const reviewResizeFrom = useRef({ x: 0, width: REVIEW_DEFAULT_WIDTH });
+
+  /* The stored width is what the user asked for; this is what fits right now.
+     Keeping the two apart is what lets a 700px column survive a spell on a
+     laptop and come back at 700 rather than at whatever the laptop allowed. */
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  /* `panelSize.ts` reserves room for a 56px rail. An expanded one takes its
+     extra out of the same window, so the clamp is handed a viewport that has
+     already paid for it — otherwise widening the rail and then the column
+     leaves the bench 152px short of the reserve it was promised. */
+  const railWidth = isRailExpanded ? RAIL_EXPANDED_WIDTH : RAIL_WIDTH;
+  const layoutWidth = viewportWidth - (railWidth - RAIL_WIDTH);
+  const appliedReviewWidth = clampReviewWidth(reviewWidth, layoutWidth);
+
+  const rememberReviewWidth = useCallback((width: number) => {
+    try {
+      localStorage.setItem(REVIEW_WIDTH_KEY, String(width));
+    } catch {
+      /* storage disabled — the width still applies for this session */
+    }
+  }, []);
+  const rememberReviewCollapsed = useCallback((collapsed: boolean) => {
+    try {
+      localStorage.setItem(REVIEW_COLLAPSED_KEY, String(collapsed));
+    } catch {
+      /* storage disabled — the choice still applies for this session */
+    }
+  }, []);
+
+  const toggleReviewPanel = useCallback(() => {
+    setIsReviewCollapsed((prev) => {
+      rememberReviewCollapsed(!prev);
+      return !prev;
+    });
+  }, [rememberReviewCollapsed]);
+
+  /* Every route into the second column goes through here, so that choosing a
+     section while the panel is hidden shows it rather than switching a section
+     nobody can see. The rail's toggle is the only control that hides it. */
+  const showRailPanel = useCallback((panel: RailPanel) => {
+    setRailPanel(panel);
+    setIsReviewCollapsed(false);
+    rememberReviewCollapsed(false);
+  }, [rememberReviewCollapsed]);
+
+  const beginReviewResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    // Stops the drag from being interpreted as a text selection or an image drag
+    // in the panel it starts against.
+    e.preventDefault();
+    reviewResizeFrom.current = { x: e.clientX, width: appliedReviewWidth };
+    // Capture, so the rest of the drag is delivered here even though the pointer
+    // spends it over the bench.
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsResizingReview(true);
+  };
+  const moveReviewResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isResizingReview) return;
+    const { x, width } = reviewResizeFrom.current;
+    setReviewWidth(clampReviewWidth(width + (e.clientX - x), layoutWidth));
+  };
+  const endReviewResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isResizingReview) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    setIsResizingReview(false);
+    // Written once, at the end. A setItem per pointermove is a disk write per
+    // frame for a value only the last of which matters.
+    rememberReviewWidth(reviewWidth);
+  };
+  const resetReviewWidth = () => {
+    setReviewWidth(REVIEW_DEFAULT_WIDTH);
+    rememberReviewWidth(REVIEW_DEFAULT_WIDTH);
+  };
+  /* The handle is a real control, not a hover affordance: it takes focus and the
+     arrow keys move it, which is the whole of the WAI-ARIA window-splitter
+     pattern and the only way to resize this without a pointer. */
+  const onReviewResizeKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    let next: number | null = null;
+    const step = e.shiftKey ? 64 : 16;
+
+    if (e.key === 'ArrowLeft') next = appliedReviewWidth - step;
+    else if (e.key === 'ArrowRight') next = appliedReviewWidth + step;
+    else if (e.key === 'Home') next = REVIEW_MIN_WIDTH;
+    else if (e.key === 'End') next = REVIEW_MAX_WIDTH;
+    else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleReviewPanel();
+      return;
+    } else return;
+
+    e.preventDefault();
+    const clamped = clampReviewWidth(next, layoutWidth);
+    setReviewWidth(clamped);
+    rememberReviewWidth(clamped);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1183,6 +1402,8 @@ export default function App() {
         case '/features':
         case '/docs':
         case '/contact':
+        case '/terms':
+        case '/privacy':
           setShowWorkspace(false);
           setShowLogin(false);
           setLastViewPath(path);
@@ -1481,6 +1702,81 @@ export default function App() {
     configSnapshotRef.current = null;
     setIsConfigOpen(false);
   };
+
+  /**
+   * The dialog's keyboard contract, which `role="dialog" aria-modal="true"`
+   * promises and nothing was keeping.
+   *
+   * Three things were wrong, all confirmed in a real browser rather than
+   * reasoned about: Escape did nothing (only the attachment lightbox listened
+   * for it), focus stayed on `document.body` when the dialog opened, and Tab
+   * from the Save button walked out into the rail behind the scrim — a set of
+   * controls the user cannot see and did not ask for.
+   *
+   * The dismiss function is reached through a ref so this effect depends on
+   * `isConfigOpen` alone. Listing the handler instead would re-run the whole
+   * effect on every render, which means re-focusing the dialog on every
+   * keystroke typed into it.
+   */
+  const configDialogRef = useRef<HTMLDivElement>(null);
+  const dismissConfigRef = useRef(dismissConfigWithoutSaving);
+  dismissConfigRef.current = dismissConfigWithoutSaving;
+
+  useEffect(() => {
+    if (!isConfigOpen) return;
+
+    const dialog = configDialogRef.current;
+    const returnFocusTo = document.activeElement as HTMLElement | null;
+    // The dialog itself, not its first field: landing on a <select> lets a
+    // stray arrow key change the DevExpress version before the user has read
+    // which one it is on.
+    dialog?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        dismissConfigRef.current();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialog) return;
+
+      // Recomputed per keystroke: the vault section appears and disappears, and
+      // Clear only exists once there is a key to clear.
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null);
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      // Back to the rail button that opened it, not to nowhere.
+      returnFocusTo?.focus?.();
+    };
+  }, [isConfigOpen]);
+
+  /* A check result belongs to the session it was run in. Left alone, "That key
+     looks valid" was still sitting there the next time the dialog opened, over
+     a key that may since have been cleared. */
+  useEffect(() => {
+    if (!isConfigOpen) {
+      setKeyCheck(null);
+      setVaultNotice(null);
+    }
+  }, [isConfigOpen]);
 
   const saveConfigAndClose = () => {
     configSnapshotRef.current = null;
@@ -2583,10 +2879,29 @@ export default function App() {
     const isFeatures = currentRoute === '/features';
     const isDocs = currentRoute === '/docs';
     const isContact = currentRoute === '/contact';
+    const legalDoc: LegalDoc | null =
+      currentRoute === '/terms' ? 'terms' : currentRoute === '/privacy' ? 'privacy' : null;
 
     return (
       <div className="h-full w-full">
-        {isFeatures ? (
+        {legalDoc ? (
+          <LegalPage
+            doc={legalDoc}
+            onEnterWorkspace={() => {
+              navigate('/workspace');
+            }}
+            onSignIn={() => {
+              navigate('/login');
+            }}
+            onSignUp={() => {
+              navigate('/signup');
+            }}
+            user={user}
+            logOut={handleLogOut}
+            isDarkMode={isDarkMode}
+            setIsDarkMode={setTheme}
+          />
+        ) : isFeatures ? (
           <FeaturesPage
             onEnterWorkspace={() => {
               navigate('/workspace');
@@ -2689,14 +3004,31 @@ export default function App() {
       aria-current={railPanel === panel}
       title={label}
       aria-label={label}
-      onClick={() => setRailPanel(panel)}
+      onClick={() => showRailPanel(panel)}
     >
       {icon}
+      {/* Present in every state and hidden by CSS while the rail is narrow —
+          the label is what the rail expands to show, and rendering it
+          conditionally would mean the expanded rail mounts a different tree
+          than the one whose focus and aria-current the user was just using. */}
+      <span className="wb-rail-label">{label}</span>
     </button>
   );
 
   return (
-    <div className="sheet wb-root wb-shell">
+    <div
+      className="sheet wb-root wb-shell"
+      /* The first two tracks. The review column's is 0 while the panel is
+         hidden — a `display: none` section keeps its grid track otherwise. Both
+         are read by the rules at the foot of workspace.css, which explain why
+         they are down there rather than at the top with everything else. */
+      style={{
+        '--wb-rail-w': `${railWidth}px`,
+        '--wb-review-w': isReviewCollapsed ? '0px' : `${appliedReviewWidth}px`,
+      } as React.CSSProperties}
+      data-resizing={isResizingReview ? 'true' : undefined}
+      data-rail={isRailExpanded ? 'wide' : undefined}
+    >
       {/* ============================================================== rail */}
       <nav className="wb-rail" aria-label="Sections">
         {/* The mark is a home link, as it is in SiteHeader on all five marketing
@@ -2709,16 +3041,56 @@ export default function App() {
             right-clickable and middle-clickable. */}
         <a href="/" className="wb-mark" title="Back to the home page" aria-label="Forma — home page">
           <Logo size={26} />
+          {/* The lockup the five marketing pages carry in `SiteHeader`, at the
+              workspace's own type scale. Hidden with the rest of the labels
+              while the rail is narrow: 56px has never had room for it. */}
+          <span className="wb-wordmark">Forma</span>
         </a>
+
+        {/* The rail's own expander, directly under the mark because it is about
+            the navigation rather than about anything the navigation reaches.
+            Expanded, every target here gains the label it already carries in
+            `aria-label` — the icons alone are learnable, but only after you have
+            clicked each one once to find out. */}
+        <button
+          data-toggle-rail
+          title={isRailExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
+          aria-label={isRailExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
+          aria-expanded={isRailExpanded}
+          onClick={toggleRail}
+        >
+          {isRailExpanded ? <IconChevronsLeft size={19} /> : <IconChevronsRight size={19} />}
+          <span className="wb-rail-label">Collapse</span>
+        </button>
+
         {railBtn('review', 'Current report', <IconLayout size={19} />)}
         {railBtn('projects', 'Saved projects', <IconFolder size={19} />)}
         {railBtn('history', 'Recent', <IconHistory size={19} />)}
         <button data-open-config title="Configure" aria-label="Configure" onClick={() => setIsConfigOpen(true)}>
           <IconTune size={19} />
+          <span className="wb-rail-label">Configure</span>
+        </button>
+
+        {/* The panel's only hide control, and the only way back once it is
+            hidden — which is why it lives in the rail rather than in the panel
+            it collapses. `aria-expanded` rather than `aria-current`: that
+            attribute is the rail's "this section is showing" paint, and this is
+            not a section. */}
+        <button
+          data-toggle-panel
+          title={isReviewCollapsed ? 'Show the side panel' : 'Hide the side panel'}
+          aria-label={isReviewCollapsed ? 'Show the side panel' : 'Hide the side panel'}
+          aria-expanded={!isReviewCollapsed}
+          aria-controls="wb-review-panel"
+          onClick={toggleReviewPanel}
+        >
+          <IconPanelLeft size={19} />
+          <span className="wb-rail-label">{isReviewCollapsed ? 'Show panel' : 'Hide panel'}</span>
         </button>
         <span className="wb-spacer" />
         <button title="Switch theme" aria-label="Switch theme" onClick={() => setTheme(!isDarkMode)}>
           {isDarkMode ? <IconSun size={18} /> : <IconMoon size={18} />}
+          <span className="wb-rail-label">{isDarkMode ? 'Light theme' : 'Dark theme'}</span>
         </button>
 
         {/*
@@ -2738,18 +3110,28 @@ export default function App() {
               className="wb-avatar"
               aria-label="Account"
               aria-expanded={showWorkspaceProfile}
-              title={`${user.displayName || user.email} — account`}
+              title={`${accountName} — account`}
               onClick={(e) => { e.stopPropagation(); setShowWorkspaceProfile(!showWorkspaceProfile); }}
             >
-              {initialsOf(user)}
+              <span className="wb-initials">{initialsOf(user)}</span>
+              <span className="wb-rail-label">{user.displayName || 'Account'}</span>
             </button>
 
             {showWorkspaceProfile && (
               <div className="wb-pop" role="menu" ref={workspaceProfileRef}>
                 <div className="wb-who">
-                  <b>{user.displayName || 'Signed in'}</b>
+                  <b>{accountName}</b>
                   <span>{user.email}</span>
                 </div>
+                {/* The only route to account settings. Deliberately above Sign
+                    out: the destructive-adjacent item goes last. */}
+                <button
+                  role="menuitem"
+                  onClick={() => { setShowWorkspaceProfile(false); setIsAccountOpen(true); }}
+                >
+                  <IconShieldCheck size={15} />
+                  Account settings
+                </button>
                 <button
                   role="menuitem"
                   className="wb-danger"
@@ -2764,13 +3146,15 @@ export default function App() {
         ) : (
           <a href="/login" title="Sign in" aria-label="Sign in">
             <IconLogin size={19} />
+            <span className="wb-rail-label">Sign in</span>
           </a>
         )}
       </nav>
 
       {/* ============================================================ review */}
       <section
-        className="wb-review wb-rise wb-rise-1"
+        id="wb-review-panel"
+        className={`wb-review wb-rise wb-rise-1${isReviewCollapsed ? ' wb-hidden' : ''}`}
         aria-label="Session"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -2781,7 +3165,7 @@ export default function App() {
         <div className="wb-actions">
           <button
             className="wb-pill wb-pill--accent wb-grow"
-            onClick={() => { handleClearChat(); setRailPanel('review'); }}
+            onClick={() => { handleClearChat(); showRailPanel('review'); }}
           >
             <IconPlus size={14} />
             New report
@@ -2790,7 +3174,7 @@ export default function App() {
             className="wb-pill wb-pill--outline"
             title="Search projects"
             aria-label="Search projects"
-            onClick={() => setRailPanel('projects')}
+            onClick={() => showRailPanel('projects')}
           >
             <IconSearch size={14} />
           </button>
@@ -2802,6 +3186,29 @@ export default function App() {
             <span className="wb-col-title">Review</span>
             <span className="wb-kicker">{messages.length === 1 ? '1 note' : `${messages.length} notes`}</span>
           </div>
+
+          {/* Unverified means an address nobody has proved they can read. It is
+              a nudge, not a gate: nothing here is withheld until it is done,
+              because the account only ever holds this person's own reports and
+              locking them out of their own work would cost more than it buys.
+              Google accounts never see this — the popup already proved it. */}
+          {user && !user.emailVerified && user.providerData.some((p) => p.providerId === 'password') && (
+            <div style={{ padding: '12px 20px 0' }}>
+              <div className="wb-note-line wb-warn">
+                <span className="wb-ic"><IconWarn size={13} /></span>
+                <span>
+                  <b>Verify your email.</b> We sent a link when you created the account.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setIsAccountOpen(true)}
+                    style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    Send it again
+                  </button>
+                </span>
+              </div>
+            </div>
+          )}
 
           <div className="wb-thread">
             {messages.map((msg) => (
@@ -3122,6 +3529,29 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {/* The column's right edge, made draggable. Last child so it paints over
+            the three panel bodies, and inside the section rather than beside it
+            because the shell's three grid tracks are load-bearing everywhere
+            else — a fourth item would land in the bench's track. */}
+        <div
+          className="wb-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the side panel"
+          aria-controls="wb-review-panel"
+          aria-valuenow={appliedReviewWidth}
+          aria-valuemin={REVIEW_MIN_WIDTH}
+          aria-valuemax={REVIEW_MAX_WIDTH}
+          tabIndex={0}
+          title="Drag to resize · double-click to reset"
+          onPointerDown={beginReviewResize}
+          onPointerMove={moveReviewResize}
+          onPointerUp={endReviewResize}
+          onPointerCancel={endReviewResize}
+          onDoubleClick={resetReviewWidth}
+          onKeyDown={onReviewResizeKey}
+        />
       </section>
 
       {/* ============================================================= bench */}
@@ -3238,7 +3668,17 @@ export default function App() {
       {/* =========================================================== modals */}
       {isConfigOpen && (
         <div className="wb-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) dismissConfigWithoutSaving(); }}>
-          <div className="wb-modal wb-reg-marks" role="dialog" aria-modal="true" aria-labelledby="config-title">
+          <div
+            className="wb-modal wb-reg-marks"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="config-title"
+            ref={configDialogRef}
+            /* Focusable only programmatically: the effect above puts focus here
+               on open so the dialog is where the keyboard is, without making it
+               a Tab stop of its own afterwards. */
+            tabIndex={-1}
+          >
             <div className="wb-modal-head">
               <h2 id="config-title">Report configuration</h2>
               <button className="wb-pill wb-pill--round" onClick={dismissConfigWithoutSaving} aria-label="Close without saving">
@@ -3246,45 +3686,39 @@ export default function App() {
               </button>
             </div>
 
+            {/* Two columns above 760px, one below — see workspace.css. The split
+                is the one the code already makes: everything on the left is a
+                property of the document and goes through `reportConfigStore`'s
+                allowlist; everything on the right is the key, which goes to
+                `sessionStorage` and the vault and must never travel with it. */}
             <div className="wb-modal-body">
+              <div className="wb-modal-col">
               <div className="wb-fset">
                 <div className="wb-eyebrow"><b>x 000</b>Output<span className="wb-fade" /></div>
-                <div>
-                  <label className="wb-lbl" htmlFor="cfg-ver">DevExpress version</label>
-                  <span className="wb-sel">
-                    <select
-                      className="wb-ctl"
-                      id="cfg-ver"
-                      value={config.version}
-                      onChange={(e) => setConfig({ ...config, version: e.target.value })}
-                    >
-                      <option value="24.1">v24.1</option>
-                      <option value="23.2">v23.2</option>
-                      <option value="23.1">v23.1</option>
-                      <option value="22.2">v22.2</option>
-                      {/* 20.1 is here because the target ERP is built against
-                          DevExpress.XtraReports.v20.1 and its templates declare
-                          SerializerVersion 20.1.3.0. A newer .repx does not open
-                          in an older designer, so without this option Forma
-                          cannot produce a file that ERP can edit. */}
-                      <option value="20.1">v20.1</option>
-                    </select>
-                    <IconChevronDown size={13} className="wb-caret" />
-                  </span>
-                </div>
+                {/* The two short values share a row and the long one takes the
+                    width. The other way round — version alone, unit beside page
+                    size — is what the single-column dialog did, and in a 328px
+                    column it clipped the unit to "Hundredths of an". */}
                 <div className="wb-grid2">
                   <div>
-                    <label className="wb-lbl" htmlFor="cfg-unit">Report unit</label>
+                    <label className="wb-lbl" htmlFor="cfg-ver">DevExpress version</label>
                     <span className="wb-sel">
                       <select
                         className="wb-ctl"
-                        id="cfg-unit"
-                        value={config.unit}
-                        onChange={(e) => setConfig({ ...config, unit: e.target.value })}
+                        id="cfg-ver"
+                        value={config.version}
+                        onChange={(e) => setConfig({ ...config, version: e.target.value })}
                       >
-                        <option value="HundredthsOfAnInch">HundredthsOfAnInch</option>
-                        <option value="TenthsOfAMillimeter">TenthsOfAMillimeter</option>
-                        <option value="Pixels">Pixels</option>
+                        <option value="24.1">v24.1</option>
+                        <option value="23.2">v23.2</option>
+                        <option value="23.1">v23.1</option>
+                        <option value="22.2">v22.2</option>
+                        {/* 20.1 is here because the target ERP is built against
+                            DevExpress.XtraReports.v20.1 and its templates declare
+                            SerializerVersion 20.1.3.0. A newer .repx does not open
+                            in an older designer, so without this option Forma
+                            cannot produce a file that ERP can edit. */}
+                        <option value="20.1">v20.1</option>
                       </select>
                       <IconChevronDown size={13} className="wb-caret" />
                     </span>
@@ -3305,6 +3739,28 @@ export default function App() {
                       <IconChevronDown size={13} className="wb-caret" />
                     </span>
                   </div>
+                </div>
+                <div>
+                  <label className="wb-lbl" htmlFor="cfg-unit">Report unit</label>
+                  <span className="wb-sel">
+                    <select
+                      className="wb-ctl"
+                      id="cfg-unit"
+                      value={config.unit}
+                      onChange={(e) => setConfig({ ...config, unit: e.target.value })}
+                    >
+                      {/* The label is prose, the value is still the exact
+                          DevExpress enum that goes into the XML. The enum names
+                          were the labels and did not fit the field —
+                          "HundredthsOfAnInch" rendered as "HundredthsOfAnIr…",
+                          which is a worse thing to show than the words it
+                          stands for. */}
+                      <option value="HundredthsOfAnInch">Hundredths of an inch</option>
+                      <option value="TenthsOfAMillimeter">Tenths of a millimetre</option>
+                      <option value="Pixels">Pixels</option>
+                    </select>
+                    <IconChevronDown size={13} className="wb-caret" />
+                  </span>
                 </div>
               </div>
 
@@ -3354,6 +3810,9 @@ export default function App() {
                 </div>
               </div>
 
+              </div>
+
+              <div className="wb-modal-col">
               <div className="wb-fset">
                 <div className="wb-eyebrow"><b>key</b>Your Gemini key<span className="wb-fade" /></div>
                 <div>
@@ -3370,6 +3829,17 @@ export default function App() {
                         style={{ paddingRight: 38 }}
                         value={config.customApiKey || ''}
                         onChange={(e) => setConfig({ ...config, customApiKey: e.target.value })}
+                        /* The whole point of this app is that the key is not
+                           written to disk. A password manager offering to save
+                           it, or the browser offering to fill it, undoes that
+                           from outside — and the field is revealed as plain text
+                           by the eye button, where autocorrect would happily
+                           rewrite an API key. */
+                        aria-describedby="cfg-key-note"
+                        autoComplete="off"
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        spellCheck={false}
                       />
                       <button
                         className="wb-peek"
@@ -3379,7 +3849,16 @@ export default function App() {
                         {showApiKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
                       </button>
                     </span>
-                    <button className="wb-pill wb-pill--outline" onClick={handleCheckKey}>Check key</button>
+                    {/* Disabled while it runs: the check is a network round trip
+                        to Google, and nothing about the button said so, so a
+                        second click fired a second request. */}
+                    <button
+                      className="wb-pill wb-pill--outline"
+                      onClick={handleCheckKey}
+                      disabled={vaultBusy || !(config.customApiKey || '').trim()}
+                    >
+                      {vaultBusy ? 'Checking…' : 'Check key'}
+                    </button>
                     {hasApiKey && (
                       <button className="wb-pill" onClick={handleClearKeyFromSession} title="Clear the key from this tab">
                         Clear
@@ -3395,7 +3874,7 @@ export default function App() {
                   </div>
                 )}
 
-                <div className="wb-note-line">
+                <div className="wb-note-line" id="cfg-key-note">
                   <span className="wb-ic"><IconKey size={13} /></span>
                   <span>
                     The key goes from this browser straight to Google. It is held for this tab
@@ -3417,6 +3896,11 @@ export default function App() {
                         placeholder="At least 8 characters"
                         value={passphrase}
                         onChange={(e) => setPassphrase(e.target.value)}
+                        /* `new-password` rather than `off`: this is the one
+                           field a manager may legitimately generate for, and it
+                           stops it being autofilled with the account password,
+                           which would silently become the vault passphrase. */
+                        autoComplete="new-password"
                       />
                     </div>
                     <div>
@@ -3428,6 +3912,7 @@ export default function App() {
                         placeholder="Confirm passphrase"
                         value={passphraseConfirm}
                         onChange={(e) => setPassphraseConfirm(e.target.value)}
+                        autoComplete="new-password"
                       />
                     </div>
                   </div>
@@ -3463,6 +3948,7 @@ export default function App() {
                   </div>
                 </div>
               )}
+              </div>
             </div>
 
             <div className="wb-modal-foot">
@@ -3471,6 +3957,20 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Rendered from the shell rather than from the rail's menu, which
+          unmounts the moment it is clicked.
+
+          Deliberately not keyed on `profileTick`: re-keying would remount the
+          panel and throw away the fields and the "Name updated." line the user
+          just earned. The counter only has to re-render this component. */}
+      {isAccountOpen && user && (
+        <AccountDialog
+          user={user}
+          onClose={() => setIsAccountOpen(false)}
+          onProfileUpdated={() => setProfileTick((n) => n + 1)}
+        />
       )}
 
       {fullScreenImage && (

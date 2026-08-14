@@ -1,6 +1,23 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
+  updatePassword,
+  verifyBeforeUpdateEmail,
+  deleteUser,
+  type User,
+} from 'firebase/auth';
+import { getFirestore, doc, getDocFromServer, collection, getDocs, deleteDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -21,7 +38,93 @@ export const signUpWithEmail = async (email: string, password: string, displayNa
   if (displayName && result.user) {
     await updateProfile(result.user, { displayName });
   }
+
+  // Sent here rather than left to the caller, so every account created through
+  // this app gets one. Deliberately not awaited into the failure path: a mail
+  // service having a bad minute must not turn a successful sign-up into an
+  // error, and the account page can resend.
+  sendEmailVerification(result.user).catch((error) => {
+    console.warn('Could not send the verification email:', error);
+  });
+
   return result.user;
+};
+
+/** Resend, from the account panel, when the first one never arrived. */
+export const sendVerificationEmail = async (user: User) => {
+  await sendEmailVerification(user);
+};
+
+/**
+ * Whether this account signs in with a password at all.
+ *
+ * A Google account has no password to re-enter, and asking for one would be a
+ * field nobody can fill. Everything below branches on this rather than assuming
+ * one provider.
+ */
+export const hasPasswordProvider = (user: User) =>
+  user.providerData.some((p) => p.providerId === 'password');
+
+/**
+ * Firebase requires a recent sign-in before a password change, an email change
+ * or account deletion, and refuses with `auth/requires-recent-login` otherwise.
+ * Password accounts re-enter their password; Google accounts go back through
+ * the popup.
+ */
+export const reauthenticate = async (user: User, password?: string) => {
+  if (hasPasswordProvider(user)) {
+    if (!user.email) throw new Error('This account has no email address to re-authenticate with.');
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password ?? ''));
+    return;
+  }
+  await reauthenticateWithPopup(user, googleProvider);
+};
+
+export const changePassword = async (user: User, currentPassword: string, nextPassword: string) => {
+  await reauthenticate(user, currentPassword);
+  await updatePassword(user, nextPassword);
+};
+
+/**
+ * `verifyBeforeUpdateEmail`, not `updateEmail`: the address only changes once
+ * the new one has been clicked through, so a typo cannot lock someone out of
+ * their own account, and Firebase rejects the direct call outright when email
+ * enumeration protection is on.
+ */
+export const requestEmailChange = async (user: User, newEmail: string, password?: string) => {
+  await reauthenticate(user, password);
+  await verifyBeforeUpdateEmail(user, newEmail);
+};
+
+export const setDisplayName = async (user: User, displayName: string) => {
+  await updateProfile(user, { displayName });
+};
+
+/**
+ * Delete the account **and everything stored under it**.
+ *
+ * Order matters and is not interchangeable: the documents live under
+ * `users/{uid}/…` and `firestore.rules` only lets the signed-in owner touch
+ * them, so they have to go while that account still exists. Deleting the user
+ * first would leave the reports and the encrypted key behind with no one able
+ * to reach them — orphaned data that the person asking to be forgotten cannot
+ * get rid of.
+ *
+ * The vault delete is tolerated failing: most accounts never stored a key, and
+ * `deleteDoc` on a missing document is a no-op rather than an error, but a
+ * rules edge should not block the deletion the user actually asked for.
+ */
+export const deleteAccountAndData = async (user: User, password?: string) => {
+  await reauthenticate(user, password);
+
+  const reports = await getDocs(collection(db, 'users', user.uid, 'reports'));
+  await Promise.all(reports.docs.map((entry) => deleteDoc(entry.ref)));
+
+  await deleteDoc(doc(db, 'users', user.uid, 'vault', 'geminiKey')).catch((error) => {
+    console.warn('Could not remove the stored key while deleting the account:', error);
+  });
+
+  await deleteUser(user);
 };
 
 export const signInWithGoogle = async () => {

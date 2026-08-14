@@ -19,7 +19,11 @@ import { IconSun, IconMoon } from './landing/icons';
  * overlap.
  */
 
-export type NavItem = 'Product' | 'Features' | 'Docs' | 'Contact';
+/**
+ * `'none'` is for pages that are not in the nav at all — Terms and Privacy.
+ * Passing one of the four instead would light a link the reader is not on.
+ */
+export type NavItem = 'Product' | 'Features' | 'Docs' | 'Contact' | 'none';
 
 const LINKS: Array<{ label: NavItem; href: string }> = [
   { label: 'Product', href: '/' },

@@ -251,7 +251,6 @@ export default function DocsPage({
   const [helpful, setHelpful] = useState<boolean | null>(null);
   const [sent, setSent] = useState(false);
   const [comment, setComment] = useState('');
-  const [progress, setProgress] = useState(0);
   const docRef = useRef<HTMLDivElement>(null);
 
   const q = query.trim().toLowerCase();
@@ -260,17 +259,6 @@ export default function DocsPage({
     const s = SECTIONS.find((x) => x.id === id);
     return !!s && `${s.title} ${s.keys}`.toLowerCase().includes(q);
   };
-
-  // Reading progress, and nothing else on scroll — the ruler owns its own.
-  useEffect(() => {
-    const onScroll = () => {
-      const max = Math.max(1, document.body.scrollHeight - window.innerHeight);
-      setProgress(Math.min(1, window.scrollY / max) * 100);
-    };
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
 
   // Which section am I in. The bottom margin keeps the highlight on the
   // section you are reading rather than the one just entering the viewport.
@@ -294,11 +282,6 @@ export default function DocsPage({
 
   return (
     <div className="landing font-body-lg text-[16px] leading-[1.62] bg-surface text-on-surface min-h-screen flex flex-col">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-x-0 top-0 z-[200] h-0.5 origin-left bg-secondary"
-        style={{ transform: `scaleX(${progress / 100})` }}
-      />
       <SheetRuler />
       <SiteHeader
         active="Docs"
@@ -322,8 +305,20 @@ export default function DocsPage({
               Documentation
               <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
             </div>
+            {/* The accented trailing clause the other marketing pages carry —
+                same `text-secondary`, same underline bar at `bottom-[0.12em]`,
+                same 0.26 opacity. Only the colour treatment: this page's own
+                type scale is left alone, since the docs headline sits above a
+                full-width article rather than a hero. */}
             <h1 className="mt-5 font-display-lg text-[clamp(34px,5.4vw,54px)] font-extrabold leading-[1.04] tracking-[-0.038em] text-on-surface text-balance">
-              How Forma works, in detail.
+              <span className="inline-block">How Forma works,</span>{' '}
+              <span className="relative inline-block text-secondary">
+                in detail.
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-0 bottom-[0.12em] h-1 origin-left rounded-[2px] bg-secondary opacity-[0.26]"
+                />
+              </span>
             </h1>
             <p className="mt-4 max-w-[62ch] font-body-lg text-[clamp(16.5px,1.3vw,18.5px)] leading-[1.58] text-on-surface-variant">
               Everything below describes what the application actually does today — the file it produces, the
@@ -544,6 +539,35 @@ export default function DocsPage({
                 Not just the credential. The design you uploaded, the text extracted from it and the generated report
                 are all cleared, so the next person at that browser does not see your work. Ending a session in
                 another tab clears this one too.
+              </Note>
+
+              <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
+                Managing the account
+              </h3>
+              <p className={`mt-2 ${PROSE}`}>
+                In the workspace, open the account disc at the foot of the rail and choose{' '}
+                <strong className="font-semibold text-on-surface">Account settings</strong>.
+              </p>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="Display name">Rename the account at any time.</Def>
+                <Def t="Password">
+                  Changing it asks for the current one first. Accounts created with Google have no password to
+                  change — Google keeps that.
+                </Def>
+                <Def t="Email address">
+                  A confirmation link goes to the <em className="not-italic text-secondary">new</em> address and the
+                  account moves only when you open it, so a typo cannot lock you out.
+                </Def>
+                <Def t="Deleting the account">
+                  Removes your saved projects and the encrypted copy of your key along with it. Reports kept only in
+                  this browser are not touched. It cannot be undone.
+                </Def>
+              </dl>
+
+              <Note label="Verifying your email">
+                Accounts created with an email and password get a verification link when they are made, and the
+                workspace shows a reminder until it is used. Nothing is withheld in the meantime — the account only
+                ever holds your own work, and locking you out of it would cost more than it buys.
               </Note>
             </Article>
 

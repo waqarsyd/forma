@@ -48,9 +48,26 @@ interface LogoProps {
    * Pass one explicitly where the mark stands alone.
    */
   alt?: string;
+  /**
+   * Render one variant and ignore the theme.
+   *
+   * For surfaces that do not flip with it. The workspace's report sheet and the
+   * landing scanner's page are drawn against `--paper`, which is deliberately
+   * identical in light and dark, so the theme-following mark would turn white
+   * on white paper and disappear. Point (3) above still holds everywhere else —
+   * this is the exception, and it is a prop rather than a second `<img>` at the
+   * call site so the asset paths stay owned by this file.
+   */
+  pin?: 'light' | 'dark';
+  /**
+   * Size to the parent box instead of to `size`, contained and left-aligned.
+   * The scanner's page is drawn in percentages so it scales with its column;
+   * a px `size` there would stay put while everything around it moved.
+   */
+  fill?: boolean;
 }
 
-export default function Logo({ size = 32, className = '', alt = '' }: LogoProps) {
+export default function Logo({ size = 32, className = '', alt = '', pin, fill = false }: LogoProps) {
   const imgProps = {
     width: size,
     height: size,
@@ -58,20 +75,34 @@ export default function Logo({ size = 32, className = '', alt = '' }: LogoProps)
     // Decorative by default; a non-empty alt makes it meaningful again.
     'aria-hidden': alt ? undefined : true,
     decoding: 'async' as const,
-    className: 'block',
-    style: { width: size, height: size },
+    className: fill ? 'block h-full w-full object-contain object-left' : 'block',
+    style: fill ? undefined : { width: size, height: size },
   };
 
+  const light = (
+    <picture className={pin ? 'block h-full w-full' : 'block dark:hidden'}>
+      <source srcSet="/logo.webp" type="image/webp" />
+      <img {...imgProps} src="/logo.png" />
+    </picture>
+  );
+  const dark = (
+    <picture className={pin ? 'block h-full w-full' : 'hidden dark:block'}>
+      <source srcSet="/logo_white.webp" type="image/webp" />
+      <img {...imgProps} src="/logo_white.png" />
+    </picture>
+  );
+
   return (
-    <span className={`inline-flex shrink-0 ${className}`} style={{ width: size, height: size }}>
-      <picture className="block dark:hidden">
-        <source srcSet="/logo.webp" type="image/webp" />
-        <img {...imgProps} src="/logo.png" />
-      </picture>
-      <picture className="hidden dark:block">
-        <source srcSet="/logo_white.webp" type="image/webp" />
-        <img {...imgProps} src="/logo_white.png" />
-      </picture>
+    <span
+      className={`inline-flex shrink-0 ${className}`}
+      style={fill ? undefined : { width: size, height: size }}
+    >
+      {pin === 'dark' ? dark : pin === 'light' ? light : (
+        <>
+          {light}
+          {dark}
+        </>
+      )}
     </span>
   );
 }

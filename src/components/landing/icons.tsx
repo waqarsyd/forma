@@ -420,6 +420,35 @@ export const IconMenu = (p: Props) => (
     <path d="M4 7h16M4 12h16M4 17h16" />
   </Svg>
 );
+/* The workspace's side-panel toggle. Distinct from `IconLayout` — that one
+   divides the frame with a header rule and reads as "a page"; this divides it
+   with a full-height rule and reads as "a column beside the work". */
+export const IconPanelLeft = (p: Props) => (
+  <Svg {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M9.5 3v18" />
+  </Svg>
+);
+/* The announcement dock's launcher. A bell rather than a megaphone: a
+   megaphone reads as marketing, and this is a changelog. */
+export const IconBell = (p: Props) => (
+  <Svg {...p}>
+    <path d="M18 8.5a6 6 0 1 0-12 0c0 4.2-1.4 5.6-1.4 5.6h14.8S18 12.7 18 8.5" />
+    <path d="M13.7 18a2 2 0 0 1-3.4 0" />
+  </Svg>
+);
+/* The rail's own expander. Double chevrons rather than the single one
+   `IconChevronDown` carries, so it does not read as "open this section". */
+export const IconChevronsRight = (p: Props) => (
+  <Svg {...p}>
+    <path d="m7 6 6 6-6 6M13 6l6 6-6 6" />
+  </Svg>
+);
+export const IconChevronsLeft = (p: Props) => (
+  <Svg {...p}>
+    <path d="m17 6-6 6 6 6M11 6l-6 6 6 6" />
+  </Svg>
+);
 export const IconCheckCircle = (p: Props) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="9" />

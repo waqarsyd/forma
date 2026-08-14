@@ -5,6 +5,7 @@ import SiteFooter from './SiteFooter';
 import HeroScanner from './landing/HeroScanner';
 import VaultFigure from './landing/VaultFigure';
 import SheetRuler from './landing/SheetRuler';
+import AnnouncementDock from './landing/AnnouncementDock';
 import { FigureIngest, FigureStream, FigureExport } from './landing/StepFigures';
 import { Reveal, RevealGroup, RevealItem, SectionHead, Eyebrow, Stat, H2, LEDE, BODY } from './landing/sections';
 import {
@@ -178,6 +179,10 @@ const LandingPage = ({
     // not set `leading-` explicitly.
     <div className="landing font-body-lg text-[16px] leading-[1.62] bg-surface text-on-surface min-h-screen flex flex-col">
       <SheetRuler />
+      {/* Home only — see the component. The other marketing pages are reference
+          material people arrive at on purpose, and the workspace has enough
+          chrome without a disc floating over it. */}
+      <AnnouncementDock />
       <SiteHeader
         active="Product"
         onEnterWorkspace={onEnterWorkspace}
