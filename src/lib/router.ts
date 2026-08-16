@@ -9,12 +9,22 @@
  * takes it from there.
  *
  * No router library: the whole surface is one string of state plus a listener,
- * and pulling in react-router to replace six routes would be a heavier
+ * and pulling in react-router to replace nine routes would be a heavier
  * dependency than the problem deserves.
  */
 
-/** Everything the app answers on. `/` is the marketing home page. */
-export const ROUTES = ['/', '/features', '/docs', '/contact', '/login', '/signup', '/workspace'] as const;
+/**
+ * Everything the app answers on. `/` is the marketing home page.
+ *
+ * This list is not decorative: `migrateLegacyHashUrl()` below is its only
+ * reader, and a path missing from here is a path an old `#hash` link cannot be
+ * migrated to — it gets dropped to the home page instead. `/terms` and
+ * `/privacy` were absent for a while and nobody noticed, because they postdate
+ * hash routing and so no bookmark could point at them; the next route to go
+ * missing may not be so lucky. A new route belongs here *and* in `App.tsx`'s
+ * route effect and `ROUTE_TITLES`.
+ */
+export const ROUTES = ['/', '/features', '/docs', '/contact', '/login', '/signup', '/workspace', '/terms', '/privacy'] as const;
 export type Route = (typeof ROUTES)[number];
 
 /**
