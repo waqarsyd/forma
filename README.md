@@ -90,21 +90,35 @@ src/
   index.css            tokens, marketing pages, shared chrome (Tailwind v4, no config file)
   workspace.css        the workspace shell only — every `wb-` class lives here
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
-                       LoginPage, SiteHeader, SiteFooter, MobileNav,
-                       Logo, UserAvatar
+                       LoginPage, LegalPage (/terms and /privacy),
+                       SiteHeader, SiteFooter, MobileNav, Logo,
+                       AccountDialog, UserAvatar
     landing/           figures used by the marketing pages: HeroScanner,
-                       SheetRuler, StepFigures, VaultFigure, sections, icons
-  lib/                 router, motion tokens, repx + sourceRect helpers (+ tests)
+                       SheetRuler, StepFigures, VaultFigure,
+                       AnnouncementDock, sections, icons
+  lib/                 router and motion tokens, plus the pure helpers the
+                       unit suite covers: repx, sourceRect, attachments,
+                       panelSize, announcements, reportConfigStore,
+                       designerBridge (+ tests)
   services/            geminiService, firebase, keyVault (+ tests)
 tests/                 Firestore rules tests (emulator)
+tools/RepxDesigner/    optional Windows companion that opens a generated .repx
+                       in the real DevExpress designer — C# and MSBuild, with
+                       its own README; nothing in the web app depends on it
 public/                static assets served at / — logos (one doubles as the
                        favicon) and the pre-rendered og-card.png
 assets/source/         full-resolution logo masters and the og-card source
                        page they are rendered from (not deployed)
 docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident history)
 scripts/               dev + build helpers
+.agents/skills/        Firebase's official agent skill packs — reference
+                       material, nothing builds from them
+_not_required/         parked files nothing reads or imports; note the
+                       DESIGN.md in here is a decoy for docs/design/DESIGN.md
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
+firebase-applet-config.json
+                       your Firebase web config — see the Firebase section above
 ```
 
 ---
