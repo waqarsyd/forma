@@ -101,6 +101,7 @@ import ContactPage from './components/ContactPage';
 import LegalPage, { type LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
+import { titleForRoute, viewForRoute } from './lib/routes';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
@@ -1044,41 +1045,11 @@ export interface SavedReport {
 }
 
 
-/**
- * Per-route document titles.
- *
- * `index.html` can only carry one title, so every route used to show the home
- * page's — a browser with six Forma tabs open showed six identical ones, and a
- * bookmark or history entry recorded nothing about which page it came from.
- *
- * Two things here are deliberate:
- *
- * 1. **`/` must stay byte-identical to the `<title>` in `index.html`.** That tag
- *    is what search engines and link-preview scrapers read (they do not run this
- *    code), and it is also what paints before the bundle loads. Any difference
- *    would rewrite the title a moment after first paint for no reason. If you
- *    change one, change both — same rule as the theme bootstrap.
- *
- * 2. **The page name leads, the brand trails.** Tab strips truncate the end, so
- *    "Docs — Forma" survives being narrowed to a favicon-plus-two-words while
- *    "Forma — Docs" degrades to "Forma…" on every tab. The names match the
- *    header nav and the login page's own tab labels rather than inventing
- *    synonyms.
- *
- * An unrecognised path falls back to `/`, which is what the route effect's
- * `default` branch already renders.
- */
-const ROUTE_TITLES: Record<string, string> = {
-  '/': 'Forma — Screenshot to DevExpress .repx',
-  '/features': 'Features — Forma',
-  '/docs': 'Docs — Forma',
-  '/contact': 'Contact — Forma',
-  '/login': 'Sign in — Forma',
-  '/signup': 'Create account — Forma',
-  '/workspace': 'Workspace — Forma',
-  '/terms': 'Terms of use — Forma',
-  '/privacy': 'Privacy policy — Forma',
-};
+/* Per-route titles and the route -> view-state mapping moved to
+   `src/lib/routes.ts` on 2026-08-16, so they could be tested without importing
+   this file. The reasoning that used to sit here moved with them — including
+   why `/` must stay byte-identical to the `<title>` in `index.html`, which
+   `routes.test.ts` now checks rather than asks you to remember. */
 
 /** Which panel the rail's second column is showing. */
 type RailPanel = 'review' | 'projects' | 'history';
@@ -1384,36 +1355,18 @@ export default function App() {
       // Set here rather than in a render pass or a per-page effect: this runs on
       // boot, on navigate() and on back/forward, which is every way the route can
       // change, and one writer cannot disagree with another about the same tab.
-      document.title = ROUTE_TITLES[path] ?? ROUTE_TITLES['/'];
-      switch (path) {
-        case '/workspace':
-          setShowWorkspace(true);
-          setShowLogin(false);
-          setLastViewPath('/workspace');
-          break;
-        case '/login':
-          setShowLogin(true);
-          setLoginInitialMode('signin');
-          break;
-        case '/signup':
-          setShowLogin(true);
-          setLoginInitialMode('signup');
-          break;
-        case '/features':
-        case '/docs':
-        case '/contact':
-        case '/terms':
-        case '/privacy':
-          setShowWorkspace(false);
-          setShowLogin(false);
-          setLastViewPath(path);
-          break;
-        default:
-          setShowWorkspace(false);
-          setShowLogin(false);
-          setLastViewPath('/');
-          break;
-      }
+      document.title = titleForRoute(path);
+
+      // The mapping itself lives in `src/lib/routes.ts` so it can be tested
+      // without importing this file (and with it pdf.js and Firebase). A `null`
+      // means leave that piece of state as it was — which is how `/login` and
+      // `/signup` render over the workspace instead of closing it, and why
+      // neither overwrites the path we would return someone to after sign-in.
+      const view = viewForRoute(path);
+      if (view.showWorkspace !== null) setShowWorkspace(view.showWorkspace);
+      setShowLogin(view.showLogin);
+      if (view.loginMode !== null) setLoginInitialMode(view.loginMode);
+      if (view.lastViewPath !== null) setLastViewPath(view.lastViewPath);
     };
 
     // A legacy `#hash` link followed from *within* the app is a same-document
