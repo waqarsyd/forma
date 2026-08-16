@@ -126,7 +126,7 @@ firebase-applet-config.json
 ## Testing
 
 ```bash
-npm test          # pure helpers: REPX validation, crop geometry, stream parsing
+npm test          # pure helpers: REPX validation, crop geometry, stream parsing, routing
 npm run test:rules # security rules, against the Firestore emulator
 ```
 
