@@ -96,11 +96,13 @@ src/
     landing/           figures used by the marketing pages: HeroScanner,
                        SheetRuler, StepFigures, VaultFigure,
                        AnnouncementDock, sections, icons
-  lib/                 router and motion tokens, plus the pure helpers the
-                       unit suite covers: repx, sourceRect, attachments,
+  lib/                 motion tokens, plus everything the unit suite covers:
+                       the pure helpers repx, sourceRect, attachments,
                        panelSize, announcements, reportConfigStore,
-                       designerBridge (+ tests)
-  services/            geminiService, firebase, keyVault (+ tests)
+                       designerBridge, and the routing pair router (real
+                       history/location, so not pure) + routes (+ tests)
+  services/            geminiService (+ tests), firebase, keyVault — the
+                       vault's storage rules are covered by tests/, not here
 tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
                        in the real DevExpress designer — C# and MSBuild, with
@@ -130,7 +132,9 @@ npm test          # pure helpers: REPX validation, crop geometry, stream parsing
 npm run test:rules # security rules, against the Firestore emulator
 ```
 
-Run one file with `npx vitest run src/lib/repx.test.ts`, or one case with `-t "<name>"`. Neither is meaningfully faster than the whole thing — jsdom startup dominates the wall clock, so a single small file takes about 30 seconds against about 34 for everything. Narrow for focused output, not for speed.
+Run one file with `npx vitest run src/lib/repx.test.ts`, or one case with `-t "<name>"`. Neither is meaningfully faster than the whole thing: warm, a single file and the entire suite both land around 5 seconds. Narrow for focused output, not for speed.
+
+**Budget for the first run being roughly ten times the rest.** Measured on one machine on 2026-08-20: 52s for the first `npm test` of the session, then 4.6s for the same command immediately after, with jsdom environment setup collapsing from 442s summed across workers to 18s. Nothing is wrong when the first run crawls — that is the OS file cache and `node_modules/.vite` filling up, and it is worth knowing before you go hunting for a hang.
 
 **`--reporter=basic` does not exist in Vitest 4.** An unrecognised reporter name is treated as a module to import, so the run dies with `Failed to load custom Reporter from basic` and a stack trace full of Vite frames — it reads like a broken config rather than a bad flag value. Use `--reporter=dot` for the terse output `basic` used to give.
 
@@ -144,7 +148,7 @@ Neither suite covers React components or `App.tsx`'s stateful logic. **This is a
 
 ## Contributing
 
-Two documents carry the reasoning that the code cannot:
+Three documents carry the reasoning that the code cannot:
 
 - **[`CLAUDE.md`](CLAUDE.md)** — the entry point: hard constraints, commands, and an index that routes you to the note covering whatever you are about to change.
 - **[`docs/notes/`](docs/notes/)** — four notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.
