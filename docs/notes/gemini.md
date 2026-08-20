@@ -1,6 +1,6 @@
 # The Gemini path
 
-Split out of `CLAUDE.md` on 2026-08-13. The text is unchanged from when it lived there, apart from heading levels and the cross-references, which now name the note they point at instead of saying "above". It is incident history — the reason a thing is the way it is, which the code cannot tell you. **Nothing here is loaded automatically**: `CLAUDE.md` routes to this file, and reading its one-line summary of this area is not a substitute for opening it before you change that area.
+Split out of `CLAUDE.md` on 2026-08-13, carried across unchanged at the time apart from heading levels and the cross-references, which name the note they point at instead of saying "above". **It has grown since, so do not read it as a snapshot of that date** — every note here has taken new material in the weeks after the split, and `git log -- docs/notes/` is the record of what arrived when. (This paragraph claimed the text was still unchanged until 2026-08-20, by which point all four notes had been edited four or more times.) It is incident history — the reason a thing is the way it is, which the code cannot tell you. **Nothing here is loaded automatically**: `CLAUDE.md` routes to this file, and reading its one-line summary of this area is not a substitute for opening it before you change that area.
 
 ## The Gemini call runs in the browser, not on the server
 
