@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { User } from 'firebase/auth';
 import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
@@ -66,17 +66,50 @@ const ROUTES: Array<[string, ReactNode]> = [
 ];
 
 /**
- * PLACEHOLDER LINKS. Every href here is "#" until the real profile URLs are
- * supplied. The previous page shipped these pointing at "/", and a dead link
- * on the one block a recruiter clicks is worse than no block at all.
- * `grep data-needs-url` finds every one.
+ * The maintainer's profiles. Real URLs as of 2026-08-26, and the convention
+ * that got them here stands for anything added later: a destination is either
+ * real or marked with `data-needs-url`, never invented. The previous page
+ * shipped all four pointing at "/", and a dead link on the one block a
+ * recruiter clicks is worse than no block at all.
+ *
+ * Discord is the awkward case: a username is not addressable on the web —
+ * `discord.com/users/<name>` needs the numeric snowflake, not the handle — so
+ * there is no honest href to give it. It renders as a copy button instead of a
+ * link, which is what someone actually needs to do with a handle anyway.
  */
-const PROFILES: Array<{ Icon: typeof IconGitHub; name: string; note: string; href: string }> = [
-  { Icon: IconGitHub, name: 'GitHub', note: 'the source, and everything else I build', href: '#' },
-  { Icon: IconLinkedIn, name: 'LinkedIn', note: 'background and work history', href: '#' },
-  { Icon: IconDiscord, name: 'Discord', note: 'questions about the project', href: '#' },
-  { Icon: IconPortfolio, name: 'Portfolio', note: 'other work, in more detail', href: '#' },
+type Profile = {
+  Icon: typeof IconGitHub;
+  name: string;
+  note: string;
+  href?: string;
+  handle?: string;
+};
+
+const PROFILES: Profile[] = [
+  {
+    Icon: IconGitHub,
+    name: 'GitHub',
+    note: 'the source, and everything else I build',
+    href: 'https://github.com/waqarsyd',
+  },
+  {
+    Icon: IconLinkedIn,
+    name: 'LinkedIn',
+    note: 'background and work history',
+    href: 'https://www.linkedin.com/in/waqarsayyed',
+  },
+  { Icon: IconDiscord, name: 'Discord', note: 'waqarsyd — questions about the project', handle: 'waqarsyd' },
+  {
+    Icon: IconPortfolio,
+    name: 'Portfolio',
+    note: 'other work, in more detail',
+    href: 'https://waqarsyd.github.io/portfolio/',
+  },
 ];
+
+/** Shared by the profile cards and the mail panel below them. */
+const CARD =
+  'u-transition group flex w-full items-center gap-3.5 rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[17px] py-[15px] text-left shadow-[var(--shadow-sm)] hover:-translate-y-0.5 hover:border-[color:var(--accent-line)] hover:shadow-[var(--shadow-md)]';
 
 type FieldKey = 'name' | 'email' | 'topic' | 'message';
 type FieldErrors = Partial<Record<FieldKey, string>>;
@@ -144,8 +177,53 @@ export default function ContactPage({
   const [errors, setErrors] = useState<FieldErrors>({});
   const [state, setState] = useState<'form' | 'sending' | 'sent' | 'failed'>('form');
   const [revealed, setRevealed] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  // What was copied, not whether — the address and the Discord handle share
+  // this, and a boolean would light both confirmations at once.
+  const [copied, setCopied] = useState<string | null>(null);
   const [trap, setTrap] = useState('');
+  const mailCard = useRef<HTMLDivElement>(null);
+
+  /**
+   * A revealed address goes back behind the button as soon as attention moves
+   * elsewhere. It is revealed for a moment and for one purpose; leaving it on
+   * screen for the rest of the session is the state a screenshot or a passer-by
+   * catches, and it half-undoes the reason the address is kept out of the
+   * markup in the first place.
+   *
+   * The whole card is the boundary, not just the address line — the copy button
+   * and the "replies take a day or two" note are part of the same thing, and
+   * collapsing the address because someone clicked two words below it would
+   * read as a bug. Escape does the same, since by then the address is what has
+   * the focus.
+   *
+   * `pointerdown` rather than `click`: it fires at the start of the gesture, so
+   * the dismissal happens with the press instead of trailing it, and a drag
+   * that begins inside the card (selecting the address by hand) still counts as
+   * inside. The listener is only attached while something is revealed, so the
+   * reveal click itself cannot race it — the effect runs after that click has
+   * already been handled.
+   */
+  useEffect(() => {
+    if (!revealed) return;
+
+    const hide = () => {
+      setRevealed(null);
+      setCopied((c) => (c === 'mail' ? null : c));
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (!mailCard.current?.contains(e.target as Node)) hide();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') hide();
+    };
+
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [revealed]);
 
   const set = (k: FieldKey) => (value: string) => {
     setValues((p) => ({ ...p, [k]: value }));
@@ -157,16 +235,15 @@ export default function ContactPage({
     });
   };
 
-  const copyAddress = async () => {
-    const addr = mailAddress();
+  const copyText = async (value: string, key: string) => {
     try {
       // navigator.clipboard is undefined outside a secure context — the same
       // LAN-over-HTTP case the workspace's copy action guards.
-      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(addr);
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(value);
       else throw new Error('no clipboard');
     } catch {
       const ta = document.createElement('textarea');
-      ta.value = addr;
+      ta.value = value;
       ta.style.position = 'fixed';
       ta.style.opacity = '0';
       document.body.appendChild(ta);
@@ -174,8 +251,8 @@ export default function ContactPage({
       try { document.execCommand('copy'); } catch { /* nothing else to try */ }
       document.body.removeChild(ta);
     }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    setCopied(key);
+    window.setTimeout(() => setCopied((c) => (c === key ? null : c)), 1600);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -312,11 +389,13 @@ export default function ContactPage({
                     Read the FAQ
                     <IconArrowRight size={14} />
                   </a>
-                  {/* Placeholder until the repository is public — same rule as
-                      the profile links below: marked, never invented. */}
+                  {/* The issue tracker, not the profile — the paragraph below
+                      sends people here to file a bug, so it has to land on the
+                      form that files one. */}
                   <a
-                    href="#"
-                    data-needs-url
+                    href="https://github.com/waqarsyd/Dev_Forma/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="u-transition u-press inline-flex cursor-pointer items-center gap-2 rounded-full border border-outline-variant bg-surface-container-low px-4 py-2 font-body-lg text-[13.5px] font-semibold text-on-surface hover:border-secondary hover:bg-[color:var(--accent-wash)] hover:text-secondary"
                   >
                     <IconGitHub size={14} />
@@ -512,7 +591,10 @@ export default function ContactPage({
               </div>
 
               {/* --------------------------------------- the address */}
-              <div className="mt-[30px] rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[22px] py-5 shadow-[var(--shadow-sm)]">
+              <div
+                ref={mailCard}
+                className="mt-[30px] rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[22px] py-5 shadow-[var(--shadow-sm)]"
+              >
                 <div className="flex items-start gap-3.5">
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] border border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] text-secondary">
                     <IconMail size={17} />
@@ -531,10 +613,10 @@ export default function ContactPage({
                         </a>
                         <button
                           type="button"
-                          onClick={copyAddress}
+                          onClick={() => copyText(revealed, 'mail')}
                           className="u-transition cursor-pointer rounded-full border border-outline-variant px-2.5 py-0.5 font-code-sm text-[10px] tracking-[0.1em] uppercase text-[color:var(--ink-faint)] hover:border-secondary hover:text-secondary"
                         >
-                          {copied ? 'copied' : 'copy'}
+                          {copied === 'mail' ? 'copied' : 'copy'}
                         </button>
                       </div>
                     ) : (
@@ -601,32 +683,60 @@ export default function ContactPage({
               </div>
 
               <div className="grid gap-2.5">
-                {PROFILES.map((p) => (
-                  <a
-                    key={p.name}
-                    href={p.href}
-                    data-needs-url
-                    className="u-transition group flex items-center gap-3.5 rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[17px] py-[15px] shadow-[var(--shadow-sm)] hover:-translate-y-0.5 hover:border-[color:var(--accent-line)] hover:shadow-[var(--shadow-md)]"
-                  >
-                    <span className="u-transition grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[10px] bg-surface-container-high text-on-surface group-hover:bg-[color:var(--accent-wash)] group-hover:text-secondary">
-                      <p.Icon size={19} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block font-body-lg text-[14.5px] font-semibold tracking-[-0.012em] text-on-surface">
-                        {p.name}
+                {PROFILES.map((p) => {
+                  const body = (
+                    <>
+                      <span className="u-transition grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[10px] bg-surface-container-high text-on-surface group-hover:bg-[color:var(--accent-wash)] group-hover:text-secondary">
+                        <p.Icon size={19} />
                       </span>
-                      {/* mt-0.5 = the artifact's `margin-top: 2px`. Omitting it
-                          made every profile card 2px short. */}
-                      <span className="mt-0.5 block font-code-sm text-[11px] leading-[1.45] text-[color:var(--ink-faint)]">
-                        {p.note}
+                      <span className="min-w-0">
+                        <span className="block font-body-lg text-[14.5px] font-semibold tracking-[-0.012em] text-on-surface">
+                          {p.name}
+                        </span>
+                        {/* mt-0.5 = the artifact's `margin-top: 2px`. Omitting it
+                            made every profile card 2px short. */}
+                        <span className="mt-0.5 block font-code-sm text-[11px] leading-[1.45] text-[color:var(--ink-faint)]">
+                          {p.note}
+                        </span>
                       </span>
-                    </span>
-                    <IconExternal
-                      size={15}
-                      className="u-transition ml-auto shrink-0 text-[color:var(--ink-faint)] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-secondary"
-                    />
-                  </a>
-                ))}
+                    </>
+                  );
+
+                  // A handle has nowhere to navigate to, so the card copies it
+                  // rather than pretending to be a link.
+                  if (p.handle) {
+                    return (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => copyText(p.handle!, p.name)}
+                        className={`${CARD} cursor-pointer`}
+                      >
+                        {body}
+                        <span className="u-transition ml-auto shrink-0 font-code-sm text-[10px] tracking-[0.1em] uppercase text-[color:var(--ink-faint)] group-hover:text-secondary">
+                          {copied === p.name ? 'copied' : 'copy'}
+                        </span>
+                      </button>
+                    );
+                  }
+
+                  const external = p.href!.startsWith('http');
+                  return (
+                    <a
+                      key={p.name}
+                      href={p.href}
+                      {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                      {...(p.href === '#' ? { 'data-needs-url': true } : {})}
+                      className={CARD}
+                    >
+                      {body}
+                      <IconExternal
+                        size={15}
+                        className="u-transition ml-auto shrink-0 text-[color:var(--ink-faint)] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-secondary"
+                      />
+                    </a>
+                  );
+                })}
 
                 {/* Points at the form rather than carrying a mailto: one
                     plaintext address in the markup is all a harvester needs. */}
@@ -636,7 +746,7 @@ export default function ContactPage({
                     e.preventDefault();
                     document.getElementById('message')?.focus();
                   }}
-                  className="u-transition group flex items-center gap-3.5 rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-[17px] py-[15px] shadow-[var(--shadow-sm)] hover:-translate-y-0.5 hover:border-[color:var(--accent-line)] hover:shadow-[var(--shadow-md)]"
+                  className={CARD}
                 >
                   <span className="u-transition grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[10px] bg-surface-container-high text-on-surface group-hover:bg-[color:var(--accent-wash)] group-hover:text-secondary">
                     <IconMail size={19} />
@@ -660,14 +770,14 @@ export default function ContactPage({
         </div>
       </main>
 
-      {/* The fourth column the artifact's contact footer carries. Still
-          href="#" and greppable — see PROFILES above. */}
+      {/* The fourth column the artifact's contact footer carries. Discord is
+          not in it, because the footer renders links and a handle is not one —
+          it lives on the card above, which copies it. See PROFILES. */}
       <SiteFooter
         maker={[
-          ['GitHub', '#'],
-          ['LinkedIn', '#'],
-          ['Portfolio', '#'],
-          ['Discord', '#'],
+          ['GitHub', 'https://github.com/waqarsyd'],
+          ['LinkedIn', 'https://www.linkedin.com/in/waqarsayyed'],
+          ['Portfolio', 'https://waqarsyd.github.io/portfolio/'],
           ['Send a message', '#form'],
         ]}
       />
