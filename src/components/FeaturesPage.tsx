@@ -79,7 +79,7 @@ const SETUP: Array<{ Icon: typeof IconText; k: string; v: string; d: string }> =
     Icon: IconLayout,
     k: 'Page size',
     v: 'Letter · A4 · Legal',
-    d: 'Written into the XML along with the margins, so the sheet you review and the sheet that prints are the same size.',
+    d: 'Written into the XML as real page dimensions, so the sheet you review and the sheet that prints are the same size.',
   },
   {
     Icon: IconImage,

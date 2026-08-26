@@ -1,4 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
+import { pageSizeInUnits, unitsPerInch, unitsToPoints } from "../lib/reportGeometry";
 
 /** One cell of a real `table` element. Weights are relative, like XRTableCell's. */
 export interface ReportCell {
@@ -292,7 +294,15 @@ export const MODEL_PREFERENCE = [
 ];
 
 const MODEL_CACHE_KEY = "geminiModel:session";
+/**
+ * Every model the probe found this key *can* call, not just the winner. The
+ * probes already ran and their results were being thrown away; keeping them is
+ * what lets an overloaded generation fall back to a different model instead of
+ * failing (see the 503 path in `analyzeReportDesign`).
+ */
+const MODEL_SET_CACHE_KEY = "geminiModels:session";
 let resolvedModel: string | null = null;
+let resolvedModelSet: string[] | null = null;
 
 /** Exported so the debug console can report the detected model without re-probing. */
 export function readCachedModel(): string | null {
@@ -304,22 +314,87 @@ export function readCachedModel(): string | null {
   }
 }
 
-function cacheModel(model: string): void {
+function cacheModel(model: string, usable?: string[]): void {
   resolvedModel = model;
   try {
     sessionStorage.setItem(MODEL_CACHE_KEY, model);
   } catch {
     /* in-memory copy still applies for this page */
   }
+  if (usable) {
+    resolvedModelSet = usable;
+    try {
+      sessionStorage.setItem(MODEL_SET_CACHE_KEY, JSON.stringify(usable));
+    } catch {
+      /* in-memory copy still applies for this page */
+    }
+  }
+}
+
+/**
+ * Models this key can call, in preference order, or `null` if that has not been
+ * established this session. Never probes: a caller that needs it to be
+ * populated should have gone through `resolveModel` first.
+ */
+function readCachedModelSet(): string[] | null {
+  if (resolvedModelSet) return resolvedModelSet;
+  try {
+    const raw = sessionStorage.getItem(MODEL_SET_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) && parsed.every((m) => typeof m === "string") ? parsed : null;
+  } catch {
+    return null; // Node, storage disabled, or a corrupt entry
+  }
 }
 
 /** Drop the cached choice — called when a model 404s mid-flight, or the key changes. */
 export function clearCachedModel(): void {
   resolvedModel = null;
+  resolvedModelSet = null;
   try {
     sessionStorage.removeItem(MODEL_CACHE_KEY);
+    sessionStorage.removeItem(MODEL_SET_CACHE_KEY);
   } catch {
     /* nothing to clear */
+  }
+}
+
+/**
+ * Ask Google what models exist. **Discovery only — never trusted as an answer.**
+ *
+ * `MODEL_PREFERENCE` is hand-written, and a hand-written list of model ids has a
+ * shelf life: a key created in a year's time may have access to nothing on it.
+ * Two entries are `-latest` aliases that Google repoints, which covers most of
+ * that, but not a family shipped under a new name or a retired alias.
+ *
+ * This does not contradict the standing "never resolve models from
+ * `models.list`" rule, and the distinction is worth stating plainly: that
+ * endpoint is unreliable about what a key can **call** (it advertised
+ * `gemini-2.5-flash` with `generateContent` while the real call 404'd) and
+ * reliable about what **exists**. Everything it returns here is still confirmed
+ * by a real 1-token probe before anything depends on it.
+ *
+ * Failure is not an error. No network, a blocked endpoint, an unexpected shape —
+ * all resolve to an empty list and the curated preference order is used exactly
+ * as it was before. Discovery can only ever add candidates.
+ */
+async function discoverModels(apiKey: string, signal?: AbortSignal): Promise<string[]> {
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", {
+      method: "GET",
+      headers: { "x-goog-api-key": apiKey },
+      signal,
+    });
+    if (!res.ok) {
+      console.debug(`Model catalogue unavailable (HTTP ${res.status}); using the curated list only.`);
+      return [];
+    }
+    const body = await res.json();
+    return usableFromCatalog(body?.models);
+  } catch (err: any) {
+    if (err?.name === "AbortError") throw err;
+    console.debug("Model catalogue could not be read; using the curated list only.", err);
+    return [];
   }
 }
 
@@ -367,20 +442,38 @@ export async function resolveModel(apiKey: string, signal?: AbortSignal): Promis
   // The probes are one token each, so firing all of them costs nothing that
   // matters, and preference order is still honoured when reading the results.
   const started = Date.now();
-  const verdicts = await Promise.all(
-    MODEL_PREFERENCE.map((candidate) => probeModel(candidate, apiKey, signal))
-  );
-  console.debug(`Model probing finished in ${Date.now() - started}ms.`);
 
-  const winner = MODEL_PREFERENCE.find((_, i) => verdicts[i] === "ok");
+  // Catalogue first, so a key that can reach nothing on the curated list still
+  // has somewhere to go. It runs before the probes rather than beside them
+  // because its results decide what to probe; it is one request and it can only
+  // add candidates, never remove them.
+  const discovered = await discoverModels(apiKey, signal);
+  const candidates = mergeCandidates(MODEL_PREFERENCE, discovered);
+  if (candidates.length > MODEL_PREFERENCE.length) {
+    console.debug(
+      `Catalogue added ${candidates.length - MODEL_PREFERENCE.length} model(s) the curated list does not know: ` +
+      candidates.slice(MODEL_PREFERENCE.length).join(", ")
+    );
+  }
+
+  const verdicts = await Promise.all(
+    candidates.map((candidate) => probeModel(candidate, apiKey, signal))
+  );
+  console.debug(`Model probing finished in ${Date.now() - started}ms (${candidates.length} candidates).`);
+
+  const usable = candidates.filter((_, i) => verdicts[i] === "ok");
+  const winner = usable[0];
   if (winner) {
-    console.log(`Auto-selected Gemini model: ${winner}`);
-    cacheModel(winner);
+    console.log(
+      `Auto-selected Gemini model: ${winner}` +
+      (usable.length > 1 ? ` (${usable.length - 1} more available as fallbacks: ${usable.slice(1).join(", ")})` : "")
+    );
+    cacheModel(winner, usable);
     return winner;
   }
 
-  // A key-level rejection repeats for every candidate, so it is the real cause
-  // and takes priority over the quota message below.
+  // Nothing answered. A key-level rejection repeats for every candidate, so it
+  // is the real cause and takes priority over the quota message below.
   if (verdicts.includes("keyError")) {
     throw new Error(
       "Your Gemini API key was rejected. Check that it is correct and that the Generative Language API is enabled for its project."
@@ -761,11 +854,25 @@ export async function analyzeReportDesign(
   const targetVersion = config?.version || '23.2';
   const targetSerializerVersion = `${targetVersion}.3.0`;
 
+  /**
+   * The page the model is told to map onto, derived rather than hardcoded.
+   *
+   * `PageWidth="850" PageHeight="1100"` and "a standard 8.5x11 page is 850x1100"
+   * were both literals in this prompt while the config dialog offered A4 and
+   * Legal, and `configInstructions` separately told the model to "adjust page
+   * dimensions accordingly" — three instructions, two of them contradicting the
+   * user's own setting. `FeaturesPage` advertises "written into the XML along
+   * with the margins, so the sheet you review and the sheet that prints are the
+   * same size", which was simply not true for two of the three options.
+   */
+  const reportUnit = config?.unit || 'HundredthsOfAnInch';
+  const page = pageSizeInUnits(config?.pageSize, reportUnit);
+  const unitsPerInchForReport = unitsPerInch(reportUnit);
+
   const configInstructions = config ? `
   CRITICAL CONFIGURATION:
   - DevExpress Version: ${config.version}
-  - ReportUnit: ${config.unit}
-  - Page Size: ${config.pageSize} (Adjust PaperKind and page dimensions accordingly)
+  - PaperKind: ${config.pageSize}. The exact PageWidth/PageHeight/ReportUnit values are given in the ROOT STRUCTURE above and are already correct for this paper — use them verbatim rather than recomputing them.
   ${config.header ? `
   - HEADER:
     - Include Company Logo: ${config.header.showCompanyLogo ? 'Yes' : 'No'}
@@ -923,27 +1030,37 @@ export async function analyzeReportDesign(
           - When an existing .repx is supplied, treat it as the base structure and preserve it, applying only the changes the user asks for.
 
           PHASE 1: SPATIAL MAPPING
-          Before generating the output, list elements and their exact coordinates and sizes in hundredths of an inch (X, Y, Width, Height) in the markdown section.
-          - 1 inch = 100 units. A standard 8.5" x 11" page is 850 x 1100.
+          Before generating the output, list elements and their exact coordinates and sizes (X, Y, Width, Height) in the markdown section.
+          - The report unit is ${reportUnit}: 1 inch = ${unitsPerInchForReport} units.
+          - The page is ${config?.pageSize || 'Letter'}: ${page.width} x ${page.height} units.
+          - The origin (0,0) is the TOP-LEFT CORNER OF THE PAPER, not of any margin or content area.
           - Map the visual proportions perfectly to this grid.
+          - The design's own whitespace is part of the design. If the artwork begins an inch in from the paper edge, its first element is at x=${Math.round(unitsPerInchForReport)}, and you must NOT also add a page margin — that would move it in twice.
 
           PHASE 2: DEVEXPRESS CHEAT SHEET (STRICT SYNTAX)
           When generating the "repxContent" XML, you MUST use these exact structures:
           
           - ROOT STRUCTURE: The entire repxContent MUST be wrapped exactly like this:
             <?xml version="1.0" encoding="utf-8"?>
-            <XtraReportsLayoutSerializer SerializerVersion="${targetSerializerVersion}" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="100, 100, 100, 100" PageWidth="850" PageHeight="1100" Version="${targetVersion}">
+            <XtraReportsLayoutSerializer SerializerVersion="${targetSerializerVersion}" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="${reportUnit}" Margins="0, 0, 0, 0" PageWidth="${page.width}" PageHeight="${page.height}" Version="${targetVersion}">
               <Bands>
-                <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="100" />
-                <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="100">
+                <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
+                <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${page.height}">
                   <Controls>
                     <!-- Your controls go here -->
                   </Controls>
                 </Item2>
-                <Item3 Ref="3" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="100" />
+                <Item3 Ref="3" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
               </Bands>
             </XtraReportsLayoutSerializer>
-            
+
+          - COORDINATE FRAME — the single most common way this output comes out wrong.
+            A control's LocationFloat is measured from the TOP-LEFT OF ITS BAND, and a band begins at the page's left margin. The margins above are therefore ZERO on purpose: it makes the band's coordinate space identical to the paper's, so the numbers from PHASE 1 and from any extracted PDF text can be used directly.
+            - Do NOT set non-zero Margins. Do NOT give the margin bands a height.
+            - Do NOT subtract or add anything to the PHASE 1 coordinates when writing LocationFloat.
+            - Every control must satisfy x + width <= ${page.width} and fit inside its band's height. Anything wider than the page is silently clipped or pushed onto a second page by the designer.
+            - Make the Detail band tall enough to contain the tallest element you place in it.
+
           - Labels: <Item1 Ref="1" ControlType="XRLabel" Name="label1" Text="My Text" LocationFloat="0,10" SizeF="200,30" Padding="2,2,0,0,100" />
           - Tables: <Item2 Ref="2" ControlType="XRTable" Name="table1" LocationFloat="0,50" SizeF="400,20" Borders="All"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="row1" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="cell1" Text="Data" Weight="1" /></Cells></Item1></Rows></Item2>
           - Images: <Item3 Ref="5" ControlType="XRPictureBox" Name="pictureBox1" Sizing="ZoomImage" LocationFloat="0,100" SizeF="150,150" />
@@ -951,6 +1068,16 @@ export async function analyzeReportDesign(
           - Page Info: <Item5 Ref="7" ControlType="XRPageInfo" Name="pageInfo1" PageInfo="DateTime" LocationFloat="0,270" SizeF="150,20" />
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
           Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+
+          - APPEARANCE IS PART OF THE REPORT, NOT JUST OF THE PREVIEW.
+            Every visual property you put in the "layout" JSON must also appear on the matching control in repxContent. A .repx that has the right boxes in the right places but default styling is a failed reproduction — it is the file the user actually opens and prints.
+            - Font: <Font>Arial, 9.75pt, style=Bold</Font> as a child element, or Font="Arial, 9.75pt" as an attribute. Styles: style=Bold, style=Italic, style=Bold, Italic.
+            - **FONT SIZE IS ALWAYS IN POINTS (1/72"), NEVER IN REPORT UNITS.** This is the one unit in the file that does not follow ReportUnit. Convert: points = layoutFontSize * 72 / ${unitsPerInchForReport}. A layout fontSize of 16 is ${(unitsToPoints(16, reportUnit)).toFixed(2)}pt, NOT 16pt. Writing the layout number straight into the Font makes every piece of text far too large while both files still look internally consistent.
+            - ForeColor="Black" or ForeColor="#1A2B3C" for text colour; BackColor for fills. Omit BackColor entirely when the area is white or transparent — do not paint every control white.
+            - TextAlignment="TopLeft" | "MiddleCenter" | "MiddleRight" | "BottomLeft" etc. — it combines the vertical and horizontal alignment from the layout into one value. Numeric and currency columns are almost always a *Right variant.
+            - Borders="None" | "All" | "Top, Bottom" | "Left, Right" (comma-separated sides), plus BorderColor="#RRGGBB" and BorderWidth="1" when the rule is not a hairline black. A heading underlined by a rule is Borders="Bottom", NOT Borders="All".
+            - WordWrap="false" on single-line labels so they clip instead of reflowing, matching the "wrap" flag in the layout.
+            - RightToLeft="Yes" on a control only if the report itself is RTL.
 
           ${configInstructions}
           ${previousContext}
@@ -972,10 +1099,10 @@ export async function analyzeReportDesign(
           - If the user provides a barcode, use ControlType="XRBarCode". For Lines, use ControlType="XRLine".
           - EXACT COMPLETENESS: Do not skip ANY table cells, labels, or elements to save tokens. The output must be 100% complete and exhaustive.
           
-          The "layout" JSON must follow this structure (use standard DevExpress units, e.g., hundredths of an inch, so x, y, width, height match your REPX coordinates relative to the section's top-left corner):
+          The "layout" JSON must follow this structure. Its x, y, width and height are in the SAME ${reportUnit} units as the REPX, and are measured from the TOP-LEFT OF THEIR OWN SECTION — exactly like a control's LocationFloat inside its band, so the two artifacts carry the same numbers. "pageWidth" must be ${page.width}, matching the ROOT STRUCTURE.
           {
             "title": "Report Title",
-            "pageWidth": 850,
+            "pageWidth": ${page.width},
             "sections": [
               {
                 "id": "section-1",
@@ -1179,6 +1306,8 @@ export async function analyzeReportDesign(
   let response;
   let overloadAttempts = 0;
   let alreadyRedetected = false;
+  /** Models that returned 503 until their retries ran out, in the order tried. */
+  const overloadedModels: string[] = [];
 
   while (true) {
     try {
@@ -1192,12 +1321,62 @@ export async function analyzeReportDesign(
       // sleep() rejects on abort, so pausing during the wait still tears down.
       if (isOverloaded(error) && overloadAttempts < MAX_OVERLOAD_RETRIES) {
         overloadAttempts++;
-        const backoffMs = 2000 * overloadAttempts; // 2s, then 4s
+        // 2s, then 4s, plus jitter. The jitter matters more than it looks:
+        // without it every tab that got a 503 in the same second retries in the
+        // same second, which is how a busy model stays busy.
+        const backoffMs = 2000 * overloadAttempts + Math.floor(Math.random() * 500);
         console.warn(
           `Model "${selectedModel}" is overloaded (503). Retrying in ${backoffMs}ms — attempt ${overloadAttempts} of ${MAX_OVERLOAD_RETRIES}.`
         );
         await sleep(backoffMs, signal);
         continue;
+      }
+
+      /**
+       * Same model, out of retries. **A 503 is that model's capacity — not the
+       * key's, not the request's** — so the next model this key can call is a
+       * different pool and is usually free. Until 2026-08-26 this path just
+       * gave up after ~6 seconds on one model while three or four perfectly
+       * available alternatives sat in `MODEL_PREFERENCE`, already probed and
+       * already known to work with this key. Switching is both faster and far
+       * likelier to succeed than waiting longer on a model Google has just said
+       * it has no room for.
+       *
+       * The fallback is **not** cached as the session's model: the preferred
+       * model should be tried first again next time, once capacity returns.
+       * `pinnedModel` opts out, for the same reason the 404 re-detect does — a
+       * pinned id is an explicit instruction, not a default.
+       */
+      if (isOverloaded(error)) {
+        overloadedModels.push(selectedModel);
+        // The probed set when we have it. A tab that resolved its model before
+        // this set was cached falls back to the raw preference list; if that
+        // picks something the key cannot call, the 404 branch below re-detects
+        // once and the loop carries on with an accurate set.
+        const alternatives = pinnedModel ? [] : (readCachedModelSet() ?? MODEL_PREFERENCE);
+        const next = alternatives.find((m) => !overloadedModels.includes(m));
+
+        if (next) {
+          console.warn(
+            `Model "${selectedModel}" stayed overloaded after ${MAX_OVERLOAD_RETRIES} retries. ` +
+            `Falling back to "${next}" for this request.`
+          );
+          selectedModel = next;
+          overloadAttempts = 0;
+          continue;
+        }
+
+        // Every model this key can use is busy. Say so, and name them — "try
+        // again" reads very differently when the user can see it was not one
+        // unlucky model.
+        throw new Error(
+          overloadedModels.length > 1
+            ? `Google's servers are busy for every model this key can use — ${overloadedModels.join(", ")} ` +
+              `were all tried and all returned "overloaded". This is capacity at Google's end: nothing is wrong ` +
+              `with your API key or your design. Wait a minute or two and generate again.`
+            : "Google's servers are busy and could not take this request, even after retrying. " +
+              "Nothing is wrong with your API key or your design — wait a minute and generate again."
+        );
       }
 
       // A model retired between sessions leaves a stale cached choice. Re-resolve
@@ -1327,7 +1506,36 @@ export async function analyzeReportDesign(
     return parsed;
   } catch (e) {
     console.error("Failed to parse Gemini response", e);
-    console.debug("Raw response length:", rawText.length);
+    console.error(
+      `Raw response was ${rawText.length} characters, finishReason: ${response.finishReason ?? "none reported"}. ` +
+      `Last 120 characters received: ${JSON.stringify(rawText.slice(-120))}`
+    );
+
+    /**
+     * A truncated body is still a body, and until 2026-08-26 nothing here
+     * noticed. `finishReason` was only consulted when the response came back
+     * *empty*, so the far more common case — the model writes most of the
+     * report and is cut off mid-string — fell through to "malformed", which is
+     * wrong twice over: it blames the model for bad output when the output was
+     * fine as far as it got, and it tells the user to try again, which for the
+     * same input fails the same way every time. The JSON is unparseable either
+     * way; only `finishReason` distinguishes ran-out-of-room from nonsense.
+     *
+     * Reproduced over CDP by fulfilling the stream with 62% of a valid payload
+     * and `finishReason: MAX_TOKENS`: the old path reported "The AI returned a
+     * malformed report. Try generating again."
+     */
+    if (response.finishReason === "MAX_TOKENS") {
+      throw new Error(
+        "The report was cut off before it finished — the model reached its output limit part-way through. " +
+        "This design is too large to return in one response: try a simpler page, upload fewer pages at once, " +
+        "or split it into two requests. Generating again with the same input will hit the same limit."
+      );
+    }
+    if (response.finishReason === "SAFETY" || response.finishReason === "PROHIBITED_CONTENT") {
+      throw new Error("Gemini stopped part-way under its safety filters. Try a different source image or prompt.");
+    }
+
     throw new Error("The AI returned a malformed report. Try generating again.");
   }
 }

@@ -339,15 +339,21 @@
 .wb-eyebrow b { font-weight: 500; color: var(--accent); }
 .wb-eyebrow .wb-fade { height: 1px; flex: 1; background: linear-gradient(to right, var(--rule), transparent); }
 
-/* The hero's glow, scaled to this canvas. */
-.wb-glow {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 999px;
-  opacity: .5;
-  filter: blur(40px);
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 20%, transparent), transparent 58%);
-}
+/* `.wb-glow` was here: the landing hero's orange bloom, carried over with the
+   rest of the artifact. Removed 2026-08-26 after it was reported as "yellowness
+   in the Untitled report area", which it was.
+
+   The geometry is why it failed rather than the colour. Both call sites placed
+   it at `inset: -90px … auto …` above `.wb-proof-holder`, so the entire visible
+   part of it sat on bare grid *above* the sheet and none of it ever fell behind
+   the paper — a 40px-blurred accent at 20% over `--sheet-line` grey renders as a
+   peach smear, in the empty state and with a report loaded alike. It reads as a
+   stain on the drafting ground, not as light.
+
+   It works on the landing hero because that sits on a graded background it can
+   bloom into. This canvas is a white sheet on a ruled grid and has no such
+   place for it. If a glow is ever wanted back here it has to sit *behind* the
+   sheet, which is very nearly the same thing as not having one. */
 
 /* One orchestrated arrival rather than scattered effects: the columns rise in
    sequence, once. Zeroed wholesale by the reduced-motion block at the end. */
@@ -517,6 +523,39 @@
 }
 .wb-row-actions button:hover { background: var(--track); color: var(--ink); }
 .wb-row-actions button.wb-danger:hover { color: var(--bad-ink); }
+
+/* Deleting a row fades it before it goes, rather than having it blink out from
+   under the cursor. Opacity only, deliberately: a height collapse needs a
+   max-height baseline, and any value low enough to animate from would clip a
+   long report name for every card that is not being deleted. The list reflows
+   when the row actually leaves, which at 190ms reads as one movement.
+   `pointer-events: none` is what stops a second click queueing the same delete
+   twice while the fade runs. */
+.wb-card.wb-leaving {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+}
+
+/* "Clear all" and its confirm, in the column head. */
+.wb-col-head .wb-mini {
+  margin-left: 8px;
+  padding: 2px 7px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.wb-col-head .wb-mini:hover { color: var(--ink); border-color: var(--rule-strong); background: var(--track); }
+.wb-col-head .wb-mini.wb-danger:hover { color: var(--bad-ink); border-color: var(--bad-ink); }
+.wb-col-head .wb-confirm { display: inline-flex; align-items: center; gap: 0; }
+.wb-col-head .wb-confirm > span { color: var(--bad-ink); }
 .wb-badge {
   display: inline-flex;
   align-items: center;
@@ -606,7 +645,20 @@
   transition: border-color .15s ease, box-shadow .15s ease;
 }
 .wb-box:focus-within { border-color: var(--accent); box-shadow: var(--shadow-md); }
-.wb-box .wb-line { flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-box .wb-line { flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* `.wb-line` was a static placeholder span in the artifact, so it was coloured
+   like one. As a real input that rule painted everything the user *typed* in
+   --ink-faint too, indistinguishable from the placeholder it sat on top of.
+   Text is --ink; the placeholder keeps the faint colour, deliberately. */
+.wb-box .wb-line::placeholder { color: var(--ink-faint); }
+/* No generic focus ring here: `.wb-box:focus-within` above already turns the
+   pill's border accent and lifts its shadow, so the shared `.wb-root
+   :focus-visible` outline was a *second* indicator for the same focus — a
+   hard-edged 2px rectangle floating inside a rounded pill that had already gone
+   orange. Focus is still plainly visible, which is the part that matters; this
+   is the same trade `.wb-ctl:focus` makes in the config dialog. Do not add
+   `outline: none` anywhere the container does not take over like this. */
+.wb-box .wb-line:focus-visible { outline: none; }
 .wb-tool {
   width: 28px;
   height: 28px;
@@ -941,48 +993,136 @@ table.wb-rows .wb-n { text-align: right; font-variant-numeric: tabular-nums; }
 .wb-status .wb-push { flex: 1; }
 
 /* ----------------------------------------------------------- generation */
-/* The progress card. Labels and stages are the app's own, and so is the
-   restraint: before any output arrives the bar has nothing real to report, so a
-   skeleton stands in rather than inventing movement, and past 20s the wait gets
-   an explanation instead of a spinner. */
+/* The progress card, rebuilt 2026-08-26 around the mark.
+   ------------------------------------------------------------------------
+   It used to stack five rows — spinner and clock, a bar, a stage line, three
+   shimmering skeleton bars, and an explanation — which is a lot of furniture to
+   say "working". The bar is now the ring around the logo, and the duplication
+   went with it: the status bar at the foot of the workspace already carries the
+   state and the elapsed clock, so the card no longer prints either.
+   What is left is one row. */
+/* Three text rows beside the mark, and the stage sentence runs under the
+   controls to the card's edge. It was first drawn as one row with everything in
+   a single column beside the halo; in the review panel's 340px that left the
+   text about 130px, which wrapped the heading onto two lines and cut the stage
+   sentence to "Extracting layout…". The panel is the constraint here, not the
+   design — measure any change to this at 340px, not at whatever the window
+   happens to be. */
 .wb-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding: 13px 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 2px 13px;
+  padding: 14px 15px;
   border: 1px solid var(--rule);
   border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow-sm);
 }
 .wb-progress.wb-is-paused { border-color: var(--rule-strong); }
-.wb-progress .wb-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.wb-progress .wb-state { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.wb-progress .wb-state b { font-size: 12.5px; font-weight: 600; color: var(--ink); }
-.wb-progress .wb-clock { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
-.wb-progress .wb-acts { display: flex; gap: 2px; }
-.wb-spin { animation: wb-spin 1s linear infinite; color: var(--accent); }
-@keyframes wb-spin { to { transform: rotate(360deg); } }
-
-.wb-track { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
-/* scaleX from a left origin, not width: it is a compositor-only property, so the
-   bar cannot cause layout on every tick. */
-.wb-track i { display: block; height: 100%; width: 100%; border-radius: 999px; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform .25s linear; }
-.wb-progress.wb-is-paused .wb-track i { background: var(--ink-faint); }
-
-.wb-progress .wb-stage { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; color: var(--ink-2); }
-.wb-progress .wb-stage .wb-chars { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.wb-progress .wb-why { margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--ink-faint); }
-
-.wb-skeleton { height: 9px; border-radius: 999px; background: var(--track); position: relative; overflow: hidden; }
-.wb-skeleton::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink-faint) 18%, transparent), transparent);
-  animation: wb-sweep 1.4s ease-in-out infinite;
+/* Rows 1-3 are the text block; the halo sits beside all of them. */
+.wb-progress .wb-halo { grid-row: 1 / 4; align-self: center; }
+.wb-progress .wb-state {
+  grid-row: 1;
+  grid-column: 2;
+  min-width: 0;
+  align-self: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-@keyframes wb-sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.wb-progress .wb-acts { grid-row: 1; grid-column: 3; display: flex; gap: 2px; align-self: center; }
+
+/* Spans the controls' column too — the sentence is the longest thing in the
+   card and there is nothing beside it on this row. Clamped to two lines rather
+   than ellipsised on one: the height is then fixed whatever the stage says, so
+   the transcript below cannot jump as the steps advance. */
+.wb-progress .wb-stage {
+  grid-row: 2;
+  grid-column: 2 / -1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  height: 33px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+/* Percent and characters: the two numbers that are actually measurements. */
+.wb-progress .wb-metrics {
+  grid-row: 3;
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.wb-progress .wb-metrics b { font-weight: 600; color: var(--accent); }
+.wb-progress.wb-is-paused .wb-metrics b { color: var(--ink-faint); }
+.wb-progress .wb-why {
+  grid-row: 4;
+  grid-column: 1 / -1;
+  margin: 9px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------- the halo
+   The animated mark. See LogoPulse.tsx for which parts mean something and
+   which are decoration, and for why this has to survive `animation: none`. */
+.wb-halo { position: relative; display: grid; place-items: center; flex: none; }
+.wb-halo-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.wb-halo-svg circle { fill: none; }
+
+.wb-halo-track { stroke: var(--track); stroke-width: 4; }
+.wb-halo-arc {
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+  /* Matches the old .wb-track i timing exactly. Under reduced motion this is
+     switched off and the arc snaps to each new value, which is still movement
+     driven by real output. */
+  transition: stroke-dashoffset .25s linear;
+}
+.wb-halo-orbit {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 13 42;
+  opacity: .38;
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: wb-halo-turn 7s linear infinite;
+}
+/* Behind the mark. Luminance only — no transform — which is why this is the one
+   thing allowed to keep running under reduced motion. */
+.wb-halo-glow {
+  position: absolute;
+  inset: 18%;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 26%, transparent), transparent 70%);
+  animation: wb-halo-breathe 2.7s ease-in-out infinite;
+}
+.wb-halo-mark { position: relative; }
+
+.wb-halo--paused .wb-halo-arc { stroke: var(--ink-faint); }
+.wb-halo--paused .wb-halo-orbit { animation-play-state: paused; opacity: .18; }
+.wb-halo--paused .wb-halo-glow { animation-play-state: paused; opacity: .25; }
+.wb-halo--paused .wb-halo-mark { opacity: .55; }
+
+@keyframes wb-halo-turn { to { transform: rotate(360deg); } }
+@keyframes wb-halo-breathe {
+  0%, 100% { opacity: .30; }
+  50% { opacity: .85; }
+}
 
 /* ------------------------------------------------------------- account */
 .wb-pop {
@@ -1478,4 +1618,34 @@ select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
     transition: none !important;
     animation: none !important;
   }
+
+  /* One deliberate exception, and it needs `!important` only because the rule
+     above uses it. The generation card can be on screen for two minutes; with
+     every animation off and the progress ring pinned — which it honestly is
+     until output arrives — the card is indistinguishable from a crash.
+
+     What survives is a slow opacity breathe on a blurred disc behind the mark.
+     It changes luminance and nothing else: no movement, no rotation, no
+     scaling, nothing that tracks across the retina, which is what the
+     preference is actually asking to be spared. It also only ever appears
+     during work the user started themselves — the same user-initiated
+     exception the landing page's Replay button already relies on, and the
+     reason that button was fixed rather than left disabled.
+
+     The orbit is not on this list. It rotates, so under the preference it
+     stops, and it means nothing, so nothing is lost. */
+  .wb-root .wb-halo-glow { animation: wb-halo-breathe 2.7s ease-in-out infinite !important; }
+
+  /* Two more opacity-only exceptions, on the same reasoning and with the same
+     limits: no movement, no rotation, no scaling, and both driven by something
+     the user just did rather than by the page deciding to animate at them.
+
+     The delete affordance fading in on hover, and a deleted row fading out
+     before the list reflows. Killing these does not make the panel calmer, it
+     makes rows appear and vanish instantly under the cursor — which for a
+     destructive action reads as "did that just delete the wrong one?". A
+     190ms fade is the feedback that it went. `!important` only because the
+     blanket rule above uses it. */
+  .wb-root .wb-card .wb-row-actions { transition: opacity .15s ease !important; }
+  .wb-root .wb-card.wb-leaving { transition: opacity .18s ease !important; }
 }

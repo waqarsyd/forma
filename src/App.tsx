@@ -45,7 +45,6 @@ import {
   IconPause,
   IconPlay,
   IconPlus,
-  IconReplay,
   IconSave,
   IconTrash,
   IconTune,
@@ -106,8 +105,11 @@ import { titleForRoute, viewForRoute } from './lib/routes';
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { sourceRectFor } from './lib/sourceRect';
-import { pingDesigner, sendToDesigner, designerFileName } from './lib/designerBridge';
+import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
+import { formatSessionStamp } from './lib/datetime';
+import { unitsToPx, pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
+import LogoPulse from './components/LogoPulse';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
   clampReviewWidth,
@@ -180,8 +182,14 @@ const MAX_PDF_PAGES = 8;
  * in the generated REPX.
  */
 const PDF_RENDER_SCALE = 2.5;
-/** PDF points are 1/72"; the report grid is hundredths of an inch. */
-const PT_TO_REPORT_UNITS = 100 / 72;
+/**
+ * PDF points are 1/72"; the report grid is whatever `ReportUnit` says.
+ *
+ * Was a `100 / 72` constant, which hardcoded hundredths-of-an-inch into the one
+ * part of the pipeline whose output the prompt tells the model to use verbatim
+ * as `LocationFloat`. `pointsToUnits` in `src/lib/reportGeometry.ts` replaces
+ * it, and unlike the constant it is under test.
+ */
 /** Cap on extracted strings per page, so a dense page cannot flood the prompt. */
 const MAX_TEXT_ITEMS_PER_PAGE = 400;
 
@@ -192,10 +200,21 @@ const MAX_TEXT_ITEMS_PER_PAGE = 400;
  */
 const CLOUD_SAVE_BUDGET_BYTES = 900_000;
 
-/** A non-visual attachment: a PDF's text layer, or the contents of a .repx. */
+/**
+ * A non-visual attachment: a PDF's text layer, or the contents of a .repx.
+ *
+ * `uploadId` is the same id the upload's page images carry in `PreviewMeta`,
+ * and it is what ties the two lists back together. Without it the composer had
+ * no way to tell that eight "page N text" entries and eight page images were
+ * one file the user dropped, so it drew sixteen chips for one PDF.
+ */
 interface TextAttachment {
   id: string;
-  label: string;
+  uploadId: string;
+  /** Source filename. Display is derived from this, never stored pre-formatted. */
+  file: string;
+  /** 1-based page number, for text recovered page by page. */
+  page?: number;
   text: string;
 }
 
@@ -227,8 +246,10 @@ interface IngestResult {
  */
 async function extractPdfPageText(
   page: any,
-  pageNumber: number
+  pageNumber: number,
+  reportUnit?: string
 ): Promise<{ text: string; omitted: number } | null> {
+  const toUnits = (points: number) => Math.round(pointsToUnits(points, reportUnit));
   try {
     const base = page.getViewport({ scale: 1 });
     const pageHeightPt = base.height;
@@ -253,13 +274,13 @@ async function extractPdfPageText(
       const x = item.transform?.[4] ?? 0;
       const baselineY = item.transform?.[5] ?? 0;
       const h = item.height || 0;
-      const yTop = pageHeightPt - (baselineY + h);
+      const yTop = pdfTopFromBaseline(baselineY, h, pageHeightPt);
 
       lines.push(
-        `"${str.replace(/"/g, "'")}" x=${Math.round(x * PT_TO_REPORT_UNITS)} ` +
-        `y=${Math.round(yTop * PT_TO_REPORT_UNITS)} ` +
-        `w=${Math.round((item.width || 0) * PT_TO_REPORT_UNITS)} ` +
-        `h=${Math.round(h * PT_TO_REPORT_UNITS)}`
+        `"${str.replace(/"/g, "'")}" x=${toUnits(x)} ` +
+        `y=${toUnits(yTop)} ` +
+        `w=${toUnits(item.width || 0)} ` +
+        `h=${toUnits(h)}`
       );
     }
 
@@ -273,8 +294,8 @@ async function extractPdfPageText(
     const text = (
       `PDF page ${pageNumber} — text layer extracted from the file itself. ` +
       `These strings and coordinates are EXACT and take priority over anything read from the page image.\n` +
-      `Page is ${Math.round(base.width * PT_TO_REPORT_UNITS)} x ${Math.round(pageHeightPt * PT_TO_REPORT_UNITS)} report units. ` +
-      `Coordinates are already in report units (hundredths of an inch), origin top-left.\n` +
+      `Page is ${toUnits(base.width)} x ${toUnits(pageHeightPt)} report units. ` +
+      `Coordinates are already in report units (${reportUnit || 'HundredthsOfAnInch'}), origin at the top-left of the paper.\n` +
       lines.join('\n') + truncated
     );
 
@@ -312,7 +333,7 @@ async function renderPdfPage(page: any): Promise<string | null> {
  * and oversized files produce a notice rather than being silently ignored —
  * previously dropping a .docx did nothing at all, with no feedback.
  */
-async function ingestFile(file: File, uploadId: string): Promise<IngestResult> {
+async function ingestFile(file: File, uploadId: string, reportUnit?: string): Promise<IngestResult> {
   const out: IngestResult = { images: [], imageMeta: [], texts: [], notices: [] };
   const name = file.name || 'file';
 
@@ -343,9 +364,9 @@ async function ingestFile(file: File, uploadId: string): Promise<IngestResult> {
           out.imageMeta.push({ uploadId, file: name, page: n });
         }
 
-        const extracted = await extractPdfPageText(page, n);
+        const extracted = await extractPdfPageText(page, n, reportUnit);
         if (extracted) {
-          out.texts.push({ id: `${Date.now()}-${name}-p${n}`, label: `${name} · page ${n} text`, text: extracted.text });
+          out.texts.push({ id: `${Date.now()}-${name}-p${n}`, uploadId, file: name, page: n, text: extracted.text });
           // The per-page string cap used to drop the tail of a dense page in
           // silence, so missing accuracy at the bottom of a busy page looked
           // like a model failure. Say it out loud instead.
@@ -387,7 +408,8 @@ async function ingestFile(file: File, uploadId: string): Promise<IngestResult> {
     }
     out.texts.push({
       id: `${Date.now()}-${name}`,
-      label: name,
+      uploadId,
+      file: name,
       text: `Existing DevExpress report (${name}). Use this as the base structure and preserve it unless asked to change it:\n\n${xml}`,
     });
     return out;
@@ -555,12 +577,17 @@ const RepxViewer = ({ xml }: { xml: string }) => {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div
           className={`flex items-center gap-2 text-[11px] font-semibold px-3 py-1.5 rounded-full border ${
-            status.ok
-              ? 'text-[color:var(--ok-ink)] border-[color:var(--ok-line)] bg-[color:var(--ok-wash)]'
-              : 'text-[color:var(--bad-ink)] border-[color:var(--bad-line)] bg-[color:var(--bad-wash)]'
+            !status.ok
+              ? 'text-[color:var(--bad-ink)] border-[color:var(--bad-line)] bg-[color:var(--bad-wash)]'
+              : status.warnings.length
+                // Valid, opens fine, will not look like the design. A third
+                // state, because colouring it green hides the finding and
+                // colouring it red says the file is broken when it is not.
+                ? 'text-[color:var(--warn-ink,var(--bad-ink))] border-[color:var(--rule-strong)] bg-[color:var(--track)]'
+                : 'text-[color:var(--ok-ink)] border-[color:var(--ok-line)] bg-[color:var(--ok-wash)]'
           }`}
         >
-          {status.ok ? <IconCheckCircle size={14} /> : <IconAlert size={14} />}
+          {status.ok && !status.warnings.length ? <IconCheckCircle size={14} /> : <IconAlert size={14} />}
           <span>{status.message}</span>
         </div>
 
@@ -577,6 +604,20 @@ const RepxViewer = ({ xml }: { xml: string }) => {
           </button>
         </div>
       </div>
+
+      {/* What will not look like the design. Listed rather than counted: "3
+          elements do not fit" is not actionable, and the name of the control is
+          the thing that makes it findable in the designer. */}
+      {status.warnings.length > 0 && (
+        <ul className="flex flex-col gap-1.5 rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3">
+          {status.warnings.map((warning, i) => (
+            <li key={i} className="flex gap-2 text-[11.5px] leading-[1.5] text-on-surface-variant">
+              <span className="mt-[3px] shrink-0 text-[color:var(--ink-faint)]"><IconAlert size={12} /></span>
+              <span>{warning}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* Source */}
       {/* The XML pane is one of the things the sheet's --code-* tokens exist for.
@@ -880,11 +921,24 @@ const MockupChart = ({ el }: { el: ReportElement }) => {
 const ReportMockup = ({
   layout,
   sourceImages,
+  reportUnit,
 }: {
   layout: ReportLayout;
   /** The user's uploaded images, so `sourceRect` crops can be resolved. */
   sourceImages?: string[];
+  /**
+   * The `ReportUnit` the layout's numbers are in. Was a bare `0.96` at eight
+   * call sites — correct for the default (1/100" ÷ 1/96" = 0.96) and silently
+   * wrong for the other two units the config dialog offers.
+   *
+   * A report reloaded from history does not record the unit it was generated
+   * under, so this is the *current* setting; that only misreads a report made
+   * before the setting was changed, which is a far smaller wrong than being
+   * fixed to one unit forever.
+   */
+  reportUnit?: string;
 }) => {
+  const px = (value: number) => unitsToPx(value, reportUnit);
   // The report page is an absolutely-positioned pixel grid (coordinates come
   // straight from the REPX units), so it cannot reflow. Instead we measure the
   // available width and scale the whole page down to fit — the geometry stays
@@ -892,10 +946,10 @@ const ReportMockup = ({
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
 
-  const pageWidth = (layout.pageWidth || 850) * 0.96;
+  const pageWidth = px(layout.pageWidth || 850);
   const pageHeight = Math.max(
-    1056, // 1100 * 0.96
-    layout.sections.reduce((sum, s) => sum + (s.height || 100) * 0.96, 0),
+    px(1100),
+    layout.sections.reduce((sum, s) => sum + px(s.height || 100), 0),
   );
 
   useEffect(() => {
@@ -942,7 +996,7 @@ const ReportMockup = ({
             <div
               key={sIdx}
               className="relative w-full"
-              style={{ height: (section.height || 100) * 0.96 }}
+              style={{ height: px(section.height || 100) }}
             >
               {/* Elements */}
               {section.elements.map((el, eIdx) => {
@@ -970,13 +1024,16 @@ const ReportMockup = ({
                     // themes, and a flipping token would invert or vanish here.
                     className="absolute flex overflow-hidden"
                     style={{
-                      left: (el.x || 0) * 0.96,
-                      top: (el.y || 0) * 0.96,
-                      width: (el.width || 100) * 0.96,
-                      height: (el.height || 20) * 0.96,
+                      left: px(el.x || 0),
+                      top: px(el.y || 0),
+                      width: px(el.width || 100),
+                      height: px(el.height || 20),
                       backgroundColor: el.backgroundColor || 'transparent',
                       color: el.color || 'inherit',
-                      fontSize: el.fontSize ? `${el.fontSize * 0.96}px` : '12px',
+                      // fontSize is in report units like every other number in
+                      // the layout — see the prompt. It is the REPX that has to
+                      // convert to points, not this.
+                      fontSize: el.fontSize ? `${px(el.fontSize)}px` : '12px',
                       fontWeight: el.bold ? 700 : undefined,
                       fontStyle: el.italic ? 'italic' : undefined,
                       fontFamily: el.fontFamily || undefined,
@@ -1011,7 +1068,7 @@ const ReportMockup = ({
                       <div className="w-full h-[1px] bg-on-paper/80"></div>
                     )}
 
-                    {isTable && <MockupTable el={el} scaleFont={0.96} />}
+                    {isTable && <MockupTable el={el} scaleFont={unitsToPx(1, reportUnit)} />}
 
                     {isChart && <MockupChart el={el} />}
 
@@ -1511,6 +1568,42 @@ export default function App() {
     () => groupAttachments(previewMeta, previews.length),
     [previewMeta, previews.length]
   );
+
+  /**
+   * Text attachments that are not already represented by a chip of their own.
+   *
+   * A PDF produces both page images and a per-page text layer, and both are
+   * needed — but they are one file. The images already collapse into a single
+   * chip, so listing the text layer beside them drew a second chip per page: an
+   * eight-page PDF appeared as nine attachments, which reads as the product
+   * having torn the file apart. Text belonging to an upload that has images is
+   * therefore part of that upload's chip and not listed again.
+   *
+   * What is left is genuinely text-only — a `.repx`, or a PDF whose pages all
+   * failed to rasterise — and it is grouped by the same rule so that case
+   * cannot re-open the same defect from the other side.
+   */
+  const textGroups = useMemo(() => {
+    const withImages = new Set(previewMeta.map((m) => m.uploadId));
+    const standalone = attachmentTexts.filter((t) => !withImages.has(t.uploadId));
+    return groupAttachments(
+      standalone.map((t) => ({ uploadId: t.uploadId, file: t.file, page: t.page })),
+      standalone.length
+    ).map((group) => ({ ...group, uploadId: standalone[group.indices[0]].uploadId }));
+  }, [attachmentTexts, previewMeta]);
+
+  /**
+   * How many *files* are staged, which is what `MAX_ATTACHMENTS` has always
+   * claimed to count. Counting rows instead meant one eight-page PDF spent
+   * sixteen of the twelve allowed slots, and the next drop was refused with
+   * "you can attach up to 12 items" after the user had attached one.
+   */
+  const stagedUploads = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of previewMeta) ids.add(m.uploadId);
+    for (const t of attachmentTexts) ids.add(t.uploadId);
+    return ids.size;
+  }, [previewMeta, attachmentTexts]);
   const [config, setConfig] = useState<ReportConfig>(() => {
     // Forma never ships a key of its own, so the only key in play is the user's.
     // It lives in sessionStorage, which the browser clears when the tab closes;
@@ -1992,7 +2085,8 @@ export default function App() {
     if (incoming.length === 0) return;
     setUploadNotices([]);
 
-    const room = MAX_ATTACHMENTS - (previews.length + attachmentTexts.length);
+    // Files, not rows — a PDF's pages are ours, not something the user attached.
+    const room = MAX_ATTACHMENTS - stagedUploads;
     if (room <= 0) {
       setUploadNotices([`You can attach up to ${MAX_ATTACHMENTS} items. Remove one to add another.`]);
       return;
@@ -2009,7 +2103,9 @@ export default function App() {
       for (const [i, file] of accepted.entries()) {
         // Identifies this drop for the life of the staged attachment. Two files
         // can share a name, so the name cannot be the key — see attachments.ts.
-        const result = await ingestFile(file, `${Date.now()}-${i}-${file.name}`);
+        // The extracted coordinates go into the prompt as LocationFloat values,
+        // so they have to be in the unit the REPX will declare.
+        const result = await ingestFile(file, `${Date.now()}-${i}-${file.name}`, config.unit);
         if (result.images.length) {
           setPreviews(prev => [...prev, ...result.images]);
           setPreviewMeta(prev => [...prev, ...result.imageMeta]);
@@ -2021,7 +2117,7 @@ export default function App() {
       setIsIngesting(false);
       setUploadNotices(notices);
     }
-  }, [previews.length, attachmentTexts.length]);
+  }, [stagedUploads]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     await ingestFiles(Array.from(e.target.files || []));
@@ -2036,15 +2132,22 @@ export default function App() {
    * split into pages is ours, so undoing the attachment has to undo all of it —
    * leaving pages 2..5 of a PDF behind after removing "it" would be its own
    * kind of broken.
+   *
+   * That includes the text layer, which has no chip of its own once the file
+   * has images. It used to survive the removal, so a PDF the user had taken
+   * back was still sent to the model — invisibly, with nothing on screen left
+   * to remove it with.
    */
-  const removeFile = (indices: number[]) => {
+  const removeFile = (indices: number[], uploadId?: string) => {
     const drop = new Set(indices);
     setPreviews(prev => prev.filter((_, i) => !drop.has(i)));
     setPreviewMeta(prev => prev.filter((_, i) => !drop.has(i)));
+    if (uploadId) setAttachmentTexts(prev => prev.filter(t => t.uploadId !== uploadId));
   };
 
-  const removeTextAttachment = (id: string) => {
-    setAttachmentTexts(prev => prev.filter(t => t.id !== id));
+  /** Same rule from the other side: one chip, one upload, all of it. */
+  const removeTextAttachment = (uploadId: string) => {
+    setAttachmentTexts(prev => prev.filter(t => t.uploadId !== uploadId));
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -2186,6 +2289,28 @@ export default function App() {
     setMessages(report.messages);
     setResult(report.result);
     setRailPanel('review');
+  };
+
+  /**
+   * Rows on their way out, so the list can fade them before they vanish.
+   *
+   * The delay is presentational only — `handleDeleteReport` still runs after
+   * it, and the row is `pointer-events: none` meanwhile, so a second click
+   * cannot queue the same delete twice.
+   */
+  const [leavingReportIds, setLeavingReportIds] = useState<string[]>([]);
+  /** Two-step confirm for "Clear all". A native confirm() is banned here. */
+  const [confirmingClearAll, setConfirmingClearAll] = useState(false);
+
+  const REMOVE_FADE_MS = 190;
+
+  const removeReports = (ids: string[]) => {
+    if (ids.length === 0) return;
+    setLeavingReportIds((prev) => [...prev, ...ids]);
+    window.setTimeout(() => {
+      ids.forEach((id) => void handleDeleteReport(id));
+      setLeavingReportIds((prev) => prev.filter((id) => !ids.includes(id)));
+    }, REMOVE_FADE_MS);
   };
 
   const handleDeleteReport = async (id: string) => {
@@ -2766,10 +2891,14 @@ export default function App() {
   /**
    * Whether the RepxDesigner companion is running on this machine. Pinged once
    * on mount; false for everyone who has not installed it, which is the normal
-   * case and is why the button it gates simply does not render rather than
-   * appearing and failing. Same contract as `canUseVault`.
+   * case. It gates whether **Open in designer** can be clicked, not whether it
+   * is drawn — the button is always in the bar and explains itself when the
+   * companion is not answering. Same detection contract as `canUseVault`; the
+   * difference is that an undiscoverable capability is its own failure.
    */
   const [designerReady, setDesignerReady] = useState(false);
+  /** True while a `forma-repx://` launch is being waited on — a cold start is slow. */
+  const [designerStarting, setDesignerStarting] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const check = () => {
@@ -2801,9 +2930,34 @@ export default function App() {
   const openInDesigner = async () => {
     if (!result?.repxContent) return;
     if (blockedByInvalidRepx()) return;
+
     try {
+      // Nothing listening: ask Windows to start it, then wait for the port.
+      // The button no longer requires the companion to be running already —
+      // requiring someone to remember a tray app before a one-click action
+      // works is most of the reason this button was never used.
+      if (!designerReady) {
+        setError(null);
+        setDesignerStarting(true);
+        launchDesigner();
+        const started = await waitForDesigner();
+        setDesignerStarting(false);
+        setDesignerReady(started);
+
+        if (!started) {
+          setError(
+            `Could not start the report designer on this machine. If your browser asked for permission, ` +
+            `allow it and click again. If it did not ask at all, the handler is not registered yet — run ` +
+            `RepxDesigner.exe --register once (no admin needed), or start RepxDesigner.exe --serve yourself. ` +
+            `Export .repx works regardless.`
+          );
+          return;
+        }
+      }
+
       await sendToDesigner(result.repxContent, designerFileName(result.title));
     } catch (err) {
+      setDesignerStarting(false);
       setError(
         `Could not reach the report designer on this machine. ` +
         `Start it with \`RepxDesigner.exe --serve\` and try again. ` +
@@ -3225,54 +3379,46 @@ export default function App() {
               </article>
             )}
 
-            {/* Generation. The bar reports only what has actually arrived. */}
+            {/* Generation. The ring around the mark *is* the progress bar — same
+                `analyzingProgress`, same guarantee that it only ever reports
+                what has actually arrived. The spinner, the clock and the three
+                shimmering skeleton bars are gone: the status bar at the foot of
+                the workspace already carries state and elapsed time, and this
+                card sits in the middle of a conversation, where five stacked
+                rows of furniture is the loudest thing on screen for a job the
+                user already knows they started. */}
             {(isAnalyzing || isPaused) && (
               <div className={`wb-progress${isPaused ? ' wb-is-paused' : ''}`} aria-live="polite">
-                <div className="wb-top">
-                  <span className="wb-state">
-                    <span>{isPaused ? <IconPause size={17} /> : <IconReplay size={17} className="wb-spin" />}</span>
-                    <b>{isPaused ? 'Analysis paused' : streamChars > 0 ? 'Writing report' : 'Reading your design'}</b>
-                  </span>
-                  <span className="wb-clock">{formatElapsed(elapsedTime)}</span>
-                  <span className="wb-acts">
-                    <button
-                      className="wb-tool"
-                      title={isPaused ? 'Resume' : 'Pause'}
-                      aria-label={isPaused ? 'Resume analysis' : 'Pause analysis'}
-                      onClick={isPaused ? handleResume : handlePause}
-                    >
-                      {isPaused ? <IconPlay size={15} /> : <IconPause size={15} />}
-                    </button>
-                    <button className="wb-tool" title="Stop &amp; reset" aria-label="Stop analysis" onClick={handleStop}>
-                      <IconClose size={15} />
-                    </button>
-                  </span>
-                </div>
+                <LogoPulse percent={analyzingProgress} paused={isPaused} size={56} />
 
-                <div className="wb-track">
-                  <i style={{ transform: `scaleX(${analyzingProgress / 100})` }} />
-                </div>
+                <b className="wb-state">
+                  {isPaused ? 'Analysis paused' : streamChars > 0 ? 'Writing report' : 'Reading your design'}
+                </b>
+                <span className="wb-stage">{analyzingStep || 'Analyzing input request and images…'}</span>
+                <span className="wb-metrics">
+                  <b>{Math.round(analyzingProgress)}%</b>
+                  {streamChars > 0 && <span>· {streamChars.toLocaleString()} chars</span>}
+                </span>
 
-                <div className="wb-stage">
-                  <span>{analyzingStep || 'Analyzing input request and images…'}</span>
-                  <span className="wb-chars">{streamChars > 0 ? `${streamChars.toLocaleString()} chars` : ''}</span>
-                </div>
-
-                {/* Before output arrives there is nothing real to report, so a
-                    skeleton stands in rather than a bar that invents movement. */}
-                {!isPaused && streamChars === 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }} aria-hidden="true">
-                    <span className="wb-skeleton" style={{ width: '74%' }} />
-                    <span className="wb-skeleton" style={{ width: '100%' }} />
-                    <span className="wb-skeleton" style={{ width: '64%' }} />
-                  </div>
-                )}
+                <span className="wb-acts">
+                  <button
+                    className="wb-tool"
+                    title={isPaused ? 'Resume' : 'Pause'}
+                    aria-label={isPaused ? 'Resume analysis' : 'Pause analysis'}
+                    onClick={isPaused ? handleResume : handlePause}
+                  >
+                    {isPaused ? <IconPlay size={15} /> : <IconPause size={15} />}
+                  </button>
+                  <button className="wb-tool" title="Stop &amp; reset" aria-label="Stop analysis" onClick={handleStop}>
+                    <IconClose size={15} />
+                  </button>
+                </span>
 
                 {/* Only once the wait is long enough to be worth explaining. */}
                 {!isPaused && streamChars === 0 && elapsedTime >= 20_000 && (
                   <p className="wb-why">
                     The model is still thinking — it can spend most of a run reasoning before
-                    emitting a character. Nothing is streaming yet, so the bar is honestly
+                    emitting a character. Nothing is streaming yet, so the ring is honestly
                     pinned rather than pretending to move.
                   </p>
                 )}
@@ -3292,6 +3438,7 @@ export default function App() {
                 {previewGroups.map((group) => {
                   const label = groupLabel(group);
                   const first = group.indices[0];
+                  const uploadId = previewMeta[first]?.uploadId;
                   return (
                     <span key={`${group.file}-${first}`} className="wb-attach wb-attach--file">
                       <button
@@ -3306,7 +3453,7 @@ export default function App() {
                         {group.pages > 1 && <span className="wb-attach-count">{group.pages} pages</span>}
                       </button>
                       <button
-                        onClick={() => removeFile(group.indices)}
+                        onClick={() => removeFile(group.indices, uploadId)}
                         title={`Remove ${label}`}
                         aria-label={`Remove ${label}`}
                       >
@@ -3317,17 +3464,27 @@ export default function App() {
                 })}
               </div>
             )}
-            {attachmentTexts.length > 0 && (
+            {textGroups.length > 0 && (
               <div className="wb-chip-row">
-                {attachmentTexts.map((att) => (
-                  <span key={att.id} className="wb-attach">
-                    <IconDoc size={13} />
-                    {att.label}
-                    <button onClick={() => removeTextAttachment(att.id)} title="Remove" aria-label="Remove attachment">
-                      <IconClose size={11} />
-                    </button>
-                  </span>
-                ))}
+                {/* Only uploads with no thumbnail of their own reach this row —
+                    see `textGroups`. A PDF's text layer belongs to the chip
+                    above, not to a row of its own. */}
+                {textGroups.map((group) => {
+                  const label = groupLabel(group);
+                  return (
+                    <span key={group.uploadId} className="wb-attach">
+                      <IconDoc size={13} />
+                      {label}
+                      <button
+                        onClick={() => removeTextAttachment(group.uploadId)}
+                        title={`Remove ${label}`}
+                        aria-label={`Remove ${label}`}
+                      >
+                        <IconClose size={11} />
+                      </button>
+                    </span>
+                  );
+                })}
               </div>
             )}
             {uploadNotices.length > 0 && (
@@ -3465,20 +3622,79 @@ export default function App() {
         <div className={`wb-panel-body${railPanel === 'history' ? '' : ' wb-hidden'}`}>
           <div className="wb-col-head">
             <span className="wb-col-title">Recent</span>
-            <span className="wb-kicker">this week</span>
+            {/* Was the words "this week", over a list that has always been every
+                saved session regardless of age. Harmless while the rows showed
+                no date; a plain contradiction now that they do. */}
+            {/* Two-step, in place. A native confirm() is the one thing this app
+                does not do — see the save notice — and "clear all" wiping every
+                saved project on a single stray click is exactly the case a
+                confirm exists for. */}
+            {confirmingClearAll ? (
+              <span className="wb-kicker wb-confirm">
+                <span>Delete all {savedReports.length}?</span>
+                <button
+                  className="wb-mini wb-danger"
+                  onClick={() => {
+                    removeReports(savedReports.map((r) => r.id));
+                    setConfirmingClearAll(false);
+                  }}
+                >
+                  Delete
+                </button>
+                <button className="wb-mini" onClick={() => setConfirmingClearAll(false)}>
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <span className="wb-kicker">
+                {savedReports.length} {savedReports.length === 1 ? 'session' : 'sessions'}
+                {savedReports.length > 0 && (
+                  <button
+                    className="wb-mini"
+                    onClick={() => setConfirmingClearAll(true)}
+                    title="Delete every saved session"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </span>
+            )}
           </div>
           <div className="wb-list" style={{ paddingTop: 0 }}>
             {savedReports.length === 0 ? (
               <div className="wb-empty">Nothing yet.</div>
             ) : (
-              savedReports.map((report) => (
-                <div key={report.id} className="wb-card" onClick={() => handleLoadReport(report)}>
-                  <div className="wb-nm">{report.name}</div>
-                  <div className="wb-sub">
-                    {new Date(report.timestamp).toLocaleTimeString()} · {report.messages.length} notes
+              savedReports.map((report) => {
+                // Day and time. A bare clock time was the same six characters
+                // for a session from this morning and one from last month.
+                const stamp = formatSessionStamp(report.timestamp);
+                const leaving = leavingReportIds.includes(report.id);
+                return (
+                  <div
+                    key={report.id}
+                    className={`wb-card${leaving ? ' wb-leaving' : ''}`}
+                    onClick={() => handleLoadReport(report)}
+                  >
+                    <div className="wb-nm">{report.name}</div>
+                    <div className="wb-sub">
+                      {stamp && `${stamp} · `}
+                      {report.messages.length} {report.messages.length === 1 ? 'note' : 'notes'}
+                    </div>
+                    {/* Same hover-revealed affordance as the Projects list, and
+                        the same handler — these two panels are one array. */}
+                    <div className="wb-row-actions">
+                      <button
+                        className="wb-danger"
+                        aria-label={`Delete ${report.name}`}
+                        title="Delete"
+                        onClick={(e) => { e.stopPropagation(); removeReports([report.id]); }}
+                      >
+                        <IconTrash size={14} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -3538,19 +3754,34 @@ export default function App() {
               <IconSave size={14} />
               Save
             </button>
-            {/* Only when the local companion answered on mount — see
-                designerBridge.ts. Everyone else gets Export and nothing else. */}
-            {designerReady && (
-              <button
-                className="wb-pill wb-pill--outline"
-                onClick={openInDesigner}
-                disabled={!result?.repxContent}
-                title="Open this report in the DevExpress designer on this machine"
-              >
-                <IconExternal size={14} />
-                Open in designer
-              </button>
-            )}
+            {/* Always in the bar, beside Save and Export, and disabled rather
+                than absent when the local companion is not answering — see
+                designerBridge.ts for the ping. It used to render only once
+                `designerReady`, which made the feature invisible to everyone
+                who had not already installed the companion: nothing on screen
+                said the capability existed, so nobody went looking for it. The
+                detection still decides whether it can be *clicked*; what
+                changed is that it no longer decides whether anyone can find
+                out. `title` carries the reason, so a greyed pill is never a
+                dead end. */}
+            <button
+              className="wb-pill wb-pill--outline"
+              onClick={openInDesigner}
+              // Only the report gates this now. Whether the companion happens to
+              // be running is no longer the user's problem to solve before
+              // clicking — see `openInDesigner`, which starts it.
+              disabled={!result?.repxContent || designerStarting}
+              title={
+                !result?.repxContent
+                  ? 'This report has no DevExpress XML to open'
+                  : designerReady
+                    ? 'Open this report in the DevExpress designer on this machine'
+                    : 'Start the DevExpress designer on this machine and open this report in it'
+              }
+            >
+              <IconExternal size={14} />
+              {designerStarting ? 'Starting designer…' : 'Open in designer'}
+            </button>
             <button className="wb-pill wb-pill--accent" onClick={downloadDesign} disabled={!result}>
               <IconDownload size={14} />
               Export .repx
@@ -3563,11 +3794,10 @@ export default function App() {
             <>
               {plate === 'proof' && (
                 <div className="wb-proof-holder wb-rise wb-rise-2">
-                  <div className="wb-glow" style={{ inset: '-90px -70px auto -70px', height: 320 }} aria-hidden="true" />
                   {/* ReportMockup sits directly in the holder — it carries the
                       artifact's proof frame itself (see its root), so wrapping it
                       in `.wb-proof` would draw that frame twice. */}
-                  <ReportMockup layout={result.layout!} sourceImages={mockupSourceImages} />
+                  <ReportMockup layout={result.layout!} sourceImages={mockupSourceImages} reportUnit={config.unit} />
                 </div>
               )}
 
@@ -3587,7 +3817,6 @@ export default function App() {
             </>
           ) : (
             <div className="wb-proof-holder wb-rise wb-rise-2">
-              <div className="wb-glow" style={{ inset: '-90px -70px auto -70px', height: 320 }} aria-hidden="true" />
               <div className="wb-sheet wb-reg-marks">
                 <Eyebrow coord="x 000 · y 0000">Canvas</Eyebrow>
                 <h3 style={{ marginTop: 22 }}>Ready to process</h3>
