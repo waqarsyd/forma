@@ -25,7 +25,9 @@ Remove-Item -Path 'HKCU:\Software\Classes\RepxDesigner.repx' -Recurse -Force
 
 A web page cannot start a program — every browser blocks that, and should. So Forma's **Open in designer** button works the other way round: this tool listens, and the page asks it.
 
-Run `RepxDesigner.exe --serve` and it sits in the system tray. Forma pings `/health` when the workspace loads and shows the button only if something answers; with the companion stopped there is no button and **Export .repx** is the whole story. That is the same contract `isVaultAvailable()` uses to gate the key-sync UI: detect the capability, never assume it.
+Run `RepxDesigner.exe --serve` and it sits in the system tray. Forma pings `/health` when the workspace loads, and again whenever the tab regains focus — starting the companion is something you do *outside* the browser, so a mount-only ping would leave the button dead until a reload.
+
+**The ping decides whether the button works, not whether it exists.** It sits in the bench bar beside **Save** and **Export .repx** at all times, and with nothing listening it is disabled with a `title` naming the command that turns it on. That is a change from the original behaviour (2026-08-26): the button used to render only once something answered, which meant the one group of people who would benefit from installing the companion — those who have not installed it — were also the only ones the product never mentioned it to. Detection is still real, and clicking something that would fail is still prevented; a capability nobody can discover is simply its own kind of broken. `isVaultAvailable()` gates the key-sync UI by the same detect-never-assume rule, and the same reasoning would apply there if the vault were ever a thing users had to go and enable.
 
 Click it and Forma POSTs the XML to `/open`. The tool writes it to `%TEMP%\Forma\<title>.repx` and opens the designer on it — no download, no file dialog.
 
@@ -70,9 +72,44 @@ Needs DevExpress 20.1 installed at the path in the `.csproj` `HintPath`s. `bin/`
 
 Observed 2026-08-13 on this machine, which has interactive desktops in sessions 2, 3 and 4: an instance started from a background shell wrote `%TEMP%\Forma\Job_Card_Report.repx` correctly and opened the designer on a desktop nobody was watching. The symptom is "the button does nothing" with a perfectly good file on disk.
 
-Double-click the exe (or a shortcut with `--serve` in its Target), and check the tray icon is in **your** tray. If the port is taken, an instance is already running somewhere — `Get-Process RepxDesigner | Select-Object Id, SessionId` shows which session owns it.
+**Double-clicking the bare exe does NOT start the server, and the wording here used to imply it did.** With no arguments the program opens a *file picker* and then the designer — a completely different mode. It looks like it worked (a window appears, the designer runs) while nothing is listening on 7317 and Forma's button stays greyed. Observed 2026-08-26: `Get-Process RepxDesigner` showed a live process with `MainWindowTitle: Report Designer` and `Get-NetTCPConnection -LocalPort 7317` showed nothing, which is the signature of exactly this mistake. **`--serve` is not optional; it is the whole difference between the two modes.**
+
+So: run the Startup shortcut, or a shortcut whose Target ends in `--serve`, or `RepxDesigner.exe --serve` from a terminal on your own desktop. Then check the tray icon is in **your** tray. If the port is taken, an instance is already running somewhere — `Get-Process RepxDesigner | Select-Object Id, SessionId` shows which session owns it.
+
+### Letting the button start it: `--register`
+
+The tidiest version of all this is not to start it at all. `RepxDesigner.exe --register` writes a `forma-repx://` URL-protocol handler under `HKCU\Software\Classes` — no admin, nothing machine-wide — whose command is `"<exe>" --serve "%1"`. Forma's **Open in designer** button is then enabled whenever the report has XML, and clicking it with nothing listening navigates to `forma-repx://serve`, which is the one route by which a web page may cause a local program to run. Windows starts the companion, the page polls `/health` for up to 12 seconds (`waitForDesigner`), and then POSTs the report as usual.
+
+Four things worth knowing before relying on it:
+
+- **The browser asks the first time.** Edge and Chrome show *"This site is trying to open RepxDesigner"* with an **Always allow** checkbox. That prompt is the security model, not a bug, and it cannot be suppressed from the page.
+- **A launch is unobservable from script.** An unregistered scheme, a declined prompt and a successful start are indistinguishable to `location.href` — none of them throws. That is why the timeout is the failure signal, and why the error message names all three causes rather than guessing one.
+- **The URL is a doorbell, not a delivery.** It carries no report: a `.repx` is tens of kilobytes and would not survive a command line. The XML still goes over the loopback POST, so the CORS and `x-forma-client` guards below apply exactly as before — registering the protocol widens nothing.
+- **The protocol launch never shows the "already running" warning box.** `RunServer(port, quietIfTaken: true)` exits silently when the port is taken, because from the page's point of view something already serving *is* success. Started by hand, the warning still appears.
+
+`--unregister` removes the key. Renaming the scheme means renaming `Scheme` in `Program.cs` **and** `DESIGNER_PROTOCOL` in `src/lib/designerBridge.ts`; they are matched by string and a mismatch fails silently.
+
+### Starting it at login, so the button is simply always live
+
+The button is gated on the ping, so "why is *Open in designer* greyed out" has one answer in practice: nothing is listening. Having to remember to start a tray app before it works is a bad deal for a one-click feature, and the fix is to stop remembering — a shortcut in the per-user Startup folder, which needs no admin and no code:
+
+```powershell
+$exe = (Resolve-Path 'tools\RepxDesigner\bin\Release\RepxDesigner.exe').Path
+$lnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'RepxDesigner (Forma).lnk'
+$s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+$s.TargetPath = $exe; $s.Arguments = '--serve'; $s.WorkingDirectory = Split-Path $exe
+$s.WindowStyle = 7   # minimised; it goes to the tray anyway
+$s.Save()
+```
+
+Done on this machine on 2026-08-26. Two things about it that are not obvious:
+
+- **It only takes effect at the next login, and it does not help the session you are in now.** Creating the shortcut starts nothing. For the current session the rule above still applies in full: double-click it yourself, from your own desktop. A script that creates the shortcut *and* launches the exe would hand you a designer on the wrong desktop, which is the exact failure this whole section exists to prevent.
+- **The shortcut hardcodes the repo path.** Move or rename the working tree and it silently points at nothing — the tray icon never appears, the button stays greyed, and there is no error anywhere. If the button stops working after a move, check this before anything else.
+
+Removing it is deleting the `.lnk` from `shell:startup`; nothing else is registered anywhere.
 
 ## Caveats
 
-- **Windows and DevExpress only.** Forma is a browser app that must keep working without any of this, which is why the button is feature-detected rather than assumed.
-- **Loopback over plain HTTP.** If Forma is ever served over HTTPS the browser will block the request to `http://127.0.0.1` as mixed content, and the button will fail even with the companion running.
+- **Windows and DevExpress only.** Forma is a browser app that must keep working without any of this, which is why the button is feature-detected rather than assumed. On a Mac or a Linux box it is permanently disabled, and its tooltip names a `.exe` that will never run there — accepted, because the alternative is a browser app sniffing the platform to decide what to admit exists.
+- **Loopback over plain HTTP.** If Forma is ever served over HTTPS the browser will block the request to `http://127.0.0.1` as mixed content, and the button will fail even with the companion running. Note the ping fails the same way, so the button reports itself as "start the companion" when the companion may well be running — the tooltip will be wrong about the reason, and this is the case to suspect first if it is ever deployed behind TLS.

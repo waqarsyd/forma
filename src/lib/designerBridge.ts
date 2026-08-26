@@ -64,6 +64,50 @@ export async function pingDesigner(timeoutMs = 1200): Promise<boolean> {
 }
 
 /**
+ * The URL scheme `RepxDesigner.exe --register` writes under HKCU. Renaming it
+ * here without renaming `Scheme` in `Program.cs` breaks the launch silently —
+ * an unregistered scheme does not error, it simply does nothing.
+ */
+export const DESIGNER_PROTOCOL = 'forma-repx';
+
+/**
+ * Ask Windows to start the companion.
+ *
+ * This is the *only* way a web page may cause a local program to run, and it is
+ * gated on purpose: the browser asks the user to confirm the first time, with an
+ * "Always allow" box. Nothing here can tell whether it worked — an unregistered
+ * scheme, a declined prompt and a successful launch are indistinguishable from
+ * script — which is why the caller must follow this with `waitForDesigner()`
+ * and treat a timeout as failure.
+ *
+ * `location.href` rather than a hidden iframe: Chromium blocks protocol launches
+ * from iframes, and assigning to `href` for an external scheme does not navigate
+ * the page away, so the workspace and its unsaved state survive.
+ */
+export function launchDesigner(): void {
+  try {
+    window.location.href = `${DESIGNER_PROTOCOL}://serve`;
+  } catch {
+    /* a blocked or unknown scheme is not an error we can see or act on */
+  }
+}
+
+/**
+ * Poll until the companion answers, or give up. Used after `launchDesigner()`:
+ * a cold start has to load the DevExpress assemblies before it binds the port,
+ * which is slow enough that a single ping straight after the launch always
+ * fails.
+ */
+export async function waitForDesigner(timeoutMs = 12000, everyMs = 400): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await pingDesigner(600)) return true;
+    await new Promise((resolve) => setTimeout(resolve, everyMs));
+  }
+  return false;
+}
+
+/**
  * Hand the XML to the companion, which writes it to a temp file and opens the
  * designer on it. Resolves once the companion has accepted the report — not
  * when the designer closes, since that dialog is modal and can stay open for as

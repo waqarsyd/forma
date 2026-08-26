@@ -27,15 +27,32 @@ namespace RepxDesigner
     ///   RepxDesigner.exe                 pick a file (starts in Downloads)
     ///   RepxDesigner.exe report.repx     open that file
     ///   RepxDesigner.exe --serve         listen on 127.0.0.1:7317 for Forma
+    ///   RepxDesigner.exe --register      register the forma-repx:// protocol
+    ///   RepxDesigner.exe --unregister    remove it again
     ///
     /// --serve is what puts an "Open in designer" button in Forma's workspace:
     /// the page POSTs the XML here and the designer opens on it directly, with no
     /// download and no file dialog. A browser cannot start a program itself, which
     /// is why this side has to exist at all.
+    ///
+    /// --register is the answer to the obvious complaint about that: the button is
+    /// dead until someone remembers to start a tray app, which is a poor deal for
+    /// a one-click feature. It writes a URL-protocol handler under HKCU (no admin,
+    /// nothing machine-wide) so the page can navigate to `forma-repx://serve` and
+    /// have Windows start this program in server mode. That is the one route by
+    /// which a web page may cause a local program to run, and it is deliberately
+    /// gated: the browser asks the user to confirm the first time.
+    ///
+    /// NOTE the registered command line is `"exe" --serve "%1"`, so the protocol
+    /// launch lands in the SAME server branch below with no extra parsing -- the
+    /// URL simply arrives as a trailing argument nobody reads.
     /// </summary>
     internal static class Program
     {
         private const int DefaultPort = 7317;
+
+        /// <summary>Scheme registered by --register. Must match designerBridge.ts.</summary>
+        private const string Scheme = "forma-repx";
 
         /// <summary>
         /// Required on POST /open. Any header outside the CORS safelist forces the
@@ -53,9 +70,28 @@ namespace RepxDesigner
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            if (Array.IndexOf(args, "--register") >= 0)
+            {
+                RegisterProtocol();
+                return;
+            }
+
+            if (Array.IndexOf(args, "--unregister") >= 0)
+            {
+                UnregisterProtocol();
+                return;
+            }
+
             if (Array.IndexOf(args, "--serve") >= 0)
             {
-                RunServer(PortFrom(args));
+                // Launched by the browser through forma-repx:// rather than by a
+                // person. That changes one thing: if the port is already taken,
+                // something is already serving, which is success from the page's
+                // point of view -- so exit quietly instead of popping a warning
+                // box the user did not ask for and cannot act on.
+                bool fromProtocol = Array.Exists(
+                    args, a => a != null && a.StartsWith(Scheme + ":", StringComparison.OrdinalIgnoreCase));
+                RunServer(PortFrom(args), fromProtocol);
                 return;
             }
 
@@ -165,6 +201,91 @@ namespace RepxDesigner
         }
 
         // ----------------------------------------------------------------- //
+        // Protocol registration
+        // ----------------------------------------------------------------- //
+
+        /// <summary>
+        /// Register `forma-repx://` for the current user so a page can ask Windows
+        /// to start this program.
+        ///
+        /// **HKCU, never HKLM.** Per-user needs no elevation, which matters: this
+        /// is a personal tool and the machine it was written on is a shared server
+        /// where nobody has admin. It also means uninstalling is one key delete and
+        /// affects nobody else's profile.
+        ///
+        /// The command is `"exe" --serve "%1"`. Passing `%1` is not decoration --
+        /// Windows appends the URL as an argument, and a handler that does not
+        /// declare where it goes gets it appended anyway in some shells. Declaring
+        /// it explicitly is what keeps `--serve` in a known position.
+        /// </summary>
+        private static void RegisterProtocol()
+        {
+            string exe = Application.ExecutablePath;
+
+            try
+            {
+                using (var root = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + Scheme))
+                {
+                    root.SetValue(string.Empty, "URL:Forma report designer");
+                    // Presence of this value -- not its content -- is what marks the
+                    // key as a URL protocol. Omitting it makes the whole thing inert
+                    // with no error anywhere.
+                    root.SetValue("URL Protocol", string.Empty);
+
+                    using (var icon = root.CreateSubKey("DefaultIcon"))
+                    {
+                        icon.SetValue(string.Empty, exe + ",0");
+                    }
+                    using (var command = root.CreateSubKey(@"shell\open\command"))
+                    {
+                        command.SetValue(string.Empty, "\"" + exe + "\" --serve \"%1\"");
+                    }
+                }
+
+                MessageBox.Show(
+                    "Forma can now start this program on its own." + Environment.NewLine + Environment.NewLine +
+                    "The \"Open in designer\" button will launch it when nothing is listening. Your browser will " +
+                    "ask for permission the first time -- tick \"Always allow\" and it will not ask again." +
+                    Environment.NewLine + Environment.NewLine +
+                    "Registered for your user only. Nothing was installed system-wide." + Environment.NewLine +
+                    "Handler: " + exe,
+                    "RepxDesigner",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Could not register the forma-repx:// protocol." + Environment.NewLine + Environment.NewLine + ex.Message,
+                    "RepxDesigner",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
+        private static void UnregisterProtocol()
+        {
+            try
+            {
+                Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\" + Scheme, false);
+                MessageBox.Show(
+                    "The forma-repx:// protocol has been removed." + Environment.NewLine +
+                    "Forma's button still works while this program is running with --serve.",
+                    "RepxDesigner",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Could not remove the forma-repx:// protocol." + Environment.NewLine + Environment.NewLine + ex.Message,
+                    "RepxDesigner",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
+        // ----------------------------------------------------------------- //
         // Server mode
         // ----------------------------------------------------------------- //
 
@@ -186,7 +307,7 @@ namespace RepxDesigner
         /// needed here is a request line, headers, a Content-Length body and a
         /// response -- small enough to hand-roll and avoid the admin prompt.
         /// </summary>
-        private static void RunServer(int port)
+        private static void RunServer(int port, bool quietIfTaken = false)
         {
             TcpListener listener;
             try
@@ -196,6 +317,11 @@ namespace RepxDesigner
             }
             catch (Exception ex)
             {
+                if (quietIfTaken)
+                {
+                    return; // already serving; the page will find it on its next ping
+                }
+
                 MessageBox.Show(
                     "Could not listen on 127.0.0.1:" + port + "." + Environment.NewLine +
                     "Another copy of RepxDesigner --serve is probably already running." +
