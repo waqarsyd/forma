@@ -72,7 +72,7 @@ const PRIVACY: Section[] = [
     heading: 'The short version',
     paragraphs: [
       'Forma collects as little as it can. There are no analytics, no advertising, no tracking pixels and no third-party scripts watching what you do. Nothing is sold or shared with anyone for marketing.',
-      'Signed out, three things leave your browser and no others: the request you send to Google with your own API key, the typefaces the page loads from Google Fonts, and — only if you use the contact form — the message you type into it. Who receives each of those is set out under “Who else is involved” below.',
+      'Signed out, four things leave your browser and no others: the request you send to Google with your own API key, the typefaces the page loads from Google Fonts, a connection the Firebase database client opens as soon as the page loads — which carries no information about you, only that a browser somewhere opened the app — and, only if you use the contact form, the message you type into it. Who receives each of those is set out under “Who else is involved” below.',
     ],
   },
   {
@@ -100,7 +100,7 @@ const PRIVACY: Section[] = [
   {
     heading: 'Who else is involved',
     paragraphs: [
-      'Google Firebase provides authentication and the database. Google Gemini generates the report, called directly from your browser with your key. Both of those need an account or a key, so neither is involved until you supply one.',
+      'Google Firebase provides authentication and the database. Google Gemini generates the report, called directly from your browser with your key. Neither holds anything of yours until you sign in or supply a key — but the database client does open a connection to Google when the page loads, whether or not you ever sign in. It carries no information about you; Google sees that a browser opened the app, and your IP address, the same as it does for the fonts below.',
       'Two others are involved without you doing anything. The pages load their typefaces from Google Fonts, so Google sees the IP address and browser of anyone who opens Forma at all. And the contact form is delivered by FormSubmit, which receives the name, email address, subject and message you type into that form and forwards them on as email — only when you press send, only from that one page, and nothing else about you goes with it.',
       'Files you upload are prepared in your browser — resized, rendered, parsed — before anything is sent.',
     ],

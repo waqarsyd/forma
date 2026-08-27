@@ -100,4 +100,21 @@ describe('privacy policy discloses every third party in the path', () => {
   it('does not claim nothing leaves the browser when signed out', () => {
     expect(legal).not.toMatch(/nothing about you leaves your browser except/i);
   });
+
+  /**
+   * Found by loading the built app and reading the network log, after the text
+   * above had already been corrected once: Firebase's database client opens a
+   * channel to firestore.googleapis.com as soon as the page loads, signed in or
+   * not, because `getFirestore()` runs at module scope. Every app-level query is
+   * correctly guarded on `user`; this is the SDK's own connection.
+   *
+   * The first correction said "three things leave your browser and no others",
+   * which was more precise and still wrong. A closed-set claim has to be checked
+   * against what the app *does*, not against what its code appears to do.
+   */
+  it('accounts for the Firebase connection that opens without signing in', () => {
+    expect(legal).toMatch(/database client/i);
+    // And the count must not contradict the list that follows it.
+    expect(legal).not.toMatch(/three things leave your browser/i);
+  });
 });

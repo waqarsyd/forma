@@ -2861,6 +2861,18 @@ export default function App() {
   /** True while a `forma-repx://` launch is being waited on — a cold start is slow. */
   const [designerStarting, setDesignerStarting] = useState(false);
   useEffect(() => {
+    // Only while the workspace is open. This used to run on mount with no
+    // condition, so every visitor to the landing page, the docs and the privacy
+    // policy fired a request at http://127.0.0.1:7317 — and for the very large
+    // majority, who do not have the companion installed, it failed and logged
+    // `net::ERR_CONNECTION_REFUSED` to the console. A predictable error on every
+    // page load is noise that hides the unpredictable ones. Found by loading
+    // the built app and reading the network log, not by reading the code.
+    //
+    // The button this feeds lives in the workspace, so nothing is lost: the
+    // ping now happens when there is something for it to enable.
+    if (!showWorkspace) return;
+
     let cancelled = false;
     const check = () => {
       pingDesigner().then((ready) => {
@@ -2880,7 +2892,7 @@ export default function App() {
       cancelled = true;
       window.removeEventListener('focus', check);
     };
-  }, []);
+  }, [showWorkspace]);
 
   /**
    * Hand the generated XML straight to the local designer — no download, no file
