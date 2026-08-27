@@ -89,7 +89,8 @@ import * as pdfjs from 'pdfjs-dist';
 // @ts-ignore
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { auth, db, logOut, handleFirestoreError, OperationType } from './services/firebase';
-import { collection, onSnapshot, query, setDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
+import { onSnapshot, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { reportsCollectionRef, reportDocRef, vaultDocRef as vaultDocumentRef } from './lib/accountData';
 import { User } from 'firebase/auth';
 import LoginPage from './components/LoginPage';
 import AccountDialog from './components/AccountDialog';
@@ -1522,7 +1523,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     try {
-      const q = query(collection(db, 'users', user.uid, 'reports'));
+      const q = query(reportsCollectionRef(db, user.uid));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const reports: SavedReport[] = [];
         snapshot.forEach((doc) => {
@@ -1697,8 +1698,12 @@ export default function App() {
   const [keyCheck, setKeyCheck] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   const canUseVault = !!user && isVaultAvailable();
+  // The path comes from lib/accountData rather than being spelled out here: the
+  // account-deletion path needs the identical one, the vault has no `list` rule
+  // so deletion cannot discover it, and two copies of the id meant a rename
+  // here would silently orphan every stored key.
   const vaultDocRef = useCallback(
-    () => (user ? doc(db, 'users', user.uid, 'vault', 'geminiKey') : null),
+    () => (user ? vaultDocumentRef(db, user.uid) : null),
     [user]
   );
 
@@ -2221,7 +2226,7 @@ export default function App() {
 
     if (user) {
       try {
-        const docRef = doc(db, 'users', user.uid, 'reports', reportId);
+        const docRef = reportDocRef(db, user.uid, reportId);
 
         // The transcript carries the user's uploads inline as base64 data URLs,
         // and one of those alone can be several times the size of an entire
@@ -2319,7 +2324,7 @@ export default function App() {
     // wherever it was written.
     if (user) {
       try {
-        await deleteDoc(doc(db, 'users', user.uid, 'reports', id));
+        await deleteDoc(reportDocRef(db, user.uid, id));
       } catch (err) {
         reportFirestoreFailure(err, OperationType.DELETE, `users/${user.uid}/reports/${id}`,
           'That project could not be deleted from your account. It is still listed — try again in a moment.');

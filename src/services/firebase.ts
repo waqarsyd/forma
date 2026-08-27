@@ -17,7 +17,8 @@ import {
   deleteUser,
   type User,
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, collection, getDocs, deleteDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { deleteAccountData } from '../lib/accountData';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -110,20 +111,15 @@ export const setDisplayName = async (user: User, displayName: string) => {
  * to reach them — orphaned data that the person asking to be forgotten cannot
  * get rid of.
  *
- * The vault delete is tolerated failing: most accounts never stored a key, and
- * `deleteDoc` on a missing document is a no-op rather than an error, but a
- * rules edge should not block the deletion the user actually asked for.
+ * What gets deleted lives in `src/lib/accountData.ts`, which takes the
+ * Firestore instance as an argument so the emulator can supply its own — that
+ * is what lets `tests/accountDeletion.test.ts` prove both collections really go.
+ * This function owns only the ordering, which is the part that cannot be tested
+ * without the Auth emulator.
  */
 export const deleteAccountAndData = async (user: User, password?: string) => {
   await reauthenticate(user, password);
-
-  const reports = await getDocs(collection(db, 'users', user.uid, 'reports'));
-  await Promise.all(reports.docs.map((entry) => deleteDoc(entry.ref)));
-
-  await deleteDoc(doc(db, 'users', user.uid, 'vault', 'geminiKey')).catch((error) => {
-    console.warn('Could not remove the stored key while deleting the account:', error);
-  });
-
+  await deleteAccountData(db, user.uid);
   await deleteUser(user);
 };
 
