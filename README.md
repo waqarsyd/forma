@@ -57,6 +57,7 @@ That's enough to generate reports. Sign-in and cloud sync are optional — signe
 | `npm start` | Serve the production build (run `build` first, from the repo root) |
 | `npm run preview` | Vite preview against `dist/` |
 | `npm run lint` | `tsc --noEmit` |
+| `npm run lint:encoding` | Fails if any source file contains mojibake |
 | `npm test` | Unit tests (Vitest + jsdom) |
 | `npm run test:watch` | The same suite in watch mode |
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
@@ -97,10 +98,12 @@ src/
                        SheetRuler, StepFigures, VaultFigure,
                        AnnouncementDock, sections, icons
   lib/                 motion tokens, plus everything the unit suite covers:
-                       the pure helpers repx, sourceRect, attachments,
-                       panelSize, announcements, reportConfigStore,
-                       designerBridge, and the routing pair router (real
-                       history/location, so not pure) + routes (+ tests)
+                       the pure helpers repx, sourceRect, reportGeometry
+                       (every unit conversion in the pipeline), attachments,
+                       panelSize, announcements, datetime, modelCatalog,
+                       reportConfigStore, designerBridge, and the routing
+                       pair router (real history/location, so not pure) +
+                       routes (+ tests)
   services/            geminiService (+ tests), firebase, keyVault — the
                        vault's storage rules are covered by tests/, not here
 tests/                 Firestore rules tests (emulator)
