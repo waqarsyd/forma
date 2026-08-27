@@ -86,7 +86,13 @@ import { DURATION } from './lib/motion';
 import { auth, db, logOut, handleFirestoreError, OperationType } from './services/firebase';
 import { onSnapshot, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { reportsCollectionRef, reportDocRef, vaultDocRef as vaultDocumentRef } from './lib/accountData';
-import { toFirestoreDocument, fromFirestoreDocument, reportDisplayName, saveReportsLocally } from './lib/savedReport';
+import {
+  toFirestoreDocument,
+  fromFirestoreDocument,
+  reportDisplayName,
+  saveReportsLocally,
+  loadReportsLocally,
+} from './lib/savedReport';
 import { loadPdfjs } from './lib/pdf';
 import { toAttachmentParts } from './lib/attachmentParts';
 import {
@@ -1206,10 +1212,14 @@ export default function App() {
   const [previewMeta, setPreviewMeta] = useState<PreviewMeta[]>([]);
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [savedReports, setSavedReports] = useState<SavedReport[]>(() => {
-    const saved = localStorage.getItem('savedReports');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Through the validating reader. A bare JSON.parse here threw during the very
+  // first render on a corrupted entry, taking the whole application to the error
+  // boundary rather than costing one panel — with a message that says nothing
+  // about storage, so the only way out was clearing site data. See
+  // src/lib/savedReport.ts.
+  const [savedReports, setSavedReports] = useState<SavedReport[]>(
+    () => loadReportsLocally<ChatMessage, DesignResult>()
+  );
   const [user, setUser] = useState<User | null>(null);
   // Below md the chat and canvas panes cannot sit side by side (the sidebar
   // alone is wider than a 375px viewport), so they become tabs. At md+ this
@@ -1528,7 +1538,7 @@ export default function App() {
         // vanished from the list on the next reload while still sitting in
         // localStorage, and only came back after a sign-in/sign-out cycle.
         // Matches what handleLogOut does on the explicit path.
-        setSavedReports(JSON.parse(localStorage.getItem('savedReports') || '[]'));
+        setSavedReports(loadReportsLocally<ChatMessage, DesignResult>());
         // A sign-out that happened elsewhere still has to leave this tab clean:
         // the uploads, extracted document text, transcript and generated report
         // all belong to the account that just left.
@@ -2358,7 +2368,7 @@ export default function App() {
     handleClearChat();
     setRailPanel('review');
 
-    setSavedReports(JSON.parse(localStorage.getItem('savedReports') || '[]'));
+    setSavedReports(loadReportsLocally<ChatMessage, DesignResult>());
   };
 
   /**

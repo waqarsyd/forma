@@ -143,6 +143,65 @@ export function saveReportsLocally<M, R>(reports: Array<SavedReportLike<M, R>>):
   }
 }
 
+/**
+ * Read the signed-out projects list.
+ *
+ * **This must not throw**, and until 2026-08-27 it could (audit DATA-002). All
+ * three read sites were a bare `JSON.parse(localStorage.getItem(...) || '[]')`,
+ * and one of them is a `useState` initialiser — so a corrupted entry did not
+ * cost the user a panel, it threw during the first render and took the entire
+ * application to the error boundary, with a message that says nothing about
+ * storage. The only way out was clearing site data, which nobody would guess.
+ *
+ * The cloud side has had a strict contract since it existed: `firestore.rules`
+ * pins six fields with types and bounds. This side had none at all, which is
+ * backwards — it is the copy with no server-side authority behind it.
+ *
+ * Individual malformed entries are dropped and the rest are kept. Losing one
+ * unreadable row is better than losing the list, and far better than losing the
+ * app.
+ */
+export function loadReportsLocally<M = unknown, R = unknown>(): Array<SavedReportLike<M, R>> {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(LOCAL_REPORTS_KEY);
+  } catch {
+    return []; // storage blocked — private mode, or site data disabled
+  }
+  if (!raw) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed.filter(isUsableReport) as Array<SavedReportLike<M, R>>;
+}
+
+/**
+ * Enough of a report to list, open and delete.
+ *
+ * Deliberately loose about `messages` and `result`: an older build may have
+ * stored a shape this one does not expect, and refusing to list a project
+ * because its transcript looks unfamiliar would be worse than showing it. What
+ * is required is what the list itself needs — an id to delete by, a name to
+ * show, and a timestamp to sort on.
+ */
+function isUsableReport(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const r = value as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    r.id.length > 0 &&
+    typeof r.name === 'string' &&
+    typeof r.timestamp === 'string' &&
+    !Number.isNaN(new Date(r.timestamp).getTime())
+  );
+}
+
 /** Parse or give up quietly — never throw, see `fromFirestoreDocument`. */
 function parseOr<T>(json: string | undefined, fallback: T): T {
   if (!json) return fallback;

@@ -26,6 +26,7 @@ import {
   fromFirestoreDocument,
   reportDisplayName,
   saveReportsLocally,
+  loadReportsLocally,
   type SavedReportLike,
 } from './savedReport';
 
@@ -252,5 +253,73 @@ describe('saveReportsLocally', () => {
     } finally {
       Storage.prototype.setItem = setItem;
     }
+  });
+});
+
+/**
+ * The read side had no validation at all (audit DATA-002), and one of its three
+ * call sites is a useState initialiser -- so a corrupted entry did not cost a
+ * panel, it threw during the first render and took the whole application to the
+ * error boundary with a message that says nothing about storage.
+ */
+describe('loadReportsLocally', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('returns what was saved', () => {
+    const reports = [report(), report({ id: '2' })];
+    saveReportsLocally(reports);
+    expect(loadReportsLocally()).toEqual(reports);
+  });
+
+  it('returns an empty list when nothing is stored', () => {
+    expect(loadReportsLocally()).toEqual([]);
+  });
+
+  it('does not throw on a corrupted entry -- the app boots either way', () => {
+    for (const junk of ['{', 'not json', '[1,2,', '"a string"', '123', 'null', '{}']) {
+      localStorage.setItem('savedReports', junk);
+      expect(() => loadReportsLocally()).not.toThrow();
+      expect(Array.isArray(loadReportsLocally())).toBe(true);
+    }
+  });
+
+  it('drops individual malformed rows and keeps the rest', () => {
+    // Losing one unreadable row beats losing the list.
+    const good = report({ id: 'keep' });
+    localStorage.setItem('savedReports', JSON.stringify([
+      good,
+      null,
+      'a string',
+      { id: 'no-name-or-timestamp' },
+      { id: 'bad-date', name: 'x', timestamp: 'not a date' },
+      42,
+    ]));
+    expect(loadReportsLocally()).toEqual([good]);
+  });
+
+  it('keeps a report whose transcript is an unfamiliar shape', () => {
+    // An older build may have stored something this one does not expect.
+    // Refusing to list a project because its messages look odd is worse than
+    // showing it -- the user can still open and delete it.
+    const odd = { ...report(), messages: 'was a string once', result: 12345 };
+    localStorage.setItem('savedReports', JSON.stringify([odd]));
+    expect(loadReportsLocally()).toHaveLength(1);
+  });
+
+  it('survives storage being blocked outright', () => {
+    const getItem = Storage.prototype.getItem;
+    Storage.prototype.getItem = () => { throw new DOMException('denied', 'SecurityError'); };
+    try {
+      expect(() => loadReportsLocally()).not.toThrow();
+      expect(loadReportsLocally()).toEqual([]);
+    } finally {
+      Storage.prototype.getItem = getItem;
+    }
+  });
+
+  it('round-trips through the writer', () => {
+    const reports = [report({ id: 'a' }), report({ id: 'b' })];
+    expect(saveReportsLocally(reports).ok).toBe(true);
+    expect(loadReportsLocally()).toEqual(reports);
   });
 });
