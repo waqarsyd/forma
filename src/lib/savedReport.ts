@@ -83,18 +83,13 @@ export const LOCAL_REPORTS_KEY = 'savedReports';
 /**
  * Succeeded, or failed with something worth showing the user.
  *
- * Deliberately not a discriminated union of `{ok: true}` / `{ok: false; message}`.
- * That is the better shape and it does not narrow here: `tsconfig.json` enables
- * no strictness flags, so `!outcome.ok` fails to exclude the success arm and
- * every read of `message` is an error. An optional field is the shape that
- * works today; revisit it if `strictNullChecks` is ever turned on (audit
- * ARC-004).
+ * This was an interface with an optional `message` for two commits, because
+ * without strictness flags `!outcome.ok` did not narrow away the success arm
+ * and every read of `message` was a type error. `strict` is on now (audit
+ * ARC-004), so the shape that was always correct compiles: a failure carries a
+ * message and a success cannot be read for one.
  */
-export interface LocalSaveOutcome {
-  ok: boolean;
-  /** Set only when `ok` is false. */
-  message?: string;
-}
+export type LocalSaveOutcome = { ok: true } | { ok: false; message: string };
 
 /**
  * Write the signed-out copy of the projects list.

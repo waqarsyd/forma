@@ -116,8 +116,9 @@ describe('sendToDesigner', () => {
     // companion reject an unknown origin before the XML is sent. Renaming it
     // here without renaming it in Program.cs disables that check silently.
     // Parameters are declared so `mock.calls[0]` is a typed tuple rather than
-    // an empty one needing a cast.
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+    // an empty one needing a cast. `init` is not optional: sendToDesigner
+    // always passes one, and saying so lets the assertions read it directly.
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
       new Response(null, { status: 200 })
     );
     vi.stubGlobal('fetch', fetchMock);

@@ -47,7 +47,9 @@ describe('submitContactMessage', () => {
   it('posts the message as JSON', async () => {
     // Parameters are declared so `mock.calls[0]` is a typed tuple rather than
     // an empty one needing a cast — see the same shape in designerBridge.test.
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+    // `init` is not optional here: submitContactMessage always passes one, and
+    // saying so is what lets the assertions below read it without a `!`.
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
       new Response('{}', { status: 200 })
     );
     vi.stubGlobal('fetch', fetchMock);
