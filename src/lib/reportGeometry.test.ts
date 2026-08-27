@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   unitsPerInch,
   unitsToPx,
@@ -246,6 +248,65 @@ describe('resolveReportUnit / resolvePageSize', () => {
     for (const bad of ['Document2', '', '  ', 'a4', null, undefined] as any[]) {
       expect(isSupportedUnit(resolveReportUnit(bad))).toBe(true);
       expect(isSupportedPageSize(resolvePageSize(bad))).toBe(true);
+    }
+  });
+});
+
+/**
+ * The workspace status bar prints the report's scale, and it printed it wrong.
+ *
+ * `<span>units 100/in</span>` was a literal — correct for the default and for
+ * nothing else. Set `TenthsOfAMillimeter` and the bar still claimed 100 where
+ * the report is built at 254; set `Pixels` and it claimed 100 against 96.
+ * Measured in the running app across the three units the dialog offers: 1 of 3
+ * told the truth. It sits beside `DevExpress v{config.version}`, which *is*
+ * derived, so the whole bar reads as live — and it names the scale of the file
+ * about to be exported, which is the worst place to be confidently wrong.
+ *
+ * Nothing could catch it: a literal is valid TypeScript, renders fine, and is
+ * only wrong relative to a table in another file. So this reads `App.tsx` off
+ * disk the way `legalDisclosure.test.ts` reads `ContactPage.tsx` — the claim is
+ * about the *source*, so the source is what gets asserted, and no component
+ * tree has to render.
+ */
+describe('the status bar reads the unit table rather than restating it', () => {
+  const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  /**
+   * Comments are stripped before the literal check, because the first version of
+   * this test failed on the comment *explaining the bug* — which quotes the old
+   * `units 100/in` markup. The invariant is about what renders, so asserting on
+   * prose would make the record of the fix and the guard against it mutually
+   * exclusive, and every future comment near this line a tripwire.
+   */
+  const codeOnly = (s: string) =>
+    s
+      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '');
+
+  const start = app.indexOf('className="wb-status"');
+  const statusBar = codeOnly(app.slice(start, start + 1600));
+
+  it('finds the status bar at all', () => {
+    // Guards the two assertions below: if the class is renamed, the slice above
+    // is empty and everything here passes vacuously.
+    expect(app).toContain('className="wb-status"');
+    expect(statusBar).toMatch(/units/);
+  });
+
+  it('derives the units-per-inch figure from unitsPerInch()', () => {
+    expect(statusBar).toMatch(/unitsPerInch\(/);
+    expect(app).toMatch(/import\s*\{[^}]*\bunitsPerInch\b[^}]*\}\s*from\s*'\.\/lib\/reportGeometry'/);
+  });
+
+  it('states no units-per-inch figure as a literal', () => {
+    for (const perInch of SUPPORTED_UNITS.map((u) => unitsPerInch(u))) {
+      expect(
+        statusBar,
+        `The status bar hardcodes "${perInch}/in". It must read unitsPerInch(config.unit) — ` +
+          `a literal is right for one unit and silently wrong for the rest.`
+      ).not.toMatch(new RegExp(`\\b${perInch}\\s*/\\s*in`));
     }
   });
 });

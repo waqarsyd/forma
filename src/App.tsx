@@ -126,7 +126,7 @@ import { sourceRectFor } from './lib/sourceRect';
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
 import { formatSessionStamp } from './lib/datetime';
-import { unitsToPx, pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
+import { unitsToPx, pointsToUnits, pdfTopFromBaseline, unitsPerInch } from './lib/reportGeometry';
 import LogoPulse from './components/LogoPulse';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
@@ -3853,7 +3853,14 @@ export default function App() {
         <span>{config.version ? `DevExpress v${config.version}` : ''}</span>
         <span>{isAnalyzing ? formatElapsed(elapsedTime) : ''}</span>
         <span className="wb-push" />
-        <span>units 100/in</span>
+        {/* Read from the same table the pipeline converts with, never written
+            out here. This said `units 100/in` as a literal, which is true only
+            for the default: pick TenthsOfAMillimeter and the bar still claimed
+            100 where the report is built at 254, and Pixels at 96. It sits
+            beside the version readout, which *is* derived, so the whole bar
+            reads as live — and it names the scale of the file about to be
+            exported, which is the worst place to be confidently wrong. */}
+        <span>units {unitsPerInch(config.unit)}/in</span>
         {result?.layout && <span>{result.layout.sections.length} bands</span>}
       </div>
 
