@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { designerFileName, sendToDesigner, DESIGNER_CLIENT_HEADER } from './designerBridge';
+import {
+  designerFileName,
+  sendToDesigner,
+  pingDesigner,
+  launchDesigner,
+  waitForDesigner,
+  DESIGNER_CLIENT_HEADER,
+  DESIGNER_PROTOCOL,
+} from './designerBridge';
 
 /**
  * `designerFileName` was the only thing covered here, on the reasoning that the
@@ -181,5 +189,109 @@ describe('designerFileName and Windows', () => {
   it('has not changed for ordinary titles', () => {
     expect(designerFileName('Sales Invoice')).toBe('Sales_Invoice.repx');
     expect(designerFileName()).toBe('report-design.repx');
+  });
+});
+/**
+ * The three helpers coverage named as the gap in lib/ (audit TEST-003).
+ *
+ * pingDesigner and waitForDesigner are what stand between "the companion is not
+ * installed" and "the button is broken", and launchDesigner is the one route by
+ * which a web page may cause a local program to run. None of them was reachable
+ * by a test.
+ */
+describe('pingDesigner', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('says yes when the companion answers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 200 })));
+    await expect(pingDesigner()).resolves.toBe(true);
+  });
+
+  it('resolves false rather than throwing when nothing is listening', async () => {
+    // Not installed is the *normal* case, not an error. A throw here would
+    // surface as a broken page for the majority of users.
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    await expect(pingDesigner()).resolves.toBe(false);
+  });
+
+  it('says no when the companion answers with an error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 500 })));
+    await expect(pingDesigner()).resolves.toBe(false);
+  });
+
+  it('gives up on a firewall that drops rather than refuses', async () => {
+    // The documented reason the timeout exists: a dropped connection would
+    // otherwise leave this pending, and the button missing, for as long as the
+    // tab is open.
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_u: string, init?: RequestInit) =>
+      new Promise<Response>((_r, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          const e = new Error('aborted'); e.name = 'AbortError'; reject(e);
+        });
+      })));
+    const pending = pingDesigner(1200);
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(pending).resolves.toBe(false);
+  });
+});
+
+describe('launchDesigner', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('navigates to the registered scheme', () => {
+    const location = { href: '' };
+    vi.stubGlobal('window', { location });
+    launchDesigner();
+    expect(location.href).toBe(`${DESIGNER_PROTOCOL}://serve`);
+  });
+
+  it('pins the scheme, which Program.cs registers by the same name', () => {
+    // Renaming one side without the other breaks the launch silently: an
+    // unregistered scheme does not error, it does nothing.
+    expect(DESIGNER_PROTOCOL).toBe('forma-repx');
+  });
+
+  it('does not throw when the browser blocks the scheme', () => {
+    // A declined prompt, an unregistered scheme and a successful launch are
+    // indistinguishable from script. None of them may take the page down.
+    vi.stubGlobal('window', {
+      get location() { throw new Error('blocked'); },
+    });
+    expect(() => launchDesigner()).not.toThrow();
+  });
+});
+
+describe('waitForDesigner', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('returns as soon as the companion answers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 200 })));
+    await expect(waitForDesigner(5000, 100)).resolves.toBe(true);
+  });
+
+  it('keeps polling while a cold start loads its assemblies', async () => {
+    // The reason this exists: a single ping straight after launchDesigner
+    // always fails, because the port is not bound yet.
+    vi.useFakeTimers();
+    let attempts = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      attempts++;
+      if (attempts < 4) throw new TypeError('Failed to fetch');
+      return new Response(null, { status: 200 });
+    }));
+
+    const pending = waitForDesigner(10_000, 100);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(pending).resolves.toBe(true);
+    expect(attempts).toBeGreaterThanOrEqual(4);
+  });
+
+  it('gives up so the caller can say the companion did not start', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    const pending = waitForDesigner(1000, 100);
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(pending).resolves.toBe(false);
   });
 });

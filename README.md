@@ -60,6 +60,7 @@ That's enough to generate reports. Sign-in and cloud sync are optional — signe
 | `npm run lint:encoding` | Fails if any source file contains mojibake |
 | `npm test` | Unit tests (Vitest + jsdom) |
 | `npm run test:watch` | The same suite in watch mode |
+| `npm run test:coverage` | Coverage over `lib/` and `services/` — see the note in `vitest.config.ts` about what is deliberately excluded |
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
 | `npm run clean` | Remove `dist/` |
 
