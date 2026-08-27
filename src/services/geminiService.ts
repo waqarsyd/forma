@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError } from "../lib/geminiErrors";
+import { parseAnalysisResponse } from "../lib/analysisResponse";
 import { pageSizeInUnits, unitsPerInch, unitsToPoints } from "../lib/reportGeometry";
 
 /** One cell of a real `table` element. Weights are relative, like XRTableCell's. */
@@ -399,7 +400,31 @@ async function discoverModels(apiKey: string, signal?: AbortSignal): Promise<str
   }
 }
 
-type Probe = "ok" | "unavailable" | "quota" | "keyError";
+/**
+ * `network` is distinct from `unavailable` on purpose. Both mean "this model
+ * did not answer", but they mean opposite things about *why*: `unavailable` is
+ * Google declining, `network` is never having reached Google. They used to be
+ * the same verdict, so an offline user was told "No Gemini model is available
+ * to this API key. Create a new key in Google AI Studio and try again." — the
+ * key was fine, and they could not have created a new one anyway.
+ */
+type Probe = "ok" | "unavailable" | "quota" | "keyError" | "network";
+
+/**
+ * A request that never reached the server, as opposed to one that was refused.
+ *
+ * `fetch` rejects with a TypeError for DNS failure, a dropped connection, a
+ * blocked origin and an offline machine alike; an HTTP status, even a 500, means
+ * the round trip happened.
+ */
+function isNetworkFailure(err: any): boolean {
+  return (
+    err instanceof TypeError ||
+    /failed to fetch|network ?error|networkerror|fetch failed|enotfound|econnrefused/i.test(
+      String(err?.message ?? "")
+    )
+  );
+}
 
 async function probeModel(model: string, apiKey: string, signal?: AbortSignal): Promise<Probe> {
   try {
@@ -423,7 +448,7 @@ async function probeModel(model: string, apiKey: string, signal?: AbortSignal): 
     return "unavailable";
   } catch (err: any) {
     if (err?.name === "AbortError") throw err;
-    return "unavailable";
+    return isNetworkFailure(err) ? "network" : "unavailable";
   }
 }
 
@@ -473,8 +498,20 @@ export async function resolveModel(apiKey: string, signal?: AbortSignal): Promis
     return winner;
   }
 
-  // Nothing answered. A key-level rejection repeats for every candidate, so it
-  // is the real cause and takes priority over the quota message below.
+  // Nothing answered. Before blaming the key or the quota, rule out never
+  // having reached Google at all: if *every* probe failed to connect, the
+  // machine is offline or the endpoint is blocked, and no message about keys or
+  // billing is true or actionable. Only "every" counts — a mix means some
+  // requests did arrive, and what they came back with is the better clue.
+  if (verdicts.length > 0 && verdicts.every((v) => v === "network")) {
+    throw new Error(
+      "Could not reach Google to check any model. Check your internet connection and try again — " +
+      "your API key has not been tested."
+    );
+  }
+
+  // A key-level rejection repeats for every candidate, so it is the real cause
+  // and takes priority over the quota message below.
   if (verdicts.includes("keyError")) {
     throw new Error(
       "Your Gemini API key was rejected. Check that it is correct and that the Generative Language API is enabled for its project."
@@ -1428,66 +1465,29 @@ export async function analyzeReportDesign(
   );
 
   console.debug(`Received raw response from Gemini. Parsing JSON...`);
-  
-  // An empty body used to be parsed as "{}" and returned as a success, so a
-  // blocked or truncated generation surfaced much later as a render crash on a
-  // missing `layout.sections`. Fail here, where the cause is still visible.
-  const rawText = response.text?.trim();
-  if (!rawText) {
-    const finishReason = response.finishReason;
-    console.error("Gemini returned an empty response. finishReason:", finishReason);
 
-    if (finishReason === "MAX_TOKENS") {
-      throw new Error(
-        "The report was too large to finish generating. Try a simpler design, or split it across two requests."
-      );
-    }
-    if (finishReason === "SAFETY" || finishReason === "PROHIBITED_CONTENT") {
-      throw new Error("Gemini blocked this request under its safety filters. Try a different source image or prompt.");
-    }
-    throw new Error("Gemini returned an empty response. Try generating again.");
+  const rawText = response.text?.trim();
+
+  // Diagnostics stay here, where the request context still exists; the decision
+  // itself is in lib/analysisResponse.ts so it can be driven from fixtures. The
+  // branch that matters — a truncated body is not a malformed one, and only
+  // finishReason tells them apart — is documented there.
+  if (!rawText) {
+    console.error("Gemini returned an empty response. finishReason:", response.finishReason);
   }
 
   try {
-    const parsed = JSON.parse(rawText) as AnalysisResponse;
-    if (!parsed?.layout?.sections) {
-      // Schema-valid JSON that is missing the part the mockup renders.
-      throw new Error("missing layout");
-    }
+    const parsed = parseAnalysisResponse(rawText, response.finishReason);
     console.log(`Successfully parsed Gemini response.`);
     return parsed;
   } catch (e) {
-    console.error("Failed to parse Gemini response", e);
-    console.error(
-      `Raw response was ${rawText.length} characters, finishReason: ${response.finishReason ?? "none reported"}. ` +
-      `Last 120 characters received: ${JSON.stringify(rawText.slice(-120))}`
-    );
-
-    /**
-     * A truncated body is still a body, and until 2026-08-26 nothing here
-     * noticed. `finishReason` was only consulted when the response came back
-     * *empty*, so the far more common case — the model writes most of the
-     * report and is cut off mid-string — fell through to "malformed", which is
-     * wrong twice over: it blames the model for bad output when the output was
-     * fine as far as it got, and it tells the user to try again, which for the
-     * same input fails the same way every time. The JSON is unparseable either
-     * way; only `finishReason` distinguishes ran-out-of-room from nonsense.
-     *
-     * Reproduced over CDP by fulfilling the stream with 62% of a valid payload
-     * and `finishReason: MAX_TOKENS`: the old path reported "The AI returned a
-     * malformed report. Try generating again."
-     */
-    if (response.finishReason === "MAX_TOKENS") {
-      throw new Error(
-        "The report was cut off before it finished — the model reached its output limit part-way through. " +
-        "This design is too large to return in one response: try a simpler page, upload fewer pages at once, " +
-        "or split it into two requests. Generating again with the same input will hit the same limit."
+    if (rawText) {
+      console.error("Failed to parse Gemini response", e);
+      console.error(
+        `Raw response was ${rawText.length} characters, finishReason: ${response.finishReason ?? "none reported"}. ` +
+        `Last 120 characters received: ${JSON.stringify(rawText.slice(-120))}`
       );
     }
-    if (response.finishReason === "SAFETY" || response.finishReason === "PROHIBITED_CONTENT") {
-      throw new Error("Gemini stopped part-way under its safety filters. Try a different source image or prompt.");
-    }
-
-    throw new Error("The AI returned a malformed report. Try generating again.");
+    throw e;
   }
 }
