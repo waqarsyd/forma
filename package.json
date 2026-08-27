@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
+    "lint:encoding": "node scripts/check-encoding.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rules": "firebase emulators:exec --only firestore \"vitest run --config vitest.rules.config.ts\"",

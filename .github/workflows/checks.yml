@@ -1,0 +1,90 @@
+# The checks this repository already documents, run by a machine instead of by
+# someone remembering.
+#
+# CLAUDE.md lists five: tsc, the unused-symbol sweep, the unit suite, the rules
+# suite, and the mojibake sweep. All five pass and always have. None of them was
+# enforced by anything -- there was no CI, no hook, and no remote, so every
+# invariant in the project depended on a human running the right command before
+# committing (audit INV-003).
+#
+# The whole `checks` job takes well under two minutes, which is the argument for
+# running it on every push rather than nightly.
+#
+# NOTE: this repository has no remote as of 2026-08-27, so nothing here has ever
+# executed. It is written to be correct on the day one is added, not before.
+
+name: checks
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: lint, types, encoding, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 20, 22 and >=24 only: vitest declares ^20 || ^22 || >=24, so the
+      # odd lines 21 and 23 are outside the supported range despite being newer
+      # than 20. Pinned to the version the project is developed against.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # `ci`, not `install`: it installs from the lockfile and fails if
+      # package.json and package-lock.json disagree, which is a check in itself
+      # and one nothing else performs.
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run lint
+
+      # Separate from the typecheck above because it uses stricter flags than
+      # tsconfig.json sets. Both baselines are clean, so any output is new.
+      - name: Dead code
+        run: npx tsc --noEmit --noUnusedLocals --noUnusedParameters
+
+      # The check with the largest blast radius when skipped: mojibake compiles,
+      # passes every test, and is visible only on the rendered page.
+      - name: Encoding
+        run: npm run lint:encoding
+
+      - name: Unit tests
+        run: npm test
+
+      # Catches what the tests cannot: a broken import, a Vite plugin failure,
+      # or the server bundle failing to resolve a local module.
+      - name: Build
+        run: npm run build
+
+  rules:
+    name: firestore rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # The Firestore emulator is a JVM process. A runtime is enough -- no JDK
+      # is required, which is also how it is installed on the dev machine.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - run: npm ci
+
+      # Its own job because it is the slow one: ~90s, nearly all of it the
+      # emulator starting and stopping. Splitting it keeps the fast feedback
+      # fast without giving up the coverage -- firestore.rules is the entire
+      # security boundary and the entire validation layer for this app.
+      - name: Security rules
+        run: npm run test:rules
