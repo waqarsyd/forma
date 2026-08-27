@@ -91,7 +91,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { auth, db, logOut, handleFirestoreError, OperationType } from './services/firebase';
 import { onSnapshot, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { reportsCollectionRef, reportDocRef, vaultDocRef as vaultDocumentRef } from './lib/accountData';
-import { toFirestoreDocument, fromFirestoreDocument, reportDisplayName } from './lib/savedReport';
+import { toFirestoreDocument, fromFirestoreDocument, reportDisplayName, saveReportsLocally } from './lib/savedReport';
 import { User } from 'firebase/auth';
 import LoginPage from './components/LoginPage';
 import AccountDialog from './components/AccountDialog';
@@ -2276,11 +2276,19 @@ export default function App() {
           'That project could not be saved to your account. It is still open here — try again in a moment.');
       }
     } else {
-      setSavedReports(prev => {
-        const updated = [draft, ...prev];
-        localStorage.setItem('savedReports', JSON.stringify(updated));
-        return updated;
-      });
+      // The write happens before the state update, not inside it: a failing
+      // setItem used to throw from inside a setSavedReports updater, which put
+      // the exception into React rather than in front of the user. Deciding
+      // first also means the list never shows a project that was not stored.
+      const updated = [draft, ...savedReports];
+      const outcome = saveReportsLocally(updated);
+
+      if (!outcome.ok) {
+        setError(outcome.message);
+        return;
+      }
+
+      setSavedReports(updated);
       setSaveNotice('Saved on this device. Sign in to sync across devices.');
     }
   };
@@ -2325,9 +2333,13 @@ export default function App() {
           'That project could not be deleted from your account. It is still listed — try again in a moment.');
       }
     } else {
+      // Through the same writer as the save path, for the same reason: it is
+      // the same key, and an unguarded setItem here would throw out of a state
+      // updater. A delete shrinks the payload so the quota is not a realistic
+      // failure, but storage being blocked outright is.
       setSavedReports(prev => {
         const updated = prev.filter(r => r.id !== id);
-        localStorage.setItem('savedReports', JSON.stringify(updated));
+        saveReportsLocally(updated);
         return updated;
       });
     }

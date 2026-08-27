@@ -77,6 +77,77 @@ export function toFirestoreDocument<M, R>(
   };
 }
 
+/** Where the signed-out copy lives. */
+export const LOCAL_REPORTS_KEY = 'savedReports';
+
+/**
+ * Succeeded, or failed with something worth showing the user.
+ *
+ * Deliberately not a discriminated union of `{ok: true}` / `{ok: false; message}`.
+ * That is the better shape and it does not narrow here: `tsconfig.json` enables
+ * no strictness flags, so `!outcome.ok` fails to exclude the success arm and
+ * every read of `message` is an error. An optional field is the shape that
+ * works today; revisit it if `strictNullChecks` is ever turned on (audit
+ * ARC-004).
+ */
+export interface LocalSaveOutcome {
+  ok: boolean;
+  /** Set only when `ok` is false. */
+  message?: string;
+}
+
+/**
+ * Write the signed-out copy of the projects list.
+ *
+ * This was the **only** unguarded `localStorage.setItem` in the app. The others
+ * write a panel width, a collapsed flag, a theme — small, bounded, and every
+ * one of them inside a try/catch. This one writes reports carrying the user's
+ * uploads inline as base64, which is the only write here that can plausibly
+ * exhaust the quota, and it had no guard at all. The *delete* path writing this
+ * same key did.
+ *
+ * Measured before fixing: four reports of 1.2 MB each threw
+ * `QuotaExceededError: The 5000000-code unit storage quota has been exceeded`.
+ * Because the call sat inside a `setSavedReports` updater, the exception
+ * escaped into React instead of becoming a message — and the signed-in path
+ * that refuses an oversized project points the user here, saying "Save Project
+ * while signed out keeps it on this device".
+ *
+ * On failure the previously stored list is left exactly as it was. A save that
+ * cannot complete must not also destroy what was already there — that would
+ * turn "could not save this one" into losing all of them.
+ */
+export function saveReportsLocally<M, R>(reports: Array<SavedReportLike<M, R>>): LocalSaveOutcome {
+  let previous: string | null = null;
+  try {
+    previous = localStorage.getItem(LOCAL_REPORTS_KEY);
+  } catch {
+    // Storage unreadable — private mode, or site data blocked. The write below
+    // will fail too; there is simply nothing to restore.
+  }
+
+  try {
+    localStorage.setItem(LOCAL_REPORTS_KEY, JSON.stringify(reports));
+    return { ok: true };
+  } catch {
+    // Some browsers clear the key before throwing, so put back what was there.
+    try {
+      if (previous === null) localStorage.removeItem(LOCAL_REPORTS_KEY);
+      else localStorage.setItem(LOCAL_REPORTS_KEY, previous);
+    } catch {
+      /* nothing more to be done */
+    }
+
+    return {
+      ok: false,
+      message:
+        'There is not enough space left in this browser to save the project on this device. ' +
+        'Uploaded images take up most of it — deleting an older project frees space, ' +
+        'and signing in stores projects in your account instead.',
+    };
+  }
+}
+
 /** Parse or give up quietly — never throw, see `fromFirestoreDocument`. */
 function parseOr<T>(json: string | undefined, fallback: T): T {
   if (!json) return fallback;

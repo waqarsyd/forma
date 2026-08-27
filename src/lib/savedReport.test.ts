@@ -20,11 +20,12 @@
  * So: round-trip both directions, and pin the edges that currently work by
  * accident rather than by intent.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   toFirestoreDocument,
   fromFirestoreDocument,
   reportDisplayName,
+  saveReportsLocally,
   type SavedReportLike,
 } from './savedReport';
 
@@ -182,5 +183,74 @@ describe('reportDisplayName', () => {
   it('falls back when there is no name at all', () => {
     expect(reportDisplayName('')).toBe('Untitled Report');
     expect(reportDisplayName('   ')).toBe('Untitled Report');
+  });
+});
+
+/**
+ * The signed-out save was the only unguarded `localStorage.setItem` in the app.
+ *
+ * Every other one writes a preference — a panel width, a theme boolean — and
+ * every one of them sits in a try/catch. The one that writes a report carrying
+ * base64 uploads, the only one that can plausibly exhaust the quota, did not;
+ * the *delete* path writing the same key did.
+ *
+ * Demonstrated before fixing: four reports of 1.2 MB each threw
+ * `QuotaExceededError: The 5000000-code unit storage quota has been exceeded`.
+ * The call sat inside a `setSavedReports` updater, so the exception escaped
+ * into React rather than becoming a message.
+ *
+ * The cloud path already refuses an oversized project with an explanation — and
+ * that explanation says *"Save Project while signed out keeps it on this
+ * device"*, pointing the user at the path that threw.
+ */
+describe('saveReportsLocally', () => {
+  const big = (mb: number): SavedReportLike =>
+    report({ messages: [{ role: 'user', images: ['data:image/jpeg;base64,' + 'A'.repeat(mb * 1_000_000)] }] });
+
+  beforeEach(() => localStorage.clear());
+
+  it('writes the reports and says it succeeded', () => {
+    const reports = [report()];
+    expect(saveReportsLocally(reports)).toEqual({ ok: true });
+    expect(JSON.parse(localStorage.getItem('savedReports')!)).toEqual(reports);
+  });
+
+  it('reports failure instead of throwing when the quota is exhausted', () => {
+    const tooMuch = [big(3), big(3), big(3)];
+    expect(() => saveReportsLocally(tooMuch)).not.toThrow();
+    expect(saveReportsLocally(tooMuch).ok).toBe(false);
+  });
+
+  it('explains what happened in terms the user can act on', () => {
+    const outcome = saveReportsLocally([big(3), big(3), big(3)]);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.message).toMatch(/space|full|storage/i);
+      // It must not claim the project was saved, and it must not be silent.
+      expect(outcome.message.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('leaves whatever was already stored intact when the write fails', () => {
+    // Losing the existing projects to a failed save of a new one would turn a
+    // "could not save" into actual data loss.
+    const existing = [report({ id: 'keep-me' })];
+    expect(saveReportsLocally(existing).ok).toBe(true);
+
+    saveReportsLocally([big(3), big(3), big(3), ...existing]);
+
+    expect(JSON.parse(localStorage.getItem('savedReports')!)).toEqual(existing);
+  });
+
+  it('survives storage being unavailable entirely', () => {
+    // Private mode, or a browser configured to block site data.
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => { throw new DOMException('denied', 'SecurityError'); };
+    try {
+      expect(() => saveReportsLocally([report()])).not.toThrow();
+      expect(saveReportsLocally([report()]).ok).toBe(false);
+    } finally {
+      Storage.prototype.setItem = setItem;
+    }
   });
 });
