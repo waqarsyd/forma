@@ -3,7 +3,7 @@ import { User } from 'firebase/auth';
 import Logo from './Logo';
 import UserAvatar from './UserAvatar';
 import MobileNav from './MobileNav';
-import { IconSun, IconMoon } from './landing/icons';
+import { IconSun, IconMoon, IconChevronDown, IconLogout } from './landing/icons';
 
 /**
  * The header shared by all four marketing pages.
@@ -149,10 +149,14 @@ export default function SiteHeader({
                 <span className="font-label-caps text-[11px] text-on-surface-variant font-semibold hidden lg:inline max-w-[120px] truncate">
                   {user.displayName || user.email?.split('@')[0]}
                 </span>
-                <span className="hidden lg:inline">
-                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-on-surface-variant select-none">
-                    {showProfileMenu ? 'expand_less' : 'expand_more'}
-                  </span>
+                {/* One chevron, rotated, rather than two glyphs. The button
+                    already carries aria-expanded, so this says nothing a screen
+                    reader needs — hence aria-hidden on the icon itself. */}
+                <span className="hidden lg:inline text-on-surface-variant">
+                  <IconChevronDown
+                    size={16}
+                    className={`u-transition ${showProfileMenu ? 'rotate-180' : ''}`}
+                  />
                 </span>
               </button>
               <button
@@ -179,7 +183,7 @@ export default function SiteHeader({
                     }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-error-container text-error hover:text-error transition-colors text-left text-xs font-semibold font-label-caps cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[16px]">logout</span>
+                    <IconLogout size={16} />
                     Sign Out
                   </button>
                 </div>

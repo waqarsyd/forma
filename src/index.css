@@ -601,9 +601,12 @@ body {
 }
 
 /* Landing Page Specific Rules */
-.material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-}
+/* The Material Symbols rule lived here until 2026-08-27. The font was loaded
+   from fonts.googleapis.com for five glyphs — menu, close, logout and a pair of
+   chevrons — three of which already existed as inline SVGs in
+   components/landing/icons.tsx. Removed along with its stylesheet link; the
+   icons render from the same module as every other icon in the app now
+   (audit PERF-002). */
 .bento-grid {
     display: grid;
     grid-template-columns: repeat(12, 1fr);

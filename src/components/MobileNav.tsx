@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { backdropVariants, transition } from '../lib/motion';
+import { IconMenu, IconClose } from './landing/icons';
 
 const LINKS = [
   { label: 'Product', path: '/' },
@@ -47,7 +48,7 @@ export default function MobileNav({ active, signedIn }: { active?: string; signe
         aria-expanded={open}
         className="u-tap u-transition-fast u-press u-focus-ring w-10 h-10 flex items-center justify-center rounded-full border border-outline-variant text-on-surface-variant hover:text-secondary hover:border-secondary cursor-pointer"
       >
-        <span className="material-symbols-outlined text-[20px]">menu</span>
+        <IconMenu size={20} />
       </button>
 
       <AnimatePresence>
@@ -78,7 +79,7 @@ export default function MobileNav({ active, signedIn }: { active?: string; signe
                   aria-label="Close menu"
                   className="u-tap u-transition-fast u-press u-focus-ring w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container cursor-pointer"
                 >
-                  <span className="material-symbols-outlined">close</span>
+                  <IconClose size={20} />
                 </button>
               </div>
 

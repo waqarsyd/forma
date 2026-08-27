@@ -70,14 +70,31 @@
   <meta name="twitter:image" content="/og-card.png" />
   <meta name="twitter:image:alt"
     content="Forma — Show it. Build it. Ship it. Screenshot, PDF or .repx to DevExpress .repx." />
-  <!-- Font Families: Hanken Grotesk, Inter, JetBrains Mono -->
+  <!-- Font Families: Hanken Grotesk, Inter, JetBrains Mono.
+       The stylesheet comes from one origin and the font files from another, and
+       both handshakes happen before first paint — so both are warmed here.
+       crossorigin on the gstatic hint is required and easy to miss: font files
+       are fetched in CORS mode, and a preconnect without it opens a connection
+       the font request then cannot reuse, which is slower than not hinting.
+
+       Self-hosting these three faces would remove the last third-party request
+       on the critical path and the last undisclosed thing Google sees (the
+       privacy page names it, so this is disclosed rather than hidden). It is
+       deliberately not done here: it means committing font binaries and
+       changing what every page renders in, with no visual regression test to
+       catch a wrong weight or a missing subset. Audit PERF-002, still open. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
     href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap"
     rel="stylesheet" />
-  <!-- Material Symbols Outlined -->
-  <link
-    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
-    rel="stylesheet" />
+  <!-- The Material Symbols stylesheet was here until 2026-08-27. It pulled a
+       variable icon font across its full weight and fill axes to draw five
+       glyphs — menu, close, logout and a chevron pair — and three of those
+       already existed as inline SVGs in components/landing/icons.tsx, which
+       every other icon in the app comes from. Two render-blocking requests to a
+       third-party origin, for something the project already had. Removed; do
+       not add it back for one more icon, add the icon. (Audit PERF-002.) -->
 </head>
 
 <body>
