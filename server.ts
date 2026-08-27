@@ -2,10 +2,26 @@ import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { securityHeadersFor } from "./src/lib/securityHeaders";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Express advertises itself with X-Powered-By by default. It tells an
+  // attacker which stack to look up and tells a user nothing.
+  app.disable("x-powered-by");
+
+  // Security headers, before anything that can answer a request — the SPA
+  // fallback below responds to almost every path, so a middleware registered
+  // after it would cover nothing. HSTS is opt-in via HTTPS=true because
+  // sending it over plain http://localhost poisons the whole machine's
+  // localhost for a year; see src/lib/securityHeaders.ts.
+  const headers = securityHeadersFor({ https: process.env.HTTPS === "true" });
+  app.use((_req, res, next) => {
+    for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
+    next();
+  });
 
   // Increase payload limit for base64 images
   app.use(express.json({ limit: '50mb' }));
