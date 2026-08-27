@@ -91,6 +91,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { auth, db, logOut, handleFirestoreError, OperationType } from './services/firebase';
 import { onSnapshot, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { reportsCollectionRef, reportDocRef, vaultDocRef as vaultDocumentRef } from './lib/accountData';
+import { toFirestoreDocument, fromFirestoreDocument, reportDisplayName } from './lib/savedReport';
 import { User } from 'firebase/auth';
 import LoginPage from './components/LoginPage';
 import AccountDialog from './components/AccountDialog';
@@ -1527,14 +1528,11 @@ export default function App() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const reports: SavedReport[] = [];
         snapshot.forEach((doc) => {
-          const data = doc.data();
-          reports.push({
-            id: data.id,
-            name: data.name,
-            timestamp: new Date(data.timestamp).toISOString(),
-            messages: JSON.parse(data.messages || '[]'),
-            result: data.result ? JSON.parse(data.result) : null
-          });
+          // fromFirestoreDocument never throws. That matters here specifically:
+          // this callback fires long after the try/catch below has returned, so
+          // one malformed document would empty the whole projects panel rather
+          // than skip a row. See src/lib/savedReport.ts.
+          reports.push(fromFirestoreDocument<ChatMessage, DesignResult>(doc.data()));
         });
         reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setSavedReports(reports);
@@ -2220,9 +2218,20 @@ export default function App() {
 
   const handleSaveReport = async () => {
     if (!result && messages.length === 0) return;
-    const name = result?.title || prompt || 'Untitled Report';
     const reportId = Date.now().toString();
     const ts = Date.now();
+
+    // One report, one shape, converted at the boundary rather than assembled
+    // differently in each branch — the two used to compute the display name
+    // separately, so the same project could be listed under two names depending
+    // on whether it was saved signed in. See src/lib/savedReport.ts.
+    const draft: SavedReport = {
+      id: reportId,
+      name: reportDisplayName(result?.title || prompt),
+      timestamp: new Date(ts).toISOString(),
+      messages,
+      result,
+    };
 
     if (user) {
       try {
@@ -2238,32 +2247,25 @@ export default function App() {
         // the spec, layout and REPX — and say plainly that the images were left
         // behind. A saved report without its source thumbnails still reopens and
         // still exports; a failed save leaves the user with nothing.
-        let messagesJson = JSON.stringify(messages);
-        const resultJson = JSON.stringify(result);
+        let payload = toFirestoreDocument(draft, user.uid);
         let imagesDropped = false;
 
-        if (messagesJson.length + resultJson.length > CLOUD_SAVE_BUDGET_BYTES) {
-          messagesJson = JSON.stringify(
-            messages.map((m) => (m.images?.length ? { ...m, images: undefined } : m))
+        if (payload.messages.length + payload.result.length > CLOUD_SAVE_BUDGET_BYTES) {
+          payload = toFirestoreDocument(
+            { ...draft, messages: messages.map((m) => (m.images?.length ? { ...m, images: undefined } : m)) },
+            user.uid
           );
           imagesDropped = true;
         }
 
-        if (messagesJson.length + resultJson.length > CLOUD_SAVE_BUDGET_BYTES) {
+        if (payload.messages.length + payload.result.length > CLOUD_SAVE_BUDGET_BYTES) {
           setError(
             'This project is too large to sync to your account. It is still open here, and "Save Project" while signed out keeps it on this device.'
           );
           return;
         }
 
-        await setDoc(docRef, {
-          id: reportId,
-          name: name.substring(0, 30) + (name.length > 30 ? '...' : ''),
-          timestamp: ts,
-          messages: messagesJson,
-          result: resultJson,
-          userId: user.uid
-        });
+        await setDoc(docRef, payload);
         setSaveNotice(
           imagesDropped
             ? 'Saved to your projects — the uploaded images were too large to sync, so the spec and REPX were saved without them.'
@@ -2274,15 +2276,8 @@ export default function App() {
           'That project could not be saved to your account. It is still open here — try again in a moment.');
       }
     } else {
-      const newReport: SavedReport = {
-        id: reportId,
-        name: name.substring(0, 30) + (name.length > 30 ? '...' : ''),
-        timestamp: new Date(ts).toISOString(),
-        messages,
-        result
-      };
       setSavedReports(prev => {
-        const updated = [newReport, ...prev];
+        const updated = [draft, ...prev];
         localStorage.setItem('savedReports', JSON.stringify(updated));
         return updated;
       });
