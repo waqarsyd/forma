@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "description": "Turn a screenshot, a PDF, or an existing report into a real DevExpress .repx — AI-generated spec, in-browser mockup, and XtraReports XML. Bring your own Gemini key.",
   "type": "module",
+  "engines": {
+    "node": "^20 || ^22 || >=24"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "dev:log": "node scripts/dev.mjs",

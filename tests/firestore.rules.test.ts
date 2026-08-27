@@ -259,6 +259,38 @@ describe('key vault', () => {
     );
   });
 
+  /**
+   * The floor was 100,000 until 2026-08-27 — a third of the 310,000 that
+   * `keyVault.ts` uses and calls OWASP's floor, so the rule that exists to stop
+   * a weakening stopped it in the wrong place (audit SEC-005).
+   */
+  it('rejects the old 100,000 floor, which is below what the client uses', async () => {
+    await assertFails(
+      setDoc(doc(aliceDb(), 'users', ALICE, 'vault', 'geminiKey'), {
+        ...validVault(),
+        iterations: 100000,
+      })
+    );
+  });
+
+  it('accepts the count keyVault.ts actually writes', async () => {
+    await assertSucceeds(
+      setDoc(doc(aliceDb(), 'users', ALICE, 'vault', 'geminiKey'), {
+        ...validVault(),
+        iterations: 310000,
+      })
+    );
+  });
+
+  it('accepts a stronger count, so raising it later needs no rules change', async () => {
+    await assertSucceeds(
+      setDoc(doc(aliceDb(), 'users', ALICE, 'vault', 'geminiKey'), {
+        ...validVault(),
+        iterations: 600000,
+      })
+    );
+  });
+
   it('rejects extra keys — this path must not become general storage', async () => {
     await assertFails(
       setDoc(doc(aliceDb(), 'users', ALICE, 'vault', 'geminiKey'), {

@@ -142,3 +142,44 @@ describe('sendToDesigner', () => {
     await expect(sendToDesigner('<x/>', 'a.repx')).resolves.toBeUndefined();
   });
 });
+
+/**
+ * The two Windows filename traps neither sanitiser knew about (audit BUG-002,
+ * BUG-003). Both sides were fixed -- this pins the browser half; the companion
+ * re-sanitises independently, because a value from the browser is a value an
+ * attacker could send.
+ */
+describe('designerFileName and Windows', () => {
+  for (const reserved of ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'LPT9', 'con', 'Nul']) {
+    it(`does not hand Windows the reserved device name ${reserved}`, () => {
+      // %TEMP%\Forma\CON.repx addresses the console, not a file, whatever the
+      // directory. Prefixed rather than replaced so the chosen name survives.
+      const out = designerFileName(reserved);
+      expect(out).toBe(`_${reserved}.repx`);
+      expect(out).toContain(reserved);
+    });
+  }
+
+  it('leaves a name that merely contains a device name alone', () => {
+    // Only the whole stem is reserved. CONTRACT is a perfectly good filename.
+    expect(designerFileName('CONTRACT')).toBe('CONTRACT.repx');
+    expect(designerFileName('my-con')).toBe('my-con.repx');
+  });
+
+  it('caps a title the rules would happily store', () => {
+    // firestore.rules permits 256 characters; %TEMP%\Forma\ is ~45 here, so an
+    // untruncated name produced a path over MAX_PATH and threw.
+    const out = designerFileName('A'.repeat(256));
+    expect(out.length).toBeLessThanOrEqual(65);
+    expect(out.endsWith('.repx')).toBe(true);
+  });
+
+  it('still produces something usable at the cap', () => {
+    expect(designerFileName('B'.repeat(500))).toMatch(/^B+\.repx$/);
+  });
+
+  it('has not changed for ordinary titles', () => {
+    expect(designerFileName('Sales Invoice')).toBe('Sales_Invoice.repx');
+    expect(designerFileName()).toBe('report-design.repx');
+  });
+});

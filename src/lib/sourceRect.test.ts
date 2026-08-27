@@ -79,3 +79,52 @@ describe('sourceRectFor', () => {
     expect(sourceRectFor(base)).toBeNull();
   });
 });
+
+/**
+ * The guard used to catch malformed boxes and let implausible ones through,
+ * which is the wrong way round for a value that fails silently (audit BUG-004).
+ * This is model output: a hallucinated coordinate outside the documented 0-1000
+ * range produced a crop rectangle partly or wholly outside the image, rendered
+ * without complaint.
+ */
+describe('boxToSourceRect clamps to the documented range', () => {
+  it('no longer returns a negative origin', () => {
+    // The reported case: [-1, -1, 2, 2] used to yield x and y of -0.001.
+    const rect = boxToSourceRect([-1, -1, 2, 2]);
+    expect(rect).not.toBeNull();
+    expect(rect!.x).toBeGreaterThanOrEqual(0);
+    expect(rect!.y).toBeGreaterThanOrEqual(0);
+  });
+
+  it('never returns a rectangle reaching outside the image', () => {
+    for (const box of [
+      [0, 0, 5000, 5000],
+      [-500, -500, 1500, 1500],
+      [900, 900, 3000, 3000],
+    ]) {
+      const rect = boxToSourceRect(box);
+      if (!rect) continue;
+      expect(rect.x).toBeGreaterThanOrEqual(0);
+      expect(rect.y).toBeGreaterThanOrEqual(0);
+      expect(rect.x + rect.width).toBeLessThanOrEqual(1);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('salvages a near-miss rather than dropping it', () => {
+    // Slightly over is far more likely to be an off-by-one than garbage, so it
+    // is clamped to the edge instead of rejected.
+    expect(boxToSourceRect([0, 0, 1001, 1001])).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+  });
+
+  it('drops a box that lies entirely outside the image', () => {
+    // Clamping collapses it to zero area, and a zero-area crop is not something
+    // to hand the renderer.
+    expect(boxToSourceRect([2000, 2000, 3000, 3000])).toBeNull();
+    expect(boxToSourceRect([-900, -900, -100, -100])).toBeNull();
+  });
+
+  it('leaves a box inside the range exactly as it was', () => {
+    expect(boxToSourceRect([100, 800, 200, 900])).toEqual({ x: 0.8, y: 0.1, width: 0.1, height: 0.1 });
+  });
+});

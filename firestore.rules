@@ -53,7 +53,16 @@ service cloud.firestore {
         && data.iv is string && data.iv.size() <= 64
         && data.salt is string && data.salt.size() <= 64
         // Reject a weakened iteration count written by a tampered client.
-        && data.iterations is number && data.iterations >= 100000;
+        //
+        // 310,000 is OWASP's 2023 floor for PBKDF2-HMAC-SHA256 and what
+        // keyVault.ts uses. This said 100,000 until 2026-08-27, which is a
+        // third of the number the code itself calls a floor — so the rule
+        // existing to stop a weakening stopped it at the wrong place.
+        //
+        // Safe to raise: each record stores the count it was written with and
+        // decryption honours that value, so existing records keep opening.
+        // Only new writes are constrained.
+        && data.iterations is number && data.iterations >= 310000;
     }
 
     // Split by operation on purpose. The previous single `allow read, write`

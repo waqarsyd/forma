@@ -124,7 +124,14 @@ export function rankDiscovered(names: ReadonlyArray<string>): string[] {
     if (tier !== 0) return tier;
     const version = versionOf(b) - versionOf(a);
     if (version !== 0) return version;
-    return a.localeCompare(b); // stable, so the order cannot wobble between runs
+    // String() rather than a bare a.localeCompare(b): the signature says
+    // ReadonlyArray<string> and TypeScript does not enforce that at runtime, so
+    // a non-string reaching here threw `a.localeCompare is not a function`.
+    // Unreachable through the app today — `usableFromCatalog` drops any entry
+    // whose name is not a string — but the safety sits two modules away, which
+    // is the kind of invariant that survives until someone adds a second caller
+    // (audit BUG-005).
+    return String(a).localeCompare(String(b)); // stable, so the order cannot wobble between runs
   });
 }
 

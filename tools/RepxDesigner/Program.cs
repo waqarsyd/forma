@@ -492,6 +492,25 @@ namespace RepxDesigner
                 string candidate = Path.GetFileName(suggestedName);
                 candidate = Regex.Replace(candidate, @"[^A-Za-z0-9_\-. ]", "");
                 candidate = candidate.Replace(".repx", "").Trim();
+
+                // Windows resolves CON, PRN, AUX, NUL, COM1-9 and LPT1-9 as
+                // devices in every directory, with or without an extension, so
+                // %TEMP%\Forma\CON.repx addresses the console rather than a
+                // file. Path.GetFileName and the regex above both let them
+                // through untouched. The browser sanitises this too, but a
+                // value from the browser is a value an attacker could send --
+                // which is exactly why this side re-sanitises.
+                if (Regex.IsMatch(candidate, @"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$",
+                        RegexOptions.IgnoreCase))
+                {
+                    candidate = "_" + candidate;
+                }
+
+                // %TEMP%\Forma\ is ~45 characters here, and firestore.rules
+                // permits a 256-character report name, so an untruncated one
+                // produced a ~306-character path and a PathTooLongException.
+                if (candidate.Length > 60) candidate = candidate.Substring(0, 60);
+
                 if (candidate.Length > 0) safe = candidate;
             }
 

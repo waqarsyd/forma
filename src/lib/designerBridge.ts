@@ -31,9 +31,29 @@ export const DESIGNER_CLIENT_HEADER = 'x-forma-client';
  * Sanitising here is a courtesy, not a defence — the companion re-sanitises,
  * because a value this side sends is a value an attacker could send too.
  */
+/**
+ * Windows resolves these as devices in **every** directory, with or without an
+ * extension, so `%TEMP%\Forma\CON.repx` addresses the console rather than a
+ * file. Neither sanitiser knew about them (audit BUG-002).
+ */
+const RESERVED_DEVICE_NAMES =
+  /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+
+/**
+ * Long enough to stay readable in the designer's title bar, short enough that
+ * the companion's `%TEMP%\Forma\<name>.repx` cannot approach MAX_PATH.
+ * `firestore.rules` permits a 256-character report name, so an untruncated one
+ * produced a ~306-character path and a PathTooLongException (audit BUG-003).
+ */
+const MAX_STEM = 60;
+
 export function designerFileName(title?: string): string {
-  const base = (title || 'report-design').replace(/\s+/g, '_').replace(/[^A-Za-z0-9_\-.]/g, '');
-  return `${base || 'report-design'}.repx`;
+  let base = (title || 'report-design').replace(/\s+/g, '_').replace(/[^A-Za-z0-9_\-.]/g, '');
+  if (!base) base = 'report-design';
+  if (base.length > MAX_STEM) base = base.slice(0, MAX_STEM);
+  // Prefixed rather than replaced, so the name a user chose is still legible.
+  if (RESERVED_DEVICE_NAMES.test(base)) base = `_${base}`;
+  return `${base}.repx`;
 }
 
 /**

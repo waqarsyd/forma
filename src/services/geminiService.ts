@@ -432,7 +432,26 @@ function isNetworkFailure(err: any): boolean {
   );
 }
 
+/**
+ * How long one probe may take.
+ *
+ * Generous for a one-token request, and it exists because the probes run
+ * concurrently behind `Promise.all`: without it, **one unresponsive endpoint
+ * gates the entire generation**, and the user sees "starting" with no progress
+ * and no explanation on an operation that already takes a minute (audit
+ * REL-003). Too tight would be worse than absent — it would mark a slow but
+ * working model unavailable — hence seconds rather than milliseconds.
+ */
+const PROBE_TIMEOUT_MS = 8000;
+
 async function probeModel(model: string, apiKey: string, signal?: AbortSignal): Promise<Probe> {
+  // Chained to the caller's signal so pressing Stop still cancels immediately;
+  // whichever fires first wins.
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -444,7 +463,7 @@ async function probeModel(model: string, apiKey: string, signal?: AbortSignal): 
           contents: [{ parts: [{ text: "hi" }] }],
           generationConfig: { maxOutputTokens: 1 },
         }),
-        signal,
+        signal: controller.signal,
       }
     );
     if (res.ok) return "ok";
@@ -453,8 +472,17 @@ async function probeModel(model: string, apiKey: string, signal?: AbortSignal): 
     if (res.status === 403 || res.status === 400) return "keyError";
     return "unavailable";
   } catch (err: any) {
-    if (err?.name === "AbortError") throw err;
+    // A user cancellation propagates; a probe that merely ran out of time does
+    // not. Both surface as AbortError, so the caller's signal is what tells
+    // them apart — otherwise a slow model would look like a user pressing Stop.
+    if (err?.name === "AbortError") {
+      if (signal?.aborted) throw err;
+      return "unavailable";
+    }
     return isNetworkFailure(err) ? "network" : "unavailable";
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 

@@ -355,3 +355,50 @@ describe('no key means no request', () => {
     expect(error.message).toMatch(/api key/i);
   });
 });
+
+/**
+ * A probe that never answers must not gate the rest (audit REL-003).
+ *
+ * The probes run concurrently behind Promise.all, so before the timeout one
+ * unresponsive endpoint held up the whole generation -- the user saw "starting"
+ * with no progress and no explanation, on an operation that already takes a
+ * minute.
+ */
+describe('a hung probe does not gate the others', () => {
+  it('gives up on a model that never answers and uses one that does', async () => {
+    vi.useFakeTimers();
+    const hanging = new Set([MODEL_PREFERENCE[0]]);
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url === CATALOGUE_URL) return Promise.resolve(new Response(JSON.stringify({ models: REAL_CATALOGUE }), { status: 200 }));
+      const model = /\/models\/([^:]+):generateContent/.exec(url)?.[1] ?? '';
+      if (!hanging.has(model)) return Promise.resolve(new Response('{}', { status: 200 }));
+      return new Promise<Response>((_r, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          const e = new Error('aborted'); e.name = 'AbortError'; reject(e);
+        });
+      });
+    }));
+
+    const pending = resolveModel(KEY);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const chosen = await pending;
+
+    // The first choice hung; resolution still completed on a later candidate.
+    expect(chosen).not.toBe(MODEL_PREFERENCE[0]);
+    expect(chosen).toBeTruthy();
+  });
+
+  it('still lets a user cancellation through', async () => {
+    // A timeout and a cancellation both surface as AbortError. Only the
+    // caller's signal distinguishes them, and Stop must still stop.
+    const controller = new AbortController();
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url === CATALOGUE_URL) return Promise.resolve(new Response(JSON.stringify({ models: [] }), { status: 200 }));
+      controller.abort();
+      const e = new Error('aborted'); e.name = 'AbortError';
+      return Promise.reject(e);
+    }));
+
+    await expect(resolveModel(KEY, controller.signal)).rejects.toThrow();
+  });
+});
