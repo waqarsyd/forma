@@ -108,8 +108,9 @@ src/
                        request fails), savedReport + accountData (the two
                        storage shapes and the document layout), securityHeaders
                        and bindHost (what server.ts sends and where it listens),
-                       contactSubmit, and the routing pair router (real
-                       history/location, so not pure) + routes.
+                       contactSubmit, generationProgress (the progress bar's
+                       whole state machine) and attachmentParts, and the routing
+                       pair router (real history/location, so not pure) + routes.
                        Plus motion tokens, and pdf + genai — two loaders that
                        exist so their dependencies stay out of the eager bundle,
                        and are the only files here that are not pure
