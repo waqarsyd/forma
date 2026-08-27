@@ -18,7 +18,7 @@ import SheetRuler from './landing/SheetRuler';
  * that had to end.
  */
 
-const UPDATED = '15 August 2026';
+const UPDATED = '27 August 2026';
 
 type Section = { heading: string; paragraphs: string[] };
 
@@ -72,7 +72,7 @@ const PRIVACY: Section[] = [
     heading: 'The short version',
     paragraphs: [
       'Forma collects as little as it can. There are no analytics, no advertising, no tracking pixels and no third-party scripts watching what you do. Nothing is sold or shared with anyone for marketing.',
-      'Signed out, nothing about you leaves your browser except the request you send to Google with your own API key.',
+      'Signed out, three things leave your browser and no others: the request you send to Google with your own API key, the typefaces the page loads from Google Fonts, and — only if you use the contact form — the message you type into it. Who receives each of those is set out under “Who else is involved” below.',
     ],
   },
   {
@@ -100,7 +100,8 @@ const PRIVACY: Section[] = [
   {
     heading: 'Who else is involved',
     paragraphs: [
-      'Google Firebase provides authentication and the database. Google Gemini generates the report, called directly from your browser with your key. Those are the only third parties in the path.',
+      'Google Firebase provides authentication and the database. Google Gemini generates the report, called directly from your browser with your key. Both of those need an account or a key, so neither is involved until you supply one.',
+      'Two others are involved without you doing anything. The pages load their typefaces from Google Fonts, so Google sees the IP address and browser of anyone who opens Forma at all. And the contact form is delivered by FormSubmit, which receives the name, email address, subject and message you type into that form and forwards them on as email — only when you press send, only from that one page, and nothing else about you goes with it.',
       'Files you upload are prepared in your browser — resized, rendered, parsed — before anything is sent.',
     ],
   },
