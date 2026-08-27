@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
+import { classifyGeminiError } from "../lib/geminiErrors";
 import { pageSizeInUnits, unitsPerInch, unitsToPoints } from "../lib/reportGeometry";
 
 /** One cell of a real `table` element. Weights are relative, like XRTableCell's. */
@@ -1412,60 +1413,11 @@ export async function analyzeReportDesign(
     }
     console.error("Error from AI model:", error);
 
-    const message: string = error?.message || "";
-    const status = error?.status;
-
-    if (status === 429 || message.includes("429") || status === "RESOURCE_EXHAUSTED" || message.includes("RESOURCE_EXHAUSTED")) {
-      return new Error("You have exceeded your Gemini API quota. Please check your plan and billing details, or try again later.");
-    }
-
-    // A revoked or leaked key comes back as 403 PERMISSION_DENIED. Previously this
-    // fell through to the generic branch below, so "your key is dead" was
-    // indistinguishable from any other model error.
-    if (status === 403 || message.includes("403") || message.includes("PERMISSION_DENIED")) {
-      if (message.toLowerCase().includes("leaked")) {
-        return new Error(
-          "Google has disabled this API key because it was published somewhere public. Create a new key in Google AI Studio and paste it in Settings."
-        );
-      }
-      return new Error(
-        "Your Gemini API key was rejected. Check that it is correct and that the Generative Language API is enabled for its project."
-      );
-    }
-
-    if (status === 400 || message.includes("API_KEY_INVALID") || message.includes("API key not valid")) {
-      return new Error("That Gemini API key is not valid. Check for a typo or paste it again in Settings.");
-    }
-
-    // Reached only when re-detection has already been tried and still failed.
-    if (status === 404 || message.includes("NOT_FOUND")) {
-      return new Error(
-        "No Gemini model available to this API key could complete the request. Your key may be too new, or every model may be over quota."
-      );
-    }
-
-    // Reached only after the automatic retries above have already been spent.
-    if (isOverloaded(error)) {
-      return new Error(
-        "Google's servers are busy and could not take this request, even after retrying. Nothing is wrong with your API key or your design — wait a minute and generate again."
-      );
-    }
-
-    // SDK errors frequently carry the provider's raw JSON as their message.
-    // Showing that verbatim puts a wall of braces in front of the user, so pull
-    // out the human-readable part when there is one.
-    let readable = message;
-    try {
-      const jsonStart = message.indexOf("{");
-      if (jsonStart !== -1) {
-        const parsed = JSON.parse(message.slice(jsonStart));
-        readable = parsed?.error?.message || readable;
-      }
-    } catch {
-      /* not JSON after all — fall back to the message as given */
-    }
-
-    return new Error(`AI model error: ${readable || "Unknown error"}`);
+    // The classification is in lib/geminiErrors.ts so it can be tested; only
+    // the cancellation check above needs this closure's `signal`. The 400
+    // branch in particular is load-bearing and was wrong until 2026-08-27 —
+    // see the note in that file.
+    return classifyGeminiError(error);
   }
 
   const tResponded = Date.now();
