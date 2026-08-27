@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { toPersistable, mergeStoredConfig } from './reportConfigStore';
+import { SUPPORTED_UNITS, SUPPORTED_PAGE_SIZES } from './reportGeometry';
 
 const defaults = {
   version: '23.2',
@@ -77,5 +78,63 @@ describe('mergeStoredConfig', () => {
   it('merges a partial header over the default rather than replacing it', () => {
     const merged = mergeStoredConfig(defaults, JSON.stringify({ header: { title: 'Job Card' } }));
     expect(merged.header).toEqual({ showCompanyLogo: false, title: 'Job Card' });
+  });
+});
+
+/**
+ * `unit` and `pageSize` are not free-text (audit BUG-001).
+ *
+ * They are DevExpress enum names that reach the geometry and are then written
+ * verbatim into the generated REPX. Accepting any string meant a stored
+ * "Document" -- a real ReportUnit member the geometry table did not carry --
+ * converted at 100 units per inch instead of 300: a 3x scale error, every font
+ * three times too large, and both the layout JSON and the XML internally
+ * consistent while doing it. A stored "a4" or "pixels" fell back the same way.
+ *
+ * Type-checking was not enough, so the domain is checked too. An unsupported
+ * value is dropped for the default rather than throwing, matching how the rest
+ * of this function treats a corrupted entry.
+ */
+describe('mergeStoredConfig — unit and pageSize are validated, not just typed', () => {
+  const defaults = { version: '20.1', unit: 'HundredthsOfAnInch', pageSize: 'Letter' };
+  const merge = (stored: object) => mergeStoredConfig(defaults, JSON.stringify(stored));
+
+  it('accepts every supported value', () => {
+    for (const unit of SUPPORTED_UNITS) expect(merge({ unit }).unit).toBe(unit);
+    for (const pageSize of SUPPORTED_PAGE_SIZES) expect(merge({ pageSize }).pageSize).toBe(pageSize);
+  });
+
+  it('accepts Document and Tabloid, which are real and used to be silently wrong', () => {
+    expect(merge({ unit: 'Document' }).unit).toBe('Document');
+    expect(merge({ pageSize: 'Tabloid' }).pageSize).toBe('Tabloid');
+  });
+
+  it('drops an unsupported unit rather than converting it wrongly', () => {
+    for (const unit of ['Nonsense', 'pixels', 'PIXELS', 'Pixel', ' Pixels ', '../../etc', '']) {
+      expect(merge({ unit }).unit).toBe(defaults.unit);
+    }
+  });
+
+  it('drops an unsupported page size', () => {
+    for (const pageSize of ['A3', 'a4', 'LETTER', 'Letter ', '']) {
+      expect(merge({ pageSize }).pageSize).toBe(defaults.pageSize);
+    }
+  });
+
+  it('keeps the other fields when one is rejected', () => {
+    // A bad unit must not cost the user their version or paper choice.
+    const merged = merge({ unit: 'Nonsense', pageSize: 'A4', version: '20.1' });
+    expect(merged.unit).toBe(defaults.unit);
+    expect(merged.pageSize).toBe('A4');
+    expect(merged.version).toBe('20.1');
+  });
+
+  it('still does not validate the fields that are genuinely free-text', () => {
+    // `version` is checked against the dropdown elsewhere; header/footer text is
+    // the user's own words. Validation here is specifically about the two enum
+    // fields that reach the XML.
+    expect(mergeStoredConfig({ ...defaults, header: { title: '' } } as any,
+      JSON.stringify({ header: { title: 'Anything at all — 你好' } }) as any) as any)
+      .toMatchObject({ header: { title: 'Anything at all — 你好' } });
   });
 });

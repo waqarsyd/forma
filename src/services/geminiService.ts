@@ -2,7 +2,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
-import { pageSizeInUnits, unitsPerInch, unitsToPoints } from "../lib/reportGeometry";
+import {
+  pageSizeInUnits,
+  unitsPerInch,
+  unitsToPoints,
+  resolveReportUnit,
+  resolvePageSize,
+} from "../lib/reportGeometry";
 
 /** One cell of a real `table` element. Weights are relative, like XRTableCell's. */
 export interface ReportCell {
@@ -903,14 +909,20 @@ export async function analyzeReportDesign(
    * with the margins, so the sheet you review and the sheet that prints are the
    * same size", which was simply not true for two of the three options.
    */
-  const reportUnit = config?.unit || 'HundredthsOfAnInch';
-  const page = pageSizeInUnits(config?.pageSize, reportUnit);
+  // Resolved, not taken as given. These two strings are written verbatim into
+  // the REPX — `ReportUnit="${reportUnit}"` below — so an unrecognised one does
+  // not merely mis-scale the geometry, it lands in the XML and DevExpress
+  // refuses the file. `config.unit || 'HundredthsOfAnInch'` passed anything
+  // non-empty straight through (audit BUG-001).
+  const reportUnit = resolveReportUnit(config?.unit);
+  const pageSize = resolvePageSize(config?.pageSize);
+  const page = pageSizeInUnits(pageSize, reportUnit);
   const unitsPerInchForReport = unitsPerInch(reportUnit);
 
   const configInstructions = config ? `
   CRITICAL CONFIGURATION:
   - DevExpress Version: ${config.version}
-  - PaperKind: ${config.pageSize}. The exact PageWidth/PageHeight/ReportUnit values are given in the ROOT STRUCTURE above and are already correct for this paper — use them verbatim rather than recomputing them.
+  - PaperKind: ${pageSize}. The exact PageWidth/PageHeight/ReportUnit values are given in the ROOT STRUCTURE above and are already correct for this paper — use them verbatim rather than recomputing them.
   ${config.header ? `
   - HEADER:
     - Include Company Logo: ${config.header.showCompanyLogo ? 'Yes' : 'No'}
@@ -1070,7 +1082,7 @@ export async function analyzeReportDesign(
           PHASE 1: SPATIAL MAPPING
           Before generating the output, list elements and their exact coordinates and sizes (X, Y, Width, Height) in the markdown section.
           - The report unit is ${reportUnit}: 1 inch = ${unitsPerInchForReport} units.
-          - The page is ${config?.pageSize || 'Letter'}: ${page.width} x ${page.height} units.
+          - The page is ${pageSize}: ${page.width} x ${page.height} units.
           - The origin (0,0) is the TOP-LEFT CORNER OF THE PAPER, not of any margin or content area.
           - Map the visual proportions perfectly to this grid.
           - The design's own whitespace is part of the design. If the artwork begins an inch in from the paper edge, its first element is at x=${Math.round(unitsPerInchForReport)}, and you must NOT also add a page margin — that would move it in twice.

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   unitsPerInch,
   unitsToPx,
@@ -6,6 +6,14 @@ import {
   unitsToPoints,
   pdfTopFromBaseline,
   pageSizeInUnits,
+  isSupportedUnit,
+  isSupportedPageSize,
+  resolveReportUnit,
+  resolvePageSize,
+  SUPPORTED_UNITS,
+  SUPPORTED_PAGE_SIZES,
+  DEFAULT_UNIT,
+  DEFAULT_PAGE_SIZE,
 } from './reportGeometry';
 
 /**
@@ -113,7 +121,131 @@ describe('pageSizeInUnits', () => {
   });
 
   it('falls back to Letter for an unknown size', () => {
-    expect(pageSizeInUnits('Tabloid')).toEqual({ width: 850, height: 1100 });
+    // This case used to assert `pageSizeInUnits('Tabloid')` returned Letter,
+    // which is what BUG-001 was: Tabloid is real paper the table did not carry,
+    // and its fallback matched Letter exactly so nothing looked wrong. Tabloid
+    // is supported now, so the example had to become one that genuinely is not
+    // a paper size.
+    expect(pageSizeInUnits('A3')).toEqual({ width: 850, height: 1100 });
     expect(pageSizeInUnits(undefined)).toEqual({ width: 850, height: 1100 });
+  });
+});
+
+/**
+ * An unrecognised unit or page size used to be accepted in silence and then
+ * converted with the *default* factor (audit BUG-001).
+ *
+ * Two things made that worse than an ordinary fallback. `Document` is a real
+ * `DevExpress.XtraReports.UI.ReportUnit` member the table simply did not carry,
+ * so a legitimate value produced a **3x scale error** -- a 1-inch box written as
+ * 100 units instead of 300, every font three times too large -- while both the
+ * layout JSON and the REPX stayed internally consistent. And `Tabloid` returned
+ * Letter's exact dimensions, so the fallback was invisible even to someone
+ * checking the output.
+ *
+ * The value also travels: `geminiService` writes it verbatim into
+ * `ReportUnit="..."`, so an unsupported string does not just mis-scale, it lands
+ * in the XML and DevExpress refuses the file.
+ */
+describe('the supported sets', () => {
+  it('carries every ReportUnit DevExpress defines', () => {
+    // Document is 1/300", the .NET GraphicsUnit.Document. Its absence was the
+    // root cause of BUG-001.
+    expect([...SUPPORTED_UNITS].sort()).toEqual(
+      ['Document', 'HundredthsOfAnInch', 'Pixels', 'TenthsOfAMillimeter'].sort()
+    );
+  });
+
+  it('converts Document at 300 units per inch, not the default 100', () => {
+    expect(unitsPerInch('Document')).toBe(300);
+    // The regression in numbers: a 16-unit font at Document.
+    expect(unitsToPoints(16, 'Document')).toBeCloseTo(3.84, 2);
+  });
+
+  it('knows Tabloid is 11x17, not Letter', () => {
+    const tabloid = pageSizeInUnits('Tabloid', 'HundredthsOfAnInch');
+    expect(tabloid).toEqual({ width: 1100, height: 1700 });
+    // The fallback used to be undetectable because it matched Letter exactly.
+    expect(tabloid).not.toEqual(pageSizeInUnits('Letter', 'HundredthsOfAnInch'));
+  });
+
+  it('lists page sizes the geometry can actually compute', () => {
+    for (const size of SUPPORTED_PAGE_SIZES) {
+      const page = pageSizeInUnits(size, DEFAULT_UNIT);
+      expect(page.width).toBeGreaterThan(0);
+      expect(page.height).toBeGreaterThan(0);
+    }
+  });
+
+  it('defaults to values that are themselves supported', () => {
+    expect(isSupportedUnit(DEFAULT_UNIT)).toBe(true);
+    expect(isSupportedPageSize(DEFAULT_PAGE_SIZE)).toBe(true);
+  });
+});
+
+describe('isSupportedUnit / isSupportedPageSize', () => {
+  it('accepts the exact DevExpress spellings', () => {
+    for (const unit of SUPPORTED_UNITS) expect(isSupportedUnit(unit)).toBe(true);
+    for (const size of SUPPORTED_PAGE_SIZES) expect(isSupportedPageSize(size)).toBe(true);
+  });
+
+  it('rejects a different case, because the value is written into the XML verbatim', () => {
+    // Normalising would be worse: DevExpress matches the enum name exactly, so
+    // a helpfully-corrected "pixels" would produce a file it refuses to open.
+    expect(isSupportedUnit('pixels')).toBe(false);
+    expect(isSupportedUnit('PIXELS')).toBe(false);
+    expect(isSupportedPageSize('a4')).toBe(false);
+  });
+
+  it('rejects the near-misses that look right', () => {
+    expect(isSupportedUnit('Pixel')).toBe(false);              // the enum is plural
+    expect(isSupportedUnit('TenthsOfAMillimeters')).toBe(false); // it is not
+    expect(isSupportedUnit(' Pixels ')).toBe(false);
+  });
+
+  it('rejects nothing at all', () => {
+    for (const bad of [undefined, null, '', '   ', '../../etc', '<script>']) {
+      expect(isSupportedUnit(bad as any)).toBe(false);
+      expect(isSupportedPageSize(bad as any)).toBe(false);
+    }
+  });
+});
+
+describe('resolveReportUnit / resolvePageSize', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('passes a supported value straight through', () => {
+    expect(resolveReportUnit('Document')).toBe('Document');
+    expect(resolvePageSize('Tabloid')).toBe('Tabloid');
+  });
+
+  it('falls back to the default for anything else', () => {
+    expect(resolveReportUnit('Nonsense')).toBe(DEFAULT_UNIT);
+    expect(resolvePageSize('Nonsense')).toBe(DEFAULT_PAGE_SIZE);
+  });
+
+  it('treats absent as the default without complaining', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(resolveReportUnit(undefined)).toBe(DEFAULT_UNIT);
+    expect(resolvePageSize(undefined)).toBe(DEFAULT_PAGE_SIZE);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('warns when it drops a value someone actually set', () => {
+    // The whole failure class here is silence. A fallback that says nothing is
+    // how a 3x scale error ships looking plausible.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    resolveReportUnit('Document2');
+    resolvePageSize('A3');
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(String(warn.mock.calls[0][0])).toMatch(/Document2/);
+    expect(String(warn.mock.calls[1][0])).toMatch(/A3/);
+  });
+
+  it('never returns something the conversions cannot handle', () => {
+    for (const bad of ['Document2', '', '  ', 'a4', null, undefined] as any[]) {
+      expect(isSupportedUnit(resolveReportUnit(bad))).toBe(true);
+      expect(isSupportedPageSize(resolvePageSize(bad))).toBe(true);
+    }
   });
 });

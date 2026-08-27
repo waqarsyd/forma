@@ -15,6 +15,8 @@
  * `ReportConfig` later is *not* persisted until someone adds it here on purpose.
  */
 
+import { isSupportedUnit, isSupportedPageSize } from './reportGeometry';
+
 export const STORAGE_KEY = 'reportConfig';
 
 /** Exactly the fields the settings UI exposes. Nothing else is stored. */
@@ -74,7 +76,22 @@ export function mergeStoredConfig<T extends PersistableConfig>(defaults: T, raw:
       continue;
     }
 
-    if (typeof value === 'string') (merged as Record<string, unknown>)[field] = value;
+    if (typeof value !== 'string') continue;
+
+    // Type is not enough for these two. `unit` and `pageSize` are DevExpress
+    // enum names that reach the geometry *and* get written verbatim into the
+    // REPX, so an unrecognised one produces a plausible layout at the wrong
+    // scale, or a file DevExpress refuses. Accepting any string here is what
+    // made BUG-001 reachable: a stored `"Document"` silently converted at 100
+    // units per inch instead of 300.
+    //
+    // Rejecting falls back to the default rather than throwing, for the same
+    // reason the rest of this function does: a corrupted entry must not stop
+    // the workspace loading.
+    if (field === 'unit' && !isSupportedUnit(value)) continue;
+    if (field === 'pageSize' && !isSupportedPageSize(value)) continue;
+
+    (merged as Record<string, unknown>)[field] = value;
   }
 
   return merged;
