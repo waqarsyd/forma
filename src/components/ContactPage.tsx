@@ -153,10 +153,28 @@ function Field({
         {label} <span className="text-secondary">*</span>
       </label>
       {children}
-      {error && <span className="font-body-lg text-[12.5px] leading-[1.5] text-error">{error}</span>}
+      {/* The id is what `describedBy` below points the control at. Without it
+          the control announced "invalid" and stopped there: `aria-invalid` says
+          *that* something is wrong, never *what*, and this message was visible
+          text with no programmatic relationship to the field it belonged to. */}
+      {error && (
+        <span id={`${id}-error`} className="font-body-lg text-[12.5px] leading-[1.5] text-error">
+          {error}
+        </span>
+      )}
     </div>
   );
 }
+
+/**
+ * Point a control at its error message, or at nothing when it has none.
+ *
+ * Deliberately not `role="alert"` on the message itself: `handleSubmit` moves
+ * focus to the first bad field, so that one is announced on arrival and the
+ * rest are announced as they are reached. Four live regions appearing at once
+ * would speak all four errors over each other before focus had moved anywhere.
+ */
+const describedBy = (id: string, bad: boolean) => (bad ? `${id}-error` : undefined);
 
 const fieldClass = (bad: boolean) =>
   `u-transition w-full rounded-[10px] border px-3.5 py-3 font-body-lg text-[14.5px] leading-[1.55] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:outline-none focus:ring-4 ${
@@ -508,6 +526,7 @@ export default function ContactPage({
                           value={values.name}
                           onChange={(e) => set('name')(e.target.value)}
                           aria-invalid={!!errors.name}
+                          aria-describedby={describedBy('name', !!errors.name)}
                           className={fieldClass(!!errors.name)}
                         />
                       </Field>
@@ -522,6 +541,7 @@ export default function ContactPage({
                           value={values.email}
                           onChange={(e) => set('email')(e.target.value)}
                           aria-invalid={!!errors.email}
+                          aria-describedby={describedBy('email', !!errors.email)}
                           className={fieldClass(!!errors.email)}
                         />
                       </Field>
@@ -534,6 +554,7 @@ export default function ContactPage({
                           value={values.topic}
                           onChange={(e) => set('topic')(e.target.value)}
                           aria-invalid={!!errors.topic}
+                          aria-describedby={describedBy('topic', !!errors.topic)}
                           className={`${fieldClass(!!errors.topic)} cursor-pointer appearance-none pr-10`}
                         >
                           <option value="">Choose one</option>
@@ -556,6 +577,7 @@ export default function ContactPage({
                         value={values.message}
                         onChange={(e) => set('message')(e.target.value)}
                         aria-invalid={!!errors.message}
+                        aria-describedby={describedBy('message', !!errors.message)}
                         className={`${fieldClass(!!errors.message)} min-h-[132px] resize-y`}
                       />
                     </Field>
