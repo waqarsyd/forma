@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
@@ -706,6 +706,10 @@ export async function chatReply(
 
   if (!currentApiKey) throw new MissingApiKeyError();
 
+  // Loaded here, not imported at the top: the SDK is only reachable from this
+  // function and chatReply, and both refuse above if there is no key. See
+  // src/lib/genai.ts.
+  const { GoogleGenAI, Type } = await loadGenAI();
   const ai = new GoogleGenAI({ apiKey: currentApiKey });
   const model = config?.modelName?.trim() || (await resolveModel(currentApiKey, signal));
 
@@ -980,6 +984,10 @@ export async function analyzeReportDesign(
   let selectedModel = pinnedModel || (await resolveModel(currentApiKey, signal));
   const tResolved = Date.now();
 
+  // Loaded here, not imported at the top: the SDK is only reachable from this
+  // function and chatReply, and both refuse above if there is no key. See
+  // src/lib/genai.ts.
+  const { GoogleGenAI, Type } = await loadGenAI();
   const ai = new GoogleGenAI({ apiKey: currentApiKey });
 
   console.debug(`Initializing Gemini model with API key...`);

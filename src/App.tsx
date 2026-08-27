@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 /*
  * The workspace draws from the same hairline set as the marketing pages. It used
  * to mix two other systems: Material Symbols (40 ligature spans) and lucide
@@ -53,8 +53,6 @@ import {
 /* `landing/` is the shared marketing design system, not a private folder — see
    CLAUDE.md. Eyebrow is reused here rather than restating its markup. */
 import { Eyebrow } from './components/landing/sections';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   analyzeReportDesign,
   chatReply,
@@ -85,13 +83,14 @@ import {
    are unused — see the note in CLAUDE.md about this being a deliberate departure
    for this surface. */
 import { DURATION } from './lib/motion';
-import * as pdfjs from 'pdfjs-dist';
 // @ts-ignore
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { auth, db, logOut, handleFirestoreError, OperationType } from './services/firebase';
 import { onSnapshot, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { reportsCollectionRef, reportDocRef, vaultDocRef as vaultDocumentRef } from './lib/accountData';
 import { toFirestoreDocument, fromFirestoreDocument, reportDisplayName, saveReportsLocally } from './lib/savedReport';
+import { loadPdfjs } from './lib/pdf';
+// react-markdown lives behind this boundary; see src/components/Markdown.tsx.
+const Markdown = lazy(() => import('./components/Markdown'));
 import { User } from 'firebase/auth';
 import LoginPage from './components/LoginPage';
 import AccountDialog from './components/AccountDialog';
@@ -352,6 +351,11 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
 
   if (file.type === 'application/pdf') {
     try {
+      // Loaded here rather than imported at the top: pdf.js is the largest
+      // dependency in the project and this is the only place it is used, so a
+      // static import put a PDF engine in front of every visitor to the landing
+      // page. See src/lib/pdf.ts.
+      const pdfjs = await loadPdfjs();
       const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
       const pageCount = pdf.numPages;
       const readable = Math.min(pageCount, MAX_PDF_PAGES);
@@ -1092,8 +1096,9 @@ const ReportMockup = ({
   );
 };
 
-// Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
+// The PDF.js worker used to be configured here, at module scope, which is what
+// forced the engine into the eager bundle. loadPdfjs() now does it on the way
+// past — see src/lib/pdf.ts.
 
 export interface SavedReport {
   id: string;
@@ -3816,7 +3821,23 @@ export default function App() {
               {plate === 'spec' && (
                 <div className="wb-sheet wb-reg-marks">
                   <div className="markdown-body">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.content}</ReactMarkdown>
+                    {/* Lazy: react-markdown carries the micromark tokenizer and
+                        is used only here. The fallback is deliberately the
+                        unformatted spec rather than a spinner — the text is
+                        already in hand, so showing it beats showing nothing
+                        while the renderer arrives. */}
+                    <Suspense
+                      fallback={
+                        // Inline rather than a new class: this is one element
+                        // visible for a few hundred milliseconds, and the
+                        // surrounding .markdown-body already supplies the
+                        // typography. pre-wrap stops the raw spec forcing a
+                        // horizontal scrollbar on the way past.
+                        <div style={{ whiteSpace: 'pre-wrap' }}>{result.content}</div>
+                      }
+                    >
+                      <Markdown>{result.content}</Markdown>
+                    </Suspense>
                   </div>
                 </div>
               )}
