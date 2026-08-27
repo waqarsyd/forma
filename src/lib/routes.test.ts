@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ROUTES } from './router';
-import { ROUTE_TITLES, titleForRoute, viewForRoute, routesWithoutABranch } from './routes';
+import { ROUTE_TITLES, NOT_FOUND_TITLE, titleForRoute, viewForRoute, routesWithoutABranch } from './routes';
 
 /**
  * A route needs three edits: `ROUTES`, a branch in the view mapping, and a
@@ -47,9 +47,22 @@ describe('ROUTE_TITLES', () => {
     }
   });
 
-  it('falls back to the home title for anything unrecognised', () => {
-    expect(titleForRoute('/nope')).toBe(ROUTE_TITLES['/']);
+  /**
+   * This used to assert an unrecognised path got the *home* title. That was the
+   * bug (audit UX-002): a typo showed a working page with the home page's name
+   * in the tab, so a bookmark or a history entry recorded nothing about having
+   * gone nowhere.
+   */
+  it('names an unrecognised path as not found rather than disguising it', () => {
+    expect(titleForRoute('/nope')).toBe(NOT_FOUND_TITLE);
+    expect(titleForRoute('/nope')).not.toBe(ROUTE_TITLES['/']);
     expect(titleForRoute('/docs')).toBe('Docs — Forma');
+  });
+
+  it('gives the not-found title the same shape as every other', () => {
+    // Page name leads, brand trails — tab strips truncate the end.
+    expect(NOT_FOUND_TITLE.endsWith(' — Forma')).toBe(true);
+    expect(NOT_FOUND_TITLE.startsWith('Forma')).toBe(false);
   });
 });
 
@@ -66,6 +79,7 @@ describe('viewForRoute', () => {
       showLogin: false,
       loginMode: null,
       lastViewPath: '/workspace',
+      notFound: false,
     });
   });
 
@@ -90,28 +104,47 @@ describe('viewForRoute', () => {
   });
 
   it('treats the marketing pages alike and remembers each as itself', () => {
-    for (const path of ['/features', '/docs', '/contact', '/terms', '/privacy']) {
+    for (const path of ['/', '/features', '/docs', '/contact', '/terms', '/privacy']) {
       expect(viewForRoute(path)).toEqual({
         showWorkspace: false,
         showLogin: false,
         loginMode: null,
         lastViewPath: path,
+        notFound: false,
       });
     }
   });
 
-  it('falls back to the home page for an unknown path', () => {
+  /**
+   * `/` used to have no case of its own and share the `default` branch with
+   * every unknown path, and a test here pinned that as intentional. It was the
+   * bug (audit UX-002): sharing meant a typo could not be told apart from the
+   * home page, so the app rendered a working page under a URL that does not
+   * exist. `/` now has its own case and the default means "nowhere".
+   */
+  it('marks an unknown path as not a route, rather than as the home page', () => {
     expect(viewForRoute('/nope')).toEqual({
       showWorkspace: false,
       showLogin: false,
       loginMode: null,
       lastViewPath: '/',
+      notFound: true,
     });
   });
 
-  /* `/` has no case of its own and is served by `default`. That is intentional,
-     and this pins it so the fallback cannot be changed without noticing. */
-  it('serves the home page through the same fallback', () => {
-    expect(viewForRoute('/')).toEqual(viewForRoute('/nope'));
+  it('no longer confuses the home page with nowhere', () => {
+    expect(viewForRoute('/').notFound).toBe(false);
+    expect(viewForRoute('/nope').notFound).toBe(true);
+    expect(viewForRoute('/')).not.toEqual(viewForRoute('/nope'));
+  });
+
+  it('sends someone signing in from a dead URL back somewhere that exists', () => {
+    // lastViewPath is where they return to after the modal closes. Returning
+    // them to the typo would be worse than the 404 they came from.
+    expect(viewForRoute('/nope').lastViewPath).toBe('/');
+  });
+
+  it('marks no real route as not found', () => {
+    for (const route of ROUTES) expect(viewForRoute(route).notFound).toBe(false);
   });
 });

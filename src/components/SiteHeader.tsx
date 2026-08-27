@@ -62,8 +62,18 @@ export default function SiteHeader({
         setShowProfileMenu(false);
       }
     };
+    // Escape closes it too. A menu that can only be dismissed by clicking
+    // elsewhere is a trap for the keyboard user who just opened it — and
+    // MobileNav already does this, so the app was inconsistent with itself.
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowProfileMenu(false);
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, []);
 
   return (
@@ -120,20 +130,31 @@ export default function SiteHeader({
 
           {user ? (
             <div className="flex items-center gap-4 relative" ref={profileMenuRef}>
-              <div
+              {/* A <button>, not a <div>. This was the only interactive element
+                  in the app that took no focus: Tab skipped straight past it, so
+                  a keyboard or screen-reader user could not reach the account
+                  dialog or sign out at all. The theme toggle nine lines above
+                  was already a real button with the same focus ring, which is
+                  what makes the omission a slip rather than a decision.
+                  WCAG 2.2 AA, 2.1.1 Keyboard and 4.1.2 Name/Role/Value. */}
+              <button
+                type="button"
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="flex items-center gap-2.5 px-3 py-1.5 bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/30 rounded-full select-none cursor-pointer transition-colors"
+                aria-expanded={showProfileMenu}
+                aria-haspopup="menu"
+                aria-label="Account menu"
+                className="u-transition u-focus-ring flex items-center gap-2.5 px-3 py-1.5 bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/30 rounded-full select-none cursor-pointer transition-colors"
               >
                 <UserAvatar user={user} />
                 <span className="font-label-caps text-[11px] text-on-surface-variant font-semibold hidden lg:inline max-w-[120px] truncate">
                   {user.displayName || user.email?.split('@')[0]}
                 </span>
                 <span className="hidden lg:inline">
-                  <span className="material-symbols-outlined text-[16px] text-on-surface-variant select-none">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-on-surface-variant select-none">
                     {showProfileMenu ? 'expand_less' : 'expand_more'}
                   </span>
                 </span>
-              </div>
+              </button>
               <button
                 onClick={onEnterWorkspace}
                 className="hidden lg:inline-block whitespace-nowrap font-label-caps text-on-surface-variant text-body-sm px-4 py-2 hover:text-secondary hover:bg-surface-container-low rounded-full transition-all active:scale-95 cursor-pointer"

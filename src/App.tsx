@@ -109,6 +109,7 @@ import FeaturesPage from './components/FeaturesPage';
 import DocsPage from './components/DocsPage';
 import ContactPage from './components/ContactPage';
 import LegalPage, { type LegalDoc } from './components/LegalPage';
+import NotFoundPage from './components/NotFoundPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
 import { titleForRoute, viewForRoute } from './lib/routes';
@@ -2933,6 +2934,7 @@ export default function App() {
   }, [previews, messages]);
 
   if (!showWorkspace) {
+    const isNotFound = viewForRoute(currentRoute).notFound;
     const isFeatures = currentRoute === '/features';
     const isDocs = currentRoute === '/docs';
     const isContact = currentRoute === '/contact';
@@ -2941,7 +2943,23 @@ export default function App() {
 
     return (
       <div className="h-full w-full">
-        {legalDoc ? (
+        {isNotFound ? (
+          <NotFoundPage
+            onEnterWorkspace={() => {
+              navigate('/workspace');
+            }}
+            onSignIn={() => {
+              navigate('/login');
+            }}
+            onSignUp={() => {
+              navigate('/signup');
+            }}
+            user={user}
+            logOut={handleLogOut}
+            isDarkMode={isDarkMode}
+            setIsDarkMode={setTheme}
+          />
+        ) : legalDoc ? (
           <LegalPage
             doc={legalDoc}
             onEnterWorkspace={() => {

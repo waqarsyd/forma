@@ -51,9 +51,15 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/privacy': 'Privacy policy — Forma',
 };
 
-/** The title for a path, falling back to the home page's for anything unknown. */
+/**
+ * Shown when the path is not a route. Named rather than borrowing the home
+ * page's, so a tab, a bookmark and a history entry all say what happened.
+ */
+export const NOT_FOUND_TITLE = 'Page not found — Forma';
+
+/** The title for a path. Anything unknown is named as such, not disguised. */
 export function titleForRoute(path: string): string {
-  return ROUTE_TITLES[path] ?? ROUTE_TITLES['/'];
+  return ROUTE_TITLES[path] ?? NOT_FOUND_TITLE;
 }
 
 /**
@@ -77,24 +83,40 @@ export interface RouteView {
   loginMode: 'signin' | 'signup' | null;
   /** `null` leaves the remembered path alone. */
   lastViewPath: string | null;
+  /**
+   * This path is not a route.
+   *
+   * Distinct from "render the home page", which is what an unknown path used to
+   * do: the address bar kept the typo, the tab kept the home title, and the
+   * visitor was shown a working page instead of being told they were nowhere.
+   * Search engines received a 200 for every non-existent path — a soft 404,
+   * which they penalise.
+   *
+   * The SPA fallback must keep returning `index.html` at the HTTP level; that
+   * is how a client-routed app works. This is the client's job.
+   */
+  notFound: boolean;
 }
 
 export function viewForRoute(path: string): RouteView {
   switch (path) {
     case '/workspace':
-      return { showWorkspace: true, showLogin: false, loginMode: null, lastViewPath: '/workspace' };
+      return { showWorkspace: true, showLogin: false, loginMode: null, lastViewPath: '/workspace', notFound: false };
     case '/login':
-      return { showWorkspace: null, showLogin: true, loginMode: 'signin', lastViewPath: null };
+      return { showWorkspace: null, showLogin: true, loginMode: 'signin', lastViewPath: null, notFound: false };
     case '/signup':
-      return { showWorkspace: null, showLogin: true, loginMode: 'signup', lastViewPath: null };
+      return { showWorkspace: null, showLogin: true, loginMode: 'signup', lastViewPath: null, notFound: false };
+    case '/':
     case '/features':
     case '/docs':
     case '/contact':
     case '/terms':
     case '/privacy':
-      return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: path };
+      return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: path, notFound: false };
     default:
-      return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: '/' };
+      // Not a route. `lastViewPath` stays `/` so signing in from here returns
+      // somewhere that exists, rather than back to the typo.
+      return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: '/', notFound: true };
   }
 }
 
@@ -110,13 +132,10 @@ export function viewForRoute(path: string): RouteView {
 export function routesWithoutABranch(): string[] {
   return ROUTES.filter((route) => {
     const view = viewForRoute(route);
-    const fallback = viewForRoute('/__definitely_not_a_route__');
-    return (
-      route !== '/' &&
-      view.showWorkspace === fallback.showWorkspace &&
-      view.showLogin === fallback.showLogin &&
-      view.loginMode === fallback.loginMode &&
-      view.lastViewPath === fallback.lastViewPath
-    );
+    // Since the not-found branch exists, this is a one-field check: a real
+    // route that fell through would be marked as not a route at all. The
+    // `route !== '/'` exclusion the old comparison needed is gone with it,
+    // because `/` now has a case of its own rather than sharing the default.
+    return view.notFound;
   });
 }
