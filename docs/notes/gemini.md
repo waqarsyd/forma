@@ -110,9 +110,49 @@ A full read of the generation path, asked for as "does the .repx actually match 
 
 4. **`pageSize` and `unit` were settings that did nothing.** The dialog offers Letter/A4/Legal and three report units; the prompt hardcoded `PageWidth="850" PageHeight="1100"` and `ReportUnit="HundredthsOfAnInch"`, then separately told the model to "adjust page dimensions accordingly" — contradicting itself and the user's setting. `FeaturesPage` advertised *"written into the XML along with the margins, so the sheet you review and the sheet that prints are the same size"*, which was false for two of the three sizes. Page dimensions now come from `pageSizeInUnits()`, and the unit flows all the way through: prompt, REPX root, PDF text extraction, and the mockup's px conversion. Note **A4 is 827 × 1169 units, not 850 × 1100**, and tenths-of-a-millimetre is **254** per inch, not 250 — the sort of number that looks right and is 1.6% wrong on every coordinate forever.
 
+### The follow-up (2026-08-27): the tables were right and their callers were not
+
+The audit above put every conversion in one place. It did not stop anything from
+handing that place a value it could not convert, and `mergeStoredConfig` checked only that a
+restored `unit` or `pageSize` was a *string*. So any string was accepted and then converted with
+the **default** factor — the same silent-plausible-wrong failure, arriving through the one door
+`reportGeometry.ts` did not guard: its callers.
+
+Two values made it more than theoretical. **`Document` is a real `ReportUnit` member the table
+simply did not carry**, so a legitimate setting converted at 100 units per inch instead of 300 — a
+1-inch box written as 100 units, a 16-unit font emitted as 11.52pt instead of 3.84pt, a report at a
+third of its intended size with both artifacts internally consistent. And **`Tabloid` fell back to
+Letter, whose dimensions it matched exactly** at the default unit (850 × 1100 either way), so that
+wrong answer was indistinguishable from the right one even to someone checking the output.
+
+The value also travels further than the geometry: `geminiService` writes it verbatim into
+`ReportUnit="…"`, so an unsupported string does not merely mis-scale — it lands in the XML and
+DevExpress refuses the file. `config.unit || 'HundredthsOfAnInch'` passed anything non-empty
+straight through, `"../../etc"` included.
+
+Fixed in three places at once: the tables now carry all four `ReportUnit` members and Tabloid;
+`mergeStoredConfig` validates the **domain**, dropping an unsupported value for the default rather
+than throwing; and `geminiService` resolves both before use. Validation is **case-sensitive on
+purpose** — DevExpress matches the enum name exactly, so normalising `"pixels"` would help right up
+until it produced a file the designer refuses. The fallbacks remain as a second line of defence but
+now `console.warn` with the offending value and the supported list, because the silence was the
+actual defect.
+
+**The table now leads and the dialog is a subset of it.** The old comment said the table matched
+"what the config dialog offers", and matching the dialog rather than the enum is exactly how
+`Document` went missing. In this direction a dropdown gaining an option is safe; the reverse was
+not. The dialog still offers three units and three page sizes — exposing `Document` and `Tabloid`
+is a product decision, and the geometry is ready either way.
+
 **`checkRepx` would not have caught any of this, and now it would.** It passed the margined output happily — the XML parsed, the root was right, a `<Bands>` existed. It now measures every control against the printable area and its band and reports what will not fit, without blocking the export; see *`checkRepx` now measures the geometry* in [`app-shell.md`](app-shell.md). Verified against a deliberately mis-margined report driven through the real app: it named both offending controls and the band overflow, and Export stayed enabled.
 
-**Still unverified, and it needs a key.** Everything above is a change to what the model is *told*; only a real generation against a real design shows what it now *does*. The mocked-endpoint harness proves the pipeline runs and parses, not that the output is faithful. The honest test is: generate from a PDF whose artwork starts at a known offset, open the `.repx` in the designer, and measure a known element against the source. Until someone does that, treat these as corrected instructions rather than confirmed fidelity.
+**Partly verified on 2026-08-27, and the important half still is not.** A real generation was finally run against the live API with a temporary key. What it established: the pipeline works end to end (86.5s, a three-section layout, 2,887 characters of REPX), `checkRepx` accepts real model output with no warnings, the tags balance and the root closes, and `ReportUnit`/`PageWidth` arrive in the XML as configured. The 503 retry-and-fallback path also fired for real — `gemini-flash-latest` was overloaded, retried twice with backoff, fell back to `gemini-2.5-flash` and succeeded.
+
+What it did **not** establish is fidelity, which is what this section is about. The input was `public/og-card.png`, a marketing card — not a PDF whose artwork starts at a known offset — so nothing was measured against a source. Worse for the purposes of item 2 above: **the output contained no `Font=` attributes at all**, so the points conversion that `unitsToPoints()` exists to serve was never exercised. The model's choice on that input, not a defect, but it means the font fix remains unproven against real output.
+
+The honest test is unchanged and still owed: generate from a PDF whose artwork starts at a known offset, open the `.repx` in the designer, and measure a known element against the source. Treat item 2 in particular as a corrected instruction rather than confirmed fidelity.
+
+The truncation bug did not reproduce either — but a three-section report from a marketing card is at the small end of what the product handles, and that bug is reported on larger ones. The parse-or-explain branch that decides how truncation is *reported* is now covered by fixtures in `src/lib/analysisResponse.test.ts`, including a payload cut off at 62%.
 
 **Mock mode is opt-in:** set `VITE_FORMA_MOCK=true` and the service sleeps 3s and returns `MOCK_INVOICE_RESPONSE` without calling Gemini. It previously triggered whenever the key was missing *or the prompt merely contained the word "mock"* — under bring-your-own-key that was actively harmful, since a first-time visitor with no key, or anyone asking to "mock up an invoice", silently received a canned fake report with no way to tell it was not real output. A missing key now throws `MissingApiKeyError` instead. This env flag is the **only** remaining source of canned output; the `TEST_REPORT_LAYOUT` / `TEST_REPORT_MARKDOWN` / `TEST_REPORT_REPX` constants and their "Load Test Mockup" action are gone (the action had already been removed, leaving ~190 lines of orphaned fake-report data behind).
 
