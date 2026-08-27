@@ -2,7 +2,7 @@
   "compilerOptions": {
     // Enabled 2026-08-27 (audit ARC-004). `npm run lint` is the only linter
     // this project has, and with no strictness flags a clean run proved far
-    // less than it looked like — it could not see the most common runtime
+    // less than it looked like: it could not see the most common runtime
     // error class in a TypeScript app. Turning it on cost seven errors across
     // the whole project, five of them in tests written the same week.
     //
