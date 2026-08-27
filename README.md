@@ -92,20 +92,30 @@ src/
   workspace.css        the workspace shell only — every `wb-` class lives here
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
                        LoginPage, LegalPage (/terms and /privacy),
-                       SiteHeader, SiteFooter, MobileNav, Logo,
-                       AccountDialog, UserAvatar
+                       SiteHeader, SiteFooter, MobileNav, Logo, LogoPulse,
+                       AccountDialog, UserAvatar, and Markdown — which is its
+                       own module so react-markdown can be lazy-loaded
     landing/           figures used by the marketing pages: HeroScanner,
                        SheetRuler, StepFigures, VaultFigure,
                        AnnouncementDock, sections, icons
-  lib/                 motion tokens, plus everything the unit suite covers:
-                       the pure helpers repx, sourceRect, reportGeometry
-                       (every unit conversion in the pipeline), attachments,
-                       panelSize, announcements, datetime, modelCatalog,
-                       reportConfigStore, designerBridge, and the routing
-                       pair router (real history/location, so not pure) +
-                       routes (+ tests)
-  services/            geminiService (+ tests), firebase, keyVault — the
-                       vault's storage rules are covered by tests/, not here
+  lib/                 the pure helpers, nearly all under test:
+                       repx, sourceRect, reportGeometry (every unit conversion
+                       in the pipeline, and the only place one may be written),
+                       attachments, panelSize, announcements, datetime,
+                       modelCatalog, reportConfigStore, designerBridge,
+                       analysisResponse (is a failed generation truncated or
+                       malformed), geminiErrors (what the user is told when a
+                       request fails), savedReport + accountData (the two
+                       storage shapes and the document layout), securityHeaders
+                       and bindHost (what server.ts sends and where it listens),
+                       contactSubmit, and the routing pair router (real
+                       history/location, so not pure) + routes.
+                       Plus motion tokens, and pdf + genai — two loaders that
+                       exist so their dependencies stay out of the eager bundle,
+                       and are the only files here that are not pure
+  services/            geminiService (+ tests, and modelResolution.test.ts
+                       beside it), firebase, keyVault (+ tests) — the vault's
+                       storage rules are covered by tests/ as well as here
 tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
                        in the real DevExpress designer — C# and MSBuild, with
