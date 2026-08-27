@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Separate from vitest.config.ts on purpose. The unit suite is dependency-free
- * and runs in ~2s; this one needs Java and a live Firestore emulator, so it must
+ * and fast; this one needs Java and a live Firestore emulator, so it must
  * not be picked up by `npm test`. Use `npm run test:rules`, which starts the
  * emulator around it.
  *

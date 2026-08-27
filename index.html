@@ -36,8 +36,11 @@
        asks for an absolute URL, but the only host value this project has is
        APP_URL in .env, which is NOT VITE_-prefixed and therefore never reaches
        the client (vite.config.ts allowlists VITE_* only). Baking in a literal
-       host would be wrong on every other deployment, and Vite's %VITE_*% HTML
-       replacement leaves the placeholder text in the output when the variable is
+       host would be wrong on every other deployment, and Vite's HTML variable
+       replacement (percent-VITE_NAME-percent, written out because writing it
+       literally makes Vite warn on every single build about a variable this
+       comment is explaining we do NOT use — audit RUN-001) leaves the
+       placeholder text in the output when the variable is
        unset — a visibly broken URL. Root-relative resolves correctly against the
        page origin in Slack, Facebook, X and LinkedIn, and degrades to no preview
        image rather than a wrong one.

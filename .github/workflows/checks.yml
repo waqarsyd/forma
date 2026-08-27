@@ -54,8 +54,11 @@ jobs:
       - name: Encoding
         run: npm run lint:encoding
 
+      # --coverage rather than plain `npm test`: same suite, same pass/fail, and
+      # the summary lands in the log so a drop is visible in the diff of a run
+      # rather than only when someone thinks to look.
       - name: Unit tests
-        run: npm test
+        run: npm run test:coverage
 
       # Catches what the tests cannot: a broken import, a Vite plugin failure,
       # or the server bundle failing to resolve a local module.

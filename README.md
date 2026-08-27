@@ -38,7 +38,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:3000>, click **Configure**, and paste a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+Open <http://localhost:3000>, click **Configure**, and paste a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
 
 That's enough to generate reports. Sign-in and cloud sync are optional — signed out, Forma saves your projects to `localStorage` and works fully.
 
@@ -149,7 +149,9 @@ npm run test:rules # security rules, against the Firestore emulator
 
 Run one file with `npx vitest run src/lib/repx.test.ts`, or one case with `-t "<name>"`. Neither is meaningfully faster than the whole thing: warm, a single file and the entire suite both land around 5 seconds. Narrow for focused output, not for speed.
 
-**Budget for the first run being roughly ten times the rest.** Measured on one machine on 2026-08-20: 52s for the first `npm test` of the session, then 4.6s for the same command immediately after, with jsdom environment setup collapsing from 442s summed across workers to 18s. Nothing is wrong when the first run crawls — that is the OS file cache and `node_modules/.vite` filling up, and it is worth knowing before you go hunting for a hang.
+**Budget for a cold run being roughly ten times a warm one.** Measured on one machine: 52s against 4.6s for the same command, with jsdom environment setup collapsing from 442s summed across workers to 18s. Nothing is wrong when a run crawls — that is the OS file cache and `node_modules/.vite` filling up, and it is worth knowing before you go hunting for a hang.
+
+This used to say "the first `npm test` of the session", which is the wrong variable. The cache survives the terminal closing, and both figures were reproduced **within one session** on 2026-08-27 — 4.1s early on, then 42s later after a build, two typechecks and an emulator run had pushed the suite's files back out of the cache. What predicts a slow run is a cold cache, not a fresh shell.
 
 **`--reporter=basic` does not exist in Vitest 4.** An unrecognised reporter name is treated as a module to import, so the run dies with `Failed to load custom Reporter from basic` and a stack trace full of Vite frames — it reads like a broken config rather than a bad flag value. Use `--reporter=dot` for the terse output `basic` used to give.
 

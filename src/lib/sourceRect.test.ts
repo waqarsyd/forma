@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { boxToSourceRect, sourceRectFor } from './sourceRect';
-import type { ReportElement } from '../services/geminiService';
+import type { ReportElement } from './reportTypes';
 
 /**
  * The whole point of this file is the coordinate order. Reading `box2d` x-first

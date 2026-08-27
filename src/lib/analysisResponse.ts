@@ -27,7 +27,7 @@
  * truncation from the shape of the text would be worse than admitting the
  * signal is absent.
  */
-import type { AnalysisResponse } from '../services/geminiService';
+import type { AnalysisResponse } from './reportTypes';
 
 /** The subset of `finishReason` values that change what the user should do. */
 const MAX_TOKENS = 'MAX_TOKENS';

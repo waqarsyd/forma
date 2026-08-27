@@ -21,7 +21,7 @@
  * `localStorage` carries whatever was stored — and a throw here loses the whole
  * generation rather than one thumbnail. Malformed attachments are now dropped.
  */
-import type { AttachmentPart } from '../services/geminiService';
+import type { AttachmentPart } from './reportTypes';
 
 /** Text recovered from an upload, as `App.tsx` holds it. */
 export interface AttachmentText {

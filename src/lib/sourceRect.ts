@@ -7,7 +7,7 @@
  * rather than an obvious error — so it is pinned by tests rather than by
  * eyeballing a rendered mockup.
  */
-import type { ReportElement, SourceRect } from '../services/geminiService';
+import type { ReportElement, SourceRect } from './reportTypes';
 
 /**
  * Convert Gemini's detection box — `[ymin, xmin, ymax, xmax]` normalised to

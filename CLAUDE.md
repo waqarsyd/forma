@@ -85,7 +85,7 @@ npm run test:rules                                      # firestore.rules, via t
 
 The encoding check was the one with no runnable form outside PowerShell, which is why it got skipped and why it now has `scripts/check-encoding.mjs`. It sweeps `src/`, `docs/`, `tests/`, `scripts/`, `tools/` and the named root-level files, skipping `CLAUDE.md` — **this file contains the pattern as prose and scores 8**, so its hits are literals, not damage. The script's own source is pure ASCII, pattern included, for two reasons worth knowing before editing it: a file containing the literal signatures would flag itself, and PowerShell 5.1 decodes a BOM-less `.mjs` as ANSI too. It also fails if it swept implausibly few files, because a glob that quietly stops matching looks exactly like a clean run.
 
-The PowerShell one-liner below is kept for checking a single file by hand, or on a machine without the repo installed (83 files as of 2026-08-27; `bin`/`obj` are excluded because the DevExpress build output under `tools/` is not source):
+The PowerShell one-liner below is kept for checking a single file by hand, or on a machine without the repo installed. **Do not keep a file count here** — an earlier version said 75 when the answer was 74, and the number's only real job is catching a sweep that silently stopped matching files, which `scripts/check-encoding.mjs` now does itself by failing if it swept implausibly few. `bin`/`obj` are excluded because the DevExpress build output under `tools/` is not source:
 
 ```powershell
 $f = @(Get-ChildItem src,docs,tests,scripts,tools -Recurse -File -Include *.ts,*.tsx,*.md,*.css,*.mjs,*.cs,*.html | Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' })
