@@ -65,7 +65,6 @@ import {
   SourceRect,
   StreamProgress,
   ChatTurn,
-  AttachmentPart,
 } from './services/geminiService';
 import {
   encryptApiKey,
@@ -89,6 +88,17 @@ import { onSnapshot, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore
 import { reportsCollectionRef, reportDocRef, vaultDocRef as vaultDocumentRef } from './lib/accountData';
 import { toFirestoreDocument, fromFirestoreDocument, reportDisplayName, saveReportsLocally } from './lib/savedReport';
 import { loadPdfjs } from './lib/pdf';
+import { toAttachmentParts } from './lib/attachmentParts';
+import {
+  startProgress,
+  tickSimulated,
+  applyStreamProgress,
+  finishProgress,
+  stepLabel,
+  IDLE_PROGRESS,
+  STEP_INTERVAL_MS,
+  type GenerationProgress,
+} from './lib/generationProgress';
 // react-markdown lives behind this boundary; see src/components/Markdown.tsx.
 const Markdown = lazy(() => import('./components/Markdown'));
 import { User } from 'firebase/auth';
@@ -1216,11 +1226,16 @@ export default function App() {
   const activePreviewsRef = useRef<string[]>([]);
   /** Text attachments for the in-flight run, so pause/resume re-sends them too. */
   const activeTextsRef = useRef<TextAttachment[]>([]);
-  const lastCompletedStepIndexRef = useRef<number>(0);
-  const [analyzingStep, setAnalyzingStep] = useState<string>('');
-  const [analyzingProgress, setAnalyzingProgress] = useState<number>(0);
-  /** Characters of model output received so far — 0 until streaming begins. */
-  const [streamChars, setStreamChars] = useState<number>(0);
+  /**
+   * The whole progress bar, as one value.
+   *
+   * Was three pieces of state plus a ref carrying the step index between
+   * handlers. The rules that hold it together — the bar never moves backwards,
+   * the simulated phase stays under a ceiling, the streamed phase starts above
+   * it — now live in src/lib/generationProgress.ts under test, and every update
+   * here is a functional one so no callback can read a stale copy.
+   */
+  const [progress, setProgress] = useState<GenerationProgress>(IDLE_PROGRESS);
   /**
    * Non-visual attachments: PDF text layers and .repx contents. Kept separate
    * from `previews` so that stays image-only — thumbnails, `sourceRect`
@@ -1982,58 +1997,25 @@ export default function App() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const analyzingSteps = [
-    'Analyzing input request and images...',
-    'Extracting layout boundaries and sections...',
-    'Generating spatial map...',
-    'Constructing DevExpress XML...',
-    'Refining mockup layout...',
-    'Finalizing result...'
-  ];
-
-  /**
-   * How far the simulated opening phase is allowed to climb. Nothing during
-   * upload, model detection or the model's silent thinking pass reports real
-   * progress, so this stretch is guesswork and must stay visibly small —
-   * leaving the rest of the bar for output that genuinely arrived.
-   */
-  const PRE_STREAM_CEILING = 14;
-
-  /**
-   * Progress only ever moves forward. The opening phase is simulated and the
-   * streamed phase is real, and without this guard the handover snapped the
-   * bar backwards — the simulation had already climbed while the model was
-   * still thinking, then the first real chunk reported a much lower figure.
-   */
-  const advanceProgress = useCallback((next: number) => {
-    setAnalyzingProgress((prev) => (next > prev ? next : prev));
-  }, []);
-
   /**
    * Real progress, fed by the streamed response.
    *
-   * The simulated interval still covers the opening phase — model detection,
-   * upload, and the model's own thinking produce no signal at all — but it is
-   * capped low (see PRE_STREAM_CEILING) so this can take over without the bar
-   * ever going backwards. Shared by both handleGenerate and handleResume so
-   * the two cannot drift apart.
+   * The rules that used to live here — the ceiling on the simulated phase, the
+   * floor under the streamed one, and the guarantee that the bar only ever
+   * moves forward — are in src/lib/generationProgress.ts, under test. What is
+   * left is the wiring: stop the simulation, and fold the chunk in.
+   *
+   * The update is functional, so this cannot read a stale copy of the state and
+   * needs no dependencies. Shared by handleGenerate and handleResume, which is
+   * what stops the two drifting apart.
    */
-  const handleStreamProgress = useCallback((progress: StreamProgress) => {
+  const handleStreamProgress = useCallback((chunk: StreamProgress) => {
     if (loadingIntervalRef.current) {
       clearInterval(loadingIntervalRef.current);
       loadingIntervalRef.current = null;
     }
-
-    const stepIndex = Math.min(
-      analyzingSteps.length - 1,
-      Math.floor((progress.percent / 100) * analyzingSteps.length)
-    );
-    lastCompletedStepIndexRef.current = stepIndex;
-
-    setAnalyzingStep(analyzingSteps[stepIndex]);
-    setStreamChars(progress.chars);
-    advanceProgress(Math.max(PRE_STREAM_CEILING + 1, progress.percent));
-  }, [advanceProgress]);
+    setProgress((prev) => applyStreamProgress(prev, { percent: chunk.percent, chars: chunk.chars }));
+  }, []);
 
   // Syncs the class only. Persistence deliberately lives in setTheme (the user
   // action) rather than here: StrictMode double-invokes effects in dev, so an
@@ -2442,7 +2424,7 @@ export default function App() {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      console.log('Analysis paused by user at step index:', lastCompletedStepIndexRef.current);
+      console.log('Analysis paused by user at step index:', progress.stepIndex);
     }
   };
 
@@ -2463,20 +2445,13 @@ export default function App() {
     const currentPreviews = activePreviewsRef.current;
     const currentTexts = activeTextsRef.current;
 
-    let stepIndex = lastCompletedStepIndexRef.current;
-    setAnalyzingStep(analyzingSteps[stepIndex]);
     // Resume re-issues the whole request, so previously received output no
-    // longer counts. The bar itself stays where it was rather than snapping
-    // backwards on an action the user took deliberately.
-    setStreamChars(0);
-    advanceProgress(Math.min(PRE_STREAM_CEILING, 4 + stepIndex * 2));
+    // longer counts: startProgress clears the character count. The bar itself
+    // stays where it was rather than snapping backwards on an action the user
+    // took deliberately, which is what carrying the current step across does.
+    setProgress((prev) => startProgress(prev.stepIndex));
 
-    loadingIntervalRef.current = setInterval(() => {
-      stepIndex = Math.min(stepIndex + 1, analyzingSteps.length - 1);
-      lastCompletedStepIndexRef.current = stepIndex;
-      setAnalyzingStep(analyzingSteps[stepIndex]);
-      advanceProgress(Math.min(PRE_STREAM_CEILING, 4 + stepIndex * 2));
-    }, 2500);
+    loadingIntervalRef.current = setInterval(() => setProgress(tickSimulated), STEP_INTERVAL_MS);
 
     console.log(`Resuming report generation process. Prompt: "${currentPrompt}"`);
 
@@ -2484,23 +2459,9 @@ export default function App() {
     const signal = abortControllerRef.current.signal;
 
     try {
-      const imageParts = currentPreviews.map(dataUrl => {
-        const [mimeInfo, base64Data] = dataUrl.split(',');
-        const mimeType = mimeInfo.split(':')[1].split(';')[0];
-        return {
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType,
-          },
-        };
-      });
-
-      // Text recovered from the files themselves goes first, so the exact
-      // strings and coordinates are in context before the page images.
-      const attachmentParts: AttachmentPart[] = [
-        ...currentTexts.map(t => ({ text: t.text })),
-        ...imageParts,
-      ];
+      // Text before images, and malformed previews dropped rather than thrown
+      // on — see src/lib/attachmentParts.ts.
+      const attachmentParts = toAttachmentParts(currentPreviews, currentTexts);
 
       console.debug('Requesting Gemini API on resume...');
       const response = await analyzeReportDesign(
@@ -2564,13 +2525,11 @@ export default function App() {
       setError(friendlyMessage);
     } finally {
       if (!signal.aborted) {
-        setAnalyzingProgress(100);
+        setProgress(finishProgress);
         setTimeout(() => {
           setIsAnalyzing(false);
           setIsPaused(false);
-          setAnalyzingStep('');
-          setAnalyzingProgress(0);
-          setStreamChars(0);
+          setProgress(IDLE_PROGRESS);
         }, 500);
       }
       if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
@@ -2583,10 +2542,9 @@ export default function App() {
     }
     setIsAnalyzing(false);
     setIsPaused(false);
-    setAnalyzingStep('');
-    setAnalyzingProgress(0);
-    setStreamChars(0);
-    lastCompletedStepIndexRef.current = 0;
+    // Stop discards the run entirely, so the bar goes back to nothing rather
+    // than to a step someone might resume from.
+    setProgress(IDLE_PROGRESS);
     activePromptRef.current = '';
     activePreviewsRef.current = [];
     if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
@@ -2723,20 +2681,11 @@ export default function App() {
     activePromptRef.current = currentPrompt;
     activePreviewsRef.current = currentPreviews;
     activeTextsRef.current = currentTexts;
-    lastCompletedStepIndexRef.current = 0;
 
-    setAnalyzingStep(analyzingSteps[0]);
-    setAnalyzingProgress(4);
-    setStreamChars(0);
+    setProgress(startProgress());
     setError(null);
 
-    let stepIndex = 0;
-    loadingIntervalRef.current = setInterval(() => {
-      stepIndex = Math.min(stepIndex + 1, analyzingSteps.length - 1);
-      lastCompletedStepIndexRef.current = stepIndex;
-      setAnalyzingStep(analyzingSteps[stepIndex]);
-      advanceProgress(Math.min(PRE_STREAM_CEILING, 4 + stepIndex * 2));
-    }, 2500);
+    loadingIntervalRef.current = setInterval(() => setProgress(tickSimulated), STEP_INTERVAL_MS);
 
     console.log(`Starting report generation process. Prompt: "${currentPrompt}"`);
     console.debug(`Included ${currentPreviews.length} preview images/files.`);
@@ -2745,23 +2694,9 @@ export default function App() {
     const signal = abortControllerRef.current.signal;
 
     try {
-      const imageParts = currentPreviews.map(dataUrl => {
-        const [mimeInfo, base64Data] = dataUrl.split(',');
-        const mimeType = mimeInfo.split(':')[1].split(';')[0];
-        return {
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType,
-          },
-        };
-      });
-
-      // Text recovered from the files themselves goes first, so the exact
-      // strings and coordinates are in context before the page images.
-      const attachmentParts: AttachmentPart[] = [
-        ...currentTexts.map(t => ({ text: t.text })),
-        ...imageParts,
-      ];
+      // Text before images, and malformed previews dropped rather than thrown
+      // on — see src/lib/attachmentParts.ts.
+      const attachmentParts = toAttachmentParts(currentPreviews, currentTexts);
 
       console.debug('Sending request to Gemini API...');
       const response = await analyzeReportDesign(
@@ -2827,13 +2762,11 @@ export default function App() {
       setError(friendlyMessage);
     } finally {
       if (!signal.aborted) {
-        setAnalyzingProgress(100);
+        setProgress(finishProgress);
         setTimeout(() => {
           setIsAnalyzing(false);
           setIsPaused(false);
-          setAnalyzingStep('');
-          setAnalyzingProgress(0);
-          setStreamChars(0);
+          setProgress(IDLE_PROGRESS);
         }, 500);
       }
       if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
@@ -3406,15 +3339,19 @@ export default function App() {
                 user already knows they started. */}
             {(isAnalyzing || isPaused) && (
               <div className={`wb-progress${isPaused ? ' wb-is-paused' : ''}`} aria-live="polite">
-                <LogoPulse percent={analyzingProgress} paused={isPaused} size={56} />
+                <LogoPulse percent={progress.percent} paused={isPaused} size={56} />
 
                 <b className="wb-state">
-                  {isPaused ? 'Analysis paused' : streamChars > 0 ? 'Writing report' : 'Reading your design'}
+                  {isPaused ? 'Analysis paused' : progress.streamChars > 0 ? 'Writing report' : 'Reading your design'}
                 </b>
-                <span className="wb-stage">{analyzingStep || 'Analyzing input request and images…'}</span>
+                {/* stepLabel always names a step, so the `||` fallback this
+                    used to carry is gone rather than dead. */}
+                <span className="wb-stage">{stepLabel(progress)}</span>
                 <span className="wb-metrics">
-                  <b>{Math.round(analyzingProgress)}%</b>
-                  {streamChars > 0 && <span>· {streamChars.toLocaleString()} chars</span>}
+                  <b>{Math.round(progress.percent)}%</b>
+                  {progress.streamChars > 0 && (
+                    <span>· {progress.streamChars.toLocaleString()} chars</span>
+                  )}
                 </span>
 
                 <span className="wb-acts">
@@ -3432,7 +3369,7 @@ export default function App() {
                 </span>
 
                 {/* Only once the wait is long enough to be worth explaining. */}
-                {!isPaused && streamChars === 0 && elapsedTime >= 20_000 && (
+                {!isPaused && progress.streamChars === 0 && elapsedTime >= 20_000 && (
                   <p className="wb-why">
                     The model is still thinking — it can spend most of a run reasoning before
                     emitting a character. Nothing is streaming yet, so the ring is honestly
