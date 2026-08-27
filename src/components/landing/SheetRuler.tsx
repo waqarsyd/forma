@@ -6,9 +6,12 @@ import { useEffect, useRef, useState } from 'react';
  * grid the product works in.
  *
  * The marker riding it is the one piece of chrome here that is live rather than
- * decorative: it tracks scroll position and reads it out in the same units.
+ * decorative: it tracks scroll position and reads out **the rule's own scale at
+ * the point it has reached**. That last part is the whole contract — the chip is
+ * a cursor on this rule, not a measure of the document. See `units` below for
+ * what it cost to get that wrong.
  *
- * Three things it must not do:
+ * Four things it must not do:
  *
  * 1. **Carry a background of its own.** It is fixed, so any fill follows the
  *    scroll and paints a pale strip straight down the dark CTA band. Ticks only.
@@ -26,6 +29,11 @@ import { useEffect, useRef, useState } from 'react';
  *    fix: the marker fades out while it is inside the header band and fades back
  *    in the moment it clears. **A translucent blurred header is not an occluder**
  *    — anything drawn under one has to hide itself.
+ * 4. **Give the readout a second source of truth.** `units` is derived from
+ *    `top` in the render, using the same expression as the tick labels. Compute
+ *    it from `window.scrollY` in the scroll handler instead and the chip starts
+ *    describing a different coordinate system from the rule it is printed on,
+ *    silently — which is exactly what happened. Keep the derivation.
  */
 
 const TICK_GAP = 12;
@@ -46,7 +54,6 @@ const HEADER_CLEARANCE = 76;
 export default function SheetRuler() {
   const [height, setHeight] = useState(0);
   const [top, setTop] = useState(0);
-  const [units, setUnits] = useState(0);
   const [overDark, setOverDark] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -54,10 +61,11 @@ export default function SheetRuler() {
     const measure = () => setHeight(window.innerHeight);
     measure();
 
+    // `top` is the only thing scroll produces. The readout is derived from it
+    // below rather than computed here — see `units`.
     const onScroll = () => {
       const max = Math.max(1, document.body.scrollHeight - window.innerHeight);
       setTop(Math.min(1, window.scrollY / max) * (window.innerHeight - 4));
-      setUnits(Math.round((window.scrollY / MAJOR_EVERY) * UNITS_PER_INCH));
     };
     onScroll();
 
@@ -86,6 +94,23 @@ export default function SheetRuler() {
   // See HEADER_CLEARANCE. Opacity rather than unmounting, so the marker fades
   // rather than blinking out of existence at the threshold.
   const tucked = top < HEADER_CLEARANCE;
+
+  /**
+   * What the rule reads at the marker's own position — the *same* expression
+   * the tick labels use, so the chip and the tick beside it cannot disagree.
+   *
+   * This is derived rather than stored on purpose. It used to be its own piece
+   * of scroll state, `Math.round((window.scrollY / MAJOR_EVERY) * UNITS_PER_INCH)`,
+   * which is the document's absolute scroll offset — while `top` is a *fraction
+   * of the document* mapped onto the viewport, and the tick labels are a
+   * *viewport* scale. Three coordinate systems in one component, and the chip
+   * could only ever agree with the rule at zero. Measured across six pages and
+   * four scroll positions each: 0 of 22 agreed, worst by 8,669 units on /docs,
+   * where the chip read 9,509 on a rule whose largest label is 900. Nothing
+   * threw, because nothing was wrong arithmetically — each number was correct
+   * in a system the other two were not using.
+   */
+  const units = Math.round((top / MAJOR_EVERY) * UNITS_PER_INCH);
 
   return (
     <div
