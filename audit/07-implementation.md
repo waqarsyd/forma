@@ -345,13 +345,58 @@ and is kept only so the sequence is legible.
 
 | | Count |
 |---|---|
-| **Closed** | **26** |
-| Partially closed | 3 — ARC-001, PERF-001, TEST-003 |
-| Open | 21 |
+| **Closed** | **45** |
+| Partially closed | 3 — ARC-001, PERF-001, PERF-002 |
+| Open | 2 |
 | **P0** | 0, and there never were any |
 | **P1 open** | **0** — all four are closed |
-| P2 open | 4 — ARC-003, UX-001, INV-005, plus the remainder of PERF-001 |
-| P3 open | 17 |
+| **P2 open** | **1** — ARC-003 (observability) |
+| P3 open | 1 — component/render tests, which ARC-001 gates |
+
+### The final pass
+
+Everything from the *Later* list except the two items below. In one sitting, in
+this order:
+
+| Commit | Findings |
+|---|---|
+| `298ae32` | **UX-001**, **UX-002** — keyboard access to the account menu; a real 404 |
+| `3f8b5aa` | **BUG-002…005**, **REL-003**, **INV-005**, **SEC-005** — the quiet-failure cluster |
+| `82c1d4f` | **INV-004**, **TEST-003** — coverage measured at last, and the gap it named |
+| `f6eba8a` | **ARC-005**, **RUN-001/003/005/006**, **INV-006/008/009/011** — layering and doc drift |
+| `e36cd3f` | **DATA-002** — a corrupted store no longer takes the app down at boot |
+| `d75381b` | **PERF-002** (partial) — the icon font is gone |
+
+**Coverage, measured rather than estimated for the first time:** `lib/` at
+**95.99% of statements**, `lib/` + `services/` at 71.95%. Two zeroes in the
+report are not gaps — `accountData.ts` is exercised by the emulator suite under
+a different config, and `firebase.ts` is the Firebase singleton.
+
+### What remains, and why
+
+**ARC-003 — no observability.** Deliberately left. It is the one item whose
+right answer depends on a decision nobody has made: where the reports go. Adding
+a sink also adds a third-party processor, and the privacy page now names its
+processors exactly — so this must be done *with* that text, not before it. Worth
+closing before any public deployment; not worth guessing at now.
+
+**ARC-001 — `App.tsx`.** Started, not finished: 4,221 → 3,860 lines, still 30
+`useState`. Two slices landed (the progress state machine, the attachment
+builder) and the pattern is proven. Component tests and the last of the bundle
+weight are both downstream of it.
+
+**PERF-002 — self-hosting the three text faces.** The icon font is gone and both
+origins are preconnected. The rest means committing font binaries and changing
+what every page renders in, with no visual regression test to catch a wrong
+weight. The exposure is disclosed either way.
+
+### Never assessed — unchanged from the first hour
+
+Report **fidelity** (needs a PDF with known offsets, measured in the designer),
+the **truncation bug** on a large report, the **designer round-trip**, and
+anything **visual** — contrast, focus order, responsive behaviour,
+screen-reader flow. The CI workflow has still never executed, because there is
+still no remote.
 
 ### The four found while fixing, none of which the audit saw
 

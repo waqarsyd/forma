@@ -94,12 +94,15 @@ src/
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
                        LoginPage, LegalPage (/terms and /privacy),
                        SiteHeader, SiteFooter, MobileNav, Logo, LogoPulse,
-                       AccountDialog, UserAvatar, and Markdown — which is its
-                       own module so react-markdown can be lazy-loaded
+                       AccountDialog, UserAvatar, NotFoundPage, and Markdown —
+                       which is its own module so react-markdown can be
+                       lazy-loaded
     landing/           figures used by the marketing pages: HeroScanner,
                        SheetRuler, StepFigures, VaultFigure,
                        AnnouncementDock, sections, icons
-  lib/                 the pure helpers, nearly all under test:
+  lib/                 the pure helpers, nearly all under test. reportTypes
+                       holds the report shape — it lives here rather than in
+                       services/ so nothing in this layer has to import upward.
                        repx, sourceRect, reportGeometry (every unit conversion
                        in the pipeline, and the only place one may be written),
                        attachments, panelSize, announcements, datetime,
