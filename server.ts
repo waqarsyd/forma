@@ -3,6 +3,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { securityHeadersFor } from "./src/lib/securityHeaders";
+import { resolveBindHost } from "./src/lib/bindHost";
 
 async function startServer() {
   const app = express();
@@ -51,8 +52,10 @@ async function startServer() {
     res.status(404).json({ error: "Not found" });
   });
 
+  const isProduction = process.env.NODE_ENV === "production";
+
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -66,8 +69,14 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  // Loopback in development, every interface in production, HOST overrides
+  // both. In development this process runs Vite in middleware mode, so binding
+  // it to every interface publishes the module graph to anyone who can reach
+  // the machine — see src/lib/bindHost.ts.
+  const host = resolveBindHost({ production: isProduction, host: process.env.HOST });
+
+  app.listen(PORT, host, () => {
+    console.log(`Server running on http://localhost:${PORT} (bound to ${host})`);
   });
 }
 
