@@ -4,6 +4,7 @@ import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
 import SheetRuler from './landing/SheetRuler';
 import Logo from './Logo';
+import { submitContactMessage } from '../lib/contactSubmit';
 import {
   IconMail, IconCheck, IconWarn, IconChevronDown, IconArrowRight, IconExternal,
   IconGitHub, IconLinkedIn, IconDiscord, IconPortfolio,
@@ -274,23 +275,19 @@ export default function ContactPage({
     }
 
     setState('sending');
-    // A rejected request goes to 'failed', never 'sent'. The previous version
-    // fell through to the success state on error and lost the message.
-    fetch('https://formsubmit.co/ajax/' + mailAddress(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        name: values.name.trim(),
-        email: values.email.trim(),
-        subject: values.topic,
-        message: values.message.trim(),
-        _subject: `Forma: ${values.topic} (from ${values.name.trim()})`,
-      }),
+    // Anything other than a 2xx goes to 'failed', never 'sent'. The previous
+    // version fell through to the success state on error and lost the message;
+    // the version after that could hang here forever, because a relay that
+    // accepts the connection and never answers does not reject. Both are
+    // handled inside submitContactMessage, which owns the timeout.
+    submitContactMessage('https://formsubmit.co/ajax/' + mailAddress(), {
+      name: values.name.trim(),
+      email: values.email.trim(),
+      subject: values.topic,
+      message: values.message.trim(),
+      _subject: `Forma: ${values.topic} (from ${values.name.trim()})`,
     })
-      .then((r) => {
-        if (!r.ok) throw new Error(`send failed: ${r.status}`);
-        setState('sent');
-      })
+      .then(() => setState('sent'))
       .catch((err) => {
         console.error('Contact form send failed:', err);
         setState('failed');

@@ -108,21 +108,59 @@ export async function waitForDesigner(timeoutMs = 12000, everyMs = 400): Promise
 }
 
 /**
+ * How long to wait for the companion to accept a report.
+ *
+ * Much longer than `pingDesigner`'s 1200ms, and for a different reason: a bound
+ * port answers a health check instantly, whereas accepting a report means
+ * writing a temp file and handing it to the designer. A budget copied from the
+ * ping would abort work that was about to succeed.
+ */
+const SEND_TIMEOUT_MS = 15000;
+
+/**
  * Hand the XML to the companion, which writes it to a temp file and opens the
  * designer on it. Resolves once the companion has accepted the report — not
  * when the designer closes, since that dialog is modal and can stay open for as
  * long as the user is editing.
+ *
+ * The timeout is not optional. A refused connection rejects on its own and
+ * always did, but a companion that accepts the socket and then stops answering
+ * — a modal dialog already open, a mid-crash, a debugger holding it — leaves
+ * this pending indefinitely, and the user is left having clicked *Open in
+ * designer* with no result and no error. That was the state until the
+ * 2026-08-27 audit (REL-002); `pingDesigner` had guarded itself against the
+ * same failure since it was written.
  */
 export async function sendToDesigner(repxContent: string, fileName: string): Promise<void> {
-  const response = await fetch(`${DESIGNER_ORIGIN}/open`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/xml',
-      [DESIGNER_CLIENT_HEADER]: '1',
-      'x-forma-filename': fileName,
-    },
-    body: repxContent,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(`${DESIGNER_ORIGIN}/open`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/xml',
+        [DESIGNER_CLIENT_HEADER]: '1',
+        'x-forma-filename': fileName,
+      },
+      body: repxContent,
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    // Distinguish "it never answered" from "it could not be reached": the first
+    // means the companion is running and stuck, and the remedy is to look at
+    // it; the second means it is not running at all.
+    if (error?.name === 'AbortError') {
+      throw new Error(
+        `The designer companion did not respond within ${SEND_TIMEOUT_MS / 1000} seconds. ` +
+          'It may be waiting on a dialog — check the RepxDesigner window.'
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     throw new Error(`The designer companion refused the report (HTTP ${response.status}).`);
