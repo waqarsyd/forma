@@ -10,7 +10,15 @@ const stripAnsi = (s) => s.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
 const log = createWriteStream(LOG_FILE, { flags: 'w' });
 log.write(`=== npm run dev:log - ${new Date().toISOString()} ===\n`);
 
-const child = spawn('tsx', ['server.ts'], {
+// One string rather than ('tsx', ['server.ts']): Node 24 raises DEP0190 for an
+// args array combined with shell: true, because the shell concatenates the args
+// instead of escaping them. Harmless here — nothing is interpolated — but the
+// warning printed on every run, and it lands on the parent's stderr *above* the
+// point where the tee below starts, so it never reached dev-server.log. A
+// warning you cannot see in the log you were told to read is worth one line to
+// remove. The command stays literal; if anything variable ever needs to go in
+// it, drop shell and resolve the binstub explicitly instead of interpolating.
+const child = spawn('tsx server.ts', {
   // stdin inherited so Ctrl+C still reaches the server; stdout/stderr piped so
   // we can fan them out to both the terminal and the log file.
   stdio: ['inherit', 'pipe', 'pipe'],
