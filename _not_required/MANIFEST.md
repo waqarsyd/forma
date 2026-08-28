@@ -27,9 +27,22 @@ Because the folder is gitignored, `git mv` out of it is what re-adds the file to
 index. Moving something *in* needs `git rm --cached <path>` after the `mv`, since a
 `git mv` into an ignored path fails.
 
+### One caveat that changes what "safe" means
+
+**For a file that was never tracked, this folder is the only copy.** Git history is the
+real backup only for things git ever had. A gitignored file moved in here has no commit
+to be recovered from, and the restore command in its row is not a convenience - it is
+the entire recovery path.
+
+Rows below are marked **`untracked`** in the Risk column where this applies. Weigh them
+accordingly before emptying the folder: for a regenerable build artifact it means
+nothing, and for anything else it would mean everything.
+
 ---
 
 ## Moved
+
+### Pre-existing - parked 2026-08-09, untracked 2026-08-28
 
 | Date | Original path | New path | Category | Why removed | Evidence (search/tool + result) | Restore command | Risk | Safe to delete after |
 |---|---|---|---|---|---|---|---|---|
@@ -38,16 +51,37 @@ index. Moving something *in* needs `git rm --cached <path>` after the `mv`, sinc
 | 2026-08-09 (parked) / 2026-08-28 (untracked) | `public/LoginPage/Contact&InquirePage/DESIGN.md` | `_not_required/public/LoginPage/Contact&InquirePage/DESIGN.md` | pre-existing | Byte-identical twin of a design doc that had to be edited twice. Worse, it sat inside `public/`, so Vite copied it into `dist/` and **served the design docs on the live site** - verified in a build. The live source is `docs/design/DESIGN.md`. | `git grep -n -I -e 'Contact&InquirePage'` -> 2 hits, prose in `CLAUDE.md:55` and `docs/notes/styling.md:29`. Also `git grep -n -I -e 'LoginPage/DESIGN'` -> 1 hit, the same `styling.md` sentence. Parked in `fbb0b3d`. | `git mv "_not_required/public/LoginPage/Contact&InquirePage/DESIGN.md" "public/LoginPage/Contact&InquirePage/DESIGN.md"` | low | 2026-11-26 |
 | 2026-08-09 (parked) / 2026-08-28 (untracked) | `.agents/skills/xcode_project_setup/SKILL.md` | `_not_required/.agents/skills/xcode_project_setup/SKILL.md` | pre-existing | Shipped inside Firebase's official skill packs. This is a web project on Windows with no Apple platform target; the skill is inapplicable. | `git grep -n -I -e 'xcode_project_setup'` -> 2 hits, prose in `CLAUDE.md` (lines 55, 137) explaining that it is parked. Parked in `fbb0b3d`. | `git mv _not_required/.agents/skills/xcode_project_setup/SKILL.md .agents/skills/xcode_project_setup/SKILL.md` | low | 2026-11-26 |
 
-### Note on the four rows above
+### Phase 2 - obvious junk (2026-08-28)
 
-These four predate this cleanup pass - they were parked on 2026-08-09 in `fbb0b3d`,
+| Date | Original path | New path | Category | Why removed | Evidence (search/tool + result) | Restore command | Risk | Safe to delete after |
+|---|---|---|---|---|---|---|---|---|
+| 2026-08-28 | `debug.log` (671 B) | `_not_required/build-artifacts/debug.log` | build-artifacts | **Not this project's file at all.** A Chrome *installer* log, written 2026-08-17 by a browser install run out of a previous agent session's scratchpad directory. Nothing in this repo produces or reads it. | Read the file: every line is `chrome\updater\win\installer\installer.cc` verbose output referencing `...\claude\...\823f4e14-...\scratchpad\chrome_installer.exe`. Untracked - `git ls-files` does not list it; matched by the existing `*.log` rule, so it was never in the clone. Does not regenerate: nothing here installs Chrome. | `Move-Item _not_required/build-artifacts/debug.log debug.log` | **untracked** / none | 2026-11-26 |
+| 2026-08-28 | `firestore-debug.log` (167,171 B) | `_not_required/build-artifacts/firestore-debug.log` | build-artifacts | Firestore emulator output, and the largest non-build untracked file in the tree. Stale output from a finished run; nothing reads it after the emulator exits. | Untracked, covered by `*.log`. **Confirmed transient:** running `npm run test:rules` after the move recreated it at the root at exactly 167,171 bytes - the same size, so the emulator truncates and rewrites rather than appending. | `Move-Item _not_required/build-artifacts/firestore-debug.log firestore-debug.log` | **untracked** / none - regenerates | 2026-11-26 |
+| 2026-08-28 | `dev-server.log` (112 B) | `_not_required/build-artifacts/dev-server.log` | build-artifacts | Output of `npm run dev:log`. Two lines, from a dev server that had already exited. | Untracked, covered by `*.log`. `scripts/dev.mjs` opens it with `flags: 'w'`, so each run truncates it - documented in `CLAUDE.md`. Verified nothing was listening on port 3000 before moving it, so no live process had the handle. | `Move-Item _not_required/build-artifacts/dev-server.log dev-server.log` | **untracked** / none - regenerates | 2026-11-26 |
+
+### Note on the four pre-existing rows
+
+Those four predate this cleanup pass - they were parked on 2026-08-09 in `fbb0b3d`,
 before there was a manifest. What changed on 2026-08-28 is only their **tracked
 status**: the folder was deliberately tracked until then, and is now gitignored except
 `MANIFEST.md` and `README.md`. The files themselves have not moved and are still on
-disk.
+disk. Unlike the Phase 2 rows they *were* tracked, so history is a real second copy of
+them; `fbb0b3d` is the commit to recover from.
 
 The evidence column was re-run from scratch during this pass rather than inherited from
 the original commit message, because "it was already parked" is not evidence.
+
+### Note on the two regenerating rows
+
+`firestore-debug.log` and `dev-server.log` are back at the repo root already, and that
+is expected rather than a failed move: both are tool scratch files that their tool
+rewrites from scratch on the next run. Running the rules suite immediately after the
+move recreated `firestore-debug.log` at byte-identical size.
+
+Their rows are here for completeness of the record, not because anything was recovered.
+Do not read a root-level `firestore-debug.log` as evidence that the manifest is wrong.
+The only Phase 2 row describing a file that will *not* come back on its own is
+`debug.log`, which this project has no way to produce.
 
 ---
 
