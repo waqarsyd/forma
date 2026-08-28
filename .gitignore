@@ -7,6 +7,35 @@ coverage/
 .env*
 !.env.example
 
+# OS and editor droppings. `.DS_Store` above was the only one covered, which is
+# the wrong half for this project: development happens on Windows, where
+# Explorer writes `Thumbs.db` into any folder whose images it has previewed and
+# `desktop.ini` into any folder given a custom icon. Neither has ever been
+# committed here -- these are a backstop, in the same spirit as the credential
+# patterns further down, not a response to an incident.
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+.idea/
+
+# Backup and scratch copies. The failure this prevents is `git add .` after an
+# editor or a merge has left `App.tsx.orig` next to `App.tsx` -- a 178 KB near
+# duplicate of the largest file in the repo, committed by accident and then
+# read by someone as if it were real. Archives are here for the same reason: a
+# .zip in a source tree is almost always a download nobody meant to keep.
+*.bak
+*.old
+*.orig
+*.rej
+*.tmp
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
 # Editor state, not project data: a single ~22 MB .pbtxt that nothing reads and
 # nothing builds from. It matched no pattern here before, so a first `git add .`
 # would have committed it and put 22 MB into every clone forever.
