@@ -33,5 +33,27 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  // Added 2026-08-28 with the quarantine folder. There was no `exclude` at all
+  // before, and with no `include` either, tsc's default is every .ts/.tsx/.js
+  // under this directory minus a short built-in list -- node_modules, and
+  // `outDir` if one is set. Neither covers `dist/`, and `allowJs` is on, so
+  // `npm run lint` was reading eight files of build output including the
+  // 2.1 MB pdf.worker bundle and the 1.1 MB entry chunk. Verified with
+  // `tsc --noEmit --listFiles`. It passed, which is the problem: whether the
+  // only linter this project has succeeds depended on whether generated code
+  // that nobody wrote happens to typecheck, and on whether `dist/` exists at
+  // all when you run it.
+  //
+  // `_not_required/` is the reason this block exists. Quarantined code must not
+  // be typechecked -- it is parked precisely because it is not part of the
+  // project, and a file that still has to compile has not really left.
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "_not_required",
+    ".antigravity",
+    "tools"
+  ]
 }
