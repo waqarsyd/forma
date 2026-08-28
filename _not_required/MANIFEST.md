@@ -60,6 +60,26 @@ nothing, and for anything else it would mean everything.
 | 2026-08-28 | `dev-server.log` (112 B) | `_not_required/build-artifacts/dev-server.log` | build-artifacts | Output of `npm run dev:log`. Two lines, from a dev server that had already exited. | Untracked, covered by `*.log`. `scripts/dev.mjs` opens it with `flags: 'w'`, so each run truncates it - documented in `CLAUDE.md`. Verified nothing was listening on port 3000 before moving it, so no live process had the handle. | `Move-Item _not_required/build-artifacts/dev-server.log dev-server.log` | **untracked** / none - regenerates | 2026-11-26 |
 | 2026-08-28 | `public/LoginPage/` and `public/LoginPage/Contact&InquirePage/` (empty dirs) | `_not_required/duplicates/public/LoginPage/...` | duplicates | Empty directories left behind when the decoy `DESIGN.md` was parked in `fbb0b3d`. Not harmless: Vite copies `public/` **verbatim** into the build, so every `npm run build` reproduced the empty tree as `dist/LoginPage/Contact&InquirePage/` - an empty directory named after a page that does not exist, shipping in the deployable output. | Git never tracked them (git cannot track an empty directory), so they were invisible to `git ls-files`, the encoding sweep, `tsc` and every grep. Found only by walking the disk for directories containing no files at any depth. **Verified fixed:** `npm run clean && npm run build` afterwards produced a `dist/` with no `LoginPage` entry - previously present. | `Move-Item "_not_required/duplicates/public/LoginPage" "public/LoginPage"` | **untracked** / none - contains no files | 2026-11-26 |
 
+### Phase 2 - resolved from UNSURE by explicit decision (2026-08-28)
+
+| Date | Original path | New path | Category | Why removed | Evidence (search/tool + result) | Restore command | Risk | Safe to delete after |
+|---|---|---|---|---|---|---|---|---|
+| 2026-08-28 | `.vscode/launch.json` (212 B) | `_not_required/old-configs/.vscode/launch.json` | old-configs | A node-terminal launch running `npm install && npm run dev`. Wrong on three counts: `npm install` is not this project's install (`npm ci` is what CI uses and what the lockfile expects - Phase 0 measured `node_modules` drifted 14.64 MB above the lockfile, which is what `npm install` does over time); `CLAUDE.md` states the dev server belongs in the user's own terminal, not a launched one; and it is AI Studio scaffold of the same vintage as `metadata.json` and `package.json`'s `"name": "react-example"`. | Tracked since the initial commit `c0e9c51` and **never edited since** - `git log -- .vscode` returns exactly one commit. Referenced nowhere in code or config; the only mention anywhere is `audit/00-inventory.md:157`, a list of config files that were read during the audit. **Classified UNSURE, not SAFE**, because no search can prove whether a human presses F5 - moved only on the explicit instruction of the repository owner on 2026-08-28. | `git mv _not_required/old-configs/.vscode/launch.json .vscode/launch.json` | low - if it was in use, it was running the wrong install command | 2026-11-26 |
+
+### Kept, so a later pass does not re-flag them
+
+Not everything examined is a candidate. These were looked at and deliberately left in
+place; the reason is recorded so the next cleanup does not spend the same effort.
+
+| Item | Looked like | Kept because |
+|---|---|---|
+| `.vscode/settings.json` | personal editor config, same untouched scaffold vintage as `launch.json` | One line - `{"workbench.startupEditor": "readme"}`. Harmless, and "open the README first" is a reasonable thing for a project whose README is its open-source front door to want. Kept on the owner's explicit decision, 2026-08-28. |
+| `tools/RepxDesigner/bin/` (145.64 MB) | enormous build output | It is the **compiled companion tool the user double-clicks**. A working binary, not residue. Already gitignored. |
+| `tools/RepxDesigner/obj/` (0.13 MB) | build intermediates | Regenerable, but moving it invalidates an incremental MSBuild for no gain. |
+| `.antigravity/` (22.14 MB) | a 22 MB blob nothing reads | Live editor state for an editor still in use. Moving it is a change to the owner's tooling, not a cleanup. Already gitignored and documented in `CLAUDE.md`. |
+| `audit/` (205 KB, 10 files) | a docs dump | The 2026-08-27 audit's findings register. 33 local branches still carry its identifiers (`audit/SEC-001-security-headers` and the rest). It is a historical record. It *is* undocumented in `CLAUDE.md` - that is a documentation gap for Phase 7, not a reason to move 205 KB of findings. |
+| `dist/`, `.env` | build output, config | Regenerated / real local configuration. Both correctly gitignored. |
+
 ### Note on the four pre-existing rows
 
 Those four predate this cleanup pass - they were parked on 2026-08-09 in `fbb0b3d`,
