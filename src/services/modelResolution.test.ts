@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+// Needs sessionStorage for the per-session model cache. Must stay line 1; see
+// vitest.config.ts.
 /**
  * Picking a model the user's key can actually call.
  *

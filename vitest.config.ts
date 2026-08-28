@@ -6,12 +6,36 @@ import path from 'path';
  * marked "Do not modify", and the dev server imports it. Nothing here touches
  * the app's own build.
  *
- * jsdom is required rather than optional — `checkRepx` uses DOMParser, which is
- * a browser API the app genuinely depends on.
+ * **The default environment is `node`, and that is load-bearing.** It was
+ * `jsdom` for every file until 2026-08-28. jsdom's entry loads synchronously and
+ * costs ~1.4s warm, but on a cold OS file cache it was measured at **113
+ * seconds** in a single process on the development machine — and vitest gives a
+ * worker 60 seconds to report in (`START_TIMEOUT`, hardcoded in vitest's dist,
+ * with no config option feeding it). Every one of the 25 workers therefore died
+ * before it could start, and the whole suite failed with
+ * `[vitest-pool-runner]: Timeout waiting for worker to respond` — which reads as
+ * a broken pool or a broken install, and is really a stopwatch. The second run
+ * took 1.4s. See the *cold cache* note in CLAUDE.md.
+ *
+ * Since the 60s ceiling cannot be raised, the lever is to need jsdom less.
+ * Measured: 20 of the 25 files and 363 of the 409 tests never touch a DOM API.
+ * The five that do opt in individually with a first-line
+ * `// @vitest-environment jsdom`, which is honoured per file and overrides both
+ * this setting and a `--environment` flag on the command line.
+ *
+ * Do not "simplify" this back to a global `environment: 'jsdom'`. It costs
+ * ~66s of environment setup summed across workers where this costs ~6ms, and it
+ * puts every worker back behind the same 60s cliff.
+ *
+ * Adding a test that needs `document`, `DOMParser`, `localStorage`,
+ * `sessionStorage`, `crypto.subtle`, `history` or `location`? Put the pragma on
+ * line 1 of that file. Forgetting is safe: it fails loudly with a
+ * `... is not defined` rather than passing on a half-real global.
  */
 export default defineConfig({
   test: {
-    environment: 'jsdom',
+    // Per-file opt-in via `// @vitest-environment jsdom`; see the note above.
+    environment: 'node',
     include: ['src/**/*.test.ts'],
     reporters: 'default',
     /**

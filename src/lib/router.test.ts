@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+// Real history/location, which is the whole point of this file. Must stay
+// line 1; see vitest.config.ts.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ROUTES, currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './router';
 

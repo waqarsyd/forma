@@ -58,7 +58,7 @@ That's enough to generate reports. Sign-in and cloud sync are optional — signe
 | `npm run preview` | Vite preview against `dist/` |
 | `npm run lint` | `tsc --noEmit` |
 | `npm run lint:encoding` | Fails if any source file contains mojibake |
-| `npm test` | Unit tests (Vitest + jsdom) |
+| `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |
 | `npm run test:coverage` | Coverage over `lib/` and `services/` — see the note in `vitest.config.ts` about what is deliberately excluded |
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
@@ -152,7 +152,9 @@ npm run test:rules # security rules, against the Firestore emulator
 
 Run one file with `npx vitest run src/lib/repx.test.ts`, or one case with `-t "<name>"`. Neither is meaningfully faster than the whole thing: warm, a single file and the entire suite both land around 5 seconds. Narrow for focused output, not for speed.
 
-**Budget for a cold run being roughly ten times a warm one.** Measured on one machine: 52s against 4.6s for the same command, with jsdom environment setup collapsing from 442s summed across workers to 18s. Nothing is wrong when a run crawls — that is the OS file cache and `node_modules/.vite` filling up, and it is worth knowing before you go hunting for a hang.
+**Budget for a cold run being roughly ten times a warm one.** Measured on one machine: 52s against 4.6s for the same command. Nothing is wrong when a run crawls — that is the OS file cache and `node_modules/.vite` filling up, and it is worth knowing before you go hunting for a hang.
+
+**If every file fails at once with `[vitest-pool-runner]: Timeout waiting for worker to respond`, run it again.** That is a cold cache, not a broken install. jsdom loads synchronously and was measured at 113s cold against 1.4s warm on one machine, while vitest allows a worker 60s to start — so all of them time out together. Most files now run under the `node` environment for exactly this reason, with the five that need a DOM opting in via a first-line `// @vitest-environment jsdom`; `vitest.config.ts` explains the split. If you add a test needing `document`, `localStorage`, `crypto.subtle` or `location`, add that line — forgetting fails loudly rather than silently.
 
 This used to say "the first `npm test` of the session", which is the wrong variable. The cache survives the terminal closing, and both figures were reproduced **within one session** on 2026-08-27 — 4.1s early on, then 42s later after a build, two typechecks and an emulator run had pushed the suite's files back out of the cache. What predicts a slow run is a cold cache, not a fresh shell.
 

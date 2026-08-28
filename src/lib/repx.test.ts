@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// checkRepx parses with DOMParser. Must stay line 1; see vitest.config.ts.
 import { describe, it, expect } from 'vitest';
 import { checkRepx, formatXml, tokenizeXml } from './repx';
 

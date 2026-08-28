@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// Needs crypto.subtle and sessionStorage. Must stay line 1; see vitest.config.ts.
 /**
  * The cryptography protecting a stored Gemini key.
  *

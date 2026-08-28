@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// Needs localStorage. Must stay line 1; see vitest.config.ts.
 /**
  * A saved project has two shapes, and nothing checked they agree.
  *
