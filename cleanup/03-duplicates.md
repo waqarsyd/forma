@@ -270,3 +270,105 @@ that Phase 7 may want to move anyway.
 **None of these is a `git mv`.** They are edits to working code, which is why ground
 rule 4 keeps them out of the move commits and why the phase stops here for your
 decision.
+
+---
+
+## 3.8 Outcome - what was decided and done
+
+Decision taken 2026-08-28: **execute 1, 2 and 5; consolidate only, no new tests.**
+
+| # | Outcome | Commit |
+|---|---|---|
+| 1 | **Done.** `runGeneration()` is the single copy; the wording moved into a `RunCopy` parameter (`INITIAL_RUN` / `RESUMED_RUN`). | `4d1b499` |
+| 2 | **Done.** `src/components/useFocusTrap.ts`; both dialogs call it, the config dialog passing `active={isConfigOpen}`. | `9987ebe` |
+| 3 | Not done - deferred to the ARC-001 `App.tsx` breakup, as recommended. | - |
+| 4 | Not done - same reason. | - |
+| 5 | **Deferred to Phase 7** on a corrected estimate. See below. | - |
+
+**Measured, not asserted.** Re-running the same detector after both consolidations:
+
+```
+before:  30 blocks >= 8 lines, 373 duplicated lines
+after:   26 blocks >= 8 lines, 299 duplicated lines
+```
+
+−4 blocks and −74 lines, which is exactly clusters A and C and nothing else.
+`src/App.tsx` is **3,872 lines, down from 3,910**, after *adding* 45 lines of copy
+constants and rationale.
+
+### Two things worth recording about how it went
+
+**The strict gates caught a mistake I would not have caught by reading.**
+`AccountDialog`'s `closeRef` was serving two purposes and only one of them was the focus
+trap: the account-deletion path calls `onClose` from inside an `await`, and the
+component re-renders while that request is in flight. Removing the ref with the trap
+compiled fine in my head and failed immediately on `tsc`
+(`TS2304: Cannot find name 'closeRef'`), plus `TS6133` for the now-unused `useEffect`
+import. The ref stays, with a comment saying what it is actually for. This is the
+`strict` flag from the 2026-08-27 audit doing precisely the job it was turned on for.
+
+**One deliberate behaviour change, in proposal 1.** Three `console.debug` lines - the
+preview count, the generated layout title, and the REPX character length - existed only
+on the initial-generation path. That asymmetry was drift rather than design: they are
+exactly as useful after a resume, and preserving it would have meant carrying a flag
+whose only job was to reproduce an accident. **Both paths now emit them.** Every other
+log string is preserved verbatim through `RunCopy`. Nothing user-visible changed.
+
+### Proposal 5, and a correction to the estimate I gave
+
+I described proposal 5 as "four lines." That was wrong, and the error was in scope
+rather than in the code.
+
+There is no existing file that both `vite.config.ts` and `vitest.config.ts` can share.
+`vitest.config.ts` importing from `vite.config.ts` would couple the test config to the
+file carrying the "Do not modify" HMR block - the exact coupling its own docblock exists
+to prevent. So it needs a **new root file**, and that cascades:
+
+- `scripts/check-encoding.mjs` enumerates root files individually in `ROOT_FILES`, so
+  the new one needs an entry or the sweep silently stops covering it;
+- `CLAUDE.md` describes that sweep as covering "the three configs";
+- `README.md`'s `## Project structure` block is the only copy of the file layout in the
+  repo, and `CLAUDE.md` already flags it as the thing that keeps going stale.
+
+Four lines of real change, three documentation edits, and a new root-level file - in a
+phase whose successor (Phase 7) explicitly aims for a *shorter* root and would likely
+move it into a `config/` folder, making the doc edits happen twice.
+
+**Deferred to Phase 7** on that basis, decided 2026-08-28. The triplication stands
+recorded in §3.4: three declarations of `path.resolve(__dirname, '.')` that have not
+diverged in 119 commits, with a silent-but-low-probability failure mode.
+
+## 3.9 Found while working, not acted on: a licensing contradiction
+
+Not a duplicate, and outside this phase's remit, but it surfaced while editing `App.tsx`
+and is the kind of thing that is worse for going unrecorded.
+
+**`src/App.tsx` lines 1-4 carry an SPDX licence header:**
+
+```
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+```
+
+It is the **only** one in the repository - `git grep 'SPDX-License-Identifier|@license'`
+returns those two lines and nothing else. Meanwhile:
+
+- there is **no `LICENSE` file**;
+- `package.json` has **no `license` field**;
+- `CLAUDE.md` states, in *Read this first*: *"Do not add a license header, an SPDX
+  identifier, or a badge to any file on the assumption that it will be MIT; the choice
+  has not been made, and a header asserting one is worse than no header at all."*
+
+So the repository simultaneously forbids SPDX identifiers and contains one, asserting a
+licence (Apache-2.0) that nothing else in the project claims. It is almost certainly an
+AI Studio scaffold artifact of the same vintage as `metadata.json` and
+`"name": "react-example"` - both already recognised as leftovers.
+
+**No action taken, and none should be taken casually.** Ground rule 6 puts LICENSE and
+compliance artifacts out of bounds, and `CLAUDE.md` independently forbids touching
+licence headers. Removing it is a licensing decision, not a cleanup; leaving it is a
+licensing decision too. Either way it belongs to whoever decides what this project is
+released under, alongside the `LICENSE` / `package.json` / `README.md` change
+`CLAUDE.md` already describes.
