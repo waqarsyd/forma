@@ -3,7 +3,8 @@
 Date: 2026-08-28
 Branch: `chore/cleanup`
 
-**SAFE 11 / UNSURE 3 / KEEP 7.**
+**SAFE 11 / UNSURE 3 / KEEP 7.** All three UNSURE items were subsequently decided as
+**KEEP** (§4.10), so the phase closes at **SAFE 11 / UNSURE 0 / KEEP 10**.
 
 Eleven dead symbols quarantined. The measured effect on the shipped bundle is
 **−604 bytes, all of it CSS** - because ten of the eleven were already being
@@ -228,3 +229,24 @@ it during a cleanup. Recorded for whoever owns `docs/notes/gemini.md`.
 | `npm run clean && npm run build` | exit 0, and measured against the pre-removal bundle |
 
 Nothing broke; nothing needed restoring.
+
+## 4.10 Outcome - the UNSURE bucket, decided
+
+Decisions taken 2026-08-28. **All three kept**, so nothing further moved and the phase
+closes at **SAFE 11 / UNSURE 0 / KEEP 10**.
+
+| Item | Decision | Reason of record |
+|---|---|---|
+| `resetGenAIForTests` | **Keep** | A deliberately placed, documented seam. It costs three source lines and zero shipped bytes, and `genai.ts` is excluded from coverage precisely because it is a loader. Removing it would take away the only way a future test can reset the memoised `import()`. |
+| `Route` type | **Keep** | One line, erased at compile time, names the union derived from a `ROUTES` array the same file documents as load-bearing. |
+| ~12 internal-only exports | **Leave exported** | An edit across nine files with no runtime effect, in a pass whose Phase 7 may move those files anyway. The boundary is symbol-by-symbol rather than file-by-file: `VAULT_DOC_ID` sits in the same file as three of them and *is* imported by a test, so a file-level rule would have been wrong. |
+
+All three are now in `MANIFEST.md`'s "Kept, so a later pass does not re-flag them" table
+with their reasoning, which is the point of that table - the next cleanup should not
+spend this effort again.
+
+**One cost is accepted knowingly** and belongs on the record rather than in a footnote:
+leaving those dozen symbols exported keeps them outside what
+`tsc --noUnusedLocals` can see. If any of them becomes genuinely dead in future, no
+check in this project will notice. That is the price of not making the edit, and it was
+weighed rather than overlooked.
