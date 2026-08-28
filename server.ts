@@ -60,6 +60,31 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
+
+    // chokidar emits 'error' on the watcher when it cannot watch a file, and an
+    // unhandled 'error' event on an EventEmitter is a process-level throw — so
+    // one locked file kills the dev server outright, mid-session, with a stack
+    // trace that names node:internal/fs/watchers and looks like a Node bug.
+    //
+    // vite.config.ts already ignores tools/ because MSBuild locks its bin/ and
+    // obj/ during a build (2026-08-13). That removed the trigger that was known
+    // at the time, not the defect: EBUSY is a property of *any* file another
+    // process has open. Observed again 2026-08-28 on a plain markdown file the
+    // user had open in an editor:
+    //
+    //   Error: EBUSY: resource busy or locked, watch
+    //   '...\docs\claude-code-cleanup-and-restructure-prompt.md'
+    //
+    // A file we cannot watch costs a missed hot reload for that one file. It
+    // must not cost the server. Logged rather than swallowed, so a watcher that
+    // is failing everywhere is still visible as the reason HMR went quiet.
+    vite.watcher.on("error", (error: NodeJS.ErrnoException) => {
+      console.warn(
+        `[vite] watcher error (${error.code ?? "unknown"}) on ${error.path ?? "an unknown path"} -- ` +
+          `continuing without watching it; edits to that file will not hot-reload.`,
+      );
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
