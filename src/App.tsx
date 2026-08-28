@@ -110,6 +110,7 @@ const Markdown = lazy(() => import('./components/Markdown'));
 import { User } from 'firebase/auth';
 import LoginPage from './components/LoginPage';
 import AccountDialog from './components/AccountDialog';
+import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 import FeaturesPage from './components/FeaturesPage';
 import DocsPage from './components/DocsPage';
@@ -1799,54 +1800,13 @@ export default function App() {
    * keystroke typed into it.
    */
   const configDialogRef = useRef<HTMLDivElement>(null);
-  const dismissConfigRef = useRef(dismissConfigWithoutSaving);
-  dismissConfigRef.current = dismissConfigWithoutSaving;
 
-  useEffect(() => {
-    if (!isConfigOpen) return;
-
-    const dialog = configDialogRef.current;
-    const returnFocusTo = document.activeElement as HTMLElement | null;
-    // The dialog itself, not its first field: landing on a <select> lets a
-    // stray arrow key change the DevExpress version before the user has read
-    // which one it is on.
-    dialog?.focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        dismissConfigRef.current();
-        return;
-      }
-      if (e.key !== 'Tab' || !dialog) return;
-
-      // Recomputed per keystroke: the vault section appears and disappears, and
-      // Clear only exists once there is a key to clear.
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((el) => el.offsetParent !== null);
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      // Back to the rail button that opened it, not to nowhere.
-      returnFocusTo?.focus?.();
-    };
-  }, [isConfigOpen]);
+  // This dialog stays mounted while closed, so the trap is armed by
+  // `isConfigOpen` rather than by the component's lifetime. The rationale that
+  // used to sit inline here — focus the dialog and not its first <select>, and
+  // recompute the focusable list per keystroke because the vault section comes
+  // and goes — now lives in useFocusTrap, which is the only copy of it.
+  useFocusTrap(configDialogRef, dismissConfigWithoutSaving, isConfigOpen);
 
   /* A check result belongs to the session it was run in. Left alone, "That key
      looks valid" was still sitting there the next time the dialog opened, over
