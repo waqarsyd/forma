@@ -3,7 +3,8 @@
 Date: 2026-08-28
 Branch: `chore/cleanup`
 
-**SAFE 0 / UNSURE 2 / KEEP 5.** Nothing moved. Phase 6's rule is that unreferenced
+**SAFE 0 / UNSURE 2 / KEEP 5.** Both UNSURE items were decided (§6.9), closing the phase
+at **SAFE 0 / UNSURE 0 / KEEP 6**, with one asset added. Nothing moved. Phase 6's rule is that unreferenced
 assets get quarantined but merely *unoptimized* ones get a report and an approval first,
 because conversion is an edit and can affect visual quality. Both live candidates here
 turn out to need a decision rather than an action, for a reason worth stating up front:
@@ -208,3 +209,71 @@ SVG.
 | Responsive image variants | The only raster in the layout is a logo rendered at ≤46 CSS px; `srcset` by width would be over-engineering. The WebP/PNG `<source>` pair is the variant that matters and it is present. |
 | PNGs that should be SVGs | The mark has no vector source in this repository - `docs/notes/styling.md` records that this is why `LogoPulse` animates *around* the logo rather than animating anything inside it. Converting would mean redrawing it, which is design work, not cleanup. |
 | Media belonging in object storage | Only the two masters, at 3.28 MB. Covered in §6.5; moving them to storage has the same zero effect on clone size. |
+
+---
+
+## 6.9 Outcome
+
+Decisions taken 2026-08-29, after a visual review of the downscale candidates rendered at
+true tab-strip scale on both light and dark chrome.
+
+### The favicon: done, at 32×32
+
+`public/favicon.png` — **1,406 bytes**, downscaled from `public/logo.png` with
+high-quality bicubic — and `index.html` now reads:
+
+```html
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+```
+
+**−36,669 bytes on every cold page load**, which is **60× the total saving Phase 4
+produced**, from a single asset. It is the largest measured win of the entire cleanup.
+
+Three choices, each recorded at the point of use in `index.html` and again in
+`docs/notes/styling.md`:
+
+- **32 rather than 16.** A 2× tab strip gets real pixels instead of invented ones. The
+  16×16 candidate was measured at 636 B and breaks up on the mark's diagonals.
+- **PNG rather than WebP.** Favicon WebP support is still patchy, and this is the one
+  request that happens before any component code runs and so cannot fall back.
+- **`public/logo.png` untouched.** It keeps its two other jobs — the `<picture>` fallback
+  rendered at up to 46 CSS px, and the image `og-card.html` composites into the
+  1200×630 card. Shrinking it in place would have degraded both.
+
+What the visual review actually settled: the mark is a navy triangle, an orange slab and
+a small orange cube, and **at 16 px the cube is a dot in every version including the
+current 38 KB one.** The silhouette carries it — the same conclusion `icons.tsx` already
+records for the toolbar icon set. So the downscale gives up nothing that was visible.
+
+### The masters: kept
+
+`assets/source/logo.png` and `logo_white.png` stay tracked. For an open-source project the
+full-resolution originals are what a fork needs to regenerate `public/` at other sizes or
+produce a new OG card, and the arithmetic in §6.4 means quarantining them would shrink the
+checkout by 3.28 MB and the clone by **exactly zero**. Recorded in `MANIFEST.md`'s
+"Kept, so a later pass does not re-flag them" table.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `public/favicon.png` | **new**, 1,406 B |
+| `index.html` | the `rel="icon"` line, plus a comment recording why 32 and why PNG |
+| `docs/notes/styling.md` | the favicon paragraph, which the change would otherwise have made wrong, and one clause in the "Local asset, not that CDN" bullet |
+| `README.md` | the `public/` line of the project-structure block |
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `npm run lint` | exit 0 |
+| `npm run lint:encoding` | exit 0 — 105 files |
+| `npm test` | exit 0 — 25 files / 409 tests. Two of these read `index.html` off disk (`routes.test.ts` checks the home title against the `<title>` tag; `legalDisclosure.test.ts` checks the third-party disclosure), so the edit was exercised rather than merely compiled. |
+| `npm run clean && npm run build` | exit 0 |
+| `dist/` contents | `dist/favicon.png` present at 1,406 B; `dist/index.html` carries `href="/favicon.png"` |
+
+### Still open, deliberately
+
+The fonts in §6.7 — three families, eleven weights, on the order of 150–250 KB, more than
+every image on this site combined. That remains the largest unmeasured asset question,
+and it needs a network panel on a built page rather than a guess.

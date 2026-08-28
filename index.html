@@ -4,7 +4,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/png" href="/logo.png" />
+  <!-- Its own file, and 32x32 on purpose. This used to point at /logo.png, the
+       256x256 <picture> fallback, which meant 38,075 bytes fetched before any
+       component code runs to be drawn at sixteen pixels in a tab strip. The
+       downscale is 1,406 bytes. 32 rather than 16 so a 2x strip has real pixels
+       to use; PNG rather than WebP because favicon WebP support is still patchy
+       and this is the one request that cannot afford a fallback. -->
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
   <script>
     // Resolve the theme before first paint so a dark-mode user never sees a
     // flash of the light theme. Mirrors the resolution order in App.tsx:

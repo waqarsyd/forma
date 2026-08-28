@@ -125,8 +125,9 @@ tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
                        in the real DevExpress designer — C# and MSBuild, with
                        its own README; nothing in the web app depends on it
-public/                static assets served at / — logos (one doubles as the
-                       favicon) and the pre-rendered og-card.png
+public/                static assets served at / — the logo pair (PNG + WebP,
+                       light and dark), favicon.png, and the pre-rendered
+                       og-card.png
 assets/source/         full-resolution logo masters and the og-card source
                        page they are rendered from (not deployed)
 docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident history)
