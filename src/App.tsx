@@ -1201,6 +1201,52 @@ function initialsOf(user: { displayName?: string | null; email?: string | null }
   return parts.slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
 }
 
+/**
+ * The only things that differed between a first generation and a resumed one.
+ *
+ * `handleResume` and `handleGenerate` used to carry a copy each of the same
+ * ~90-line run: the same `analyzeReportDesign` call, the same result shape, the
+ * same assistant message, and a byte-identical 30-line `catch`. Diffed on
+ * 2026-08-28, every single difference between them was a log string or a
+ * sentence of user-facing copy — nothing functional at all. They are one
+ * function now (`runGeneration`) and this is the parameter that made that
+ * possible.
+ *
+ * Keeping the wording out here rather than branching on an `isResume` flag is
+ * deliberate: the strings are the *whole* difference, so a flag would put a
+ * conditional inside the very code the split was hiding.
+ */
+type RunCopy = {
+  /** Prefixes the run's opening `console.log`, before `Prompt: "…"`. */
+  start: string;
+  /** Logged immediately before the request goes out. */
+  request: string;
+  /** Logged once the transcript has the assistant's reply. */
+  done: string;
+  /** The assistant's message, given whether the user actually typed a prompt. */
+  assistant: (fromPrompt: boolean) => string;
+};
+
+const INITIAL_RUN: RunCopy = {
+  start: 'Starting report generation process.',
+  request: 'Sending request to Gemini API...',
+  done: 'Report layout updated successfully.',
+  assistant: (fromPrompt) =>
+    fromPrompt
+      ? "I've updated the report layout based on your instructions. You can view the UI preview and specifications on the right."
+      : "I've generated the report layout based on your provided images. You can view the UI preview and specifications on the right.",
+};
+
+const RESUMED_RUN: RunCopy = {
+  start: 'Resuming report generation process.',
+  request: 'Requesting Gemini API on resume...',
+  done: 'Report layout updated successfully on resume.',
+  assistant: (fromPrompt) =>
+    fromPrompt
+      ? "I've resumed and completed the report layout based on your instructions. You can view the UI preview and specifications on the right."
+      : "I've resumed and completed the report layout based on your provided images. You can view the UI preview and specifications on the right.",
+};
+
 export default function App() {
   const [showWorkspace, setShowWorkspace] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -2399,32 +2445,30 @@ export default function App() {
     }
   };
 
-  const handleResume = async () => {
-    // Same gate as handleGenerate: the key could have been cleared from the
-    // session while the run was paused.
-    if (!hasApiKey) {
-      setError('Add your Gemini API key to use the workspace.');
-      setIsConfigOpen(true);
-      return;
-    }
-
-    setIsPaused(false);
-    setIsAnalyzing(true);
-    setError(null);
-
-    const currentPrompt = activePromptRef.current;
-    const currentPreviews = activePreviewsRef.current;
-    const currentTexts = activeTextsRef.current;
-
-    // Resume re-issues the whole request, so previously received output no
-    // longer counts: startProgress clears the character count. The bar itself
-    // stays where it was rather than snapping backwards on an action the user
-    // took deliberately, which is what carrying the current step across does.
-    setProgress((prev) => startProgress(prev.stepIndex));
-
+  /**
+   * The generation run itself: ticker, request, result, transcript, error
+   * handling, teardown.
+   *
+   * This is the single copy of what `handleGenerate` and `handleResume` used to
+   * do twice. Everything either of them needs to vary is in `copy`; everything
+   * that has to stay in step — above all the `catch`, which is the error path
+   * for a call that can 404, 429, 503, hang, abort, or return truncated
+   * `repxContent` — is here once and cannot drift again.
+   *
+   * The caller owns the *setup* that genuinely differs: the initial run adds a
+   * user message and may take a chat turn first, and the resume carries the
+   * progress bar's current step across instead of starting from zero.
+   */
+  const runGeneration = async (
+    currentPrompt: string,
+    currentPreviews: readonly string[],
+    currentTexts: readonly TextAttachment[],
+    copy: RunCopy,
+  ) => {
     loadingIntervalRef.current = setInterval(() => setProgress(tickSimulated), STEP_INTERVAL_MS);
 
-    console.log(`Resuming report generation process. Prompt: "${currentPrompt}"`);
+    console.log(`${copy.start} Prompt: "${currentPrompt}"`);
+    console.debug(`Included ${currentPreviews.length} preview images/files.`);
 
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
@@ -2434,7 +2478,7 @@ export default function App() {
       // on — see src/lib/attachmentParts.ts.
       const attachmentParts = toAttachmentParts(currentPreviews, currentTexts);
 
-      console.debug('Requesting Gemini API on resume...');
+      console.debug(copy.request);
       const response = await analyzeReportDesign(
         currentPrompt || "Generate a professional DevExpress report layout based on these visuals.",
         attachmentParts,
@@ -2450,6 +2494,8 @@ export default function App() {
       }
 
       console.log('Successfully received response from Gemini API.');
+      console.debug(`Generated Layout Title: ${response.layout.title}`);
+      console.debug(`Generated REPX length: ${response.repxContent.length} characters`);
 
       const newResult = {
         content: response.markdown,
@@ -2466,11 +2512,11 @@ export default function App() {
       const newAssistantMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: currentPrompt ? "I've resumed and completed the report layout based on your instructions. You can view the UI preview and specifications on the right." : "I've resumed and completed the report layout based on your provided images. You can view the UI preview and specifications on the right.",
+        text: copy.assistant(Boolean(currentPrompt)),
         result: newResult
       };
       setMessages(prev => [...prev, newAssistantMsg]);
-      console.log('Report layout updated successfully on resume.');
+      console.log(copy.done);
 
     } catch (err: any) {
       if (signal.aborted) {
@@ -2505,6 +2551,33 @@ export default function App() {
       }
       if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
     }
+  };
+
+  const handleResume = async () => {
+    // Same gate as handleGenerate: the key could have been cleared from the
+    // session while the run was paused.
+    if (!hasApiKey) {
+      setError('Add your Gemini API key to use the workspace.');
+      setIsConfigOpen(true);
+      return;
+    }
+
+    setIsPaused(false);
+    setIsAnalyzing(true);
+    setError(null);
+
+    // Resume re-issues the whole request, so previously received output no
+    // longer counts: startProgress clears the character count. The bar itself
+    // stays where it was rather than snapping backwards on an action the user
+    // took deliberately, which is what carrying the current step across does.
+    setProgress((prev) => startProgress(prev.stepIndex));
+
+    await runGeneration(
+      activePromptRef.current,
+      activePreviewsRef.current,
+      activeTextsRef.current,
+      RESUMED_RUN,
+    );
   };
 
   const handleStop = () => {
@@ -2656,92 +2729,7 @@ export default function App() {
     setProgress(startProgress());
     setError(null);
 
-    loadingIntervalRef.current = setInterval(() => setProgress(tickSimulated), STEP_INTERVAL_MS);
-
-    console.log(`Starting report generation process. Prompt: "${currentPrompt}"`);
-    console.debug(`Included ${currentPreviews.length} preview images/files.`);
-
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-
-    try {
-      // Text before images, and malformed previews dropped rather than thrown
-      // on — see src/lib/attachmentParts.ts.
-      const attachmentParts = toAttachmentParts(currentPreviews, currentTexts);
-
-      console.debug('Sending request to Gemini API...');
-      const response = await analyzeReportDesign(
-        currentPrompt || "Generate a professional DevExpress report layout based on these visuals.",
-        attachmentParts,
-        config,
-        result ? { layout: result.layout, repxContent: result.repxContent } : undefined,
-        signal,
-        handleStreamProgress
-      );
-
-      if (signal.aborted) {
-        console.debug('Generation aborted/paused by user.');
-        return;
-      }
-
-      console.log('Successfully received response from Gemini API.');
-      console.debug(`Generated Layout Title: ${response.layout.title}`);
-      console.debug(`Generated REPX length: ${response.repxContent.length} characters`);
-
-      const newResult = {
-        content: response.markdown,
-        timestamp: new Date(),
-        title: response.layout.title,
-        layout: response.layout,
-        repxContent: response.repxContent
-      };
-
-      setResult(newResult);
-      setActiveTab('ui');
-
-      // Add assistant message
-      const newAssistantMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        text: currentPrompt ? "I've updated the report layout based on your instructions. You can view the UI preview and specifications on the right." : "I've generated the report layout based on your provided images. You can view the UI preview and specifications on the right.",
-        result: newResult
-      };
-      setMessages(prev => [...prev, newAssistantMsg]);
-      console.log('Report layout updated successfully.');
-
-    } catch (err: any) {
-      if (signal.aborted) {
-        console.debug('Generation aborted/paused by user during error handling.');
-        return;
-      }
-      console.error('Error during report generation:', err);
-
-      // No key configured is a setup step, not a failure — send the user straight
-      // to the place they can fix it instead of showing a dead-end error.
-      if (err instanceof MissingApiKeyError) {
-        setError('Add your own Gemini API key in Settings to generate reports.');
-        setIsConfigOpen(true);
-        return;
-      }
-
-      let friendlyMessage = err.message || 'An error occurred during analysis.';
-      if (friendlyMessage.includes('quota') || friendlyMessage.includes('429')) {
-        friendlyMessage = 'Your Gemini API key has hit its quota. Check your plan and billing in Google AI Studio.';
-      } else if (friendlyMessage.includes('Failed to fetch')) {
-        friendlyMessage = 'Network error. Please check your internet connection.';
-      }
-      setError(friendlyMessage);
-    } finally {
-      if (!signal.aborted) {
-        setProgress(finishProgress);
-        setTimeout(() => {
-          setIsAnalyzing(false);
-          setIsPaused(false);
-          setProgress(IDLE_PROGRESS);
-        }, 500);
-      }
-      if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
-    }
+    await runGeneration(currentPrompt, currentPreviews, currentTexts, INITIAL_RUN);
   };
 
   /**
