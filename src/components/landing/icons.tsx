@@ -377,30 +377,17 @@ export const IconArrowUp = (p: Props) => (
   </Svg>
 );
 /* There is deliberately no IconRocket. The `rocket_launch` glyph it would have
-   replaced sat in the "03 SHIP — Export Native" card, directly beside IconRuler's
+   replaced sat in the "03 SHIP — Export Native" card, directly beside a drafting
    compass, and three attempts at a rocket all reduced to the same
-   triangle-plus-crossbar silhouette as the compass at 22px. The card means
+   triangle-plus-crossbar silhouette as that compass at 22px. The card means
    export, so it uses IconDownload — the same icon as the Export action, which is
-   the same concept. Silhouette, not detail, is what carries at toolbar sizes. */
+   the same concept. Silhouette, not detail, is what carries at toolbar sizes.
+   (The compass was `IconRuler`; it and `IconUpload` were quarantined on
+   2026-08-28 as unrendered — see _not_required/MANIFEST.md. The reasoning above
+   survives them because it is about the rocket, not about the compass.) */
 export const IconFolder = (p: Props) => (
   <Svg {...p}>
     <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5z" />
-  </Svg>
-);
-export const IconRuler = (p: Props) => (
-  <Svg {...p}>
-    {/* A drafting compass, because the Material glyph it replaces was
-        `architecture`. The legs splay wide on purpose: drawn narrow they closed
-        up into a solid wedge and read as IconRocket. */}
-    <circle cx="12" cy="4.4" r="1.5" />
-    <path d="M11 6.2 5.4 19.6M13 6.2l5.6 13.4" />
-    <path d="M8.4 14.2h7.2" />
-  </Svg>
-);
-export const IconUpload = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5" />
-    <path d="M4 16v3.5h16V16" />
   </Svg>
 );
 export const IconLogout = (p: Props) => (

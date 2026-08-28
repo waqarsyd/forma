@@ -620,28 +620,13 @@ body {
    components/landing/icons.tsx. Removed along with its stylesheet link; the
    icons render from the same module as every other icon in the app now
    (audit PERF-002). */
-.bento-grid {
-    display: grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 24px;
-}
-.glass-panel {
-    background: color-mix(in srgb, var(--color-surface) 70%, transparent);
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--color-outline-variant);
-}
-.port-indicator {
-    width: 4px;
-    height: 4px;
-    background-color: var(--color-secondary-container);
-}
-.hero-gradient {
-    background: radial-gradient(
-      circle at top,
-      var(--color-primary-fixed) 0%,
-      var(--color-surface) 70%
-    );
-}
+/* `.bento-grid`, `.glass-panel`, `.port-indicator` and `.hero-gradient` sat here
+   until 2026-08-28, leftovers from an earlier visual direction that the current
+   landing design never adopted. Each name appeared exactly once in the whole
+   repository — its own declaration — and unlike the unused @theme tokens, which
+   Tailwind drops from the output, all four were shipping in dist/. Quarantined;
+   see _not_required/MANIFEST.md. This is the second clear-out of this region,
+   after `.dot-grid` and the Material Symbols rule above. */
 
 /* ====================================================================
    SHEET PALETTE
