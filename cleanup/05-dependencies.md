@@ -244,3 +244,97 @@ what `npm install` does over time, and it is the same argument that retired
 
 Nothing else in this phase has an action attached. **SAFE 0**, because there is no unused
 dependency to quarantine; **KEEP 26**, all of them, with the reasons above.
+
+---
+
+## 5.12 Outcome - the bump, and why the first attempt failed
+
+Approved and executed 2026-08-28. **It took two steps, and the first one did not work.**
+The failure is the useful part of this section.
+
+### Step 1: bump `esbuild` to `^0.28.2` - and the advisory did not clear
+
+```
+$ npm audit
+6 vulnerabilities (1 low, 5 moderate)     <- unchanged
+```
+
+The reason is in §5.7, which I had already written and then failed to apply to my own
+proposal: `esbuild` is installed more than once. Bumping the **root** copy to 0.28.2 left
+`tsx@4.21.0`'s nested `esbuild@0.27.7` exactly where it was - and 0.27.7 is the copy
+inside the advisory range `0.27.3 - 0.28.0`.
+
+So the bump did not fix the vulnerability. It also made things worse:
+
+```
+11.15 MB  node_modules/@esbuild/win32-x64            <- new 0.28.2
+10.86 MB  node_modules/tsx/node_modules/@esbuild/…   <- vulnerable 0.27.7, now nested
+10.13 MB  node_modules/vite/node_modules/@esbuild/…  <- 0.25.12
+          32.14 MB across THREE copies, up from 20.99 MB across two
+```
+
+`node_modules` went from 530.30 MB to 541.61 MB: **+11.31 MB of disk to fix nothing.**
+
+### Step 2: follow it through - `npm update tsx`
+
+`tsx@4.23.12` declares `esbuild: "~0.28.0"`, so it deduplicates onto the new root copy.
+And 4.23.12 already satisfies the declared `^4.21.0` range, so this needed **no
+`package.json` change at all** - only a lockfile refresh that had never been taken.
+
+```
+$ npm ls esbuild
++-- esbuild@0.28.2
++-- tsx@4.23.12
+|  `-- esbuild@0.28.2 deduped     <- the vulnerable 0.27.7 is gone
+`-- vite@6.4.3
+   `-- esbuild@0.25.12            <- structural, see §5.7
+
+$ npm audit
+5 moderate severity vulnerabilities    <- the low-severity esbuild advisory is cleared
+```
+
+### Result
+
+| Measure | Before | After |
+|---|---|---|
+| Vulnerabilities | 6 (1 low, 5 moderate) | **5 (0 low, 5 moderate)** |
+| esbuild copies | 2 | 2 |
+| esbuild platform binaries | 20.99 MB | 21.28 MB (+0.29 MB - a newer binary, not a new copy) |
+| `node_modules` | 530.30 MB | 530.54 MB |
+| `tsx` | 4.21.0 | 4.23.12 (inside the existing `^4.21.0` range) |
+
+The five remaining are the `firebase-tools` chain from §5.6, which has no forward fix and
+must not be "fixed" by the downgrade npm offers.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `npm run lint` | exit 0 |
+| `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` | exit 0 |
+| `npm run lint:encoding` | exit 0 - 105 files |
+| `npm test` | exit 0 - 25 files / 409 tests |
+| `npm run clean && npm run build` | exit 0 |
+| **`dist/server.cjs` byte comparison** | **SHA-256 identical, 3,940 bytes** - esbuild 0.28.2 emits exactly what 0.27.7 emitted for this input |
+| **dev server on the new `tsx`** | started, port 3000 listening in **1.4 s**; `GET /api/health` -> 200 `{"status":"ok"}`; `GET /features` -> 200, 6,470 bytes. Port freed afterwards by killing only the PID owning it. |
+
+The byte-identical server bundle is the strongest evidence available that the toolchain
+change is behaviour-neutral: the same input produced the same output through a
+different bundler version.
+
+**`tsx` was the one thing tests could not cover** - it is the dev server's runtime and
+nothing in either suite executes it - which is why it got a live HTTP check rather than
+a green tick from the build.
+
+### What this cost, honestly
+
+The advisory it cleared was **low severity and unreachable**: `scripts/build-server.mjs`
+calls esbuild's `build()`, never `serve()`, which is what the advisory concerns. So the
+practical security improvement is approximately zero, and the honest description of this
+change is hygiene - one fewer line in `npm audit` for the next person to triage, and a
+`tsx` that is two minor versions less stale.
+
+What it was actually worth was the discovery in step 1: a version bump aimed at a
+transitive advisory can silently miss, because the vulnerable copy is not the one you
+declared. Re-running `npm audit` after the fix - rather than assuming - is what caught
+it.
