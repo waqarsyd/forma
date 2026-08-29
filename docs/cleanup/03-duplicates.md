@@ -211,6 +211,22 @@ the generation pipeline depends on them either.
 
 ### The one real config duplication: the `@` alias is declared three times
 
+> **Outcome, 2026-08-29 — and this section got the question wrong.** All three
+> declarations were **deleted**. The analysis below studies how to de-duplicate the
+> alias and never asks the prior question: *is anything using it?* Nothing was. Not one
+> import in `src/`, `tests/`, `server.ts` or `scripts/` referenced `@/anything` — every
+> import in this project is relative. That was only noticed at the very end of the pass,
+> while writing the cross-reference comments this section's proposal 5 called for.
+>
+> Removing all three changed the built output not at all: `index-CJP1nzM4.js` stayed at
+> 1,120,976 bytes with the same hash, which is the proof the alias was dead rather than
+> merely duplicated. Gates green throughout.
+>
+> The lesson is the section heading itself. "Which of these three copies is canonical?"
+> is a reasonable-sounding question that assumes its own premise, and it cost the whole
+> of §3.4 and proposal 5 below — including an estimate I had to correct in §3.8 — to
+> answer a question that should have been closed by one grep.
+
 ```
 tsconfig.json:30       "@/*": ["./*"]
 vite.config.ts:20      '@': path.resolve(__dirname, '.')

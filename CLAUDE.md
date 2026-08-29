@@ -183,11 +183,17 @@ broken, and nothing in the toolchain enforces any of them.
   describe the repository as it was on their date, so read `notes/` for what is true now.
   Neither was mentioned in this file at all until 2026-08-29, while both sat at the top
   level.
-- **The `@` alias is declared three times** — `tsconfig.json`, `vite.config.ts` and
-  `vitest.config.ts` — all resolving to the repo root, with nothing checking they agree.
-  Change one and the build and the tests resolve `@` differently, silently. Collapsing it
-  needs a shared module and therefore a new root file, which was judged not worth the
-  clutter; see `docs/cleanup/03-duplicates.md` §3.4. **If you edit one, edit all three.**
+- **There is no `@` path alias, and its removal is worth knowing about.** One was declared
+  three times — `tsconfig.json`'s `paths`, `vite.config.ts` and `vitest.config.ts` — all
+  resolving to the repo root, with nothing checking they agreed, so changing one would
+  have made the build and the tests resolve `@` to different places silently. The 2026-08-28
+  cleanup treated that as a duplication problem and spent a while looking for somewhere to
+  put a shared constant. **The prior question went unasked until the very end: nothing was
+  using it.** Not one import in `src/`, `tests/`, `server.ts` or `scripts/` referenced
+  `@/anything`. All three declarations were removed on 2026-08-29 and the built output was
+  byte-identical, which is the proof. **Every import in this project is relative — keep it
+  that way, or add aliases back to all three files in one commit and actually use them.**
+  See `docs/cleanup/03-duplicates.md` §3.4.
 
 ## Firebase skills
 

@@ -1,6 +1,5 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
@@ -15,21 +14,13 @@ export default defineConfig(() => {
     // application-owned key to expose, so nothing Gemini-related belongs in
     // import.meta.env. Do not re-add a 'GEMINI_' prefix here.
     envPrefix: ['VITE_'],
-    // Declared in THREE files with nothing checking they agree: here,
-    // `tsconfig.json` (as `paths`) and `vitest.config.ts`. Change one and the
-    // build and the tests resolve `@` differently, silently — each config stays
-    // valid on its own and every tool reports success. See
-    // docs/cleanup/03-duplicates.md §3.4 for why it was not collapsed into a
-    // shared module. **If you edit this, edit the other two.**
-    //
-    // And note the alias has **zero usages** as of 2026-08-29 — every import in
-    // the project is relative. Use it or delete all three; do not keep a
-    // three-way agreement nothing depends on.
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
-    },
+    // There is deliberately no `resolve.alias` here. An `'@'` alias pointing at
+    // the repo root was declared in this file, in `vitest.config.ts` and in
+    // `tsconfig.json`'s `paths` — three declarations, nothing checking they
+    // agreed, and **zero imports using any of them**: every import in this
+    // project is relative. Removed 2026-08-29. If you want path aliases, add
+    // them back to all three in one commit and actually use them; see
+    // docs/cleanup/03-duplicates.md §3.4.
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.

@@ -1,5 +1,4 @@
 import { defineConfig } from 'vitest/config';
-import path from 'path';
 
 /**
  * Kept separate from vite.config.ts on purpose: that file carries the HMR block
@@ -86,29 +85,22 @@ export default defineConfig({
       reporter: ['text-summary', 'text'],
     },
   },
-  /**
-   * Declared in THREE files with nothing checking they agree: here,
-   * `tsconfig.json` (as `paths`) and `vite.config.ts`. Change one and the tests
-   * and the build resolve `@` to different places — silently, because each
-   * config remains individually valid and every tool still reports success.
+  /*
+   * There is deliberately no `resolve.alias` block here.
    *
-   * It is not collapsed into a shared constant because that needs a new
-   * root-level file, and Phase 7 was reducing the root rather than adding to it;
-   * `vitest.config.ts` importing from `vite.config.ts` would also couple the
-   * test config to the file carrying the "Do not modify" HMR block, which is
-   * precisely what this file's separation exists to avoid. See
-   * docs/cleanup/03-duplicates.md §3.4.
+   * An `'@'` alias pointing at the repo root used to be declared in this file,
+   * in `vite.config.ts` and in `tsconfig.json`'s `paths` — three declarations
+   * with nothing checking they agreed, so changing one would have made the
+   * tests and the build resolve `@` to different places, silently. Phase 3 of
+   * the 2026-08-28 cleanup treated that as a duplication problem and looked for
+   * somewhere to put a shared constant.
    *
-   * **If you edit this, edit the other two.**
+   * The prior question went unasked until the end of the pass: **nothing was
+   * using it.** Not one import in `src/`, `tests/`, `server.ts` or `scripts/`
+   * referenced `@/anything` — every import in this project is relative. All
+   * three declarations were removed on 2026-08-29.
    *
-   * One fact that decides what to do about it, and which the Phase 3 analysis
-   * missed by studying the triplication without asking the prior question:
-   * **the alias has zero usages.** As of 2026-08-29 nothing in `src/`, `tests/`,
-   * `server.ts` or `scripts/` imports `@/anything` — every import is relative.
-   * So the real choice is to adopt it or to delete all three declarations, not
-   * to keep three configs in agreement about a path nobody takes.
+   * If path aliases are ever wanted, add them back to all three files in one
+   * commit and use them. See docs/cleanup/03-duplicates.md §3.4.
    */
-  resolve: {
-    alias: { '@': path.resolve(__dirname, '.') },
-  },
 });
