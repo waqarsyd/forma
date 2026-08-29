@@ -47,7 +47,29 @@ Checks **two** things, because the quarantine fails in two different ways:
    tracked file stays tracked wherever it sits, so the bytes never leave the clone.
    Moving something in needs `git rm --cached` after the move.
 
-Current output: `90 source files checked, none import from _not_required/`.
+Current output: `92 source files checked, none import from _not_required/`.
+
+**It failed on its first run after being committed, on itself.** Both the pattern and the
+comment above it have to contain the folder name next to import syntax in order to
+describe what they match, so the checker matched its own line 43. It had passed while the
+file was untracked, because the scan walks `git ls-files` - committing it is what put it
+in scope.
+
+Fixed with one documented self-exemption, exactly as `scripts/check-encoding.mjs` skips
+`CLAUDE.md` for containing the mojibake pattern as prose. **Then verified the exemption
+had not simply disabled the check**, by adding a probe file that really did import from
+the quarantine:
+
+```
+$ node scripts/check-quarantine.mjs        → 0, "92 source files checked"
+   (add src/lib/__probe.ts importing from _not_required/)
+$ node scripts/check-quarantine.mjs        → 1, "src/lib/__probe.ts:1 imports from _not_required/"
+   (remove the probe)
+$ node scripts/check-quarantine.mjs        → 0
+```
+
+A guardrail is not verified by watching it pass. It is verified by watching it fail on
+something it should catch, and this one now has been.
 
 ### `scripts/check-bundle-size.mjs` → `npm run check:size`
 

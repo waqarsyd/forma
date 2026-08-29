@@ -36,11 +36,30 @@ const problems = [];
 
 /* ---- 1. imports ------------------------------------------------------- */
 
+/**
+ * This file is skipped, and the reason is not laziness.
+ *
+ * The comment and the pattern below both have to contain the folder name next
+ * to import syntax in order to describe what they match -- so this checker
+ * matches itself. It did not show up while the file was untracked, because the
+ * scan walks `git ls-files`; the very first run after committing it failed on
+ * line 43. `scripts/check-encoding.mjs` skips `CLAUDE.md` for exactly this
+ * reason, and this is the same trade: one documented self-exception, so the
+ * pattern can stay readable.
+ *
+ * A checker that cannot describe what it checks is worse than one with a
+ * one-line exemption.
+ */
+const SELF = 'scripts/check-quarantine.mjs';
+
 const sources = tracked.filter(
-  (f) => /\.(ts|tsx|mjs|cjs|js|jsx|css)$/.test(f) && !f.startsWith(`${QUARANTINE}/`),
+  (f) =>
+    /\.(ts|tsx|mjs|cjs|js|jsx|css)$/.test(f) &&
+    !f.startsWith(`${QUARANTINE}/`) &&
+    f !== SELF,
 );
 
-// `from '…_not_required…'`, `import('…')`, `require('…')`, and CSS `@import`.
+// `from '...<quarantine>...'`, `import('...')`, `require('...')`, CSS `@import`.
 const REACH = new RegExp(
   `(?:from\\s*|\\bimport\\s*\\(?\\s*|\\brequire\\s*\\(\\s*|@import\\s+)['"][^'"]*${QUARANTINE}[^'"]*['"]`,
 );
