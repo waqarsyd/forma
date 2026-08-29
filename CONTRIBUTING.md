@@ -51,11 +51,17 @@ All seven, in the order CI runs them:
 | `npm run lint` | `tsc --noEmit` under `strict`. There is no ESLint. |
 | `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` | dead locals and parameters, stricter than `tsconfig.json` |
 | `npm run lint:encoding` | mojibake — the highest-blast-radius check here, see below |
-| `npm test` | 409 unit tests in 25 files |
-| `npm run test:rules` | 41 security-rule tests against the emulator |
+| `npm test` | the unit suite — pure helpers, plus the two outbound calls that can hang |
+| `npm run test:rules` | the security-rule suite, against the Firestore emulator |
 | `npm run build` && `npm run check:size` | a broken import, and artifact-size regression |
 
 **Every baseline is clean**, so anything any of them prints is yours.
+
+This table deliberately does not say how many tests there are. `CLAUDE.md` is the
+only place that number is written down, and it stays that way because copies of it
+drift: this file carried "409 unit tests in 25 files" for a while after the suite
+had moved on, which is worse than no number at all — a contributor trusts it and
+concludes their run is broken. Run the suite if you want the count.
 
 ### The encoding check is not bureaucracy
 

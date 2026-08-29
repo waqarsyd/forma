@@ -1,0 +1,68 @@
+name: Something in the app is broken
+description: An error message, a control that does nothing, a page that renders wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a report that generated but came back *wrong*, use "The report came
+        back wrong" instead — it asks for the details that make those diagnosable.
+
+        **Do not paste your Gemini API key.** Error messages sometimes quote a
+        request; check before pasting.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the workspace
+        2. Attach a two-page PDF
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: The exact error text, if there was one
+      description: >-
+        Wording matters here — Forma says different things for a retired model, an
+        exhausted quota and an overloaded one, and they have different fixes.
+        Also say whether it happened on the **first** request of the session or a
+        later one: model detection only runs once per session, so "first request
+        only" points somewhere quite specific.
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console output
+      description: >-
+        DevTools → Console. Forma logs a per-phase timing breakdown and the model
+        it resolved to, which is often the whole answer.
+      render: text
+
+  - type: input
+    id: env
+    attributes:
+      label: Browser and OS
+      placeholder: Firefox 133 on macOS 15
+    validations:
+      required: true
+
+  - type: dropdown
+    id: signed-in
+    attributes:
+      label: Were you signed in?
+      options:
+        - "No — using it signed out"
+        - "Yes"
+    validations:
+      required: true

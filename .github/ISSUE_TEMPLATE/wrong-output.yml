@@ -1,0 +1,106 @@
+name: The report came back wrong
+description: A layout in the wrong place, missing elements, or a .repx the designer refuses
+labels: ["output"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the one that matters most, so it asks for a little more than a
+        normal bug report.
+
+        **Do not paste your Gemini API key anywhere in this issue.** Nothing here
+        needs it, and an issue is public. If you think you have already pasted one
+        somewhere, revoke it at [Google AI Studio](https://aistudio.google.com/apikey)
+        rather than editing the issue — edit history is public too.
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: What did you give it?
+      options:
+        - A screenshot or photo
+        - A digital PDF
+        - A scanned PDF
+        - An existing .repx
+        - Several files at once
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What came back, and what you expected instead
+      description: >-
+        Be concrete about position if you can — "the totals block is about half an
+        inch too low" is far more useful than "the layout is wrong".
+    validations:
+      required: true
+
+  - type: dropdown
+    id: artifact
+    attributes:
+      label: Which artifact is wrong?
+      multiple: true
+      options:
+        - The in-browser mockup
+        - The generated .repx
+        - The written specification
+        - All three
+    validations:
+      required: true
+
+  - type: dropdown
+    id: version
+    attributes:
+      label: DevExpress version selected
+      options: ["24.1", "23.2", "23.1", "22.2", "20.1"]
+    validations:
+      required: true
+
+  - type: dropdown
+    id: unit
+    attributes:
+      label: Report unit
+      description: >-
+        Worth checking before filing. This is the scale every coordinate is
+        written in, and a mismatch renders a plausible layout in the wrong place
+        without any error.
+      options:
+        - Hundredths of an inch (default)
+        - Tenths of a millimetre
+        - Pixels
+    validations:
+      required: true
+
+  - type: dropdown
+    id: page
+    attributes:
+      label: Page size
+      options: ["Letter", "A4", "Legal"]
+    validations:
+      required: true
+
+  - type: textarea
+    id: repx
+    attributes:
+      label: The generated XML, or the part of it that is wrong
+      description: >-
+        Paste it here. If the DevExpress designer refused the file, include what
+        it said — that message is usually the whole diagnosis.
+      render: xml
+
+  - type: textarea
+    id: source-file
+    attributes:
+      label: The file you uploaded
+      description: >-
+        Attach it if you can share it. **The original PDF beats a screenshot of
+        it**: a digital PDF carries a text layer with exact strings and
+        coordinates, and a screenshot of that same PDF throws all of it away, so
+        the result is approximate for a reason that has nothing to do with a bug.
+
+  - type: input
+    id: env
+    attributes:
+      label: Browser and OS
+      placeholder: Chrome 141 on Windows 11

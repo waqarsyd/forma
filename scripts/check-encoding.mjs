@@ -26,11 +26,18 @@ import { join, extname, basename, relative, sep } from 'node:path';
 
 const ROOT = process.cwd();
 
-/** Directories swept recursively. */
-const DIRS = ['src', 'docs', 'tests', 'scripts', 'tools'];
+/**
+ * Directories swept recursively.
+ *
+ * `.github` is here because everything in it is read by strangers — the issue
+ * forms, the PR template and the CI workflow — and none of it was covered until
+ * 2026-08-29. A mojibake em dash in an issue form is seen by every person who
+ * files a bug, which is a wider audience than most of `src`.
+ */
+const DIRS = ['src', 'docs', 'tests', 'scripts', 'tools', '.github'];
 
 /** Extensions worth reading. Binary files are skipped by omission. */
-const EXTENSIONS = new Set(['.ts', '.tsx', '.md', '.css', '.mjs', '.cs', '.html']);
+const EXTENSIONS = new Set(['.ts', '.tsx', '.md', '.css', '.mjs', '.cs', '.html', '.yml', '.yaml']);
 
 /**
  * Individually named files at the repo root.
@@ -53,6 +60,7 @@ const ROOT_FILES = [
   'README.md',
   'CONTRIBUTING.md',
   'SECURITY.md',
+  'CODE_OF_CONDUCT.md',
   'index.html',
   'firestore.rules',
   '.gitignore',

@@ -1,0 +1,51 @@
+name: An idea
+description: Something Forma should do, or should do differently
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful thing you can write here is **what you were trying to do**,
+        not the feature you had in mind. The underlying task is the part worth
+        designing against — a described feature is one answer to it, and often not
+        the best one.
+
+  - type: textarea
+    id: task
+    attributes:
+      label: What were you trying to do?
+      description: The report, the workflow, the thing that was awkward.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What do you do about it today?
+      description: >-
+        Including "I gave up" or "I fixed it by hand in the designer" — knowing
+        the workaround is how the cost of not having this gets weighed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you had in mind, if anything
+      description: Optional. The task above is the important half.
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Two things that are deliberately not going to happen
+
+        Worth knowing before you write, so nobody spends effort on a proposal that
+        was already decided against:
+
+        - **Generation moving to a server.** It is explicitly out of scope
+          (`docs/PRD.md` §6). A server would mean Forma holding API keys, and not
+          holding them is the whole design.
+        - **A model picker.** Google retires models "for new users", so a
+          hard-coded id is a time bomb. Forma probes what your key can reach and
+          uses the best one that answers. See "No model picker, on purpose" in the
+          docs.

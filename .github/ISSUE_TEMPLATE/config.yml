@@ -1,0 +1,29 @@
+# Blank issues are off so that every report arrives with the detail that makes
+# it actionable. The forms alongside this file ask for exactly what the contact
+# page has always asked for -- the same triage needs, in the place people
+# actually file.
+#
+# TODO(needs-url): both links below carry a placeholder owner/repo path. Replace
+# OWNER/REPO with the real one when this is pushed. They are written out rather
+# than guessed at from a name, because the repo's own convention is that a
+# destination is either real or marked as missing, never invented -- see the
+# `data-needs-url` note in src/components/SiteFooter.tsx. A contact link that
+# 404s is worse than no contact link: it reads as neglect on the first page a
+# would-be contributor sees.
+#
+# `grep -rn "needs-url" .github` finds this.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/OWNER/REPO/security/advisories/new
+    about: >-
+      Report it privately, not here. Anything that could expose an API key or
+      someone's saved reports belongs in a private advisory. If that link is not
+      live yet, email the address in SECURITY.md instead.
+
+  - name: Question, or not sure it is a bug
+    url: https://github.com/OWNER/REPO/discussions
+    about: >-
+      Ask in Discussions. "Is this supposed to happen?" is a fine question and
+      does not need to be an issue first.
