@@ -4,6 +4,10 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+// Only for the theme swap: a view transition snapshots the DOM around its
+// callback, so the state change has to land inside it rather than on React's
+// own schedule. See setTheme.
+import { flushSync } from 'react-dom';
 /*
  * The workspace draws from the same hairline set as the marketing pages. It used
  * to mix two other systems: Material Symbols (40 ligature spans) and lucide
@@ -82,6 +86,7 @@ import {
    are unused — see the note in CLAUDE.md about this being a deliberate departure
    for this surface. */
 import { DURATION } from './lib/motion';
+import { circularThemeSwap } from './lib/themeTransition';
 // @ts-ignore
 import { auth, db, logOut, handleFirestoreError, OperationType } from './services/firebase';
 import { onSnapshot, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
@@ -1978,6 +1983,8 @@ export default function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
   const isFirstThemeRun = useRef(true);
+  /** Set when a circular wipe handled the swap, so the cross-fade stands down. */
+  const skipThemeFade = useRef(false);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const startTimeRef = useRef<number | null>(null);
 
@@ -2049,6 +2056,15 @@ export default function App() {
       return;
     }
 
+    // A circular wipe already handled this one — see setTheme. Running the
+    // cross-fade as well paints it *inside* the expanding circle and the
+    // leading edge turns to mush. Consumed here so the next change, whatever
+    // causes it, gets the fade again.
+    if (skipThemeFade.current) {
+      skipThemeFade.current = false;
+      return;
+    }
+
     // Animate the swap with the app's shared timing, then drop the class so
     // steady-state hover/focus transitions are left exactly as they were.
     root.classList.add('theme-transition');
@@ -2059,9 +2075,28 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [isDarkMode]);
 
-  // The only place a theme choice is persisted — an explicit user action.
+  /**
+   * The only place a theme choice is persisted — an explicit user action.
+   *
+   * The swap runs inside a circular view transition opening from whichever
+   * control was pressed. Two details are load-bearing:
+   *
+   * - The class is toggled directly here rather than left to the effect above.
+   *   `startViewTransition` snapshots the DOM *around* its callback, and the
+   *   effect is passive, so it would run after the snapshot was taken and the
+   *   new theme would flash in after the wipe instead of arriving with it.
+   * - `flushSync` keeps React's own state in the same frame. Without it the
+   *   class and the state disagree for a tick, which is visible on anything
+   *   rendering off `isDarkMode` rather than off the class — the toggle's own
+   *   sun/moon icon, for one.
+   *
+   * The effect then re-applies the identical class, which is a no-op.
+   */
   const setTheme = useCallback((val: boolean) => {
-    setIsDarkMode(val);
+    skipThemeFade.current = circularThemeSwap(() => {
+      document.documentElement.classList.toggle('dark', val);
+      flushSync(() => setIsDarkMode(val));
+    });
     try {
       localStorage.setItem('darkMode', JSON.stringify(val));
     } catch {
@@ -2426,7 +2461,12 @@ export default function App() {
       onClose={handleLoginClose}
       onSuccess={handleLoginSuccess}
       isDarkMode={isDarkMode}
-      setIsDarkMode={setIsDarkMode}
+      // `setTheme`, not the raw setter. This is the same explicit user action
+      // as every other toggle, and it was the one place passing the state
+      // setter directly — so switching the theme from the sign-in modal did not
+      // persist and reverted on the next load. It now persists and wipes like
+      // the rest.
+      setIsDarkMode={setTheme}
     />
   ) : null;
 

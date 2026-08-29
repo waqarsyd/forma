@@ -112,8 +112,10 @@ src/
                        request fails), savedReport + accountData (the two
                        storage shapes and the document layout),
                        contactSubmit, generationProgress (the progress bar's
-                       whole state machine) and attachmentParts, and the routing
-                       pair router (real history/location, so not pure) + routes.
+                       whole state machine) and attachmentParts, themeTransition
+                       (the circular wipe the theme toggle opens from, and its
+                       fallbacks), and the routing pair router (real
+                       history/location, so not pure) + routes.
                        Plus motion tokens, and pdf + genai — two loaders that
                        exist so their dependencies stay out of the eager bundle,
                        and are the only files here that are not pure

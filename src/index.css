@@ -535,6 +535,40 @@ body {
   transition-timing-function: var(--ease-standard);
 }
 
+/* --------------------------------------------------------------------
+   ...and the circular wipe that replaces it where the browser can do it.
+
+   `src/lib/themeTransition.ts` runs the swap inside startViewTransition and
+   animates a clip-path circle out from the toggle. These four declarations
+   are what hand the job over to it:
+
+   - Both snapshots get `animation: none`, which cancels the API's own
+     default cross-fade. Leave it in and it plays *underneath* the circle,
+     so the wipe's leading edge smears instead of cutting cleanly.
+   - `mix-blend-mode: normal` because the default is `plus-lighter`, which
+     is built for a cross-fade of two half-opaque layers. With one layer
+     clipped and fully opaque it blows the overlap out to white along the
+     edge — bright on light, and lurid over the dark CTA band.
+   - The z-order puts the incoming theme above the outgoing one, so the
+     circle reveals the new page over the old rather than punching a hole
+     through to the browser's backdrop.
+
+   Nothing here needs a fallback: a browser without the API never creates
+   these pseudo-elements, and the helper falls back to an instant swap plus
+   the .theme-transition fade above.
+   -------------------------------------------------------------------- */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 0;
+}
+::view-transition-new(root) {
+  z-index: 1;
+}
+
 /* ====================================================================
    MARKDOWN SPEC VIEW
    The generated report specification renders here. Written against the
