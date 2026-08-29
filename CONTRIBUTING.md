@@ -37,8 +37,8 @@ Git will not run hooks out of a tracked directory on its own, and this project
 deliberately does not install them for you — the alternative is a dependency plus a
 postinstall step, and a codebase whose entire dependency list is justified should not add
 one to lint filenames. The hook blocks files over 1 MB, backup and archive extensions, OS
-droppings, anything staged inside `_not_required/`, and what looks like a real API key
-assignment. Bypass a single commit with `git commit --no-verify`.
+droppings, and what looks like a real API key assignment. Bypass a single commit with
+`git commit --no-verify`.
 
 ---
 
@@ -51,7 +51,6 @@ All seven, in the order CI runs them:
 | `npm run lint` | `tsc --noEmit` under `strict`. There is no ESLint. |
 | `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` | dead locals and parameters, stricter than `tsconfig.json` |
 | `npm run lint:encoding` | mojibake — the highest-blast-radius check here, see below |
-| `npm run lint:quarantine` | anything importing from `_not_required/`, or tracked inside it |
 | `npm test` | 409 unit tests in 25 files |
 | `npm run test:rules` | 41 security-rule tests against the emulator |
 | `npm run build` && `npm run check:size` | a broken import, and artifact-size regression |
@@ -83,7 +82,7 @@ Before adding **any** file, dependency, config, tool, or editor extension, it mu
 2. in the directory the conventions call for (see *Structure conventions* in `CLAUDE.md`).
 
 If it fails either test it does not go in — not "temporarily", not "we'll clean it up
-later". Put it in `_not_required/` or leave it out.
+later". Leave it out; git will still have it if you committed it once and removed it.
 
 **Never commit:** build output, caches, coverage, logs, profiling dumps, dependency
 folders, backup or versioned copies (`*.bak`, `file 2.js`, `index-final-v3.ts`), personal
@@ -113,18 +112,22 @@ one library per job, no date library, no HTTP client (native `fetch`), no icon p
 - When a feature flag is fully rolled out or abandoned, collapse the branch and remove the
   flag in the same PR.
 
-### The quarantine
+### Removing things: git is the safety net
 
-`_not_required/` is where anything unnecessary goes. **It is not part of the project.**
+There is no quarantine folder. One existed briefly and was retired — **git history is the
+recovery mechanism this project actually uses**, and a second one needing three separate
+enforcement mechanisms was not earning its keep.
 
-- Nothing may import from it. `npm run lint:quarantine` enforces this.
-- Its contents are gitignored; only `MANIFEST.md` and `README.md` are tracked.
-- Every move is logged in [`_not_required/MANIFEST.md`](_not_required/MANIFEST.md) with the
-  reason, the search proving nothing referenced it, a working restore command, and a
-  retention date.
-- **Moving something *in* needs `git rm --cached` after the `mv`.** A tracked file stays
-  tracked wherever it sits, so without that step the bytes never leave the clone.
-- Deleting *from* quarantine is a separate, deliberate decision. Never part of a cleanup.
+- **`git rm` it.** Do not move it aside "for now"; a directory of files nobody polices is
+  how the clutter comes back.
+- **Leave a comment where it was**, naming the commit, if the removal is one somebody
+  might reasonably want to undo — the way `src/lib/motion.ts` and
+  `src/components/landing/icons.tsx` do.
+- **Recovering:** `git show <commit>~1:<path>` for a file, `git log --diff-filter=D
+  --name-only` to find every path ever deleted, `git log -S'<symbol>'` to find the commit
+  that removed a given piece of code.
+- **The exception that proves it:** a gitignored file has no copy in history, so deleting
+  one is permanent. Check `git log -- <path>` returns something before you rely on this.
 
 ---
 
@@ -146,7 +149,7 @@ one library per job, no date library, no HTTP client (native `fetch`), no icon p
 ## Definition of done
 
 No new unused files, exports, dependencies or assets. No commented-out code. No new
-top-level clutter. All seven checks pass. If you changed something the documentation
+top-level clutter. All six checks pass. If you changed something the documentation
 describes, the documentation changed in the same PR.
 
 ---
@@ -157,8 +160,9 @@ Not automated, because most of it needs judgement. Roughly every three months:
 
 1. **`git gc --aggressive --prune=now`.** Safe, no history rewrite. Recovered **454 KB
    (8.5%)** on 2026-08-29.
-2. **Review `_not_required/MANIFEST.md`** for rows past their retention date. Deleting is
-   a decision to take deliberately against that table — git history is the real backup.
+2. **Skim `git log --diff-filter=D --name-only`** for anything deleted that should have
+   been kept, or kept that should have been deleted. This replaced a quarantine manifest
+   with retention dates; the log is the same information without a folder to maintain.
 3. **`npx knip`** for unused files and exports. **Read its output, do not act on it**: it
    has no configuration for this project's second Vitest project, so it reports both rules
    test files and `@firebase/rules-unit-testing` as unused. They are not; removing them

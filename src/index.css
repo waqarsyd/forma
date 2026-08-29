@@ -651,8 +651,9 @@ body {
    until 2026-08-28, leftovers from an earlier visual direction that the current
    landing design never adopted. Each name appeared exactly once in the whole
    repository — its own declaration — and unlike the unused @theme tokens, which
-   Tailwind drops from the output, all four were shipping in dist/. Quarantined;
-   see _not_required/MANIFEST.md. This is the second clear-out of this region,
+   Tailwind drops from the output, all four were shipping in dist/. Removing them
+   took the built stylesheet down 604 bytes; recover them from `ed534eb~1` if a
+   later design wants them back. This is the second clear-out of this region,
    after `.dot-grid` and the Material Symbols rule above. */
 
 /* ====================================================================

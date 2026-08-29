@@ -51,7 +51,7 @@ for (const file of staged) {
 /* The same categories .gitignore backstops. A file still arrives here via
  * `git add -f`, or under a name no pattern anticipated. */
 const NAME_RULES = [
-  [/\.(bak|old|orig|rej|tmp|swp|swo)$/i, 'BACKUP', 'a scratch copy. Delete it, or park it in _not_required/.'],
+  [/\.(bak|old|orig|rej|tmp|swp|swo)$/i, 'BACKUP', 'a scratch copy. Delete it — git already has whatever it shadows.'],
   [/\.(zip|tar|tgz|rar|7z)$|\.tar\.gz$/i, 'ARCHIVE', 'archives do not belong in the source tree.'],
   [/\.log$/i, 'LOG', 'tool output. Already covered by .gitignore, so this is a force-add.'],
   [/(^|\/)(Thumbs\.db|desktop\.ini|\.DS_Store)$/i, 'OS CRUFT', 'operating-system dropping.'],
@@ -63,20 +63,12 @@ for (const file of staged) {
   }
 }
 
-/* ---- 3. the quarantine stays a one-way door ---------------------------- */
-/* Same rule as scripts/check-quarantine.mjs, applied now because the fix --
- * `git rm --cached` -- is much easier before the commit than after. */
-for (const file of staged) {
-  if (!file.startsWith('_not_required/')) continue;
-  if (file === '_not_required/MANIFEST.md' || file === '_not_required/README.md') continue;
-  flag(
-    'QUARANTINE',
-    file,
-    `staging a file inside _not_required/ keeps its bytes in the clone. Run: git rm --cached "${file}"  (the file stays on disk)`,
-  );
-}
+/* A third check lived here until 2026-08-29: it blocked anything staged inside
+ * the `_not_required/` quarantine, because a tracked file stays tracked wherever
+ * it sits and the bytes would never have left the clone. The quarantine was
+ * retired along with its CI check; if it ever comes back, so should this. */
 
-/* ---- 4. credentials ---------------------------------------------------- */
+/* ---- 3. credentials ---------------------------------------------------- */
 /*
  * Deliberately narrow. An application-owned Gemini key was once inlined into a
  * shipped bundle here and revoked by Google's secret scanner. Matching `AIzaSy`

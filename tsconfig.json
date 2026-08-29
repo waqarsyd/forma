@@ -47,14 +47,14 @@
   // that nobody wrote happens to typecheck, and on whether `dist/` exists at
   // all when you run it.
   //
-  // `_not_required/` is the reason this block exists. Quarantined code must not
-  // be typechecked -- it is parked precisely because it is not part of the
-  // project, and a file that still has to compile has not really left.
+  // The block was originally added to keep a `_not_required/` quarantine folder
+  // out of the typecheck; that folder is gone, but the `dist/` problem it
+  // incidentally fixed is the reason the block stays. Check with
+  // `tsc --noEmit --listFiles`: it should read only this project's own sources.
   "exclude": [
     "node_modules",
     "dist",
     "coverage",
-    "_not_required",
     ".antigravity",
     "tools"
   ]

@@ -141,11 +141,6 @@ docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
 scripts/               dev + build helpers
 .agents/skills/        Firebase's official agent skill packs — reference
                        material, nothing builds from them
-_not_required/         the quarantine — parked files nothing reads or imports.
-                       Its contents are gitignored, so a fresh clone has only
-                       MANIFEST.md (what was parked, why, and how to restore
-                       it) and README.md (the convention). Note the DESIGN.md
-                       recorded in there is a decoy for docs/design/DESIGN.md
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
 firebase-applet-config.json

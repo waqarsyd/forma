@@ -21,8 +21,10 @@ export const H2 =
 export const LEDE =
   'font-body-lg text-[clamp(17px,1.45vw,19.5px)] leading-[1.55] tracking-[-0.008em] text-on-surface-variant max-w-[62ch]';
 export const BODY = 'font-body-lg text-[15.5px] leading-[1.65] text-on-surface-variant';
-/* `SMALL` sat here until 2026-08-28. Unlike its four siblings, neither
-   LandingPage nor FeaturesPage imported it. See _not_required/MANIFEST.md. */
+/* `SMALL` sat here until 2026-08-28 — a typography class-string constant that,
+   unlike its four siblings, neither LandingPage nor FeaturesPage imported. It
+   was `'font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-faint)]'`;
+   recover it from `ed534eb~1` if a small-print style is wanted again. */
 
 /** Reveals its children once, on scroll into view. */
 export function Reveal({

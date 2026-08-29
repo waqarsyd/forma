@@ -54,14 +54,6 @@ jobs:
       - name: Encoding
         run: npm run lint:encoding
 
-      # The quarantine is only a one-way door if something enforces it. Fails if
-      # any source file imports from _not_required/, and also if anything inside
-      # it is tracked beyond MANIFEST.md and README.md -- because `git mv`-ing a
-      # file INTO the folder looks like it worked while the bytes stay in the
-      # clone. Cheap and static, so it runs before the slow steps.
-      - name: Quarantine
-        run: npm run lint:quarantine
-
       # --coverage rather than plain `npm test`: same suite, same pass/fail, and
       # the summary lands in the log so a drop is visible in the diff of a run
       # rather than only when someone thinks to look.

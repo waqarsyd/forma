@@ -382,9 +382,11 @@ export const IconArrowUp = (p: Props) => (
    triangle-plus-crossbar silhouette as that compass at 22px. The card means
    export, so it uses IconDownload — the same icon as the Export action, which is
    the same concept. Silhouette, not detail, is what carries at toolbar sizes.
-   (The compass was `IconRuler`; it and `IconUpload` were quarantined on
-   2026-08-28 as unrendered — see _not_required/MANIFEST.md. The reasoning above
-   survives them because it is about the rocket, not about the compass.) */
+   (The compass was `IconRuler`; it and `IconUpload` were removed on 2026-08-28
+   as unrendered — nothing imported either, and neither appeared in the built
+   bundle, so both were already tree-shaken. Recover from `ed534eb~1`. The
+   reasoning above survives them because it is about the rocket, not the
+   compass.) */
 export const IconFolder = (p: Props) => (
   <Svg {...p}>
     <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5z" />
