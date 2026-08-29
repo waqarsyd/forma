@@ -1660,6 +1660,40 @@ select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
   .wb-rail { flex-wrap: wrap; }
 }
 
+/* In the stacked layout the spare height belongs to the canvas, not the rail.
+
+   `.wb-shell` declares `grid-template-rows: minmax(0, 1fr) auto` for the
+   three-column desktop, and the 880px rule above overrides only
+   grid-template-COLUMNS. So once the shell stacks, that flexible first row
+   lands on whatever is first — the rail — and the rail swallows every spare
+   pixel while the canvas stays at its content height. It scales with the
+   window, which is what makes it obvious: measured at 800px wide, the rail was
+   253px tall at a 900px viewport, 353px at 1000px and 553px at 1200px, with its
+   icons occupying 38px throughout. Over half the screen was an empty bar above
+   a 297px canvas.
+
+   Flex rather than a row template, and this is the part worth keeping: the
+   shell has FOUR items with the review panel shown and THREE with it hidden,
+   because a `display: none` panel stops being a grid item. Any positional
+   `grid-template-rows: auto auto minmax(0,1fr) auto` is therefore right half
+   the time and puts the flexible row on the STATUS BAR the other half — a
+   worse bug than the one being fixed. `flex: 1` sits on the bench itself and
+   does not care what position it is in.
+
+   Verified both ways: with the panel shown the rail holds at 55px and the
+   canvas absorbs the rest at every viewport height; with it hidden the canvas
+   takes 1109px of a 1200px window and the status bar stays 36px.
+
+   Nothing here reaches the desktop layout — `.wb-bench { grid-column: 3 }` and
+   the resizable-column rules are all scoped to `min-width: 881px`. */
+@media (max-width: 880px) {
+  .wb-shell {
+    display: flex;
+    flex-direction: column;
+  }
+  .wb-bench { flex: 1 1 auto; }
+}
+
 /* Scoped to the workspace. In the artifact this was a bare `* { ... !important }`,
    which is correct for a standalone page and wrong here: imported globally it
    killed every transition and animation in the whole app, and because headless
