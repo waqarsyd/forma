@@ -132,8 +132,10 @@ tools/RepxDesigner/    optional Windows companion that opens a generated .repx
 public/                static assets served at / — the logo pair (PNG + WebP,
                        light and dark), favicon.png, and the pre-rendered
                        og-card.png
-assets/source/         full-resolution logo masters and the og-card source
-                       page they are rendered from (not deployed)
+assets/source/         og-card.html, the page public/og-card.png is rendered
+                       from (not deployed). The full-resolution logo masters
+                       lived here until 2026-08-29; they are gitignored now —
+                       2.8 MB backing 256px files already in public/
 docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
                        history) and audit/README.md (a one-line index of the
                        2026-08-27 findings, whose IDs are cited throughout the

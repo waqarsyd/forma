@@ -19,6 +19,23 @@ desktop.ini
 *.swo
 .idea/
 
+# Full-resolution logo masters. Untracked on 2026-08-29: the 2048px white mark
+# alone was 2.5 MB and 50% of the repository, cloned in full by everyone who has
+# ever cloned it, to serve a 256px derivative that is committed beside it in
+# `public/`. Nothing in the build reads them, and `assets/source/og-card.html`
+# renders from `../../public/logo.png`, not from these — so the artwork the
+# project actually ships is unaffected.
+#
+# They are design originals and belong wherever the rest of the design source
+# lives. The last committed copies are recoverable — `git log --diff-filter=D
+# --name-only` finds the path, `git show <commit>~1:<path>` gets the bytes — but
+# once a NEW master is produced it will exist only on whatever machine made it.
+# That is the trade this rule accepts; see the note in docs/notes/styling.md.
+#
+# `og-card.html` beside them stays tracked on purpose: it is the recipe for
+# regenerating public/og-card.png, not artwork.
+assets/source/*.png
+
 # `.vscode/` was the one editor directory NOT covered here, and it was tracked:
 # `.vscode/settings.json` held `{"workbench.startupEditor":"readme"}` -- 42 bytes
 # of one person's window preference, committed and about to be published.

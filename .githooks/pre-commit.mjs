@@ -28,11 +28,23 @@ const flag = (label, file, detail) => problems.push({ label, file, detail });
 
 /* ---- 1. large files ---------------------------------------------------- */
 /*
- * 1 MB. Only NEW or MODIFIED files are seen, so the 2.98 MB
- * assets/source/logo_white.png that is already committed does not trip this --
- * and re-encoding it would be worse than leaving it, because the optimised file
- * is a NEW blob while the original stays reachable from history, so the clone
- * grows rather than shrinks.
+ * 1 MB. Only NEW or MODIFIED files are seen, so an oversized file that is
+ * already committed does not trip this on every later commit.
+ *
+ * This paragraph used to warn that re-encoding assets/source/logo_white.png
+ * "would be worse than leaving it, because the optimised file is a NEW blob
+ * while the original stays reachable from history, so the clone grows rather
+ * than shrinks." On 2026-08-29 it was re-encoded anyway, past this hook, with
+ * --no-verify. The warning was exactly right: the working tree got 460 KB
+ * smaller and the clone payload went from 4.74 MB to 7.59 MB, because history
+ * then held both the 2,984,020-byte original and the 2,599,351-byte
+ * replacement.
+ *
+ * Two things worth keeping from that. **A blob is forever unless history is
+ * rewritten** -- "optimising" a large tracked binary always costs more than it
+ * saves until someone purges the old one. And **this hook's refusal carried the
+ * reasoning that made it correct**; overriding it after reading only the one-line
+ * failure message is how a warning gets bypassed on its own merits.
  */
 const SIZE_LIMIT = 1_048_576;
 for (const file of staged) {
