@@ -55,8 +55,17 @@ import { useEffect, useRef, useState } from 'react';
  */
 
 const TICK_GAP = 12;
-export const MAJOR_EVERY = 96; // one CSS inch
-export const UNITS_PER_INCH = 100;
+/*
+ * Module-private on purpose. `toSheetUnits` below is the only thing anything
+ * outside needs, and exporting these two put `UNITS_PER_INCH` on the public
+ * surface as a plain number while `reportGeometry.ts` already has a private
+ * constant of the same name that is a Record of unit -> scale. Two unrelated
+ * things under one name is how the wrong one gets imported, and in a codebase
+ * whose worst historical bug class is unit conversions that is not a collision
+ * worth leaving lying around.
+ */
+const MAJOR_EVERY = 96; // one CSS inch
+const UNITS_PER_INCH = 100;
 
 /**
  * CSS pixels to the sheet's own hundredths-of-an-inch.
