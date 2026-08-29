@@ -50,7 +50,10 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
   { id: 'account', n: '03', title: 'Your account', keys: 'account sign in signup register google email password forgot reset sync devices optional' },
   { id: 'upload', n: '04', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan' },
   { id: 'run', n: '05', title: 'Running and refining', keys: 'run generate progress streaming pause stop cancel elapsed read result specification mockup refine change iterate conversation' },
-  { id: 'controls', n: '06', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrchart gauge elements supported' },
+  // xrchart and xrgauge stay in the index on purpose: neither is written into
+  // the file, and someone searching for them should land on the section that
+  // says so rather than on nothing.
+  { id: 'controls', n: '06', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrpageinfo pageinfo page numbers xrchart xrgauge chart gauge elements supported' },
   { id: 'repx', n: '07', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download' },
   { id: 'config', n: '08', title: 'Configuration', keys: 'config configure version paper size letter a4 legal header footer rtl model picker unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
   { id: 'saving', n: '09', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
@@ -739,8 +742,8 @@ y_top = pageHeight − (baseline + height)`}
 
             <Article id="controls" kicker="Reference" title="Supported controls" hidden={!matches('controls')}>
               <p className={PROSE}>
-                Regions of your design are mapped to real DevExpress controls. Two of them are drawn as
-                stand-ins in the browser mockup but are still written into the file in full — noted below.
+                Regions of your design are mapped to real DevExpress controls. These are the ones Forma
+                asks for by name; where the mockup and the file differ, it is said so below.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="XRLabel">
@@ -757,18 +760,23 @@ y_top = pageHeight − (baseline + height)`}
                   clean placeholder.
                 </Def>
                 <Def t="XRLine">Rules and dividers, placed at exact coordinates.</Def>
-                <Def t="XRChart">
-                  Written into the file with its type and values.{' '}
+                <Def t="XRPageInfo">
+                  Page numbers and dates, written when the footer options ask for them.
+                </Def>
+                <Def t="XRBarCode">
+                  Written into the file as a real barcode control, carrying its symbology.{' '}
                   <em className="not-italic text-[color:var(--ink-faint)]">
-                    In the mockup it is drawn stylised — it is not a charting library and should not be read
-                    as data.
+                    In the mockup it is a decorative stand-in: positioned and sized, but its content is not
+                    drawn.
                   </em>
                 </Def>
-                <Def t="XRBarCode · XRGauge">
-                  Written into the file so the designer gets the real control.{' '}
+                <Def t="Charts and gauges">
+                  Located and sized, and a chart is drawn stylised in the mockup from its type and values —
+                  it is not a charting library and should not be read as data.{' '}
                   <em className="not-italic text-[color:var(--ink-faint)]">
-                    In the mockup they are decorative stand-ins: positioned and sized, but their content is
-                    not drawn.
+                    Forma does not ask for a chart or gauge control by name, so the{' '}
+                    <code className="doc-code">.repx</code> is not guaranteed to carry one. Treat the region
+                    as marked out for you and add the control in the designer.
                   </em>
                 </Def>
               </dl>

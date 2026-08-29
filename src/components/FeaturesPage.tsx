@@ -159,18 +159,18 @@ const CARRIES: Array<{ Icon: typeof IconText; k: string; d: string; mock: Cell; 
     repx: { mark: 'full', note: 'XRPictureBox' },
   },
   {
-    Icon: IconChart,
-    k: 'Charts',
-    d: 'Drawn from the chart type and its values, but stylised — there is no charting library behind the mockup. The control itself is written out in full.',
-    mock: { mark: 'partial', note: 'stylised' },
-    repx: { mark: 'full', note: 'emitted' },
+    Icon: IconGauge,
+    k: 'Barcodes',
+    d: 'A decorative stand-in on screen — positioned and sized, with its content left undrawn — and a real XRBarCode carrying its symbology in the file.',
+    mock: { mark: 'standin', note: 'placeholder' },
+    repx: { mark: 'full', note: 'XRBarCode' },
   },
   {
-    Icon: IconGauge,
-    k: 'Gauges and barcodes',
-    d: 'Decorative stand-ins on screen: the mockup marks where they sit and how big they are, and ignores their content. The control is still emitted for the designer.',
-    mock: { mark: 'standin', note: 'placeholder' },
-    repx: { mark: 'full', note: 'emitted' },
+    Icon: IconChart,
+    k: 'Charts and gauges',
+    d: 'Located and sized, and a chart is drawn stylised from its type and values — there is no charting library behind the mockup. Forma does not ask for a chart or gauge control by name, so the file is not guaranteed to carry one; the region is marked out for you to place it in the designer.',
+    mock: { mark: 'partial', note: 'stylised' },
+    repx: { mark: 'standin', note: 'not requested' },
   },
 ];
 
