@@ -136,6 +136,8 @@ docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
                        history), audit/ (the 2026-08-27 findings register) and
                        cleanup/ (the 2026-08-28 cleanup pass). The last two are
                        dated records — read notes/ for what is current
+.githooks/             opt-in pre-commit guard; enable with
+                       `git config core.hooksPath .githooks`
 scripts/               dev + build helpers
 .agents/skills/        Firebase's official agent skill packs — reference
                        material, nothing builds from them
@@ -179,7 +181,10 @@ Neither suite covers React components or `App.tsx`'s stateful logic. **This is a
 
 ## Contributing
 
-Three documents carry the reasoning that the code cannot:
+Start with **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — setup, the seven checks, and the
+rules for adding and removing things.
+
+Four documents carry the reasoning that the code cannot:
 
 - **[`CLAUDE.md`](CLAUDE.md)** — the entry point: hard constraints, commands, and an index that routes you to the note covering whatever you are about to change.
 - **[`docs/notes/`](docs/notes/)** — four notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.

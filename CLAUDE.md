@@ -68,6 +68,8 @@ npm run build:server # server bundle only -> dist/server.cjs
 npm start            # node dist/server.cjs -- serves dist/ statically, no Vite
 npm run lint         # tsc --noEmit  (there is still no ESLint config)
 npm run lint:encoding # node scripts/check-encoding.mjs -- the mojibake sweep, as a gate
+npm run lint:quarantine # node scripts/check-quarantine.mjs -- nothing imports _not_required/
+npm run check:size   # node scripts/check-bundle-size.mjs -- artifact budgets; needs a build first
 npm test             # vitest run -- the pure helpers in src/lib + geminiService
 npm run test:watch   # the same suite in watch mode
 npm run test:coverage # the same suite + v8 coverage over lib/ and services/ only
@@ -76,17 +78,21 @@ npm run clean        # removes dist/ (node fs.rmSync, works on Windows and POSIX
 npm run preview      # vite preview against dist/
 ```
 
-**These five commands are the whole of what a machine checks here.** Nothing else in this document is enforced — every other invariant it records is verified by reading or by looking at the rendered page:
+**These seven commands are the whole of what a machine checks here.** Nothing else in this document is enforced — every other invariant it records is verified by reading or by looking at the rendered page:
 
 ```powershell
 npm run lint                                            # tsc --noEmit; the baseline is clean, so any output is yours
 npx tsc --noEmit --noUnusedLocals --noUnusedParameters  # dead code; also clean, so treat any hit as newly introduced
 npm run lint:encoding                                   # the mojibake sweep; exits 1 with the offending paths
+npm run lint:quarantine                                 # nothing imports _not_required/, and nothing in it is tracked
 npm test                                                # the pure helpers
 npm run test:rules                                      # firestore.rules, via the emulator (needs Java)
+npm run build; npm run check:size                       # artifact budgets; must follow a build
 ```
 
-**`.github/workflows/checks.yml` runs all five, plus a sixth thing the list above does not have** — the first four as one job that ends with `npm run build` (which catches a broken import or an unresolvable local module in the server bundle, and no test does), and the rules suite as its own job because it needs a JVM. Two details worth knowing before you treat the workflow and this list as the same thing: the unit step is **`npm run test:coverage`, not `npm test`** — same suite and same pass/fail, but the summary lands in the log so a drop shows up in a run's diff — and `npm ci` is used rather than `npm install`, which fails when `package.json` and `package-lock.json` disagree and is therefore a seventh check nothing else performs. Added 2026-08-27, and note it has never executed: there is still no remote. Until there is, these are run by hand exactly as before, and the workflow is a statement of intent rather than a gate.
+**The last two were added 2026-08-29 and each exists because of a specific failure.** `lint:quarantine` catches both halves of a broken quarantine — a source file importing from it, and the subtler one where `git mv`-ing a file *into* the folder looks like it worked while the bytes stay tracked in the clone. `check:size` exists because a real defect got past every other check on this list: `src/index.css` had a bare `@import "tailwindcss"`, so Tailwind's automatic content detection scanned all 110 markdown files and generated real utilities from class names quoted in prose — `.bg-user-msg` was being served to every visitor because a cleanup report contained the sentence explaining that the token was dead. `tsc` was clean, 409 tests passed, the build succeeded, and the stylesheet quietly grew. Nothing was watching the size. The fix is the `source(none)` block at the top of `src/index.css`; the budget is what stops it recurring. Full write-up in [`docs/cleanup/09-results.md`](docs/cleanup/09-results.md) §9.4.
+
+**`.github/workflows/checks.yml` runs all seven, plus one thing the list above does not have** — the first four as one job that ends with `npm run build` (which catches a broken import or an unresolvable local module in the server bundle, and no test does), and the rules suite as its own job because it needs a JVM. Two details worth knowing before you treat the workflow and this list as the same thing: the unit step is **`npm run test:coverage`, not `npm test`** — same suite and same pass/fail, but the summary lands in the log so a drop shows up in a run's diff — and `npm ci` is used rather than `npm install`, which fails when `package.json` and `package-lock.json` disagree and is therefore a seventh check nothing else performs. Added 2026-08-27, and note it has never executed: there is still no remote. Until there is, these are run by hand exactly as before, and the workflow is a statement of intent rather than a gate.
 
 **`npm run test:coverage` needs its own note, because the number it prints is scoped on purpose.** `vitest.config.ts` includes only `src/lib/**` and `src/services/**` — `App.tsx` and the twenty components are **not** in the denominator, because counting code that cannot be unit-tested until `App.tsx` is broken up would move the figure for reasons unrelated to whether anything got safer. Do not "fix" that by widening the include list; raise the number by shrinking `App.tsx`. And **two zeroes in the report are not untested paths**: `src/lib/accountData.ts` reads 0% because everything exercising it lives in `tests/accountDeletion.test.ts`, which runs under the *other* config against the emulator and is not in this run at all, and `src/services/firebase.ts` reads 0% because it is the Firebase singleton — importing it initialises an app and there is nothing in it to unit-test. The config says all of this at the point of use; read the comment there before changing the block.
 
@@ -100,7 +106,9 @@ $f += Get-Item *.ts,*.md,index.html,firestore.rules,.gitignore,.env.example
 $f | Sort-Object FullName -Unique | Where-Object Name -ne 'CLAUDE.md' | ForEach-Object { $n = [regex]::Matches([IO.File]::ReadAllText($_.FullName),'Ã|Â|â€').Count; if ($n) { "$n  $($_.FullName)" } }
 ```
 
-Each of the five is explained where it belongs — the two suites, the `strict` note and the mojibake incident in *Read this first*, the unused sweep under *`src/App.tsx` is the whole app* in [`docs/notes/app-shell.md`](docs/notes/app-shell.md). This block is a runnable summary of those, deliberately carrying no test counts and no second copy of the reasoning.
+**There is also a pre-commit hook, and it is opt-in.** `.githooks/pre-commit` blocks files over 1 MB, backup and archive extensions, OS droppings, anything staged inside `_not_required/`, and what looks like a real API key *assignment* (the `AIzaSy` prefix alone would fire on three legitimate places, so it is not used as a signal on its own). Git does not run hooks out of a tracked directory, so enable it once per clone with `git config core.hooksPath .githooks`; bypass a single commit with `--no-verify`. **The logic is in `.githooks/pre-commit.mjs`, in Node, and the shim explains why:** the first version was a shell script and could not run here at all — git on this machine is **MinGit**, which ships `usr/bin/sh.exe` but none of the MSYS userland, so `wc`, `tr` and `grep` are all missing. A hook that cannot execute is worse than no hook, because it looks installed. If you rewrite it, verify it by making a commit that should fail.
+
+Each of the checks is explained where it belongs — the two suites, the `strict` note and the mojibake incident in *Read this first*, the unused sweep under *`src/App.tsx` is the whole app* in [`docs/notes/app-shell.md`](docs/notes/app-shell.md). This block is a runnable summary of those, deliberately carrying no test counts and no second copy of the reasoning.
 
 - **Never run bare `vite dev`.** The dev server is `server.ts`; Vite runs in middleware mode inside it.
 - The dev server belongs in the user's own terminal, not an agent background shell — it is long-lived and browser-facing. When you need to see its output, ask the user to run `npm run dev:log` and read `dev-server.log`; only take the port yourself for a short, self-contained check, and free it afterwards.

@@ -32,13 +32,26 @@ const DIRS = ['src', 'docs', 'tests', 'scripts', 'tools'];
 /** Extensions worth reading. Binary files are skipped by omission. */
 const EXTENSIONS = new Set(['.ts', '.tsx', '.md', '.css', '.mjs', '.cs', '.html']);
 
-/** Individually named files at the repo root. */
+/**
+ * Individually named files at the repo root.
+ *
+ * This list is the sweep's weak spot and worth knowing about: a NEW root-level
+ * file is not swept until someone adds it here. That is not hypothetical --
+ * CONTRIBUTING.md was written on 2026-08-29, scored a hit on the mojibake
+ * pattern, and the sweep still reported clean because the file was not on this
+ * list. Add root files here when you create them.
+ *
+ * The root is not a formality either: server.ts and .gitignore both carry em
+ * dashes inside comments, and a sweep scoped only to the source directories
+ * would score them 0 by never opening them.
+ */
 const ROOT_FILES = [
   'server.ts',
   'vite.config.ts',
   'vitest.config.ts',
   'vitest.rules.config.ts',
   'README.md',
+  'CONTRIBUTING.md',
   'index.html',
   'firestore.rules',
   '.gitignore',
