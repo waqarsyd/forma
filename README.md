@@ -208,4 +208,6 @@ Forma is usable but young, and some things are worth knowing before you rely on 
 
 ## License
 
-**No license has been declared yet.** Until one is added, default copyright applies and others have no right to use, modify, or distribute this code. If the intent is to open-source it, add a `LICENSE` file and set the `license` field in `package.json`.
+[Apache License 2.0](LICENSE). You may use, modify and distribute this code, including commercially, provided you keep the licence and copyright notice and state what you changed. It also grants a patent licence from every contributor, which a permissive licence without one does not.
+
+Declared in three places, and they must agree: the `LICENSE` file, the `license` field in `package.json`, and the SPDX header in `src/App.tsx`.

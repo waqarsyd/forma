@@ -52,6 +52,7 @@ const ROOT_FILES = [
   'vitest.rules.config.ts',
   'README.md',
   'CONTRIBUTING.md',
+  'SECURITY.md',
   'index.html',
   'firestore.rules',
   '.gitignore',

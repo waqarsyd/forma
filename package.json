@@ -1,7 +1,8 @@
 {
-  "name": "react-example",
+  "name": "forma",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
   "description": "Turn a screenshot, a PDF, or an existing report into a real DevExpress .repx — AI-generated spec, in-browser mockup, and XtraReports XML. Bring your own Gemini key.",
   "type": "module",
   "engines": {

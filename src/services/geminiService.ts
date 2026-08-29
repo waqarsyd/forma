@@ -830,8 +830,9 @@ export async function analyzeReportDesign(
    * present and do nothing.
    *
    * `X.Y.3.0` is the shape both observed real files use: Forma's own output
-   * (23.2.3.0) and the target ERP's template (20.1.3.0). If a build number ever
-   * has to be exact, it belongs in a map keyed by version rather than here.
+   * (23.2.3.0) and a template written by an installed 20.1 designer (20.1.3.0).
+   * If a build number ever has to be exact, it belongs in a map keyed by version
+   * rather than here.
    */
   const targetVersion = config?.version || '23.2';
   const targetSerializerVersion = `${targetVersion}.3.0`;

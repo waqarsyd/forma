@@ -39,8 +39,8 @@
     <Reference Include="System.Xml" />
     <!--
       Referenced by full path against the installed DevExpress 20.1, which is the
-      version the target ERP is built against. CopyLocal is deliberately left on so the
-      output folder runs standalone rather than depending on the GAC.
+      version the target ERP is built against. CopyLocal is deliberately left on so
+      the output folder runs standalone rather than depending on the GAC.
     -->
     <Reference Include="DevExpress.Data.v20.1">
       <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.Data.v20.1.dll</HintPath>
