@@ -101,6 +101,6 @@ export default defineConfig({
    * three declarations were removed on 2026-08-29.
    *
    * If path aliases are ever wanted, add them back to all three files in one
-   * commit and use them. See docs/cleanup/03-duplicates.md §3.4.
+   * commit and use them. Commit 4113805 carries the full reasoning.
    */
 });

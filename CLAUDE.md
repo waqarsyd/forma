@@ -90,7 +90,7 @@ npm run test:rules                                      # firestore.rules, via t
 npm run build; npm run check:size                       # artifact budgets; must follow a build
 ```
 
-**The last two were added 2026-08-29 and each exists because of a specific failure.** `lint:quarantine` catches both halves of a broken quarantine — a source file importing from it, and the subtler one where `git mv`-ing a file *into* the folder looks like it worked while the bytes stay tracked in the clone. `check:size` exists because a real defect got past every other check on this list: `src/index.css` had a bare `@import "tailwindcss"`, so Tailwind's automatic content detection scanned all 110 markdown files and generated real utilities from class names quoted in prose — `.bg-user-msg` was being served to every visitor because a cleanup report contained the sentence explaining that the token was dead. `tsc` was clean, 409 tests passed, the build succeeded, and the stylesheet quietly grew. Nothing was watching the size. The fix is the `source(none)` block at the top of `src/index.css`; the budget is what stops it recurring. Full write-up in [`docs/cleanup/09-results.md`](docs/cleanup/09-results.md) §9.4.
+**The last two were added 2026-08-29 and each exists because of a specific failure.** `lint:quarantine` catches both halves of a broken quarantine — a source file importing from it, and the subtler one where `git mv`-ing a file *into* the folder looks like it worked while the bytes stay tracked in the clone. `check:size` exists because a real defect got past every other check on this list: `src/index.css` had a bare `@import "tailwindcss"`, so Tailwind's automatic content detection scanned all 110 markdown files and generated real utilities from class names quoted in prose — `.bg-user-msg` was being served to every visitor because a cleanup report contained the sentence explaining that the token was dead. `tsc` was clean, 409 tests passed, the build succeeded, and the stylesheet quietly grew. Nothing was watching the size. The fix is the `source(none)` block at the top of `src/index.css`; the budget is what stops it recurring. Full write-up in commit `c596be7`.
 
 **`.github/workflows/checks.yml` runs all seven, plus one thing the list above does not have** — the first four as one job that ends with `npm run build` (which catches a broken import or an unresolvable local module in the server bundle, and no test does), and the rules suite as its own job because it needs a JVM. Two details worth knowing before you treat the workflow and this list as the same thing: the unit step is **`npm run test:coverage`, not `npm test`** — same suite and same pass/fail, but the summary lands in the log so a drop shows up in a run's diff — and `npm ci` is used rather than `npm install`, which fails when `package.json` and `package-lock.json` disagree and is therefore a seventh check nothing else performs. Added 2026-08-27, and note it has never executed: there is still no remote. Until there is, these are run by hand exactly as before, and the workflow is a statement of intent rather than a gate.
 
@@ -174,15 +174,20 @@ broken, and nothing in the toolchain enforces any of them.
   component → `src/components`, or `src/components/landing/` if it is a landing-page
   figure. A new **top-level directory needs a stated reason** — the repo went from ten to
   eight on 2026-08-29 and the point is to keep it there.
-- **`docs/` holds all the prose, in four kinds.** `PRD.md` and `notes/` are *current* and
+- **`docs/` holds all the prose, in three kinds.** `PRD.md` and `notes/` are *current* and
   maintained against the code. `design/DESIGN.md` is the design source of truth.
   **`docs/audit/`** is the 2026-08-27 findings register — ten reports, and the 33 local
-  `audit/*` branch names still carry its identifiers. **`docs/cleanup/`** is the
-  2026-08-28 cleanup pass, one report per phase, each carrying the commands and output
-  behind its claims. Both of those are **dated records, not live documentation**: they
-  describe the repository as it was on their date, so read `notes/` for what is true now.
-  Neither was mentioned in this file at all until 2026-08-29, while both sat at the top
-  level.
+  `audit/*` branch names still carry its identifiers. It is a **dated record, not live
+  documentation**: it describes the repository as it was on that date, so read `notes/`
+  for what is true now.
+- **The 2026-08-28 cleanup pass lives in its commit messages, not in a document.** There
+  were twelve phase reports under `docs/cleanup/`; they were **removed on 2026-08-29** at
+  the owner's request and are recoverable from history (`git show 1764a0a:docs/cleanup/09-results.md`,
+  or any commit before that one). The pass itself is 32 commits merged as `15bb2b4`, and
+  the messages carry the measurements — each one states what was changed, what it was
+  worth, and what was verified. **`git log 4fd4bd9..15bb2b4` is the record**, and
+  `git revert -m 1 15bb2b4` still undoes the whole thing in one operation. Several
+  decisions elsewhere in this file cite a specific commit for exactly this reason.
 - **There is no `@` path alias, and its removal is worth knowing about.** One was declared
   three times — `tsconfig.json`'s `paths`, `vite.config.ts` and `vitest.config.ts` — all
   resolving to the repo root, with nothing checking they agreed, so changing one would
@@ -193,7 +198,7 @@ broken, and nothing in the toolchain enforces any of them.
   `@/anything`. All three declarations were removed on 2026-08-29 and the built output was
   byte-identical, which is the proof. **Every import in this project is relative — keep it
   that way, or add aliases back to all three files in one commit and actually use them.**
-  See `docs/cleanup/03-duplicates.md` §3.4.
+  Commit `4113805`.
 
 ## Firebase skills
 

@@ -112,9 +112,12 @@
        gzipped in transit).
 
        So: do not add a weight here without checking something paints it, and do
-       not remove one without checking nothing does. `docs/cleanup/11-fonts.md`
-       has the method -- document.fonts for what is downloaded, computed style
-       on every text-bearing element for what is needed. -->
+       not remove one without checking nothing does. The method, if you need to
+       redo it: load each route and read `document.fonts` for what the browser
+       actually downloaded, then computed style on every element containing
+       visible text for what the page actually paints. The disagreement between
+       those two lists is the answer. Commits a3f25d0 and 654c6c9 carry the
+       measurement and the fix. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link

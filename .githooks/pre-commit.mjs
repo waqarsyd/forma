@@ -30,8 +30,9 @@ const flag = (label, file, detail) => problems.push({ label, file, detail });
 /*
  * 1 MB. Only NEW or MODIFIED files are seen, so the 2.98 MB
  * assets/source/logo_white.png that is already committed does not trip this --
- * and docs/cleanup/06-assets.md 6.4 argues against re-encoding it anyway, since
- * that would ADD a blob rather than replace one.
+ * and re-encoding it would be worse than leaving it, because the optimised file
+ * is a NEW blob while the original stays reachable from history, so the clone
+ * grows rather than shrinks.
  */
 const SIZE_LIMIT = 1_048_576;
 for (const file of staged) {

@@ -174,5 +174,8 @@ Not automated, because most of it needs judgement. Roughly every three months:
    combinations are actually fetched has never been measured; it needs a network panel on
    a built page. This is the largest known unanswered question about the site's weight.
 
-The 2026-08-28 cleanup that produced these rules is written up phase by phase in
-[`docs/cleanup/`](docs/cleanup/), with the commands and output behind every claim.
+The 2026-08-28 cleanup that produced these rules is recorded in its commit messages —
+32 commits merged as `15bb2b4`, each stating what changed, what it was worth, and what was
+verified. `git log 4fd4bd9..15bb2b4` is the record. (Twelve phase reports also existed
+under `docs/cleanup/`; they were removed on 2026-08-29 and are recoverable from history
+with `git show 1764a0a:docs/cleanup/09-results.md` or similar.)

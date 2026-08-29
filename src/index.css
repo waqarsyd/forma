@@ -19,15 +19,17 @@
    detection across the whole project — which includes all 110 tracked markdown
    files. Any class name written in prose becomes a real utility in the shipped
    stylesheet. This was not theoretical: `.bg-user-msg{background-color:var(--color-user-msg)}`
-   was being served to every visitor because `docs/cleanup/04-dead-code.md` contains
-   the sentence "`--color-user-msg` is 'used' when some JSX says `bg-user-msg`" —
-   documenting that the token was dead is what brought it back to life.
+   was being served to every visitor because a markdown file in this repository
+   contained the sentence "`--color-user-msg` is 'used' when some JSX says
+   `bg-user-msg`" — documenting that the token was dead is what brought it back
+   to life.
 
    Measured: restricting the sources removed **10 selectors and 1,228 bytes** and
    added none. All ten were verified to have no `className` use anywhere in `src/`
-   or `index.html` first — the full table is in `docs/cleanup/09-results.md` §9.4.
-   Four of them came from `docs/notes/app-shell.md`, written 2026-08-13, so this had
-   been leaking for months.
+   or `index.html` first. They were `bg-user-msg`, `border-t-primary`, `lowercase`,
+   `m-1`, `m-2`, `max-w-6xl`, `max-w-7xl`, `mt-7`, `outline` and `shadow` — and four
+   of them came from `docs/notes/app-shell.md`, written 2026-08-13, so this had been
+   leaking for months rather than being introduced by the cleanup that found it.
 
    Keep both sources in step with reality: `../index.html` is the Vite entry, and
    `./` is this file's own directory, i.e. all of `src/`. Nothing outside those two

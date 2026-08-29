@@ -30,9 +30,9 @@
     // repo root was declared here, in `vite.config.ts` and in
     // `vitest.config.ts` -- three declarations, nothing checking they agreed,
     // and zero imports using any of them: every import in this project is
-    // relative. Removed 2026-08-29. If path aliases are ever wanted, add them
-    // back to all three files in one commit and use them; see
-    // docs/cleanup/03-duplicates.md 3.4.
+    // relative. Removed 2026-08-29 in commit 4113805, whose message carries the
+    // full reasoning. If path aliases are ever wanted, add them back to all three
+    // files in one commit and use them.
     "allowImportingTsExtensions": true,
     "noEmit": true
   },

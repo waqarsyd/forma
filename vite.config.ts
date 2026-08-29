@@ -18,9 +18,9 @@ export default defineConfig(() => {
     // the repo root was declared in this file, in `vitest.config.ts` and in
     // `tsconfig.json`'s `paths` — three declarations, nothing checking they
     // agreed, and **zero imports using any of them**: every import in this
-    // project is relative. Removed 2026-08-29. If you want path aliases, add
-    // them back to all three in one commit and actually use them; see
-    // docs/cleanup/03-duplicates.md §3.4.
+    // project is relative. Removed 2026-08-29 in commit 4113805, whose message
+    // carries the full reasoning. If you want path aliases, add them back to all
+    // three in one commit and actually use them.
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
