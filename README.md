@@ -110,8 +110,7 @@ src/
                        analysisResponse (is a failed generation truncated or
                        malformed), geminiErrors (what the user is told when a
                        request fails), savedReport + accountData (the two
-                       storage shapes and the document layout), securityHeaders
-                       and bindHost (what server.ts sends and where it listens),
+                       storage shapes and the document layout),
                        contactSubmit, generationProgress (the progress bar's
                        whole state machine) and attachmentParts, and the routing
                        pair router (real history/location, so not pure) + routes.
@@ -121,6 +120,9 @@ src/
   services/            geminiService (+ tests, and modelResolution.test.ts
                        beside it), firebase, keyVault (+ tests) — the vault's
                        storage rules are covered by tests/ as well as here
+  server/              securityHeaders and bindHost (+ tests) — what server.ts
+                       sends and where it listens. Under src/ but never bundled
+                       into the client; server.ts is the only importer
 tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
                        in the real DevExpress designer — C# and MSBuild, with
@@ -130,7 +132,10 @@ public/                static assets served at / — the logo pair (PNG + WebP,
                        og-card.png
 assets/source/         full-resolution logo masters and the og-card source
                        page they are rendered from (not deployed)
-docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident history)
+docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
+                       history), audit/ (the 2026-08-27 findings register) and
+                       cleanup/ (the 2026-08-28 cleanup pass). The last two are
+                       dated records — read notes/ for what is current
 scripts/               dev + build helpers
 .agents/skills/        Firebase's official agent skill packs — reference
                        material, nothing builds from them
