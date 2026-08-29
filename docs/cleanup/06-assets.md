@@ -167,6 +167,19 @@ single measured saving the whole cleanup has produced.
 
 ## 6.7 Fonts - reported, not actionable without measurement
 
+> **Measured 2026-08-29 — and the estimate below is wrong. See
+> [`11-fonts.md`](11-fonts.md).** The real payload is **113.6 KB across three files**,
+> not 150–250 KB across eleven: all three families are served as *variable* fonts, one
+> woff2 per family spanning the whole weight axis, so the weight list in the URL changes
+> only the CSS. Trimming weights saves **zero** font bytes; four request variants were
+> fetched and weighed at exactly 116,280 B each.
+>
+> The instinct in this section was right — it refused to act on the estimate and insisted
+> the question needed a network panel. Acting on it would have trimmed weights to reclaim
+> bytes that were never there. What the measurement actually found is a **defect, not
+> waste**: 22 elements across five pages render in a synthetic bold, because `font-bold`
+> resolves to 700 against Inter and JetBrains Mono, which were only requested up to 600.
+
 `index.html:89` loads **three families and eleven weights** from Google Fonts:
 
 ```
