@@ -686,7 +686,7 @@ body {
    landing design never adopted. Each name appeared exactly once in the whole
    repository — its own declaration — and unlike the unused @theme tokens, which
    Tailwind drops from the output, all four were shipping in dist/. Removing them
-   took the built stylesheet down 604 bytes; recover them from `c78b943~1` if a
+   took the built stylesheet down 604 bytes; recover them from `aa0d21e~1` if a
    later design wants them back. This is the second clear-out of this region,
    after `.dot-grid` and the Material Symbols rule above. */
 
