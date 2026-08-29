@@ -34,6 +34,26 @@ The Firestore copy is **zero-knowledge**. `encryptApiKey()` derives an AES-GCM k
 
 `scripts/build-server.mjs` defines `'import.meta.env': 'undefined'`. `server.ts` no longer imports `geminiService.ts`, so that define is now belt-and-braces rather than load-bearing.
 
+### Containment, measured rather than asserted (2026-08-29)
+
+The table above is the design. Until this date nothing had checked that the running app matches it — the claim "Forma ships no key of its own" is printed on the workspace, the landing page and the privacy policy, and it was resting entirely on reading the source.
+
+Driven with a real key through the actual UI, mid-run:
+
+| Where | Present |
+|---|---|
+| `sessionStorage['geminiApiKey:session']` | **yes** — the design |
+| Any `localStorage` entry | no |
+| `document.cookie` | no |
+| Anywhere in the rendered DOM | no |
+
+The hosts contacted during a generation were `generativelanguage.googleapis.com`, `firestore.googleapis.com`, Google Fonts, the loopback dev server, and the `127.0.0.1:7317` designer probe. **No server belonging to this project appears in that list**, which is the whole point of *The Gemini call runs in the browser* above.
+
+Two things worth keeping if you repeat this:
+
+- **Test the containment, not just the feature.** The interesting assertion is not "generation worked" but "the key is in exactly one place and no other". A leak here would not throw and no test would fail; it would simply be true.
+- **Never let the key reach a file.** Pass it through an environment variable, redact it from anything printed, and use a throwaway browser profile you delete afterwards — `sessionStorage` can be written into a profile's session-restore data. `.gitignore` carries credential patterns as a backstop (see *Read this first* in `CLAUDE.md`), and a backstop is not a plan.
+
 ## `geminiService.ts` is a single mega-prompt
 
 Everything the model needs — spatial mapping rules (1 inch = 100 units, Letter = 850×1100), a DevExpress XML "cheat sheet" of exact `ControlType` strings, XML-escaping rules, and the `ReportConfig` settings interpolated as `configInstructions` — lives in one template literal, paired with a `responseSchema` that forces `{markdown, layout, repxContent}`. Prompt text and schema must stay in sync; the schema is what guarantees parseable output. Defaults: `temperature: 0`, `maxOutputTokens: 65536`, and the model is **detected at request time** rather than defaulted — see below.
@@ -41,6 +61,10 @@ Everything the model needs — spatial mapping rules (1 inch = 100 units, Letter
 **An example in the prompt outranks an instruction below it, and that is not a theory.** The ROOT STRUCTURE block tells the model it MUST wrap `repxContent` "exactly like this" and then shows a literal `<XtraReportsLayoutSerializer …>`. That literal hardcoded `SerializerVersion="23.2.3.0"` / `Version="23.2"` while the user's chosen version arrived in `configInstructions`, which is interpolated **after** it. The model copied what it had just been shown, so **every generation came out 23.2 whatever the dropdown said** — the setting rendered, saved, and did nothing, for as long as the feature existed. Both attributes now interpolate `targetVersion` (from `config.version`, still defaulting to 23.2) and `targetSerializerVersion` (`X.Y.3.0`). The rule this leaves behind: **anything the config can change must be interpolated into the example itself**, not stated near it. A second copy of a value in a template literal is a second source of truth, and the concrete one wins.
 
 `X.Y.3.0` is inferred from the two real files available to check — Forma's own `23.2.3.0` output and a `20.1.3.0` layout written by the installed designer. It is a pattern, not a lookup; if some release needs an exact build number, add a map keyed by version rather than widening the guess.
+
+**The two artifacts can disagree about how many bands the report has, and the UI reports the `layout` one.** `layout.sections` and the REPX's `<Bands>` are meant to describe the same structure — the prompt says so explicitly, requiring a section's coordinates to be measured from its own top-left "exactly like a control's `LocationFloat` inside its band, so the two artifacts carry the same numbers". Nothing enforces it. The band count in the bench header and the status bar both read `result.layout.sections.length` (`App.tsx`), so they describe the mockup, not the file you download.
+
+Observed on 2026-08-29, one generation from a two-page PDF: the readout said **2 bands** while `repxContent` carried a single `DetailBand` between two zero-height margin bands. Both artifacts were internally valid — the viewer's own `checkRepx` returned *"Valid DevExpress report XML"* — they simply described different structures. This is **one sample from a synthetic fixture**, so it is recorded as something to watch rather than a fault to fix: the honest reading is that the count is a property of the mockup and is labelled as if it were a property of the report. If it turns out to diverge on real documents, the fix is to source the number from the REPX (which is what gets exported) or to stop calling it "bands", not to make the model try harder.
 
 **Why the version list reaches back to 20.1.** A `.repx` declaring a newer release will not open in an older designer, and 20.1 is the DevExpress installed on the development machine — the version `tools/RepxDesigner` is built against and therefore the only one a generated file can actually be *opened* in here. Verified end-to-end on 2026-08-13: generated with v20.1 selected, `SerializerVersion="20.1.3.0"` confirmed in the REPX pane, exported, and opened in a real 20.1 designer **with every control present**. Nothing automated covers this — the suite cannot open a designer — so it is a manual check to repeat whenever the ROOT STRUCTURE block or the version list changes. The version list is also restated in four UI surfaces and `docs/PRD.md` §2.4; they move together.
 
