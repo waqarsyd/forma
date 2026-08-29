@@ -52,7 +52,7 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
   { id: 'run', n: '05', title: 'Running and refining', keys: 'run generate progress streaming pause stop cancel elapsed read result specification mockup refine change iterate conversation' },
   { id: 'controls', n: '06', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrchart gauge elements supported' },
   { id: 'repx', n: '07', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download' },
-  { id: 'config', n: '08', title: 'Configuration', keys: 'config configure version paper size letter a4 legal header footer rtl model picker' },
+  { id: 'config', n: '08', title: 'Configuration', keys: 'config configure version paper size letter a4 legal header footer rtl model picker unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
   { id: 'saving', n: '09', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
   { id: 'trouble', n: '10', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem' },
   { id: 'faq', n: '11', title: 'FAQ', keys: 'faq questions common help cost price free visual studio photo' },
@@ -808,6 +808,16 @@ y_top = pageHeight − (baseline + height)`}
                   designer.
                 </Def>
                 <Def t="Page size">Letter, A4 or Legal, written into the XML along with margins.</Def>
+                <Def t="Report unit">
+                  Hundredths of an inch, tenths of a millimetre, or pixels. This is the scale every
+                  coordinate and size in the generated file is written in — change it and{' '}
+                  <code className="doc-code">LocationFloat</code> and{' '}
+                  <code className="doc-code">SizeF</code> mean something different, so it has to match
+                  what your report expects. Hundredths of an inch is the DevExpress default and what a
+                  Letter page of 850 × 1100 refers to. The status bar names the scale in use, so the
+                  file you are about to export is never ambiguous. Font sizes are the one exception:
+                  they are always in points, whatever this is set to.
+                </Def>
                 <Def t="Header">Whether to include a company logo, and a report title.</Def>
                 <Def t="Footer">Whether to show page numbers, plus custom footer text.</Def>
               </dl>
