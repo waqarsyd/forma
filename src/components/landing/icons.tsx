@@ -384,7 +384,7 @@ export const IconArrowUp = (p: Props) => (
    the same concept. Silhouette, not detail, is what carries at toolbar sizes.
    (The compass was `IconRuler`; it and `IconUpload` were removed on 2026-08-28
    as unrendered — nothing imported either, and neither appeared in the built
-   bundle, so both were already tree-shaken. Recover from `5e1d8bc~1`. The
+   bundle, so both were already tree-shaken. Recover from `c78b943~1`. The
    reasoning above survives them because it is about the rocket, not the
    compass.) */
 export const IconFolder = (p: Props) => (
