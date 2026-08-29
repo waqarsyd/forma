@@ -71,10 +71,21 @@ Two modules under `src/` - the client source tree, compiled by Vite into browser
 JavaScript - exist **only** to be consumed by the Express server. No client file imports
 either; verified by grep, the only other references are their own tests.
 
-This is not cosmetic. `securityHeaders.ts` is the file that sets the app's CSP and
+This is not cosmetic. `securityHeaders.ts` sets the app's response security headers and
 `bindHost.ts` decides whether the server listens on loopback or all interfaces - both
 are security-boundary code, and both currently sit in the directory whose defining
-property is *"everything in here ships to the browser."* Nothing structural stops a
+property is *"everything in here ships to the browser."*
+
+> **Correction, 2026-08-29.** An earlier revision of this sentence, and the commit
+> message of `90f7bcd`, said `securityHeaders.ts` "sets the app's CSP". **It does not.**
+> Verified against a running production server: the headers it applies are
+> `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+> `Referrer-Policy: strict-origin-when-cross-origin` and
+> `Permissions-Policy: camera=(), microphone=(), geolocation=()`. There is **no**
+> `Content-Security-Policy` on the response, and that is deliberate - the module's own
+> docblock discusses CSP as the header the app would most benefit from and explains why
+> it is not shipped yet. The argument for moving the file is unaffected; the description
+> of what it does was wrong and is corrected here rather than by rewriting the commit. Nothing structural stops a
 component importing `resolveBindHost`, or stops someone adding a `window` reference to
 `securityHeaders.ts` and only discovering it when the server crashes at boot.
 
