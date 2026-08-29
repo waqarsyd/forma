@@ -51,10 +51,22 @@ const NOTE = 'font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-fa
  */
 const YEAR = new Date().getFullYear();
 
+/**
+ * `h2`, not `h4`. The footer is a landmark of its own, so its column headings
+ * sit alongside the page's own sections rather than under them — and at `h4`
+ * they skipped a level on every single page, because page content stops at
+ * `h2`: "Let's build something precise." (h2) straight to "Product" (h4), and
+ * on the 404 it was worse, h1 to h4 with two levels missed. Assistive
+ * technology reads that as a missing subsection rather than a new region.
+ *
+ * `h2` is the level that holds on every page including the 404, where the only
+ * preceding heading is the h1. Purely semantic — `HEADING` carries the styling,
+ * so nothing moves on screen.
+ */
 function Column({ heading, links }: { heading: string; links: Link[] }) {
   return (
     <div>
-      <h4 className={HEADING}>{heading}</h4>
+      <h2 className={HEADING}>{heading}</h2>
       {links.map(([label, href]) => (
         <a
           key={label}
