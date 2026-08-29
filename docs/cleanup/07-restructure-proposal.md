@@ -285,3 +285,78 @@ reporting.
 Tier 1 is 21 files moved, **2 import lines changed**, and it closes two of the four
 structural problems named in 7.3. Tier 2 is the one with real value and real risk, and
 its value is highest *after* `App.tsx` is broken up rather than before.
+
+---
+
+## 7.9 Outcome - Tier 1 executed
+
+Approved and executed 2026-08-29. **Tier 1 only**; Tiers 2 and 3 stand as the plan above.
+
+Note this document is now at `docs/cleanup/07-restructure-proposal.md` - commit `9e1fcaf`
+moved it as part of the change it proposes.
+
+| Commit | Change | Kind |
+|---|---|---|
+| `90f7bcd` | 4 server files → `src/server/` | `git mv` only, recorded as 100% renames |
+| `809f907` | 2 imports in `server.ts`, 1 line in `vitest.config.ts` | content only, no moves |
+| `9e1fcaf` | `audit/` and `cleanup/` → `docs/` | `git mv` only, 18 files, all 100% renames |
+| `aa02924` | `CLAUDE.md` + `README.md` catch-up, and the conventions written down | content only |
+
+Moves and edits never shared a commit, so every rename was recorded as a rename and no
+file's history was broken.
+
+### Result
+
+- **Top-level directories: 10 → 8** (excluding dot-directories).
+- **`src/` now has an honest boundary.** `src/lib` is browser code; `src/server` is not.
+- **The encoding sweep went from 105 files to 123.** Eighteen documents - including ten
+  audit reports that predate the script existing - are now checked on every run of a gate
+  that had never covered them. This is the concrete win of 1b, beyond tidiness.
+
+### Two things that were verified rather than assumed
+
+**Coverage was held exactly.** Moving two well-covered modules out of `src/lib` would have
+dropped them from a denominator scoped to `src/lib/**` and `src/services/**` - *raising*
+the coverage percentage by measuring less, which is precisely backwards. `src/server/**`
+joined the include in the same commit as the import fix:
+
+```
+before the move:  Statements 72.39% (737/1018)   Lines 71.81% (632/880)
+after the move:   Statements 72.39% (737/1018)   Lines 71.81% (632/880)
+```
+
+Identical numerator *and* denominator is the proof the compensation was exact.
+
+**The production server was actually started.** Nothing in either suite executes
+`server.ts`'s module graph, so a successful build proves esbuild resolved the new paths
+and nothing more. Against the built bundle: `GET /api/health` → `200 {"status":"ok"}`,
+`GET /` → 200, and the headers from the module that moved were present on the response —
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy: strict-origin-when-cross-origin`,
+`Permissions-Policy: camera=(), microphone=(), geolocation=()`. Port freed afterwards by
+killing only its owning PID.
+
+That smoke test is also what caught the CSP error corrected in §7.3.1. **It is worth
+noting what would have happened without it:** every gate this project has was green, the
+build succeeded, and the claim would have stayed in two committed documents.
+
+### The condition set for this phase, met
+
+| Gate | Before | After |
+|---|---|---|
+| `npm test` | 409 in 25 files | **409 in 25 files** |
+| `npm run test:rules` | 41 in 2 files | **41 in 2 files** |
+| `npm run lint` | exit 0 | exit 0 |
+| `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` | exit 0 | exit 0 |
+| `npm run lint:encoding` | 105 files, clean | **123 files, clean** |
+| `npm run build` | exit 0 | exit 0 |
+| `CLAUDE.md` mojibake score | 8 (standing exception) | 8 |
+
+Nothing broke, so nothing needed restoring.
+
+### What Tier 1 deliberately did not fix
+
+`src/lib` is still a 24-module flat bag spanning seven concerns (§7.3.2), `src/components`
+still mixes pages, chrome, primitives, a hook and a test at one level (§7.3.3), and
+`App.tsx` is still 3,872 lines (§7.3.5). All three are Tier 2/3, all three are better done
+alongside ARC-001, and the plan for the first is written above ready for it.
