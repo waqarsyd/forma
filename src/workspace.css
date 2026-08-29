@@ -1605,6 +1605,34 @@ select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
   .wb-rail [data-toggle-rail] { display: none; }
 }
 
+/* The stacked rail has to be allowed to wrap, or it takes the page with it.
+   The ported rule turns it into a `flex-direction: row` with no wrap, and the
+   row has a hard floor: nine 38px targets plus the mark cannot be made to fit a
+   320px viewport at any gap or padding. Measured, the rail demanded 358px, so
+   `document.scrollWidth` became 358 against a 320 viewport and the WHOLE page
+   scrolled sideways — on the one screen where a horizontal scrollbar is most
+   destructive. 340px overflowed by 18px; 360px and up were already fine.
+
+   `flex-wrap: wrap` is the fix rather than shrinking the targets, because the
+   alternatives are all worse: smaller buttons would have to drop under 32px to
+   fit, which is below a usable touch target on exactly the devices this affects;
+   `overflow-x: auto` would hide controls behind a scroll gesture with nothing
+   indicating they are there. Wrapping keeps every control visible at full size
+   and costs one extra row on phones narrower than 360px. It is inert above that
+   — wrap only engages when the content genuinely does not fit, so the 360-880px
+   layout is byte-identical to before.
+
+   `.wb-spacer` is `flex: 1`, i.e. `flex: 1 1 0%`, so it contributes no base
+   width and cannot force a break by itself; it just absorbs the slack on
+   whichever line it lands on.
+
+   Not edited into the 880px rule above: that block is ported and stays
+   byte-identical, same as the resizable-column rules — this wins on position
+   instead. */
+@media (max-width: 880px) {
+  .wb-rail { flex-wrap: wrap; }
+}
+
 /* Scoped to the workspace. In the artifact this was a bare `* { ... !important }`,
    which is correct for a standalone page and wrong here: imported globally it
    killed every transition and animation in the whole app, and because headless

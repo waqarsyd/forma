@@ -331,8 +331,21 @@ export default function DocsPage({
         {/* No horizontal padding, matching the artifact: its `.doc-body`
             declared `padding: 44px 0 96px`, and that shorthand overrode the
             `0 32px` it inherited from `.wrap`. The article is therefore 880px
-            here rather than the 816px a padded container would give. */}
-        <div className="max-w-container-max mx-auto grid items-start gap-10 pt-11 pb-24 lg:grid-cols-[244px_minmax(0,1fr)] lg:gap-14">
+            here rather than the 816px a padded container would give.
+
+            `grid-cols-[minmax(0,1fr)]` and `[&>*]:min-w-0` are the same guard the
+            `lg:` rule already carries, applied at the base width too — and they
+            are load-bearing below 1024px. Without them this collapses to one
+            implicit `auto` track shared by the aside and the article, an `auto`
+            track floors at its content's min-content width, and the article's
+            widest element sets the column. Measured at a 390px viewport the
+            track computed to 489px, so the search box and the section list were
+            drawn 99px past the right edge. Nothing scrolled sideways — an
+            ancestor clipped it — so the sidebar was simply cut off, which is why
+            a page-level overflow check reports the page as fine. The `<pre>`
+            blocks below already carry `overflow-x-auto`; that only takes effect
+            once their ancestors are allowed to shrink. */}
+        <div className="max-w-container-max mx-auto grid grid-cols-[minmax(0,1fr)] items-start gap-10 pt-11 pb-24 [&>*]:min-w-0 lg:grid-cols-[244px_minmax(0,1fr)] lg:gap-14">
           {/* ------------------------------------------------- sidebar */}
           <aside className="grid gap-3.5 lg:sticky lg:top-[92px]">
             <div className="relative">
