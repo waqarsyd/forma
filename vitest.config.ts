@@ -86,6 +86,28 @@ export default defineConfig({
       reporter: ['text-summary', 'text'],
     },
   },
+  /**
+   * Declared in THREE files with nothing checking they agree: here,
+   * `tsconfig.json` (as `paths`) and `vite.config.ts`. Change one and the tests
+   * and the build resolve `@` to different places — silently, because each
+   * config remains individually valid and every tool still reports success.
+   *
+   * It is not collapsed into a shared constant because that needs a new
+   * root-level file, and Phase 7 was reducing the root rather than adding to it;
+   * `vitest.config.ts` importing from `vite.config.ts` would also couple the
+   * test config to the file carrying the "Do not modify" HMR block, which is
+   * precisely what this file's separation exists to avoid. See
+   * docs/cleanup/03-duplicates.md §3.4.
+   *
+   * **If you edit this, edit the other two.**
+   *
+   * One fact that decides what to do about it, and which the Phase 3 analysis
+   * missed by studying the triplication without asking the prior question:
+   * **the alias has zero usages.** As of 2026-08-29 nothing in `src/`, `tests/`,
+   * `server.ts` or `scripts/` imports `@/anything` — every import is relative.
+   * So the real choice is to adopt it or to delete all three declarations, not
+   * to keep three configs in agreement about a path nobody takes.
+   */
   resolve: {
     alias: { '@': path.resolve(__dirname, '.') },
   },

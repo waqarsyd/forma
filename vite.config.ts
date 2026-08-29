@@ -15,6 +15,16 @@ export default defineConfig(() => {
     // application-owned key to expose, so nothing Gemini-related belongs in
     // import.meta.env. Do not re-add a 'GEMINI_' prefix here.
     envPrefix: ['VITE_'],
+    // Declared in THREE files with nothing checking they agree: here,
+    // `tsconfig.json` (as `paths`) and `vitest.config.ts`. Change one and the
+    // build and the tests resolve `@` differently, silently — each config stays
+    // valid on its own and every tool reports success. See
+    // docs/cleanup/03-duplicates.md §3.4 for why it was not collapsed into a
+    // shared module. **If you edit this, edit the other two.**
+    //
+    // And note the alias has **zero usages** as of 2026-08-29 — every import in
+    // the project is relative. Use it or delete all three; do not keep a
+    // three-way agreement nothing depends on.
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

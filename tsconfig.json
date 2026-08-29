@@ -26,6 +26,18 @@
     "moduleDetection": "force",
     "allowJs": true,
     "jsx": "react-jsx",
+    // The `@` alias is declared in THREE files and nothing checks they agree:
+    // here, `vite.config.ts` and `vitest.config.ts`. Change one and the build
+    // and the tests resolve `@` to different places -- silently, because each
+    // config stays individually valid and every tool still reports success.
+    // Collapsing it needs a shared module and therefore a new root file, which
+    // was judged not worth the clutter; see docs/cleanup/03-duplicates.md 3.4.
+    // **If you edit this, edit the other two.**
+    //
+    // And know before you do: as of 2026-08-29 the alias has **zero usages**.
+    // Every import in this project is relative; nothing imports `@/anything`.
+    // So the honest options are to use it or to delete all three declarations,
+    // not to keep maintaining a three-way agreement nothing depends on.
     "paths": {
       "@/*": [
         "./*"
