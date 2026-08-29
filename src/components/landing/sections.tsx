@@ -25,7 +25,7 @@ export const BODY = 'font-body-lg text-[15.5px] leading-[1.65] text-on-surface-v
 /* `SMALL` sat here until 2026-08-28 — a typography class-string constant that,
    unlike its four siblings, neither LandingPage nor FeaturesPage imported. It
    was `'font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-faint)]'`;
-   recover it from `ed534eb~1` if a small-print style is wanted again. */
+   recover it from `5e1d8bc~1` if a small-print style is wanted again. */
 
 /** Reveals its children once, on scroll into view. */
 export function Reveal({
