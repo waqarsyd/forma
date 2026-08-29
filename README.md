@@ -110,8 +110,7 @@ src/
                        analysisResponse (is a failed generation truncated or
                        malformed), geminiErrors (what the user is told when a
                        request fails), savedReport + accountData (the two
-                       storage shapes and the document layout), securityHeaders
-                       and bindHost (what server.ts sends and where it listens),
+                       storage shapes and the document layout),
                        contactSubmit, generationProgress (the progress bar's
                        whole state machine) and attachmentParts, and the routing
                        pair router (real history/location, so not pure) + routes.
@@ -121,20 +120,32 @@ src/
   services/            geminiService (+ tests, and modelResolution.test.ts
                        beside it), firebase, keyVault (+ tests) — the vault's
                        storage rules are covered by tests/ as well as here
+  server/              securityHeaders and bindHost (+ tests) — what server.ts
+                       sends and where it listens. Under src/ but never bundled
+                       into the client; server.ts is the only importer
 tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
                        in the real DevExpress designer — C# and MSBuild, with
                        its own README; nothing in the web app depends on it
-public/                static assets served at / — logos (one doubles as the
-                       favicon) and the pre-rendered og-card.png
+public/                static assets served at / — the logo pair (PNG + WebP,
+                       light and dark), favicon.png, and the pre-rendered
+                       og-card.png
 assets/source/         full-resolution logo masters and the og-card source
                        page they are rendered from (not deployed)
-docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident history)
+docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
+                       history), audit/ (the 2026-08-27 findings register) and
+                       cleanup/ (the 2026-08-28 cleanup pass). The last two are
+                       dated records — read notes/ for what is current
+.githooks/             opt-in pre-commit guard; enable with
+                       `git config core.hooksPath .githooks`
 scripts/               dev + build helpers
 .agents/skills/        Firebase's official agent skill packs — reference
                        material, nothing builds from them
-_not_required/         parked files nothing reads or imports; note the
-                       DESIGN.md in here is a decoy for docs/design/DESIGN.md
+_not_required/         the quarantine — parked files nothing reads or imports.
+                       Its contents are gitignored, so a fresh clone has only
+                       MANIFEST.md (what was parked, why, and how to restore
+                       it) and README.md (the convention). Note the DESIGN.md
+                       recorded in there is a decoy for docs/design/DESIGN.md
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
 firebase-applet-config.json
@@ -170,7 +181,10 @@ Neither suite covers React components or `App.tsx`'s stateful logic. **This is a
 
 ## Contributing
 
-Three documents carry the reasoning that the code cannot:
+Start with **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — setup, the seven checks, and the
+rules for adding and removing things.
+
+Four documents carry the reasoning that the code cannot:
 
 - **[`CLAUDE.md`](CLAUDE.md)** — the entry point: hard constraints, commands, and an index that routes you to the note covering whatever you are about to change.
 - **[`docs/notes/`](docs/notes/)** — four notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.

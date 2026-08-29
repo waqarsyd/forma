@@ -2,8 +2,8 @@ import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { securityHeadersFor } from "./src/lib/securityHeaders";
-import { resolveBindHost } from "./src/lib/bindHost";
+import { securityHeadersFor } from "./src/server/securityHeaders";
+import { resolveBindHost } from "./src/server/bindHost";
 
 async function startServer() {
   const app = express();

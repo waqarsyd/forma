@@ -50,38 +50,17 @@ export const modalVariants: Variants = {
   visible: { opacity: 1, scale: 1, y: 0, transition: transition.base },
 };
 
-/** Off-canvas drawer sliding in from the right. */
-export const drawerVariants: Variants = {
-  hidden: { x: '100%', transition: transition.exit },
-  visible: { x: 0, transition: transition.base },
-};
-
-/** A single chat message / list row appearing. */
-export const messageVariants: Variants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0, transition: transition.base },
-};
-
-/** Tab panel body. Use with <AnimatePresence mode="wait">. */
-export const tabPanelVariants: Variants = {
-  hidden: { opacity: 0, y: 6, transition: transition.exit },
-  visible: { opacity: 1, y: 0, transition: transition.base },
-};
+/* `drawerVariants`, `messageVariants`, `tabPanelVariants` and `snapInVariants`
+   lived here until 2026-08-28. Nothing imported any of them, and two were
+   measurably absent from the built bundle, so they were quarantined rather than
+   kept as a vocabulary for screens that do not exist. They are recoverable from
+   _not_required/MANIFEST.md if a drawer, an animated message list or an animated
+   tab panel is ever built. */
 
 /** Generic section reveal. */
 export const fadeInUpVariants: Variants = {
   hidden: { opacity: 0, y: 16 },
   visible: { opacity: 1, y: 0, transition: transition.slow },
-};
-
-/**
- * An element landing on a target it was detected against — the bounding boxes
- * on the landing page's scanner. Starts oversized and settles, so the overshoot
- * reads as "found it" rather than as a fade.
- */
-export const snapInVariants: Variants = {
-  hidden: { opacity: 0, scale: 1.22 },
-  visible: { opacity: 1, scale: 1, transition: transition.snap },
 };
 
 /** Staggered container for lists that reveal together. */

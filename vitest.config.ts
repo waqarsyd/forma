@@ -64,7 +64,17 @@ export default defineConfig({
      */
     coverage: {
       provider: 'v8',
-      include: ['src/lib/**', 'src/services/**'],
+      /**
+       * `src/server/**` joined this list on 2026-08-29, when `securityHeaders`
+       * and `bindHost` moved out of `src/lib` into their own directory. They
+       * had always been in the denominator; leaving them out of the new path
+       * would have quietly *raised* the coverage number by removing two
+       * well-covered modules from it, which is the opposite of what a number
+       * like this is for. It is also the wrong two files to stop measuring —
+       * one sets the CSP and the other decides whether Express listens on
+       * loopback or on every interface.
+       */
+      include: ['src/lib/**', 'src/services/**', 'src/server/**'],
       exclude: [
         '**/*.test.ts',
         // Loaders whose whole job is a dynamic import; there is nothing to

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
   changePassword,
@@ -9,6 +9,7 @@ import {
   setDisplayName,
 } from '../services/firebase';
 import { IconAlert, IconCheck, IconClose, IconShieldCheck, IconTrash, IconWarn } from './landing/icons';
+import { useFocusTrap } from './useFocusTrap';
 
 /**
  * Everything an account owner can do to their own account: rename it, change
@@ -93,48 +94,21 @@ export default function AccountDialog({
   const [verificationSent, setVerificationSent] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Not for the focus trap — that holds its own ref now. This one guards the
+   * one place `onClose` is called from inside an `await`: deleting the account
+   * re-renders this component while the request is in flight, and the ref makes
+   * sure the callback that runs afterwards is the current one rather than the
+   * one captured when the button was clicked.
+   */
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
-  // Same contract as the config dialog: focus lands inside, Escape closes, and
-  // Tab cannot walk out into the workspace behind the scrim.
-  useEffect(() => {
-    const node = dialogRef.current;
-    const returnFocusTo = document.activeElement as HTMLElement | null;
-    node?.focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeRef.current();
-        return;
-      }
-      if (e.key !== 'Tab' || !node) return;
-
-      const focusable = Array.from(
-        node.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((el) => el.offsetParent !== null);
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      returnFocusTo?.focus?.();
-    };
-  }, []);
+  // Same contract as the config dialog, and now literally the same code — see
+  // useFocusTrap. This dialog unmounts when it closes, so the trap is always
+  // armed while it exists and needs no `active` argument.
+  useFocusTrap(dialogRef, onClose);
 
   /** One runner for every action, so none of them can forget to clear `busy`. */
   const run = async (id: string, action: () => Promise<void>, done: string) => {
