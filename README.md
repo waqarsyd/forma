@@ -133,8 +133,9 @@ public/                static assets served at / — the logo pair (PNG + WebP,
 assets/source/         full-resolution logo masters and the og-card source
                        page they are rendered from (not deployed)
 docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
-                       history) and audit/ (the 2026-08-27 findings register —
-                       a dated record; read notes/ for what is current)
+                       history) and audit/README.md (a one-line index of the
+                       2026-08-27 findings, whose IDs are cited throughout the
+                       code — a dated record; read notes/ for what is current)
 .githooks/             opt-in pre-commit guard; enable with
                        `git config core.hooksPath .githooks`
 scripts/               dev + build helpers

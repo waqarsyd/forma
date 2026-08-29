@@ -176,10 +176,14 @@ broken, and nothing in the toolchain enforces any of them.
   eight on 2026-08-29 and the point is to keep it there.
 - **`docs/` holds all the prose, in three kinds.** `PRD.md` and `notes/` are *current* and
   maintained against the code. `design/DESIGN.md` is the design source of truth.
-  **`docs/audit/`** is the 2026-08-27 findings register — ten reports, and the 33 local
-  `audit/*` branch names still carry its identifiers. It is a **dated record, not live
-  documentation**: it describes the repository as it was on that date, so read `notes/`
-  for what is true now.
+  **`docs/audit/README.md`** is the 2026-08-27 findings register, reduced on 2026-08-29 to
+  a **one-line index of the 31 identifiers the codebase actually cites**. The ten narrative
+  reports it summarises were removed and are recoverable from history
+  (`git show 64234fd:docs/audit/06-roadmap.md`). **The index exists because the reports
+  could be deleted and their identifiers could not**: `ARC-001`, `PERF-002`, `REL-001` and
+  the rest appear in **68 comments across 43 source and config files**, and **33 local
+  branches are named after them** — none of which any edit here can update. It is a
+  **dated record, not live documentation**; read `notes/` for what is true now.
 - **The 2026-08-28 cleanup pass lives in its commit messages, not in a document.** There
   were twelve phase reports under `docs/cleanup/`; they were **removed on 2026-08-29** at
   the owner's request and are recoverable from history (`git show 1764a0a:docs/cleanup/09-results.md`,
