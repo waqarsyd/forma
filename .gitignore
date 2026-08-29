@@ -19,6 +19,20 @@ desktop.ini
 *.swo
 .idea/
 
+# `.vscode/` was the one editor directory NOT covered here, and it was tracked:
+# `.vscode/settings.json` held `{"workbench.startupEditor":"readme"}` -- 42 bytes
+# of one person's window preference, committed and about to be published.
+# CONTRIBUTING.md already said never to commit personal editor config; `.idea/`
+# above was ignored while its VS Code equivalent was not, which is exactly the
+# half-covered shape the OS-droppings comment describes. `launch.json` lived here
+# too and was removed earlier.
+#
+# If a genuinely shared setting is ever needed -- a formatter or a recommended
+# extension the whole project depends on -- unignore that ONE file by path
+# (`!.vscode/extensions.json`) rather than the directory, so personal preferences
+# cannot ride in beside it.
+.vscode/
+
 # Backup and scratch copies. The failure this prevents is `git add .` after an
 # editor or a merge has left `App.tsx.orig` next to `App.tsx` -- a 178 KB near
 # duplicate of the largest file in the repo, committed by accident and then
