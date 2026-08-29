@@ -136,6 +136,33 @@
    classes rather than edited there.
    ============================================================================= */
 
+/* The canvas empty state's heading is an `h2`, not an `h3`.
+
+   It follows the bench's `h1` ("Untitled report"), so at `h3` the workspace
+   skipped a level — assistive technology reads that as a missing subsection
+   rather than as the next heading. It was the last heading-order jump left in
+   the app after the footer columns moved to `h2`.
+
+   The rule has to exist because the ported block styles these by ELEMENT
+   (`.wb-sheet h3`, line ~891), not by class, so changing the tag alone would
+   have dropped the heading to the browser's default `h2` — bigger, differently
+   spaced, and obviously wrong. These declarations are that rule's, copied
+   verbatim, so the empty state renders exactly as before; verified by capturing
+   the workspace in both themes before and after and comparing.
+
+   Added here rather than by widening the selector at line 891, because the
+   ported block stays byte-identical. `.wb-sheet h3` is deliberately left in
+   place: the generated spec renders its own `h3`s into a sheet and still needs
+   it. Nothing else styles `.wb-sheet h2`, so there is no rule to lose to. */
+.wb-sheet h2 {
+  margin: 0 0 8px;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -.03em;
+  text-wrap: balance;
+}
+
 /* A chip carrying a thumbnail sits tighter on the left than a text-only one. */
 .wb-attach--file { padding-left: 5px; }
 

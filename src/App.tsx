@@ -3777,7 +3777,11 @@ export default function App() {
             <div className="wb-proof-holder wb-rise wb-rise-2">
               <div className="wb-sheet wb-reg-marks">
                 <Eyebrow coord="x 000 · y 0000">Canvas</Eyebrow>
-                <h3 style={{ marginTop: 22 }}>Ready to process</h3>
+                {/* h2, not h3: this follows the bench's h1 and would otherwise
+                    skip a level. `.wb-sheet h2` in workspace.css carries the
+                    same styling the ported `.wb-sheet h3` rule gives, so this
+                    looks identical. */}
+                <h2 style={{ marginTop: 22 }}>Ready to process</h2>
                 <p>
                   Upload a design in the review pane — a screenshot, a PDF, or an existing{' '}
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>.repx</span> — and the spec,
