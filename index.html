@@ -88,11 +88,37 @@
        privacy page names it, so this is disclosed rather than hidden). It is
        deliberately not done here: it means committing font binaries and
        changing what every page renders in, with no visual regression test to
-       catch a wrong weight or a missing subset. Audit PERF-002, still open. -->
+       catch a wrong weight or a missing subset. Audit PERF-002, still open.
+
+       THE WEIGHT LISTS ARE MEASURED, NOT GUESSED (2026-08-29). Each family asks
+       for exactly the weights the app paints, and this was got wrong in both
+       directions before:
+
+         - Inter and JetBrains Mono stopped at 600, but Tailwind's `font-bold`
+           resolves to 700 against whichever family is in effect. With no 700
+           face to use, the browser SYNTHESISED one by thickening the regular
+           weight -- on 22 elements across five pages, including every <b> in
+           body copy and the byline in the footer. Faux bold is fatter AND
+           wider, because thickening each stem adds advance width, so it also
+           moves line breaks.
+         - Hanken Grotesk asked for 400/500/600 and painted them on zero
+           elements. The display face is only ever used at 700 and 800.
+
+       Correcting both costs NOTHING in font bytes. All three families are
+       served as *variable* fonts -- one woff2 per family spanning the whole
+       weight axis -- so the wght list selects which @font-face blocks appear in
+       the CSS, not which binaries exist. Four request variants were fetched and
+       weighed at exactly 116,280 B each; only the CSS changes (22.5 -> 25.0 KB,
+       gzipped in transit).
+
+       So: do not add a weight here without checking something paints it, and do
+       not remove one without checking nothing does. `docs/cleanup/11-fonts.md`
+       has the method -- document.fonts for what is downloaded, computed style
+       on every text-bearing element for what is needed. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap"
+    href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@700;800&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap"
     rel="stylesheet" />
   <!-- The Material Symbols stylesheet was here until 2026-08-27. It pulled a
        variable icon font across its full weight and fill axes to draw five

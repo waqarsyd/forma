@@ -153,8 +153,63 @@ family=JetBrains+Mono:wght@400;500;600;700
 - **Removes three declarations that were doing nothing.**
 
 It is a visible change — real bold is heavier and better-formed than synthetic bold — so
-it is a design decision, not a pure defect fix, and it is recorded here for a decision
-rather than applied.
+it is a design decision, not a pure defect fix, and it was put to the repository owner
+with a rendered before/after rather than applied on my own judgement.
+
+## 11.5b Applied, 2026-08-29
+
+**Approved after visual review and applied.** `index.html`'s font request is now:
+
+```
+family=Hanken+Grotesk:wght@700;800
+family=Inter:wght@400;500;600;700;800
+family=JetBrains+Mono:wght@400;500;600;700
+```
+
+Verified against the shipped production build across all seven routes:
+
+```
+/  /features  /docs  /contact  /login  /terms  /workspace
+    → 0 element(s) in an undeclared weight, on every one
+```
+
+And the declared set is now exactly the painted set — no dead declarations, no synthesis:
+
+```
+  Hanken Grotesk  700  loaded  painted on  77      Inter 700  loaded  painted on  13
+  Hanken Grotesk  800  loaded  painted on  65      Inter 800  loaded  painted on   2
+  Inter           400  loaded  painted on 404      JBM   400  loaded  painted on 467
+  Inter           500  loaded  painted on  15      JBM   500  loaded  painted on 348
+  Inter           600  loaded  painted on  77      JBM   600  loaded  painted on  14
+                                                   JBM   700  loaded  painted on   6
+```
+
+Every face fetched is used; every weight painted is declared. Gates green throughout:
+lint, unused sweep, encoding at 130 files, quarantine, 409 unit tests in 25 files, build,
+and the bundle budget.
+
+`docs/notes/styling.md` carries the rule going forward, and `index.html` carries it at the
+point of use: **do not add a weight without checking something paints it, and do not
+remove one without checking nothing does** — neither question can be answered by reading
+source.
+
+### What the before/after actually showed
+
+The visual review changed the argument. The expected difference was weight; the more
+consequential one is **width**. Synthetic bold thickens each stem, which adds advance
+width the designer never drew — in the `/docs` capture, the faux-bold sentence overflows
+a crop that the real Inter Bold fits inside. So this was never only a question of texture:
+the synthetic faces were also pushing line breaks around.
+
+### A correction about the measurement itself
+
+The first two attempts at those crops produced **blank images**, and a hash comparison run
+on them reported one pair as "byte-identical" — which was two empty regions compared
+against each other, and meant nothing. `Page.captureScreenshot`'s `clip` is measured in
+page coordinates while `getBoundingClientRect()` returns viewport coordinates, and
+overriding `deviceScaleFactor` shifted the space again. Once fixed, **all four pairs
+differ.** Recorded because a measurement that silently returns nothing looks exactly like
+a measurement that found nothing.
 
 ## 11.6 What this corrects in the earlier record
 
