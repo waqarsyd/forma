@@ -371,7 +371,7 @@ export default function ContactPage({
             long one without it.
           </p>
 
-          <div className="mt-12 grid items-start gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:gap-16">
+          <div className="mt-12 grid grid-cols-[minmax(0,1fr)] items-start gap-14 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:gap-16">
             {/* ------------------------------------------------ routing */}
             <div>
               {/* A contact page's first job is to answer the questions that
@@ -432,7 +432,7 @@ export default function ContactPage({
                 {ROUTES.map(([t, d]) => (
                   <div
                     key={t}
-                    className="grid gap-y-1.5 border-b border-outline-variant py-[18px] sm:grid-cols-[172px_minmax(0,1fr)] sm:items-baseline sm:gap-x-5"
+                    className="grid grid-cols-[minmax(0,1fr)] gap-y-1.5 border-b border-outline-variant py-[18px] [&>*]:min-w-0 sm:grid-cols-[172px_minmax(0,1fr)] sm:items-baseline sm:gap-x-5"
                   >
                     {/* No `leading-`: the artifact's `.routes .t` sets none and
                         inherits the body's 1.62, rendering at 24.3px. */}
@@ -669,7 +669,7 @@ export default function ContactPage({
               <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
             </div>
 
-            <div className="mt-[26px] grid items-start gap-9 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)] lg:gap-14">
+            <div className="mt-[26px] grid grid-cols-[minmax(0,1fr)] items-start gap-9 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)] lg:gap-14">
               <div>
                 <div className="flex items-center gap-4">
                   {/* The framing goes on a wrapper, not on Logo. Logo sets its

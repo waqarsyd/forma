@@ -205,7 +205,13 @@ const LandingPage = ({
             }}
           />
           <div className="relative max-w-container-max mx-auto px-margin-desktop">
-            <div className="grid items-center gap-[60px] lg:grid-cols-[minmax(0,1fr)_minmax(0,548px)]">
+            {/* `grid-cols-[minmax(0,1fr)]` + `[&>*]:min-w-0` mirror the `lg:`
+                rule at the base width. Below the breakpoint this is one implicit
+                `auto` track, and an `auto` track floors at its content's
+                min-content width rather than at the container — which is what
+                drew /docs and /features past the right edge on phones. Applied
+                to every stacked-then-split grid here for the same reason. */}
+            <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,548px)]">
               <div>
                 <Reveal>
                   <Eyebrow coord="x 000 · y 0000">Report designer</Eyebrow>
@@ -298,7 +304,7 @@ const LandingPage = ({
               lede="Not a chat answer you have to interpret. A response schema forces the model to return all three together, so the mockup you look at and the XML you download describe the same report."
             />
 
-            <div className="grid items-start gap-13 lg:grid-cols-[296px_minmax(0,1fr)]">
+            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-13 [&>*]:min-w-0 lg:grid-cols-[296px_minmax(0,1fr)]">
               <Reveal>
                 <div className="reg-marks rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card p-[22px] shadow-[var(--shadow-md),var(--inset-hi)]">
                   {[
@@ -438,7 +444,7 @@ const LandingPage = ({
 
         {/* ------------------------------------------------------ ACCURACY */}
         <section id="textlayer" className="border-y border-outline-variant band-alt py-[108px]">
-          <div className="max-w-container-max mx-auto grid items-center gap-[60px] px-margin-desktop lg:grid-cols-[minmax(0,1fr)_minmax(0,512px)]">
+          <div className="max-w-container-max mx-auto grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] px-margin-desktop [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,512px)]">
             <div>
               <Reveal>
                 <Eyebrow coord="x 000 · y 2100">Accuracy</Eyebrow>
@@ -546,7 +552,7 @@ const LandingPage = ({
 
         {/* ------------------------------------------------------- YOUR KEY */}
         <section id="key" className="border-y border-outline-variant band-alt py-[108px]">
-          <div className="max-w-container-max mx-auto grid items-center gap-[60px] px-margin-desktop lg:grid-cols-[minmax(0,512px)_minmax(0,1fr)]">
+          <div className="max-w-container-max mx-auto grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] px-margin-desktop [&>*]:min-w-0 lg:grid-cols-[minmax(0,512px)_minmax(0,1fr)]">
             <Reveal>
               <VaultFigure />
             </Reveal>

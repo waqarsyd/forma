@@ -136,7 +136,7 @@ const PROSE = 'font-body-lg text-[15.5px] leading-[1.68] text-on-surface-variant
 /** One row of a definition list — the shape most of this page is made of. */
 function Def({ t, children }: { t: ReactNode; children: ReactNode }) {
   return (
-    <div className="grid gap-y-1 border-b border-outline-variant py-3.5 sm:grid-cols-[190px_minmax(0,1fr)] sm:items-baseline sm:gap-x-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-y-1 border-b border-outline-variant py-3.5 [&>*]:min-w-0 sm:grid-cols-[190px_minmax(0,1fr)] sm:items-baseline sm:gap-x-4">
       {/* No `leading-`: the artifact's `.defs dt` sets none, so it inherits
           the body's 1.62 and renders at 20.3px rather than 18.8px. */}
       <dt className="font-code-sm text-[12.5px] font-medium text-on-surface">{t}</dt>

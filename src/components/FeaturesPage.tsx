@@ -381,7 +381,7 @@ export default function FeaturesPage({
             }}
           />
           <div className="relative max-w-container-max mx-auto px-margin-desktop">
-            <div className="grid items-center gap-[60px] lg:grid-cols-[minmax(0,1fr)_minmax(0,468px)]">
+            <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,468px)]">
               <div>
                 <Reveal>
                   <Eyebrow coord="x 000 · y 0000">Capability</Eyebrow>
@@ -478,7 +478,7 @@ export default function FeaturesPage({
             </RevealGroup>
 
             {/* the two-pass read */}
-            <div className="mt-13 grid items-center gap-[60px] lg:grid-cols-[minmax(0,1fr)_minmax(0,472px)]">
+            <div className="mt-13 grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,472px)]">
               <div>
                 <Reveal>
                   <h3 className="font-display-lg text-[24px] font-bold leading-[1.18] tracking-[-0.026em] text-on-surface">
@@ -828,7 +828,7 @@ export default function FeaturesPage({
               lede="Forma ships with no API key and cannot be given one. Yours is never written to disk in plaintext, on any tier."
             />
 
-            <div className="grid items-start gap-[60px] lg:grid-cols-[minmax(0,532px)_minmax(0,1fr)]">
+            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,532px)_minmax(0,1fr)]">
               <Reveal>
                 <div className="reg-marks overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card shadow-[var(--shadow-md),var(--inset-hi)]">
                   {[
