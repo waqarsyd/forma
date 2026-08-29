@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
 import SheetRuler from './landing/SheetRuler';
+import { Eyebrow } from './landing/sections';
 import Logo from './Logo';
 import { submitContactMessage } from '../lib/contactSubmit';
 import {
@@ -329,11 +330,7 @@ export default function ContactPage({
       {/* 76px top / 104px bottom — the artifact's `padding: 76px 0 104px`. */}
       <main className="flex-grow sheet-grid pt-[76px] pb-[104px]">
         <div className="max-w-container-max mx-auto px-margin-desktop">
-          <div className="flex items-center gap-3 font-code-sm text-[11px] font-medium leading-[1.62] tracking-[0.15em] uppercase text-[color:var(--ink-faint)]">
-            <b className="font-medium text-secondary">x 000 · y 0000</b>
-            Contact
-            <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
-          </div>
+          <Eyebrow>Contact</Eyebrow>
 
           {/* ------------------------------------------------------- hero
 
@@ -663,11 +660,7 @@ export default function ContactPage({
 
           {/* ------------------------------------------- behind the project */}
           <section className="mt-[88px] border-t border-outline-variant pt-11">
-            <div className="flex items-center gap-3 font-code-sm text-[11px] font-medium leading-[1.62] tracking-[0.15em] uppercase text-[color:var(--ink-faint)]">
-              <b className="font-medium text-secondary">x 000 · y 0840</b>
-              Behind the project
-              <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
-            </div>
+            <Eyebrow>Behind the project</Eyebrow>
 
             <div className="mt-[26px] grid grid-cols-[minmax(0,1fr)] items-start gap-9 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)] lg:gap-14">
               <div>

@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
 import SheetRuler from './landing/SheetRuler';
+import { Eyebrow } from './landing/sections';
 import {
   IconSearch, IconChevronDown, IconThumbUp, IconThumbDown, IconCheck, IconArrowRight,
 } from './landing/icons';
@@ -300,11 +301,7 @@ export default function DocsPage({
             py-[68px] put everything below it 24px too low. */}
         <section className="border-b border-outline-variant pt-[68px] pb-11">
           <div className="max-w-container-max mx-auto px-margin-desktop">
-            <div className="flex items-center gap-3 font-code-sm text-[11px] font-medium leading-[1.62] tracking-[0.15em] uppercase text-[color:var(--ink-faint)]">
-              <b className="font-medium text-secondary">x 000 · y 0000</b>
-              Documentation
-              <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
-            </div>
+            <Eyebrow>Documentation</Eyebrow>
             {/* The accented trailing clause the other marketing pages carry —
                 same `text-secondary`, same underline bar at `bottom-[0.12em]`,
                 same 0.26 opacity. Only the colour treatment: this page's own

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, useInView, useReducedMotion } from 'motion/react';
 import { fadeInUpVariants, respectReducedMotion, staggerContainer } from '../../lib/motion';
+import { toSheetUnits } from './SheetRuler';
 
 /**
  * Shared furniture for the landing page's sections, so LandingPage.tsx stays a
@@ -126,11 +127,71 @@ export function Stat({ to, unit, label }: { to: number; unit?: string; label: st
   );
 }
 
-/** `x 000 · y 0840  Output` — the sheet coordinate and the section's name. */
-export function Eyebrow({ coord, children }: { coord: string; children: ReactNode }) {
+/**
+ * `x 000 · y 0840  Output` — the sheet coordinate and the section's name.
+ *
+ * **The coordinate is measured, not authored.** It used to be a literal passed
+ * in per section, stepping in tidy 420s (`y 0840`, `y 1260`, `y 1680`…), which
+ * meant the number described nothing — while the comment at the top of this file
+ * claimed these "mark where you are down the page, which is information". They
+ * were decoration wearing a measurement's clothes, and they contradicted the
+ * `SheetRuler` chip on screen beside them by as much as 1,909 units.
+ *
+ * Three details that matter if you change this:
+ *
+ * 1. **The offsetTop chain, not `getBoundingClientRect`.** These sit inside
+ *    `Reveal`, which animates `translateY`. A rect includes that transform, so
+ *    measuring one mid-reveal reads a position the section never occupies and
+ *    the number would settle to something different from what it flashed.
+ *    `offsetTop` is layout-only and immune to it.
+ * 2. **Re-measure on reflow.** Web fonts land after first paint and move
+ *    everything below them, so a single measurement at mount is stale by the
+ *    time anyone reads it. A `ResizeObserver` on the document element covers
+ *    reflow and viewport changes; `document.fonts.ready` covers the font swap,
+ *    which does not necessarily change the document's height and so can slip
+ *    past the observer.
+ * 3. **`x` stays `000`, and that is a measurement too.** Every section begins at
+ *    the content column's left edge, which is the sheet's own x origin. It is
+ *    zero because it is zero, not because nobody filled it in.
+ *
+ * `coord` remains as an override for the one caller that is not a page section:
+ * the workspace canvas card, which is not positioned down a document and whose
+ * coordinate is legitimately fixed.
+ */
+export function Eyebrow({ coord, children }: { coord?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [measured, setMeasured] = useState('');
+
+  useLayoutEffect(() => {
+    if (coord) return;
+    const el = ref.current;
+    if (!el) return;
+    let live = true;
+
+    const read = () => {
+      if (!live) return;
+      let y = 0;
+      for (let n: HTMLElement | null = el; n; n = n.offsetParent as HTMLElement | null) y += n.offsetTop;
+      setMeasured(`x 000 · y ${String(toSheetUnits(y)).padStart(4, '0')}`);
+    };
+    read();
+
+    const ro = new ResizeObserver(read);
+    ro.observe(document.documentElement);
+    document.fonts?.ready.then(read).catch(() => {});
+
+    return () => {
+      live = false;
+      ro.disconnect();
+    };
+  }, [coord]);
+
   return (
-    <div className="flex items-center gap-3 font-code-sm text-[11px] leading-[1.62] font-medium tracking-[0.15em] uppercase text-[color:var(--ink-faint)]">
-      <b className="font-medium text-secondary">{coord}</b>
+    <div
+      ref={ref}
+      className="flex items-center gap-3 font-code-sm text-[11px] leading-[1.62] font-medium tracking-[0.15em] uppercase text-[color:var(--ink-faint)]"
+    >
+      <b className="font-medium text-secondary">{coord ?? measured}</b>
       {children}
       <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
     </div>
@@ -139,12 +200,10 @@ export function Eyebrow({ coord, children }: { coord: string; children: ReactNod
 
 /** Section heading block: eyebrow, title, optional lede. */
 export function SectionHead({
-  coord,
   eyebrow,
   title,
   lede,
 }: {
-  coord: string;
   eyebrow: string;
   title: ReactNode;
   lede?: ReactNode;
@@ -152,7 +211,7 @@ export function SectionHead({
   return (
     <div className="max-w-[730px] mb-[54px]">
       <Reveal>
-        <Eyebrow coord={coord}>{eyebrow}</Eyebrow>
+        <Eyebrow>{eyebrow}</Eyebrow>
       </Reveal>
       <Reveal delay={0.06}>
         <h2 className={`mt-[18px] ${H2}`}>{title}</h2>

@@ -384,7 +384,7 @@ export default function FeaturesPage({
             <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,468px)]">
               <div>
                 <Reveal>
-                  <Eyebrow coord="x 000 · y 0000">Capability</Eyebrow>
+                  <Eyebrow>Capability</Eyebrow>
                 </Reveal>
                 <Reveal delay={0.06}>
                   <h1 className="mt-[22px] font-display-lg text-display-lg md:text-[70px] font-extrabold leading-[1.0] tracking-[-0.042em] text-on-surface">
@@ -452,7 +452,6 @@ export default function FeaturesPage({
         <section id="intake" className="py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 0840"
               eyebrow="Intake"
               title="Hand it what you already have."
               lede="Nothing needs converting first. Files are prepared in your browser — resized, rendered, parsed — and anything that cannot be used says so on screen instead of failing quietly."
@@ -567,7 +566,6 @@ export default function FeaturesPage({
         <section id="setup" className="border-y border-outline-variant band-alt py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 1260"
               eyebrow="Setup"
               title="Decide the shape before it builds."
               lede="Four settings, all of them things you would otherwise fix by hand in the designer afterwards. They are written into the generated XML rather than applied to it later."
@@ -611,7 +609,6 @@ export default function FeaturesPage({
         <section id="fidelity" className="py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 1680"
               eyebrow="Fidelity"
               title="What survives the trip."
               lede="The mockup you look at and the XML you download are generated together from one description, so they agree with each other. This is what that description carries — including the two rows where it stops short."
@@ -681,7 +678,6 @@ export default function FeaturesPage({
         <section id="control" className="border-y border-outline-variant band-alt py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 2100"
               eyebrow="Control"
               title="You are not watching a spinner."
               lede="A generation takes real time, and the interface is honest about where that time goes rather than filling it with an animation."
@@ -710,7 +706,6 @@ export default function FeaturesPage({
         <section id="output" className="py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 2520"
               eyebrow="Output"
               title="Checked before you download it."
               lede="A malformed generation should show up here, in the browser, and not when the DevExpress designer refuses the file."
@@ -822,7 +817,6 @@ export default function FeaturesPage({
         <section id="custody" className="border-y border-outline-variant band-alt py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 2940"
               eyebrow="Custody"
               title="Your key, and your saved work."
               lede="Forma ships with no API key and cannot be given one. Yours is never written to disk in plaintext, on any tier."
@@ -935,7 +929,6 @@ export default function FeaturesPage({
         <section id="cost" className="py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 3360"
               eyebrow="Cost"
               title="Free, and there is no upgrade to sell you."
               lede="Forma is open source. There is no licence, no seat count, no plan above the one you are on — because there are no plans."

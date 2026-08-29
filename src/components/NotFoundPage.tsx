@@ -2,6 +2,7 @@ import { User } from 'firebase/auth';
 import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
 import SheetRuler from './landing/SheetRuler';
+import { Eyebrow } from './landing/sections';
 
 /**
  * Nowhere.
@@ -54,11 +55,7 @@ export default function NotFoundPage({
 
       <main className="flex-grow sheet-grid pt-[76px] pb-[104px]">
         <div className="max-w-container-max mx-auto px-margin-desktop">
-          <div className="flex items-center gap-3 font-code-sm text-[11px] font-medium leading-[1.62] tracking-[0.15em] uppercase text-[color:var(--ink-faint)]">
-            <b className="font-medium text-secondary">x 000 · y 0000</b>
-            Error 404
-            <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
-          </div>
+          <Eyebrow>Error 404</Eyebrow>
 
           <h1 className="mt-[22px] font-display-lg text-display-lg md:text-[56px] font-extrabold leading-[1.04] tracking-[-0.038em] text-on-surface">
             This page does not exist

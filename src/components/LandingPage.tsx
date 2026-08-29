@@ -214,7 +214,7 @@ const LandingPage = ({
             <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,548px)]">
               <div>
                 <Reveal>
-                  <Eyebrow coord="x 000 · y 0000">Report designer</Eyebrow>
+                  <Eyebrow>Report designer</Eyebrow>
                 </Reveal>
                 <Reveal delay={0.06}>
                   {/* Each phrase is inline-block so a line can only break
@@ -298,7 +298,6 @@ const LandingPage = ({
         <section id="artifacts" className="py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 0840"
               eyebrow="Output"
               title="One request comes back as three finished things."
               lede="Not a chat answer you have to interpret. A response schema forces the model to return all three together, so the mockup you look at and the XML you download describe the same report."
@@ -374,7 +373,6 @@ const LandingPage = ({
         <section id="cases" className="border-y border-outline-variant band-alt py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 1260"
               eyebrow="Scope"
               title="Built for the documents you already have."
               lede="Most reporting work starts from something that already exists — a printed form, a PDF a client sent, a report someone built years ago. Forma starts there too."
@@ -400,7 +398,6 @@ const LandingPage = ({
         <section id="how" className="py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 1680"
               eyebrow="Workflow"
               title="Three steps, and the middle one is the only one you wait for."
             />
@@ -447,7 +444,7 @@ const LandingPage = ({
           <div className="max-w-container-max mx-auto grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] px-margin-desktop [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,512px)]">
             <div>
               <Reveal>
-                <Eyebrow coord="x 000 · y 2100">Accuracy</Eyebrow>
+                <Eyebrow>Accuracy</Eyebrow>
               </Reveal>
               <Reveal delay={0.06}>
                 <h2 className={`mt-[18px] ${H2}`}>
@@ -526,7 +523,6 @@ const LandingPage = ({
         <section id="precision" className="border-t border-outline-variant py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
-              coord="x 000 · y 2520"
               eyebrow="Precision"
               title="Accurate down to the hundredth of an inch."
               lede="These are the details Forma carries through from your design into the XML, so the report opens in the designer ready to work with."
@@ -558,7 +554,7 @@ const LandingPage = ({
             </Reveal>
             <div>
               <Reveal>
-                <Eyebrow coord="x 000 · y 2940">Your key</Eyebrow>
+                <Eyebrow>Your key</Eyebrow>
               </Reveal>
               <Reveal delay={0.06}>
                 <h2 className={`mt-[18px] ${H2}`}>

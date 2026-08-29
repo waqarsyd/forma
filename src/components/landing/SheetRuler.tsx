@@ -5,11 +5,30 @@ import { useEffect, useRef, useState } from 'react';
  * major every CSS inch, read out in report units — the same hundredths-of-an-inch
  * grid the product works in.
  *
- * The marker riding it is the one piece of chrome here that is live rather than
- * decorative: it tracks scroll position and reads out **the rule's own scale at
- * the point it has reached**. That last part is the whole contract — the chip is
- * a cursor on this rule, not a measure of the document. See `units` below for
- * what it cost to get that wrong.
+ * **The rule measures the document, not the window.** The strip is `fixed`, but
+ * its grid is anchored to the page: the ticks slide as you scroll, and a label
+ * reading `800` marks the point eight inches down the *document*. That is the
+ * whole contract, and it is what lets the labels agree with the `Eyebrow`
+ * coordinates printed in the page beside them — both are `toSheetUnits` of a
+ * document offset, and there is now exactly one scale on screen.
+ *
+ * It did not always work that way, and the history is the reason for the rule:
+ *
+ *  - Originally the marker chip stored its own scroll state while the ticks used
+ *    a viewport scale and the marker's position used a third — a fraction of the
+ *    document mapped onto the viewport. Three coordinate systems in one
+ *    component. Measured over six pages and four scroll positions: **0 of 22
+ *    agreed, worst by 8,669 units on /docs**, where the chip read 9,509 on a
+ *    rule whose largest label was 900. Nothing threw; each number was correct in
+ *    a system the other two were not using.
+ *  - Deriving the chip from the tick scale fixed *that*, and the chip and its
+ *    ticks then agreed everywhere. But it reconciled the component with itself
+ *    and not with the page: the section eyebrows were hardcoded literals
+ *    stepping in 420s, so a reader saw `Y 1260 SCOPE` in the copy and `y 0280`
+ *    on the rule beside it. **6 of 17 agreed, and all six were reading zero**,
+ *    which is where any two scales agree for free.
+ *  - Both are now document coordinates. The eyebrows measure their own layout
+ *    position; these labels measure the offset at each tick.
  *
  * Four things it must not do:
  *
@@ -18,42 +37,59 @@ import { useEffect, useRef, useState } from 'react';
  * 2. **Sit under the content.** The landing page scopes its measure to 1180px,
  *    so from xl (1280px) the outer margin is at least 50px and the 44px rule
  *    clears the copy. Widening that measure puts the rule back on top of it.
- * 3. **Let the marker paint while it is behind `SiteHeader`.** This is the
+ * 3. **Paint anything solid while it is behind `SiteHeader`.** This is the
  *    subtle one, and it shipped broken. The header is `sticky top-0 z-50` with
  *    `backdrop-filter: blur(16px) saturate(1.5)` over `bg-surface/[0.84]`, so it
- *    does not *hide* what is beneath it — it *smears* it. At scroll 0 the marker
- *    sits at top 0, which put solid brand orange directly under that blur and
- *    painted a shapeless orange stain into the top-left corner of every page the
- *    rule renders on (all six), on every load, before any scrolling. It read as
- *    a rendering fault rather than as chrome. `HEADER_CLEARANCE` below is the
- *    fix: the marker fades out while it is inside the header band and fades back
- *    in the moment it clears. **A translucent blurred header is not an occluder**
- *    — anything drawn under one has to hide itself.
- * 4. **Give the readout a second source of truth.** `units` is derived from
- *    `top` in the render, using the same expression as the tick labels. Compute
- *    it from `window.scrollY` in the scroll handler instead and the chip starts
- *    describing a different coordinate system from the rule it is printed on,
- *    silently — which is exactly what happened. Keep the derivation.
+ *    does not *hide* what is beneath it — it *smears* it. The old marker sat at
+ *    top 0 at rest, which put solid brand orange under that blur and painted a
+ *    shapeless orange stain into the top-left corner of every page the rule
+ *    renders on, on every load, before any scrolling. **A translucent blurred
+ *    header is not an occluder** — anything drawn under one has to hide itself.
+ *    The marker is gone, but the hazard is not: the ticks now travel upward
+ *    through that band instead of sitting still below it, so each one carries
+ *    its own `HEADER_CLEARANCE` fade.
+ * 4. **Introduce a second scale.** Everything here is `toSheetUnits` of a
+ *    document offset. A readout derived from anything else — a scroll fraction,
+ *    a viewport position, a hardcoded literal — is how all three of the bugs
+ *    above happened, and none of them threw.
  */
 
 const TICK_GAP = 12;
-const MAJOR_EVERY = 96; // one CSS inch
-const UNITS_PER_INCH = 100;
+export const MAJOR_EVERY = 96; // one CSS inch
+export const UNITS_PER_INCH = 100;
 
 /**
- * How far down the marker has to be before it is clear of `SiteHeader`.
+ * CSS pixels to the sheet's own hundredths-of-an-inch.
+ *
+ * Exported because `Eyebrow` in `sections.tsx` prints coordinates in this same
+ * scale, and the two must not each carry their own copy of 96 and 100. That is
+ * not hypothetical here: the section eyebrows were hardcoded literals stepping
+ * in 420s, and they disagreed with this rule by up to 1,909 units — measured
+ * across 17 eyebrows on six pages, of which only the six reading zero agreed,
+ * and zero is where every scale agrees for free. One function, one scale.
+ */
+export function toSheetUnits(px: number): number {
+  return Math.round((px / MAJOR_EVERY) * UNITS_PER_INCH);
+}
+
+/**
+ * How far down a tick has to be before it is clear of `SiteHeader`.
  *
  * The header measures 69px (its `py-[22px]` plus the 25px lockup and a 1px
  * border). 76 gives it a few pixels of daylight so the fade finishes before the
  * bar emerges rather than during. If the header's height changes, this changes
  * with it — there is no shared token for it, and getting it wrong reintroduces
  * the smear described above rather than throwing.
+ *
+ * This used to gate the marker alone, which was the only thing that moved.
+ * Now every tick and label slides under the header on the way up, so the fade
+ * applies to all of them.
  */
 const HEADER_CLEARANCE = 76;
 
 export default function SheetRuler() {
   const [height, setHeight] = useState(0);
-  const [top, setTop] = useState(0);
+  const [scrollY, setScrollY] = useState(0);
   const [overDark, setOverDark] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -61,12 +97,10 @@ export default function SheetRuler() {
     const measure = () => setHeight(window.innerHeight);
     measure();
 
-    // `top` is the only thing scroll produces. The readout is derived from it
-    // below rather than computed here — see `units`.
-    const onScroll = () => {
-      const max = Math.max(1, document.body.scrollHeight - window.innerHeight);
-      setTop(Math.min(1, window.scrollY / max) * (window.innerHeight - 4));
-    };
+    // The document offset at the top edge of the viewport. That is the only
+    // thing the rule needs: every tick's coordinate is this plus its own screen
+    // position, so there is one input and one scale.
+    const onScroll = () => setScrollY(window.scrollY);
     onScroll();
 
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -89,28 +123,19 @@ export default function SheetRuler() {
     return () => io.disconnect();
   }, []);
 
-  const ticks = height ? Math.ceil(height / TICK_GAP) : 0;
-
-  // See HEADER_CLEARANCE. Opacity rather than unmounting, so the marker fades
-  // rather than blinking out of existence at the threshold.
-  const tucked = top < HEADER_CLEARANCE;
-
   /**
-   * What the rule reads at the marker's own position — the *same* expression
-   * the tick labels use, so the chip and the tick beside it cannot disagree.
+   * The ticks, in DOCUMENT coordinates.
    *
-   * This is derived rather than stored on purpose. It used to be its own piece
-   * of scroll state, `Math.round((window.scrollY / MAJOR_EVERY) * UNITS_PER_INCH)`,
-   * which is the document's absolute scroll offset — while `top` is a *fraction
-   * of the document* mapped onto the viewport, and the tick labels are a
-   * *viewport* scale. Three coordinate systems in one component, and the chip
-   * could only ever agree with the rule at zero. Measured across six pages and
-   * four scroll positions each: 0 of 22 agreed, worst by 8,669 units on /docs,
-   * where the chip read 9,509 on a rule whose largest label is 900. Nothing
-   * threw, because nothing was wrong arithmetically — each number was correct
-   * in a system the other two were not using.
+   * The grid is anchored to the document, not the viewport: `firstTick` is the
+   * first multiple of `TICK_GAP` at or below the top edge, so as the page
+   * scrolls the ticks slide upward and a major always lands on a round hundred.
+   * That is what makes a label mean something — `800` marks the point 8 inches
+   * down the page, on every viewport size, rather than 8 inches down the window.
+   *
+   * One extra tick is drawn so the strip stays filled as the grid slides.
    */
-  const units = Math.round((top / MAJOR_EVERY) * UNITS_PER_INCH);
+  const firstTick = Math.ceil(scrollY / TICK_GAP) * TICK_GAP;
+  const count = height ? Math.ceil(height / TICK_GAP) + 1 : 0;
 
   return (
     <div
@@ -120,37 +145,33 @@ export default function SheetRuler() {
         overDark ? 'opacity-0' : 'opacity-100'
       }`}
     >
-      {Array.from({ length: ticks }, (_, i) => {
-        const y = i * TICK_GAP;
-        const major = y % MAJOR_EVERY === 0;
+      {Array.from({ length: count }, (_, i) => {
+        const docY = firstTick + i * TICK_GAP;
+        const screenY = docY - scrollY;
+        const major = docY % MAJOR_EVERY === 0;
+
+        // See HEADER_CLEARANCE. Everything now travels under the header rather
+        // than sitting still below it, so each tick carries its own fade in and
+        // nothing solid is left to smear through the blur.
+        const fade = Math.max(0, Math.min(1, screenY / HEADER_CLEARANCE));
+
         return (
-          <div key={y}>
+          <div key={docY} style={{ opacity: fade }}>
             <span
               className={`absolute right-0 h-px ${major ? 'w-3 bg-on-surface-variant/90' : 'w-1.5 bg-outline-variant'}`}
-              style={{ top: y }}
+              style={{ top: screenY }}
             />
-            {major && y > 0 && (
+            {major && docY > 0 && (
               <span
                 className="absolute right-4 -translate-y-1/2 font-code-sm text-[8.5px] tabular-nums text-on-surface-variant/70"
-                style={{ top: y }}
+                style={{ top: screenY }}
               >
-                {(y / MAJOR_EVERY) * UNITS_PER_INCH}
+                {toSheetUnits(docY)}
               </span>
             )}
           </div>
         );
       })}
-
-      <span
-        className={`u-transition absolute inset-x-0 h-0.5 bg-secondary-container ${
-          tucked ? 'opacity-0' : 'opacity-100'
-        }`}
-        style={{ top }}
-      >
-        <span className="absolute right-0.5 top-1.5 whitespace-nowrap rounded-sm bg-secondary-container px-1 py-px font-code-sm text-[8.5px] font-medium tabular-nums text-white">
-          y {String(units).padStart(4, '0')}
-        </span>
-      </span>
     </div>
   );
 }
