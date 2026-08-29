@@ -410,8 +410,20 @@ export default function DocsPage({
             </div>
           </aside>
 
-          {/* ------------------------------------------------- content */}
-          <div ref={docRef} className="grid gap-7">
+          {/* ------------------------------------------------- content
+
+              Same guard as the grid above, and it is needed separately: this is
+              a nested grid, so constraining the outer one only caps THIS box —
+              its own implicit track is still `auto` and still floors at the
+              min-content width of the <Article> cards, which carry the default
+              `min-width: auto`. Measured at 390px the outer fix left the column
+              correctly at 390 while the cards inside it sat at 489 and spilled
+              out of it, so 150 headings, paragraphs and links were still drawn
+              outside the viewport. The `<pre>` blocks keep their
+              `overflow-x-auto`, so genuinely wide code scrolls in place rather
+              than being cut off — verified: applying this takes the count of
+              clipped, non-scrollable elements to zero as well. */}
+          <div ref={docRef} className="grid grid-cols-[minmax(0,1fr)] gap-7 [&>*]:min-w-0">
             <Article id="start" kicker="Guide" title="Getting started" hidden={!matches('start')}>
               <p className={PROSE}>
                 Forma turns a report design you already have into three things at once: a written

@@ -716,7 +716,14 @@ export default function FeaturesPage({
               lede="A malformed generation should show up here, in the browser, and not when the DevExpress designer refuses the file."
             />
 
-            <div className="grid items-start gap-[60px] lg:grid-cols-[minmax(0,1fr)_minmax(0,516px)]">
+            {/* The base `grid-cols-[minmax(0,1fr)]` and `[&>*]:min-w-0` are the
+                same guard the `lg:` rule carries, applied at the base width too.
+                Without them this is one implicit `auto` track below 1024px, and
+                an `auto` track floors at its content's min-content width: at a
+                320px viewport it measured 339px, so the four cards below and
+                their headings were drawn 28px past the right edge. Same defect
+                as the two grids in DocsPage. */}
+            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,516px)]">
               <div>
                 <RevealGroup className="grid gap-3" stagger={0.1}>
                   {[
