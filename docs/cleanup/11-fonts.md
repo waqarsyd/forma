@@ -211,6 +211,59 @@ overriding `deviceScaleFactor` shifted the space again. Once fixed, **all four p
 differ.** Recorded because a measurement that silently returns nothing looks exactly like
 a measurement that found nothing.
 
+## 11.5c Runtime verification, 2026-08-29
+
+The measurement in §11.1 and the check in §11.5b both ran against the **production**
+build. The app is also served a second way — `npm run dev` runs `tsx server.ts` with Vite
+in middleware mode, which transforms modules on the fly rather than serving `dist/`. A
+font change that held in one and not the other would be a real trap, so both were run.
+
+Ten routes on each: `/`, `/features`, `/docs`, `/contact`, `/login`, `/signup`, `/terms`,
+`/privacy`, `/workspace`, and an unrouted path.
+
+| | Dev server | Production server |
+|---|---|---|
+| Elements in an undeclared weight | **0 on every route** | **0 on every route** |
+| Faces loaded per route | 7–10 (subsets vary with content) | 7–10, identical |
+| `<link rel="icon">` | `/favicon.png` | `/favicon.png` |
+| DOM nodes under `#root` | 137–980 | **identical, route for route** |
+| Rendered text length | 364–16,173 chars | **identical, route for route** |
+| Console errors / uncaught exceptions | none | none |
+| HTTP ≥ 400 | none | none |
+
+Identical node counts and text lengths across the two servers is the useful part: it says
+the Vite-transformed and the bundled output render the same thing, so the weight
+declarations are not being resolved differently by the two pipelines.
+
+Also confirmed from the network log — the request that goes out is the corrected one:
+
+```
+https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@700;800
+  &family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700
+```
+
+and it pulls exactly three files from `fonts.gstatic.com` — one per family, as §11.3
+established it must.
+
+### Two findings that look like failures and are not
+
+Both are recorded because the next person to run this check will see them.
+
+1. **The first dev-server load of `/` rendered nothing** — 0 nodes, 0 text, 20 seconds.
+   That is Vite re-optimising dependencies, which it does after `vite.config.ts` changes;
+   the log line is `[vite] (client) Re-optimizing dependencies because vite config has
+   changed`. Warm, the same route renders 828 nodes in 2.5 s. **A cold dev server is not
+   a broken one** — the same trap `CLAUDE.md` already records for a cold Vitest cache.
+2. **`net::ERR_CONNECTION_REFUSED` on `/workspace`.** Traced to the URL rather than
+   assumed: `http://127.0.0.1:7317/health`, which is `designerBridge.ts` feature-detecting
+   RepxDesigner. It is not running, so the probe is refused and the **Open in designer**
+   button stays disabled — which is the designed behaviour, verified visually. The other
+   abort in that log is Firestore's realtime channel closing on navigation.
+
+The reduced-motion console warnings appear only under the dev server, because `motion`
+strips them from its production build. They are this machine's Windows setting, not the
+application.
+
 ## 11.6 What this corrects in the earlier record
 
 `docs/cleanup/06-assets.md` §6.7 says the eleven weights are "on the order of 150–250 KB,
