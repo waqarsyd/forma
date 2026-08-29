@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# A two-line shim, and the reason is worth knowing before you "simplify" it.
+#
+# The first version of this hook was a real shell script using wc, tr and grep.
+# It could not run on the development machine: git there is **MinGit**, a
+# stripped-down Git for Windows that ships usr/bin/sh.exe but none of the MSYS
+# userland, so every one of those utilities is missing. A hook that cannot
+# execute is worse than no hook, because it looks installed.
+#
+# So the logic lives in Node, which this project already requires at >=20 and
+# already uses for three scripts/ checks. `exec node` is the only thing this
+# file needs from the shell. The relative path is safe: git runs hooks with the
+# working directory set to the top of the repository.
+#
+# Install once per clone (git does not run tracked hooks on its own):
+#     git config core.hooksPath .githooks
+#
+# Bypass for one commit:  git commit --no-verify
+exec node .githooks/pre-commit.mjs

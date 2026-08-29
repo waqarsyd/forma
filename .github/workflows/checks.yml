@@ -54,6 +54,14 @@ jobs:
       - name: Encoding
         run: npm run lint:encoding
 
+      # The quarantine is only a one-way door if something enforces it. Fails if
+      # any source file imports from _not_required/, and also if anything inside
+      # it is tracked beyond MANIFEST.md and README.md -- because `git mv`-ing a
+      # file INTO the folder looks like it worked while the bytes stay in the
+      # clone. Cheap and static, so it runs before the slow steps.
+      - name: Quarantine
+        run: npm run lint:quarantine
+
       # --coverage rather than plain `npm test`: same suite, same pass/fail, and
       # the summary lands in the log so a drop is visible in the diff of a run
       # rather than only when someone thinks to look.
@@ -64,6 +72,14 @@ jobs:
       # or the server bundle failing to resolve a local module.
       - name: Build
         run: npm run build
+
+      # Must follow the build, because it measures dist/. This exists because of
+      # a defect every other check here missed: Tailwind was generating utilities
+      # from class names quoted in markdown, so the stylesheet grew while tsc was
+      # clean, 409 tests passed and the build succeeded. Nothing was watching the
+      # size. See docs/cleanup/09-results.md 9.4.
+      - name: Bundle size budget
+        run: npm run check:size
 
   rules:
     name: firestore rules
