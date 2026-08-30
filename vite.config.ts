@@ -18,7 +18,7 @@ export default defineConfig(() => {
     // the repo root was declared in this file, in `vitest.config.ts` and in
     // `tsconfig.json`'s `paths` — three declarations, nothing checking they
     // agreed, and **zero imports using any of them**: every import in this
-    // project is relative. Removed 2026-08-29 in commit bf447ac, whose message
+    // project is relative. Removed 2026-08-29 in commit 1e9b4e5, whose message
     // carries the full reasoning. If you want path aliases, add them back to all
     // three in one commit and actually use them.
     server: {

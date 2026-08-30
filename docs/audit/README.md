@@ -4,9 +4,9 @@
 they were removed and are recoverable from git history:
 
 ```
-git show 4e4c844:docs/audit/06-roadmap.md          # the roadmap and severity table
-git show 4e4c844:docs/audit/07-implementation.md   # what was actually built, and what it cost
-git show 4e4c844:docs/audit/00-inventory.md        # 01-runbook, 02-architecture, 03-test-audit,
+git show a4ac759:docs/audit/06-roadmap.md          # the roadmap and severity table
+git show a4ac759:docs/audit/07-implementation.md   # what was actually built, and what it cost
+git show a4ac759:docs/audit/00-inventory.md        # 01-runbook, 02-architecture, 03-test-audit,
                                                    # 04-bugs, 05a-security, 05b-performance,
                                                    # 05c-reliability-data-ux
 ```
@@ -19,7 +19,7 @@ and the rest). Without this table, a reader hitting `// (audit ARC-001)` in
 `src/lib/attachmentParts.ts` has no way to learn what that was.
 
 Status is as of the audit's own implementation pass; several were closed or partly closed
-by the 2026-08-28 cleanup, which is recorded in `git log 29d7b6d..4cf5dab`.
+by the 2026-08-28 cleanup, which is recorded in `git log 2ce6e56..9a8163c`.
 
 ---
 
@@ -100,6 +100,6 @@ by the 2026-08-28 cleanup, which is recorded in `git log 29d7b6d..4cf5dab`.
   (ARC-003 "no observability", INV-005 "no `engines` field", PERF-003, UX-001, UX-003,
   NEW-001…004). They are deliberately not listed above — this index covers the 31
   identifiers the codebase actually references. The full set is in
-  `git show 4e4c844:docs/audit/06-roadmap.md`.
+  `git show a4ac759:docs/audit/06-roadmap.md`.
 - **Do not renumber or reuse these IDs.** They are load-bearing in 68 comments and 33
   branch names, none of which can be updated by editing this file.

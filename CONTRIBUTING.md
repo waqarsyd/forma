@@ -185,7 +185,7 @@ Not automated, because most of it needs judgement. Roughly every three months:
    a built page. This is the largest known unanswered question about the site's weight.
 
 The 2026-08-28 cleanup that produced these rules is recorded in its commit messages —
-32 commits merged as `4cf5dab`, each stating what changed, what it was worth, and what was
-verified. `git log 29d7b6d..4cf5dab` is the record. (Twelve phase reports also existed
+32 commits merged as `9a8163c`, each stating what changed, what it was worth, and what was
+verified. `git log 2ce6e56..9a8163c` is the record. (Twelve phase reports also existed
 under `docs/cleanup/`; they were removed on 2026-08-29 and are recoverable from history
-with `git show 2c2c584:docs/cleanup/09-results.md` or similar.)
+with `git show 7b7de66:docs/cleanup/09-results.md` or similar.)

@@ -53,7 +53,7 @@ export const modalVariants: Variants = {
 /* `drawerVariants`, `messageVariants`, `tabPanelVariants` and `snapInVariants`
    lived here until 2026-08-28. Nothing imported any of them, and two were
    measurably absent from the built bundle, so they were removed rather than kept
-   as a vocabulary for screens that do not exist. Recover them from `cd1fd85~1`
+   as a vocabulary for screens that do not exist. Recover them from `ea37ed0~1`
    if a drawer, an animated message list or an animated tab panel is ever built —
    they were written against the DURATION / EASE / transition tokens still in
    this file, so they should drop straight back in. */
