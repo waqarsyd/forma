@@ -69,7 +69,7 @@ jobs:
       # a defect every other check here missed: Tailwind was generating utilities
       # from class names quoted in markdown, so the stylesheet grew while tsc was
       # clean, 409 tests passed and the build succeeded. Nothing was watching the
-      # size. Commit e6e5f6f carries the measurement.
+      # size. Commit ea767ee carries the measurement.
       - name: Bundle size budget
         run: npm run check:size
 
