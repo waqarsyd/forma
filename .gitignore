@@ -19,6 +19,26 @@ desktop.ini
 *.swo
 .idea/
 
+# Firebase's official agent skill packs. Untracked on 2026-08-30, ahead of making
+# this repository public, and kept on disk so they still work locally.
+#
+# Two reasons, and the first is the one that decided it. They are 44 markdown
+# files of Google's own documentation -- 75% of every .md file this repo tracked,
+# ~192 KB -- carrying no LICENSE, no NOTICE, no copyright line and no statement
+# of where they came from. Publishing them inside an Apache-2.0 repository would
+# redistribute someone else's writing with nothing telling a reader it is not
+# ours. The fonts in src/fonts/ set the standard the same week: OFL texts
+# shipped, copyright recorded per family. These did not meet it.
+#
+# Second, CONTRIBUTING.md's rule already excluded them: a file must be used by
+# code that actually ships or actually runs. Nothing does. `git grep .agents`
+# over anything but markdown returns nothing -- no build step, no script, no CI
+# job reads them; they are instructions for one particular AI assistant.
+#
+# Not deleted, because they are genuinely useful when working on firestore.rules
+# or the auth flow. Anyone who wants them can install the official packs.
+.agents/
+
 # Full-resolution logo masters. Untracked on 2026-08-29: the 2048px white mark
 # alone was 2.5 MB and 50% of the repository, cloned in full by everyone who has
 # ever cloned it, to serve a 256px derivative that is committed beside it in

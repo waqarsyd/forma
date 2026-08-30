@@ -126,6 +126,10 @@ src/
                        what server.ts sends, where it listens, and how long
                        dist/ is cached for. Under src/ but never bundled
                        into the client; server.ts is the only importer
+  fonts/               the three self-hosted typefaces as variable woff2, their
+                       SIL OFL licences, and a README — referenced from
+                       index.css so Vite fingerprints them; see the typefaces
+                       block there for why they are not in public/
 tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
                        in the real DevExpress designer — C# and MSBuild, with
@@ -144,8 +148,6 @@ docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
 .githooks/             opt-in pre-commit guard; enable with
                        `git config core.hooksPath .githooks`
 scripts/               dev + build helpers
-.agents/skills/        Firebase's official agent skill packs — reference
-                       material, nothing builds from them
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
 firebase-applet-config.json
