@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { securityHeadersFor } from "./src/server/securityHeaders";
 import { resolveBindHost } from "./src/server/bindHost";
+import { cacheControlFor, REVALIDATE } from "./src/server/staticCache";
 
 async function startServer() {
   const app = express();
@@ -96,8 +97,37 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    // Without `setHeaders`, express.static sends `public, max-age=0` on
+    // everything, so Vite's content-hashed bundles are revalidated on every
+    // load despite their URLs being unable to change meaning. See
+    // src/server/staticCache.ts for why index.html must NOT get the same
+    // treatment.
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          res.setHeader('Cache-Control', cacheControlFor(filePath));
+        },
+      }),
+    );
+    // A hashed asset that is not on disk must 404, not fall through to the SPA
+    // catch-all below. Registered after express.static, so anything that does
+    // exist has already been served.
+    //
+    // Same defect as the /api/* guard above, one layer down: without this, a
+    // request for a bundle from a previous deploy answers 200 with index.html,
+    // and the browser reports a syntax error from parsing HTML as JavaScript --
+    // which reads as a corrupt build rather than a missing file. Verified by
+    // requesting a stale hash after a rebuild.
+    app.use('/assets', (_req, res) => {
+      res.status(404).type('text/plain').send('Not found');
+    });
+
+    // The SPA fallback answers with index.html, and `sendFile` does NOT run the
+    // `setHeaders` above -- that hook belongs to express.static. Set it here
+    // too, or every deep link (which is most navigations) gets a different
+    // caching policy from the same file served at `/`.
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', REVALIDATE);
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

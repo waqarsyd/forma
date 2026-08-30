@@ -122,8 +122,9 @@ src/
   services/            geminiService (+ tests, and modelResolution.test.ts
                        beside it), firebase, keyVault (+ tests) — the vault's
                        storage rules are covered by tests/ as well as here
-  server/              securityHeaders and bindHost (+ tests) — what server.ts
-                       sends and where it listens. Under src/ but never bundled
+  server/              securityHeaders, bindHost and staticCache (+ tests) —
+                       what server.ts sends, where it listens, and how long
+                       dist/ is cached for. Under src/ but never bundled
                        into the client; server.ts is the only importer
 tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
