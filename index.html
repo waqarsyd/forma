@@ -76,53 +76,22 @@
   <meta name="twitter:image" content="/og-card.png" />
   <meta name="twitter:image:alt"
     content="Forma — Show it. Build it. Ship it. Screenshot, PDF or .repx to DevExpress .repx." />
-  <!-- Font Families: Hanken Grotesk, Inter, JetBrains Mono.
-       The stylesheet comes from one origin and the font files from another, and
-       both handshakes happen before first paint — so both are warmed here.
-       crossorigin on the gstatic hint is required and easy to miss: font files
-       are fetched in CORS mode, and a preconnect without it opens a connection
-       the font request then cannot reuse, which is slower than not hinting.
+  <!-- Font Families: Hanken Grotesk, Inter, JetBrains Mono. Three <link> tags
+       lived here — two preconnects and a render-blocking stylesheet on
+       fonts.googleapis.com — until 2026-08-30, when the faces were self-hosted
+       and audit PERF-002 closed.
 
-       Self-hosting these three faces would remove the last third-party request
-       on the critical path and the last undisclosed thing Google sees (the
-       privacy page names it, so this is disclosed rather than hidden). It is
-       deliberately not done here: it means committing font binaries and
-       changing what every page renders in, with no visual regression test to
-       catch a wrong weight or a missing subset. Audit PERF-002, still open.
+       There is deliberately nothing to replace them with. The @font-face rules
+       live in src/index.css, which is already loaded by the bundle, so the
+       fonts need no markup here and no preconnect: they come from this origin,
+       on the connection that fetched the page. A preload hint would be the one
+       arguable addition, and it is left out on purpose — it would have to name
+       a Vite-fingerprinted filename that changes every build.
 
-       THE WEIGHT LISTS ARE MEASURED, NOT GUESSED (2026-08-29). Each family asks
-       for exactly the weights the app paints, and this was got wrong in both
-       directions before:
+       The reasoning that used to sit here, including the measured weight lists
+       and why they are what they are, moved to src/index.css next to the rules
+       it now governs. Read it there before changing a weight. -->
 
-         - Inter and JetBrains Mono stopped at 600, but Tailwind's `font-bold`
-           resolves to 700 against whichever family is in effect. With no 700
-           face to use, the browser SYNTHESISED one by thickening the regular
-           weight -- on 22 elements across five pages, including every <b> in
-           body copy and the byline in the footer. Faux bold is fatter AND
-           wider, because thickening each stem adds advance width, so it also
-           moves line breaks.
-         - Hanken Grotesk asked for 400/500/600 and painted them on zero
-           elements. The display face is only ever used at 700 and 800.
-
-       Correcting both costs NOTHING in font bytes. All three families are
-       served as *variable* fonts -- one woff2 per family spanning the whole
-       weight axis -- so the wght list selects which @font-face blocks appear in
-       the CSS, not which binaries exist. Four request variants were fetched and
-       weighed at exactly 116,280 B each; only the CSS changes (22.5 -> 25.0 KB,
-       gzipped in transit).
-
-       So: do not add a weight here without checking something paints it, and do
-       not remove one without checking nothing does. The method, if you need to
-       redo it: load each route and read `document.fonts` for what the browser
-       actually downloaded, then computed style on every element containing
-       visible text for what the page actually paints. The disagreement between
-       those two lists is the answer. Commits bb07957 and 887358a carry the
-       measurement and the fix. -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@700;800&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap"
-    rel="stylesheet" />
   <!-- The Material Symbols stylesheet was here until 2026-08-27. It pulled a
        variable icon font across its full weight and fill axes to draw five
        glyphs — menu, close, logout and a chevron pair — and three of those

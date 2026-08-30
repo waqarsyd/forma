@@ -34,14 +34,37 @@ const PRINT_ONLY = process.argv.includes('--print');
  */
 const BUDGETS = [
   { prefix: 'index-', ext: '.js', max: 1_160_000, note: 'eager entry chunk + the genai chunk' },
-  { prefix: 'index-', ext: '.css', max: 112_000, note: 'the whole stylesheet' },
+  // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
+  // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
+  // old cap -- tight enough that the next unrelated line would have tripped it
+  // and sent someone hunting a Tailwind leak that was not there.
+  { prefix: 'index-', ext: '.css', max: 116_000, note: 'the whole stylesheet' },
   { prefix: 'pdf.worker-', ext: '.mjs', max: 2_250_000, note: 'pdfjs worker, lazy' },
   { prefix: 'pdf-', ext: '.js', max: 470_000, note: 'pdfjs entry, lazy' },
   { prefix: 'Markdown-', ext: '.js', max: 175_000, note: 'react-markdown + remark-gfm, lazy' },
+  /*
+   * Every self-hosted font, checked individually. An empty prefix matches all
+   * of them; the cap is the largest (inter-latin-ext, 85,068 B) plus a little.
+   *
+   * Worth watching per-file rather than only in the total, because the failure
+   * mode here is silent and specific: fetching a STATIC instance instead of a
+   * variable face, or a subset wider than latin-ext, changes one file's size
+   * and nothing else. See src/fonts/README.md for how to refresh them.
+   */
+  { prefix: '', ext: '.woff2', max: 90_000, note: 'a single self-hosted font subset' },
 ];
 
-/** The whole deployable payload, as a backstop for anything the list above misses. */
-const TOTAL_MAX = 4_600_000;
+/**
+ * The whole deployable payload, as a backstop for anything the list above misses.
+ *
+ * Raised from 4,600,000 on 2026-08-30 for the self-hosted fonts (audit
+ * PERF-002): six woff2 files, 230,672 B, which took the total from 4,468,367 to
+ * 4,699,146 and tripped this check exactly as it should have. The bytes moved
+ * from Google's origin to ours rather than appearing from nowhere -- a typical
+ * page still fetches three of the six, the same three it fetched before -- but
+ * they are in `dist/` now, so the budget has to say so.
+ */
+const TOTAL_MAX = 4_840_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);

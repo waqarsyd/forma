@@ -110,8 +110,12 @@ function directives(development: boolean): Record<string, string[]> {
     'script-src': development
       ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"]
       : ["'self'", THEME_SCRIPT_HASH],
-    'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-    'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
+    // No fonts.googleapis.com and no fonts.gstatic.com: the three families are
+    // self-hosted as of 2026-08-30 (see the typefaces block in src/index.css),
+    // so both origins came out of the policy. Putting either back means a
+    // third party sees every visitor again -- check why before doing it.
+    'style-src': ["'self'", "'unsafe-inline'"],
+    'font-src': ["'self'", 'data:'],
     // data: for uploaded screenshots and the model's own image crops; blob: for
     // the object URLs App.tsx creates when previewing a file.
     'img-src': ["'self'", 'data:', 'blob:'],

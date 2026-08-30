@@ -188,6 +188,15 @@ describe('buildContentSecurityPolicy', () => {
     expect(prod['form-action']).toEqual(["'self'", 'https://formsubmit.co']);
   });
 
+  it('names no third-party origin for fonts or styles', () => {
+    // The families are self-hosted (src/index.css). Re-adding either Google
+    // origin would hand every visitor's IP and Referer back to a third party on
+    // page load, which is a privacy change, not a styling one.
+    expect(prod['style-src'].join(' ')).not.toContain('fonts.googleapis.com');
+    expect(prod['font-src'].join(' ')).not.toContain('fonts.gstatic.com');
+    expect(prod['font-src']).toEqual(["'self'", 'data:']);
+  });
+
   it('allows the pdf.js worker and the object URLs App.tsx creates', () => {
     expect(prod['worker-src']).toContain('blob:');
     expect(prod['img-src']).toContain('blob:');

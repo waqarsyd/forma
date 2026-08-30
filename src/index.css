@@ -38,6 +38,127 @@
    C#. If a genuine third source ever appears, add it here; do not remove
    `source(none)` to "fix" a missing class, or the documentation leak returns. */
 @import "tailwindcss" source(none);
+
+/* ---------------------------------------------------------------- typefaces
+   Self-hosted as of 2026-08-30 (audit PERF-002). These three families came from
+   fonts.googleapis.com until then, via a <link> in index.html, and that cost
+   more than the bytes:
+
+     - a render-blocking stylesheet on a THIRD origin, so first paint waited on
+       a DNS lookup, a TLS handshake and a round trip to a host we do not
+       control, before the font files themselves were even discovered;
+     - two origins in the CSP (`fonts.googleapis.com` in style-src,
+       `fonts.gstatic.com` in font-src), both now gone;
+     - every visitor's IP and Referer handed to a third party on page load,
+       which the privacy policy would otherwise have to disclose.
+
+   Served from our own origin they arrive on a connection that is already open,
+   and Vite fingerprints them, so they inherit `immutable` caching from
+   src/server/staticCache.ts rather than the `no-cache` that anything in
+   public/ gets.
+
+   **Variable fonts, one file per family per subset.** Requesting weight RANGES
+   from Google (`wght@400..800`) returns a variable face covering every weight;
+   requesting the discrete list this project uses returns 67 static ones. Do not
+   "simplify" these back to per-weight files.
+
+   **latin-ext is free.** `unicode-range` means a subset is not fetched until a
+   page actually contains a character from it, so declaring it costs nothing at
+   runtime and buys correct rendering for European text in user-entered report
+   titles and footers.
+
+   `font-display: swap` matches what the Google CSS requested, so first paint
+   still uses the fallback stack rather than showing nothing.
+
+   To refresh: re-run the fetch with the same weight ranges and replace both the
+   files and these rules. The licences are in src/fonts/.
+
+   THE WEIGHT RANGES ARE MEASURED, NOT GUESSED (2026-08-29, moved here from
+   index.html when the faces were self-hosted). Each family spans exactly the
+   weights the app paints, and this was got wrong in both directions before:
+
+     - Inter and JetBrains Mono stopped at 600, but Tailwind's `font-bold`
+       resolves to 700 against whichever family is in effect. With no 700 face
+       to use, the browser SYNTHESISED one by thickening the regular weight --
+       on 22 elements across five pages, including every <b> in body copy and
+       the byline in the footer. Faux bold is fatter AND wider, because
+       thickening each stem adds advance width, so it also moves line breaks.
+     - Hanken Grotesk asked for 400/500/600 and painted them on zero elements.
+       The display face is only ever used at 700 and 800.
+
+   Correcting both cost NOTHING in font bytes, and the same is true now: these
+   are variable faces spanning a weight axis, so the range selects what the
+   browser may interpolate, not how many binaries exist. Widening
+   `font-weight: 400 800` to `100 900` would not add a byte -- but it would let
+   a stray `font-thin` render in a weight nobody designed for, so the ranges
+   stay honest.
+
+   Do not widen a range without checking something paints it, and do not narrow
+   one without checking nothing does. The method: load each route and read
+   `document.fonts` for what the browser actually downloaded, then computed
+   style on every element containing visible text for what the page actually
+   paints. The disagreement between those two lists is the answer. Commits
+   bb07957 and 887358a carry the original measurement and fix. */
+
+/* Hanken Grotesk -- latin */
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 700 800;
+  font-display: swap;
+  src: url('./fonts/hanken-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Hanken Grotesk -- latin-ext */
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 700 800;
+  font-display: swap;
+  src: url('./fonts/hanken-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Inter -- latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('./fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Inter -- latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('./fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* JetBrains Mono -- latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* JetBrains Mono -- latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 @source "../index.html";
 @source "./";
 
