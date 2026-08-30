@@ -19,6 +19,20 @@ desktop.ini
 *.swo
 .idea/
 
+# Claude Code's personal settings. `.claude/settings.json` beside it IS committed
+# and holds the shared allowlist for the commands this project documents -- that
+# split is the tool's own convention, and it was the wrong way round here until
+# 2026-08-30: the *personal* file was the tracked one, so any contributor's own
+# permission edits would have collided with the owner's in git.
+#
+# The tracked copy had also fossilised. Five of its twelve entries were one-off
+# probes from long-finished debugging sessions -- one allowed reading App.tsx
+# around four specific line numbers, another fetched /@vite/client to grep it for
+# the word "process". They could never fire again and meant nothing to anyone
+# else. The seven that survive are the documented commands: npm run *, npm test,
+# npm ls *, npx tsc *, npx vitest *, New-Item *, Get-Process *.
+.claude/settings.local.json
+
 # Firebase's official agent skill packs. Untracked on 2026-08-30, ahead of making
 # this repository public, and kept on disk so they still work locally.
 #

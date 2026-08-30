@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npm run *)",
+      "PowerShell(npm test)",
+      "PowerShell(npm ls *)",
+      "PowerShell(npx tsc *)",
+      "PowerShell(npx vitest *)",
+      "PowerShell(New-Item *)",
+      "PowerShell(Get-Process *)"
+    ]
+  }
+}
