@@ -122,8 +122,17 @@ function directives(development: boolean): Record<string, string[]> {
     // signInWithPopup opens a window rather than a frame, but the Firebase Auth
     // SDK also mounts a hidden iframe on the auth domain to carry the result.
     'frame-src': ['https://*.firebaseapp.com', 'https://accounts.google.com'],
+    // The HMR socket is NOT on the server's port. Vite in middleware mode opens
+    // its own listener -- 24678 by default -- and `vite.config.ts` passes `hmr`
+    // as a boolean, so there is no port here to read even if we wanted one.
+    // Naming 3000 blocked every hot reload while the pages still rendered
+    // perfectly, which is the worst shape a bug can have: nothing looks broken
+    // until you edit a file and nothing happens.
+    //
+    // So the port is wildcarded rather than guessed. Still loopback, still
+    // development only, and now immune to Vite moving its default.
     'connect-src': development
-      ? [...CONNECT_SRC, 'ws://localhost:3000', 'ws://127.0.0.1:3000']
+      ? [...CONNECT_SRC, 'ws://localhost:*', 'ws://127.0.0.1:*']
       : CONNECT_SRC,
   };
 }

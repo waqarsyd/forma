@@ -157,6 +157,27 @@ describe('buildContentSecurityPolicy', () => {
     expect(prod['connect-src'].some((s) => s.startsWith('ws://'))).toBe(false);
   });
 
+  /**
+   * Regression: the first version of this policy allowed `ws://localhost:3000`,
+   * reasoning that the HMR socket shares the server's port. It does not -- Vite
+   * in middleware mode opens its own listener, 24678 by default. Every hot
+   * reload was blocked while every page still rendered correctly, so nothing
+   * looked wrong until you edited a file and waited.
+   *
+   * `vite.config.ts` passes `hmr` as a boolean, so there is no port to read
+   * here. Wildcarding it is the fix; pinning any number reintroduces the bug the
+   * next time Vite changes its default.
+   */
+  it('does not pin the HMR socket to a port it cannot know', () => {
+    const sockets = dev['connect-src'].filter((s) => s.startsWith('ws://'));
+    expect(sockets.length).toBeGreaterThan(0);
+    for (const s of sockets) {
+      expect(s).toMatch(/:\*$/);
+      // Loopback only -- a wildcard port must not come with a wildcard host.
+      expect(s).toMatch(/^ws:\/\/(localhost|127\.0\.0\.1):/);
+    }
+  });
+
   it('forbids plugins and rebasing, and refuses to be framed', () => {
     expect(prod['object-src']).toEqual(["'none'"]);
     expect(prod['base-uri']).toEqual(["'self'"]);
