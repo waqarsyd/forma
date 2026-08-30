@@ -18,7 +18,17 @@ async function startServer() {
   // after it would cover nothing. HSTS is opt-in via HTTPS=true because
   // sending it over plain http://localhost poisons the whole machine's
   // localhost for a year; see src/lib/securityHeaders.ts.
-  const headers = securityHeadersFor({ https: process.env.HTTPS === "true" });
+  // Declared here rather than at its old position further down, because the CSP
+  // depends on it and the header middleware has to be registered before
+  // anything that can answer a request.
+  const isProduction = process.env.NODE_ENV === "production";
+
+  const headers = securityHeadersFor({
+    https: process.env.HTTPS === "true",
+    // Vite's HMR client is inline script and its transform needs eval, so the
+    // dev policy is looser. It is reachable from loopback only.
+    development: !isProduction,
+  });
   app.use((_req, res, next) => {
     for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
     next();
@@ -51,8 +61,6 @@ async function startServer() {
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "Not found" });
   });
-
-  const isProduction = process.env.NODE_ENV === "production";
 
   // Vite middleware for development
   if (!isProduction) {

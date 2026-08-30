@@ -16,7 +16,23 @@
  * edit to `server.ts`.
  */
 import { describe, it, expect } from 'vitest';
-import { SECURITY_HEADERS, securityHeadersFor } from './securityHeaders';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  SECURITY_HEADERS,
+  securityHeadersFor,
+  buildContentSecurityPolicy,
+  THEME_SCRIPT_HASH,
+} from './securityHeaders';
+
+/** Parse a policy string back into directive -> sources, for asserting on. */
+const parse = (csp: string): Record<string, string[]> =>
+  Object.fromEntries(
+    csp.split(';').map((part) => {
+      const [name, ...sources] = part.trim().split(/\s+/);
+      return [name, sources];
+    }),
+  );
 
 describe('SECURITY_HEADERS', () => {
   it('blocks MIME sniffing', () => {
@@ -77,5 +93,121 @@ describe('securityHeadersFor', () => {
     const headers = securityHeadersFor({});
     headers['X-Frame-Options'] = 'SAMEORIGIN';
     expect(SECURITY_HEADERS['X-Frame-Options']).toBe('DENY');
+  });
+
+  it('always sends a CSP, in either mode', () => {
+    for (const options of [{}, { development: true }, { https: true }]) {
+      expect(securityHeadersFor(options)['Content-Security-Policy']).toContain('default-src');
+    }
+  });
+});
+
+/**
+ * The CSP is the control that makes the app's central claim true -- that a
+ * user's Gemini key cannot leave their machine. `connect-src` is the part
+ * doing that work: injected script can read `sessionStorage` whatever we do,
+ * but it cannot post what it reads to an origin the policy does not name.
+ *
+ * So these tests are deliberately about *absence*: no wildcard, no
+ * `'unsafe-inline'` on script in production, no attacker-controlled origin.
+ */
+describe('buildContentSecurityPolicy', () => {
+  const prod = parse(buildContentSecurityPolicy(false));
+  const dev = parse(buildContentSecurityPolicy(true));
+
+  it('locks the exfiltration boundary to a known list', () => {
+    // The assertion that matters. If this list ever grows, it should be
+    // because someone decided to send user data somewhere new.
+    expect(prod['connect-src']).toEqual([
+      "'self'",
+      'https://generativelanguage.googleapis.com',
+      'https://identitytoolkit.googleapis.com',
+      'https://securetoken.googleapis.com',
+      'https://firestore.googleapis.com',
+      'https://www.googleapis.com',
+      'https://formsubmit.co',
+      'http://127.0.0.1:7317',
+    ]);
+  });
+
+  it('never allows connecting to an arbitrary origin', () => {
+    for (const policy of [prod, dev]) {
+      expect(policy['connect-src']).not.toContain('*');
+      expect(policy['connect-src']).not.toContain('https:');
+      expect(policy['connect-src']).not.toContain('http:');
+    }
+  });
+
+  it('keeps the designer companion reachable', () => {
+    // Loopback, plain http, cross-origin. Omitting it breaks "Open in
+    // designer" silently -- the fetch just never resolves.
+    expect(prod['connect-src']).toContain('http://127.0.0.1:7317');
+  });
+
+  it('runs no inline or eval script in production', () => {
+    expect(prod['script-src']).not.toContain("'unsafe-inline'");
+    expect(prod['script-src']).not.toContain("'unsafe-eval'");
+  });
+
+  it('relaxes script only for the dev server, which binds to loopback', () => {
+    expect(dev['script-src']).toContain("'unsafe-inline'");
+    expect(dev['script-src']).toContain("'unsafe-eval'");
+    // ...and the HMR socket, which is the other thing Vite needs.
+    expect(dev['connect-src'].some((s) => s.startsWith('ws://'))).toBe(true);
+    expect(prod['connect-src'].some((s) => s.startsWith('ws://'))).toBe(false);
+  });
+
+  it('forbids plugins and rebasing, and refuses to be framed', () => {
+    expect(prod['object-src']).toEqual(["'none'"]);
+    expect(prod['base-uri']).toEqual(["'self'"]);
+    expect(prod['frame-ancestors']).toEqual(["'none'"]);
+  });
+
+  it('lets the contact form post only to the endpoint it documents', () => {
+    expect(prod['form-action']).toEqual(["'self'", 'https://formsubmit.co']);
+  });
+
+  it('allows the pdf.js worker and the object URLs App.tsx creates', () => {
+    expect(prod['worker-src']).toContain('blob:');
+    expect(prod['img-src']).toContain('blob:');
+    expect(prod['img-src']).toContain('data:');
+  });
+
+  it('does not pin the Firebase auth domain to one project', () => {
+    // The README documents bringing your own Firebase project, so a literal
+    // `forma-201ba.firebaseapp.com` here would break every fork that followed
+    // it -- and the failure would be an auth popup that does nothing.
+    expect(prod['frame-src']).toContain('https://*.firebaseapp.com');
+    expect(prod['frame-src'].join(' ')).not.toContain('forma-201ba');
+  });
+});
+
+/**
+ * `index.html`'s theme script must run before first paint, so it cannot move to
+ * a module -- it is allowed by hash instead of `'unsafe-inline'`. The hash is a
+ * constant in `securityHeaders.ts` and the script is in another file, which
+ * fails silently when they drift: a blocked theme script throws nothing, it
+ * just brings back the flash of light theme it exists to prevent.
+ *
+ * Reading `index.html` off disk is how `routes.test.ts` and
+ * `legalDisclosure.test.ts` already pin facts that live in that file.
+ */
+describe('the inline theme script hash', () => {
+  const html = readFileSync('index.html', 'utf8');
+  const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)];
+
+  it('finds exactly one inline script to account for', () => {
+    // A second one would be silently blocked in production: the policy allows
+    // one hash and nothing else.
+    expect(inline).toHaveLength(1);
+  });
+
+  it('matches what index.html actually contains', () => {
+    const digest = createHash('sha256').update(inline[0][1], 'utf8').digest('base64');
+    expect(THEME_SCRIPT_HASH).toBe(`'sha256-${digest}'`);
+  });
+
+  it('is the hash the production policy sends', () => {
+    expect(parse(buildContentSecurityPolicy(false))['script-src']).toContain(THEME_SCRIPT_HASH);
   });
 });
