@@ -4028,7 +4028,19 @@ export default function App() {
                            it, or the browser offering to fill it, undoes that
                            from outside — and the field is revealed as plain text
                            by the eye button, where autocorrect would happily
-                           rewrite an API key. */
+                           rewrite an API key.
+
+                           For the same reason this input is deliberately NOT
+                           inside a <form>. Chromium logs a warning about that on
+                           every load — "[DOM] Password field is not contained in
+                           a form" — and it is the browser objecting to the
+                           correct behaviour: that hint exists to help password
+                           managers recognise sign-in forms, which is the one
+                           thing this field must never look like. Do not silence
+                           it by adding a form wrapper; that trades a console
+                           line for the security property the app is built on.
+                           If Enter-to-submit is ever wanted here, wire an
+                           onKeyDown to the check-key handler instead. */
                         aria-describedby="cfg-key-note"
                         autoComplete="off"
                         autoCapitalize="off"
