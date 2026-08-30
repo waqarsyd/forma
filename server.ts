@@ -1,4 +1,5 @@
 import "dotenv/config";
+import compression from "compression";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -34,6 +35,32 @@ async function startServer() {
     for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
     next();
   });
+
+  /*
+   * gzip, in production only.
+   *
+   * Without this the server sent no Content-Encoding at all: the main bundle
+   * went out at 1,121,864 bytes where gzip is 308,020, and a cold load of `/`
+   * transferred 1.22 MB against roughly 0.43 MB compressed. Nothing in the
+   * build was wrong -- Vite already reports the gzip figures -- the server was
+   * simply never asked to use them.
+   *
+   * Production only, deliberately. In development this process runs Vite in
+   * middleware mode, which transforms and streams modules on demand; wrapping
+   * that in a compressor buys nothing (one machine, loopback) and adds a
+   * failure mode to the path used for every hot reload. `npm start` serves
+   * finished files off disk, which is the simple case compression is for.
+   *
+   * Registered before the routes and the static handler so it can see their
+   * responses, and after the security headers so those are set regardless.
+   *
+   * On BREACH: compressing a response that mixes a secret with
+   * attacker-influenced input can leak the secret. It does not apply here --
+   * this server holds no user data, issues no session cookie or CSRF token, and
+   * has no key-bearing routes by design (see the note below). It is worth
+   * re-checking if that ever stops being true.
+   */
+  if (isProduction) app.use(compression());
 
   // Increase payload limit for base64 images
   app.use(express.json({ limit: '50mb' }));
