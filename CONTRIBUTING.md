@@ -110,6 +110,13 @@ folders, backup or versioned copies (`*.bak`, `file 2.js`, `index-final-v3.ts`),
 editor config, OS metadata, scratch scripts, one-off migrations, screenshots, archives,
 database dumps, or large media that belongs in object storage.
 
+**One narrow exception, added 2026-09-01: images the committed documentation links to
+live in [`docs/media/`](docs/media/).** The README needs a screenshot to be worth
+reading, and a front door pointing at an image nobody may commit is a rule that cannot
+be followed. The exception covers that case only — a debugging capture, a scratch
+recording, or a screenshot you pasted into a PR thread is still none of the
+repository's business. `docs/media/README.md` carries the size and format rules.
+
 **Never commit commented-out code.** Git remembers it. Delete it. (A 2026-08-28 sweep
 found zero commented-out blocks in this repository — keep it that way.)
 

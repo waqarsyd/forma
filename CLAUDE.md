@@ -194,8 +194,15 @@ broken, and nothing in the toolchain enforces any of them.
   "from ten to eight", which matched no commit — there were twelve tracked directories
   on the day it was written. Hence the list: a number nothing can check is how it went
   wrong, and `git ls-tree` settles the replacement in one command.)
-- **`docs/` holds all the prose, in three kinds.** `PRD.md` and `notes/` are *current* and
+- **`docs/` holds all the prose, in three kinds — plus `media/`, which is not prose.**
+  `PRD.md` and `notes/` are *current* and
   maintained against the code. `design/DESIGN.md` is the design source of truth.
+  **`docs/media/`** (2026-09-01) holds images the committed documentation links to, and is
+  the *only* place a screenshot may be committed — `CONTRIBUTING.md` bans them everywhere
+  else, and that ban was absolute until the README needed one. Nothing in the build reads
+  it; `public/` is Vite's static root and this is not it. It carries its own README with
+  the capture rules, including deleting the placeholder in the same commit as the real
+  capture.
   **`docs/audit/README.md`** is the 2026-08-27 findings register, reduced on 2026-08-29 to
   a **one-line index of the 31 identifiers the codebase actually cites**. The ten narrative
   reports it summarises were removed and are recoverable from history

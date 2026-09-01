@@ -31,12 +31,15 @@ It is built around one constraint that shaped everything else: **the application
 
 ## Demo
 
-<!-- TODO: no screenshot or demo GIF exists in this repository yet. public/og-card.png
-     is a pre-rendered social card, not a screenshot of the app. Capture the workspace
-     with a report generated and place it at docs/media/screenshot.png, then replace
-     this block with:  ![Forma workspace](docs/media/screenshot.png) -->
+<!-- TODO: this is a placeholder drawing, not a capture of the running app. Replace it
+     with a real screenshot at docs/media/screenshot.png and swap the <img> below for
+     ![Forma workspace](docs/media/screenshot.png), deleting the placeholder SVG in the
+     same commit. docs/media/README.md carries the capture recipe, including what to
+     check for in the frame before committing it. -->
 
-> **Screenshot pending.** Run `npm run dev`, open <http://localhost:3000>, and the landing page shows the in-browser mockup renderer with sample geometry before you supply a key.
+<img src="docs/media/screenshot.placeholder.svg" alt="Placeholder for a Forma workspace screenshot" width="100%">
+
+> **This image is a drawing, not a capture.** To see the real thing, run `npm run dev` and open <http://localhost:3000> — the landing page renders the in-browser mockup engine with sample geometry before you supply a key.
 
 ---
 
@@ -308,6 +311,9 @@ docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
                        history) and audit/README.md (a one-line index of the
                        2026-08-27 findings, whose IDs are cited throughout the
                        code — a dated record; read notes/ for what is current)
+  media/               images the documentation links to, and the only place a
+                       committed screenshot belongs; nothing here is read by the
+                       build. Has its own README with the capture rules
 .github/               CI workflow (checks.yml, which runs the six checks plus
                        `npm ci`), three issue templates and a PR template
 .githooks/             opt-in pre-commit guard; enable with
