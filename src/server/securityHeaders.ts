@@ -107,9 +107,35 @@ function directives(development: boolean): Record<string, string[]> {
     // browsers honour, this directive is what current ones actually read.
     'frame-ancestors': ["'none'"],
     'form-action': ["'self'", 'https://formsubmit.co'],
+    /**
+     * `https://apis.google.com` is here for Google sign-in, and leaving it out
+     * broke that button completely from the day this policy shipped.
+     *
+     * `signInWithPopup` does not just open a window. Before it can, the Firebase
+     * Auth SDK loads **`https://apis.google.com/js/api.js`** to build the gapi
+     * relay that carries the result back from the auth domain. That is a
+     * `<script>`, so `frame-src` below does not cover it however carefully it
+     * names the popup and the iframe -- it was blocked by `script-src`, the load
+     * fired `el.onerror`, and Firebase surfaced the whole thing as
+     * `auth/internal-error`.
+     *
+     * Which is a *terrible* symptom: a generic code that maps to "Something went
+     * wrong" in LoginPage's message table and looks exactly like a Firebase
+     * console misconfiguration. Email and password sign-in kept working
+     * throughout, because it makes a plain `fetch` and loads no script, so the
+     * obvious checks -- API key, authorized domains, provider enabled -- all
+     * came back healthy while the button stayed dead.
+     *
+     * Verified by watching the CSP block it:
+     *   `script-src-elem <- https://apis.google.com/js/api.js?onload=…`
+     *
+     * This is the narrowest origin that fixes it. It is a script source, so it
+     * is a real widening of the policy -- but it is Google's own auth helper on
+     * a fixed path, and the alternative is having no Google sign-in.
+     */
     'script-src': development
-      ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"]
-      : ["'self'", THEME_SCRIPT_HASH],
+      ? ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://apis.google.com']
+      : ["'self'", THEME_SCRIPT_HASH, 'https://apis.google.com'],
     // No fonts.googleapis.com and no fonts.gstatic.com: the three families are
     // self-hosted as of 2026-08-30 (see the typefaces block in src/index.css),
     // so both origins came out of the policy. Putting either back means a

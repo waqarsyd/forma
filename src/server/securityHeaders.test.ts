@@ -130,6 +130,46 @@ describe('buildContentSecurityPolicy', () => {
     ]);
   });
 
+  /**
+   * Google sign-in was broken for the entire life of this policy and no test
+   * noticed, because every test here read the header and none of them clicked
+   * the button.
+   *
+   * `signInWithPopup` loads `https://apis.google.com/js/api.js` — the gapi relay
+   * that carries the OAuth result back from the auth domain — before it opens
+   * anything. `frame-src` already named the popup and the iframe, so the policy
+   * *looked* complete; the script was blocked by `script-src`, and Firebase
+   * reported the failure as `auth/internal-error`, which reads like a console
+   * misconfiguration rather than a header of ours.
+   *
+   * Both environments are asserted. The dev policy is looser everywhere else, so
+   * it would be easy to assume it is covered — it is not, `'unsafe-inline'` says
+   * nothing about which *origins* may serve a script, and the bug reproduces in
+   * development exactly as in production.
+   */
+  it('lets the Firebase auth helper load, or Google sign-in dies', () => {
+    for (const [name, policy] of [['production', prod], ['development', dev]] as const) {
+      expect(
+        policy['script-src'],
+        `${name}: script-src must allow https://apis.google.com. Without it ` +
+          `signInWithPopup fails with auth/internal-error and the Google button ` +
+          `does nothing — verified as "script-src-elem <- ` +
+          `https://apis.google.com/js/api.js".`
+      ).toContain('https://apis.google.com');
+    }
+  });
+
+  it('does not open script-src to anything wider than that one origin', () => {
+    for (const policy of [prod, dev]) {
+      expect(policy['script-src']).not.toContain('*');
+      expect(policy['script-src']).not.toContain('https:');
+      // 'unsafe-inline' is a development-only relaxation; production carries the
+      // theme script's hash instead. This pins that split.
+      expect(prod['script-src']).not.toContain("'unsafe-inline'");
+      expect(prod['script-src']).not.toContain("'unsafe-eval'");
+    }
+  });
+
   it('never allows connecting to an arbitrary origin', () => {
     for (const policy of [prod, dev]) {
       expect(policy['connect-src']).not.toContain('*');
