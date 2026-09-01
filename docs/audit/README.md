@@ -88,7 +88,7 @@ by the 2026-08-28 cleanup, which is recorded in `git log 2ce6e56..9a8163c`.
 |---|---|
 | **TEST-001** | No crypto round-trip test for the key vault — "highest value per line" in the gap list. Closed — `src/services/keyVault.test.ts`. |
 | **TEST-002** | `geminiService` response parsing untested; wanted captured fixtures. Closed. |
-| **TEST-003** | `designerBridge` — 5 of 6 exports untested. **Partially closed**; `launchDesigner` and `waitForDesigner` remain untested. |
+| **TEST-003** | `designerBridge` — 5 of 6 exports untested. Closed: `launchDesigner` and `waitForDesigner` both have `describe` blocks in `designerBridge.test.ts` now, and this row said they did not until 2026-09-01. (The module exports eight things today, not six; the audit-era count is left as written because the ids are a dated record.) |
 | **TEST-004** | Report-shape round-trip untested. |
 | **INV-001** | **FormSubmit** (`formsubmit.co`) relays the visitor's name, email, topic and message to a third party — undisclosed at the time. Paired with SEC-003. |
 | **INV-003** | **No CI.** Every documented invariant depended on a human remembering to run it. Closed — `.github/workflows/checks.yml`. |

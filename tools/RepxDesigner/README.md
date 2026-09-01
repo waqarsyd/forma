@@ -14,7 +14,17 @@ RepxDesigner.exe --serve          # listen on 127.0.0.1:7317 for Forma
 
 Saving inside the designer writes back to the file it opened.
 
-**Double-clicking a downloaded `.repx` also works** — `.repx` is associated with this exe for the current user. To undo that:
+**Double-clicking a downloaded `.repx` can also work, but only after you set it up — and nothing in this program does it for you.** `--register` writes the `forma-repx://` scheme and *only* that scheme; the file association is a separate, manual, per-user step. This section stated the association as a fact and gave only the commands to remove it, which was true of the machine it was written on and of no other. To create it:
+
+```powershell
+$exe = (Resolve-Path 'tools\RepxDesigner\bin\Release\RepxDesigner.exe').Path
+New-Item -Path 'HKCU:\Software\Classes\RepxDesigner.repx\shell\open\command' -Force | Out-Null
+Set-ItemProperty -Path 'HKCU:\Software\Classes\RepxDesigner.repx\shell\open\command' -Name '(default)' -Value "`"$exe`" `"%1`""
+New-Item -Path 'HKCU:\Software\Classes\.repx' -Force | Out-Null
+Set-ItemProperty -Path 'HKCU:\Software\Classes\.repx' -Name '(default)' -Value 'RepxDesigner.repx'
+```
+
+`HKCU` only — no admin, nothing machine-wide, and it does not disturb a DevExpress installation's own association if one exists. **It hardcodes the exe path**, so it has the same failure mode as the Startup shortcut further down: move or rename the working tree and double-clicking a `.repx` silently stops working. To undo it:
 
 ```powershell
 Remove-Item -Path 'HKCU:\Software\Classes\.repx' -Recurse -Force
@@ -62,7 +72,7 @@ A file declaring a newer release will not open in an older designer, so the tool
 & 'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\MSBuild\Current\Bin\MSBuild.exe' tools\RepxDesigner\RepxDesigner.csproj /p:Configuration=Release
 ```
 
-Needs DevExpress 20.1 installed at the path in the `.csproj` `HintPath`s. `bin/` and `obj/` are gitignored (`tools/**/bin/`, `tools/**/obj/`); `Release` is ~137 MB because the DevExpress assemblies are copied local so the folder runs standalone.
+Needs DevExpress 20.1 installed at the path in the `.csproj` `HintPath`s. `bin/` and `obj/` are gitignored (`tools/**/bin/`, `tools/**/obj/`); `Release` is ~146 MB (measured 2026-09-01) because the DevExpress assemblies are copied local so the folder runs standalone. `.gitignore` repeats that figure in the comment above those two patterns, so re-measuring is a change to both.
 
 **Stop `--serve` before rebuilding** — MSBuild cannot overwrite a running exe. `vite.config.ts` already excludes `**/tools/**` from its watcher, so a build no longer kills the dev server.
 

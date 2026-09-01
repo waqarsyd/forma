@@ -127,7 +127,7 @@ secrets.json
 .firebase/
 
 # .NET build output from tools/RepxDesigner. A bare `bin/` would be too broad in
-# a JS repo, so both are scoped to tools/. Release is ~137 MB, because the
+# a JS repo, so both are scoped to tools/. Release is ~146 MB, because the
 # DevExpress assemblies are copied local so the tool runs standalone.
 tools/**/bin/
 tools/**/obj/
