@@ -24,6 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 
 /** Vitest runs with the repo root as cwd — see the same note in routes.test.ts. */
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -184,5 +185,74 @@ describe('privacy policy discloses every third party in the path', () => {
         `sentence must say "${WORDS[flows]}". Change the flows and this number ` +
         `changes with them -- do not edit the expectation to match the prose.`,
     ).toMatch(new RegExp(`${WORDS[flows]} things leave your browser and no others`, 'i'));
+  });
+});
+
+/**
+ * The "Last updated" date must move when the words above it do.
+ *
+ * This is not a tidiness rule. The Terms' own *Changes* clause says **"The date
+ * at the top is when they last did"** and anchors acceptance to it — "continuing
+ * to use Forma after a change means you accept the current version". So the date
+ * is a factual claim the document makes about itself, and a stale one is the
+ * document lying in the single place a reader checks to see whether it is worth
+ * re-reading.
+ *
+ * It had already gone stale before this test existed, which is why the test
+ * exists: `UPDATED` said 27 August 2026 while the copy underneath it described
+ * the typefaces moving off Google Fonts on 30 August 2026. Three days, on a site
+ * that had not launched yet — the failure mode is not carelessness over years,
+ * it is one edit that forgets a constant fifty lines away.
+ *
+ * Nothing here checks the date is *correct*, because nothing can: only a person
+ * knows whether an edit was substantive. What it checks is that the two changed
+ * **together**, which is the part a human reliably forgets.
+ *
+ * ## When this fails
+ *
+ * You edited TERMS or PRIVACY. Do both of these, in this order:
+ *
+ *   1. Set `UPDATED` in `LegalPage.tsx` to the date you are making the change.
+ *   2. Put the hash from the failure message into `EXPECTED_COPY_HASH` below.
+ *
+ * Doing (2) alone makes this test green and the date wrong, which is precisely
+ * the bug it is here to catch. If the edit genuinely was not substantive — a
+ * typo, a reflow — updating only the hash is defensible, but that is a decision,
+ * and it should be visible in the diff rather than automatic.
+ */
+describe('the legal copy and its date change together', () => {
+  /** Whitespace-collapsed so reformatting alone does not trip it. */
+  const legalCopy = () => {
+    const start = legal.indexOf('const TERMS: Section[] = [');
+    const end = legal.indexOf('const DOCS = {');
+    expect(
+      start >= 0 && end > start,
+      'Could not find the TERMS…DOCS block in LegalPage.tsx. If those markers ' +
+        'were renamed, update them here — do not delete this test.'
+    ).toBe(true);
+    return legal.slice(start, end).replace(/\s+/g, ' ').trim();
+  };
+
+  const EXPECTED_COPY_HASH = '43c6b5a61bc9';
+  const EXPECTED_UPDATED = '27 August 2026';
+
+  it('has not changed the terms or policy without moving the date', () => {
+    const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);
+    const declared = legal.match(/const UPDATED = '([^']+)'/)?.[1];
+
+    if (actual !== EXPECTED_COPY_HASH) {
+      expect.fail(
+        `The terms or privacy copy changed (hash ${EXPECTED_COPY_HASH} -> ${actual}).\n` +
+          `"Last updated" currently reads ${declared}.\n` +
+          `Set UPDATED in LegalPage.tsx to today's date, then set ` +
+          `EXPECTED_COPY_HASH here to ${actual}.`
+      );
+    }
+
+    expect(
+      declared,
+      'UPDATED changed but the copy did not. If that is deliberate, move ' +
+        'EXPECTED_UPDATED here to match; if not, put the date back.'
+    ).toBe(EXPECTED_UPDATED);
   });
 });
