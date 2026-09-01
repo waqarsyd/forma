@@ -162,8 +162,16 @@ broken, and nothing in the toolchain enforces any of them.
   of them (451 → 411). If you ever do move them, widen that include in the same commit
   and check the count.
 - **File naming: `PascalCase.tsx` for React components, `camelCase.ts` for everything
-  else.** 100% consistent today — 22 and 58 files under `src/`. The single exception is
-  `src/vite-env.d.ts`, which is Vite's own required name.
+  else.** 100% consistent today — **21** PascalCase components and **59** `.ts` files.
+  The single exception is `src/vite-env.d.ts`, which is Vite's own required name.
+  **Do not "correct" the 21 to 24 by counting `.tsx` files.** There are 24, and the
+  three that are not PascalCase are deliberate: `main.tsx` is the entry point, and
+  `icons.tsx` and `sections.tsx` export collections rather than one component, so they
+  are named like the `camelCase.ts` modules they resemble. A second trap sits under the
+  first: `git ls-files 'src/**/*.tsx'` answers **22**, because that pathspec does not
+  match files sitting directly in `src/` and so drops `App.tsx` and `main.tsx`. Both
+  wrong numbers have been written into this bullet at least once. Count with
+  `git ls-files | Where-Object { $_ -like '*.tsx' }` and read the names.
 - **Test placement is two conventions, and the split is load-bearing.** Colocated
   `*.test.ts` beside the module for the unit suite; `tests/` at the **root**, outside
   `src/`, for anything needing the Firestore emulator. That is *why* it is outside — it

@@ -44,7 +44,11 @@ droppings, and what looks like a real API key assignment. Bypass a single commit
 
 ## The checks
 
-All seven, in the order CI runs them:
+All six, in the order CI runs them. (CI runs a seventh thing this table cannot:
+`npm ci`, which fails when `package.json` and `package-lock.json` disagree. Nothing
+you can run locally checks that, which is why the count here is six and the count in
+`.github/workflows/checks.yml` is seven — the *Definition of done* below says six for
+the same reason.)
 
 | Command | What it catches |
 |---|---|

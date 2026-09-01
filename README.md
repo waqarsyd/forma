@@ -27,6 +27,8 @@ The optional cloud copy is zero-knowledge: your key is encrypted in your browser
 
 That also means **a forgotten passphrase is unrecoverable by design.** There is no reset, because a reset would imply the operator could decrypt it.
 
+The claim is enforced, not just intended: the server sends a Content-Security-Policy whose `connect-src` allowlists the handful of origins this app legitimately talks to. A key sitting in `sessionStorage` a few components away from model-generated markdown is worth stealing, and `connect-src` is what makes a stolen one useless — injected script that cannot reach an attacker's server cannot exfiltrate anything. Adding an origin to that list is a change to this guarantee; see `src/server/securityHeaders.ts`, which carries the full reasoning.
+
 ---
 
 ## Quick start
@@ -58,6 +60,7 @@ That's enough to generate reports. Sign-in and cloud sync are optional — signe
 | `npm run preview` | Vite preview against `dist/` |
 | `npm run lint` | `tsc --noEmit` |
 | `npm run lint:encoding` | Fails if any source file contains mojibake |
+| `npm run check:size` | Artifact size budgets — run `build` first |
 | `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |
 | `npm run test:coverage` | Coverage over `lib/` and `services/` — see the note in `vitest.config.ts` about what is deliberately excluded |
@@ -188,6 +191,7 @@ rules for adding and removing things.
 
 Four documents carry the reasoning that the code cannot:
 
+- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — the six checks and the rules for adding and removing things; the one to read before you open a PR.
 - **[`CLAUDE.md`](CLAUDE.md)** — the entry point: hard constraints, commands, and an index that routes you to the note covering whatever you are about to change.
 - **[`docs/notes/`](docs/notes/)** — four notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.
 - **[`docs/PRD.md`](docs/PRD.md)** — the product specification, kept current against the code.
@@ -215,4 +219,4 @@ Forma is usable but young, and some things are worth knowing before you rely on 
 
 [Apache License 2.0](LICENSE). You may use, modify and distribute this code, including commercially, provided you keep the licence and copyright notice and state what you changed. It also grants a patent licence from every contributor, which a permissive licence without one does not.
 
-Declared in three places, and they must agree: the `LICENSE` file, the `license` field in `package.json`, and the SPDX header in `src/App.tsx`.
+Declared in four places, and they must agree: the `LICENSE` file, the `license` field in `package.json`, the SPDX header in `src/App.tsx`, and this section. (This sentence said "three places" and omitted the one it is written in, which is exactly the copy most likely to be missed when the licence changes.)
