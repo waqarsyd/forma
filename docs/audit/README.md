@@ -12,11 +12,20 @@ git show a4ac759:docs/audit/00-inventory.md        # 01-runbook, 02-architecture
 ```
 
 This file exists because the reports could be deleted but their **identifiers could not**.
-The findings below are cited **68 times across 43 source and config files** — in
+The findings below are cited **67 times across 42 source and config files** (2026-09-01) — in
 `index.html`, `src/index.css`, `.env.example`, `.github/workflows/checks.yml`, half a
 dozen tests — and **33 local branches are named after them** (`audit/SEC-001-security-headers`
 and the rest). Without this table, a reader hitting `// (audit ARC-001)` in
 `src/lib/attachmentParts.ts` has no way to learn what that was.
+
+That count moves whenever a comment is added or a file is renamed, so do not trust it
+without re-running it, and do not bother correcting it for a drift of one or two — the
+argument it supports is "many, in places this file cannot reach", not a precise total.
+It said **68 across 43** until 2026-09-01, which was never right: at the commit that
+introduced the sentence the true figure was 66 across 41. To recount, match
+`\b(ARC|SEC|REL|DATA|BUG|PERF|TEST|INV|RUN|UX|NEW)-\d{3}\b` over tracked non-markdown
+files, and **exclude four-digit matches** or `INV-2043` in `HeroScanner.tsx` inflates
+both numbers (see the note at the foot of this file).
 
 Status is as of the audit's own implementation pass; several were closed or partly closed
 by the 2026-08-28 cleanup, which is recorded in `git log 2ce6e56..9a8163c`.
@@ -71,7 +80,7 @@ by the 2026-08-28 cleanup, which is recorded in `git log 2ce6e56..9a8163c`.
 | ID | Finding |
 |---|---|
 | **PERF-001** | One **1.99 MB** eager chunk, no code splitting. **Partially closed: 540 → 306 kB gzipped eager, a 43% cut** — pdf.js, the Gemini SDK and react-markdown became lazy chunks. **Firebase remains eager** and dominates what is left. |
-| **PERF-002** | Render-blocking third-party stylesheets. The Material Symbols icon font was removed (five glyphs, three of which already existed as inline SVG); **self-hosting the three text faces is still open**. |
+| **PERF-002** | Render-blocking third-party stylesheets. The Material Symbols icon font was removed (five glyphs, three of which already existed as inline SVG). Closed 2026-08-30 (`506da99`): the three text faces are self-hosted as variable woff2 under `src/fonts/`, with their OFL texts. This row read "self-hosting the three text faces is still open" until 2026-09-01 — which `src/fonts/README.md`, citing PERF-002 as the reason it was done, had been contradicting for two days. |
 
 ## Tests and infrastructure
 
@@ -84,7 +93,7 @@ by the 2026-08-28 cleanup, which is recorded in `git log 2ce6e56..9a8163c`.
 | **INV-001** | **FormSubmit** (`formsubmit.co`) relays the visitor's name, email, topic and message to a third party — undisclosed at the time. Paired with SEC-003. |
 | **INV-003** | **No CI.** Every documented invariant depended on a human remembering to run it. Closed — `.github/workflows/checks.yml`. |
 | **INV-004** | No coverage tooling; roughly **8.8%** of `src/` genuinely exercised. Closed — `npm run test:coverage`. |
-| **INV-006** | `APP_URL` was documented in `.env.example` and **read by nothing**. |
+| **INV-006** | `APP_URL` was documented in `.env.example` and **read by nothing**. Closed — removed 2026-08-27; `.env.example` keeps a comment where it stood saying why. A copy may still sit in your own untracked `.env`, where it is inert. |
 | **INV-009** | Documentation drift; part of the cluster with INV-006/010/011, RUN-001 and ARC-005. |
 | **RUN-001** | Runbook drift — including the `%VITE_*%` placeholder note that `index.html` still explains. |
 | **UX-002** | **No 404 page**; an unknown path fell through silently. Closed — `src/components/NotFoundPage.tsx`. |
