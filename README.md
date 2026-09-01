@@ -98,12 +98,16 @@ src/
   main.tsx             entry point
   index.css            tokens, marketing pages, shared chrome (Tailwind v4, no config file)
   workspace.css        the workspace shell only — every `wb-` class lives here
+  vite-env.d.ts        Vite's ambient types; the one file here not in
+                       PascalCase.tsx / camelCase.ts form, because Vite names it
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
                        LoginPage, LegalPage (/terms and /privacy),
                        SiteHeader, SiteFooter, MobileNav, Logo, LogoPulse,
                        AccountDialog, UserAvatar, NotFoundPage, and Markdown —
                        which is its own module so react-markdown can be
-                       lazy-loaded
+                       lazy-loaded. Two files here are not components:
+                       useFocusTrap (a shared hook) and legalDisclosure.test.ts,
+                       the only test outside lib/, services/ and server/
     landing/           figures used by the marketing pages: HeroScanner,
                        SheetRuler, StepFigures, VaultFigure,
                        AnnouncementDock, sections, icons
@@ -152,13 +156,21 @@ docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
                        history) and audit/README.md (a one-line index of the
                        2026-08-27 findings, whose IDs are cited throughout the
                        code — a dated record; read notes/ for what is current)
+.github/               CI workflow (checks.yml, which runs the six checks plus
+                       `npm ci`), three issue templates and a PR template
 .githooks/             opt-in pre-commit guard; enable with
                        `git config core.hooksPath .githooks`
-scripts/               dev + build helpers
+.claude/               settings.json — the committed permission allowlist, so
+                       the documented checks run without prompting
+scripts/               four helpers: dev + build, and the encoding and
+                       bundle-size checks that two of the six commands call
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
+firebase.json          the rules path, databaseId, and the emulator port
 firebase-applet-config.json
-                       your Firebase web config — see the Firebase section above
+                       your Firebase web config — see the Firebase section
+                       above, including the databaseId that must match
+                       firebase.json's
 ```
 
 ---
