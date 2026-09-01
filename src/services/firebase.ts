@@ -17,7 +17,7 @@ import {
   deleteUser,
   type User,
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import { deleteAccountData } from '../lib/accountData';
 import { OperationType, type FirestoreErrorInfo } from '../lib/firestoreOps';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -189,14 +189,21 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Test connection
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
-    }
-  }
-}
-testConnection();
+/*
+ * A `testConnection()` ran here at import time until 2026-09-01, reading
+ * `test/connection` with `getDocFromServer`. Recover it with
+ * `git log -S'testConnection' -- src/services/firebase.ts`.
+ *
+ * It was a Firestore round-trip **guaranteed to fail** — no rule matches that
+ * path, so the global deny in `firestore.rules` rejected every one — made once
+ * per page load, for every visitor, including the ones who only ever read the
+ * landing page. What it bought was one `console.error` in the single case where
+ * the failure message happened to contain "the client is offline"; every other
+ * failure, the permission denial included, was caught and dropped. So it spent a
+ * request and a logged error on every session to detect a condition the next
+ * real Firestore call would surface anyway, with a better message.
+ *
+ * Do not add a connectivity probe back. If Firebase is misconfigured, the first
+ * genuine read says so through `handleFirestoreError`, which has the operation
+ * and the path a probe cannot know.
+ */
