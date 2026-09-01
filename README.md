@@ -280,6 +280,9 @@ src/
                        (the circular wipe the theme toggle opens from, and its
                        fallbacks), and the routing pair router (real
                        history/location, so not pure) + routes.
+                       reportBands (the REPX band skeleton the prompt asks for,
+                       and the VITE_FORMA_BANDED prototype that swaps the single
+                       page-sized DetailBand for a real one),
                        Plus motion tokens, and pdf + genai + firebaseClient —
                        three loaders that exist so their dependencies stay out of
                        the eager bundle, and are the only files here that are not
