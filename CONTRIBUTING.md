@@ -7,6 +7,17 @@ This file is the public-facing half of the project's conventions. The other half
 new contributor needs before touching anything. Where the two overlap — the Node floor,
 the script list, the encoding rule — a change is a change to **both**.
 
+`CLAUDE.md` now says this back: the bullet beginning **"`CONTRIBUTING.md` is the public
+half of this file"**, in its *Read this first* section, names what this file duplicates and
+which direction new material goes. It did not exist until 2026-09-01, and its absence had
+the predictable effect — `CLAUDE.md`'s "a change to two files" warnings were counting
+`README.md` and stopping, so this file quietly drifted. Read that bullet before moving a
+rule between the two. The short version of it: **process here, reasoning in the
+`docs/notes/` file that owns the area, session-wide constraints in `CLAUDE.md`.**
+
+Three documents carry the check list — the table below, `README.md`'s script table, and
+`CLAUDE.md`'s *Commands* block — so adding or renaming a script is a change to all three.
+
 ---
 
 ## Setup
@@ -108,9 +119,13 @@ Justify it in the PR: what it does, why nothing already here does it, its instal
 bundle size, its maintenance status, and what removing it later would take. If an existing
 dependency covers the job, use that one.
 
-The bar is real. A 2026-08-28 audit of all 26 dependencies found **nothing to remove** —
-one library per job, no date library, no HTTP client (native `fetch`), no icon package
-(the icons are inline SVG). Adding the 27th should feel like a decision.
+The bar is real. A 2026-08-28 audit of all 26 dependencies declared at the time found
+**nothing to remove** — one library per job, no date library, no HTTP client (native `fetch`), no icon
+package (the icons are inline SVG). There are **28** now (11 runtime, 17 dev), and the
+two arrived together: `7d1984a` added `compression` and its `@types/` package to stop
+serving responses at three and a half times their size. Adding the 29th should feel like a
+decision. Count them rather than trusting this sentence — it is a number nothing in the
+toolchain checks, and `git show <commit>:package.json` settles when one appeared.
 
 ---
 
@@ -144,7 +159,10 @@ enforcement mechanisms was not earning its keep.
 ## Structure
 
 - New code goes in the existing structure. A new **top-level directory needs a stated
-  reason** — there are eight, down from ten, and the point is to keep it there.
+  reason** — there are **ten** tracked, and the point is to keep it there. Check with
+  `git ls-tree --name-only -d HEAD`, which is the whole verification. (This line said
+  "eight, down from ten" until 2026-09-01, which matched no commit in either number;
+  `CLAUDE.md` carried the same wrong pair, corrected itself, and this copy was missed.)
 - `src/lib` is browser code. `src/server` is not. `server.ts` is the only importer of the
   latter.
 - `PascalCase.tsx` for components, `camelCase.ts` for everything else.
@@ -183,10 +201,23 @@ Not automated, because most of it needs judgement. Roughly every three months:
 5. **`npm outdated`.** Upgrade deliberately, one major at a time, never as a side effect.
 6. **Re-measure the bundle** with `npm run check:size` and tighten the budgets if the
    build shrank. A budget with slack in it is a budget that never fires.
-7. **Check the fonts.** `index.html` loads three families and eleven weights, on the order
-   of 150–250 KB — more than every image on the site combined. Which family/weight
-   combinations are actually fetched has never been measured; it needs a network panel on
-   a built page. This is the largest known unanswered question about the site's weight.
+7. **Check the font weight ranges still match what paints.** This item used to say
+   `index.html` loaded three families and eleven weights from Google and that nobody had
+   measured which were used, calling it the largest unanswered question about the site's
+   weight. **It has been answered.** `index.html` now loads no font at all — the Material
+   Symbols stylesheet went on 2026-08-27 and the Google Fonts links on 2026-08-30, both
+   under audit PERF-002 — and the three families are self-hosted from `src/fonts/` as six
+   variable `woff2` subsets totalling 230,672 B, each capped individually by
+   `npm run check:size` and counted in its `dist/` total. So the bytes are now measured on
+   every build rather than once a quarter. What is left is a judgement call the budget
+   cannot make: the `font-weight` ranges in `src/index.css` are deliberately narrow, so a
+   new `font-thin` or `font-black` somewhere renders in a weight nobody designed for.
+   Widening a range costs no bytes on a variable face, which is exactly why the ranges have
+   to be kept honest by hand. **Do not widen one without checking something paints it, and
+   do not narrow one without checking nothing does.** The method is recorded in the
+   typefaces comment above the `@font-face` block in `src/index.css`; commits `bb07957` and
+   `887358a` carry the original measurement, which found faux-bold synthesis on 22 elements
+   across five pages.
 
 The 2026-08-28 cleanup that produced these rules is recorded in its commit messages —
 32 commits merged as `9a8163c`, each stating what changed, what it was worth, and what was
