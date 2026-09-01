@@ -19,7 +19,7 @@ async function startServer() {
   // fallback below responds to almost every path, so a middleware registered
   // after it would cover nothing. HSTS is opt-in via HTTPS=true because
   // sending it over plain http://localhost poisons the whole machine's
-  // localhost for a year; see src/lib/securityHeaders.ts.
+  // localhost for a year; see src/server/securityHeaders.ts.
   // Declared here rather than at its old position further down, because the CSP
   // depends on it and the header middleware has to be registered before
   // anything that can answer a request.
@@ -162,7 +162,7 @@ async function startServer() {
   // Loopback in development, every interface in production, HOST overrides
   // both. In development this process runs Vite in middleware mode, so binding
   // it to every interface publishes the module graph to anyone who can reach
-  // the machine — see src/lib/bindHost.ts.
+  // the machine — see src/server/bindHost.ts.
   const host = resolveBindHost({ production: isProduction, host: process.env.HOST });
 
   app.listen(PORT, host, () => {
