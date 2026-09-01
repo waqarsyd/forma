@@ -206,7 +206,7 @@ describe('privacy policy discloses every third party in the path', () => {
       `${flows} things leave the browser when signed out, so the closed-set ` +
         `sentence must say "${WORDS[flows]}". Change the flows and this number ` +
         `changes with them -- do not edit the expectation to match the prose.`,
-    ).toMatch(new RegExp(`${WORDS[flows]} things leave your browser and no others`, 'i'));
+    ).toMatch(new RegExp(`${WORDS[flows]} things leave your machine and no others`, 'i'));
   });
 });
 
@@ -257,8 +257,10 @@ describe('the legal copy and its date change together', () => {
 
   /* Moved together on 2026-09-01, when "Who else is involved" and the closed-set
      sentence were corrected — the first real use of this guard, and it caught
-     the edit before the date was stale rather than after. */
-  const EXPECTED_COPY_HASH = '8aab11437a01';
+     the edit before the date was stale rather than after. Bumped again the same
+     day for the loopback designer probe, which is why the date does not move a
+     second time: same day, same version of the document. */
+  const EXPECTED_COPY_HASH = 'dca540a90ef8';
   const EXPECTED_UPDATED = '1 September 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

@@ -29,6 +29,7 @@ const TERMS: Section[] = [
     paragraphs: [
       'Forma turns a design you already have — a screenshot, a PDF, or an existing .repx file — into three things: a written specification, an in-browser mockup, and DevExpress XtraReports XML you can open in the DevExpress designer.',
       'It is a personal project, offered free of charge and without a support contract. There is no uptime guarantee, and it may change or stop being available at any time.',
+      'One thing the workspace does that is worth stating plainly: it checks whether the optional RepxDesigner companion is running on your own computer, by asking 127.0.0.1 — your machine, not the internet — whether anything answers on that port. That is how the “Open in designer” button knows whether to appear. The check sends nothing about you or your work, and if you have not installed the companion it simply fails and the button stays hidden. Nothing leaves your machine either way.',
     ],
   },
   {
@@ -73,7 +74,8 @@ const PRIVACY: Section[] = [
     heading: 'The short version',
     paragraphs: [
       'Forma collects as little as it can. There are no analytics, no advertising, no tracking pixels and no third-party scripts watching what you do. Nothing is sold or shared with anyone for marketing.',
-      'Signed out, two things leave your browser and no others: the request you send to Google with your own API key, and, only if you use the contact form, the message you type into it. Simply opening a page sends nothing to anyone. Who receives each of those is set out under “Who else is involved” below.',
+      'Signed out, two things leave your machine and no others: the request you send to Google with your own API key, and, only if you use the contact form, the message you type into it. Simply opening a page sends nothing to anyone. Who receives each of those is set out under “Who else is involved” below.',
+      'Your machine, not your browser, is the boundary that sentence draws, and the difference is deliberate. The workspace asks 127.0.0.1 whether the optional designer companion is running — a request that leaves the browser and reaches nothing but your own computer. It carries no information about you, and the terms describe it under “What Forma is”.',
     ],
   },
   {
