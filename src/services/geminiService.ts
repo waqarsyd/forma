@@ -2,7 +2,6 @@ import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
-import { bandedLayoutEnabled, rootStructurePrompt } from "../lib/reportBands";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -859,12 +858,6 @@ export async function analyzeReportDesign(
   const page = pageSizeInUnits(pageSize, reportUnit);
   const unitsPerInchForReport = unitsPerInch(reportUnit);
 
-  /* Prototype (2026-09-01): ask for a real band skeleton rather than one
-     page-sized DetailBand. Off unless VITE_FORMA_BANDED=true — see
-     lib/reportBands.ts for why the flat shape is still the default, and why this
-     is an env flag rather than a ReportConfig field. */
-  const useBandedLayout = bandedLayoutEnabled(viteEnv);
-
   const configInstructions = config ? `
   CRITICAL CONFIGURATION:
   - DevExpress Version: ${config.version}
@@ -1040,7 +1033,26 @@ export async function analyzeReportDesign(
           PHASE 2: DEVEXPRESS CHEAT SHEET (STRICT SYNTAX)
           When generating the "repxContent" XML, you MUST use these exact structures:
           
-${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion }, useBandedLayout)}
+          - ROOT STRUCTURE: The entire repxContent MUST be wrapped exactly like this:
+            <?xml version="1.0" encoding="utf-8"?>
+            <XtraReportsLayoutSerializer SerializerVersion="${targetSerializerVersion}" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="${reportUnit}" Margins="0, 0, 0, 0" PageWidth="${page.width}" PageHeight="${page.height}" Version="${targetVersion}">
+              <Bands>
+                <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
+                <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${page.height}">
+                  <Controls>
+                    <!-- Your controls go here -->
+                  </Controls>
+                </Item2>
+                <Item3 Ref="3" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
+              </Bands>
+            </XtraReportsLayoutSerializer>
+
+          - COORDINATE FRAME — the single most common way this output comes out wrong.
+            A control's LocationFloat is measured from the TOP-LEFT OF ITS BAND, and a band begins at the page's left margin. The margins above are therefore ZERO on purpose: it makes the band's coordinate space identical to the paper's, so the numbers from PHASE 1 and from any extracted PDF text can be used directly.
+            - Do NOT set non-zero Margins. Do NOT give the margin bands a height.
+            - Do NOT subtract or add anything to the PHASE 1 coordinates when writing LocationFloat.
+            - Every control must satisfy x + width <= ${page.width} and fit inside its band's height. Anything wider than the page is silently clipped or pushed onto a second page by the designer.
+            - Make the Detail band tall enough to contain the tallest element you place in it.
 
           - Labels: <Item1 Ref="1" ControlType="XRLabel" Name="label1" Text="My Text" LocationFloat="0,10" SizeF="200,30" Padding="2,2,0,0,100" />
           - Tables: <Item2 Ref="2" ControlType="XRTable" Name="table1" LocationFloat="0,50" SizeF="400,20" Borders="All"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="row1" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="cell1" Text="Data" Weight="1" /></Cells></Item1></Rows></Item2>
