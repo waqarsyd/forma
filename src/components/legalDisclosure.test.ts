@@ -145,18 +145,34 @@ describe('privacy policy discloses every third party in the path', () => {
   });
 
   /**
-   * Found by loading the built app and reading the network log, after the text
-   * above had already been corrected once: Firebase's database client opens a
-   * channel to firestore.googleapis.com as soon as the page loads, signed in or
-   * not, because `getFirestore()` runs at module scope. Every app-level query is
-   * correctly guarded on `user`; this is the SDK's own connection.
+   * This used to assert the opposite, and the reversal is the interesting part.
    *
-   * The first correction said "three things leave your browser and no others",
-   * which was more precise and still wrong. A closed-set claim has to be checked
-   * against what the app *does*, not against what its code appears to do.
+   * It required the policy to mention a "database client" connection that opened
+   * on page load whether or not you signed in. That was true when it was written,
+   * and the reason was not `getFirestore()` running at module scope as the old
+   * comment here claimed — it was `testConnection()` in `services/firebase.ts`,
+   * which issued a real `getDocFromServer` on every load. Removing it (25b1b0a)
+   * removed the connection, and this assertion was left quietly enforcing a
+   * disclosure of something the app had stopped doing.
+   *
+   * Over-disclosure is not harmless. A policy that claims more contact with a
+   * third party than actually happens is still wrong, and a reader deciding
+   * whether to use the app is being given a worse answer than the truth.
+   *
+   * Measured signed out, 15 seconds per route, fresh browser profile: **zero**
+   * requests leave the origin on `/`, `/privacy` and `/features`. Signed in, with
+   * a real session: `securetoken.googleapis.com` to refresh, then a Firestore
+   * `channel`. So the claim is now conditional on being signed in, and the
+   * assertion is that the unconditional version has not crept back.
    */
-  it('accounts for the Firebase connection that opens without signing in', () => {
-    expect(legal).toMatch(/database client/i);
+  it('does not claim a page-load connection that no longer happens', () => {
+    expect(
+      legal,
+      'Signed out, nothing leaves the origin — verified with the network log. ' +
+        'The policy must not describe a database connection opening on load ' +
+        'regardless of sign-in state; that stopped being true when ' +
+        'testConnection() was removed.'
+    ).not.toMatch(/database client|as soon as the page loads/i);
   });
 
   /**
@@ -169,15 +185,21 @@ describe('privacy policy discloses every third party in the path', () => {
    * removed a flow, the sentence correctly said "three", and the test failed for
    * saying something true.
    *
-   * A count is not a constant, so pin the arithmetic instead. Three flows are
-   * unconditional -- the Gemini request the user's own key makes, the Firebase
-   * database client's connection, and the contact form -- and Google Fonts adds
-   * a fourth whenever index.html loads from it. Derive the expected word from
-   * that, and the test stays correct in both directions.
+   * A count is not a constant, so pin the arithmetic instead. **Two** flows are
+   * unconditional as of 2026-09-01 -- the Gemini request the user's own key
+   * makes, and the contact form -- and Google Fonts would add a third whenever
+   * index.html loads from it. Derive the expected word from that, and the test
+   * stays correct in both directions.
+   *
+   * It was three until `testConnection()` was removed (25b1b0a). That call was
+   * the *only* reason Firebase contacted anything on a signed-out page load, so
+   * deleting it took a flow out of this sum -- which is exactly the kind of
+   * change that silently makes a privacy policy wrong, and exactly why the count
+   * is derived here rather than written into the prose and forgotten.
    */
   it('states a count that matches what actually leaves the browser', () => {
     const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six'];
-    const flows = 3 + (indexHtml.includes('fonts.googleapis.com') ? 1 : 0);
+    const flows = 2 + (indexHtml.includes('fonts.googleapis.com') ? 1 : 0);
 
     expect(
       legal,
@@ -233,8 +255,11 @@ describe('the legal copy and its date change together', () => {
     return legal.slice(start, end).replace(/\s+/g, ' ').trim();
   };
 
-  const EXPECTED_COPY_HASH = '43c6b5a61bc9';
-  const EXPECTED_UPDATED = '27 August 2026';
+  /* Moved together on 2026-09-01, when "Who else is involved" and the closed-set
+     sentence were corrected — the first real use of this guard, and it caught
+     the edit before the date was stale rather than after. */
+  const EXPECTED_COPY_HASH = '8aab11437a01';
+  const EXPECTED_UPDATED = '1 September 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);
