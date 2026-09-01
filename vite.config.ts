@@ -14,6 +14,36 @@ export default defineConfig(() => {
     // application-owned key to expose, so nothing Gemini-related belongs in
     // import.meta.env. Do not re-add a 'GEMINI_' prefix here.
     envPrefix: ['VITE_'],
+    build: {
+      rollupOptions: {
+        output: {
+          /**
+           * Keep the whole Firebase SDK in one chunk.
+           *
+           * `lib/firebaseClient.ts` dynamically imports `services/firebase` and
+           * `firebase/firestore` separately, and Rollup's default splitting gave
+           * each its own chunk: 129.52 kB + 492.32 kB. Grouping them yields one
+           * 619.08 kB chunk — worth about 3 kB, so this is **not** a size fix. It
+           * was tried as one, on the theory that the two chunks were duplicating
+           * shared `@firebase` internals, and the measurement says they were not.
+           *
+           * What it buys is one request instead of two on the sign-in path, and
+           * a single artifact that `check:size` can hold a budget against.
+           *
+           * It costs nothing in load behaviour: nothing in the eager graph
+           * references `@firebase` any more, so this chunk is fetched only when
+           * something actually asks for Firebase. If a static import of it
+           * reappears in the entry graph the chunk turns eager again — the entry
+           * chunk's own budget is what will catch that.
+           */
+          manualChunks(id: string) {
+            if (id.includes('node_modules/@firebase') || id.includes('node_modules/firebase')) {
+              return 'firebase';
+            }
+          },
+        },
+      },
+    },
     // There is deliberately no `resolve.alias` here. An `'@'` alias pointing at
     // the repo root was declared in this file, in `vitest.config.ts` and in
     // `tsconfig.json`'s `paths` — three declarations, nothing checking they

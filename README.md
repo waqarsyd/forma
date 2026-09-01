@@ -280,9 +280,13 @@ src/
                        (the circular wipe the theme toggle opens from, and its
                        fallbacks), and the routing pair router (real
                        history/location, so not pure) + routes.
-                       Plus motion tokens, and pdf + genai — two loaders that
-                       exist so their dependencies stay out of the eager bundle,
-                       and are the only files here that are not pure
+                       Plus motion tokens, and pdf + genai + firebaseClient —
+                       three loaders that exist so their dependencies stay out of
+                       the eager bundle, and are the only files here that are not
+                       pure. firestoreOps sits beside the last of them holding
+                       the OperationType enum, deliberately free of any
+                       firebase/* import so referencing it cannot drag the SDK
+                       back into the entry chunk
   services/            geminiService (+ tests, and modelResolution.test.ts
                        beside it), firebase, keyVault (+ tests) — the vault's
                        storage rules are covered by tests/ as well as here

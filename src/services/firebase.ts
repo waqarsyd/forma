@@ -19,6 +19,7 @@ import {
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { deleteAccountData } from '../lib/accountData';
+import { OperationType, type FirestoreErrorInfo } from '../lib/firestoreOps';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -156,31 +157,16 @@ export const logOut = async () => {
   }
 };
 
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
+/**
+ * Re-exported, not defined here. `OperationType` moved to `lib/firestoreOps.ts`
+ * because it is an enum: a caller writing `OperationType.GET` makes a *value*
+ * reference, and while that value lived in this file it pulled the entire
+ * Firebase SDK into the caller's chunk — defeating the lazy load in
+ * `lib/firebaseClient.ts` on its own. `handleFirestoreError` below stays here
+ * because it reads `auth.currentUser`.
+ */
+export { OperationType };
+export type { FirestoreErrorInfo };
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {

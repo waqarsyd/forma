@@ -88,9 +88,12 @@ import {
 import { DURATION } from './lib/motion';
 import { circularThemeSwap } from './lib/themeTransition';
 // @ts-ignore
-import { auth, db, logOut, handleFirestoreError, OperationType } from './services/firebase';
-import { onSnapshot, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
-import { reportsCollectionRef, reportDocRef, vaultDocRef as vaultDocumentRef } from './lib/accountData';
+/* Firebase arrives on demand — see lib/firebaseClient.ts for why, and for what
+   had to move with it. `OperationType` is the one piece that stays eager: it is
+   an enum, so referencing a member is a value reference that would pull the SDK
+   back into this chunk unaided. */
+import { loadFirebase, type FirebaseClient } from './lib/firebaseClient';
+import { OperationType } from './lib/firestoreOps';
 import {
   toFirestoreDocument,
   fromFirestoreDocument,
@@ -113,8 +116,12 @@ import {
 // react-markdown lives behind this boundary; see src/components/Markdown.tsx.
 const Markdown = lazy(() => import('./components/Markdown'));
 import { User } from 'firebase/auth';
-import LoginPage from './components/LoginPage';
-import AccountDialog from './components/AccountDialog';
+/* Lazy for the same reason as the loader above, not for their own size: both
+   import `services/firebase` directly, and a static import of either would pull
+   the SDK straight back into the entry chunk and undo the deferral. Both are
+   modals — neither can be on screen at first paint. */
+const LoginPage = lazy(() => import('./components/LoginPage'));
+const AccountDialog = lazy(() => import('./components/AccountDialog'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 import FeaturesPage from './components/FeaturesPage';
@@ -1575,8 +1582,37 @@ export default function App() {
    * defined.
    */
   const handleClearChatRef = useRef<(() => void) | null>(null);
+
+  /**
+   * The loaded Firebase surface, or `null` until it arrives.
+   *
+   * Everything below that talks to Firebase is gated on this. Holding it in
+   * state rather than a ref is deliberate: the auth subscription, the projects
+   * snapshot and the vault lookup are all effects that must *re-run* once the
+   * SDK is here, and a ref would not retrigger them.
+   */
+  const [firebase, setFirebase] = useState<FirebaseClient | null>(null);
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((u) => {
+    let alive = true;
+    loadFirebase().then(
+      (client) => {
+        if (alive) setFirebase(client);
+      },
+      (err) => {
+        // A failed chunk load leaves the app signed-out and local-only, which is
+        // a supported state rather than a broken one — so this warns and stops
+        // instead of surfacing an error the user cannot act on.
+        console.warn('Firebase could not be loaded; staying local-only.', err);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!firebase) return;
+    const unsubscribe = firebase.service.auth.onAuthStateChanged((u) => {
       const wasSignedIn = previousUidRef.current !== null;
       const isSignedIn = !!u;
       previousUidRef.current = u?.uid ?? null;
@@ -1601,14 +1637,15 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [firebase]);
 
   // Fetch from Firebase
   useEffect(() => {
-    if (!user) return;
+    if (!user || !firebase) return;
+    const { service, sdk, paths } = firebase;
     try {
-      const q = query(reportsCollectionRef(db, user.uid));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      const q = sdk.query(paths.reportsCollectionRef(service.db, user.uid));
+      const unsubscribe = sdk.onSnapshot(q, (snapshot) => {
         const reports: SavedReport[] = [];
         snapshot.forEach((doc) => {
           // fromFirestoreDocument never throws. That matters here specifically:
@@ -1620,13 +1657,13 @@ export default function App() {
         reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setSavedReports(reports);
       }, (error) => {
-        handleFirestoreError(error, OperationType.GET, `users/${user.uid}/reports`);
+        service.handleFirestoreError(error, OperationType.GET, `users/${user.uid}/reports`);
       });
       return () => unsubscribe();
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, `users/${user.uid}/reports`);
+      service.handleFirestoreError(error, OperationType.GET, `users/${user.uid}/reports`);
     }
-  }, [user]);
+  }, [user, firebase]);
 
   const [error, setError] = useState<string | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -1784,8 +1821,8 @@ export default function App() {
   // so deletion cannot discover it, and two copies of the id meant a rename
   // here would silently orphan every stored key.
   const vaultDocRef = useCallback(
-    () => (user ? vaultDocumentRef(db, user.uid) : null),
-    [user]
+    () => (user && firebase ? firebase.paths.vaultDocRef(firebase.service.db, user.uid) : null),
+    [user, firebase]
   );
 
   // Does this account have a stored key? Only the existence is fetched here —
@@ -1796,14 +1833,14 @@ export default function App() {
       return;
     }
     const ref = vaultDocRef();
-    if (!ref) return;
-    getDoc(ref)
+    if (!ref || !firebase) return;
+    firebase.sdk.getDoc(ref)
       .then((snap) => setVaultRecord(snap.exists() ? (snap.data() as EncryptedKeyRecord) : null))
       .catch((err) => {
         console.warn('Could not check for a stored API key:', err);
         setVaultRecord(null);
       });
-  }, [canUseVault, vaultDocRef]);
+  }, [canUseVault, vaultDocRef, firebase]);
 
   /**
    * The config panel edits `config` live — every field's onChange writes straight
@@ -1905,7 +1942,7 @@ export default function App() {
     setVaultBusy(true);
     try {
       const record = await encryptApiKey(key, passphrase);
-      await setDoc(ref, record);
+      await (await loadFirebase()).sdk.setDoc(ref, record);
       setVaultRecord(record);
       setPassphrase('');
       setPassphraseConfirm('');
@@ -1953,7 +1990,7 @@ export default function App() {
     if (!ref) return;
     setVaultBusy(true);
     try {
-      await deleteDoc(ref);
+      await (await loadFirebase()).sdk.deleteDoc(ref);
       setVaultRecord(null);
       setVaultNotice({ tone: 'ok', text: 'Stored key removed from your account.' });
     } catch (err: any) {
@@ -2247,11 +2284,21 @@ export default function App() {
     path: string,
     userMessage: string
   ) => {
-    try {
-      handleFirestoreError(err, operation, path);
-    } catch {
-      // Already logged by handleFirestoreError; the re-throw stops here.
-    }
+    /* `loadFirebase()` is already resolved wherever this is reached — every
+       caller failed a Firestore call to get here, so the SDK is in memory and
+       this only awaits a settled promise. The user message is set outside the
+       chain so it lands even if the module itself is what failed. */
+    loadFirebase()
+      .then(({ service }) => {
+        try {
+          service.handleFirestoreError(err, operation, path);
+        } catch {
+          // Already logged by handleFirestoreError; the re-throw stops here.
+        }
+      })
+      .catch(() => {
+        console.error('Firestore failure, and Firebase could not be loaded to report it:', err);
+      });
     setError(userMessage);
   };
 
@@ -2274,7 +2321,8 @@ export default function App() {
 
     if (user) {
       try {
-        const docRef = reportDocRef(db, user.uid, reportId);
+        const { service, sdk, paths } = await loadFirebase();
+        const docRef = paths.reportDocRef(service.db, user.uid, reportId);
 
         // The transcript carries the user's uploads inline as base64 data URLs,
         // and one of those alone can be several times the size of an entire
@@ -2304,7 +2352,7 @@ export default function App() {
           return;
         }
 
-        await setDoc(docRef, payload);
+        await sdk.setDoc(docRef, payload);
         setSaveNotice(
           imagesDropped
             ? 'Saved to your projects — the uploaded images were too large to sync, so the spec and REPX were saved without them.'
@@ -2366,7 +2414,8 @@ export default function App() {
     // wherever it was written.
     if (user) {
       try {
-        await deleteDoc(reportDocRef(db, user.uid, id));
+        const { service, sdk, paths } = await loadFirebase();
+        await sdk.deleteDoc(paths.reportDocRef(service.db, user.uid, id));
       } catch (err) {
         reportFirestoreFailure(err, OperationType.DELETE, `users/${user.uid}/reports/${id}`,
           'That project could not be deleted from your account. It is still listed — try again in a moment.');
@@ -2386,7 +2435,7 @@ export default function App() {
 
   const handleLogOut = async () => {
     try {
-      await logOut();
+      await (await loadFirebase()).service.logOut();
     } catch (err) {
       console.error(err);
     }
@@ -2455,19 +2504,24 @@ export default function App() {
     navigate(lastViewPath || '/');
   }, [lastViewPath]);
 
+  /* `fallback={null}` rather than a spinner: the chunk is small and usually
+     already warm, and a flash of loading state where a dialog is about to open
+     reads worse than the dialog simply appearing. */
   const loginModal = showLogin ? (
-    <LoginPage
-      initialMode={loginInitialMode}
-      onClose={handleLoginClose}
-      onSuccess={handleLoginSuccess}
-      isDarkMode={isDarkMode}
-      // `setTheme`, not the raw setter. This is the same explicit user action
-      // as every other toggle, and it was the one place passing the state
-      // setter directly — so switching the theme from the sign-in modal did not
-      // persist and reverted on the next load. It now persists and wipes like
-      // the rest.
-      setIsDarkMode={setTheme}
-    />
+    <Suspense fallback={null}>
+      <LoginPage
+        initialMode={loginInitialMode}
+        onClose={handleLoginClose}
+        onSuccess={handleLoginSuccess}
+        isDarkMode={isDarkMode}
+        // `setTheme`, not the raw setter. This is the same explicit user action
+        // as every other toggle, and it was the one place passing the state
+        // setter directly — so switching the theme from the sign-in modal did not
+        // persist and reverted on the next load. It now persists and wipes like
+        // the rest.
+        setIsDarkMode={setTheme}
+      />
+    </Suspense>
   ) : null;
 
   const handlePause = () => {
@@ -2952,8 +3006,20 @@ export default function App() {
       currentRoute === '/terms' ? 'terms' : currentRoute === '/privacy' ? 'privacy' : null;
 
     return (
-      <div className="h-full w-full">
-        {isNotFound ? (
+      /* `inert` while the sign-in dialog is open, rather than unmounting.
+         The dialog is an opaque `fixed inset-0` sheet, so the page behind it is
+         invisible but still in the document: two `<h1>`s in the outline, and a
+         focusable tree behind a modal that claims `aria-modal="true"`.
+         Unmounting it was the obvious fix and is the wrong one — the marketing
+         page and the dialog render from the same component, so `/login` does not
+         remount it, and closing returns you to the page at the scroll position
+         you left (measured: 2000px out, 2000px back). Unmounting throws that
+         away and replays every reveal animation. `inert` takes the subtree out
+         of the a11y tree and out of tab order while leaving it mounted, which is
+         the part that was actually wrong. */
+      <>
+        <div className="h-full w-full" inert={showLogin || undefined}>
+          {isNotFound ? (
           <NotFoundPage
             onEnterWorkspace={() => {
               navigate('/workspace');
@@ -3050,9 +3116,10 @@ export default function App() {
             isDarkMode={isDarkMode}
             setIsDarkMode={setTheme}
           />
-        )}
+          )}
+        </div>
         {loginModal}
-      </div>
+      </>
     );
   }
 
@@ -3101,8 +3168,15 @@ export default function App() {
   );
 
   return (
+    /* Same `inert`-while-signing-in treatment as the marketing return above, and
+       for the same reason: the sign-in sheet is opaque and full-screen, so the
+       workspace behind it is invisible but still focusable and still in the
+       accessibility tree. `loginModal` moves out of this div so the attribute
+       does not disable the dialog along with everything else. */
+    <>
     <div
       className="sheet wb-root wb-shell"
+      inert={showLogin || undefined}
       /* The first two tracks. The review column's is 0 while the panel is
          hidden — a `display: none` section keeps its grid track otherwise. Both
          are read by the rules at the foot of workspace.css, which explain why
@@ -4172,11 +4246,13 @@ export default function App() {
           panel and throw away the fields and the "Name updated." line the user
           just earned. The counter only has to re-render this component. */}
       {isAccountOpen && user && (
-        <AccountDialog
-          user={user}
-          onClose={() => setIsAccountOpen(false)}
-          onProfileUpdated={() => setProfileTick((n) => n + 1)}
-        />
+        <Suspense fallback={null}>
+          <AccountDialog
+            user={user}
+            onClose={() => setIsAccountOpen(false)}
+            onProfileUpdated={() => setProfileTick((n) => n + 1)}
+          />
+        </Suspense>
       )}
 
       {fullScreenImage && (
@@ -4238,7 +4314,8 @@ export default function App() {
         </div>
       )}
 
-      {loginModal}
     </div>
+    {loginModal}
+    </>
   );
 }

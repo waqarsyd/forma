@@ -33,7 +33,13 @@ const PRINT_ONLY = process.argv.includes('--print');
  * the entry chunk's.
  */
 const BUDGETS = [
-  { prefix: 'index-', ext: '.js', max: 1_160_000, note: 'eager entry chunk + the genai chunk' },
+  // Lowered from 1,160,000 on 2026-09-01, when Firebase was deferred behind
+  // lib/firebaseClient.ts and the entry chunk fell from 1,121,920 B to 619,380 B
+  // -- 502,540 B, 45% of it, off the critical path. A cap left at 1,160,000
+  // would have had 87% headroom and could never fire again, which is the failure
+  // this whole script exists to prevent. Tightened to sit just above the new
+  // measurement instead.
+  { prefix: 'index-', ext: '.js', max: 660_000, note: 'eager entry chunk + the genai chunk' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it
@@ -42,6 +48,17 @@ const BUDGETS = [
   { prefix: 'pdf.worker-', ext: '.mjs', max: 2_250_000, note: 'pdfjs worker, lazy' },
   { prefix: 'pdf-', ext: '.js', max: 470_000, note: 'pdfjs entry, lazy' },
   { prefix: 'Markdown-', ext: '.js', max: 175_000, note: 'react-markdown + remark-gfm, lazy' },
+  /*
+   * The Firebase SDK, lazy as of 2026-09-01 and grouped into one chunk by the
+   * manualChunks block in vite.config.ts.
+   *
+   * Budgeted because it is now the largest thing that is *not* on the critical
+   * path, and the way that silently reverts is a static `import` of
+   * `services/firebase` creeping back into the eager graph. That would not show
+   * up here -- it shows up as the entry chunk jumping ~500 kB against its own
+   * cap. This budget catches the other direction: the SDK itself growing.
+   */
+  { prefix: 'firebase-', ext: '.js', max: 660_000, note: 'firebase app + auth + firestore, lazy' },
   /*
    * Every self-hosted font, checked individually. An empty prefix matches all
    * of them; the cap is the largest (inter-latin-ext, 85,068 B) plus a little.
@@ -63,8 +80,21 @@ const BUDGETS = [
  * from Google's origin to ours rather than appearing from nowhere -- a typical
  * page still fetches three of the six, the same three it fetched before -- but
  * they are in `dist/` now, so the budget has to say so.
+ *
+ * Raised again from 4,840,000 on 2026-09-01, to 4,847,691 measured + headroom.
+ * Deferring Firebase (see lib/firebaseClient.ts) took 502,540 B off the entry
+ * chunk but added 148,489 B to the total: code-splitting is not free, and the
+ * same modules spread across more chunks tree-shake and dedupe less well than
+ * they did in one. Grouping the SDK with manualChunks was tried against this and
+ * recovered only ~3 kB, so the cost is inherent rather than a chunking mistake.
+ *
+ * It is a deliberate trade and worth stating plainly: every visitor now
+ * downloads ~500 kB less to see a page, and only the ones who sign in ever fetch
+ * the 619 kB Firebase chunk at all. The total is the wrong number to optimise
+ * for when most of it is never requested -- but it still gets a budget, because
+ * something has to notice if it doubles.
  */
-const TOTAL_MAX = 4_840_000;
+const TOTAL_MAX = 4_900_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);
