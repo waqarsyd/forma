@@ -37,6 +37,21 @@ Three token sets are duplicated by hand and must be changed together:
 
 **The sheet palette is a whole scoped token set, not a few overrides**, because the home page was matched pixel-for-pixel to an external design and that design has its own tokens. It is split across **two selectors, and which one you reach for matters**:
 
+- **The accent was darkened for contrast on 2026-09-01, and the split between two orange tokens is the point.** The brand orange `#fe6b00` failed WCAG AA in the two places it mattered most: **2.87:1** behind the white text of every filled CTA, and **2.54:1** as the 82px hero display type, which needs only 3:1 and still missed. `--ink-faint` (`#8492a6`) was **2.79:1** on the sheet — body copy, not decoration. Every replacement was solved rather than picked: same hue and saturation, walked down (or up, in dark mode) in HSL until it cleared 4.5:1 against the *worst* of the four surfaces it can land on, with a little margin.
+
+  | token | was | now | measured |
+  |---|---|---|---|
+  | `--color-secondary` light | `#fe6b00` | `#ae4900` | 4.64–5.60:1 as text |
+  | `--color-secondary-container` both themes | `#fe6b00` / `#ff7d21` | `#ae4900` | white on it 5.60:1 |
+  | `--ink-faint` light | `#8492a6` | `#5b697d` | 4.62–5.58:1 |
+  | `--ink-faint` dark | `#66748a` | `#758399` | 4.62–5.19:1 |
+  | `--accent-deep` light / dark | `#d95a00` / `#ff8f43` | `#8f3c00` / `#c65300` | hover, white stays ≥4.5:1 |
+  | `--paper-accent` | `#fe6b00` | `#ae4900` | 5.60:1 on the paper |
+
+  **`--color-secondary` stays vivid `#ff7d21` in dark mode and that is deliberate**: as *text* on a dark ground it is already 6.94–7.80:1, so darkening it would cost brand for nothing. Which is why the fill is a separate token — `--accent` maps to `--color-secondary`, so `.wb-pill--accent` had to be repointed at `--color-secondary-container`, or the workspace's "New report" button kept the vivid fill and its white label stayed at 2.56:1. **The rule: `--color-secondary` is the orange you read, `--color-secondary-container` is the orange you read *on*.** `--paper-accent` is a third case, theme-invariant because the paper it sits on is white in both themes — `StepFigures`' file chips used `text-secondary` there and inherited the dark-mode vivid orange onto white.
+
+  `--accent-wash` and `--accent-line` keep the original hue: at 9% and 32% alpha they are tints, carry no text, and are exempt. Verified after the change with a canvas-resolved contrast sweep over every text node on five routes in both themes — **0 failures**, excluding `aria-hidden` subtrees, which is the correct WCAG scope and covers the decorative `SheetRuler` numerals.
+
 - **`.sheet, .landing`** is the token layer — the `--color-*` remaps plus `--ground-2`, `--ink-faint`, `--accent-deep` / `--accent-wash` / `--accent-line`, `--ok-*` / `--bad-*`, `--paper-rule`, the `--code-bg` / `--code-rule` / `--code-ink` trio for the XML pane (`--code-bg` sinks a step darker in dark mode — hardcoding the light value left the pane visibly wrong in dark), and `--shadow-sm` / `--shadow-md` / `--shadow-lg` / `--inset-hi`. The most consequential remap is `--secondary`: it is `#a04100`, a dark brown, app-wide, and the sheet's accent is `#fe6b00`. **Use those shadow variables on any sheet surface rather than Tailwind's `shadow-*` scale** — it is a different ramp, and matching by eye put every panel a step too heavy.
 - **`.landing` alone** carries four page-only declarations that must never move into `.sheet`: `text-rendering: optimizeLegibility` (the source sets it on `body`; without it kerning differs and every glyph lands a fraction off), `overflow-x: clip` (the source's `body { overflow-x: hidden }`, containing the oversized decorative glows — `clip` rather than `hidden` so the element does not become a scroll container and stop the header sticking), and `--spacing-container-max: 1180px` / `--spacing-margin-desktop: 32px`. Those last two are the reason the split exists: **spacing variables scope at the element** rather than resolving once at declaration, so leaking them to a full-bleed surface narrows it to the marketing measure.
 

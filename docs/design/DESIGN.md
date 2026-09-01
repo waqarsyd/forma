@@ -23,7 +23,7 @@ colors:
   inverse-primary: '#bec7db'
   secondary: '#a04100'
   on-secondary: '#ffffff'
-  secondary-container: '#fe6b00'
+  secondary-container: '#ae4900'  # was #fe6b00 until 2026-09-01; white on it measured 2.87:1
   on-secondary-container: '#572000'
   tertiary: '#090d0f'
   on-tertiary: '#ffffff'

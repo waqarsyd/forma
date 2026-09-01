@@ -376,7 +376,7 @@
     --on-primary-fixed-variant: #3e4758;
 
     --secondary: #a04100;
-    --secondary-container: #fe6b00; /* brand CTA — identical in both themes */
+    --secondary-container: #ae4900; /* brand CTA — identical in both themes; darkened 2026-09-01, white on it was 2.87:1 */
     --on-secondary: #ffffff;
     --on-secondary-container: #572000;
     --secondary-fixed: #ffdbcc;
@@ -409,8 +409,13 @@
        elements used `bg-primary/40` and `border-t-primary`, and --primary DOES
        flip (#FF5E00 -> #FF6C1A), so the chart quietly changed colour with the
        app theme inside a sheet that is supposed to be theme-invariant. */
-    --paper-accent: #fe6b00;
-    --paper-accent-soft: rgba(254, 107, 0, .4);
+    /* Theme-invariant, like --paper itself: a drawn sheet is white in both
+       themes, so its accent cannot vary either. Darkened from #fe6b00 with the
+       rest of the accent on 2026-09-01 — 2.87:1 on the paper, against 5.60:1
+       now — which matters because the file chips in StepFigures label that
+       paper in this colour. */
+    --paper-accent: #ae4900;
+    --paper-accent-soft: rgba(174, 73, 0, .4);
 
     /* Blueprint grid behind the landing page. Unlike --paper these DO flip. */
     --sheet-line: rgba(10, 40, 78, 0.055);
@@ -462,7 +467,7 @@
     --on-primary-fixed-variant: #bec7db;
 
     --secondary: #ffa37a;
-    --secondary-container: #fe6b00; /* unchanged: brand CTA reads on both */
+    --secondary-container: #ae4900; /* brand CTA, same value in both themes; darkened 2026-09-01 for AA */
     --on-secondary: #ffffff;
     --on-secondary-container: #572000; /* held: the container colour is the
                                           same orange, so the contrast-checked
@@ -491,8 +496,13 @@
     /* Intentionally identical to light — see the note in @theme. */
     --paper: #ffffff;
     --on-paper: #0b1c30;
-    --paper-accent: #fe6b00;
-    --paper-accent-soft: rgba(254, 107, 0, .4);
+    /* Theme-invariant, like --paper itself: a drawn sheet is white in both
+       themes, so its accent cannot vary either. Darkened from #fe6b00 with the
+       rest of the accent on 2026-09-01 — 2.87:1 on the paper, against 5.60:1
+       now — which matters because the file chips in StepFigures label that
+       paper in this colour. */
+    --paper-accent: #ae4900;
+    --paper-accent-soft: rgba(174, 73, 0, .4);
 
     --sheet-line: rgba(126, 176, 235, 0.055);
     --sheet-line-fine: rgba(126, 176, 235, 0.026);
@@ -852,13 +862,24 @@ body {
     --color-on-surface-variant: #4a5a70;
     --color-outline-variant: #d7dee9;       /* --rule: every hairline */
     --color-outline: #aeb9ca;               /* --rule-strong: outlined buttons */
-    --color-secondary: #fe6b00;
-    --color-secondary-container: #fe6b00;
+    /* Darkened from #fe6b00 on 2026-09-01 for WCAG AA. The vivid brand orange
+       measured 2.87:1 behind the white text of every filled CTA and 2.54:1 as
+       large display type on the sheet — both failures, on the most-clicked
+       control and the biggest words on the site. This value is the same hue and
+       saturation, walked down in HSL only as far as 4.5:1 required against the
+       *worst* of the four light surfaces (#e5eaf3), so nothing had to be picked
+       by eye. White on it is 5.60:1; as text it is 4.64–5.60:1. See
+       docs/notes/styling.md for the measurements. */
+    --color-secondary: #ae4900;
+    --color-secondary-container: #ae4900;
     --color-success: #0f9d6b;               /* --ok: deliberately not the accent */
 
     --ground-2: #e5eaf3;                    /* the alternating section bands */
-    --ink-faint: #8492a6;                   /* eyebrows, captions, the sign-off */
-    --accent-deep: #d95a00;                 /* the filled button's hover */
+    /* Was #8492a6, which read 2.79:1 on the sheet — this is body copy, not
+       decoration, so 4.5:1 applies. Solved the same way: 4.62–5.58:1 across all
+       four light surfaces. */
+    --ink-faint: #5b697d;                   /* eyebrows, captions, the sign-off */
+    --accent-deep: #8f3c00;                 /* the filled button's hover, a step under the fill */
     --accent-wash: rgba(254, 107, 0, .09);  /* tinted fills */
     --accent-line: rgba(254, 107, 0, .32);  /* tinted rules */
 
@@ -969,13 +990,20 @@ body {
     --color-on-surface-variant: #9daabd;
     --color-outline-variant: #1b2534;
     --color-outline: #2d3b4f;
+    /* `--color-secondary` stays vivid: as *text* on a dark ground #ff7d21 is
+       already 6.94–7.80:1, so darkening it here would cost brand for nothing.
+       The container is a different job — it is a fill with white text on it,
+       where the same colour measured 2.56:1 — so it takes the light theme's
+       accessible orange. Fill identical in both themes, accent text is not. */
     --color-secondary: #ff7d21;
-    --color-secondary-container: #ff7d21;
+    --color-secondary-container: #ae4900;
     --color-success: #34d399;
 
     --ground-2: #090e17;
-    --ink-faint: #66748a;
-    --accent-deep: #ff8f43;
+    /* Was #66748a: 3.75–4.21:1 on the dark surfaces, short of AA. Lightened
+       rather than darkened here, to 4.62–5.19:1 across all four. */
+    --ink-faint: #758399;
+    --accent-deep: #c65300;                 /* hover lifts off the fill; white on it is 4.53:1 */
     --accent-wash: rgba(255, 125, 33, .12);
     --accent-line: rgba(255, 125, 33, .38);
 

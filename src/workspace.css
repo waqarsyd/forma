@@ -86,7 +86,8 @@
 }
 .wb-pill--accent:disabled,
 .wb-pill--accent:disabled:hover {
-  background: var(--accent);
+  /* The fill token, matching the enabled rule further down this file. */
+  background: var(--color-secondary-container);
   color: var(--on-accent);
 }
 
@@ -743,7 +744,12 @@
   transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
 .wb-pill:hover { color: var(--ink); background: var(--track); }
-.wb-pill--accent { background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-sm); }
+/* The FILL token, not `--accent`. `--accent` is `--color-secondary`, which is the
+   orange meant to be read *as text* — and in dark mode that is deliberately the
+   vivid #ff7d21, which is 7.8:1 on a dark ground and 2.56:1 behind the white
+   text of this pill. `--color-secondary-container` is the one solved for white
+   on top (5.60:1). Identical in light mode, where both are #ae4900. */
+.wb-pill--accent { background: var(--color-secondary-container); color: var(--on-accent); box-shadow: var(--shadow-sm); }
 .wb-pill--accent:hover { background: var(--accent-deep); color: var(--on-accent); }
 .wb-pill--outline { border-color: var(--rule-strong); }
 .wb-pill--round { width: 34px; height: 34px; padding: 0; justify-content: center; }
