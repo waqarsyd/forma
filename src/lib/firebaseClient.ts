@@ -61,7 +61,11 @@ export function loadFirebase(): Promise<FirebaseClient> {
   return pending;
 }
 
-/** Test seam. Not for application use — the memo is deliberate at runtime. */
-export function resetFirebaseForTests(): void {
-  pending = null;
-}
+/* `lib/genai.ts` ends with a `resetGenAIForTests()` seam and this file had a
+   matching `resetFirebaseForTests()` for one day, copied from it. Removed
+   2026-09-01: knip reported it, and it was true — nothing imported it, because
+   there is no test for this module to reset. The one it was copied from is
+   equally unused, but it is grandfathered into the seven unused exports the
+   Phase 4 pass measured at exactly zero shipped bytes, whereas this one was new
+   and CONTRIBUTING.md's definition of done says not to add those. Add it back
+   the day a test needs it; `git log -S'resetFirebaseForTests'` has the shape. */
