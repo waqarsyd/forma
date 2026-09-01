@@ -6,13 +6,25 @@ served publicly. These files are for people reading the repository, not for the 
 
 ## What is here
 
-| File | Status |
+| File | What it shows |
 |---|---|
-| `screenshot.placeholder.svg` | A drawing, not a capture. It exists so the README's Demo section has something to render, and it says so on its face. |
+| `screenshot.png` | The home page at `/`, 2400×1500. The README's lead image. |
+| `workspace.png` | The workspace at `/workspace` with no key supplied, 3200×2000. The real shell — review pane, canvas, status bar — and the banner stating that Forma ships no key of its own. |
 
-## Replacing the placeholder
+Both were captured on 2026-09-01 from `localhost:3000` over CDP against a headless
+Edge, at a device scale factor of 1.5 and 2 respectively. A placeholder SVG stood here
+until they were taken; it was deleted in the same commit, per step 7 below.
 
-The README's Demo section points here. Swap it in one commit:
+**Neither shows generated output, and that is deliberate.** Generating a report needs a
+Gemini key, which is the user's and does not belong in a capture. `VITE_FORMA_MOCK=true`
+produces a report without one, but the canned fixture prints `INVOICE - FORMA MOCK
+ENGINE` across the sheet — an honesty marker that works exactly as intended and makes
+the image useless as a README lead. If you want a screenshot of real output, capture it
+yourself with your own key and follow the checklist below.
+
+## Recapturing
+
+The README's Demo section points here. Swap an image in one commit:
 
 1. `npm run dev`, then open <http://localhost:3000>.
 2. Supply a Gemini key, generate a report from a sample document, and wait for the
@@ -23,12 +35,19 @@ The README's Demo section points here. Swap it in one commit:
 4. **Check the frame for anything of yours before saving it.** An API key is masked in
    the Settings dialog, but a signed-in capture shows your account email in the avatar
    menu, and saved report titles are yours too. Sign out, or use a throwaway account.
-5. Save as `docs/media/screenshot.png`.
-6. In the README, replace the placeholder `<img>` and its surrounding TODO comment with
-   `![Forma workspace](docs/media/screenshot.png)`.
-7. Delete `screenshot.placeholder.svg` in the same commit — a placeholder that outlives
-   its replacement is how a repository ends up with two images and no way to tell which
-   one is current.
+5. Overwrite the file in place, keeping the name — the README links to these paths, and
+   a second file beside the first is how a repository ends up with two images and no way
+   to tell which is current. Update the table above with the new dimensions.
+6. Re-check the size. Anything approaching 500 KB wants a lower device scale factor
+   rather than a JPEG; the two images here were taken at 1.5 and 2.
+
+**On automating it.** These were captured headlessly over the Chrome DevTools Protocol,
+which is the only reliable route on a machine where the browser extension cannot reach
+`localhost`. A page can be driven to a chosen state — planting a session key, attaching a
+file, clicking through — with nothing but Node's global `fetch` and `WebSocket` against
+`msedge.exe --headless=new --remote-debugging-port=9222`, no Puppeteer and no dependency
+added to this project. Launch it with `--user-data-dir` pointing somewhere temporary: on
+a shared machine, the default profile is somebody's real browser.
 
 ## Rules for this directory
 

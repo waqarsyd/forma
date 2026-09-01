@@ -31,15 +31,13 @@ It is built around one constraint that shaped everything else: **the application
 
 ## Demo
 
-<!-- TODO: this is a placeholder drawing, not a capture of the running app. Replace it
-     with a real screenshot at docs/media/screenshot.png and swap the <img> below for
-     ![Forma workspace](docs/media/screenshot.png), deleting the placeholder SVG in the
-     same commit. docs/media/README.md carries the capture recipe, including what to
-     check for in the frame before committing it. -->
+![Forma's home page: upload a report design and get a specification, a live mockup and valid DevExpress XML](docs/media/screenshot.png)
 
-<img src="docs/media/screenshot.placeholder.svg" alt="Placeholder for a Forma workspace screenshot" width="100%">
+The workspace itself — the uploaded design and the conversation on the left, the rendered mockup on the right, and the `Mockup` / `Spec` / `REPX` tabs over the three artifacts:
 
-> **This image is a drawing, not a capture.** To see the real thing, run `npm run dev` and open <http://localhost:3000> — the landing page renders the in-browser mockup engine with sample geometry before you supply a key.
+![The Forma workspace, showing the review pane, the report canvas and the export controls](docs/media/workspace.png)
+
+Both are real captures of the app at `localhost:3000`, not mockups. See [`docs/media/README.md`](docs/media/README.md) for how they were taken.
 
 ---
 
