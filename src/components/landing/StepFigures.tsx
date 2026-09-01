@@ -42,11 +42,7 @@ export function FigureIngest() {
             transition={{ ...transition.snap, delay: reduce ? 0 : f.delay }}
           >
             <span className="absolute inset-x-[7px] top-2 h-0.5 bg-outline-variant shadow-[0_5px_0_var(--color-outline-variant),0_10px_0_var(--color-outline-variant)]" />
-            {/* --paper-accent, not text-secondary. This label sits on `bg-paper`,
-                which is white in BOTH themes, while `--color-secondary` flips to
-                the vivid #ff7d21 in dark — 2.56:1 on white. The paper token is
-                theme-invariant for exactly this reason. */}
-            <span className="absolute inset-x-0 bottom-1.5 text-center font-code-sm text-[6.5px] leading-[1.62] font-medium tracking-[0.04em] text-[color:var(--paper-accent)]">
+            <span className="absolute inset-x-0 bottom-1.5 text-center font-code-sm text-[6.5px] leading-[1.62] font-medium tracking-[0.04em] text-secondary">
               {f.k}
             </span>
           </motion.div>
