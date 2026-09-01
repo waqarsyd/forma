@@ -35,6 +35,8 @@ The claim is enforced, not just intended: the server sends a Content-Security-Po
 
 Requires **Node 20, 22, or 24+** (developed on Node 24.18.1 / npm 11.16.0). "20+" is the wrong shorthand: Vitest supports `^20 || ^22 || >=24`, so the odd-numbered lines **21 and 23 are outside the supported range** even though they are newer than 20.
 
+<sup>`package.json`'s `engines` field is the declaration; **three** files restate it in prose — this one, [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CLAUDE.md`](CLAUDE.md) — so raising the floor touches four files in all. (`CLAUDE.md` says "three files" and means the prose copies.)</sup>
+
 ```bash
 npm install
 npm run dev
@@ -66,6 +68,8 @@ That's enough to generate reports. Sign-in and cloud sync are optional — signe
 | `npm run test:coverage` | Coverage over `lib/` and `services/` — see the note in `vitest.config.ts` about what is deliberately excluded |
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
 | `npm run clean` | Remove `dist/` |
+
+<sup>Two other files list these: [`CONTRIBUTING.md`](CONTRIBUTING.md)'s table of checks and [`CLAUDE.md`](CLAUDE.md)'s *Commands* block. Adding or renaming a script is a change to all three — this table is the one users read, so it lists every script rather than only the checks.</sup>
 
 ---
 
@@ -186,12 +190,9 @@ Neither suite covers React components or `App.tsx`'s stateful logic. **This is a
 
 ## Contributing
 
-Start with **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — setup, the seven checks, and the
-rules for adding and removing things.
-
 Four documents carry the reasoning that the code cannot:
 
-- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — the six checks and the rules for adding and removing things; the one to read before you open a PR.
+- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — setup, the six checks, and the rules for adding and removing things; the one to read before you open a PR. (Six is what you can run locally. [`.github/workflows/checks.yml`](.github/workflows/checks.yml) runs a seventh, `npm ci`, which fails when `package.json` and the lockfile disagree — nothing local checks that.)
 - **[`CLAUDE.md`](CLAUDE.md)** — the entry point: hard constraints, commands, and an index that routes you to the note covering whatever you are about to change.
 - **[`docs/notes/`](docs/notes/)** — four notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.
 - **[`docs/PRD.md`](docs/PRD.md)** — the product specification, kept current against the code.
