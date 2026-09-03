@@ -265,6 +265,34 @@ Three things worth knowing before touching this again:
 - **`h` is 0 for vertical fonts**, which is the same branch that leaves them unsized in pdf.js. The prompt says so, and says to fall back to the image for those.
 - **Nothing in the suite covers any of this.** It is prompt prose plus one line of extracted text. Verified by reading; the check that settles it is a generation from a PDF with a real text layer, then measuring a known heading in the designer against the source.
 
+## The report that finished without the REPX finishing (2026-09-03)
+
+There are **two** truncations in this pipeline and they had been discussed as one. Separating them is most of the fix.
+
+**The loud one** cuts the response itself: `finishReason` comes back `MAX_TOKENS`, the JSON does not parse, and there is no report at all. `analysisResponse.ts` owns it and has since 2026-08-26, when it turned out that a cut-off-but-non-empty body fell through to *"The AI returned a malformed report. Try generating again"* — advice that fails identically every time, because the same input hits the same limit. That case is **explained, not fixed**, and still is.
+
+**The quiet one is the one users actually reported.** The model returns a complete, valid JSON object — normal `finishReason`, intact `layout.sections`, a readable markdown spec, a mockup that draws — and inside it the `repxContent` string simply stops. Measured on a real generation: **896 bytes ending mid-attribute at `... Name=`**. Every signal the app had said success. The only broken artifact was the only one anybody opens in DevExpress, and `checkRepx` catches it at Export — at the far end of the wait, with nothing to be done but run the whole generation again.
+
+**So it is caught at the parse now, and repaired there.** `src/lib/repxTruncation.ts` answers *did the model stop writing* — no DOM, no dependencies, pure string work, so it runs inside the service and under the node test environment. It is deliberately not `checkRepx`: that one answers *will the designer open this*, which a hand-written malformation fails just as a truncation does, and it needs a browser `DOMParser`. Truncation is a specific enough diagnosis to act on, which a generic parse failure is not.
+
+**The repair is one focused rewrite of the XML alone**, and three things make it likely to fit where the first attempt did not:
+
+- **It writes one artifact.** The markdown and the layout already exist and are correct, so the entire output budget goes to the XML.
+- **It answers in raw XML, not XML escaped inside a JSON string.** Every quote in a DevExpress document is an attribute delimiter; escaping them all is pure overhead on the one artifact that ran out of room.
+- **It transcribes rather than designs.** The layout it is handed carries every position, size, font, colour, border and table cell, so there is no measuring left to do — and no images are re-sent, because the layout *is* the specification by then and re-uploading the page would put the expensive half of the first request into the one meant to be cheap.
+
+One attempt, and any failure leaves the original untouched: the rewrite is checked for completeness the same way the original was, and a rewrite that also stops early is discarded with a logged reason. Throwing here would lose a report that still has a working mockup and spec.
+
+**Two things were considered and deliberately not done.**
+
+*Reordering the response schema* so the XML is written before the layout — the standing suggestion from the day the bug was filed. It buys nothing on its own: if the JSON is cut anywhere it is unparseable everywhere, so field order only pays if partial JSON is salvaged, and salvage is real machinery for a failure that **three live runs could not reproduce**. If it is ever built, the order to want is layout before `repxContent`, so a hard cut leaves a complete layout and the rewrite above can finish the job. (Note the schema already emits `markdown`, `repxContent`, `layout` — the XML is second, not last, which the original report of this bug assumed.)
+
+*Closing the open tags locally* to make a truncated document well-formed. It would turn a file the designer refuses into a file the designer opens with content silently missing, and `checkRepx` would then pass it. That is a worse failure, not a smaller one.
+
+**The first-order mitigation landed earlier the same day and is not in this section.** The banded skeleton cut a dense invoice from 20,608 characters to 10,547 — the surest way not to run out of output budget is to need less of it.
+
+**Not validated live.** No key was used for any of this: the detection is covered by fixtures cut the way the real one was, and the rewrite path has never run against Gemini. The honest test is a document that actually triggers the quiet truncation, and nobody has one — three attempts with dense invoices produced complete XML every time. Watch the console for *"The generated REPX is unfinished"*; that line firing is the first real evidence either way. The user is told nothing today beyond the existing Export refusal — threading a "this was repaired" notice through to the UI is the obvious next step and touches `App.tsx`, so it was left out.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

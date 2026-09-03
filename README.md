@@ -275,6 +275,8 @@ src/
                        real ReportHeader / PageHeader / one-row Detail /
                        ReportFooter / PageFooter, with the old single
                        page-sized DetailBand kept behind VITE_FORMA_FLAT),
+                       repxTruncation (did the model stop writing the XML
+                       part-way, asked at the parse rather than at Export),
                        attachments, panelSize, announcements, datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        analysisResponse (is a failed generation truncated or

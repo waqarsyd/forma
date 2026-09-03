@@ -4,6 +4,7 @@ import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
 import { liftReportMargins } from "../lib/repxMargins";
 import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
+import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -1443,9 +1444,131 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
     console.error("Gemini returned an empty response. finishReason:", response.finishReason);
   }
 
+  /**
+   * Rewrite the REPX on its own, when the response finished but the XML did not.
+   *
+   * This is the quiet truncation: valid JSON, an intact `layout`, a readable
+   * markdown spec, and a `repxContent` that stops mid-attribute. Everything the
+   * app looks at says success, and the only broken artifact is the only one the
+   * user opens in DevExpress. See `lib/repxTruncation.ts`.
+   *
+   * Three things make the second request likely to fit where the first did not,
+   * and they are the reason this is a retry worth spending a request on rather
+   * than the same roll of the dice:
+   *
+   * - It writes ONE artifact. No markdown specification, no layout JSON — both
+   *   already exist and are correct — so the whole output budget goes to the XML.
+   * - It answers in raw XML, not XML escaped inside a JSON string. Every quote
+   *   in a DevExpress document is an attribute delimiter, and escaping them is
+   *   pure overhead on the artifact that ran out of room.
+   * - It transcribes rather than designs. The layout it is handed already
+   *   carries every position, size, font, colour, border and table cell, so
+   *   there is no measuring left to do.
+   *
+   * Deliberately no images: the layout is the specification now, and re-sending
+   * the page would put the expensive part of the first request back into the one
+   * meant to be cheap. One attempt only, and any failure leaves the original
+   * untouched — a dead REPX with a working mockup is worse than what we had, but
+   * an exception thrown here would lose the report entirely.
+   */
+  const rewriteRepxFromLayout = async (result: AnalysisResponse): Promise<string | null> => {
+    if (signal?.aborted) return null;
+
+    const startedAt = Date.now();
+    try {
+      const stream = await ai.models.generateContentStream({
+        model: selectedModel,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `You are writing ONE artifact: a complete DevExpress XtraReports .repx document.
+
+          A previous attempt produced this report's specification correctly but stopped part-way through the XML. The layout below is complete and correct — transcribe it, do not redesign it, and do not re-measure anything.
+
+          Output the XML and NOTHING else: no explanation, no markdown fences, no JSON. Start with <?xml and end with </XtraReportsLayoutSerializer>.
+${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion }, useBandedLayout)}
+          - Each layout element becomes one control: "label" -> XRLabel, "table" -> XRTable with XRTableRow/XRTableCell (cells take Weight, never LocationFloat or SizeF), "image" -> XRPictureBox, "line" -> XRLine, "barcode" -> XRBarCode.
+          - x, y, width and height are already in ${reportUnit} and become LocationFloat="x,y" and SizeF="width,height", with no space after the comma.
+          - FONT SIZE IS IN POINTS, and the layout's fontSize is in report units: points = fontSize * 72 / ${unitsPerInchForReport}. Writing the layout number straight into Font makes every piece of text far too large.
+          - Carry every appearance property across: bold/italic into Font, color into ForeColor, backgroundColor into BackColor (omit it when the area is white), textAlign + verticalAlign into TextAlignment, the border flags into Borders, wrap into WordWrap.
+          - Include EVERY element of EVERY section. Completeness is the only thing that failed last time.
+          - The XML must be strictly valid: all attribute values double-quoted, all tags closed, &amp; &lt; &gt; &quot; escaped inside values.
+
+          THE LAYOUT TO TRANSCRIBE:
+          ${JSON.stringify(result.layout)}`,
+              },
+            ],
+          },
+        ],
+        config: {
+          abortSignal: signal,
+          temperature: 0,
+          maxOutputTokens: 65536,
+          // Matched to the main request rather than forced to 0. Disabling
+          // thinking is the obvious lever here — this is transcription, and the
+          // budget it frees is exactly what ran out — but some models refuse a
+          // zero budget, and an error would cost the repair entirely.
+          ...(typeof config?.thinkingBudget === "number"
+            ? { thinkingConfig: { thinkingBudget: config.thinkingBudget } }
+            : {}),
+        },
+      });
+
+      let text = "";
+      for await (const chunk of stream) {
+        if (signal?.aborted) throw abortError();
+        if (chunk.text) text += chunk.text;
+        // The bar is already near the end of its travel; nudge it past where
+        // the stream left it (95) and let the character count show that
+        // something is still happening. The count is cumulative on purpose —
+        // `applyStreamProgress` shows `streamChars` raw, so restarting it at
+        // zero would run a real number backwards in front of the user.
+        onProgress?.({
+          chars: (rawText?.length ?? 0) + text.length,
+          percent: 97,
+          elapsedMs: Date.now() - startedAt,
+        });
+      }
+
+      const document = extractRepxDocument(text);
+      const check = checkRepxComplete(document);
+      if (!check.complete) {
+        console.warn(`REPX rewrite came back unfinished too (${check.reason}) — keeping the original.`);
+        return null;
+      }
+
+      console.log(`REPX rewritten from the layout: ${check.length} characters in ${Date.now() - startedAt}ms.`);
+      return document;
+    } catch (error: any) {
+      if (signal?.aborted || error?.name === "AbortError") throw error;
+      console.warn("REPX rewrite failed; keeping the original.", error);
+      return null;
+    }
+  };
+
   try {
     const parsed = parseAnalysisResponse(rawText, response.finishReason);
     console.log(`Successfully parsed Gemini response.`);
+
+    /**
+     * The model can finish the response and not the report. Nothing else in the
+     * pipeline notices: `parseAnalysisResponse` sees valid JSON, the mockup
+     * draws from the layout, and `checkRepx` only runs when the user tries to
+     * leave with the file. Catch it here, where there is still a request's worth
+     * of context and something can be done about it.
+     */
+    const completeness = checkRepxComplete(parsed.repxContent);
+    if (!completeness.complete) {
+      console.warn(
+        `The generated REPX is unfinished — ${completeness.reason}. ` +
+        `The response itself was complete (finishReason: ${response.finishReason ?? "none reported"}), ` +
+        `so the layout survived; rewriting the XML from it.`
+      );
+      const rewritten = await rewriteRepxFromLayout(parsed);
+      if (rewritten) parsed.repxContent = rewritten;
+    }
 
     // The prompt pins Margins to zero so the model can write paper-absolute
     // coordinates, and the model then draws the design's margin as whitespace
