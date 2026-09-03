@@ -3,6 +3,7 @@ import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
 import { liftReportMargins } from "../lib/repxMargins";
+import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -859,6 +860,14 @@ export async function analyzeReportDesign(
   const pageSize = resolvePageSize(config?.pageSize);
   const page = pageSizeInUnits(pageSize, reportUnit);
   const unitsPerInchForReport = unitsPerInch(reportUnit);
+
+  /* A real band skeleton — ReportHeader / PageHeader / a ONE-ROW Detail /
+     ReportFooter / PageFooter — rather than one page-sized DetailBand, which
+     printed the whole page once per record the moment a data source was bound.
+     VITE_FORMA_FLAT=true asks for the old shape back; see lib/reportBands.ts for
+     why the fallback still exists and what depends on this text. */
+  const useBandedLayout = !flatLayoutEnabled(viteEnv);
+
   // Anchors for the font-size rule in the prompt. Ordinary printed body text is
   // 9-11pt; expressed in the layout's own unit it becomes a range the model can
   // check its own answer against, which is the only defence against the whole
@@ -1026,7 +1035,7 @@ export async function analyzeReportDesign(
           SOURCE PRECEDENCE — READ THIS FIRST.
           Some attachments are text extracted directly from the uploaded file rather than read from an image: a PDF's own text layer, or the contents of an existing .repx. Where such text is provided it is EXACT and comes from the file itself.
           - Use those strings verbatim for Text= values. Do NOT re-read, re-spell or "correct" them from the page image.
-          - Use their x/y/w/h numbers as the basis for LocationFloat and SizeF. They are already in report units (hundredths of an inch) with the origin at the top-left, so they need no conversion.
+          - Use their x/y/w/h numbers as the basis for LocationFloat and SizeF. They are already in this report's units (${reportUnit}, ${unitsPerInchForReport} per inch) with the origin at the top-left, so they need no conversion.
           - **An extracted string's h is its font's em size, read out of the file — so it is that string's EXACT font size as well as its height.** Use it for that element's "fontSize" verbatim and do NOT re-estimate the size from the page image; convert it to points for Font= with the arithmetic under FONT SIZE IS ALWAYS IN POINTS. (An h of 0 means the extractor could not size that one string — only then read it from the image.)
           - Use the page image for what the text layer cannot express: borders, rules, fills, logos, images, alignment and overall visual structure.
           - If the image and the extracted text disagree about a string or a position, the extracted text wins.
@@ -1044,29 +1053,9 @@ export async function analyzeReportDesign(
           PHASE 2: DEVEXPRESS CHEAT SHEET (STRICT SYNTAX)
           When generating the "repxContent" XML, you MUST use these exact structures:
           
-          - ROOT STRUCTURE: The entire repxContent MUST be wrapped exactly like this:
-            <?xml version="1.0" encoding="utf-8"?>
-            <XtraReportsLayoutSerializer SerializerVersion="${targetSerializerVersion}" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="${reportUnit}" Margins="0, 0, 0, 0" PageWidth="${page.width}" PageHeight="${page.height}" Version="${targetVersion}">
-              <Bands>
-                <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
-                <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${page.height}">
-                  <Controls>
-                    <!-- Your controls go here -->
-                  </Controls>
-                </Item2>
-                <Item3 Ref="3" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
-              </Bands>
-            </XtraReportsLayoutSerializer>
-
-          - COORDINATE FRAME — the single most common way this output comes out wrong.
-            A control's LocationFloat is measured from the TOP-LEFT OF ITS BAND, and a band begins at the page's left margin. The margins above are therefore ZERO on purpose: it makes the band's coordinate space identical to the paper's, so the numbers from PHASE 1 and from any extracted PDF text can be used directly.
-            - Do NOT set non-zero Margins. Do NOT give the margin bands a height.
-            - Do NOT subtract or add anything to the PHASE 1 coordinates when writing LocationFloat.
-            - Every control must satisfy x + width <= ${page.width} and fit inside its band's height. Anything wider than the page is silently clipped or pushed onto a second page by the designer.
-            - Make the Detail band tall enough to contain the tallest element you place in it.
-
+${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion }, useBandedLayout)}
           - Labels: <Item1 Ref="1" ControlType="XRLabel" Name="label1" Text="My Text" LocationFloat="0,10" SizeF="200,30" Padding="2,2,0,0,100" />
-          - Tables — a header row and one row per line, cells sized by Weight and never by coordinates: <Item2 Ref="2" ControlType="XRTable" Name="table1" LocationFloat="0,50" SizeF="750,40" Borders="All"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="rowHeader" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="cellHeadDesc" Text="Description" Weight="3" Font="Arial, 9.75pt, style=Bold" /><Item2 Ref="5" ControlType="XRTableCell" Name="cellHeadAmount" Text="Amount" Weight="1" TextAlignment="MiddleRight" Font="Arial, 9.75pt, style=Bold" /></Cells></Item1><Item2 Ref="6" ControlType="XRTableRow" Name="row1" Weight="1"><Cells><Item1 Ref="7" ControlType="XRTableCell" Name="cellDesc1" Text="Widget" Weight="3" /><Item2 Ref="8" ControlType="XRTableCell" Name="cellAmount1" Text="1,240.00" Weight="1" TextAlignment="MiddleRight" /></Cells></Item2></Rows></Item2>
+          - Tables — rows and cells, with cells sized by Weight and never by coordinates: <Item2 Ref="2" ControlType="XRTable" Name="table1" LocationFloat="0,50" SizeF="750,40" Borders="All"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="rowHeader" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="cellHeadDesc" Text="Description" Weight="3" Font="Arial, 9.75pt, style=Bold" /><Item2 Ref="5" ControlType="XRTableCell" Name="cellHeadAmount" Text="Amount" Weight="1" TextAlignment="MiddleRight" Font="Arial, 9.75pt, style=Bold" /></Cells></Item1><Item2 Ref="6" ControlType="XRTableRow" Name="row1" Weight="1"><Cells><Item1 Ref="7" ControlType="XRTableCell" Name="cellDesc1" Text="Widget" Weight="3" /><Item2 Ref="8" ControlType="XRTableCell" Name="cellAmount1" Text="1,240.00" Weight="1" TextAlignment="MiddleRight" /></Cells></Item2></Rows></Item2>
           - Images: <Item3 Ref="5" ControlType="XRPictureBox" Name="pictureBox1" Sizing="ZoomImage" LocationFloat="0,100" SizeF="150,150" />
           - Lines: <Item4 Ref="6" ControlType="XRLine" Name="line1" LocationFloat="0,260" SizeF="300,5" />
           - Page Info: <Item5 Ref="7" ControlType="XRPageInfo" Name="pageInfo1" PageInfo="DateTime" LocationFloat="0,270" SizeF="150,20" />
@@ -1074,12 +1063,12 @@ export async function analyzeReportDesign(
           Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
-            Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit ONE XRTable for it, with a header XRTableRow and one XRTableRow per line.
+            Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.
             - **Visible rules are not required, and their absence is not evidence.** Columns that line up are the signal. A region drawn with no borders at all is still a table; so is one separated only by a single rule under the headings.
             - **A grid of XRLabels is always the wrong answer for such a region**, however exactly its coordinates match the source. It looks identical in a preview and is a failed report: those columns cannot be re-bound to data, resized, or repeated per record, which is the whole purpose of the file being a .repx instead of a picture.
             - Column widths are relative Weight values on the cells, not coordinates — a column twice as wide as its neighbour gets twice the Weight. **An XRTableCell has no LocationFloat and no SizeF**; do not compute them. The XRTable's own SizeF sets the width the weights are distributed across.
             - Carry the source's own formatting onto the cells: bold the header row, and give money, quantity and date columns a TextAlignment ending in Right if that is how they are set.
-            - Reproduce EVERY row and column you can read, including the header and any totals row. Do not sample the rows and do not invent placeholders.
+            - ${tableRowsRule(useBandedLayout)}
             - The same region must be ONE "type": "table" element in the layout JSON, carrying the same rows and cells — see TABLES / GRIDS IN THE LAYOUT below. The two artifacts describe one report and must agree about where its tables are.
 
           - APPEARANCE IS PART OF THE REPORT, NOT JUST OF THE PREVIEW.

@@ -271,6 +271,10 @@ src/
                        in the pipeline, and the only place one may be written),
                        repxMargins (moves a margin the model drew as whitespace
                        into the report's own Margins and margin bands),
+                       reportBands (the band skeleton the prompt asks for — a
+                       real ReportHeader / PageHeader / one-row Detail /
+                       ReportFooter / PageFooter, with the old single
+                       page-sized DetailBand kept behind VITE_FORMA_FLAT),
                        attachments, panelSize, announcements, datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        analysisResponse (is a failed generation truncated or

@@ -1,0 +1,203 @@
+/**
+ * The REPX band structure the prompt asks the model to produce.
+ *
+ * ## What changed on 2026-09-03, and why there are still two shapes
+ *
+ * Until 2026-09-01 the prompt hard-coded exactly three bands — a zero-height
+ * TopMargin, ONE DetailBand at the full page height, and a zero-height
+ * BottomMargin — and every control went into that single band. It is a good
+ * choice for the thing it was optimising: with one band starting at the paper's
+ * top-left and `Margins="0,0,0,0"`, band-relative coordinates and page
+ * coordinates are the same numbers, so the model cannot get the frame wrong.
+ * Measured on a live run, that produces a genuinely faithful picture: 103
+ * controls, 0 out of bounds, 0 overlapping, and a designer check on 2026-09-03
+ * confirmed it matches its source image.
+ *
+ * It also produces something that is not a report. In DevExpress a `DetailBand`
+ * prints **once per record**, so a Detail band the height of the page means
+ * binding a data source makes the whole page repeat per row. There is no
+ * `ReportHeader` to print a title once, no `PageHeader` to repeat column
+ * headings across pages, and no `ReportFooter` for totals — the table arrives as
+ * a static `XRTable` with every row hard-coded.
+ *
+ * `banded` is now the default: reproducing a picture was never the goal, and a
+ * file that cannot take a data source fails at the one thing a `.repx` is for.
+ * `flat` remains behind `VITE_FORMA_FLAT=true` because it is the shape with a
+ * designer verdict behind it, so there is a one-variable way back if a real
+ * document comes out worse. It is a fallback, not an experiment; when the banded
+ * shape has its own designer check, this module collapses to one string.
+ *
+ * ## The part that will break first
+ *
+ * Coordinates. `flat` can tell the model "do NOT subtract anything" because the
+ * only band starts at y=0. With stacked bands, each band's origin is its own top
+ * edge, so a control 400 units down the page sitting in a band that starts at
+ * 320 must be written as `LocationFloat="x,80"`. That subtraction is exactly the
+ * class of error `src/lib/reportGeometry.ts` exists to contain — it renders a
+ * plausible layout in the wrong place and never throws. The banded prompt
+ * therefore spends most of its length on that one rule. Measured on the
+ * 2026-09-01 A/B: zero controls fell outside their band, so the model does
+ * perform the subtraction when told to.
+ *
+ * ## Two things elsewhere depend on this text
+ *
+ * - `src/lib/repxMargins.ts` declines with *"margin bands are missing"* if the
+ *   document has no `TopMarginBand` and `BottomMarginBand`. The banded prompt
+ *   invites the model to omit bands it has no content for, so it has to say
+ *   explicitly that those two are never omitted, or the margin lift silently
+ *   stops happening. The same lift declines with *"the first body band carries
+ *   no controls"*, which the flat shape could never hit and this one can: an
+ *   emitted-but-empty `ReportHeader` turns the margin lift off. That decline is
+ *   correct — whitespace held as band height is a different edit — so the
+ *   defence is the instruction to omit a band rather than emit it empty.
+ * - The layout JSON keeps EVERY data row while the Detail band keeps one. That
+ *   divergence is deliberate — the mockup is a picture of the source and the
+ *   REPX is a bindable report — and both halves of it are stated in the prompt,
+ *   because the rest of the prompt insists the two artifacts agree.
+ */
+
+/** Page geometry in the report's own units, as `pageSizeInUnits` returns it. */
+export interface PageBox {
+  width: number;
+  height: number;
+}
+
+export interface RootStructureOptions {
+  page: PageBox;
+  reportUnit: string;
+  targetVersion: string;
+  targetSerializerVersion: string;
+}
+
+/**
+ * Is the old single-band shape forced back on?
+ *
+ * Env-driven rather than a `ReportConfig` field on purpose. `reportConfigStore`
+ * persists config through an allowlist whose whole job is keeping the API key
+ * off disk; adding a field there means touching the one piece of storage code
+ * with a security invariant. A `VITE_` flag is the same shape as
+ * `VITE_FORMA_MOCK`, needs no persistence, and disappears with the fallback.
+ */
+export function flatLayoutEnabled(env: Record<string, string | undefined>): boolean {
+  return env.VITE_FORMA_FLAT === 'true';
+}
+
+/** The original single-band structure. Kept as the fallback, behaviour unchanged. */
+function flatRootStructure({ page, reportUnit, targetVersion, targetSerializerVersion }: RootStructureOptions): string {
+  return `
+          - ROOT STRUCTURE: The entire repxContent MUST be wrapped exactly like this:
+            <?xml version="1.0" encoding="utf-8"?>
+            <XtraReportsLayoutSerializer SerializerVersion="${targetSerializerVersion}" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="${reportUnit}" Margins="0, 0, 0, 0" PageWidth="${page.width}" PageHeight="${page.height}" Version="${targetVersion}">
+              <Bands>
+                <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
+                <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${page.height}">
+                  <Controls>
+                    <!-- Your controls go here -->
+                  </Controls>
+                </Item2>
+                <Item3 Ref="3" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
+              </Bands>
+            </XtraReportsLayoutSerializer>
+
+          - COORDINATE FRAME — the single most common way this output comes out wrong.
+            A control's LocationFloat is measured from the TOP-LEFT OF ITS BAND, and a band begins at the page's left margin. The margins above are therefore ZERO on purpose: it makes the band's coordinate space identical to the paper's, so the numbers from PHASE 1 and from any extracted PDF text can be used directly.
+            - Do NOT set non-zero Margins. Do NOT give the margin bands a height.
+            - Do NOT subtract or add anything to the PHASE 1 coordinates when writing LocationFloat.
+            - Every control must satisfy x + width <= ${page.width} and fit inside its band's height. Anything wider than the page is silently clipped or pushed onto a second page by the designer.
+            - Make the Detail band tall enough to contain the tallest element you place in it.
+`;
+}
+
+/**
+ * The default: a real report skeleton instead of one page-sized band.
+ *
+ * Band order is not stylistic — XtraReports reads the sequence, and a
+ * `PageHeaderBand` written after `Detail` is a different report. The order below
+ * is the one the designer itself emits.
+ */
+function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializerVersion }: RootStructureOptions): string {
+  return `
+          - ROOT STRUCTURE — A BANDED REPORT, NOT ONE PAGE-SIZED BAND.
+            You are producing a real DevExpress report, so the page is split into bands that each play a different role at print time. Emit ONLY the content bands the design actually needs; omit any you have no content for, but keep the ones you emit in exactly this order. TopMargin and BottomMargin are NOT optional — always emit both, always at HeightF="0".
+
+            <?xml version="1.0" encoding="utf-8"?>
+            <XtraReportsLayoutSerializer SerializerVersion="${targetSerializerVersion}" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="${reportUnit}" Margins="0, 0, 0, 0" PageWidth="${page.width}" PageHeight="${page.height}" Version="${targetVersion}">
+              <Bands>
+                <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
+                <Item2 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="...">
+                  <Controls><!-- printed ONCE, at the very start --></Controls>
+                </Item2>
+                <Item3 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="...">
+                  <Controls><!-- repeated at the top of EVERY page --></Controls>
+                </Item3>
+                <Item4 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="...">
+                  <Controls><!-- ONE repeating record. See DETAIL BAND below. --></Controls>
+                </Item4>
+                <Item5 Ref="5" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="...">
+                  <Controls><!-- printed ONCE, after the last record --></Controls>
+                </Item5>
+                <Item6 Ref="6" ControlType="PageFooterBand" Name="PageFooter" HeightF="...">
+                  <Controls><!-- repeated at the bottom of EVERY page --></Controls>
+                </Item6>
+                <Item7 Ref="7" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
+              </Bands>
+            </XtraReportsLayoutSerializer>
+
+          - WHICH BAND EACH PIECE OF THE DESIGN BELONGS IN.
+            Decide this from what the content *is*, not from where it sits on the page:
+            - ReportHeader — the document title, the issuing company, the invoice/report number, dates, and the "bill to"/"ship to"/"terms" blocks. Anything that identifies this one document and would be wrong to print twice.
+            - PageHeader — the COLUMN HEADING ROW of the main table, and any running title. This repeats, so a reader on page 3 still knows what each column means.
+            - Detail — exactly ONE row of the repeating data. See below; this is the band most often got wrong.
+            - ReportFooter — subtotal, tax and grand-total lines, sign-off blocks, terms paragraphs that close the document.
+            - PageFooter — page numbers (XRPageInfo), the registration line, anything repeated at the foot of every sheet.
+            If the design genuinely has no repeating rows — a certificate, a form, a single-record letter — put the body in ReportHeader, leave Detail out entirely rather than emitting an empty one, and say so in the markdown specification.
+
+          - THE DETAIL BAND IS ONE ROW, NOT THE TABLE.
+            This is the whole point of the exercise. A DetailBand is printed once PER RECORD, so it must contain a single row's worth of controls:
+            - HeightF is ONE ROW's height, not the table's height.
+            - Emit an XRTable holding exactly ONE XRTableRow — the same columns, in the same order, with the SAME cell Weight values and the same LocationFloat x and SizeF width as the heading table you put in PageHeader. Those two tables print directly above one another, so any difference in weights shows up as columns that do not line up.
+            - Give that row the FIRST data row's text as placeholder content, so the row is recognisable in the designer.
+            - Put it at y=0 inside the band.
+            - Do NOT emit an XRTable containing every row. Do NOT repeat the data rows. Do NOT put the column headings in this band — they belong in PageHeader.
+            The remaining rows are not lost: they are what the data source will supply, and they still appear in full in the markdown specification and in the layout JSON.
+
+          - COORDINATE FRAME — THE SINGLE MOST COMMON WAY THIS OUTPUT COMES OUT WRONG.
+            A control's LocationFloat is measured from the TOP-LEFT OF ITS OWN BAND. Bands stack down the page in the order above, so a band's top edge is the sum of the heights of the bands before it.
+            - X is unchanged: it is the same number as on the page, because Margins are zero and every band starts at the page's left edge.
+            - Y MUST BE CONVERTED. Take the y you measured on the page and SUBTRACT the top edge of the band you are putting the control in.
+            - Worked example. Bands so far: ReportHeader HeightF="320", PageHeader HeightF="28". PageHeader's top edge is therefore 320. A column heading you measured at y=336 on the page is written inside PageHeader as LocationFloat="x,16" — because 336 - 320 = 16.
+            - Every control must satisfy 0 <= y and y + height <= its own band's HeightF. A control whose y is still a page coordinate will be far below its band and will silently vanish or push the band to a second page.
+            - Set each band's HeightF to the real extent of the content you put in it, then check the sum: the emitted bands should account for the design's vertical space without exceeding ${page.height}.
+            - Every control must still satisfy x + width <= ${page.width}.
+            - Do NOT set non-zero Margins. Do NOT give the margin bands a height.
+
+          - THE LAYOUT JSON MIRRORS THESE BANDS.
+            The "sections" of the layout described below are the same bands in the same order — one section per content band you emit, named after it, with the same height, and with each element's y measured from that section's own top edge exactly as its LocationFloat is. Do not emit margin bands as sections. The ONE deliberate difference is the repeating data: the detail SECTION carries every row you can read, because the mockup is a picture of the source, while the Detail BAND carries one.
+`;
+}
+
+/**
+ * The ROOT STRUCTURE section of the prompt, in whichever shape is selected.
+ *
+ * Returned as prompt text rather than a structure because that is what it is —
+ * keeping it here rather than inline in `geminiService.ts` is what lets both
+ * variants be asserted without calling the model.
+ */
+export function rootStructurePrompt(options: RootStructureOptions, banded: boolean): string {
+  return banded ? bandedRootStructure(options) : flatRootStructure(options);
+}
+
+/**
+ * How many rows of a repeating region go into the REPX.
+ *
+ * This sentence closes the rule under "AN ALIGNED, REPEATING REGION IS A TABLE",
+ * which otherwise ends by demanding every row — correct for the flat shape and
+ * for the layout JSON in both, and flatly wrong for a banded Detail band. The
+ * two artifacts are required to agree everywhere else in the prompt, so the one
+ * place they deliberately do not has to be said out loud.
+ */
+export function tableRowsRule(banded: boolean): string {
+  return banded
+    ? 'Reproduce EVERY row and column you can read in the layout JSON and in the markdown specification — the mockup is a picture of the source, so nothing is dropped there. In repxContent the same region is SPLIT ACROSS BANDS as described under ROOT STRUCTURE above: the heading row goes in PageHeader, ONE data row goes in Detail, and any totals row goes in ReportFooter. That is the one place the two artifacts are meant to differ, and it is why the file can be bound to data at all.'
+    : 'Reproduce EVERY row and column you can read, including the header and any totals row, in both artifacts. Do not sample the rows and do not invent placeholders.';
+}
