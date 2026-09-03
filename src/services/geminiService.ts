@@ -7,6 +7,7 @@ import {
   pageSizeInUnits,
   unitsPerInch,
   unitsToPoints,
+  pointsToUnits,
   resolveReportUnit,
   resolvePageSize,
 } from "../lib/reportGeometry";
@@ -858,6 +859,13 @@ export async function analyzeReportDesign(
   const pageSize = resolvePageSize(config?.pageSize);
   const page = pageSizeInUnits(pageSize, reportUnit);
   const unitsPerInchForReport = unitsPerInch(reportUnit);
+  // Anchors for the font-size rule in the prompt. Ordinary printed body text is
+  // 9-11pt; expressed in the layout's own unit it becomes a range the model can
+  // check its own answer against, which is the only defence against the whole
+  // report coming out uniformly small. See "The fonts were measured off the
+  // ink" in docs/notes/gemini.md.
+  const bodyFontMinUnits = Math.round(pointsToUnits(9, reportUnit));
+  const bodyFontMaxUnits = Math.round(pointsToUnits(11, reportUnit));
 
   const configInstructions = config ? `
   CRITICAL CONFIGURATION:
@@ -1019,6 +1027,7 @@ export async function analyzeReportDesign(
           Some attachments are text extracted directly from the uploaded file rather than read from an image: a PDF's own text layer, or the contents of an existing .repx. Where such text is provided it is EXACT and comes from the file itself.
           - Use those strings verbatim for Text= values. Do NOT re-read, re-spell or "correct" them from the page image.
           - Use their x/y/w/h numbers as the basis for LocationFloat and SizeF. They are already in report units (hundredths of an inch) with the origin at the top-left, so they need no conversion.
+          - **An extracted string's h is its font's em size, read out of the file — so it is that string's EXACT font size as well as its height.** Use it for that element's "fontSize" verbatim and do NOT re-estimate the size from the page image; convert it to points for Font= with the arithmetic under FONT SIZE IS ALWAYS IN POINTS. (An h of 0 means the extractor could not size that one string — only then read it from the image.)
           - Use the page image for what the text layer cannot express: borders, rules, fills, logos, images, alignment and overall visual structure.
           - If the image and the extracted text disagree about a string or a position, the extracted text wins.
           - When an existing .repx is supplied, treat it as the base structure and preserve it, applying only the changes the user asks for.
@@ -1125,7 +1134,10 @@ export async function analyzeReportDesign(
           - "bold": true for any heavier/darker text — titles, column headings, totals. Do not guess; set it when the text is visibly heavier than body text.
           - "italic": true for slanted text.
           - "fontFamily": the closest family name you can identify, e.g. "Arial", "Times New Roman", "Courier New".
-          - "fontSize": in the same units as the rest of the layout. Match relative sizes carefully — a title must be visibly larger than body text.
+          - "fontSize": the font's EM SIZE, in the same units as the rest of the layout — the number you would type into a font dialog, NOT the measured height of the letters. **This is the single most common way a reproduction comes out uniformly small.** Capital letters stand only about 70% of the em size and lowercase about half of it, so a heading whose capitals measure 21 units is a 30-unit font, not a 21-unit one. Measure it one of these two ways rather than off the ink:
+            - Baseline to baseline of two consecutive lines in the same paragraph is 1.15-1.25x the font size. Divide.
+            - Or measure the height of a capital letter and divide by 0.7.
+            Then CHECK THE ANSWER before you use it: ordinary body text in a printed business document is 9-11pt, which is ${bodyFontMinUnits}-${bodyFontMaxUnits} in these units. If the body text you have measured comes out below that, you have measured the ink and EVERY size in the report is small by the same fraction — scale them all up together, keeping their ratios. Match those ratios carefully too: a title must be visibly larger than body text.
           - "color" and "backgroundColor": real hex values sampled from the design. Omit backgroundColor entirely when the area is plain white/transparent — do NOT emit "#ffffff" for everything.
           - "textAlign" and "verticalAlign": how the text sits inside its own box. Numeric/currency columns are almost always "right".
           - "wrap": true when the text runs onto more than one line in the source. Leave it false for single-line text so it clips instead of reflowing.

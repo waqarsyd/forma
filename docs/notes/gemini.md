@@ -219,6 +219,24 @@ The existing `DEVEXPRESS TABLES` line near the end was rewritten to reference th
 
 **This is a prompt change, so nothing in the suite covers it** — the tests assert on the stream scanner and the response parser, not on prose. It was verified by reading, and the check that matters is a live run against a ruled grid with a prompt that does not use the word "table". Related: font sizes still come out ~20-25% small (the units audit's item 2), which is the same class of defect — self-consistent output, nothing throws, only visible against the source.
 
+## The fonts were measured off the ink (2026-09-03)
+
+Every generated report came back with text **20-25% too small**, uniformly. The sample that pinned it: a 30-unit brand line arrived as `17.28pt`, where the same measurement done against an 8.5in page gives `21.6pt`. Nothing throws, and both artifacts agree with each other — the mockup renders the same small text the REPX carries — so it is only visible against the source.
+
+**It is not the conversion.** `unitsToPoints()` is correct and under test, and the units audit's item 2 above already fixed the unit confusion in the other direction. The number arriving in the layout's `fontSize` was simply too small before any conversion touched it.
+
+**A font's size is not the height of its letters, and nothing in the prompt said so.** The em size is the number in a font dialog; the capitals of a typical face stand at about 0.7 of it and the lowercase at about half. A model measuring the visible ink of a heading and reporting that as `fontSize` therefore lands ~30% low, which brackets the 20-25% observed. The prompt's only guidance was *"Match relative sizes carefully — a title must be visibly larger than body text"* — advice about **ratios**, which the model was already getting right. The absolute scale was never mentioned, so there was nothing to be wrong about and nothing to check against.
+
+The rule now names the em size, gives two ways to measure that are not the ink — baseline-to-baseline spacing is 1.15-1.25× the size, or cap height ÷ 0.7 — and then **hands the model an anchor to check its own answer against**: ordinary printed body text is 9-11pt, interpolated into the layout's own unit by `pointsToUnits()` so it reads as a range of layout numbers rather than a conversion to perform. Body text below that range means the ink was measured and *every* size is small by the same fraction, so they scale back up together.
+
+**The PDF path did not need a heuristic at all — it was discarding an exact answer.** pdf.js sets a text item's `height` to `Math.hypot(trm[2], trm[3])` (`pdf.worker.mjs`), the text transform's vertical scale, which **is the font's em size in points**. `extractPdfPageText` was already emitting it as `h=`, and the prompt was already telling the model that extracted numbers are exact and beat the page image — but it labelled that one as a height, so it became a box dimension and the font size got re-guessed from pixels beside it. Both the attachment header and *SOURCE PRECEDENCE* now say what `h` is: the string's exact font size as well as its height. For any PDF with a text layer this removes the estimate entirely.
+
+Three things worth knowing before touching this again:
+
+- **Do not "fix" it in code with a multiplier.** A blanket scale-up would corrupt the two paths that are already exact — a PDF's text layer and an uploaded `.repx`, both of which carry real font sizes — to compensate for a path that is an estimate. That is the opposite of the margin lift, which was safe precisely because it was arithmetic on numbers the model had got *right*.
+- **`h` is 0 for vertical fonts**, which is the same branch that leaves them unsized in pdf.js. The prompt says so, and says to fall back to the image for those.
+- **Nothing in the suite covers any of this.** It is prompt prose plus one line of extracted text. Verified by reading; the check that settles it is a generation from a PDF with a real text layer, then measuring a known heading in the designer against the source.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

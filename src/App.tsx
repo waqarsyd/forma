@@ -304,6 +304,11 @@ async function extractPdfPageText(
       // measured up from the bottom of the page.
       const x = item.transform?.[4] ?? 0;
       const baselineY = item.transform?.[5] ?? 0;
+      // pdf.js sets a text item's height to hypot(trm[2], trm[3]) — the text
+      // transform's vertical scale, which is the font's EM SIZE in points, not
+      // the height of the ink. So this one number is both the box height and
+      // the exact font size, and the prompt is told to use it as both. It is 0
+      // only for vertical fonts, which the same code path leaves unsized.
       const h = item.height || 0;
       const yTop = pdfTopFromBaseline(baselineY, h, pageHeightPt);
 
@@ -327,6 +332,8 @@ async function extractPdfPageText(
       `These strings and coordinates are EXACT and take priority over anything read from the page image.\n` +
       `Page is ${toUnits(base.width)} x ${toUnits(pageHeightPt)} report units. ` +
       `Coordinates are already in report units (${reportUnit || 'HundredthsOfAnInch'}), origin at the top-left of the paper.\n` +
+      `h is the font's em size taken from the file, so it is each string's EXACT font size as well as its height — ` +
+      `use it rather than estimating a size from the page image.\n` +
       lines.join('\n') + truncated
     );
 
