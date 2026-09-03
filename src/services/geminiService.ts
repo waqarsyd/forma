@@ -1029,6 +1029,7 @@ export async function analyzeReportDesign(
           - The page is ${pageSize}: ${page.width} x ${page.height} units.
           - The origin (0,0) is the TOP-LEFT CORNER OF THE PAPER, not of any margin or content area.
           - Map the visual proportions perfectly to this grid.
+          - Find the repeating structures BEFORE you list anything. A region whose rows share the same column positions is ONE element — a table with rows and columns — and is listed once as such, never as one entry per cell. See "AN ALIGNED, REPEATING REGION IS A TABLE" below for what counts and why it matters.
           - The design's own whitespace is part of the design. If the artwork begins an inch in from the paper edge, its first element is at x=${Math.round(unitsPerInchForReport)}, and you must NOT also add a page margin — that would move it in twice.
 
           PHASE 2: DEVEXPRESS CHEAT SHEET (STRICT SYNTAX)
@@ -1056,12 +1057,21 @@ export async function analyzeReportDesign(
             - Make the Detail band tall enough to contain the tallest element you place in it.
 
           - Labels: <Item1 Ref="1" ControlType="XRLabel" Name="label1" Text="My Text" LocationFloat="0,10" SizeF="200,30" Padding="2,2,0,0,100" />
-          - Tables: <Item2 Ref="2" ControlType="XRTable" Name="table1" LocationFloat="0,50" SizeF="400,20" Borders="All"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="row1" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="cell1" Text="Data" Weight="1" /></Cells></Item1></Rows></Item2>
+          - Tables — a header row and one row per line, cells sized by Weight and never by coordinates: <Item2 Ref="2" ControlType="XRTable" Name="table1" LocationFloat="0,50" SizeF="750,40" Borders="All"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="rowHeader" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="cellHeadDesc" Text="Description" Weight="3" Font="Arial, 9.75pt, style=Bold" /><Item2 Ref="5" ControlType="XRTableCell" Name="cellHeadAmount" Text="Amount" Weight="1" TextAlignment="MiddleRight" Font="Arial, 9.75pt, style=Bold" /></Cells></Item1><Item2 Ref="6" ControlType="XRTableRow" Name="row1" Weight="1"><Cells><Item1 Ref="7" ControlType="XRTableCell" Name="cellDesc1" Text="Widget" Weight="3" /><Item2 Ref="8" ControlType="XRTableCell" Name="cellAmount1" Text="1,240.00" Weight="1" TextAlignment="MiddleRight" /></Cells></Item2></Rows></Item2>
           - Images: <Item3 Ref="5" ControlType="XRPictureBox" Name="pictureBox1" Sizing="ZoomImage" LocationFloat="0,100" SizeF="150,150" />
           - Lines: <Item4 Ref="6" ControlType="XRLine" Name="line1" LocationFloat="0,260" SizeF="300,5" />
           - Page Info: <Item5 Ref="7" ControlType="XRPageInfo" Name="pageInfo1" PageInfo="DateTime" LocationFloat="0,270" SizeF="150,20" />
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
           Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+
+          - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
+            Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit ONE XRTable for it, with a header XRTableRow and one XRTableRow per line.
+            - **Visible rules are not required, and their absence is not evidence.** Columns that line up are the signal. A region drawn with no borders at all is still a table; so is one separated only by a single rule under the headings.
+            - **A grid of XRLabels is always the wrong answer for such a region**, however exactly its coordinates match the source. It looks identical in a preview and is a failed report: those columns cannot be re-bound to data, resized, or repeated per record, which is the whole purpose of the file being a .repx instead of a picture.
+            - Column widths are relative Weight values on the cells, not coordinates — a column twice as wide as its neighbour gets twice the Weight. **An XRTableCell has no LocationFloat and no SizeF**; do not compute them. The XRTable's own SizeF sets the width the weights are distributed across.
+            - Carry the source's own formatting onto the cells: bold the header row, and give money, quantity and date columns a TextAlignment ending in Right if that is how they are set.
+            - Reproduce EVERY row and column you can read, including the header and any totals row. Do not sample the rows and do not invent placeholders.
+            - The same region must be ONE "type": "table" element in the layout JSON, carrying the same rows and cells — see TABLES / GRIDS IN THE LAYOUT below. The two artifacts describe one report and must agree about where its tables are.
 
           - APPEARANCE IS PART OF THE REPORT, NOT JUST OF THE PREVIEW.
             Every visual property you put in the "layout" JSON must also appear on the matching control in repxContent. A .repx that has the right boxes in the right places but default styling is a failed reproduction — it is the file the user actually opens and prints.
@@ -1146,7 +1156,7 @@ export async function analyzeReportDesign(
 
           CHARTS — set "chartType" to "bar", "line", "pie" or "area" to match the source, and put the approximate series values in "chartValues" so the drawn chart has the same shape as the original.
           - EXACT XML COMPLETENESS: The repxContent MUST be fully comprehensive. Do NOT skip sections, do NOT omit fields, do NOT output generic XML.
-          - DEVEXPRESS TABLES: For any grid/table UI (like Department/Rows), you MUST generate a proper DevExpress \`<XRTable>\`, \`<XRTableRow>\`, and \`<XRTableCell>\` in the XML. Ensure their locations (LocationFloat) and sizes (SizeF) match the requested design perfectly. Use \`Borders="All"\` where needed.
+          - DEVEXPRESS TABLES: every region identified under "AN ALIGNED, REPEATING REGION IS A TABLE" above MUST be a proper DevExpress \`<XRTable>\` / \`<XRTableRow>\` / \`<XRTableCell>\` in the XML, never a grid of labels. Position and size the \`<XRTable>\` itself with LocationFloat and SizeF so it covers the same box as the source; the rows and cells inside it take neither, only \`Weight\`. Use \`Borders="All"\` on the table when the source rules every cell, and the individual border sides when it does not.
           - LOCATIONS AND SIZES: Make **absolute sure** that components do not overlap incorrectly. Calculate the X and Y bounds correctly. LocationFloat expects X,Y and SizeF expects Width,Height. Do NOT add spaces after the comma.
           - PREVIEW MOCKUP ACCURACY: In the JSON \`layout\`, represent every grid as ONE \`"table"\` element with a populated \`rows\`/\`cells\` array, as described under "TABLES / GRIDS IN THE LAYOUT" above. (Earlier revisions asked for grids to be decomposed into one \`"label"\` per cell because the preview could not draw real tables. It can now, so emit the real structure — it is both more accurate and far less error-prone than hand-computing every cell coordinate.)
 

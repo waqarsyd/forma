@@ -202,6 +202,23 @@ It declines, with a reason, rather than guessing: when the report already declar
 
 **What this does not fix.** Everything still lands in one `DetailBand`, which is item 3 of the audit above and the larger problem: a `DetailBand` prints once per record, so binding a data source makes the whole page repeat per row. That is the banded prototype's territory — built and measured on 2026-09-01 as `11555e2`, reverted by `11f9051`, restorable with `git revert 11f9051`. The margin lift is orthogonal to it and applies to banded output too.
 
+## A cheat sheet is not an instruction (2026-09-03)
+
+The owner's standing complaint about "inconsistency" had one reproducible cause: **the same ruled line-item grid came back as a real `XRTable` on one run and as 23 flat `XRLabel`s on the next**, and the difference was whether the user's own prompt happened to say the word *table*. Naming it — *"the line items are a real table with a header row"* — produced the table every time; a generic *"recreate this invoice"* usually did not.
+
+**Nothing in the prompt was wrong. Something was missing.** PHASE 2's cheat sheet showed `XRTable` / `XRTableRow` / `XRTableCell` syntax perfectly, and the layout section told the model to emit `"type": "table"` for a grid. Neither said **when a region is a grid**. Faced with an aligned block of text the model was free to read it either way, and the labels are the path of less resistance — every cell's coordinates are already in hand from PHASE 1, whereas a table demands recognising the structure first. So the output tracked the wording of the request, which is exactly what "inconsistent" looks like from outside.
+
+The fix is a recognition rule, `AN ALIGNED, REPEATING REGION IS A TABLE`, and four things about its shape are deliberate:
+
+- **The signal is column alignment, not borders.** The rule says so twice, because the obvious heuristic — "it has lines around it" — misses the common invoice whose line items are separated by a single rule under the headings, or by nothing at all.
+- **It states the cost, not just the rule.** A grid of labels *looks identical in the preview*, so there is no feedback anywhere in the app that would teach the model otherwise. What it loses is everything that made the artifact a `.repx` instead of a picture: those columns cannot be re-bound to a data source, resized, or repeated per record.
+- **It forbids the arithmetic rather than describing it.** `An XRTableCell has no LocationFloat and no SizeF` — column widths are relative `Weight` values distributed across the table's own `SizeF`. Left implicit, a model that has just written 31 absolute coordinates will happily write 23 more into the cells.
+- **It is repeated in PHASE 1.** That is not redundancy: PHASE 1 asks the model to *list the elements*, so a grid enumerated there as 23 labels is a decision already taken by the time PHASE 2 is read. The rule has to land before the enumeration, and be there to point back to after it.
+
+The existing `DEVEXPRESS TABLES` line near the end was rewritten to reference the rule rather than restate the syntax — it had been asking for the cells' `LocationFloat` and `SizeF` to "match the requested design perfectly", which is the wrong instruction for a control that has neither.
+
+**This is a prompt change, so nothing in the suite covers it** — the tests assert on the stream scanner and the response parser, not on prose. It was verified by reading, and the check that matters is a live run against a ruled grid with a prompt that does not use the word "table". Related: font sizes still come out ~20-25% small (the units audit's item 2), which is the same class of defect — self-consistent output, nothing throws, only visible against the source.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.
