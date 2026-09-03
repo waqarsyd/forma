@@ -2,6 +2,7 @@ import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
+import { liftReportMargins } from "../lib/repxMargins";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -1434,6 +1435,21 @@ export async function analyzeReportDesign(
   try {
     const parsed = parseAnalysisResponse(rawText, response.finishReason);
     console.log(`Successfully parsed Gemini response.`);
+
+    // The prompt pins Margins to zero so the model can write paper-absolute
+    // coordinates, and the model then draws the design's margin as whitespace
+    // instead. This puts it back into the structure. It is a translation, so
+    // the page is unchanged; when it cannot prove that it declines and says
+    // why. See `repxMargins.ts` for the reason it is arithmetic here rather
+    // than an instruction up there.
+    const lift = liftReportMargins(parsed.repxContent);
+    if (lift.applied) {
+      parsed.repxContent = lift.xml;
+      console.log(`Margins: ${lift.reason}.`);
+    } else {
+      console.log(`Margins left as generated: ${lift.reason}.`);
+    }
+
     return parsed;
   } catch (e) {
     if (rawText) {

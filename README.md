@@ -269,6 +269,8 @@ src/
                        services/ so nothing in this layer has to import upward.
                        repx, sourceRect, reportGeometry (every unit conversion
                        in the pipeline, and the only place one may be written),
+                       repxMargins (moves a margin the model drew as whitespace
+                       into the report's own Margins and margin bands),
                        attachments, panelSize, announcements, datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        analysisResponse (is a failed generation truncated or

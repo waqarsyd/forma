@@ -180,6 +180,28 @@ The truncation bug did not reproduce either — but a three-section report from 
 
 **Mock mode is opt-in:** set `VITE_FORMA_MOCK=true` and the service sleeps 3s and returns `MOCK_INVOICE_RESPONSE` without calling Gemini. It previously triggered whenever the key was missing *or the prompt merely contained the word "mock"* — under bring-your-own-key that was actively harmful, since a first-time visitor with no key, or anyone asking to "mock up an invoice", silently received a canned fake report with no way to tell it was not real output. A missing key now throws `MissingApiKeyError` instead. This env flag is the **only** remaining source of canned output; the `TEST_REPORT_LAYOUT` / `TEST_REPORT_MARKDOWN` / `TEST_REPORT_REPX` constants and their "Load Test Mockup" action are gone (the action had already been removed, leaving ~190 lines of orphaned fake-report data behind).
 
+## The margin is drawn, not declared (2026-09-02)
+
+Item 1 of the units audit above — *nothing has been opened in the real DevExpress designer* — was finally paid on 2026-09-02. A generated invoice was opened in a real 20.1 designer beside its source image, and the verdict was that **it matches**. What the eye caught instead was structural: the report declares no margins at all.
+
+**The measurement.** `Margins="0, 0, 0, 0"`, both margin bands at `HeightF="0"`, and a content box of x 48..802, y 48..590 on an 850-wide page. A symmetric 48-unit (0.48in) border, present in the output as whitespace and absent from its structure. The model reproduced the design's margin faithfully — it just drew it, by pushing all 31 top-level controls inward, rather than declaring it.
+
+On screen the two are indistinguishable, which is exactly why this survived a matching visual check. The cost is everything downstream of the picture: the file claims the whole sheet is printable, so a designer opening it gets no margin guides, a printer gets no non-printable-zone protection, and any band added later inherits one that runs to the paper edge.
+
+**It is the prompt working as designed, not the model failing.** The ROOT STRUCTURE block pins the zeros and says why, under the heading *"COORDINATE FRAME — the single most common way this output comes out wrong"*: zero margins make a band's coordinate space identical to the paper's, so PHASE 1 coordinates and an extracted PDF text layer can be written straight into `LocationFloat`. Real margins would hand the model a subtraction to perform on every coordinate, and a control that keeps its paper coordinate lands silently in the wrong place and never throws.
+
+**So the fix is arithmetic in `src/lib/repxMargins.ts`, not an instruction.** `liftReportMargins()` runs on every successful generation, at the single choke point in `analyzeReportDesign` where the parsed response is returned. It measures the content box, moves that whitespace into `Margins` and the two margin bands, and subtracts it back off the coordinates. A pure translation — same ink, same places — verified on the real file: 31 `LocationFloat` values rebased, **zero moved on paper**.
+
+Three details are load-bearing:
+
+- **Only top-level controls move.** An `XRTableCell` is positioned against its `XRTableRow`, not the band, so shifting it would move it twice. The parser is a tag stack rather than a regex over `<Band>…</Band>`, because `TopMarginBand` is self-closing and a non-greedy pair match swallows the next band's contents — the mistake that produced 22 phantom overflow reports when the banded and flat outputs were first compared on 2026-09-01.
+- **Only left and top are measured; right mirrors left and bottom mirrors top**, each capped by the space actually free. The other two edges measure nothing — no control need approach the right edge (a page of short left-aligned labels leaves 700 units clear, which is empty space, not a 7in margin), and the last band's height is the model's choice rather than its content's.
+- **The first body band absorbs the vertical shift**, losing the top margin from both its controls' y and its own height. Bands stack, so every band after it keeps its paper position untouched: the margin pushes them all down by T and the shorter first band pulls them back up by T.
+
+It declines, with a reason, rather than guessing: when the report already declares margins, when the margin bands are absent, when any measured edge is under 0.1in — which is what full bleed looks like, and lifting a margin under a background block running to the paper edge would clip it — or when the arithmetic would produce a negative coordinate. A lift wider than 1.5in is clamped rather than declined, since any value up to the measured whitespace is safe.
+
+**What this does not fix.** Everything still lands in one `DetailBand`, which is item 3 of the audit above and the larger problem: a `DetailBand` prints once per record, so binding a data source makes the whole page repeat per row. That is the banded prototype's territory — built and measured on 2026-09-01 as `11555e2`, reverted by `11f9051`, restorable with `git revert 11f9051`. The margin lift is orthogonal to it and applies to banded output too.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.
