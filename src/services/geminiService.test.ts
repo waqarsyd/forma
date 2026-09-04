@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractPartialReply, asReadableError } from './geminiService';
+import { extractPartialReply, asReadableError, isOverloaded, isTruncatedStream } from './geminiService';
 
 /**
  * `extractPartialReply` types the assistant's answer into the bubble as the
@@ -111,5 +111,58 @@ describe('asReadableError', () => {
     expect(asReadableError(new Error('')).message.length).toBeGreaterThan(0);
     expect(asReadableError({}).message.length).toBeGreaterThan(0);
     expect(asReadableError(undefined).message.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * These two decide whether a chat turn is retried or lost. Both were reported
+ * from a real session on 2026-09-05: a 503 arrived as "This model is currently
+ * experiencing high demand" and the SDK's SSE reader raised "Incomplete JSON
+ * segment at the end" twice in a row, and neither was retried, while a
+ * generation hitting the same outage retried twice and changed model.
+ */
+describe('isOverloaded', () => {
+  it('recognises the message the user actually saw', () => {
+    expect(isOverloaded(new Error('This model is currently experiencing high demand.'))).toBe(true);
+  });
+
+  it('recognises a 503 however the SDK reports it', () => {
+    expect(isOverloaded({ status: 503 })).toBe(true);
+    expect(isOverloaded({ status: 'UNAVAILABLE' })).toBe(true);
+    expect(isOverloaded(new Error('got 503 from upstream'))).toBe(true);
+    expect(isOverloaded(new Error('The model is overloaded. Please try again.'))).toBe(true);
+  });
+
+  it('does not retry failures that would fail again', () => {
+    for (const err of [
+      new Error('API key not valid'),
+      { status: 400, message: 'INVALID_ARGUMENT' },
+      { status: 404, message: 'model not found' },
+      new Error('quota exceeded'),
+      null,
+      undefined,
+    ]) {
+      expect(isOverloaded(err), `wrongly retried: ${JSON.stringify(err)}`).toBe(false);
+    }
+  });
+});
+
+describe('isTruncatedStream', () => {
+  it('recognises the SDK error that broke two chat turns in a row', () => {
+    expect(isTruncatedStream(new Error('Incomplete JSON segment at the end'))).toBe(true);
+  });
+
+  it('recognises the other ways a stream ends early', () => {
+    for (const message of ['Unexpected end of JSON input', 'network error', 'Failed to fetch']) {
+      expect(isTruncatedStream(new Error(message)), message).toBe(true);
+    }
+  });
+
+  it('leaves a malformed-but-complete response alone', () => {
+    // The parser already salvages those; retrying would cost a request and
+    // return the same thing.
+    expect(isTruncatedStream(new Error('Unexpected token < in JSON at position 0'))).toBe(false);
+    expect(isTruncatedStream(new Error('API key not valid'))).toBe(false);
+    expect(isTruncatedStream(null)).toBe(false);
   });
 });

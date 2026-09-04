@@ -564,6 +564,50 @@ export function extractPartialReply(json: string): string {
  * `onPartialReply` receives the answer as it streams, so the bubble fills in
  * progressively rather than after a silent wait.
  */
+/**
+ * 503 / UNAVAILABLE means Google's capacity for this model is momentarily
+ * exhausted. The request never really started, nothing is wrong with the key or
+ * the design, and the identical request usually succeeds moments later — so
+ * retry it rather than making the user do the turn again.
+ *
+ * Module scope since 2026-09-05, because it was defined inside
+ * `analyzeReportDesign` and so only generation was protected by it. Chat failed
+ * on the first 503 with "This model is currently experiencing high demand",
+ * while a generation issued a second later would retry twice and then fall back
+ * to another model. Same key, same outage, two different behaviours.
+ */
+export function isOverloaded(error: any): boolean {
+  const status = error?.status;
+  const text = `${error?.message || ""}`.toLowerCase();
+  return (
+    status === 503 ||
+    status === "UNAVAILABLE" ||
+    text.includes("503") ||
+    text.includes("unavailable") ||
+    text.includes("overloaded") ||
+    text.includes("high demand")
+  );
+}
+
+/**
+ * A stream that stopped mid-object rather than a request that was refused.
+ *
+ * `Incomplete JSON segment at the end` comes from the SDK's SSE reader, not
+ * from this file: the connection ended between two chunks and the parser was
+ * left holding half a JSON object. Nothing about the request was wrong, so the
+ * same request is worth making again — the same argument as a 503, arriving
+ * one layer lower. Observed twice in a row while chatting on 2026-09-05.
+ */
+export function isTruncatedStream(error: any): boolean {
+  const text = `${error?.message || ""}`.toLowerCase();
+  return (
+    text.includes("incomplete json") ||
+    text.includes("unexpected end") ||
+    text.includes("network error") ||
+    text.includes("failed to fetch")
+  );
+}
+
 export async function chatReply(
   history: ChatTurn[],
   config?: ReportConfig,
@@ -659,58 +703,100 @@ ${transcript}`,
     },
   });
 
-  let stream;
-  const attemptWithoutThinking = !thinkingUnsupportedForModel.has(model);
-
-  try {
-    stream = await ai.models.generateContentStream(buildChatRequest(attemptWithoutThinking));
-  } catch (err: any) {
-    const invalidArgument =
-      err?.status === 400 ||
-      `${err?.message || ""}`.includes("INVALID_ARGUMENT") ||
-      `${err?.message || ""}`.includes("invalid argument");
-
-    if (attemptWithoutThinking && invalidArgument && !signal?.aborted) {
-      // Remember for the rest of the session so this costs one failed request
-      // per model, not one per message.
-      thinkingUnsupportedForModel.add(model);
-      console.warn(
-        `Model "${model}" rejected thinkingBudget:0 — retrying without it. ` +
-        `Chat replies will be slower on this model.`
-      );
-      stream = await ai.models.generateContentStream(buildChatRequest(false));
-    } else {
-      throw asReadableError(err);
-    }
-  }
-
   let raw = '';
   let lastEmitted = '';
   let firstChunkAt = 0;
 
-  try {
-  for await (const chunk of stream) {
-    if (signal?.aborted) throw abortError();
-    if (!chunk.text) continue;
-    if (!firstChunkAt) firstChunkAt = Date.now();
+  /**
+   * The whole turn is retryable, request and stream together.
+   *
+   * Until 2026-09-05 neither half was. A 503 on the request surfaced as "This
+   * model is currently experiencing high demand" and the turn was lost, while
+   * `analyzeReportDesign` would have retried the same failure twice and then
+   * changed model. A stream that ended mid-object surfaced as the SDK's
+   * "Incomplete JSON segment at the end" and was likewise fatal.
+   *
+   * Retrying from the top rather than resuming the stream, because a partial
+   * reply is worth nothing: the response is one JSON object and half of it does
+   * not parse. `raw` is reset each attempt for the same reason, and the partial
+   * text already typed into the UI is cleared so the next attempt does not
+   * appear to continue the abandoned one.
+   */
+  const MAX_CHAT_RETRIES = 2;
 
-    raw += chunk.text;
+  for (let attempt = 0; ; attempt++) {
+    raw = '';
+    lastEmitted = '';
+    firstChunkAt = 0;
 
-    // Type the answer out as it arrives. Emitting only on change keeps this
-    // from re-rendering on chunks that carried nothing but JSON punctuation.
-    if (onPartialReply) {
-      const partial = extractPartialReply(raw);
-      if (partial && partial !== lastEmitted) {
-        lastEmitted = partial;
-        onPartialReply(partial);
+    try {
+      let stream;
+      // Re-read each attempt: a previous attempt may have just learned that
+      // this model rejects thinkingBudget:0.
+      const attemptWithoutThinking = !thinkingUnsupportedForModel.has(model);
+
+      try {
+        stream = await ai.models.generateContentStream(buildChatRequest(attemptWithoutThinking));
+      } catch (err: any) {
+        const invalidArgument =
+          err?.status === 400 ||
+          `${err?.message || ""}`.includes("INVALID_ARGUMENT") ||
+          `${err?.message || ""}`.includes("invalid argument");
+
+        if (attemptWithoutThinking && invalidArgument && !signal?.aborted) {
+          // Remember for the rest of the session so this costs one failed request
+          // per model, not one per message.
+          thinkingUnsupportedForModel.add(model);
+          console.warn(
+            `Model "${model}" rejected thinkingBudget:0 — retrying without it. ` +
+            `Chat replies will be slower on this model.`
+          );
+          stream = await ai.models.generateContentStream(buildChatRequest(false));
+        } else {
+          throw err;
+        }
       }
+
+      for await (const chunk of stream) {
+        if (signal?.aborted) throw abortError();
+        if (!chunk.text) continue;
+        if (!firstChunkAt) firstChunkAt = Date.now();
+
+        raw += chunk.text;
+
+        // Type the answer out as it arrives. Emitting only on change keeps this
+        // from re-rendering on chunks that carried nothing but JSON punctuation.
+        if (onPartialReply) {
+          const partial = extractPartialReply(raw);
+          if (partial && partial !== lastEmitted) {
+            lastEmitted = partial;
+            onPartialReply(partial);
+          }
+        }
+      }
+
+      break; // The turn completed.
+    } catch (err: any) {
+      // Cancellation is the user's decision and is never retried.
+      if (signal?.aborted || err?.name === 'AbortError') throw err;
+
+      const retryable = isOverloaded(err) || isTruncatedStream(err);
+      if (retryable && attempt < MAX_CHAT_RETRIES) {
+        // Jittered, for the reason the generation path gives: without it every
+        // tab that got a 503 in the same second retries in the same second.
+        const backoffMs = Math.round(1500 * 2 ** attempt * (1 + Math.random() * 0.4));
+        console.warn(
+          `Chat turn failed (${isOverloaded(err) ? 'overloaded' : 'stream ended early'}). ` +
+          `Retrying in ${backoffMs}ms — attempt ${attempt + 1} of ${MAX_CHAT_RETRIES}.`
+        );
+        // Drop the abandoned partial so the retry does not look like a continuation.
+        onPartialReply?.('');
+        await sleep(backoffMs, signal);
+        continue;
+      }
+
+      throw asReadableError(err);
     }
-  }
-  } catch (err: any) {
-    // Mid-stream failures carry the same nested JSON envelope as the initial
-    // request, so they get the same treatment. Cancellation passes through.
-    if (signal?.aborted || err?.name === 'AbortError') throw err;
-    throw asReadableError(err);
   }
 
   console.debug(
@@ -1240,25 +1326,6 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       }
     }
   });
-
-  /**
-   * 503 / UNAVAILABLE means Google's capacity for this model is momentarily
-   * exhausted. The generation never really started, nothing is wrong with the
-   * key or the design, and the identical request usually succeeds moments
-   * later — so retry it rather than making the user re-upload and re-run.
-   */
-  const isOverloaded = (error: any): boolean => {
-    const status = error?.status;
-    const text = `${error?.message || ""}`.toLowerCase();
-    return (
-      status === 503 ||
-      status === "UNAVAILABLE" ||
-      text.includes("503") ||
-      text.includes("unavailable") ||
-      text.includes("overloaded") ||
-      text.includes("high demand")
-    );
-  };
 
   const MAX_OVERLOAD_RETRIES = 2;
 
