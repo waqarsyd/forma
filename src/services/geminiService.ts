@@ -738,12 +738,24 @@ ${transcript}`,
       try {
         stream = await ai.models.generateContentStream(buildChatRequest(attemptWithoutThinking));
       } catch (err: any) {
+        const message = `${err?.message || ""}`;
         const invalidArgument =
           err?.status === 400 ||
-          `${err?.message || ""}`.includes("INVALID_ARGUMENT") ||
-          `${err?.message || ""}`.includes("invalid argument");
+          message.includes("INVALID_ARGUMENT") ||
+          message.includes("invalid argument");
 
-        if (attemptWithoutThinking && invalidArgument && !signal?.aborted) {
+        /*
+         * A rejected key also arrives as a 400, and without this it was read as
+         * "this model rejects thinkingBudget:0": a second request that fails
+         * identically, a warning naming the wrong cause, and the model marked
+         * thinking-unsupported for the rest of the session on the strength of
+         * an auth failure. Narrowed rather than replaced, because some models
+         * really do return a bare 400 with no useful message for the thinking
+         * parameter, which is what the fallback was written for.
+         */
+        const authFailure = /api[ _-]?key|unauthenticated|permission|unauthori[sz]ed/i.test(message);
+
+        if (attemptWithoutThinking && invalidArgument && !authFailure && !signal?.aborted) {
           // Remember for the rest of the session so this costs one failed request
           // per model, not one per message.
           thinkingUnsupportedForModel.add(model);
