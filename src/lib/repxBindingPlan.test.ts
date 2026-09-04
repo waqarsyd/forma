@@ -9,7 +9,7 @@
  * grep and its run agree.
  */
 import { describe, it, expect } from 'vitest';
-import { planDetailBinding, bindDetailRow, unescapeXml } from './repxBindingPlan';
+import { planDetailBinding, bindDetailRow, bindingEnabled, unescapeXml } from './repxBindingPlan';
 import { checkRepxComplete } from './repxTruncation';
 
 const cell = (name: string, text: string, weight = 1) =>
@@ -259,6 +259,18 @@ describe('bindDetailRow', () => {
     const { xml, fields } = bindDetailRow(banded(['Tom & Jerry <b>'], ['x']));
     expect(fields[0].name).toBe('TomJerryB');
     expect(xml).toContain('Expression="[TomJerryB]"');
+  });
+});
+
+describe('bindingEnabled', () => {
+  it('is off unless the flag is exactly "true"', () => {
+    // Off by default, and not turned on by a truthy-looking value -- the same
+    // contract flatLayoutEnabled has, so the two flags cannot behave
+    // differently for the same input.
+    for (const value of [undefined, '', 'false', 'TRUE', '1', 'yes']) {
+      expect(bindingEnabled({ VITE_FORMA_BIND: value })).toBe(false);
+    }
+    expect(bindingEnabled({ VITE_FORMA_BIND: 'true' })).toBe(true);
   });
 });
 

@@ -3,6 +3,8 @@ import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
 import { liftReportMargins } from "../lib/repxMargins";
+import { ensureUniqueRefs } from "../lib/repxRefs";
+import { bindDetailRow, bindingEnabled } from "../lib/repxBindingPlan";
 import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import {
@@ -1571,6 +1573,21 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       if (rewritten) parsed.repxContent = rewritten;
     }
 
+    // First, because everything below assumes the document DevExpress will
+    // load is the document we are looking at. A repeated Ref makes the loader
+    // alias two elements onto one object and silently discard the second, so
+    // a collision here costs whole controls with no error anywhere. Nothing
+    // asks the model for unique numbering and the cheat sheet's snippets each
+    // restart at Ref="1", so this is arithmetic rather than an instruction.
+    // See `repxRefs.ts` for the measurement.
+    const refs = ensureUniqueRefs(parsed.repxContent);
+    if (refs.applied) {
+      parsed.repxContent = refs.xml;
+      console.warn(`REPX Ref collision repaired: ${refs.reason}.`);
+    } else {
+      console.debug(`REPX Refs: ${refs.reason}.`);
+    }
+
     // The prompt pins Margins to zero so the model can write paper-absolute
     // coordinates, and the model then draws the design's margin as whitespace
     // instead. This puts it back into the structure. It is a translation, so
@@ -1583,6 +1600,21 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.log(`Margins: ${lift.reason}.`);
     } else {
       console.log(`Margins left as generated: ${lift.reason}.`);
+    }
+
+    // Opt-in, and last, because it is the only pass here that changes what the
+    // report *says* rather than how it is structured: a bound cell shows the
+    // field name where the source document showed a number. It runs after the
+    // margin lift because that one rewrites coordinates and explicitly skips
+    // nested controls, so giving it fewer children to walk costs nothing.
+    if (bindingEnabled(viteEnv)) {
+      const bound = bindDetailRow(parsed.repxContent);
+      if (bound.applied) {
+        parsed.repxContent = bound.xml;
+        console.log(`Bindings: ${bound.reason}.`);
+      } else {
+        console.log(`Bindings left as generated: ${bound.reason}.`);
+      }
     }
 
     return parsed;

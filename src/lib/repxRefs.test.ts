@@ -1,0 +1,167 @@
+/**
+ * The collision that matters is the one measured on 2026-09-04: two tables
+ * reusing the same Ref values, which made DevExpress alias the detail row onto
+ * the header row and drop three cells and three bindings without an error.
+ * The fixtures below are that document's shape.
+ *
+ * As elsewhere in this suite the loops sit inside a single case, so the grep
+ * and the run agree.
+ */
+import { describe, it, expect } from 'vitest';
+import { auditRefs, ensureUniqueRefs } from './repxRefs';
+import { checkRepxComplete } from './repxTruncation';
+
+const cell = (item: number, ref: number, text: string) =>
+  `<Item${item} Ref="${ref}" ControlType="XRTableCell" Name="cell${item}" Text="${text}" Weight="1" />`;
+
+const table = (ref: number, rowRef: number, name: string, cells: string) =>
+  `<Item1 Ref="${ref}" ControlType="XRTable" Name="${name}" LocationFloat="0,0" SizeF="750,20">` +
+  `<Rows><Item1 Ref="${rowRef}" ControlType="XRTableRow" Name="${name}Row" Weight="1">` +
+  `<Cells>${cells}</Cells></Item1></Rows></Item1>`;
+
+const report = (bands: string) =>
+  '<?xml version="1.0" encoding="utf-8"?>' +
+  '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="0" ' +
+  'ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ' +
+  'ReportUnit="HundredthsOfAnInch" PageWidth="850" PageHeight="1100" Version="20.1">' +
+  `<Bands>${bands}</Bands></XtraReportsLayoutSerializer>`;
+
+/** Two bands whose tables reuse Refs -- the measured failure. */
+const colliding = report(
+  `<Item1 Ref="2" ControlType="PageHeaderBand" Name="PageHeader" HeightF="20"><Controls>` +
+    table(5, 6, 'tableHeader', cell(1, 21, 'Description') + cell(2, 22, 'Amount')) +
+    `</Controls></Item1>` +
+    `<Item2 Ref="7" ControlType="DetailBand" Name="Detail" HeightF="20"><Controls>` +
+    table(5, 6, 'tableDetail', cell(1, 21, 'Widget') + cell(2, 22, '1240.00')) +
+    `</Controls></Item2>`
+);
+
+const unique = report(
+  `<Item1 Ref="2" ControlType="PageHeaderBand" Name="PageHeader" HeightF="20"><Controls>` +
+    table(5, 6, 'tableHeader', cell(1, 21, 'Description') + cell(2, 22, 'Amount')) +
+    `</Controls></Item1>` +
+    `<Item2 Ref="7" ControlType="DetailBand" Name="Detail" HeightF="20"><Controls>` +
+    table(8, 9, 'tableDetail', cell(1, 23, 'Widget') + cell(2, 24, '1240.00')) +
+    `</Controls></Item2>`
+);
+
+describe('auditRefs', () => {
+  it('finds every Ref in the document', () => {
+    expect(auditRefs(unique).occurrences).toHaveLength(11);
+  });
+
+  it('reports nothing for a document that is already unique', () => {
+    expect(auditRefs(unique).duplicates).toEqual([]);
+  });
+
+  it('reports each colliding value with its count', () => {
+    const { duplicates } = auditRefs(colliding);
+    expect(duplicates).toEqual([
+      { ref: '5', count: 2 },
+      { ref: '6', count: 2 },
+      { ref: '21', count: 2 },
+      { ref: '22', count: 2 },
+    ]);
+  });
+
+  it('reports the largest Ref, so a repair knows where to start', () => {
+    expect(auditRefs(unique).max).toBe(24);
+    expect(auditRefs(colliding).max).toBe(22);
+  });
+
+  it('marks elements with a ControlType as definitions', () => {
+    expect(auditRefs(unique).occurrences.every((o) => o.defines)).toBe(true);
+  });
+
+  it('does not mark a bare back-reference as a definition', () => {
+    const withRef = report('<Item1 Ref="2" ControlType="DetailBand" Name="Detail" /><Item2 Ref="2" />');
+    const bare = auditRefs(withRef).occurrences.filter((o) => !o.defines);
+    expect(bare).toHaveLength(1);
+    expect(bare[0].ref).toBe('2');
+  });
+
+  it('is not confused by a Ref inside a comment', () => {
+    const withComment = unique.replace('<Bands>', '<!-- Ref="5" ControlType="X" --><Bands>');
+    expect(auditRefs(withComment).occurrences).toHaveLength(11);
+  });
+
+  it('handles an empty document', () => {
+    for (const input of ['', null, undefined]) {
+      const audit = auditRefs(input);
+      expect(audit.occurrences).toEqual([]);
+      expect(audit.max).toBe(-1);
+    }
+  });
+});
+
+describe('ensureUniqueRefs', () => {
+  it('leaves an already-unique document byte-identical', () => {
+    const result = ensureUniqueRefs(unique);
+    expect(result.applied).toBe(false);
+    expect(result.xml).toBe(unique);
+    expect(result.renumbered).toBe(0);
+    expect(result.reason).toBe('all 11 Ref values are already unique');
+  });
+
+  it('makes every Ref unique when they collide', () => {
+    const { xml, applied, renumbered } = ensureUniqueRefs(colliding);
+    expect(applied).toBe(true);
+    expect(renumbered).toBe(4);
+    expect(auditRefs(xml).duplicates).toEqual([]);
+  });
+
+  it('keeps the first occurrence and renumbers the later one', () => {
+    const { xml } = ensureUniqueRefs(colliding);
+    // The header table keeps Ref="5"; the detail table gets a fresh number.
+    expect(xml).toContain('Ref="5" ControlType="XRTable" Name="tableHeader"');
+    expect(xml).not.toContain('Ref="5" ControlType="XRTable" Name="tableDetail"');
+  });
+
+  it('allocates new numbers above the document maximum', () => {
+    const { xml } = ensureUniqueRefs(colliding);
+    // max was 22, so the four repeats become 23..26.
+    expect(xml).toContain('Ref="23" ControlType="XRTable" Name="tableDetail"');
+    expect(auditRefs(xml).max).toBe(26);
+  });
+
+  it('changes nothing but the Ref attributes it had to change', () => {
+    const { xml } = ensureUniqueRefs(colliding);
+    const normalise = (s: string) => s.replace(/ Ref="\d+"/g, ' Ref=""');
+    expect(normalise(xml)).toBe(normalise(colliding));
+  });
+
+  it('leaves a bare back-reference alone rather than splitting the object', () => {
+    const withRef = report('<Item1 Ref="2" ControlType="DetailBand" Name="Detail" /><Item2 Ref="2" />');
+    const result = ensureUniqueRefs(withRef);
+    expect(result.applied).toBe(false);
+    expect(result.renumbered).toBe(0);
+    expect(result.xml).toBe(withRef);
+    expect(result.reason).toContain('look like back-references');
+  });
+
+  it('names the collisions it found in the reason', () => {
+    expect(ensureUniqueRefs(colliding).reason).toBe(
+      'renumbered 4 element(s) that reused a Ref (5x2, 6x2, 21x2, 22x2)'
+    );
+  });
+
+  it('leaves the document parseable and complete', () => {
+    const { xml } = ensureUniqueRefs(colliding);
+    expect(checkRepxComplete(xml).complete).toBe(true);
+  });
+
+  it('is idempotent', () => {
+    const once = ensureUniqueRefs(colliding);
+    const twice = ensureUniqueRefs(once.xml);
+    expect(twice.applied).toBe(false);
+    expect(twice.xml).toBe(once.xml);
+  });
+
+  it('declines an empty document rather than throwing', () => {
+    for (const input of ['', '  ', null, undefined]) {
+      const result = ensureUniqueRefs(input);
+      expect(result.applied).toBe(false);
+      expect(result.reason).toBe('there is no REPX to check');
+    }
+  });
+});

@@ -323,6 +323,21 @@ export interface BoundRepx {
  * input untouched with the reason. Running it twice is safe: the second run
  * sees the bindings from the first and declines.
  */
+/**
+ * Is the binding pass switched on?
+ *
+ * Opt-in, mirroring `flatLayoutEnabled` in `reportBands.ts` and for the same
+ * reason: this changes the artifact the user downloads, and the change has no
+ * designer verdict behind it yet. Bound cells are a report that can take a
+ * data source; they are also a report whose line items read as field names
+ * rather than the numbers from the source document, which is the right
+ * trade-off only once somebody has confirmed it opens correctly. Default off
+ * until then, one variable to turn on.
+ */
+export function bindingEnabled(env: Record<string, string | undefined>): boolean {
+  return env.VITE_FORMA_BIND === 'true';
+}
+
 export function bindDetailRow(xml: string | undefined | null): BoundRepx {
   const text = xml ?? '';
   const { plan, reason } = planDetailBinding(text);

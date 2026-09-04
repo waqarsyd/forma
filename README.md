@@ -280,6 +280,9 @@ src/
                        repxBindings (column headings to DevExpress field names
                        for expression bindings — derived in code so the guess
                        is testable, not left to the prompt),
+                       repxRefs (makes the model's Ref values unique — a repeat
+                       makes DevExpress alias two elements onto one and drop
+                       the second's content, with no error anywhere),
                        repxBindingPlan (finds the header and detail rows, proves
                        they describe the same columns, and binds the detail row
                        to one field each — declining rather than guess when the
