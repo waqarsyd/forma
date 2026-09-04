@@ -2591,7 +2591,11 @@ export default function App() {
       console.debug(copy.request);
       const { analyzeReportDesign } = await loadGemini();
       const response = await analyzeReportDesign(
-        currentPrompt || "Generate a professional DevExpress report layout based on these visuals.",
+        // Passed through empty when the user typed nothing. It used to become
+        // "Generate a professional DevExpress report layout based on these
+        // visuals." here, which handed the model an instruction nobody gave and
+        // then told it to apply that as a modification. See lib/userInstructions.ts.
+        currentPrompt,
         attachmentParts,
         config,
         result ? { layout: result.layout, repxContent: result.repxContent } : undefined,

@@ -6,6 +6,7 @@ import { cacheModel, readCachedModel, readCachedModelSet, clearCachedModel } fro
 import { liftReportMargins } from "../lib/repxMargins";
 import { ensureUniqueRefs } from "../lib/repxRefs";
 import { normalizeItemNames } from "../lib/repxItems";
+import { instructionBlock } from "../lib/userInstructions";
 import { bindDetailRow, bindFooterTotals, bindingEnabled } from "../lib/repxBindingPlan";
 import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
@@ -1119,13 +1120,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
           - LOCATIONS AND SIZES: Make **absolute sure** that components do not overlap incorrectly. Calculate the X and Y bounds correctly. LocationFloat expects X,Y and SizeF expects Width,Height. Do NOT add spaces after the comma.
           - PREVIEW MOCKUP ACCURACY: In the JSON \`layout\`, represent every grid as ONE \`"table"\` element with a populated \`rows\`/\`cells\` array, as described under "TABLES / GRIDS IN THE LAYOUT" above. (Earlier revisions asked for grids to be decomposed into one \`"label"\` per cell because the preview could not draw real tables. It can now, so emit the real structure — it is both more accurate and far less error-prone than hand-computing every cell coordinate.)
 
-          USER INSTRUCTIONS / CHAT REQUEST: 
-          "${prompt}"
-          
-          CRITICAL INSTRUCTION HANDLING:
-          1. FIRST, build the complete, pixel-perfect base layout from the image(s) or the PREVIOUS REPORT STATE.
-          2. THEN, apply the USER INSTRUCTIONS as specific modifications (additions, deletions, style changes) to that base layout.
-          3. NEVER discard the rest of the report structure just because the user asked for a specific change. The final output MUST contain the full report with the user's changes applied on top.` },
+          ${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent) })}` },
           ...imageParts,
         ],
       },

@@ -280,6 +280,9 @@ src/
                        repxBindings (column headings to DevExpress field names
                        for expression bindings — derived in code so the guess
                        is testable, not left to the prompt),
+                       userInstructions (an empty composer means "no request",
+                       not an invented one — the two cases are different
+                       prompts rather than one with a placeholder in it),
                        repxItems (ItemN is a position inside its own collection
                        and restarts at Item1 in each — a document-wide sequence
                        makes DevExpress read every collection as empty and drop
