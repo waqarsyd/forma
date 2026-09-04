@@ -9,7 +9,13 @@
  * grep and its run agree.
  */
 import { describe, it, expect } from 'vitest';
-import { planDetailBinding, bindDetailRow, bindingEnabled, unescapeXml } from './repxBindingPlan';
+import {
+  planDetailBinding,
+  bindDetailRow,
+  bindFooterTotals,
+  bindingEnabled,
+  unescapeXml,
+} from './repxBindingPlan';
 import { checkRepxComplete } from './repxTruncation';
 
 const cell = (name: string, text: string, weight = 1) =>
@@ -205,7 +211,9 @@ describe('bindDetailRow', () => {
   });
 
   it('leaves everything outside the cells byte-for-byte alone', () => {
-    const before = banded(['Description', 'Amount'], ['Widget', '1240.00']);
+    // Columns that infer no format, so this stays a test of the splice alone
+    // rather than of the splice plus an inserted attribute.
+    const before = banded(['Description', 'Code'], ['Widget', 'AB-1234']);
     const { xml } = bindDetailRow(before);
     // Reverse exactly the splice -- a binding block followed immediately by
     // the cell's closing tag becomes ` />` again -- and the result must be the
@@ -244,7 +252,7 @@ describe('bindDetailRow', () => {
 
   it('names the columns it bound in the reason', () => {
     const { reason } = bindDetailRow(banded(['Description', 'Amount'], ['Widget', '1.00']));
-    expect(reason).toBe('bound 2 columns: Description, Amount');
+    expect(reason).toBe('bound 2 columns: Description, Amount; formatted 1');
   });
 
   it('emits no Ref, which is the variant proven to round-trip', () => {
@@ -259,6 +267,126 @@ describe('bindDetailRow', () => {
     const { xml, fields } = bindDetailRow(banded(['Tom & Jerry <b>'], ['x']));
     expect(fields[0].name).toBe('TomJerryB');
     expect(xml).toContain('Expression="[TomJerryB]"');
+  });
+});
+
+/** Headings, a detail row, and a footer row -- for the totals pass. */
+const withFooter = (headings: string[], values: string[], footer: string[]) =>
+  report(
+    band('PageHeaderBand', headings.map((h, i) => cell(String(i + 1), h)).join('')) +
+      band('DetailBand', values.map((v, i) => cell(String(i + 1), v)).join('')) +
+      band('ReportFooterBand', footer.map((v, i) => cell(String(i + 1), v)).join(''))
+  );
+
+describe('bindDetailRow formatting', () => {
+  it('adds a currency format to a money column', () => {
+    const { xml, reason } = bindDetailRow(banded(['Description', 'Amount'], ['Widget', '1240.00']));
+    expect(xml).toContain('TextFormatString="{0:c2}"');
+    expect(reason).toBe('bound 2 columns: Description, Amount; formatted 1');
+  });
+
+  it('adds no format to a text or plain-integer column', () => {
+    const { xml, reason } = bindDetailRow(banded(['Description', 'Qty'], ['Widget', '2']));
+    expect(xml).not.toContain('TextFormatString');
+    expect(reason).toBe('bound 2 columns: Description, Qty');
+  });
+
+  it('does not overwrite a format the model already chose', () => {
+    const withFormat = banded(['Amount'], ['1240.00']).replace(
+      'Text="1240.00"',
+      'TextFormatString="{0:n2}" Text="1240.00"'
+    );
+    const { xml } = bindDetailRow(withFormat);
+    expect(xml).toContain('TextFormatString="{0:n2}"');
+    expect(xml).not.toContain('{0:c2}');
+  });
+
+  it('leaves the document complete after inserting an attribute', () => {
+    const { xml } = bindDetailRow(banded(['Amount', 'Date'], ['1240.00', '2026-09-04']));
+    expect(checkRepxComplete(xml).complete).toBe(true);
+    expect(xml).toContain('TextFormatString="{0:c2}"');
+    expect(xml).toContain('TextFormatString="{0:d}"');
+  });
+});
+
+describe('bindFooterTotals', () => {
+  it('totals a money column with the serializer summary syntax', () => {
+    const { xml, applied, reason } = bindFooterTotals(
+      withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total', '1240.00'])
+    );
+    expect(applied).toBe(true);
+    expect(xml).toContain('Expression="sumSum([Amount])"');
+    expect(reason).toBe('totalled 1 column(s): Amount');
+  });
+
+  it('leaves the label cell under a text column alone', () => {
+    const { xml } = bindFooterTotals(
+      withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total', '1240.00'])
+    );
+    expect(xml).toContain('Text="Total" Weight="1" />');
+    expect(xml.match(/<ExpressionBindings>/g)).toHaveLength(1);
+  });
+
+  it('declines when there is no footer table', () => {
+    const { applied, reason } = bindFooterTotals(banded(['Amount'], ['1240.00']));
+    expect(applied).toBe(false);
+    expect(reason).toBe('there is no ReportFooter table to total');
+  });
+
+  it('declines when the footer and detail rows have different widths', () => {
+    const { applied, reason } = bindFooterTotals(
+      withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total'])
+    );
+    expect(applied).toBe(false);
+    expect(reason).toContain('the footer row has 1 cells and the detail row has 2');
+  });
+
+  it('does not bind a sum over a label sitting in a money column', () => {
+    // A binding overrides Text at print time, so binding sumSum() onto a cell
+    // reading "Total" turns the label into a number. Found by loading a real
+    // chain output into DevExpress, not by reasoning.
+    const { xml, applied } = bindFooterTotals(
+      withFooter(['Unit Price', 'Amount'], ['12.00', '1240.00'], ['Total', '1240.00'])
+    );
+    expect(applied).toBe(true);
+    expect(xml).toContain('Text="Total" Weight="1" />');
+    expect(xml).not.toContain('sumSum([UnitPrice])');
+    expect(xml).toContain('sumSum([Amount])');
+  });
+
+  it('declines when every money cell in the footer is a label', () => {
+    const { applied, reason } = bindFooterTotals(
+      withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total', 'see below'])
+    );
+    expect(applied).toBe(false);
+    expect(reason).toBe('no footer cell sits under a money column');
+  });
+
+  it('declines when no column is money', () => {
+    const { applied, reason } = bindFooterTotals(
+      withFooter(['Description', 'Qty'], ['Widget', '2'], ['Total', '2'])
+    );
+    expect(applied).toBe(false);
+    expect(reason).toBe('no footer cell sits under a money column');
+  });
+
+  it('is idempotent', () => {
+    const src = withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total', '1240.00']);
+    const once = bindFooterTotals(src);
+    const twice = bindFooterTotals(once.xml);
+    expect(twice.applied).toBe(false);
+    expect(twice.xml).toBe(once.xml);
+  });
+
+  it('composes with the detail pass, leaving a complete document', () => {
+    const src = withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total', '1240.00']);
+    const detail = bindDetailRow(src);
+    const totals = bindFooterTotals(detail.xml);
+    expect(totals.applied).toBe(true);
+    expect(checkRepxComplete(totals.xml).complete).toBe(true);
+    // The detail cell binds the field; the footer cell sums it.
+    expect(totals.xml).toContain('Expression="[Amount]"');
+    expect(totals.xml).toContain('Expression="sumSum([Amount])"');
   });
 });
 

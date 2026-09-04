@@ -11,7 +11,7 @@
  * prose naming it would inflate the grep in the other direction.
  */
 import { describe, it, expect } from 'vitest';
-import { toFieldName, deriveFieldNames, fieldExpression } from './repxBindings';
+import { toFieldName, deriveFieldNames, fieldExpression, inferTextFormat } from './repxBindings';
 
 describe('toFieldName', () => {
   it('passes a clean single word straight through', () => {
@@ -160,6 +160,49 @@ describe('deriveFieldNames', () => {
     for (const field of deriveFieldNames(hostile)) {
       expect(field.name).toMatch(/^[A-Za-z0-9_]+$/);
     }
+  });
+});
+
+describe('inferTextFormat', () => {
+  it('formats a column the heading says is money', () => {
+    expect(inferTextFormat('Amount', '1240.00')).toBe('{0:c2}');
+    expect(inferTextFormat('Unit Price', '12.00')).toBe('{0:c2}');
+    expect(inferTextFormat('Total', '1,240.00')).toBe('{0:c2}');
+  });
+
+  it('formats a column the value says is money, whatever the heading', () => {
+    for (const sample of ['$1,240.00', '£12.00', '€9.99', '₹500']) {
+      expect(inferTextFormat('Widget', sample)).toBe('{0:c2}');
+    }
+  });
+
+  it('formats a date it can recognise', () => {
+    for (const sample of ['2026-09-04', '04/09/2026', '4 September 2026', 'Sep 4, 2026']) {
+      expect(inferTextFormat('Date', sample)).toBe('{0:d}');
+    }
+  });
+
+  it('leaves a plain integer column alone, on purpose', () => {
+    // {0:n0} would render an invoice number 12345 as "12,345". One sample
+    // value cannot tell a count from an identifier, so neither gets a format.
+    expect(inferTextFormat('Qty', '2')).toBe('');
+    expect(inferTextFormat('Invoice No', '12345')).toBe('');
+    expect(inferTextFormat('Year', '2026')).toBe('');
+  });
+
+  it('leaves ordinary text alone', () => {
+    expect(inferTextFormat('Description', 'Widget')).toBe('');
+    expect(inferTextFormat('Code', 'AB-1234')).toBe('');
+  });
+
+  it('says nothing when there is no sample to judge', () => {
+    for (const sample of ['', '   ', null, undefined]) {
+      expect(inferTextFormat('Amount', sample)).toBe('');
+    }
+  });
+
+  it('does not call a non-numeric value money just because the heading says so', () => {
+    expect(inferTextFormat('Amount', 'see attached')).toBe('');
   });
 });
 

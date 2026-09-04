@@ -73,7 +73,7 @@
  * splice rather than a re-serialisation, so every byte the model wrote that we
  * are not deliberately changing survives untouched.
  */
-import { deriveFieldNames, type DerivedField } from './repxBindings';
+import { deriveFieldNames, inferTextFormat, type DerivedField } from './repxBindings';
 
 /** One complete `<Tag …>`, `</Tag>` or `<Tag … />`, as repxTruncation reads them. */
 const TAG = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/g;
@@ -216,8 +216,18 @@ export interface BindingPlanResult {
  * - every heading is blank, so every field name would be positional -- a
  *   region with no headings at all is more likely not to have been a table
  */
-export function planDetailBinding(xml: string | undefined | null): BindingPlanResult {
-  const text = xml ?? '';
+/**
+ * Everything both passes need, without the already-bound judgement.
+ *
+ * Split out because the two callers disagree about what "already bound" means.
+ * For the detail pass it is a reason to stop -- re-binding would discard
+ * somebody's work. For the footer pass it is the *expected* state, since totals
+ * run after the detail row and would otherwise always decline; the field names
+ * it needs come from the header row, and the sample values it reads to spot a
+ * money column survive binding because `Text=` is kept. Folding the check into
+ * this function is what made the wiring order impossible on the first attempt.
+ */
+function analyseColumns(text: string): BindingPlanResult {
   if (!text.trim()) return { plan: null, reason: 'there is no REPX to bind' };
 
   const elements = parseElements(text);
@@ -253,14 +263,6 @@ export function planDetailBinding(xml: string | undefined | null): BindingPlanRe
     };
   });
 
-  const alreadyBound = targets.filter((c) => c.bound).length;
-  if (alreadyBound) {
-    return {
-      plan: null,
-      reason: `${alreadyBound} of ${targets.length} detail cells are already bound`,
-    };
-  }
-
   const headings = headerCells.map((cell) => unescapeXml(attr(text.slice(cell.start, cell.end), 'Text')));
   const fields = deriveFieldNames(headings);
 
@@ -275,6 +277,27 @@ export function planDetailBinding(xml: string | undefined | null): BindingPlanRe
     plan: { headings, fields, cells: targets },
     reason: `${fields.length} columns: ${fields.map((f) => f.name).join(', ')}`,
   };
+}
+
+/**
+ * Work out what a detail binding would do, without doing any of it.
+ *
+ * `analyseColumns` plus the one judgement only this pass makes: a detail row
+ * that already carries bindings is left alone, which is what makes
+ * `bindDetailRow` idempotent and stops it discarding hand-written work.
+ */
+export function planDetailBinding(xml: string | undefined | null): BindingPlanResult {
+  const result = analyseColumns(xml ?? '');
+  if (!result.plan) return result;
+
+  const bound = result.plan.cells.filter((c) => c.bound).length;
+  if (bound) {
+    return {
+      plan: null,
+      reason: `${bound} of ${result.plan.cells.length} detail cells are already bound`,
+    };
+  }
+  return result;
 }
 
 /**
@@ -324,6 +347,103 @@ export interface BoundRepx {
  * sees the bindings from the first and declines.
  */
 /**
+ * Bind a ReportFooter row's money columns to running totals.
+ *
+ * `sumSum([Amount])` is what the 20.1 serializer writes for a summary -- it is
+ * an ordinary expression, so this is the same splice as the detail row with a
+ * different string in it.
+ *
+ * ## Strict, and it will usually decline
+ *
+ * The footer table has to have exactly as many cells as the detail row, so
+ * that cell n is provably column n. Real footers often do not: a total row is
+ * frequently one label and one figure, or a merged span, and from here that is
+ * indistinguishable from a footer whose columns mean something else entirely.
+ * Summing the wrong column produces a number that looks like a total and is
+ * not, which is worse than leaving the cell as the model wrote it.
+ *
+ * Only columns that inferred as money are summed. A column of integers may be
+ * a quantity worth totalling or an order number that must never be added up,
+ * and one sample value does not distinguish them -- the same reasoning that
+ * keeps `{0:n0}` out of `inferTextFormat`. Cells for non-money columns are
+ * left alone, which is also what makes a "Total:" label in the footer survive.
+ *
+ * Unverified against a live generation: whether the banded prompt produces a
+ * ReportFooter table at all, let alone one column-aligned with the detail row,
+ * is not something any fixture here can settle.
+ */
+export function bindFooterTotals(xml: string | undefined | null): BoundRepx {
+  const text = xml ?? '';
+  // analyseColumns, not planDetailBinding: this runs *after* the detail row is
+  // bound, so the already-bound check would decline every single time.
+  const { plan, reason } = analyseColumns(text);
+  if (!plan) return { xml: text, applied: false, reason, fields: [] };
+
+  const elements = parseElements(text);
+  const footer = elements.find((e) => e.controlType === 'ReportFooterBand');
+  const cells = tableCells(elements, footer);
+  if (!cells.length) return { xml: text, applied: false, reason: 'there is no ReportFooter table to total', fields: [] };
+
+  if (cells.length !== plan.fields.length) {
+    return {
+      xml: text,
+      applied: false,
+      reason:
+        `the footer row has ${cells.length} cells and the detail row has ${plan.fields.length}, ` +
+        `so which column each total belongs to cannot be proved`,
+      fields: [],
+    };
+  }
+
+  // Three conditions, and the third was learned the hard way. The column has
+  // to be money, the cell must not already be bound, and **the footer cell
+  // itself has to hold a figure**. Without that last one a "Total:" label
+  // sitting under the money column gets a sum bound over it, and because a
+  // binding overrides `Text` at print time the label silently becomes a
+  // number. Caught by loading a real chain output into DevExpress and reading
+  // back `ReportFooter.cell2: sumSum([UnitPrice])` on a cell whose text was
+  // "Total" -- no unit test here would have said anything was wrong.
+  const targets = cells
+    .map((cell, i) => ({
+      cell,
+      i,
+      slice: text.slice(cell.start, cell.end),
+      own: unescapeXml(attr(text.slice(cell.start, cell.end), 'Text')),
+    }))
+    .filter(({ i }) => inferTextFormat(plan.headings[i], plan.cells[i].text) === '{0:c2}')
+    .filter(({ i, own }) => inferTextFormat(plan.headings[i], own) === '{0:c2}')
+    .filter(({ slice }) => !EXISTING_BINDING.test(slice));
+
+  if (!targets.length) {
+    return { xml: text, applied: false, reason: 'no footer cell sits under a money column', fields: [] };
+  }
+
+  let out = text;
+  for (let t = targets.length - 1; t >= 0; t--) {
+    const { cell, i } = targets[t];
+    const slice = out.slice(cell.start, cell.end);
+    const children =
+      '<ExpressionBindings>' +
+      `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="sumSum([${plan.fields[i].name}])" />` +
+      '</ExpressionBindings>';
+
+    const rewritten = slice.endsWith('/>')
+      ? `${slice.slice(0, -2).trimEnd()}>${children}</${cell.tag}>`
+      : slice.replace(new RegExp(`</${cell.tag}>$`), `${children}</${cell.tag}>`);
+
+    out = out.slice(0, cell.start) + rewritten + out.slice(cell.end);
+  }
+
+  const totalled = targets.map(({ i }) => plan.fields[i]);
+  return {
+    xml: out,
+    applied: true,
+    reason: `totalled ${totalled.length} column(s): ${totalled.map((f) => f.name).join(', ')}`,
+    fields: totalled,
+  };
+}
+
+/**
  * Is the binding pass switched on?
  *
  * Opt-in, mirroring `flatLayoutEnabled` in `reportBands.ts` and for the same
@@ -344,10 +464,28 @@ export function bindDetailRow(xml: string | undefined | null): BoundRepx {
   if (!plan) return { xml: text, applied: false, reason, fields: [] };
 
   let out = text;
+  let formatted = 0;
+
   for (let i = plan.cells.length - 1; i >= 0; i--) {
     const cell = plan.cells[i];
-    const slice = out.slice(cell.start, cell.end);
+    let slice = out.slice(cell.start, cell.end);
     const children = bindingElement(plan.fields[i].name);
+
+    // A format, where the column's meaning is not in doubt. Never overwrite one
+    // the model already chose -- it saw the document and this only sees one
+    // sample value, so on the rare occasion both have an opinion, its is better
+    // informed.
+    const format = inferTextFormat(plan.headings[i], cell.text);
+    if (format && !/\sTextFormatString\s*=/.test(slice)) {
+      const openEnd = slice.indexOf('>');
+      const insertAt = slice[openEnd - 1] === '/' ? openEnd - 1 : openEnd;
+      // trimEnd, or the space already sitting before `/>` becomes a double
+      // space in the emitted attribute list.
+      const left = slice.slice(0, insertAt).trimEnd();
+      const right = slice.slice(insertAt);
+      slice = `${left} TextFormatString="${format}"${right.startsWith('/') ? ' ' : ''}${right}`;
+      formatted++;
+    }
 
     const rewritten = slice.endsWith('/>')
       ? // `<Item1 … />` has to grow a body and a closing tag.
@@ -361,7 +499,9 @@ export function bindDetailRow(xml: string | undefined | null): BoundRepx {
   return {
     xml: out,
     applied: true,
-    reason: `bound ${plan.fields.length} columns: ${plan.fields.map((f) => f.name).join(', ')}`,
+    reason:
+      `bound ${plan.fields.length} columns: ${plan.fields.map((f) => f.name).join(', ')}` +
+      (formatted ? `; formatted ${formatted}` : ''),
     fields: plan.fields,
   };
 }

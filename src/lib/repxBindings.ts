@@ -144,3 +144,54 @@ export function deriveFieldNames(headers: readonly (string | undefined | null)[]
 export function fieldExpression(name: string): string {
   return `[${name}]`;
 }
+
+/** Headings whose column is money whatever the sample happens to look like. */
+const MONEY_HEADING = /\b(amount|price|total|subtotal|cost|value|charge|fee|balance|due|paid|net|gross|vat|tax)\b/i;
+
+/** A currency symbol anywhere in the sample. */
+const MONEY_SYMBOL = /[$£€¥₹]/;
+
+/** Digits with optional thousands separators and an optional decimal part. */
+const NUMERIC = /^-?\(?\s*\d{1,3}(,\d{3})*(\.\d+)?\s*\)?$|^-?\(?\s*\d+(\.\d+)?\s*\)?$/;
+
+/** ISO, slash and dotted dates, plus a written month. */
+const DATE =
+  /^\d{4}-\d{2}-\d{2}$|^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}$|^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}$|^[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{2,4}$/;
+
+/**
+ * A `TextFormatString` for a column, or `''` when it is better to say nothing.
+ *
+ * ## Deliberately only two formats
+ *
+ * Currency and date. Plain numbers are **excluded on purpose**, and the reason
+ * is worth stating because adding them looks like an obvious improvement.
+ *
+ * `{0:n0}` renders 12345 as "12,345". That is right for a quantity and wrong
+ * for an invoice number, an order id, a product code or a year -- all of which
+ * are columns of bare integers, and none of which this can tell apart from a
+ * count by looking at one sample value. A format string that mangles an
+ * identifier is worse than no format string at all, because the unformatted
+ * column was already correct.
+ *
+ * So the bar is: apply a format only where the column's meaning is not in
+ * doubt. Money is signalled twice over -- by a heading from a small closed
+ * vocabulary, or by a currency symbol in the value -- and a date that matches
+ * one of these shapes is not plausibly anything else. Everything else returns
+ * `''` and the cell is left as the model wrote it.
+ *
+ * Note this reads the *heading* as well as the sample, so "Amount" holding
+ * "1240.00" is money while "Qty" holding "2" is not, which no amount of
+ * looking at the value alone would settle.
+ */
+export function inferTextFormat(header: string | undefined | null, sample: string | undefined | null): string {
+  const value = (sample ?? '').trim();
+  if (!value) return '';
+
+  if (DATE.test(value)) return '{0:d}';
+
+  const numeric = NUMERIC.test(value.replace(MONEY_SYMBOL, '').trim());
+  if (!numeric) return '';
+
+  const money = MONEY_SYMBOL.test(value) || MONEY_HEADING.test(header ?? '');
+  return money ? '{0:c2}' : '';
+}

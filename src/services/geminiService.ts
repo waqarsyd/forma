@@ -4,7 +4,7 @@ import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
 import { liftReportMargins } from "../lib/repxMargins";
 import { ensureUniqueRefs } from "../lib/repxRefs";
-import { bindDetailRow, bindingEnabled } from "../lib/repxBindingPlan";
+import { bindDetailRow, bindFooterTotals, bindingEnabled } from "../lib/repxBindingPlan";
 import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import {
@@ -1614,6 +1614,20 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
         console.log(`Bindings: ${bound.reason}.`);
       } else {
         console.log(`Bindings left as generated: ${bound.reason}.`);
+      }
+
+      // Totals after the detail row, and only if that succeeded -- a footer
+      // summing a column the detail row never bound would reference a field
+      // nothing supplies. It declines far more often than it applies; see
+      // `bindFooterTotals` for why that is the intended behaviour.
+      if (bound.applied) {
+        const totals = bindFooterTotals(parsed.repxContent);
+        if (totals.applied) {
+          parsed.repxContent = totals.xml;
+          console.log(`Totals: ${totals.reason}.`);
+        } else {
+          console.log(`Totals left as generated: ${totals.reason}.`);
+        }
       }
     }
 

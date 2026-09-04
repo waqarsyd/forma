@@ -9,7 +9,19 @@ import { cacheControlFor, REVALIDATE } from "./src/server/staticCache";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+
+  // 3000 unless PORT says otherwise. It was a bare constant until 2026-09-04,
+  // which is a trap rather than a simplification: `HOST` is read from the
+  // environment three lines down and documented in `.env.example`, so PORT
+  // looks like it works the same way and silently does not. Anything that
+  // needs a second instance -- a smoke check beside a running dev server, a
+  // host that hands you a port -- binds 3000 anyway and fails with EADDRINUSE
+  // while appearing to have been told otherwise. A non-numeric or
+  // out-of-range value falls back rather than binding something arbitrary.
+  const requestedPort = Number(process.env.PORT);
+  const PORT = Number.isInteger(requestedPort) && requestedPort > 0 && requestedPort < 65536
+    ? requestedPort
+    : 3000;
 
   // Express advertises itself with X-Powered-By by default. It tells an
   // attacker which stack to look up and tells a user nothing.
