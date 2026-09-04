@@ -48,6 +48,12 @@ const EXTENSIONS = new Set(['.ts', '.tsx', '.md', '.css', '.mjs', '.cs', '.html'
  * pattern, and the sweep still reported clean because the file was not on this
  * list. Add root files here when you create them.
  *
+ * It caught the same trap twice: package.json was added on 2026-09-04, having
+ * sat outside the sweep the whole time with an em dash in its "description".
+ * It was clean, but it is a file agents edit often and a corrupted description
+ * is what npm shows the world. Note it is the first non-source entry here --
+ * the extension filter above never would have reached it.
+ *
  * The root is not a formality either: server.ts and .gitignore both carry em
  * dashes inside comments, and a sweep scoped only to the source directories
  * would score them 0 by never opening them.
@@ -65,6 +71,7 @@ const ROOT_FILES = [
   'firestore.rules',
   '.gitignore',
   '.env.example',
+  'package.json',
 ];
 
 /**
