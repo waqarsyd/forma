@@ -1019,6 +1019,19 @@ table.wb-rows .wb-n { text-align: right; font-variant-numeric: tabular-nums; }
 .wb-status .wb-pip { width: 6px; height: 6px; border-radius: 999px; background: var(--ok-ink); }
 .wb-status .wb-push { flex: 1; }
 
+/*
+ * The REPX audit readout (see src/lib/repxAudit.ts).
+ *
+ * The rest of this bar is deliberately quiet — `--ink-faint`, because a band
+ * count is not news. These two are the exception: a structural fault means the
+ * file about to be exported will lose content or print wrong, and every one of
+ * them found so far reached the user with the app reporting success. They carry
+ * colour so they are not read as more of the same, and `cursor: help` because
+ * the whole finding is in the title attribute.
+ */
+.wb-status .wb-warn { color: var(--accent); cursor: help; }
+.wb-status .wb-bad { color: var(--bad-ink); cursor: help; font-weight: 600; }
+
 /* ----------------------------------------------------------- generation */
 /* The progress card, rebuilt 2026-08-26 around the mark.
    ------------------------------------------------------------------------

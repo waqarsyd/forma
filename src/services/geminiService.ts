@@ -7,6 +7,7 @@ import { liftReportMargins } from "../lib/repxMargins";
 import { ensureUniqueRefs } from "../lib/repxRefs";
 import { normalizeItemNames } from "../lib/repxItems";
 import { instructionBlock } from "../lib/userInstructions";
+import { auditRepx } from "../lib/repxAudit";
 import { bindDetailRow, bindFooterTotals, bindingEnabled } from "../lib/repxBindingPlan";
 import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
@@ -1592,6 +1593,22 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
           console.log(`Totals left as generated: ${totals.reason}.`);
         }
       }
+    }
+
+    // Last, on the finished artifact, and it repairs nothing: this asks what is
+    // still wrong after every repair has run. An error here means a repair
+    // declined rather than that nobody looked, which is worth knowing about.
+    // See `repxAudit.ts`; the UI shows the findings beside the REPX.
+    const audit = auditRepx(parsed.repxContent);
+    if (audit.errors) {
+      console.error(`REPX audit — ${audit.summary}.`);
+    } else if (audit.warnings) {
+      console.warn(`REPX audit — ${audit.summary}.`);
+    } else {
+      console.log(`REPX audit — ${audit.summary}.`);
+    }
+    for (const finding of audit.findings) {
+      console[finding.severity === 'error' ? 'error' : 'warn'](`  [${finding.code}] ${finding.message}`);
     }
 
     return parsed;

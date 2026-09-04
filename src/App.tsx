@@ -143,6 +143,7 @@ import { titleForRoute, viewForRoute } from './lib/routes';
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
+import { auditRepx } from './lib/repxAudit';
 import { sourceRectFor } from './lib/sourceRect';
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
@@ -2887,6 +2888,23 @@ export default function App() {
   );
 
   /**
+   * What is structurally wrong with the report about to be exported.
+   *
+   * Derived from `repxContent` like the two above, so it describes the artifact
+   * rather than the run that produced it — a report loaded from a save is
+   * audited on the same terms as one just generated.
+   *
+   * Every defect found on 2026-09-04 reached the user before the app noticed
+   * anything: the tables were discarded on load, the page numbering was dropped,
+   * and the app reported success each time because by its own lights it had
+   * succeeded. This is that gap. See `repxAudit.ts`.
+   */
+  const repxAudit = useMemo(
+    () => (result?.repxContent ? auditRepx(result.repxContent) : null),
+    [result?.repxContent]
+  );
+
+  /**
    * Escape closes the attachment viewer. The backdrop already closes on a click,
    * but the viewer covers the screen and Escape is what a full-bleed overlay is
    * expected to answer to.
@@ -3976,6 +3994,20 @@ export default function App() {
         {boundFields.length > 0 && (
           <span title={`Bound to: ${boundFields.join(', ')}`}>
             {boundFields.length} bound
+          </span>
+        )}
+        {/* Structural problems in the file about to be exported. Silent when
+            there are none, which is the common case. The full text of each
+            finding is in the tooltip and in the console; the bar has room for
+            a count. See lib/repxAudit.ts. */}
+        {repxAudit && !repxAudit.ok && (
+          <span
+            className={repxAudit.errors ? 'wb-bad' : 'wb-warn'}
+            title={repxAudit.findings.map((f) => `${f.severity.toUpperCase()}: ${f.message}`).join('\n\n')}
+          >
+            {repxAudit.errors > 0 && `${repxAudit.errors} REPX error${repxAudit.errors > 1 ? 's' : ''}`}
+            {repxAudit.errors > 0 && repxAudit.warnings > 0 && ', '}
+            {repxAudit.warnings > 0 && `${repxAudit.warnings} REPX warning${repxAudit.warnings > 1 ? 's' : ''}`}
           </span>
         )}
       </div>

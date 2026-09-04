@@ -280,6 +280,10 @@ src/
                        repxBindings (column headings to DevExpress field names
                        for expression bindings — derived in code so the guess
                        is testable, not left to the prompt),
+                       repxAudit (asks what is still wrong with the finished
+                       report after every repair has run — errors mean content
+                       will be lost, warnings mean it opens and is a worse
+                       report than it should be),
                        userInstructions (an empty composer means "no request",
                        not an invented one — the two cases are different
                        prompts rather than one with a placeholder in it),
