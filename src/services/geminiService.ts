@@ -5,6 +5,7 @@ import { parseAnalysisResponse } from "../lib/analysisResponse";
 import { cacheModel, readCachedModel, readCachedModelSet, clearCachedModel } from "../lib/modelCache";
 import { liftReportMargins } from "../lib/repxMargins";
 import { ensureUniqueRefs } from "../lib/repxRefs";
+import { normalizeItemNames } from "../lib/repxItems";
 import { bindDetailRow, bindFooterTotals, bindingEnabled } from "../lib/repxBindingPlan";
 import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
@@ -1009,6 +1010,8 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
           - Images: <Item3 Ref="5" ControlType="XRPictureBox" Name="pictureBox1" Sizing="ZoomImage" LocationFloat="0,100" SizeF="150,150" />
           - Lines: <Item4 Ref="6" ControlType="XRLine" Name="line1" LocationFloat="0,260" SizeF="300,5" />
           - Page Info: <Item5 Ref="7" ControlType="XRPageInfo" Name="pageInfo1" PageInfo="DateTime" LocationFloat="0,270" SizeF="150,20" />
+            - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
+            - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
           Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
@@ -1042,7 +1045,10 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
           
           CRITICAL XML VALIDITY RULES FOR repxContent:
           - The repxContent MUST be strictly valid XML.
-          - **EVERY Ref VALUE IN THE DOCUMENT MUST BE DIFFERENT.** Number them once, straight through, from Ref="0" on the root: 0, 1, 2, 3 ... to the last element, counting bands, controls, rows and cells as one single sequence. Do NOT restart numbering inside a band, a table or a row, and do NOT copy the Ref numbers out of the examples below — those examples each start again from a low number and are NOT a numbering scheme for the whole file. DevExpress reads Ref as the identity of an object, so two elements sharing one value are loaded as ONE object and the second element's content is DISCARDED SILENTLY: the report opens with no error and controls missing.
+          - **THE TAG NAME AND THE Ref ARE TWO DIFFERENT NUMBERS. NEVER MAKE THEM MATCH.** Get this wrong and the report opens with no error and its tables missing.
+            - **The tag name ItemN is the element's POSITION IN ITS OWN COLLECTION, and it RESTARTS AT Item1 inside every single container.** Every <Bands>, <Controls>, <Rows>, <Cells> starts again from Item1: <Rows><Item1 ...><Item2 ...></Rows>, and inside each of those rows <Cells><Item1 ...><Item2 ...></Cells>. DevExpress finds a collection's members BY THIS NAME, so a <Cells> whose first child is Item14 contains no Item1 and is read as an EMPTY collection — the cells are discarded silently and the table vanishes.
+            - **Ref is the opposite: ONE sequence for the whole document, and every value must be different.** Ref="0" on the root, then 1, 2, 3 ... to the last element, counting bands, controls, rows and cells together, never restarting. Two elements sharing a Ref are loaded as ONE object and the second one's content is DISCARDED SILENTLY.
+            - So a table's second row is <Item2 Ref="19" ...> — Item2 because it is the second row in <Rows>, Ref="19" because nineteen elements came before it in the file. The two numbers have no relationship. Do NOT copy Ref values out of the examples below; each example restarts from a low number and is not a numbering scheme for the whole file.
           - ALL XML attribute values MUST be enclosed in double quotes (e.g., Text="My Label").
           - NEVER leave a string unclosed. Check every single quote.
           - If you need to use quotes, angle brackets, or ampersands inside an attribute value, use proper XML entities (e.g., &quot;, &apos;, &lt;, &gt;, &amp;).
@@ -1528,6 +1534,20 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
     // asks the model for unique numbering and the cheat sheet's snippets each
     // restart at Ref="1", so this is arithmetic rather than an instruction.
     // See `repxRefs.ts` for the measurement.
+    // Before everything, including the Ref repair. `ItemN` is a position inside
+    // its own collection and restarts at Item1 in each one; a model that runs
+    // the names straight through the document produces collections DevExpress
+    // reads as empty, and the tables disappear on load with no error. Observed
+    // on a real generation: 3 tables and 44 cells declared, 0 and 0 loaded.
+    // See `repxItems.ts` — including the part where the prompt caused it.
+    const items = normalizeItemNames(parsed.repxContent);
+    if (items.applied) {
+      parsed.repxContent = items.xml;
+      console.warn(`REPX item numbering repaired: ${items.reason}.`);
+    } else {
+      console.debug(`REPX item numbering: ${items.reason}.`);
+    }
+
     const refs = ensureUniqueRefs(parsed.repxContent);
     if (refs.applied) {
       parsed.repxContent = refs.xml;

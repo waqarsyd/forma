@@ -318,6 +318,27 @@ Sequence, by contrast, is irrelevant: a document renumbered 101..114 loads fine,
 
 **Still inferred for the model's own output.** No live generation has been checked for collisions. The pass is silent when there is nothing to do and logs a warning when there is, so the next real generation settles it.
 
+### `ItemN` is a position, `Ref` is an identity, and confusing them empties the report
+
+The most expensive thing found this way, and it was **self-inflicted by the fix above**.
+
+Every collection member is named for its index *within its own collection*: `<Rows><Item1><Item2></Rows>`, and inside each row `<Cells><Item1><Item2></Cells>`. The numbering restarts at 1 in every container. DevExpress looks members up by that name, so a `<Cells>` whose first child is `Item14` contains no `Item1` and **is read as an empty collection**.
+
+The `Ref` rule added on 2026-09-04 said to number "straight through ... do NOT restart numbering inside a band, a table or a row". That is right for `Ref` and precisely wrong for `ItemN`, and the model applied it to both — the next real generation came back with `Item12/Ref="12"`, `Item13/Ref="13"`, `Item14/Ref="14"`, the two locked together. Measured on that report, changing nothing but the names:
+
+    as generated   3 tables and 44 cells declared  ->  0 tables,  0 cells loaded
+    renumbered     3 tables and 44 cells declared  ->  3 tables, 44 cells, 12 bindings loaded
+
+No exception, no warning, a file that opens in the designer with every table missing. The user's report of "inaccurate" output was this.
+
+Two lessons worth more than the fix. **A prompt rule about one attribute can be generalised by the model to a different one that looks like it** — "do not restart numbering" was heard as a statement about numbering in general. And **`RepxProbe inspect` caught it in one command on the first export**, where reading the XML by eye had not: the file looks entirely reasonable. `src/lib/repxItems.ts` now repairs it in code and runs first in the post-processing, before anything else reads the structure.
+
+### `XRPageInfo` — the enum the cheat sheet never listed
+
+Same generation, same diffing method: comparing our XML against DevExpress's own re-save of it showed `PageInfo="NumberOfPagesNoWith  PageNumber"` **dropped entirely** and `Format=` rewritten as `TextFormatString=`. The model invented an enum value by concatenating two ideas, because the cheat sheet showed exactly one example (`PageInfo="DateTime"`) and never said the property was an enum.
+
+The eight members are `None`, `Number`, `NumberOfTotal`, `Total`, `RomLowNumber`, `RomHiNumber`, `DateTime`, `UserName`; "Page 1 of 12" is `NumberOfTotal` plus `TextFormatString="Page {0} of {1}"`. All now in the prompt. **Diffing an artifact against its own re-save is a cheap general audit** — DevExpress silently normalises what it understands and drops what it does not, so the difference is a list of everything being emitted wrongly.
+
 ### The binding syntax, transcribed rather than guessed
 
 ```xml

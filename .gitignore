@@ -140,3 +140,6 @@ tools/**/obj/
 # `git show <commit>~1:<path>` — the comments left at each removal site name the
 # commit. Do not reintroduce the folder without also reintroducing what enforced
 # it; a quarantine nothing polices is just a directory of files people forget.
+
+# RepxProbe writes <input>.resaved beside whatever it inspects.
+*.repx.resaved

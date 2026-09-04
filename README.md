@@ -280,6 +280,10 @@ src/
                        repxBindings (column headings to DevExpress field names
                        for expression bindings — derived in code so the guess
                        is testable, not left to the prompt),
+                       repxItems (ItemN is a position inside its own collection
+                       and restarts at Item1 in each — a document-wide sequence
+                       makes DevExpress read every collection as empty and drop
+                       the tables silently),
                        repxRefs (makes the model's Ref values unique — a repeat
                        makes DevExpress alias two elements onto one and drop
                        the second's content, with no error anywhere),
