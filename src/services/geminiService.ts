@@ -1095,6 +1095,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
           
           CRITICAL XML VALIDITY RULES FOR repxContent:
           - The repxContent MUST be strictly valid XML.
+          - **EVERY Ref VALUE IN THE DOCUMENT MUST BE DIFFERENT.** Number them once, straight through, from Ref="0" on the root: 0, 1, 2, 3 ... to the last element, counting bands, controls, rows and cells as one single sequence. Do NOT restart numbering inside a band, a table or a row, and do NOT copy the Ref numbers out of the examples below — those examples each start again from a low number and are NOT a numbering scheme for the whole file. DevExpress reads Ref as the identity of an object, so two elements sharing one value are loaded as ONE object and the second element's content is DISCARDED SILENTLY: the report opens with no error and controls missing.
           - ALL XML attribute values MUST be enclosed in double quotes (e.g., Text="My Label").
           - NEVER leave a string unclosed. Check every single quote.
           - If you need to use quotes, angle brackets, or ampersands inside an attribute value, use proper XML entities (e.g., &quot;, &apos;, &lt;, &gt;, &amp;).

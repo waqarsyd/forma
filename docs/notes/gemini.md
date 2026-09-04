@@ -293,6 +293,56 @@ One attempt, and any failure leaves the original untouched: the rewrite is check
 
 **Not validated live.** No key was used for any of this: the detection is covered by fixtures cut the way the real one was, and the rewrite path has never run against Gemini. The honest test is a document that actually triggers the quiet truncation, and nobody has one — three attempts with dense invoices produced complete XML every time. Watch the console for *"The generated REPX is unfinished"*; that line firing is the first real evidence either way. The user is told nothing today beyond the existing Export refusal — threading a "this was repaired" notice through to the UI is the obvious next step and touches `App.tsx`, so it was left out.
 
+## DevExpress can be asked directly, and it answers (2026-09-04)
+
+**The most useful thing in this section is the method, not the findings.** Every REPX question this project could not settle from the documentation had been queued behind "open the designer and look" — a manual step that needs the owner's own desktop, because a GUI process started from an agent shell paints where nobody can see it. Four such questions had been waiting.
+
+None of them needed the designer. `XtraReport.SaveLayoutToXml` and `LoadLayoutFromXml` are **library calls on an installed assembly**, with no window anywhere near them. A twenty-line console program compiled with `csc.exe` against `C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\*.dll` writes a report and prints exactly what the serializer produced — and, run the other way, says whether a file we generated loads and what it contains when it does. That turns "we think the XML looks like this" into a measurement, and it is repeatable in an agent shell in about a minute. **Reach for it before writing REPX syntax from a class reference.** The DevExpress API docs describe objects; they do not describe the file, and the file is what this app emits.
+
+### `Ref` must be unique, and a duplicate deletes content
+
+The finding that matters most, because the failure is silent and the app was exposed to it.
+
+DevExpress uses `Ref` as **object identity** when loading. Two elements carrying the same value are not two objects with a clashing label — the loader treats the second as *the same object* as the first and discards what it said. Measured on one document differing only in its `Ref` values:
+
+| | cells | bindings | texts |
+|---|---|---|---|
+| unique | 6 | 3 | all six |
+| duplicated | 3 | 0 | header row only — the detail row was gone |
+
+No exception, no warning, and a file that opens in the designer with controls missing.
+
+Sequence, by contrast, is irrelevant: a document renumbered 101..114 loads fine, and an element with **no `Ref` at all** loads fine and re-saves byte-identically with `Ref` regenerated 0..19. It is write-side bookkeeping in every respect except uniqueness.
+
+**Nothing was stopping a collision.** The prompt never asked for unique numbering, `checkRepx` parses for well-formedness and does not look at `Ref`, and the cheat sheet's snippets each restart from the bottom — the label example opens `Ref="1"` while ROOT STRUCTURE above it has already used `Ref="1"` for the `TopMarginBand`. That is precisely the shape *A cheat sheet is not an instruction* and the version-attribute incident both describe: a concrete example outranks whatever is said near it. `src/lib/repxRefs.ts` now renumbers repeats above the document maximum, keeping the first occurrence and leaving bare back-references alone; it runs first in `analyzeReportDesign`'s post-processing because every pass after it assumes the document DevExpress will load is the document we are looking at.
+
+**Still inferred for the model's own output.** No live generation has been checked for collisions. The pass is silent when there is nothing to do and logs a warning when there is, so the next real generation settles it.
+
+### The binding syntax, transcribed rather than guessed
+
+```xml
+<Item1 Ref="10" ControlType="XRTableCell" Name="cellDesc" Weight="3" Text="Widget">
+  <ExpressionBindings>
+    <Item1 Ref="11" EventName="BeforePrint" PropertyName="Text" Expression="[Description]" />
+  </ExpressionBindings>
+</Item1>
+```
+
+Four things in there shape the code. It is `ExpressionBindings`, not the legacy `DataBindings`, and no report-level mode attribute appears. **The binding item carries no `ControlType`** — unlike every other element, which matters because the helpers locate things *by* `ControlType` and a binding is therefore invisible to them. `Text=` survives alongside the binding and is kept, as a fallback for a field that never resolves. A summary is an ordinary expression, `Expression="sumSum([Amount])"`, and `TextFormatString="{0:c2}"` is a plain cell attribute — so neither needed new structure.
+
+### What binding does, and the two bugs that only the round trip found
+
+`repxBindings.ts` derives a field name per column heading and decides whether a column earns a format; `repxBindingPlan.ts` locates the rows, proves they correspond, and splices. Off unless `VITE_FORMA_BIND=true`, mirroring `VITE_FORMA_FLAT`, because it changes what the report *says*: a bound cell shows a field name where the source showed a number, and the names are a guess at a schema taken from headings.
+
+The correspondence check is the design. Headings live in `PageHeader` and the data row in `Detail` — two tables in two bands with nothing tying them together — so binding column *n* to heading *n* is an assumption that fails exactly when a header cell spans two columns. When the counts disagree it declines, because a confident wrong field name in a file the user trusts is worse than no binding.
+
+Two defects survived unit tests and were caught by loading the output back:
+
+- **The wiring order was impossible.** `bindFooterTotals` called `planDetailBinding`, which declines once the detail row is bound, so the detail-then-totals order could never have applied a total. The two callers disagree about what "already bound" means — a stop condition for one, the expected state for the other — and folding that judgement into the shared analysis is what made the order unsatisfiable.
+- **A sum was bound over a label.** The loader read back `ReportFooter.cell2: sumSum([UnitPrice])` on a cell whose text was `"Total"`. A binding overrides `Text` at print time, so the label would have silently become a number. The footer pass now also requires the cell to hold a figure itself.
+
+**`{0:n0}` is deliberately never emitted.** It renders 12345 as "12,345", which is right for a quantity and wrong for an invoice number, order id, product code or year — all columns of bare integers that one sample value cannot distinguish from a count. A format that mangles an identifier is worse than none, because the unformatted column was already correct. Currency and dates only, where the meaning is not in doubt.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.
