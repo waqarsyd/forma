@@ -320,6 +320,10 @@ tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
                        in the real DevExpress designer — C# and MSBuild, with
                        its own README; nothing in the web app depends on it
+tools/RepxProbe/       console tool that asks DevExpress what a .repx really
+                       contains — `emit` prints what the serializer writes,
+                       `inspect` reports what the loader sees and fails when a
+                       file silently lost content; its own README too
 public/                static assets served at / — the logo pair (PNG + WebP,
                        light and dark), favicon.png, and the pre-rendered
                        og-card.png
