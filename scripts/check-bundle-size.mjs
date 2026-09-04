@@ -39,7 +39,33 @@ const BUDGETS = [
   // would have had 87% headroom and could never fire again, which is the failure
   // this whole script exists to prevent. Tightened to sit just above the new
   // measurement instead.
-  { prefix: 'index-', ext: '.js', max: 660_000, note: 'eager entry chunk + the genai chunk' },
+  // Lowered again from 660_000 on 2026-09-04, when services/geminiService.ts was
+  // deferred behind lib/geminiClient.ts and the entry chunk fell from 649,111 B
+  // to 588,368 B -- 60,743 B, including 19,615 B of mega-prompt that every
+  // visitor to the landing page was downloading to read marketing copy. Left at
+  // 660_000 the cap would have had 11% headroom against a chunk that had just
+  // shrunk by 9%, which is the same "can never fire again" failure the
+  // 2026-09-01 entry applies. Tightened to sit just above the new measurement,
+  // exactly as that one was.
+  //
+  // 625_000 rather than 600_000, which was tried first and is the mistake this
+  // whole file is about: it put the chunk at 98.1%, so the next routine change
+  // would have tripped a size check for no reason and taught someone to raise
+  // the number instead of reading it. 588,368 against 625_000 is 94.1%, which is
+  // where the 2026-09-01 cap and the firebase- cap both sit. Tight enough to
+  // trip on a regression, loose enough that only a regression trips it.
+  { prefix: 'index-', ext: '.js', max: 625_000, note: 'eager entry chunk + the genai chunk' },
+  /*
+   * The generation service, lazy as of 2026-09-04.
+   *
+   * Budgeted because it is almost entirely one template literal, and prompt text
+   * is the thing in this repository most likely to grow without anyone noticing:
+   * every fidelity fix so far has added prose to it, and nothing else measures
+   * it. The other direction -- the whole service silently returning to the eager
+   * path, which is what a value import in App.tsx would do -- does not show up
+   * here. It shows up as the entry chunk jumping ~61 kB against the cap above.
+   */
+  { prefix: 'geminiService-', ext: '.js', max: 70_000, note: 'the mega-prompt + generation service, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it

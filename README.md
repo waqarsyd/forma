@@ -289,6 +289,10 @@ src/
                        two rows do not correspond),
                        attachments, panelSize, announcements, datetime,
                        modelCatalog, reportConfigStore, designerBridge,
+                       geminiClient (loads the generation service on demand, so
+                       its 19.6 kB prompt is not on every page load) and
+                       modelCache (the session's resolved model — eager, because
+                       a synchronous effect clears it),
                        analysisResponse (is a failed generation truncated or
                        malformed), geminiErrors (what the user is told when a
                        request fails), savedReport + accountData (the two

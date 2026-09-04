@@ -2,6 +2,7 @@ import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
+import { cacheModel, readCachedModel, readCachedModelSet, clearCachedModel } from "../lib/modelCache";
 import { liftReportMargins } from "../lib/repxMargins";
 import { ensureUniqueRefs } from "../lib/repxRefs";
 import { bindDetailRow, bindFooterTotals, bindingEnabled } from "../lib/repxBindingPlan";
@@ -213,71 +214,17 @@ export const MODEL_PREFERENCE = [
   "gemini-pro-latest",
 ];
 
-const MODEL_CACHE_KEY = "geminiModel:session";
-/**
- * Every model the probe found this key *can* call, not just the winner. The
- * probes already ran and their results were being thrown away; keeping them is
- * what lets an overloaded generation fall back to a different model instead of
- * failing (see the 503 path in `analyzeReportDesign`).
+/*
+ * The session model cache moved to `lib/modelCache.ts` on 2026-09-04, when this
+ * service was deferred behind `lib/geminiClient.ts`. `App.tsx` clears it from a
+ * synchronous `useEffect`, so it is the one part of this file the eager bundle
+ * still needs; leaving it here would have pulled the mega-prompt back in.
+ *
+ * `readCachedModel` and `clearCachedModel` are re-exported below because
+ * `modelResolution.test.ts` imports them from this module and there is no
+ * reason to churn a passing test to record a bundling decision.
  */
-const MODEL_SET_CACHE_KEY = "geminiModels:session";
-let resolvedModel: string | null = null;
-let resolvedModelSet: string[] | null = null;
-
-/** Exported so the debug console can report the detected model without re-probing. */
-export function readCachedModel(): string | null {
-  if (resolvedModel) return resolvedModel;
-  try {
-    return sessionStorage.getItem(MODEL_CACHE_KEY);
-  } catch {
-    return null; // Node, or storage disabled
-  }
-}
-
-function cacheModel(model: string, usable?: string[]): void {
-  resolvedModel = model;
-  try {
-    sessionStorage.setItem(MODEL_CACHE_KEY, model);
-  } catch {
-    /* in-memory copy still applies for this page */
-  }
-  if (usable) {
-    resolvedModelSet = usable;
-    try {
-      sessionStorage.setItem(MODEL_SET_CACHE_KEY, JSON.stringify(usable));
-    } catch {
-      /* in-memory copy still applies for this page */
-    }
-  }
-}
-
-/**
- * Models this key can call, in preference order, or `null` if that has not been
- * established this session. Never probes: a caller that needs it to be
- * populated should have gone through `resolveModel` first.
- */
-function readCachedModelSet(): string[] | null {
-  if (resolvedModelSet) return resolvedModelSet;
-  try {
-    const raw = sessionStorage.getItem(MODEL_SET_CACHE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    return Array.isArray(parsed) && parsed.every((m) => typeof m === "string") ? parsed : null;
-  } catch {
-    return null; // Node, storage disabled, or a corrupt entry
-  }
-}
-
-/** Drop the cached choice — called when a model 404s mid-flight, or the key changes. */
-export function clearCachedModel(): void {
-  resolvedModel = null;
-  resolvedModelSet = null;
-  try {
-    sessionStorage.removeItem(MODEL_CACHE_KEY);
-    sessionStorage.removeItem(MODEL_SET_CACHE_KEY);
-  } catch {
-    /* nothing to clear */
-  }
-}
+export { readCachedModel, clearCachedModel } from "../lib/modelCache";
 
 /**
  * Ask Google what models exist. **Discovery only — never trusted as an answer.**

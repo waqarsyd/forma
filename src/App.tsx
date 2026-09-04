@@ -57,12 +57,16 @@ import {
 /* `landing/` is the shared marketing design system, not a private folder — see
    CLAUDE.md. Eyebrow is reused here rather than restating its markup. */
 import { Eyebrow } from './components/landing/sections';
-import {
-  analyzeReportDesign,
-  chatReply,
-  validateApiKey,
-  clearCachedModel,
-  MissingApiKeyError,
+/*
+ * Types only — erased at compile time, so this line costs nothing at runtime and
+ * does NOT pull the service into the eager chunk. The values it used to import
+ * alongside them (`analyzeReportDesign`, `chatReply`, `validateApiKey`,
+ * `MissingApiKeyError`) now arrive through `loadGemini()` below, which is what
+ * keeps the 19.6 kB mega-prompt off the landing page. Adding a value back to
+ * this import undoes that silently; the entry-chunk budget in
+ * scripts/check-bundle-size.mjs is what would catch it.
+ */
+import type {
   ReportLayout,
   ReportElement,
   ReportConfig,
@@ -70,6 +74,9 @@ import {
   StreamProgress,
   ChatTurn,
 } from './services/geminiService';
+import { loadGemini, isMissingApiKey } from './lib/geminiClient';
+/* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
+import { clearCachedModel } from './lib/modelCache';
 import {
   encryptApiKey,
   decryptApiKey,
@@ -1923,6 +1930,7 @@ export default function App() {
     setKeyCheck(null);
     setVaultBusy(true);
     try {
+      const { validateApiKey } = await loadGemini();
       const { valid, message } = await validateApiKey(config.customApiKey || '');
       setKeyCheck({ tone: valid ? 'ok' : 'error', text: message });
     } finally {
@@ -2581,6 +2589,7 @@ export default function App() {
       const attachmentParts = toAttachmentParts(currentPreviews, currentTexts);
 
       console.debug(copy.request);
+      const { analyzeReportDesign } = await loadGemini();
       const response = await analyzeReportDesign(
         currentPrompt || "Generate a professional DevExpress report layout based on these visuals.",
         attachmentParts,
@@ -2629,7 +2638,7 @@ export default function App() {
 
       // No key configured is a setup step, not a failure — send the user straight
       // to the place they can fix it instead of showing a dead-end error.
-      if (err instanceof MissingApiKeyError) {
+      if (isMissingApiKey(err)) {
         setError('Add your own Gemini API key in Settings to generate reports.');
         setIsConfigOpen(true);
         return;
@@ -2783,6 +2792,7 @@ export default function App() {
           ...messages.map((m) => ({ role: m.role, text: m.text })),
           { role: 'user', text: currentPrompt },
         ];
+        const { chatReply } = await loadGemini();
         const outcome = await chatReply(history, config, undefined, setStreamingReply);
 
         if (!outcome.wantsReport) {
@@ -2803,7 +2813,7 @@ export default function App() {
         }]);
       } catch (err: any) {
         console.error('Chat turn failed:', err);
-        const message = err instanceof MissingApiKeyError
+        const message = isMissingApiKey(err)
           ? 'Add your Gemini API key to use the workspace.'
           : err?.message || 'Could not reach the assistant.';
         setError(message);
@@ -2812,7 +2822,7 @@ export default function App() {
         setMessages(prev => prev.map(m =>
           m.id === newUserMsg.id ? { ...m, error: message } : m
         ));
-        if (err instanceof MissingApiKeyError) setIsConfigOpen(true);
+        if (isMissingApiKey(err)) setIsConfigOpen(true);
         return;
       } finally {
         setIsChatting(false);
