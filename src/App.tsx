@@ -2900,8 +2900,8 @@ export default function App() {
    * succeeded. This is that gap. See `repxAudit.ts`.
    */
   const repxAudit = useMemo(
-    () => (result?.repxContent ? auditRepx(result.repxContent) : null),
-    [result?.repxContent]
+    () => (result?.repxContent ? auditRepx(result.repxContent, result.layout) : null),
+    [result?.repxContent, result?.layout]
   );
 
   /**

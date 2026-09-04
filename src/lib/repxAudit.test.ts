@@ -148,6 +148,83 @@ describe('auditRepx warnings', () => {
   });
 });
 
+/**
+ * The cross-check. Three live runs from one image on 2026-09-04 produced a
+ * Detail band once and none the other two times; "there is no Detail band" is
+ * correct for a certificate and a defect for a job card, and the layout is the
+ * only thing in the response that knows which this is.
+ */
+const layoutWith = (rows: number, sections = 1): any => ({
+  title: 'T',
+  pageWidth: 850,
+  sections: Array.from({ length: sections }, (_, i) => ({
+    id: `s${i}`,
+    name: i === 0 ? 'Detail' : `Section${i}`,
+    type: i === 0 ? 'detail' : 'header',
+    height: 100,
+    elements: i === 0
+      ? [{ type: 'table', rows: Array.from({ length: rows }, () => ({ cells: [{ text: 'x' }] })) }]
+      : [{ type: 'label', text: 'x' }],
+  })),
+});
+
+describe('auditRepx cross-checked against the layout', () => {
+  it('says nothing extra when the report and the mockup agree', () => {
+    // One section, one content band (Detail), and a table in both.
+    expect(codes(healthy)).toEqual([]);
+    expect(auditRepx(healthy, layoutWith(4)).findings.map((f) => f.code)).toEqual([]);
+  });
+
+  it('turns "no Detail band" from an observation into a diagnosis', () => {
+    const plain = auditRepx(noDetail).findings.find((f) => f.code === 'no-detail-band')?.message ?? '';
+    const withEvidence = auditRepx(noDetail, layoutWith(12)).findings.find((f) => f.code === 'no-detail-band')?.message ?? '';
+    expect(plain).not.toMatch(/12-row grid/);
+    expect(withEvidence).toMatch(/mockup drew a 12-row grid in "Detail"/);
+    expect(withEvidence).toMatch(/they belong in a Detail band as ONE row/);
+  });
+
+  it('leaves the plain wording when the mockup has no grid either', () => {
+    // A certificate: no Detail band is the right answer, so no evidence is added.
+    const single = auditRepx(noDetail, layoutWith(1)).findings.find((f) => f.code === 'no-detail-band')?.message ?? '';
+    expect(single).not.toMatch(/row grid/);
+  });
+
+  it('reports a grid the mockup drew that the report emitted as loose controls', () => {
+    const noTable = report(TOP + '<Item2 Ref="2" ControlType="DetailBand" Name="Detail"><Controls>' +
+      '<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="A" /></Controls></Item2>' + bottom(3, 9));
+    const found = auditRepx(noTable, layoutWith(9)).findings.map((f) => f.code);
+    expect(found).toContain('grid-not-a-table');
+    expect(auditRepx(noTable, layoutWith(9)).findings.find((f) => f.code === 'grid-not-a-table')?.message)
+      .toMatch(/cannot be bound to data, resized as a table, or repeated/);
+  });
+
+  it('does not claim a missing table when the mockup drew no grid', () => {
+    const noTable = report(TOP + '<Item2 Ref="2" ControlType="DetailBand" Name="Detail"><Controls>' +
+      '<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="A" /></Controls></Item2>' + bottom(3, 9));
+    expect(codes(noTable)).not.toContain('grid-not-a-table');
+    expect(auditRepx(noTable, layoutWith(1)).findings.map((f) => f.code)).not.toContain('grid-not-a-table');
+  });
+
+  it('reports the band-versus-section disagreement gemini.md says nothing enforces', () => {
+    // The report has one content band (Detail); the mockup claims three sections.
+    const found = auditRepx(healthy, layoutWith(4, 3)).findings.map((f) => f.code);
+    expect(found).toContain('band-section-mismatch');
+  });
+
+  it('does not count margin bands as sections', () => {
+    // healthy has TopMargin + Detail + BottomMargin. Only Detail is content, so
+    // a one-section layout agrees with it.
+    expect(auditRepx(healthy, layoutWith(4, 1)).findings.map((f) => f.code)).not.toContain('band-section-mismatch');
+  });
+
+  it('runs the structural checks with no layout at all', () => {
+    // A report loaded from an older save may not have one.
+    for (const layout of [undefined, null]) {
+      expect(auditRepx(noDetail, layout).findings.map((f) => f.code)).toContain('no-detail-band');
+    }
+  });
+});
+
 describe('auditRepx reporting', () => {
   it('counts errors and warnings separately', () => {
     const both = noDetail.replace('Ref="9"', 'Ref="1"');

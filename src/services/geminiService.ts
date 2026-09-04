@@ -1599,7 +1599,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
     // still wrong after every repair has run. An error here means a repair
     // declined rather than that nobody looked, which is worth knowing about.
     // See `repxAudit.ts`; the UI shows the findings beside the REPX.
-    const audit = auditRepx(parsed.repxContent);
+    const audit = auditRepx(parsed.repxContent, parsed.layout);
     if (audit.errors) {
       console.error(`REPX audit — ${audit.summary}.`);
     } else if (audit.warnings) {

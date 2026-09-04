@@ -39,6 +39,7 @@
 import { checkRepxComplete } from './repxTruncation';
 import { normalizeItemNames } from './repxItems';
 import { auditRefs } from './repxRefs';
+import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
 
@@ -87,13 +88,42 @@ function elementsOfType(xml: string, type: string): string[] {
 
 const has = (xml: string, type: string) => new RegExp(`ControlType="${type}"`).test(xml);
 
+/** The largest grid the model drew in the mockup, if it drew one. */
+function biggestGrid(layout: ReportLayout | null | undefined): { rows: number; section: string } | null {
+  let best: { rows: number; section: string } | null = null;
+  for (const section of layout?.sections ?? []) {
+    for (const element of section.elements ?? []) {
+      const rows = element.type === 'table' ? element.rows?.length ?? 0 : 0;
+      if (rows > (best?.rows ?? 0)) best = { rows, section: section.name || section.type };
+    }
+  }
+  return best;
+}
+
 /**
  * Audit a finished report.
  *
  * Runs after the repair passes, so the errors it can still report are the ones
  * a repair declined to make rather than ones nobody looked for.
+ *
+ * ## Why the layout is worth passing in
+ *
+ * The two artifacts come out of the same response and describe the same
+ * document, so where they disagree, one of them is wrong — and that is
+ * checkable in a way neither is on its own. gemini.md has recorded since
+ * 2026-08-29 that they can disagree about the band count and that nothing
+ * enforces the correspondence; this is the enforcement.
+ *
+ * It also turns the vaguest finding here into the most specific. "There is no
+ * Detail band" is true of a certificate, where it is correct. "The mockup shows
+ * a 12-row grid and there is no Detail band" is a defect, and the difference
+ * between them is exactly the evidence the layout carries. Observed on three
+ * live runs from one image on 2026-09-04, two of which produced no Detail band.
+ *
+ * The layout is optional: a report loaded from an old save may not have one, and
+ * the structural checks are worth running either way.
  */
-export function auditRepx(xml: string | undefined | null): RepxAudit {
+export function auditRepx(xml: string | undefined | null, layout?: ReportLayout | null): RepxAudit {
   const text = xml ?? '';
   const findings: RepxFinding[] = [];
   const add = (severity: RepxSeverity, code: string, message: string) =>
@@ -133,13 +163,49 @@ export function auditRepx(xml: string | undefined | null): RepxAudit {
 
   // --- warnings: it opens, but it is a worse report than it should be --------
 
+  const grid = biggestGrid(layout);
+
   if (!has(text, 'DetailBand')) {
+    // The layout is what turns this from an observation into a diagnosis: a
+    // certificate legitimately has no Detail band, a document whose mockup
+    // shows a multi-row grid does not.
+    const evidence = grid && grid.rows >= 2
+      ? ` The mockup drew a ${grid.rows}-row grid in "${grid.section}", so this document does have repeating rows — they belong in a Detail band as ONE row, not in the header.`
+      : '';
     add(
       'warning',
       'no-detail-band',
       'There is no Detail band, so this report prints its content exactly once and cannot be bound to a data source. ' +
-        'It is a picture of the document rather than something that can produce it for every record.'
+        'It is a picture of the document rather than something that can produce it for every record.' + evidence
     );
+  }
+
+  // The grid exists in the mockup and nowhere in the report: it was drawn as
+  // free-standing controls instead of a table. Documented in gemini.md as the
+  // failure that tracked whether the user's prompt happened to say "table";
+  // the cost is columns that cannot be bound, resized or repeated.
+  if (grid && grid.rows >= 2 && !has(text, 'XRTable')) {
+    add(
+      'warning',
+      'grid-not-a-table',
+      `The mockup drew a ${grid.rows}-row grid in "${grid.section}" but the report contains no XRTable at all, ` +
+        'so that region was emitted as separate controls. Those columns cannot be bound to data, resized as a table, or repeated per record.'
+    );
+  }
+
+  // The prompt asks for one section per content band, named after it. Nothing
+  // enforced that until now, and the band count shown in the UI comes from the
+  // layout while the file the user exports is the REPX.
+  if (layout?.sections?.length) {
+    const contentBands = (text.match(/ControlType="(?!TopMarginBand|BottomMarginBand)\w*Band"/g) ?? []).length;
+    if (contentBands && contentBands !== layout.sections.length) {
+      add(
+        'warning',
+        'band-section-mismatch',
+        `The mockup has ${layout.sections.length} section(s) and the report has ${contentBands} content band(s). ` +
+          'They are meant to describe the same structure, so the preview is not showing what the exported file contains.'
+      );
+    }
   }
 
   if (!has(text, 'TopMarginBand') || !has(text, 'BottomMarginBand')) {
