@@ -1,27 +1,58 @@
 /**
- * Locating the cells a data binding would go on, and proving they line up.
+ * Binding a report's detail row to data: finding the cells, proving they line
+ * up, and writing the bindings in.
  *
- * ## What this is, and what it deliberately is not
+ * ## The syntax here was measured, not inferred
  *
- * Stage 2 of the binding work, minus its last step. This file finds the header
- * row and the detail row, proves they describe the same columns, derives a
- * field name per column, and hands back the exact character spans a rewrite
- * would splice into. It does **not** write any binding XML.
+ * DevExpress documents `ExpressionBinding` as an API -- a constructor taking
+ * `EventName`, `PropertyName` and `Expression` -- and nowhere states what the
+ * serializer writes into a `.repx`. Guessing that from a class reference would
+ * be the `X.Y.3.0` mistake with a worse failure mode, because a malformed
+ * binding makes the file refuse to open rather than merely render wrong.
  *
- * That omission is the point. DevExpress documents `ExpressionBinding` as an
- * API -- a constructor taking `EventName`, `PropertyName` and `Expression` --
- * and nowhere states what the serializer writes into a `.repx` for one. This
- * project's standard is that REPX syntax is grounded in observed real files:
- * the `X.Y.3.0` version pattern was inferred from two of them, and the note in
- * gemini.md says outright not to guess a build number. Guessing an element
- * name and nesting from a class reference is the same error with a larger
- * blast radius, because a malformed binding makes the file fail to open rather
- * than merely render wrong.
+ * So it was not guessed. `SaveLayoutToXml` is a library call rather than
+ * anything to do with the designer window, so on 2026-09-04 a console program
+ * compiled against the installed DevExpress 20.1 assemblies wrote a bound
+ * report and the output was read directly. Verbatim, that is:
  *
- * So the emitter waits for one file out of the installed 20.1 designer. Every
- * part that does not depend on that answer is here and tested, which is most
- * of the work: the walking, the correspondence check, and the five ways this
- * can honestly decline.
+ *     <Item1 Ref="10" ControlType="XRTableCell" Name="cellDesc" Weight="3" Text="Widget">
+ *       <ExpressionBindings>
+ *         <Item1 Ref="11" EventName="BeforePrint" PropertyName="Text" Expression="[Description]" />
+ *       </ExpressionBindings>
+ *     </Item1>
+ *
+ * Four things that shape the code below came out of that file:
+ *
+ * - The binding item carries **no `ControlType`**, unlike every other element
+ *   in the document. `parseElements` finds things *by* `ControlType`, so a
+ *   binding is invisible to it -- which is why `EXISTING_BINDING` is a plain
+ *   substring test rather than a lookup through the element list.
+ * - **`Text=` survives** alongside the binding, so it is kept. It is a
+ *   harmless fallback for a cell whose field never resolves.
+ * - **`Ref` must be unique, need not be sequential, and may be omitted.** This
+ *   is the one the first probe got wrong, and it is worth the space because
+ *   the failure is silent. The designer numbers bindings in document order, so
+ *   inserting one *looks* like it invalidates every later `Ref`. It does not:
+ *   sequence is irrelevant, and a renumbered 101..114 document loads fine.
+ *   **But a duplicate `Ref` makes the loader alias the two elements onto one
+ *   object**, and the second one's content simply disappears -- measured on
+ *   one document that differed only in its `Ref` values: unique gave 6 cells
+ *   and 3 bindings, duplicated gave 3 cells and 0 bindings, no error either
+ *   time. The first probe missed it by counting bindings without checking
+ *   identity. So this emitter **omits `Ref` entirely** on the element it adds,
+ *   which is both proven to round-trip and the only choice that cannot
+ *   introduce a collision -- and that is why no renumbering step is needed.
+ *
+ *   Note this leaves a *separate* and larger question open, which is not this
+ *   file's to answer: nothing makes the **model's** own `Ref` values unique.
+ *   The prompt never asks for it, `checkRepx` does not test it, and the cheat
+ *   sheet's snippets each restart numbering at `Ref="1"` -- which, by the rule
+ *   in gemini.md that an example outranks an instruction, is exactly how a
+ *   collision gets copied into real output. Unverified on a live generation as
+ *   of 2026-09-04.
+ * - A summary is just an expression: `Expression="sumSum([Amount])"`, and
+ *   `TextFormatString="{0:c2}"` is a plain attribute on the cell. Neither
+ *   needs new structure when stages 3 and 4 arrive.
  *
  * ## Why the correspondence check is the interesting part
  *
@@ -62,6 +93,8 @@ const EXISTING_BINDING = /<(?:ExpressionBindings|DataBindings)\b/;
 interface Element {
   /** The `ControlType` attribute, or `''` when the element has none. */
   controlType: string;
+  /** The tag name -- `Item1`, `Item2` -- needed to close it when splicing. */
+  tag: string;
   /** Index of this element's opening `<`. */
   start: number;
   /** Index just past this element's final `>`. */
@@ -106,19 +139,19 @@ function parseElements(xml: string): Element[] {
   // here still indexes the caller's original string.
   const scannable = xml.replace(NON_ELEMENT, (m) => ' '.repeat(m.length));
   const out: Element[] = [];
-  const stack: { controlType: string; start: number }[] = [];
+  const stack: { controlType: string; tag: string; start: number }[] = [];
 
   TAG.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = TAG.exec(scannable)) !== null) {
-    const [, closing, , attrs, selfClosing] = m;
+    const [, closing, tag, attrs, selfClosing] = m;
     if (closing) {
       const open = stack.pop();
       if (open) out.push({ ...open, end: TAG.lastIndex });
     } else if (selfClosing) {
-      out.push({ controlType: attr(attrs, 'ControlType'), start: m.index, end: TAG.lastIndex });
+      out.push({ controlType: attr(attrs, 'ControlType'), tag, start: m.index, end: TAG.lastIndex });
     } else {
-      stack.push({ controlType: attr(attrs, 'ControlType'), start: m.index });
+      stack.push({ controlType: attr(attrs, 'ControlType'), tag, start: m.index });
     }
   }
 
@@ -143,6 +176,8 @@ export interface CellTarget {
   start: number;
   /** Index just past the cell element's final `>`. */
   end: number;
+  /** The tag name -- `Item1`, `Item2` -- so a splice can close it. */
+  tag: string;
   /** The cell's `Text` attribute, unescaped. */
   text: string;
   /** True when this cell already carries a binding of either kind. */
@@ -212,6 +247,7 @@ export function planDetailBinding(xml: string | undefined | null): BindingPlanRe
     return {
       start: cell.start,
       end: cell.end,
+      tag: cell.tag,
       text: unescapeXml(attr(slice, 'Text')),
       bound: EXISTING_BINDING.test(slice),
     };
@@ -238,5 +274,79 @@ export function planDetailBinding(xml: string | undefined | null): BindingPlanRe
   return {
     plan: { headings, fields, cells: targets },
     reason: `${fields.length} columns: ${fields.map((f) => f.name).join(', ')}`,
+  };
+}
+
+/**
+ * The binding element for one field, in the shape the 20.1 serializer writes.
+ *
+ * No `Ref`: the probe proved the loader ignores it and regenerates it on save,
+ * and the no-`Ref` variant round-tripped byte-identically. Emitting one would
+ * mean choosing a number that is either wrong or requires renumbering the rest
+ * of the document, in exchange for nothing.
+ *
+ * No escaping either, and that is guaranteed rather than assumed: a name from
+ * `deriveFieldNames` is `[A-Za-z0-9_]+`, which `repxBindings.test.ts` asserts
+ * over headings built to break it. That invariant is what lets this be a
+ * string concatenation.
+ */
+function bindingElement(field: string): string {
+  return (
+    '<ExpressionBindings>' +
+    `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="[${field}]" />` +
+    '</ExpressionBindings>'
+  );
+}
+
+export interface BoundRepx {
+  /** The rewritten document, or the input untouched when it declined. */
+  xml: string;
+  applied: boolean;
+  /** Why, in a form worth logging. */
+  reason: string;
+  /** What was bound, empty when it declined. */
+  fields: DerivedField[];
+}
+
+/**
+ * Bind the detail row's cells to one field each.
+ *
+ * A splice, not a re-serialisation: every byte outside the cells being changed
+ * survives exactly as the model wrote it. Cells are rewritten back-to-front so
+ * that each edit leaves the offsets of the ones before it valid.
+ *
+ * `Text=` is deliberately kept. The designer keeps it on a bound cell, and it
+ * is a useful fallback for a field that never resolves -- these names are a
+ * guess at the user's schema, so some of them will not.
+ *
+ * Declines for any of the reasons `planDetailBinding` declines, returning the
+ * input untouched with the reason. Running it twice is safe: the second run
+ * sees the bindings from the first and declines.
+ */
+export function bindDetailRow(xml: string | undefined | null): BoundRepx {
+  const text = xml ?? '';
+  const { plan, reason } = planDetailBinding(text);
+  if (!plan) return { xml: text, applied: false, reason, fields: [] };
+
+  let out = text;
+  for (let i = plan.cells.length - 1; i >= 0; i--) {
+    const cell = plan.cells[i];
+    const slice = out.slice(cell.start, cell.end);
+    const children = bindingElement(plan.fields[i].name);
+
+    const rewritten = slice.endsWith('/>')
+      ? // `<Item1 … />` has to grow a body and a closing tag.
+        `${slice.slice(0, -2).trimEnd()}>${children}</${cell.tag}>`
+      : // `<Item1 …>…</Item1>` already has one; go in at the end of it.
+        slice.replace(new RegExp(`</${cell.tag}>$`), `${children}</${cell.tag}>`);
+
+    out = out.slice(0, cell.start) + rewritten + out.slice(cell.end);
+  }
+
+  return {
+    xml: out,
+    applied: true,
+    reason: `bound ${plan.fields.length} columns: ${plan.fields.map((f) => f.name).join(', ')}`,
+    fields: plan.fields,
   };
 }

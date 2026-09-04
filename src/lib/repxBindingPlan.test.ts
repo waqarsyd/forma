@@ -9,7 +9,8 @@
  * grep and its run agree.
  */
 import { describe, it, expect } from 'vitest';
-import { planDetailBinding, unescapeXml } from './repxBindingPlan';
+import { planDetailBinding, bindDetailRow, unescapeXml } from './repxBindingPlan';
+import { checkRepxComplete } from './repxTruncation';
 
 const cell = (name: string, text: string, weight = 1) =>
   `<Item${name} Ref="9" ControlType="XRTableCell" Name="cell${name}" Text="${text}" Weight="${weight}" />`;
@@ -159,6 +160,105 @@ describe('planDetailBinding', () => {
   it('survives the single-line form the model actually returns', () => {
     const xml = banded(['Unit Price'], ['12.00']).replace(/\n\s*/g, '');
     expect(planDetailBinding(xml).plan?.fields[0].name).toBe('UnitPrice');
+  });
+});
+
+describe('bindDetailRow', () => {
+  it('writes the shape the 20.1 serializer writes', () => {
+    // Verbatim from a real file produced by SaveLayoutToXml against the
+    // installed DevExpress 20.1, minus the Ref the loader ignores.
+    const { xml } = bindDetailRow(banded(['Description'], ['Widget']));
+    expect(xml).toContain(
+      '<ExpressionBindings>' +
+        '<Item1 EventName="BeforePrint" PropertyName="Text" Expression="[Description]" />' +
+        '</ExpressionBindings>'
+    );
+  });
+
+  it('binds every column to its own field', () => {
+    const { xml, applied, fields } = bindDetailRow(
+      banded(['Description', 'Unit Price'], ['Widget', '12.00'])
+    );
+    expect(applied).toBe(true);
+    expect(fields.map((f) => f.name)).toEqual(['Description', 'UnitPrice']);
+    expect(xml).toContain('Expression="[Description]"');
+    expect(xml).toContain('Expression="[UnitPrice]"');
+  });
+
+  it('keeps Text on the bound cell, as the designer does', () => {
+    const { xml } = bindDetailRow(banded(['Description'], ['Widget']));
+    expect(xml).toContain('Text="Widget"');
+  });
+
+  it('converts a self-closing cell into one with a body', () => {
+    const { xml } = bindDetailRow(banded(['Description'], ['Widget']));
+    // The cell element must no longer be self-closing, and must close properly.
+    expect(xml).not.toContain('Text="Widget" Weight="1" />');
+    expect(xml).toContain('</ExpressionBindings></Item1>');
+  });
+
+  it('leaves the header row alone', () => {
+    const { xml } = bindDetailRow(banded(['Description'], ['Widget']));
+    expect(xml).toContain('Text="Description" Weight="1" />');
+    // One binding, in the detail row only.
+    expect(xml.match(/<ExpressionBindings>/g)).toHaveLength(1);
+  });
+
+  it('leaves everything outside the cells byte-for-byte alone', () => {
+    const before = banded(['Description', 'Amount'], ['Widget', '1240.00']);
+    const { xml } = bindDetailRow(before);
+    // Reverse exactly the splice -- a binding block followed immediately by
+    // the cell's closing tag becomes ` />` again -- and the result must be the
+    // input, byte for byte. Anchoring on both ends matters: a regex that just
+    // strips the bindings also eats `</Cells></Item1>` and proves nothing.
+    const unwound = xml.replace(
+      /><ExpressionBindings>.*?<\/ExpressionBindings><\/Item\d+>/g,
+      ' />'
+    );
+    expect(unwound).toBe(before);
+  });
+
+  it('produces a document that still parses as complete', () => {
+    const { xml } = bindDetailRow(banded(['Description', 'Amount'], ['Widget', '1.00']));
+    const check = checkRepxComplete(xml);
+    expect(check.complete).toBe(true);
+    expect(check.reason).toBe('');
+  });
+
+  it('is idempotent: the second run declines rather than double-binding', () => {
+    const once = bindDetailRow(banded(['Description'], ['Widget']));
+    const twice = bindDetailRow(once.xml);
+    expect(twice.applied).toBe(false);
+    expect(twice.reason).toBe('1 of 1 detail cells are already bound');
+    expect(twice.xml).toBe(once.xml);
+  });
+
+  it('returns the input untouched, with the reason, when it declines', () => {
+    const flat = report(band('DetailBand', cell('1', 'Widget')));
+    const result = bindDetailRow(flat);
+    expect(result.applied).toBe(false);
+    expect(result.xml).toBe(flat);
+    expect(result.fields).toEqual([]);
+    expect(result.reason).toBe('there is no PageHeader table to read column headings from');
+  });
+
+  it('names the columns it bound in the reason', () => {
+    const { reason } = bindDetailRow(banded(['Description', 'Amount'], ['Widget', '1.00']));
+    expect(reason).toBe('bound 2 columns: Description, Amount');
+  });
+
+  it('emits no Ref, which is the variant proven to round-trip', () => {
+    const { xml } = bindDetailRow(banded(['Description'], ['Widget']));
+    const binding = /<Item1 EventName[^>]*\/>/.exec(xml);
+    expect(binding).not.toBeNull();
+    expect(binding![0]).not.toContain('Ref=');
+  });
+
+  it('never needs escaping, because the field name cannot need it', () => {
+    // The heading is hostile; the derived name is not, by construction.
+    const { xml, fields } = bindDetailRow(banded(['Tom & Jerry <b>'], ['x']));
+    expect(fields[0].name).toBe('TomJerryB');
+    expect(xml).toContain('Expression="[TomJerryB]"');
   });
 });
 
