@@ -277,6 +277,9 @@ src/
                        page-sized DetailBand kept behind VITE_FORMA_FLAT),
                        repxTruncation (did the model stop writing the XML
                        part-way, asked at the parse rather than at Export),
+                       repxBindings (column headings to DevExpress field names
+                       for expression bindings — derived in code so the guess
+                       is testable, not left to the prompt),
                        attachments, panelSize, announcements, datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        analysisResponse (is a failed generation truncated or
