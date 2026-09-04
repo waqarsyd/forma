@@ -14,6 +14,7 @@ import {
   bindDetailRow,
   bindFooterTotals,
   bindingEnabled,
+  readBoundFields,
   unescapeXml,
 } from './repxBindingPlan';
 import { checkRepxComplete } from './repxTruncation';
@@ -387,6 +388,38 @@ describe('bindFooterTotals', () => {
     // The detail cell binds the field; the footer cell sums it.
     expect(totals.xml).toContain('Expression="[Amount]"');
     expect(totals.xml).toContain('Expression="sumSum([Amount])"');
+  });
+});
+
+describe('readBoundFields', () => {
+  it('lists the fields a bound report references', () => {
+    const { xml } = bindDetailRow(banded(['Description', 'Unit Price'], ['Widget', '12.00']));
+    expect(readBoundFields(xml)).toEqual(['Description', 'UnitPrice']);
+  });
+
+  it('counts a field once even when the footer also totals it', () => {
+    const src = withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total', '1240.00']);
+    const bound = bindDetailRow(src);
+    const totals = bindFooterTotals(bound.xml);
+    // [Amount] in the detail row and sumSum([Amount]) in the footer are one field.
+    expect(readBoundFields(totals.xml)).toEqual(['Description', 'Amount']);
+  });
+
+  it('returns nothing for an unbound report', () => {
+    expect(readBoundFields(banded(['Description'], ['Widget']))).toEqual([]);
+  });
+
+  it('returns nothing for an empty or absent document', () => {
+    for (const input of ['', null, undefined]) {
+      expect(readBoundFields(input)).toEqual([]);
+    }
+  });
+
+  it('is not fooled by a bracketed literal outside an expression', () => {
+    // Only Expression attributes are read, so a label reading "[draft]" is not
+    // a bound field.
+    const xml = banded(['Description'], ['[draft]']);
+    expect(readBoundFields(xml)).toEqual([]);
   });
 });
 

@@ -443,6 +443,53 @@ export function bindFooterTotals(xml: string | undefined | null): BoundRepx {
   };
 }
 
+/** A field reference inside an expression: the `Amount` of `sumSum([Amount])`. */
+const FIELD_REF = /\[([A-Za-z0-9_]+)\]/g;
+
+/** The `Expression` attribute of a binding. */
+const EXPRESSION = /\sExpression\s*=\s*"([^"]*)"/g;
+
+/**
+ * Which fields a report is actually bound to, read out of the document.
+ *
+ * Derived rather than remembered, and that is the whole design of this
+ * function. The alternative was to carry the field list out of
+ * `analyzeReportDesign` on `AnalysisResponse`, which would have meant changing
+ * a shape that is also persisted -- to Firestore and to `localStorage`, whose
+ * divergence `persistence.md` already documents -- in order to display
+ * something the artifact itself states.
+ *
+ * Reading it back instead means a saved report loaded a month later shows the
+ * truth about the file that was saved, not about the settings in force when it
+ * is reopened. It also means the status bar cannot claim a binding that is not
+ * in the `.repx` about to be exported, which is the standard the comment above
+ * that bar sets for the units readout beside it.
+ *
+ * Distinct, in document order, so the detail row's `[Amount]` and the footer's
+ * `sumSum([Amount])` count once between them.
+ */
+export function readBoundFields(xml: string | undefined | null): string[] {
+  const text = xml ?? '';
+  if (!text) return [];
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  EXPRESSION.lastIndex = 0;
+  let expr: RegExpExecArray | null;
+  while ((expr = EXPRESSION.exec(text)) !== null) {
+    FIELD_REF.lastIndex = 0;
+    let field: RegExpExecArray | null;
+    while ((field = FIELD_REF.exec(expr[1])) !== null) {
+      if (seen.has(field[1])) continue;
+      seen.add(field[1]);
+      out.push(field[1]);
+    }
+  }
+
+  return out;
+}
+
 /**
  * Is the binding pass switched on?
  *

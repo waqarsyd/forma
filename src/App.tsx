@@ -135,6 +135,7 @@ import { titleForRoute, viewForRoute } from './lib/routes';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
+import { readBoundFields } from './lib/repxBindingPlan';
 import { sourceRectFor } from './lib/sourceRect';
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
@@ -2853,6 +2854,25 @@ export default function App() {
   );
 
   /**
+   * Which data fields the report about to be exported is bound to.
+   *
+   * Read out of `repxContent` rather than carried on the response, so it is a
+   * property of the artifact and not of the settings in force right now. A
+   * report saved while VITE_FORMA_BIND was on still reports its fields when
+   * reopened with the flag off, and one saved before binding existed reports
+   * none -- which is the truth in both cases. It is also what keeps this honest
+   * in the same way the units readout beside it has to be: it cannot claim a
+   * binding the file does not contain.
+   *
+   * Empty for every report generated with binding off, which is the default, so
+   * the readout simply does not appear.
+   */
+  const boundFields = useMemo(
+    () => readBoundFields(result?.repxContent),
+    [result?.repxContent]
+  );
+
+  /**
    * Escape closes the attachment viewer. The backdrop already closes on a click,
    * but the viewer covers the screen and Escape is what a full-bleed overlay is
    * expected to answer to.
@@ -3935,6 +3955,15 @@ export default function App() {
             exported, which is the worst place to be confidently wrong. */}
         <span>units {unitsPerInch(config.unit)}/in</span>
         {result?.layout && <span>{result.layout.sections.length} bands</span>}
+        {/* Only when the report actually carries bindings, which is never
+            unless VITE_FORMA_BIND was on for the generation. Derived from
+            repxContent for the same reason as the units readout above: this
+            bar describes the file about to be exported. */}
+        {boundFields.length > 0 && (
+          <span title={`Bound to: ${boundFields.join(', ')}`}>
+            {boundFields.length} bound
+          </span>
+        )}
       </div>
 
       {/* =========================================================== modals */}
