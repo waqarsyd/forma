@@ -150,7 +150,12 @@ function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializer
             - Detail — exactly ONE row of the repeating data. See below; this is the band most often got wrong.
             - ReportFooter — subtotal, tax and grand-total lines, sign-off blocks, terms paragraphs that close the document.
             - PageFooter — page numbers (XRPageInfo), the registration line, anything repeated at the foot of every sheet.
-            If the design genuinely has no repeating rows — a certificate, a form, a single-record letter — put the body in ReportHeader, leave Detail out entirely rather than emitting an empty one, and say so in the markdown specification.
+            WHETHER THE DESIGN HAS REPEATING ROWS IS A TEST, NOT A JUDGEMENT CALL. Apply it before you decide:
+            **a heading row with two or more rows of like-kind values aligned under the same columns IS repeating data**, and that block belongs in Detail as ONE row. Nothing else about the document changes that.
+            - A form can, and usually does, contain repeating data. A job card, a worksheet, a delivery note and a service report are all forms whose middle is a grid of operations or items — that grid is the repeating data, and the fixed boxes around it are the ReportHeader. "It is a form" is NOT a reason to leave Detail out.
+            - Ask it of the ROWS, not of the page. A single-record letter has no such block anywhere. A job card has one in the middle of it.
+            Only when NO block anywhere in the design passes that test — a certificate, a single-record letter, a title page — put the body in ReportHeader, leave Detail out, and say so in the markdown specification.
+            THE COST OF GETTING THIS WRONG IS THE WHOLE ARTIFACT. DevExpress treats DetailBand as a mandatory band. A report without one prints its content exactly once and CANNOT be bound to a data source, so it is a picture of the document rather than a report that can produce it for every record. The output still opens in the designer and still looks right, which is why this is stated at length instead of left to judgement.
 
           - THE DETAIL BAND IS ONE ROW, NOT THE TABLE.
             This is the whole point of the exercise. A DetailBand is printed once PER RECORD, so it must contain a single row's worth of controls:

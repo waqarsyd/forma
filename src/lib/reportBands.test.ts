@@ -88,8 +88,24 @@ describe('the banded default', () => {
     }
   });
 
-  it('handles a design with no repeating rows rather than forcing a Detail band', () => {
-    expect(banded).toMatch(/leave Detail out entirely rather than emitting an empty one/i);
+  it('still allows a design with genuinely no repeating rows to omit Detail', () => {
+    expect(banded).toMatch(/leave Detail out/i);
+  });
+
+  it('gives a test for "repeating rows" rather than leaving it to judgement', () => {
+    /*
+     * The escape hatch above used to list "a form" as an example of a design
+     * with no repeating rows. A real job card on 2026-09-04 took it: the whole
+     * document went into ReportHeader, no Detail band was emitted, and nothing
+     * could be bound — while the SAME source half an hour earlier had produced
+     * a Detail band with twelve bound columns. A form is exactly the case that
+     * usually does have repeating data in the middle of it, so the rule now
+     * states the signal, names that case, and states the cost.
+     */
+    expect(banded).toMatch(/heading row with two or more rows of like-kind values/i);
+    expect(banded).toMatch(/job card/i);
+    expect(banded).toMatch(/is NOT a reason to leave Detail out/i);
+    expect(banded).toMatch(/CANNOT be bound to a data source/i);
   });
 
   /**
