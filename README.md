@@ -280,6 +280,9 @@ src/
                        repxBindings (column headings to DevExpress field names
                        for expression bindings — derived in code so the guess
                        is testable, not left to the prompt),
+                       repxBindingPlan (finds the header and detail rows, proves
+                       they describe the same columns, and declines rather than
+                       guess when they do not),
                        attachments, panelSize, announcements, datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        analysisResponse (is a failed generation truncated or
