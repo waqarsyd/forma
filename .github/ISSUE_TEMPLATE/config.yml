@@ -8,9 +8,11 @@
 # live one -- so they are worth re-checking then. `grep -rn github.com .github`
 # finds every hardcoded path.
 #
-# The Discussions link only works once Discussions is enabled for the repository
-# (Settings -> General -> Features). Until then it 404s, so enable it or drop
-# that entry.
+# Discussions was enabled on 2026-09-05, so both links resolve -- verified by
+# fetching them: /discussions and /security/advisories/new each answer 200.
+# It is a repository setting (Settings -> General -> Features), not anything in
+# this file, so a restored-from-backup or newly-forked repository has it off
+# again and this link 404s while looking exactly as it does now.
 blank_issues_enabled: false
 
 contact_links:
