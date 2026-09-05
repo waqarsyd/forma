@@ -163,7 +163,7 @@ describe('ALL_SECTIONS', () => {
     // Written out by hand on purpose: deriving it the same way the module does
     // would make this test agree with itself rather than with the type.
     const expected: PromptSection[] = [
-      'grouping', 'parameters', 'charts', 'rules',
+      'grouping', 'parameters', 'charts', 'rules', 'calculated',
       'checkbox', 'crossband', 'containers', 'shapes',
     ];
     expect([...ALL_SECTIONS].sort()).toEqual([...expected].sort());
@@ -188,6 +188,29 @@ describe('ALL_SECTIONS', () => {
       'add conditional formatting',
     ]) {
       expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('rules');
+    }
+  });
+});
+
+describe('calculated fields as a section', () => {
+  const plain = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+
+  it('is kept when the source declares one', () => {
+    const withCalc = '<XtraReportsLayoutSerializer><CalculatedFields><Item1 Ref="1" Name="T" /></CalculatedFields></XtraReportsLayoutSerializer>';
+    expect(sectionsFor({ texts: [withCalc] })).toEqual(['calculated']);
+  });
+
+  it('is dropped for a report that has none', () => {
+    expect(sectionsFor({ texts: [plain] })).not.toContain('calculated');
+  });
+
+  it('is kept when the user asks for arithmetic in their own words', () => {
+    for (const instruction of [
+      'make the total a calculated field',
+      'the line total should be computed from quantity times price',
+      'add a derived column',
+    ]) {
+      expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('calculated');
     }
   });
 });

@@ -564,6 +564,27 @@ So a language model cannot write one. Asking for it would produce a blob that ei
 
 **Two audit checks, both for failures of behaviour rather than of content**, which is why nothing above them could have caught these: a link naming a `Ref` that is not a rule (an **error** — it never fires, so the report prints as though the condition was never met), and a rule nothing links to (a warning — usually the link went on the wrong element).
 
+### Calculated fields, and a requirement that is not there (2026-09-05)
+
+`RepxProbe emit-calc`. A total column written as the literal 37.50 is correct once and wrong for every other row; written as `[Quantity] * [UnitPrice]` it is correct for all of them. That is the difference between a picture and a report, and it was the last data-shaping feature entirely missing.
+
+```xml
+  <CalculatedFields>
+    <Item1 Ref="1" Name="LineTotal" FieldType="Decimal" Expression="[Quantity] * [UnitPrice]" />
+    <Item2 Ref="2" Name="Margin" FieldType="Decimal" Expression="[Price] - [Cost]" DataMember="Orders" />
+  </CalculatedFields>
+```
+
+**The finding that decided whether this was possible at all is a negative one about a requirement.** `CalculatedField` has `DataSource` and `DataMember` properties, and Forma never opens a connection — that is a stated boundary, not a gap. If either were required, a generated calculated field would name a connection that does not exist. Neither is: `DataMember` is written only when set, and the first field above is complete without it.
+
+- The collection is root-level and written **before** `<Bands>`, like `<FormattingRuleSheet>` and unlike `<StyleSheet>`.
+- `FieldType` is written every time, including for `String` — one of the few things here that is *not* omitted for a default.
+- **A control references a calculated field exactly as it references a real one**: `Expression="[LineTotal]"`, with nothing to say it is calculated. Convenient for the model, unhelpful for checking — nothing in a binding can tell us whether a name resolves, which is why the audit checks are all about the declarations rather than the uses.
+
+**The prompt forbids inventing one from a heading.** "Total" next to "Amount" is not evidence of a formula. A calculated field with a guessed expression produces confidently wrong numbers on real data, which is worse than the literal it replaced — so it is emitted only where the arithmetic is visible in the source, a column whose printed values are plainly the product or difference of two others on the same row.
+
+Three audit checks, all silent failures: an empty `Expression` (**error** — every bound cell prints blank), two fields sharing a `Name` (**error** — the later wins and bindings compute the wrong thing), and a field nothing uses (warning — usually the cell that should carry it still holds a literal).
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

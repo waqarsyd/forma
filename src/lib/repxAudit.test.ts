@@ -492,3 +492,57 @@ describe('formatting rules', () => {
     expect(findings.some((f) => f.code.startsWith('formatting-rule'))).toBe(false);
   });
 });
+
+/**
+ * Calculated fields, and why the checks are about the declarations.
+ *
+ * A control references a calculated field exactly as it references a real one
+ * -- Expression="[LineTotal]" says nothing about where the field comes from
+ * (RepxProbe emit-calc). So nothing in a binding can tell us whether a name
+ * resolves, and the failures worth catching are all in the <CalculatedFields>
+ * block itself.
+ */
+describe('calculated fields', () => {
+  const withFields = (fields: string, body = '') =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+    (fields ? `<CalculatedFields>${fields}</CalculatedFields>` : '') +
+    '<Bands><Item1 Ref="50" ControlType="DetailBand" Name="Detail" HeightF="40"><Controls>' + body +
+    '</Controls></Item1></Bands></XtraReportsLayoutSerializer>';
+
+  const bound = (name: string) =>
+    `<Item1 Ref="60" ControlType="XRLabel" Name="l" Text="0" SizeF="100,20" LocationFloat="0,0">` +
+    `<ExpressionBindings><Item1 Ref="61" EventName="BeforePrint" PropertyName="Text" Expression="[${name}]" /></ExpressionBindings></Item1>`;
+
+  const field = (name: string, expr: string) =>
+    `<Item1 Ref="1" Name="${name}" FieldType="Decimal" Expression="${expr}" />`;
+
+  it('accepts a field that is declared and used', () => {
+    const findings = auditRepx(withFields(field('LineTotal', '[Qty] * [Price]'), bound('LineTotal')), null).findings;
+    expect(findings.some((f) => f.code.startsWith('calculated-field'))).toBe(false);
+  });
+
+  it('reports a field with no expression as an error', () => {
+    const findings = auditRepx(withFields(field('LineTotal', ''), bound('LineTotal')), null).findings;
+    const empty = findings.find((f) => f.code === 'calculated-field-empty');
+    expect(empty?.severity).toBe('error');
+    expect(empty?.message).toContain('LineTotal');
+  });
+
+  it('reports two fields sharing a name, because the later one silently wins', () => {
+    const two = field('LineTotal', '[Qty] * [Price]') +
+      '<Item2 Ref="2" Name="LineTotal" FieldType="Decimal" Expression="[Qty]" />';
+    const findings = auditRepx(withFields(two, bound('LineTotal')), null).findings;
+    expect(findings.find((f) => f.code === 'calculated-field-duplicate')?.severity).toBe('error');
+  });
+
+  it('warns about a field nothing references', () => {
+    const findings = auditRepx(withFields(field('Margin', '[Price] - [Cost]')), null).findings;
+    expect(findings.some((f) => f.code === 'calculated-field-unused')).toBe(true);
+  });
+
+  it('stays quiet about a report with no calculated fields', () => {
+    const findings = auditRepx(withFields('', bound('Amount')), null).findings;
+    expect(findings.some((f) => f.code.startsWith('calculated-field'))).toBe(false);
+  });
+});

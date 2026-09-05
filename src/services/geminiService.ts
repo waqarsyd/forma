@@ -945,6 +945,27 @@ ${transcript}`,
  * is written after, so the two root collections sit on opposite sides), and a
  * control links a rule through a `#Ref-N` pointer rather than by name.
  */
+/**
+ * Calculated fields — a named expression that behaves like a data field.
+ *
+ * Measured with `RepxProbe emit-calc`. The finding that matters is a negative
+ * one about a requirement: **no data source is needed.** `DataMember` is written
+ * only when set, and a field with nothing but a name, a type and an expression
+ * is complete — so this is usable in a tool that never opens a connection.
+ */
+const CALCULATED_BLOCK = `          - CALCULATED FIELDS — a column the report can RECOMPUTE, not a number it remembers.
+            An invoice line showing 3 x 12.50 = 37.50 has a total column that is arithmetic over two other columns. Written as the literal 37.50 it is correct once and wrong for every other row; written as a calculated field it is correct for all of them, which is the difference between a picture and a report.
+            The collection is root-level and written BEFORE <Bands>, like <FormattingRuleSheet> and unlike <StyleSheet>:
+            <CalculatedFields>
+              <Item1 Ref="1" Name="LineTotal" FieldType="Decimal" Expression="[Quantity] * [UnitPrice]" />
+            </CalculatedFields>
+            - **No data source is required.** Name, FieldType and Expression are the whole of it — DataMember is written only when there is one, and there is not one here.
+            - FieldType is one of: String, Int32, Decimal, Double, DateTime, Boolean, Guid. Write it every time; it is not omitted for a default the way SortOrder and CanGrow are.
+            - A control uses it **exactly like a real field** — <ExpressionBindings> with Expression="[LineTotal]". Nothing in the reference says it is calculated.
+            - Emit one ONLY where the arithmetic is visible in the source: a column whose printed values are plainly the product, sum or difference of two other columns on the same row. **Do not invent one from a column heading.** "Total" next to "Amount" is not evidence of a formula, and a calculated field with a guessed expression produces confidently wrong numbers on real data — worse than the literal it replaced.
+            - Name it as the data would: LineTotal, Margin, FullName. The expression's operands must be field names that exist in the data, spelled as the data spells them.
+`;
+
 const RULES_BLOCK = `          - CONDITIONAL FORMATTING — a rule the report applies at print time, not a colour you saw once.
             "Print overdue amounts in red" is a rule. A single red figure in a scanned document is NOT evidence of one: it is one row that happened to be overdue on the day that page was printed, and you cannot see the condition from the result. **Do not invent a rule from an image.** Emit one only when the uploaded .repx already has it, or when the user asks for it in words.
             The sheet is a root-level collection written BEFORE <Bands> — note that this is the opposite side from <StyleSheet>, which is written after:
@@ -1277,7 +1298,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
             - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
-${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
             Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.

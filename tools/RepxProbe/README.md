@@ -14,6 +14,7 @@ RepxProbe emit-container <out.repx> # the same, for XRPanel and XRSubreport
 RepxProbe emit-styles <out.repx> # the same, for a STYLE SHEET
 RepxProbe emit-rich <out.repx>   # the same, for XRRichText and XRShape
 RepxProbe emit-rules <out.repx>  # the same, for CONDITIONAL FORMATTING
+RepxProbe emit-calc <out.repx>   # the same, for CALCULATED FIELDS
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 

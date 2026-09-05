@@ -42,6 +42,7 @@ static class Program {
             case "emit-styles": EmitStyles(args[1]); return 0;
             case "emit-rich":  EmitRich(args[1]);  return 0;
             case "emit-rules": EmitRules(args[1]); return 0;
+            case "emit-calc":  EmitCalc(args[1]);  return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -642,6 +643,70 @@ static class Program {
         report.Bands.AddRange(new Band[] {
             new TopMarginBand(),
             detail,
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes CALCULATED FIELDS -- a named expression over the data that behaves
+    /// like a field, so a line-total column can be [Quantity] * [UnitPrice]
+    /// instead of a number the report cannot recompute.
+    ///
+    /// The question that decides whether this is usable here at all:
+    ///
+    ///   **Does a calculated field need a bound data source?** It has DataSource
+    ///   and DataMember properties. Forma never connects to a database -- that is
+    ///   an explicit boundary, not a gap -- so if either is required, a generated
+    ///   calculated field would reference a connection that does not exist and
+    ///   this is a negative result like XRRichText.
+    ///
+    /// So one field is written with NOTHING but a name, an expression and a
+    /// type, and a second with a DataMember, to see what the serializer insists
+    /// on. Also open: whether the collection is root-level, and whether a
+    /// control refers to the field the same way it refers to a real one.
+    static void EmitCalc(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeCalc";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        // Nothing but the three things a model could plausibly author.
+        CalculatedField lineTotal = new CalculatedField();
+        lineTotal.Name = "LineTotal";
+        lineTotal.Expression = "[Quantity] * [UnitPrice]";
+        lineTotal.FieldType = FieldType.Decimal;
+
+        // The same, plus a DataMember, to see whether it is written and whether
+        // its absence above produced anything different.
+        CalculatedField withMember = new CalculatedField();
+        withMember.Name = "Margin";
+        withMember.Expression = "[Price] - [Cost]";
+        withMember.FieldType = FieldType.Decimal;
+        withMember.DataMember = "Orders";
+
+        // A string one, to find out whether FieldType is written for every type
+        // or omitted for a default the way so much else here is.
+        CalculatedField label = new CalculatedField();
+        label.Name = "FullName";
+        label.Expression = "[FirstName] + ' ' + [LastName]";
+        label.FieldType = FieldType.String;
+
+        report.CalculatedFields.AddRange(new CalculatedField[] { lineTotal, withMember, label });
+
+        // A cell bound to the calculated field, to see whether the reference
+        // looks any different from a reference to a real field.
+        XRTableCell total = Cell("cellTotal", "0.00", 1);
+        total.ExpressionBindings.Add(new ExpressionBinding("BeforePrint", "Text", "[LineTotal]"));
+        XRTable table = Table("tableDetail", new XRTableCell[] { total });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            Band(new DetailBand(), "Detail", table),
             new BottomMarginBand()
         });
 

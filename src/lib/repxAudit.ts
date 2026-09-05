@@ -320,6 +320,61 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
    * outside the box that was meant to contain them.
    */
   /*
+   * Calculated fields. A control references one exactly as it references a real
+   * data field — `Expression="[LineTotal]"` says nothing about where the field
+   * comes from (measured, `RepxProbe emit-calc`). That symmetry is convenient
+   * for the model and unhelpful here: it means nothing in a binding can tell us
+   * whether a name resolves, so the checks have to be about the declarations.
+   *
+   * Two failures, both of which load without complaint:
+   *
+   *   - an empty Expression, which computes nothing and prints blank in every
+   *     row bound to it;
+   *   - two fields sharing a Name, where the later silently wins and every
+   *     binding to that name gets the wrong arithmetic.
+   *
+   * A field nothing references is only a warning: harmless in itself, but it
+   * usually means the binding that was meant to use it went to a literal.
+   */
+  const calcBlock = /<CalculatedFields>([\s\S]*?)<\/CalculatedFields>/.exec(text);
+  if (calcBlock) {
+    const fields = [...calcBlock[1].matchAll(/<Item\d+\b[^>]*>/g)].map((m) => m[0]);
+    const nameOf = (tag: string) => /\sName="([^"]*)"/.exec(tag)?.[1] ?? '';
+    const exprOf = (tag: string) => /\sExpression="([^"]*)"/.exec(tag)?.[1] ?? '';
+
+    const blank = fields.filter((f) => !exprOf(f).trim()).map(nameOf).filter(Boolean);
+    if (blank.length) {
+      add(
+        'error',
+        'calculated-field-empty',
+        `${blank.map((n) => `"${n}"`).join(', ')} ${blank.length === 1 ? 'is a calculated field' : 'are calculated fields'} ` +
+          'with no expression, so every cell bound to it prints blank. DevExpress loads it without complaint.',
+      );
+    }
+
+    const names = fields.map(nameOf).filter(Boolean);
+    const repeated = [...new Set(names.filter((n, i) => names.indexOf(n) !== i))];
+    if (repeated.length) {
+      add(
+        'error',
+        'calculated-field-duplicate',
+        `${repeated.map((n) => `"${n}"`).join(', ')} ${repeated.length === 1 ? 'is declared' : 'are declared'} ` +
+          'more than once. The later declaration wins, so bindings to that name compute the wrong expression.',
+      );
+    }
+
+    const unused = names.filter((n) => n && !new RegExp(`\\[${n}\\]`).test(text));
+    if (unused.length) {
+      add(
+        'warning',
+        'calculated-field-unused',
+        `${unused.map((n) => `"${n}"`).join(', ')} ${unused.length === 1 ? 'is' : 'are'} declared and never used. ` +
+          'Usually the cell that should carry the calculation still holds a literal number.',
+      );
+    }
+  }
+
+  /*
    * Conditional formatting, and its two silent failures.
    *
    * A `<FormattingRuleLinks>` item points at a rule by `Value="#Ref-N"`
