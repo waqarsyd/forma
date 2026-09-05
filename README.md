@@ -288,6 +288,14 @@ src/
                        out across real pages — Detail once per record,
                        PageHeader on every sheet — which is what the Preview
                        pane and the PDF export are drawn from),
+                       batchQueue (the state of a folder of source documents
+                       being turned into a report each — pending, running,
+                       done, failed — and the audit verdict per row, because
+                       the point of running forty files is knowing which of
+                       the forty are worth opening),
+                       zip (a store-only ZIP writer, ~150 lines against a
+                       ~30 kB dependency, so a batch comes back as one archive
+                       instead of forty download prompts),
                        repxParameters (the parameters a report asks for before
                        it prints, and the lift that makes a typed one work —
                        DevExpress silently ignores an inline Type and loads a

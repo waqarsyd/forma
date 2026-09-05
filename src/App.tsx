@@ -35,6 +35,7 @@ import {
   IconEyeOff,
   IconFolder,
   IconHistory,
+  IconStack,
   IconKey,
   IconMoon,
   IconSearch,
@@ -135,6 +136,9 @@ const ReportPreview = lazy(() => import('./components/ReportPreview'));
 /* The binding screen. Lazy for the same reason as the preview: workspace-only,
    reachable only with a finished report, and it carries its own styles. */
 const DataBinding = lazy(() => import('./components/DataBinding'));
+/* Batch intake. Lazy for the same reason as the other two, and it carries the
+   ZIP writer, which nobody generating a single report ever needs. */
+const BatchPanel = lazy(() => import('./components/BatchPanel'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -1184,7 +1188,7 @@ export interface SavedReport {
    `routes.test.ts` now checks rather than asks you to remember. */
 
 /** Which panel the rail's second column is showing. */
-type RailPanel = 'review' | 'projects' | 'history';
+type RailPanel = 'review' | 'projects' | 'history' | 'batch';
 
 /**
  * The review column's own geometry, remembered between sessions.
@@ -2236,6 +2240,40 @@ export default function App() {
       setUploadNotices(notices);
     }
   }, [stagedUploads]);
+
+  /**
+   * One file, one report — the batch panel's unit of work.
+   *
+   * Deliberately the ORDINARY path: the same `ingestFile`, the same
+   * `analyzeReportDesign`, the same `auditRepx`. Batch intake is a different
+   * way of feeding the product, not a different product, and a second
+   * generation path would be a second set of bugs.
+   *
+   * No prompt and no previous state are passed. Each file is its own report
+   * with nothing to refine against, and handing it the last file's layout is
+   * how forty documents come out looking like the first one.
+   */
+  const batchResults = useRef<Map<string, DesignResult>>(new Map());
+  const runOneBatchFile = useCallback(async (file: File, signal: AbortSignal, id: string) => {
+    const ingested = await ingestFile(file, `batch-${id}`, config.unit);
+    const parts = toAttachmentParts(ingested.images, ingested.texts);
+    const { analyzeReportDesign } = await loadGemini();
+    const response = await analyzeReportDesign('', parts, config, undefined, signal);
+    const audit = auditRepx(response.repxContent, response.layout);
+    batchResults.current.set(id, {
+      content: response.markdown,
+      layout: response.layout,
+      repxContent: response.repxContent,
+      title: response.layout?.title || file.name,
+    } as DesignResult);
+    return {
+      title: response.layout?.title || '',
+      repxContent: response.repxContent || '',
+      bands: response.layout?.sections?.length ?? 0,
+      errors: audit.errors,
+      warnings: audit.warnings,
+    };
+  }, [config]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     await ingestFiles(Array.from(e.target.files || []));
@@ -3360,6 +3398,7 @@ export default function App() {
         {railBtn('review', 'Current report', <IconLayout size={19} />)}
         {railBtn('projects', 'Saved projects', <IconFolder size={19} />)}
         {railBtn('history', 'Recent', <IconHistory size={19} />)}
+        {railBtn('batch', 'Batch', <IconStack size={19} />)}
         <button data-open-config title="Configure" aria-label="Configure" onClick={() => setIsConfigOpen(true)}>
           <IconTune size={19} />
           <span className="wb-rail-label">Configure</span>
@@ -3810,6 +3849,28 @@ export default function App() {
         </div>
 
         {/* -------------------------------------------------------- recent */}
+        <div className={`wb-panel-body${railPanel === 'batch' ? '' : ' wb-hidden'}`}>
+          <div className="wb-col-head">
+            <span className="wb-col-title">Batch</span>
+          </div>
+          <div style={{ padding: '0 16px 16px', flex: 1, minHeight: 0, display: 'flex' }}>
+            <Suspense fallback={null}>
+              <BatchPanel
+                ready={hasApiKey}
+                onNeedKey={() => setIsConfigOpen(true)}
+                runOne={runOneBatchFile}
+                onOpen={(item) => {
+                  const full = batchResults.current.get(item.id);
+                  if (!full) return;
+                  setResult(full);
+                  setMessages([]);
+                  showRailPanel('review');
+                }}
+              />
+            </Suspense>
+          </div>
+        </div>
+
         <div className={`wb-panel-body${railPanel === 'history' ? '' : ' wb-hidden'}`}>
           <div className="wb-col-head">
             <span className="wb-col-title">Recent</span>

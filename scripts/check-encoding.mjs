@@ -120,6 +120,24 @@ const SKIP_DIRS = new Set(['bin', 'obj', 'node_modules', '.git']);
  */
 const MOJIBAKE = new RegExp('\\u00C3|\\u00C2|\\u00E2\\u20AC', 'g');
 
+/**
+ * Literal control characters, which are a different kind of invisible damage.
+ *
+ * Mojibake at least renders as something. A raw NUL or DEL in a source file
+ * renders as nothing at all: it survives no copy-paste, it is invisible in
+ * every editor, and it can silently change what a regular expression matches.
+ *
+ * Added 2026-09-05 after `src/lib/zip.ts` was written with a character class
+ * containing literal U+0000, U+001F and U+007F where the escapes were meant.
+ * The code happened to be correct and the line was unreadable and unmaintainable
+ * -- and the mojibake sweep, which had just run clean over that file, could
+ * never have said so.
+ *
+ * Tab, newline and carriage return are excluded because they are what source
+ * files are made of.
+ */
+const CONTROL_CHARS = new RegExp('[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]', 'g');
+
 function* walk(dir) {
   if (!existsSync(dir)) return;
   for (const entry of readdirSync(dir)) {
@@ -141,13 +159,23 @@ for (const name of ROOT_FILES) {
 }
 
 const hits = [];
+const controls = [];
 let checked = 0;
 
 for (const file of new Set(files)) {
   if (SKIP_FILES.has(basename(file))) continue;
   checked++;
-  const matches = readFileSync(file, 'utf8').match(MOJIBAKE);
-  if (matches) hits.push({ file: relative(ROOT, file).split(sep).join('/'), count: matches.length });
+  const text = readFileSync(file, 'utf8');
+  const name = relative(ROOT, file).split(sep).join('/');
+  const matches = text.match(MOJIBAKE);
+  if (matches) hits.push({ file: name, count: matches.length });
+  const ctrl = text.match(CONTROL_CHARS);
+  if (ctrl) {
+    // The line number is worth the extra pass: a control character is invisible,
+    // so "somewhere in this 400-line file" is not an actionable report.
+    const line = text.slice(0, text.search(CONTROL_CHARS)).split('\n').length;
+    controls.push({ file: name, count: ctrl.length, line });
+  }
 }
 
 // A sweep that silently stops matching files looks identical to a clean sweep.
@@ -166,4 +194,14 @@ if (hits.length) {
   process.exit(1);
 }
 
-console.log(`Encoding clean: ${checked} files swept, no mojibake.`);
+if (controls.length) {
+  console.error('Literal control characters found. They render as nothing, survive no');
+  console.error('copy-paste, and can silently change what a regular expression matches.\n');
+  for (const { file, count, line } of controls) {
+    console.error(`  ${String(count).padStart(5)}  ${file}:${line}`);
+  }
+  console.error('\nWrite them as escapes -- \\u0000, \\t -- rather than as raw bytes.');
+  process.exit(1);
+}
+
+console.log(`Encoding clean: ${checked} files swept, no mojibake, no control characters.`);
