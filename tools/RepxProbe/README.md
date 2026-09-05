@@ -22,6 +22,7 @@ RepxProbe emit-book <out.repx>   # the same, for BOOKMARKS / the document map
 RepxProbe emit-gauge <out.repx>  # the same, for XRGauge and XRSparkline
 RepxProbe emit-toc <out.repx>    # the same, for a TABLE OF CONTENTS
 RepxProbe emit-comb <out.repx>   # the same, for a CHARACTER COMB
+RepxProbe render-cols            # what does DevExpress DRAW? bricks from CreateDocument()
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 

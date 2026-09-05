@@ -791,6 +791,30 @@ describe('multi-column bands', () => {
     expect(band('<MultiColumn Ref="3" ColumnCount="2" Layout="DownThenAcross" />').columns?.layout).toBe('DownThenAcross');
   });
 
+it('reads an absent Layout as DownThenAcross, which is the default', () => {
+    // Measured with `RepxProbe render-cols`: with no Layout attribute, twelve
+    // records filled the first column before any reached the second. This
+    // parser said AcrossThenDown until that measurement, and every fixture set
+    // Layout explicitly -- so the wrong default was invisible to the suite,
+    // which is why it gets a case of its own.
+    const b = band('<MultiColumn Ref="3" ColumnCount="2" ColumnSpacing="20" Mode="UseColumnCount" />');
+    expect(b.columns?.layout).toBe('DownThenAcross');
+  });
+
+  it('paginates an unlabelled multi-column band down the first column', () => {
+    const structure = parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="900" PageHeight="1000">' +
+      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100">' +
+      '<MultiColumn Ref="2" ColumnCount="2" ColumnSpacing="20" Mode="UseColumnCount" />' +
+      '<Controls><Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" LocationFloat="0,0" /></Controls>' +
+      '</Item1></Bands></XtraReportsLayoutSerializer>'
+    );
+    const placed = paginate(structure, 3).pages[0].bands.filter((b) => b.band.kind === 'Detail');
+    // Down the first column, not across the row.
+    expect(placed.map((b) => b.left)).toEqual([0, 0, 0]);
+    expect(placed.map((b) => b.top)).toEqual([0, 100, 200]);
+  });
+
   it('does not read a MultiColumn item as a control', () => {
     // It is a band-level child written BEFORE <Controls>, like SortFields and
     // GroupFields -- the third of them, and the reason that generalisation is

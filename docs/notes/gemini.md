@@ -644,7 +644,19 @@ The Preview draws it behind the bands on every page, with `pointer-events: none`
 
 **One thing here is still unmeasured, and the prompt was corrected rather than left asserting it.** The block first said the band keeps the full page width and DevExpress divides it, so controls should *not* be narrowed. That was inferred, not measured — and driving the app showed the consequence immediately: a table sized to the page overflows its column. The prompt now says to size controls to one column, `(850 − 40) / 3 = 270` for three columns with 20 spacing.
 
-**What has still NOT been established is what DevExpress itself does with an over-wide control in a column** — clip it, overlap the next, or widen the column. `RepxProbe` measures serialization and this is a rendering question, so answering it means `CreateDocument()` and reading the brick geometry: a probe that does not exist yet. The prompt's instruction is right either way (a control sized to its column cannot hit the case), but the note should not pretend the underlying behaviour is known.
+**That question is now answered, by the first probe here that measures RENDERING rather than serialization.** `RepxProbe render-cols` calls `CreateDocument()` and reads the bricks — the positioned rectangles DevExpress produces when it actually lays the report out.
+
+| | |
+|---|---|
+| an over-wide control | **is not clipped.** A label declared at the full page width came back at the full page width, so it prints straight over the next column. The page then looks like overlapping content rather than a width mistake, which is why the prompt now says to size controls to one column and says *why*. |
+| column 2's x offset | `(columnWidth + spacing)`, exactly as the paginator computes it. |
+| **the default `Layout`** | **`DownThenAcross`** — twelve records filled the first column before any reached the second. |
+
+**That last one was a live bug in this repository.** `parseColumns` defaulted to `AcrossThenDown`, so a `<MultiColumn>` with no `Layout` attribute would have been previewed filling across the page when DevExpress fills down it. Every fixture in the suite set `Layout` explicitly, so the wrong default was invisible to 85 passing tests — it now has a case of its own, and so does the pagination that depends on it.
+
+**Two API traps in the brick walk**, both the same shape and both costing a run that printed nothing at all: `Page.InnerBricks` holds the children, not `Page.Bricks`; and a `CompositeBrick` likewise keeps its children in `InnerBricks` while `Bricks` is also present and non-empty. Walking `Bricks` finds nothing and looks exactly like an empty page.
+
+One observation deliberately left unexplained: column 2's first record started 180 document units down rather than at 0. Nothing here depends on it and no explanation was measured, so none is offered.
 
 ### Bookmarks, and a prediction that held (2026-09-05)
 

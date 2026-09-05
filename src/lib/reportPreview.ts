@@ -304,7 +304,16 @@ function parseColumns(bandInner: string): PreviewColumns | null {
   return {
     count: numAttr(attrs, 'ColumnCount', 1),
     spacing: numAttr(attrs, 'ColumnSpacing', 0),
-    layout: attrOf(attrs, 'Layout') || 'AcrossThenDown',
+    /*
+     * `DownThenAcross` is the default, measured with `RepxProbe render-cols`
+     * rather than assumed — and this line said `AcrossThenDown` until that
+     * measurement, which would have laid an unlabelled multi-column report out
+     * in the wrong order while looking entirely plausible.
+     *
+     * The evidence: with no `Layout` attribute, twelve records filled the first
+     * column top to bottom before any reached the second.
+     */
+    layout: attrOf(attrs, 'Layout') || 'DownThenAcross',
     mode: attrOf(attrs, 'Mode') || 'UseColumnCount',
   };
 }

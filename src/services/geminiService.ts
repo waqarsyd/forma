@@ -117,7 +117,7 @@ const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
         </Item1>
       </Controls>
     </Item3>
-    <Item4 Ref="9" ControlType="DetailBand" Name="Detail" HeightF="40">
+    <Item4 Ref="9" ControlType="DetailBand" Name="Detail" HeightF="40">
       <Controls>
         <Item1 Ref="10" ControlType="XRTable" Name="tableDetail" LocationFloat="20,5" SizeF="810,25">
           <Rows>
@@ -1008,11 +1008,12 @@ const COLUMNS_BLOCK = `          - MULTI-COLUMN DETAIL — records flowing into 
               <Controls> ... </Controls>
             </Item2>
             - **Mode decides which of the two size properties is read.** Mode="UseColumnCount" reads ColumnCount and ignores ColumnWidth; Mode="UseColumnWidth" does the opposite. Write the mode that matches the property you set, or the one you set is silently ignored and the report prints in one column.
-            - Layout is AcrossThenDown (fill left to right, then the next row) or DownThenAcross (fill the first column top to bottom, then the next). The attribute is **Layout**, not Direction.
+            - Layout is AcrossThenDown (fill left to right, then the next row) or DownThenAcross (fill the first column top to bottom, then the next). The attribute is **Layout**, not Direction. **DownThenAcross is the default and writing it is optional; AcrossThenDown must be written or the report fills column by column.** Read the source: a phone list runs down a column, a label sheet usually runs across.
+            - **Size the controls to ONE COLUMN.** A control wider than its column is NOT clipped — measured — so it prints straight over the next column and the page looks like overlapping content rather than a width mistake.
             - ColumnSpacing is in the report's own units, like every other measurement except font size and border width.
             - The element carries a Ref and NO ControlType.
             - **Omit it entirely for an ordinary report.** A band with no <MultiColumn> prints one column, which is what almost every document wants. Only emit it when the source visibly repeats its records side by side across the page.
-            - **Size the controls to ONE COLUMN, not to the page.** With ColumnCount="3" and ColumnSpacing="20" on an 850-wide page each column is (850 - 40) / 3 = 270 units, so a table filling a column is SizeF="270,…" and not "810,…". A control wider than its column is the commonest way this comes out wrong, and it looks like a layout bug rather than a column-width one.
+            - With ColumnCount="3" and ColumnSpacing="20" on an 850-wide page each column is (850 - 40) / 3 = 270 units, so a table filling a column is SizeF="270,…" and not "810,…".
 `;
 
 /**

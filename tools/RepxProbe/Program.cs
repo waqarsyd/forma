@@ -50,6 +50,7 @@ static class Program {
             case "emit-gauge": EmitGauge(args[1]); return 0;
             case "emit-toc":   EmitToc(args[1]);   return 0;
             case "emit-comb":  EmitComb(args[1]);  return 0;
+            case "render-cols": return RenderColumns();
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -1166,6 +1167,116 @@ static class Program {
         Console.WriteLine("written: " + Path.GetFullPath(outPath));
         Console.WriteLine();
         Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// The first probe that asks a RENDERING question rather than a
+    /// serialization one.
+    ///
+    /// Every other subcommand here reads what `SaveLayoutToXml` writes. This one
+    /// calls `CreateDocument()` and reads the BRICKS -- the positioned rectangles
+    /// DevExpress produces when it actually lays the report out -- because the
+    /// question cannot be answered from the file:
+    ///
+    ///   **What does DevExpress do with a control wider than its column?**
+    ///   Clip it, let it overlap the next column, or widen the column? Forma's
+    ///   prompt tells the model to size controls to one column, which avoids the
+    ///   case; but the note said the underlying behaviour was unknown, and an
+    ///   unknown that can be measured should not stay one.
+    ///
+    /// Three controls in a 2-column band on an 850-wide page with 20 spacing, so
+    /// a column is 415 units: one sized to the column, one at the full page
+    /// width, and one at half the page. What comes back tells us which.
+    static int RenderColumns() {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeRenderCols";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+        report.Margins = new System.Drawing.Printing.Margins(0, 0, 0, 0);
+
+        const float pageWidth = 850f;
+        const float spacing = 20f;
+        const int count = 2;
+        float columnWidth = (pageWidth - spacing * (count - 1)) / count;
+        Console.WriteLine("page " + pageWidth + ", " + count + " columns, spacing " + spacing
+            + " => column width " + columnWidth);
+        Console.WriteLine();
+
+        XRLabel fits = new XRLabel();
+        fits.Name = "fits";
+        fits.Text = "FITS";
+        fits.LocationF = new PointF(0, 0);
+        fits.SizeF = new SizeF(columnWidth, 20);
+
+        XRLabel overWide = new XRLabel();
+        overWide.Name = "overWide";
+        overWide.Text = "OVERWIDE";
+        overWide.LocationF = new PointF(0, 25);
+        overWide.SizeF = new SizeF(pageWidth, 20);
+
+        XRLabel half = new XRLabel();
+        half.Name = "half";
+        half.Text = "HALF";
+        half.LocationF = new PointF(0, 50);
+        half.SizeF = new SizeF(pageWidth / 2, 20);
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 80;
+        detail.Controls.AddRange(new XRControl[] { fits, overWide, half });
+        detail.MultiColumn.ColumnCount = count;
+        detail.MultiColumn.ColumnSpacing = spacing;
+        detail.MultiColumn.Mode = MultiColumnMode.UseColumnCount;
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(), detail, new BottomMarginBand()
+        });
+
+
+        List<Row> rows = new List<Row>();
+        // Enough to fill a column and spill into the next: a 1100-tall page over
+        // an 80-tall band is 13 rows, so 20 records must use both columns.
+        for (int i = 1; i <= 20; i++) rows.Add(new Row(i));
+        report.DataSource = rows;
+
+        report.CreateDocument();
+        Console.WriteLine("pages: " + report.Pages.Count);
+        Console.WriteLine();
+        Console.WriteLine("brick                 x        y        width    height");
+        Console.WriteLine(new string('-', 62));
+        foreach (DevExpress.XtraPrinting.Page page in report.Pages) {
+            foreach (DevExpress.XtraPrinting.Brick brick in page.InnerBricks) Dump(brick, 0);
+            break; // the first page answers the question
+        }
+        return 0;
+    }
+
+    /// One data row, so the Detail band repeats. An anonymous type would do but
+    /// a named one keeps the reflection DevExpress does over it predictable.
+    class Row {
+        public Row(int n) { Number = n; }
+        public int Number { get; set; }
+    }
+
+    /// Print a brick and everything inside it, indented, with its rectangle.
+    /// Only bricks carrying text are named -- the rest are containers and their
+    /// geometry is the band, not a control.
+    static void Dump(DevExpress.XtraPrinting.Brick brick, int depth) {
+        DevExpress.XtraPrinting.TextBrick text = brick as DevExpress.XtraPrinting.TextBrick;
+        string label = text != null && !string.IsNullOrEmpty(text.Text)
+            ? text.Text
+            : "<" + brick.BrickType + ">";
+        RectangleF r = brick.Rect;
+        Console.WriteLine("{0,-24} {1,8:0.#} {2,8:0.#} {3,8:0.#} {4,8:0.#}",
+            new string(' ', depth * 2) + label, r.X, r.Y, r.Width, r.Height);
+        // A composite keeps its children in InnerBricks, NOT in Bricks -- which
+        // is also non-empty, so walking `Bricks` finds nothing and looks like an
+        // empty page. Same trap as Page.InnerBricks one level up.
+        DevExpress.XtraPrinting.CompositeBrick composite = brick as DevExpress.XtraPrinting.CompositeBrick;
+        if (composite != null) {
+            foreach (DevExpress.XtraPrinting.Brick child in composite.InnerBricks) Dump(child, depth + 1);
+        }
+        foreach (DevExpress.XtraPrinting.Brick child in brick.Bricks) Dump(child, depth + 1);
     }
 
     /// Writes a GROUPED report, to settle how grouping is serialized.
