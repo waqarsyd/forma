@@ -37,6 +37,7 @@ static class Program {
                 case "emit-params": EmitParams(args[1]); return 0;
                 case "emit-chart": EmitChart(args[1]); return 0;
             case "emit-grow":  EmitGrow(args[1]);  return 0;
+            case "emit-marks": EmitMarks(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -191,6 +192,106 @@ static class Program {
             detail,
             new BottomMarginBand()
         });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes CHECKBOXES and CROSS-BAND controls, the two things an ordinary
+    /// invoice or form contains that Forma currently cannot represent at all.
+    ///
+    /// Open questions, none of which the class reference answers about the FILE:
+    ///
+    ///   XRCheckBox     -- is the state an enum or a bool? Which value is the
+    ///                     default and therefore omitted? Does the caption live
+    ///                     in Text like every other control?
+    ///   XRCrossBandLine/Box
+    ///                  -- these do NOT live in a band's Controls. They hang off
+    ///                     the REPORT and name a start and end band, so the
+    ///                     question is how a band REFERENCE is serialized:
+    ///                     by name, by Ref pointer, or by index. That matters
+    ///                     more than the geometry, because a wrong reference is
+    ///                     the kind of thing that loads without complaint.
+    static void EmitMarks(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeMarks";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        // Three checkboxes: default state, explicitly checked, and indeterminate
+        // -- so whichever value is missing from the file is the default.
+        XRCheckBox untouched = new XRCheckBox();
+        untouched.Name = "checkUntouched";
+        untouched.Text = "Untouched";
+        untouched.LocationF = new PointF(0, 0);
+        untouched.SizeF = new SizeF(200, 20);
+
+        XRCheckBox ticked = new XRCheckBox();
+        ticked.Name = "checkTicked";
+        ticked.Text = "Paid in full";
+        ticked.LocationF = new PointF(0, 25);
+        ticked.SizeF = new SizeF(200, 20);
+        ticked.Checked = true;
+
+        XRCheckBox unticked = new XRCheckBox();
+        unticked.Name = "checkUnticked";
+        unticked.Text = "Explicitly unchecked";
+        unticked.LocationF = new PointF(0, 50);
+        unticked.SizeF = new SizeF(200, 20);
+        unticked.Checked = false;
+
+        XRCheckBox bound = new XRCheckBox();
+        bound.Name = "checkBound";
+        bound.Text = "Bound";
+        bound.LocationF = new PointF(0, 75);
+        bound.SizeF = new SizeF(200, 20);
+        // Does a checkbox bind on CheckState rather than on Text? Ask.
+        bound.ExpressionBindings.Add(new ExpressionBinding("BeforePrint", "CheckState", "[IsPaid]"));
+
+        PageHeaderBand pageHeader = new PageHeaderBand();
+        pageHeader.Name = "PageHeader";
+        pageHeader.HeightF = 40;
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 110;
+        detail.Controls.AddRange(new XRControl[] { untouched, ticked, unticked, bound });
+
+        ReportFooterBand reportFooter = new ReportFooterBand();
+        reportFooter.Name = "ReportFooter";
+        reportFooter.HeightF = 30;
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            pageHeader,
+            detail,
+            reportFooter,
+            new BottomMarginBand()
+        });
+
+        // A vertical rule from the page header down through the detail band --
+        // the column separator every legacy table-heavy report has.
+        XRCrossBandLine line = new XRCrossBandLine();
+        line.Name = "columnRule";
+        line.StartBand = pageHeader;
+        line.EndBand = detail;
+        line.StartPointFloat = new DevExpress.Utils.PointFloat(300, 0);
+        line.EndPointFloat = new DevExpress.Utils.PointFloat(300, 110);
+        line.WidthF = 1;
+
+        // And a box around the same span, which is the other half of the shape.
+        XRCrossBandBox box = new XRCrossBandBox();
+        box.Name = "detailBox";
+        box.StartBand = pageHeader;
+        box.EndBand = reportFooter;
+        box.StartPointFloat = new DevExpress.Utils.PointFloat(0, 0);
+        box.EndPointFloat = new DevExpress.Utils.PointFloat(750, 30);
+        box.WidthF = 1;
+
+        report.CrossBandControls.AddRange(new XRCrossBandControl[] { line, box });
 
         report.SaveLayoutToXml(outPath);
         Console.WriteLine("written: " + Path.GetFullPath(outPath));

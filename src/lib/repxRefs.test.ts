@@ -165,3 +165,89 @@ describe('ensureUniqueRefs', () => {
     }
   });
 });
+
+/**
+ * `#Ref-N` pointers, and why the repair leaves them alone.
+ *
+ * Two attributes in this format point at a Ref rather than defining one: a
+ * parameter's `Type`, pointing into `<ObjectStorage>`, and a cross-band
+ * control's `StartBand`/`EndBand`, pointing at bands. Both were measured with
+ * `RepxProbe`, and neither existed when this module was written.
+ *
+ * The renumbering takes new values from `max + 1`, and the FIRST occurrence of
+ * a duplicated Ref keeps its number — so in the ordinary case a pointer still
+ * resolves to exactly the element it resolved to before. Rewriting pointers to
+ * follow the renumbered copy would break that case, which is why the repair
+ * does not do it.
+ */
+describe('ensureUniqueRefs and #Ref- pointers', () => {
+  const withPointer = (body: string) => report(body);
+
+  it('leaves a pointer alone when its target kept its number', () => {
+    const xml = withPointer(
+      '<Item1 Ref="2" ControlType="DetailBand" Name="Detail" />' +
+      '<Item2 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" />' +
+      '<Item3 Ref="3" ControlType="ReportFooterBand" Name="ReportFooter" />' +
+      '<Item4 ControlType="XRCrossBandLine" Name="rule" StartBand="#Ref-2" EndBand="#Ref-3" />'
+    );
+    const { xml: out, applied } = ensureUniqueRefs(xml);
+    expect(applied).toBe(true);
+    // Ref 2 was never duplicated, so this pointer is untouched and still right.
+    expect(out).toContain('StartBand="#Ref-2"');
+  });
+
+  it('does not rewrite a pointer to follow the renumbered copy', () => {
+    // The regression guarded here: "fixing" the pointer to chase the element
+    // that moved would aim it at the LAST duplicate, when the pointer resolved
+    // to the first one both before and after the repair.
+    const xml = withPointer(
+      '<Item1 Ref="4" ControlType="PageHeaderBand" Name="PageHeader" />' +
+      '<Item2 Ref="4" ControlType="DetailBand" Name="Detail" />' +
+      '<Item3 ControlType="XRCrossBandLine" Name="rule" StartBand="#Ref-4" />'
+    );
+    const { xml: out } = ensureUniqueRefs(xml);
+    expect(out).toContain('StartBand="#Ref-4"');
+    expect(out).not.toMatch(/StartBand="#Ref-(?!4")/);
+  });
+
+  it('warns when a renumbered Ref had a pointer to it, because that is ambiguous', () => {
+    const xml = withPointer(
+      '<Item1 Ref="4" ControlType="PageHeaderBand" Name="PageHeader" />' +
+      '<Item2 Ref="4" ControlType="DetailBand" Name="Detail" />' +
+      '<Item3 ControlType="XRCrossBandLine" Name="rule" StartBand="#Ref-4" />'
+    );
+    const { reason } = ensureUniqueRefs(xml);
+    expect(reason).toContain('WARNING');
+    expect(reason).toContain('#Ref- pointer');
+  });
+
+  it('stays quiet when no pointer names anything that moved', () => {
+    const xml = withPointer(
+      '<Item1 Ref="5" ControlType="XRTable" Name="a" />' +
+      '<Item2 Ref="5" ControlType="XRTable" Name="b" />' +
+      '<Item3 Ref="9" ControlType="DetailBand" Name="Detail" />' +
+      '<Item4 ControlType="XRCrossBandLine" Name="rule" StartBand="#Ref-9" />'
+    );
+    expect(ensureUniqueRefs(xml).reason).not.toContain('WARNING');
+  });
+
+  it('does not mistake a pointer for a definition', () => {
+    // `StartBand="#Ref-2"` must not be counted as an element carrying Ref="2",
+    // or the audit would report a collision that is not one.
+    const xml = withPointer(
+      '<Item1 Ref="2" ControlType="DetailBand" Name="Detail" />' +
+      '<Item2 ControlType="XRCrossBandLine" Name="rule" StartBand="#Ref-2" />'
+    );
+    expect(auditRefs(xml).duplicates).toEqual([]);
+    expect(ensureUniqueRefs(xml).applied).toBe(false);
+  });
+
+  it('leaves a parameter type pointer alone the same way', () => {
+    const xml = withPointer(
+      '<Item1 Ref="7" ControlType="DetailBand" Name="Detail" />' +
+      '<Item2 Ref="7" ControlType="XRLabel" Name="label1" />'
+    ).replace('</Bands>', '</Bands><Parameters><Item1 Ref="30" Name="From" Type="#Ref-31" /></Parameters>');
+    const { xml: out } = ensureUniqueRefs(xml);
+    expect(out).toContain('Type="#Ref-31"');
+  });
+});

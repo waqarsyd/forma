@@ -159,6 +159,45 @@ function ControlBox({
   }
 
   /*
+   * A checkbox draws its own box, which is the point of it being one.
+   *
+   * The alternative the prompt warns against -- a label containing "X", or a
+   * bordered empty label -- looks identical here, so this pane is where the
+   * difference becomes visible: a real XRCheckBox renders a tick, a fake one
+   * renders a letter. Unchecked is the common case and is drawn as an empty
+   * box rather than as nothing, because an empty box IS the content.
+   */
+  if (control.type === 'XRCheckBox') {
+    // Sized from the control's own height in px, clamped so a tall box does
+    // not produce an absurd glyph and a short one stays visible.
+    const box = Math.min(12, Math.max(8, u(control.height) * 0.6));
+    return (
+      <div style={{ ...frame, gap: 6, alignItems: 'center', justifyContent: 'flex-start' }}>
+        <span
+          aria-hidden
+          style={{
+            width: box,
+            height: box,
+            flex: `0 0 ${box}px`,
+            border: '1px solid currentColor',
+            borderRadius: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: box - 2,
+            lineHeight: 1,
+          }}
+        >
+          {control.checkState === 'checked' ? '✓' : control.checkState === 'indeterminate' ? '–' : ''}
+        </span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {control.text}
+        </span>
+      </div>
+    );
+  }
+
+  /*
    * A chart and a cross-tab are drawn as their STRUCTURE, not as invented data.
    *
    * The preview has no data source, so plotting bars would mean making numbers

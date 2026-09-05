@@ -134,6 +134,13 @@ export interface PreviewControl {
   /** Populated for XRCrossTab only. */
   crossTab: PreviewCrossTab | null;
   /**
+   * Populated for XRCheckBox only: `unchecked`, `checked` or `indeterminate`.
+   *
+   * Unchecked is the serializer's default and is written as nothing at all, so
+   * an absent attribute is a real state rather than missing information.
+   */
+  checkState: CheckState | null;
+  /**
    * Where this control's opening tag sits in the source REPX: `openStart` is
    * the `<`, `openEnd` the matching `>`. Absolute offsets into the document
    * that was parsed, which is what lets an edit rewrite one attribute list and
@@ -160,6 +167,29 @@ export interface ReportStructure {
 }
 
 // --------------------------------------------------------------- attributes
+
+export type CheckState = 'unchecked' | 'checked' | 'indeterminate';
+
+/**
+ * A checkbox's state, from whichever of the two attributes the file carries.
+ *
+ * `RepxProbe emit-marks` showed DevExpress writes `Checked="true"` **and**
+ * `CheckBoxState="Checked"` together for a ticked box, and neither for an empty
+ * one. `CheckBoxState` wins when both are present because it is the wider type
+ * — `Indeterminate` has no representation in the bool.
+ *
+ * A model that writes only one of the pair is still read correctly here. That is
+ * deliberate leniency in the reader, not permission in the prompt, which asks
+ * for both: this pane exists to show what the file says, and refusing to read a
+ * half-written checkbox would hide the defect instead of displaying it.
+ */
+function parseCheckState(attrs: string): CheckState {
+  const state = (attrOf(attrs, 'CheckBoxState') || '').toLowerCase();
+  if (state === 'checked') return 'checked';
+  if (state === 'indeterminate') return 'indeterminate';
+  if (state === 'unchecked') return 'unchecked';
+  return (attrOf(attrs, 'Checked') || '').toLowerCase() === 'true' ? 'checked' : 'unchecked';
+}
 
 const attrOf = (attrs: string, name: string): string | null => {
   const m = new RegExp(`\\s${name}\\s*=\\s*"([^"]*)"`).exec(attrs);
@@ -267,27 +297,35 @@ function innerSpan(xml: string, tagName: string, openIndex: number): { text: str
   const openEnd = xml.indexOf('>', openIndex);
   if (openEnd === -1) return null;
   if (xml[openEnd - 1] === '/') return null; // self-closing: no children
-  const open = new RegExp(`<${tagName}(?=[\\s>])`, 'g');
-  const close = new RegExp(`</${tagName}>`, 'g');
-  open.lastIndex = openEnd;
-  close.lastIndex = openEnd;
+  /*
+   * Match WHOLE tags, so a self-closing one can be told from an opening one.
+   *
+   * The previous version searched for `<Item2` and `</Item2>` separately and
+   * counted every `<Item2` as a nesting level. A self-closing `<Item2 ... />`
+   * has no `</Item2>`, so it pushed the depth up by one and nothing ever
+   * brought it back down: the scan ran off the end and returned null.
+   *
+   * That is not a hypothetical. Item numbering restarts inside every
+   * collection, so a band `<Item2 ControlType="ReportHeaderBand">` holding two
+   * or more controls contains a control named `<Item2 ... />` — self-closing,
+   * because most controls have no children. The band's inner XML came back
+   * null and **every control in it silently vanished from the Preview**, while
+   * the exported REPX was perfectly correct. Found on 2026-09-05 by a checkbox
+   * fixture whose Detail band happened to be `Item1`.
+   */
+  const scanner = new RegExp(
+    `<(/?)${tagName}((?:\\s+[\\w.:-]+\\s*=\\s*"[^"]*")*)\\s*(/?)>`,
+    'g',
+  );
+  scanner.lastIndex = openEnd + 1;
   let depth = 1;
-  let cursor = openEnd;
-  while (depth > 0) {
-    open.lastIndex = cursor;
-    close.lastIndex = cursor;
-    const nextOpen = open.exec(xml);
-    const nextClose = close.exec(xml);
-    if (!nextClose) return null;
-    if (nextOpen && nextOpen.index < nextClose.index) {
-      depth++;
-      cursor = nextOpen.index + 1;
-    } else {
+  let match: RegExpExecArray | null;
+  while ((match = scanner.exec(xml)) !== null) {
+    if (match[1] === '/') {
       depth--;
-      if (depth === 0) {
-        return { text: xml.slice(openEnd + 1, nextClose.index), start: openEnd + 1 };
-      }
-      cursor = nextClose.index + 1;
+      if (depth === 0) return { text: xml.slice(openEnd + 1, match.index), start: openEnd + 1 };
+    } else if (match[3] !== '/') {
+      depth++;
     }
   }
   return null;
@@ -435,6 +473,15 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
       rows: type === 'XRTable' ? parseTableRows(inner, item.start) : [],
       series: type === 'XRChart' ? parseSeries(inner, item.start, extent) : [],
       crossTab: type === 'XRCrossTab' ? parseCrossTab(inner, item.start, extent) : null,
+      /*
+       * Read `CheckBoxState` rather than `Checked`, though DevExpress writes
+       * both when a box is ticked (`RepxProbe emit-marks`). `Checked` is a
+       * two-value bool and `CheckBoxState` is the enum that also carries
+       * `Indeterminate`, so the enum is the one that can express every state
+       * the control has. Absent means unchecked -- neither attribute is written
+       * for the default, so the empty box is the silent case.
+       */
+      checkState: type === 'XRCheckBox' ? parseCheckState(item.attrs) : null,
       openStart: innerStart + item.start,
       openEnd: innerStart + inner.indexOf('>', item.start),
     });

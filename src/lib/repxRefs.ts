@@ -63,6 +63,26 @@ const NON_ELEMENT = /<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g;
 const REF = /\sRef\s*=\s*"([^"]*)"/;
 const CONTROL_TYPE = /\sControlType\s*=\s*"/;
 
+/**
+ * A pointer to a `Ref`, written as the attribute value `#Ref-N`.
+ *
+ * Three places use this form, and none of them were known when this module was
+ * written: a parameter's `Type` pointing into `<ObjectStorage>`, and a
+ * cross-band control's `StartBand` and `EndBand` pointing at bands
+ * (`RepxProbe emit-params` and `emit-marks` respectively).
+ *
+ * **They have to move when their target is renumbered.** Renumbering a
+ * duplicate definition and leaving the pointer behind aims it at whichever
+ * element kept the old number — so a parameter silently becomes a string, or a
+ * cross-band line silently attaches to the wrong band. That is the same
+ * loads-fine-looks-wrong failure the whole module exists to prevent, arriving
+ * through the repair rather than through the model.
+ *
+ * Note this deliberately matches the attribute VALUE and not a bare `Ref=`, so
+ * it cannot collide with a definition.
+ */
+const REF_POINTER = /="#Ref-(\d+)"/g;
+
 export interface RefOccurrence {
   /** The `Ref` value as written. */
   ref: string;
@@ -185,13 +205,42 @@ export function ensureUniqueRefs(xml: string | undefined | null): RefRepair {
     out = out.slice(0, start) + tag.replace(REF, ` Ref="${to}"`) + out.slice(tagEnd);
   }
 
+  /*
+   * `#Ref-N` pointers are deliberately NOT rewritten, and the reasoning is
+   * worth stating because both obvious answers are wrong.
+   *
+   * New numbers come from `max + 1`, so no existing pointer can be aimed at
+   * one. The first occurrence of a duplicated `Ref` keeps its number, so a
+   * pointer to that number still resolves — to the element it already resolved
+   * to before this ran. In the ordinary case the repair is invisible to
+   * pointers, which is why leaving them alone is right.
+   *
+   * The exception cannot be repaired, only reported. If the pointer's intended
+   * target was the *later* duplicate — the one that just moved — then the
+   * pointer now names a different element. Following the renumbering instead
+   * would break the mirror-image case just as badly, and the file carries
+   * nothing that says which element a `#Ref-N` meant when two claimed the same
+   * number. Guessing either way would turn a detectable problem into a silent
+   * one, so the count goes into `reason` and the XML is left as found.
+   */
+  const renumbered = new Set(rewrites.map((r) => r.from));
+  const ambiguous = new Set<string>();
+  for (const match of text.matchAll(REF_POINTER)) {
+    if (renumbered.has(match[1])) ambiguous.add(match[1]);
+  }
+
   const which = duplicates.map((d) => `${d.ref}x${d.count}`).join(', ');
   return {
     xml: out,
     applied: true,
     reason:
       `renumbered ${rewrites.length} element(s) that reused a Ref (${which})` +
-      (skipped ? `; left ${skipped} back-reference(s) alone` : ''),
+      (skipped ? `; left ${skipped} back-reference(s) alone` : '') +
+      (ambiguous.size
+        ? `; WARNING: ${ambiguous.size} renumbered Ref(s) had a #Ref- pointer to them ` +
+          `(${[...ambiguous].join(', ')}) — a parameter type or cross-band band reference ` +
+          `may now name the wrong element, and the file cannot say which was meant`
+        : ''),
     renumbered: rewrites.length,
   };
 }

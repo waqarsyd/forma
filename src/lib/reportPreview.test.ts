@@ -468,3 +468,110 @@ describe('choosing how many records to preview', () => {
     expect(recordCountFromLayout(headerTable)).toBe(3);
   });
 });
+
+/**
+ * Checkboxes, and the one thing about them that is not obvious.
+ *
+ * `RepxProbe emit-marks` measured what DevExpress writes: a ticked box carries
+ * BOTH `Checked="true"` and `CheckBoxState="Checked"`, and an unchecked one
+ * carries neither. So an absent attribute is a real state rather than missing
+ * information, and the reader must not treat it as unknown.
+ */
+describe('checkboxes', () => {
+  const withControl = (control: string) =>
+    parseReportStructure(
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>' +
+      control +
+      '</Controls></Item1></Bands></XtraReportsLayoutSerializer>'
+    ).bands[0].controls[0];
+
+  it('reads a ticked box from the pair DevExpress writes', () => {
+    const c = withControl('<Item1 Ref="2" ControlType="XRCheckBox" Name="c" Checked="true" CheckBoxState="Checked" Text="Paid" SizeF="200,20" LocationFloat="0,0" />');
+    expect(c.checkState).toBe('checked');
+    expect(c.text).toBe('Paid');
+  });
+
+  it('reads an untouched box as unchecked, because that is what the default means', () => {
+    const c = withControl('<Item1 Ref="2" ControlType="XRCheckBox" Name="c" Text="Not paid" SizeF="200,20" LocationFloat="0,0" />');
+    expect(c.checkState).toBe('unchecked');
+  });
+
+  it('reads the third state the bool cannot express', () => {
+    const c = withControl('<Item1 Ref="2" ControlType="XRCheckBox" Name="c" CheckBoxState="Indeterminate" Text="Partial" SizeF="200,20" LocationFloat="0,0" />');
+    expect(c.checkState).toBe('indeterminate');
+  });
+
+  it('prefers CheckBoxState when the two attributes disagree', () => {
+    // The enum is the wider type, so it decides. A file with both saying
+    // different things is malformed either way; this is the reading that can
+    // represent every state rather than the one that cannot.
+    const c = withControl('<Item1 Ref="2" ControlType="XRCheckBox" Name="c" Checked="true" CheckBoxState="Unchecked" Text="x" SizeF="200,20" LocationFloat="0,0" />');
+    expect(c.checkState).toBe('unchecked');
+  });
+
+  it('still reads a half-written checkbox rather than refusing it', () => {
+    // Leniency in the reader, not permission in the prompt: this pane exists to
+    // show what the file says, and hiding a malformed control would hide the
+    // defect instead of displaying it.
+    const c = withControl('<Item1 Ref="2" ControlType="XRCheckBox" Name="c" Checked="true" Text="x" SizeF="200,20" LocationFloat="0,0" />');
+    expect(c.checkState).toBe('checked');
+  });
+
+  it('leaves checkState null on every other control type', () => {
+    const c = withControl('<Item1 Ref="2" ControlType="XRLabel" Name="l" Text="x" SizeF="200,20" LocationFloat="0,0" />');
+    expect(c.checkState).toBeNull();
+  });
+});
+
+/**
+ * A band whose ItemN number collides with one of its own controls.
+ *
+ * Item numbering restarts inside every collection, so a band `<Item2>` holding
+ * two controls contains a control also named `<Item2 />` — self-closing,
+ * because most controls have no children. The span reader used to count that
+ * self-closing tag as a nesting level, find no matching `</Item2>`, and return
+ * null for the band's inner XML.
+ *
+ * **Every control in that band then vanished from the Preview while the
+ * exported REPX stayed perfectly correct** — the silent class this pane exists
+ * to catch, occurring in the pane itself. Found on 2026-09-05.
+ */
+describe('a band numbered the same as one of its controls', () => {
+  const band = (n: number, controls: string) =>
+    parseReportStructure(
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      `<Bands><Item${n} Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>` +
+      controls +
+      `</Controls></Item${n}></Bands></XtraReportsLayoutSerializer>`
+    ).bands[0];
+
+  const label = (n: number) =>
+    `<Item${n} Ref="${n + 10}" ControlType="XRLabel" Name="l${n}" Text="x" SizeF="100,20" LocationFloat="0,0" />`;
+
+  it('keeps the controls when the collision is on the first item', () => {
+    expect(band(1, label(1)).controls).toHaveLength(1);
+  });
+
+  it('keeps every control when a later one collides with the band', () => {
+    // The realistic shape: ReportHeader is Item2 and its second control is too.
+    expect(band(2, label(1) + label(2) + label(3)).controls).toHaveLength(3);
+  });
+
+  it('still reads a band whose number collides with nothing', () => {
+    expect(band(4, label(1) + label(2)).controls).toHaveLength(2);
+  });
+
+  it('does not confuse a nested collection for the band closing early', () => {
+    const table =
+      '<Item1 Ref="20" ControlType="XRTable" Name="t" SizeF="700,20" LocationFloat="0,0">' +
+      '<Rows><Item1 Ref="21" ControlType="XRTableRow" Name="r" Weight="1">' +
+      '<Cells><Item1 Ref="22" ControlType="XRTableCell" Name="c" Text="A" Weight="1" /></Cells>' +
+      '</Item1></Rows></Item1>';
+    const result = band(1, table + label(2));
+    expect(result.controls.map((c) => c.type)).toEqual(['XRTable', 'XRLabel']);
+    expect(result.controls[0].rows[0].cells[0].text).toBe('A');
+  });
+});

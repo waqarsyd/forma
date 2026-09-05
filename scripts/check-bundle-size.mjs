@@ -97,7 +97,13 @@ const BUDGETS = [
   // drift: the mega-prompt is where features are specified, so a cap on it fires
   // roughly once per feature. If it ever fires without a prompt change behind
   // it, that is the interesting case and the one this budget is really for.
-  { prefix: 'geminiService-', ext: '.js', max: 78_000, note: 'the mega-prompt + generation service, lazy' },
+  //
+  // And again to 81_000 the same day: 73,565 -> 75,740 B, +2,175 B, for the
+  // XRCheckBox and cross-band-control sections. That is the third raise in one
+  // day and the fourth overall, which is the cadence the paragraph above
+  // predicts rather than a sign of anything wrong -- each one names a feature.
+  // 81_000 puts it at 93.5%.
+  { prefix: 'geminiService-', ext: '.js', max: 81_000, note: 'the mega-prompt + generation service, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it
