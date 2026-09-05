@@ -162,13 +162,26 @@ const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
         id: "detail",
         name: "Detail",
         type: "detail",
-        height: 40,
+        /* Tall enough for the four rows below.
+         *
+         * This deliberately does NOT match the DetailBand's HeightF of 40, and
+         * the mismatch is the point: the layout describes the SOURCE document,
+         * where the detail area shows four rows at once, while the band
+         * describes the REPORT, where one row repeats per record. */
+        height: 110,
         elements: [
           {
             /* Every row the model could read, which is the one deliberate
                difference from the Detail BAND above — and what the preview
-               counts records from. */
-            id: "tbl-detail", type: "table", content: "", x: 20, y: 5, width: 810, height: 25, fontSize: 10,
+               counts records from.
+
+               **The height has to carry all of them.** MockupTable divides its
+               declared height between its rows, so four rows in the height of
+               one gave each row a quarter of a line and `overflow: hidden` cut
+               the text into an illegible band -- which reads as rows drawn on
+               top of each other, and was reported that way. Nothing warns: the
+               REPX was correct throughout, and only the Mockup looked wrong. */
+            id: "tbl-detail", type: "table", content: "", x: 20, y: 5, width: 810, height: 100, fontSize: 10,
             rows: [
               { cells: [{ content: "Item Description" }, { content: "Amount", textAlign: "right" }] },
               { cells: [{ content: "Mock Layout Development Service" }, { content: "1,250.00", textAlign: "right" }] },
