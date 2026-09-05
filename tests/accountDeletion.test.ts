@@ -35,9 +35,12 @@ import { doc, setDoc, getDoc, collection, getDocs, type Firestore } from 'fireba
 import fs from 'node:fs';
 import {
   deleteAccountData,
+  deleteReportAndVersions,
   vaultDocRef,
   reportsCollectionRef,
+  versionsCollectionRef,
   VAULT_DOC_ID,
+  VERSIONS_COLLECTION,
 } from '../src/lib/accountData';
 
 const ALICE = 'alice-uid';
@@ -177,6 +180,106 @@ describe('deleteAccountData', () => {
   });
 });
 
+/**
+ * Version history, and the one thing about it that is not obvious.
+ *
+ * **Firestore does not delete a subcollection when its parent document is
+ * deleted.** A report removed with a plain `deleteDoc` leaves its whole history
+ * behind — under an account that may itself be gone — reachable by nobody and
+ * visible to nobody, including the person who asked to be forgotten. That is
+ * the same stranding this module was written to prevent for the vault, and it
+ * is why `deleteReportAndVersions` exists and why nothing may call
+ * `deleteDoc(reportDocRef(...))` directly.
+ *
+ * These tests assert the absence, which is the only way that failure is
+ * visible: everything about it looks like a successful delete.
+ */
+const validVersion = (id: string, reportId: string, uid: string) => ({
+  id,
+  reportId,
+  label: 'Refined',
+  timestamp: Date.now(),
+  snapshot: '{"content":"# spec","repxContent":"<x/>","title":"R"}',
+  userId: uid,
+});
+
+/** Past the rules, for the reason given above `countReports`. */
+const countVersions = async (uid: string, reportId: string): Promise<number> => {
+  let size = -1;
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const snap = await getDocs(
+      collection(ctx.firestore(), 'users', uid, 'reports', reportId, VERSIONS_COLLECTION),
+    );
+    size = snap.size;
+  });
+  return size;
+};
+
+const seedReportWithHistory = async (uid: string, reportId: string, versions: number) => {
+  await seed(['users', uid, 'reports', reportId], validReport(reportId, uid));
+  for (let i = 1; i <= versions; i++) {
+    await seed(
+      ['users', uid, 'reports', reportId, VERSIONS_COLLECTION, `v${i}`],
+      validVersion(`v${i}`, reportId, uid),
+    );
+  }
+};
+
+describe('deleting a report takes its history with it', () => {
+  it('removes every version', async () => {
+    await seedReportWithHistory(ALICE, 'r1', 3);
+    expect(await countVersions(ALICE, 'r1')).toBe(3);
+
+    await deleteReportAndVersions(asUser(ALICE), ALICE, 'r1');
+
+    expect(await countVersions(ALICE, 'r1')).toBe(0);
+    expect(await countReports(ALICE)).toBe(0);
+  });
+
+  it('leaves another report\'s history alone', async () => {
+    await seedReportWithHistory(ALICE, 'r1', 2);
+    await seedReportWithHistory(ALICE, 'r2', 2);
+
+    await deleteReportAndVersions(asUser(ALICE), ALICE, 'r1');
+
+    expect(await countVersions(ALICE, 'r1')).toBe(0);
+    expect(await countVersions(ALICE, 'r2')).toBe(2);
+  });
+
+  it('succeeds for a report that has no history', async () => {
+    await seed(['users', ALICE, 'reports', 'r1'], validReport('r1', ALICE));
+    await deleteReportAndVersions(asUser(ALICE), ALICE, 'r1');
+    expect(await countReports(ALICE)).toBe(0);
+  });
+});
+
+describe('deleting an account takes every history with it', () => {
+  it('removes the versions of every report, not just the reports', async () => {
+    // The regression this pins: deleteAccountData used a plain deleteDoc per
+    // report, which would leave all six versions below addressable by nobody.
+    await seedReportWithHistory(ALICE, 'r1', 3);
+    await seedReportWithHistory(ALICE, 'r2', 3);
+    await seed(['users', ALICE, 'vault', VAULT_DOC_ID], validVault());
+
+    await deleteAccountData(asUser(ALICE), ALICE);
+
+    expect(await countReports(ALICE)).toBe(0);
+    expect(await countVersions(ALICE, 'r1')).toBe(0);
+    expect(await countVersions(ALICE, 'r2')).toBe(0);
+    expect(await vaultExists(ALICE)).toBe(false);
+  });
+
+  it('leaves another account\'s history untouched', async () => {
+    await seedReportWithHistory(ALICE, 'r1', 2);
+    await seedReportWithHistory(BOB, 'r1', 2);
+
+    await deleteAccountData(asUser(ALICE), ALICE);
+
+    expect(await countVersions(ALICE, 'r1')).toBe(0);
+    expect(await countVersions(BOB, 'r1')).toBe(2);
+  });
+});
+
 describe('the account document layout', () => {
   /**
    * The vault has no `list` rule, so deletion cannot discover the document — it
@@ -191,5 +294,16 @@ describe('the account document layout', () => {
     const db = asUser(ALICE);
     expect(vaultDocRef(db, ALICE).path).toBe(`users/${ALICE}/vault/geminiKey`);
     expect(reportsCollectionRef(db, ALICE).path).toBe(`users/${ALICE}/reports`);
+  });
+
+  /**
+   * The versions path has to match the `match` block in `firestore.rules`
+   * segment for segment, and neither can see the other. A rename on this side
+   * makes every write fail the rule; a rename on that side makes every write
+   * land somewhere the global deny covers. Both look like "saving is broken".
+   */
+  it('nests versions under the report they belong to', () => {
+    expect(versionsCollectionRef(asUser(ALICE), ALICE, 'r1').path)
+      .toBe(`users/${ALICE}/reports/r1/versions`);
   });
 });

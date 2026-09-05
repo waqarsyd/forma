@@ -13,16 +13,25 @@
  */
 import { useMemo } from 'react';
 import { diffReports, describeDiff, type Revision } from '../lib/revisions';
+import { MAX_PERSISTED_REVISIONS } from '../lib/revisionStore';
 import { formatSessionStamp } from '../lib/datetime';
 
 interface Props {
   revisions: readonly Revision[];
   /** The REPX on screen, so the newest row can say whether it is still current. */
   current?: string;
+  /**
+   * Whether saving this project will keep its history — true when signed in.
+   *
+   * The panel says which, because the difference is invisible and only shows up
+   * when someone comes back tomorrow to a report whose history is gone. Signed
+   * out is session-only on purpose; see the header of `lib/revisionStore.ts`.
+   */
+  persisted?: boolean;
   onRestore: (revision: Revision) => void;
 }
 
-export default function RevisionsPanel({ revisions, current, onRestore }: Props) {
+export default function RevisionsPanel({ revisions, current, persisted, onRestore }: Props) {
   /*
    * Each row is compared with the one BELOW it — the state it replaced — which
    * is what "what did this step do" means. The last row has nothing below it
@@ -50,6 +59,7 @@ export default function RevisionsPanel({ revisions, current, onRestore }: Props)
       <style>{`
         .rv-root { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
         .rv-empty { font-size: 12.5px; line-height: 1.6; opacity: .75; }
+        .rv-foot { margin: 0; font-size: 11px; line-height: 1.5; opacity: .6; flex: 0 0 auto; }
         .rv-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; flex: 1; }
         .rv-row {
           display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px;
@@ -79,7 +89,10 @@ export default function RevisionsPanel({ revisions, current, onRestore }: Props)
           so a refinement that made the report worse is one click from being undone.
           <br /><br />
           Nudging a control is not a revision; the Preview pane has its own undo for that.
-          Revisions live for this session and are not saved with the project.
+          {' '}
+          {persisted
+            ? `Saving the project keeps the last ${MAX_PERSISTED_REVISIONS}.`
+            : 'Revisions live for this session; sign in to keep them with the project.'}
         </p>
       ) : (
         <ul className="rv-list">
@@ -102,6 +115,14 @@ export default function RevisionsPanel({ revisions, current, onRestore }: Props)
             </li>
           ))}
         </ul>
+      )}
+
+      {revisions.length > 0 && (
+        <p className="rv-foot">
+          {persisted
+            ? `Saving keeps the newest ${MAX_PERSISTED_REVISIONS} with the project.`
+            : 'Kept for this session only — sign in to save them with the project.'}
+        </p>
       )}
     </div>
   );

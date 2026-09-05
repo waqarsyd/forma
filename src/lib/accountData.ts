@@ -46,6 +46,23 @@ export const REPORTS_COLLECTION = 'reports';
 export const VAULT_COLLECTION = 'vault';
 
 /**
+ * Revision history, one document per version, beneath its report.
+ *
+ * A subcollection because a saved report is size-budgeted and a `result` runs
+ * 50–200 kB; ten of those inline would break the budget several times over.
+ * See `lib/revisionStore.ts`.
+ *
+ * **This is the collection that makes deletion non-obvious.** Firestore does
+ * not delete a subcollection when its parent document is deleted — the parent
+ * is not even required to exist for children to. So a report deleted without
+ * its versions leaves them behind, reachable by nobody and invisible to
+ * everybody, which is exactly the stranding this module exists to prevent for
+ * the vault. `deleteReportAndVersions` is the only way a report should be
+ * removed.
+ */
+export const VERSIONS_COLLECTION = 'versions';
+
+/**
  * The one document the vault ever holds.
  *
  * Pinned by a test. If this ever needs to change, the migration has to delete
@@ -73,6 +90,42 @@ export function vaultDocRef(db: Firestore, uid: string): DocumentReference {
   return doc(db, USERS_COLLECTION, uid, VAULT_COLLECTION, VAULT_DOC_ID);
 }
 
+export function versionsCollectionRef(db: Firestore, uid: string, reportId: string): CollectionReference {
+  return collection(db, USERS_COLLECTION, uid, REPORTS_COLLECTION, reportId, VERSIONS_COLLECTION);
+}
+
+export function versionDocRef(
+  db: Firestore,
+  uid: string,
+  reportId: string,
+  versionId: string,
+): DocumentReference {
+  return doc(db, USERS_COLLECTION, uid, REPORTS_COLLECTION, reportId, VERSIONS_COLLECTION, versionId);
+}
+
+/**
+ * Delete one report AND its version history.
+ *
+ * Versions first, then the report. The order matters for the same reason the
+ * account-deletion order does: while the report exists the path to its versions
+ * is ordinary, and a failure part-way leaves a report whose history is short
+ * rather than an orphaned history with no report. The reverse order, on a
+ * failure, leaves documents nobody can enumerate a route to.
+ *
+ * Never call `deleteDoc(reportDocRef(...))` directly. Firestore leaves the
+ * subcollection behind, silently, and the result looks exactly like a
+ * successful delete.
+ */
+export async function deleteReportAndVersions(
+  db: Firestore,
+  uid: string,
+  reportId: string,
+): Promise<void> {
+  const versions = await getDocs(versionsCollectionRef(db, uid, reportId));
+  await Promise.all(versions.docs.map((entry) => deleteDoc(entry.ref)));
+  await deleteDoc(reportDocRef(db, uid, reportId));
+}
+
 /**
  * Remove every document stored under an account.
  *
@@ -90,7 +143,12 @@ export function vaultDocRef(db: Firestore, uid: string): DocumentReference {
  */
 export async function deleteAccountData(db: Firestore, uid: string): Promise<void> {
   const reports = await getDocs(reportsCollectionRef(db, uid));
-  await Promise.all(reports.docs.map((entry) => deleteDoc(entry.ref)));
+  // Through deleteReportAndVersions, not deleteDoc: a report's version history
+  // is a subcollection, and Firestore does not remove those with the parent.
+  // Deleting the reports directly here would leave every version behind, under
+  // an account that no longer exists, addressable by nobody -- the precise
+  // outcome the ordering in `deleteAccountAndData` exists to avoid.
+  await Promise.all(reports.docs.map((entry) => deleteReportAndVersions(db, uid, entry.id)));
 
   await deleteDoc(vaultDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the stored key while deleting the account:', error);

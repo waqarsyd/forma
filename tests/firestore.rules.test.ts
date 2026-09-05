@@ -35,6 +35,16 @@ const validReport = (id: string, uid: string) => ({
   userId: uid,
 });
 
+/** Exactly what revisionStore.toVersionDocument writes. */
+const validVersion = (id: string, reportId: string, uid: string) => ({
+  id,
+  reportId,
+  label: 'Refined',
+  timestamp: Date.now(),
+  snapshot: '{"content":"# spec","repxContent":"<x/>","title":"R"}',
+  userId: uid,
+});
+
 /** Exactly what keyVault.encryptApiKey produces. */
 const validVault = () => ({
   v: 1,
@@ -212,6 +222,91 @@ describe('reports — updates cannot re-home a document', () => {
     await assertFails(
       updateDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), { id: 'r2' })
     );
+  });
+});
+
+/**
+ * Revision history, added 2026-09-05.
+ *
+ * A subcollection under a report, and therefore a new place an account's data
+ * can be reached, written to, or left behind. The last of those is the one
+ * worth testing hardest: Firestore does not delete a subcollection with its
+ * parent, so `list` has to work for the owner or nothing can ever clean up.
+ */
+describe('report versions — isolation between accounts', () => {
+  const path = (uid: string, reportId = 'r1', versionId = 'v1') =>
+    ['users', uid, 'reports', reportId, 'versions', versionId];
+
+  beforeEach(async () => {
+    await seed(['users', ALICE, 'reports', 'r1'], validReport('r1', ALICE));
+    await seed(path(ALICE), validVersion('v1', 'r1', ALICE));
+  });
+
+  it('lets the owner read one version', async () => {
+    await assertSucceeds(getDoc(doc(aliceDb(), path(ALICE).join('/'))));
+  });
+
+  it('refuses another account', async () => {
+    await assertFails(getDoc(doc(bobDb(), path(ALICE).join('/'))));
+    await assertFails(setDoc(doc(bobDb(), path(ALICE, 'r1', 'v9').join('/')), validVersion('v9', 'r1', ALICE)));
+    await assertFails(deleteDoc(doc(bobDb(), path(ALICE).join('/'))));
+  });
+
+  it('refuses an anonymous visitor', async () => {
+    await assertFails(getDoc(doc(anonDb(), path(ALICE).join('/'))));
+  });
+
+  it('lets the owner list a history, and nobody else', async () => {
+    // list is what loading a report's history needs, and what deleting one
+    // needs in order to remove what Firestore leaves behind.
+    await assertSucceeds(getDocs(collection(aliceDb(), 'users', ALICE, 'reports', 'r1', 'versions')));
+    await assertFails(getDocs(collection(bobDb(), 'users', ALICE, 'reports', 'r1', 'versions')));
+  });
+
+  it('lets the owner delete one, which is how cleanup happens', async () => {
+    await assertSucceeds(deleteDoc(doc(aliceDb(), path(ALICE).join('/'))));
+  });
+});
+
+describe('report versions — document shape', () => {
+  const write = (data: unknown, versionId = 'v2') =>
+    setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1', 'versions', versionId), data as any);
+
+  it('accepts exactly what the app writes', async () => {
+    await assertSucceeds(write(validVersion('v2', 'r1', ALICE)));
+  });
+
+  it('refuses an extra field, so this cannot become general storage', async () => {
+    await assertFails(write({ ...validVersion('v2', 'r1', ALICE), smuggled: 'x' }));
+  });
+
+  it('refuses a missing field', async () => {
+    const { snapshot, ...withoutSnapshot } = validVersion('v2', 'r1', ALICE);
+    void snapshot;
+    await assertFails(write(withoutSnapshot));
+  });
+
+  it('refuses a document id that disagrees with the id field', async () => {
+    await assertFails(write(validVersion('v2', 'r1', ALICE), 'somethingElse'));
+  });
+
+  it('refuses a version filed under a report it does not claim', async () => {
+    // Without the reportId pin a client could write a version into one
+    // report's history that claims to belong to another, and the loader would
+    // believe it.
+    await assertFails(write(validVersion('v2', 'r-other', ALICE)));
+  });
+
+  it('refuses another account as the owner', async () => {
+    await assertFails(write(validVersion('v2', 'r1', BOB)));
+  });
+
+  it('refuses a far-future timestamp', async () => {
+    await assertFails(write({ ...validVersion('v2', 'r1', ALICE), timestamp: 4102444800001 }));
+  });
+
+  it('refuses a non-string snapshot', async () => {
+    await assertFails(write({ ...validVersion('v2', 'r1', ALICE), snapshot: { a: 1 } }));
   });
 });
 

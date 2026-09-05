@@ -37,6 +37,30 @@ service cloud.firestore {
         && data.userId == request.auth.uid;
     }
 
+    // Validation Blueprint for one stored revision of a report.
+    //
+    // Same six-field, flat-string shape as the report above, and pinned the
+    // same way with hasOnly + hasAll so this path cannot be repurposed as
+    // general storage under an account.
+    //
+    // `reportId` is carried on the document as well as being in its path. It is
+    // not redundant: the rule below pins it to the {reportId} wildcard, so a
+    // client cannot write a version that claims to belong to a different report
+    // than the one it is filed under. The report document pins `id` to its own
+    // document id for the same reason.
+    function isValidReportVersion(data, reportId) {
+      return data.keys().hasOnly(['id', 'reportId', 'label', 'timestamp', 'snapshot', 'userId'])
+        && data.keys().hasAll(['id', 'reportId', 'label', 'timestamp', 'snapshot', 'userId'])
+        && data.id is string && data.id.size() <= 128
+        && data.reportId == reportId
+        && data.label is string && data.label.size() <= 256
+        && data.snapshot is string
+        // Same bound as the report's timestamp, and for the same reason: a
+        // far-future value would pin one version to the top of the history.
+        && data.timestamp is number && data.timestamp > 0 && data.timestamp < 4102444800000
+        && data.userId == request.auth.uid;
+    }
+
     // Validation Blueprint for the encrypted Gemini key vault.
     //
     // This document holds AES-GCM ciphertext produced in the user's browser by
@@ -115,11 +139,49 @@ service cloud.firestore {
         && incoming().userId == existing().userId
         && incoming().id == existing().id;
 
-      allow delete: if isSignedIn() 
+      allow delete: if isSignedIn()
         && isValidId(userId)
         && isValidId(reportId)
         && userId == request.auth.uid
         && existing().userId == request.auth.uid;
+    }
+
+    // A report's revision history.
+    //
+    // Its own subcollection because a saved report is size-budgeted at 900 kB
+    // and one snapshot -- markdown, layout and REPX -- runs 50-200 kB; ten
+    // inline would break that several times over. Each version is its own
+    // document with its own 1 MiB ceiling, and the report document's shape and
+    // budget are untouched.
+    //
+    // `list` is allowed here, unlike the vault: loading a report's history means
+    // enumerating this collection, and deleting a report means enumerating it
+    // to remove what Firestore will not remove on its own. Scoped to the owner,
+    // as everything under users/{uid} is.
+    //
+    // Note the parent report document is NOT required to exist. Firestore
+    // subcollections are independent of their parent, and requiring existence
+    // via get() would cost a read on every write to buy nothing: the path is
+    // already owner-scoped, and a version under a report that has gone is
+    // deleted by `deleteReportAndVersions`, not prevented by a rule.
+    match /users/{userId}/reports/{reportId}/versions/{versionId} {
+      allow get, list: if isSignedIn()
+        && isValidId(userId)
+        && userId == request.auth.uid;
+
+      allow create, update: if isSignedIn()
+        && isValidId(userId)
+        && isValidId(reportId)
+        && isValidId(versionId)
+        && userId == request.auth.uid
+        && isValidReportVersion(incoming(), reportId)
+        && incoming().id == versionId;
+
+      allow delete: if isSignedIn()
+        && isValidId(userId)
+        && isValidId(reportId)
+        && isValidId(versionId)
+        && userId == request.auth.uid;
     }
   }
 }

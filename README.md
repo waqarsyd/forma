@@ -97,7 +97,8 @@ Each of these is a shipped code path, not a plan.
 - **Streaming progress with pause and stop.** Once the model starts writing, the progress bar and character count reflect output actually received ([`src/lib/generationProgress.ts`](src/lib/generationProgress.ts)).
 - **Optional sign-in and cloud sync.** Signed out, Forma saves to `localStorage` and works fully; signed in, reports sync to Firestore under rules that enforce account isolation ([`firestore.rules`](firestore.rules)).
 - **Zero-knowledge key vault.** AES-GCM encryption in the browser, PBKDF2-SHA256 key derivation ([`src/services/keyVault.ts`](src/services/keyVault.ts)).
-- **Account deletion that actually deletes**, removing both saved reports and the encrypted key — proven by a test running against the emulator with production rules enforced ([`tests/accountDeletion.test.ts`](tests/accountDeletion.test.ts)).
+- **Version history with a structural diff.** Every generation, refinement and binding pass is kept, each row saying what it changed — controls added, removed, moved, resized, retyped — so a refinement that made the report worse is one click from being undone. Signed in, the newest ten are saved with the project ([`src/lib/revisions.ts`](src/lib/revisions.ts), [`src/lib/revisionStore.ts`](src/lib/revisionStore.ts)).
+- **Account deletion that actually deletes**, removing saved reports, their version history and the encrypted key — proven by a test running against the emulator with production rules enforced. The middle one is the part that is easy to miss: Firestore does not delete a subcollection with its parent document, so a report deleted the obvious way leaves its history behind and looks like it worked ([`tests/accountDeletion.test.ts`](tests/accountDeletion.test.ts)).
 - **A single place for unit conversion.** Four coordinate systems meet in this pipeline and every conversion between them lives in one module, because a mismatch renders a plausible layout in the wrong place and never throws ([`src/lib/reportGeometry.ts`](src/lib/reportGeometry.ts)).
 - **Optional Windows companion** that opens a generated `.repx` in the real DevExpress designer over a loopback listener, feature-detected so the button only appears when it is running ([`tools/RepxDesigner/`](tools/RepxDesigner/), [`src/lib/designerBridge.ts`](src/lib/designerBridge.ts)).
 - **Mock mode** — `VITE_FORMA_MOCK=true` returns a canned invoice after a 3s delay, for exercising loaders and progress bars without spending a request.
@@ -288,11 +289,17 @@ src/
                        out across real pages — Detail once per record,
                        PageHeader on every sheet — which is what the Preview
                        pane and the PDF export are drawn from),
-                       revisions (the report's history for the session, and a
+                       revisions (the report's history, and a
                        structural diff by control name — added, removed,
                        moved, resized, retyped — because the model rewrites
                        whitespace freely and a line diff of two REPX files is
                        almost entirely noise),
+                       revisionStore (that history on its way to Firestore and
+                       back — one document per version in a subcollection,
+                       because ten snapshots inline would break the report's
+                       size budget several times over; signed out it stays in
+                       memory, because localStorage is one shared quota across
+                       every project),
                        workspaceView (which pane the bench shows, held in two
                        pieces of state — extracted from App.tsx so the pair
                        can be round-trip tested, because a plate present in

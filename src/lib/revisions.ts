@@ -19,16 +19,19 @@
  * The two mechanisms answer different questions. Undo is "take that back";
  * a revision is "what did this report look like before I asked for that".
  *
- * ## In memory, deliberately, for now
+ * ## In memory here; stored next door
  *
- * Revisions are not saved to the cloud, and that is a decision rather than an
- * omission. A saved report is budgeted at 900 kB (see `persistence.md`) and one
- * `result` — markdown, layout and REPX — can be 50–200 kB on its own, so ten
- * revisions inline would exceed the budget several times over. Doing it
- * properly needs a Firestore subcollection, its own rules, its own rules tests,
- * and a change to account deletion, since deleting a document does not delete
- * the subcollection beneath it. That is a real piece of work and it deserves
- * its own decision, not to be smuggled in under a budget it would break.
+ * This module is the session's list and the diff between two entries — no
+ * storage, no Firestore, nothing async. `lib/revisionStore.ts` is what turns
+ * these into documents under `users/{uid}/reports/{id}/versions` and back, and
+ * it owns the reasons: a subcollection rather than a field, because a saved
+ * report is budgeted at 900 kB and ten snapshots inline would break that several
+ * times over; ten stored against the twenty kept here; and nothing at all when
+ * signed out, because `localStorage` is one shared quota across every project.
+ *
+ * The one thing to know before touching either: **deleting a document does not
+ * delete the subcollection beneath it.** Removing a report goes through
+ * `accountData.ts`'s `deleteReportAndVersions`, never a bare `deleteDoc`.
  */
 
 /** The part of a report a revision has to be able to restore. */

@@ -173,6 +173,14 @@ import { titleForRoute, viewForRoute } from './lib/routes';
 import { plateFor, stateForPlate, type Plate, type ActiveTab, type SpecView } from './lib/workspaceView';
 import { countStagedUploads, admitFiles } from './lib/attachmentBudget';
 import { pushRevision, type Revision } from './lib/revisions';
+/* Persisting those revisions. Pure — it plans documents, it does not write them —
+   so it stays eager while `accountData`'s path builders arrive through
+   `loadFirebase()` with the SDK they import. */
+import {
+  planVersionWrites,
+  fromVersionDocuments,
+  type VersionDocument,
+} from './lib/revisionStore';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
@@ -2267,6 +2275,15 @@ export default function App() {
    * somebody actually wants to return to under forty nudges. See lib/revisions.
    */
   const [revisions, setRevisions] = useState<Revision[]>([]);
+  /**
+   * Which saved project the bench is currently showing, or null for unsaved work.
+   *
+   * Only `handleLoadReport` reads it, and only to discard a history that arrived
+   * for a report the user has already navigated away from: two clicks in the
+   * project list race, and the slower query answering second would otherwise
+   * hang the first report's versions off the second report.
+   */
+  const openReportId = useRef<string | null>(null);
   const recordRevision = useCallback((label: string, snapshot: DesignResult) => {
     setRevisions((list) => pushRevision(list, label, {
       content: snapshot.content,
@@ -2405,6 +2422,54 @@ export default function App() {
     setError(userMessage);
   };
 
+  /**
+   * Write the revision history beside a report that has just been saved.
+   *
+   * Separate from the report write, and allowed to fail on its own. The report
+   * is the thing the user asked to save; losing the history is a smaller loss
+   * than turning a successful save into a failed one, so this never throws into
+   * `handleSaveReport` and never calls `reportFirestoreFailure` — that sets an
+   * error saying the project could not be saved, which would be untrue.
+   *
+   * Signed out gets nothing, deliberately. See the header of
+   * `lib/revisionStore.ts`: localStorage is one shared 5–10 MB quota across
+   * every project, and a megabyte of history per report would evict the reports.
+   *
+   * The read of what is already stored looks redundant today — `handleSaveReport`
+   * mints a new `reportId` on every save, so the collection always comes back
+   * empty and the plan always writes everything. It is here because the plan is
+   * what makes this correct the day saving updates a project in place instead of
+   * creating another one, and an empty query is a cheap price for not having to
+   * remember that.
+   */
+  const persistRevisions = async (
+    reportId: string,
+  ): Promise<'none' | 'saved' | 'partial' | 'failed'> => {
+    if (!user || revisions.length === 0) return 'none';
+    try {
+      const { service, sdk, paths } = await loadFirebase();
+      const stored = await sdk.getDocs(paths.versionsCollectionRef(service.db, user.uid, reportId));
+      const plan = planVersionWrites(
+        revisions,
+        stored.docs.map((entry) => entry.id),
+        reportId,
+        user.uid,
+      );
+
+      await Promise.all([
+        ...plan.toWrite.map((document) =>
+          sdk.setDoc(paths.versionDocRef(service.db, user.uid, reportId, document.id), document)),
+        ...plan.toDelete.map((id) =>
+          sdk.deleteDoc(paths.versionDocRef(service.db, user.uid, reportId, id))),
+      ]);
+
+      return plan.tooLarge.length > 0 ? 'partial' : 'saved';
+    } catch (err) {
+      console.warn('The report was saved, but its version history was not:', err);
+      return 'failed';
+    }
+  };
+
   const handleSaveReport = async () => {
     if (!result && messages.length === 0) return;
     const reportId = Date.now().toString();
@@ -2456,10 +2521,20 @@ export default function App() {
         }
 
         await sdk.setDoc(docRef, payload);
+
+        // After the report, and only after: a version filed under a report that
+        // failed to save would be history for something nobody can open.
+        const history = await persistRevisions(reportId);
+        const historyNote =
+          history === 'saved' ? ' Its version history came with it.'
+          : history === 'partial' ? ' One version was too large to sync; the rest came with it.'
+          : history === 'failed' ? ' Its version history could not be synced — it is still here for this session.'
+          : '';
+
         setSaveNotice(
-          imagesDropped
+          (imagesDropped
             ? 'Saved to your projects — the uploaded images were too large to sync, so the spec and REPX were saved without them.'
-            : 'Saved to your projects.'
+            : 'Saved to your projects.') + historyNote
         );
       } catch (err) {
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${reportId}`,
@@ -2483,10 +2558,41 @@ export default function App() {
     }
   };
 
-  const handleLoadReport = (report: SavedReport) => {
+  /**
+   * Open a saved project, and bring its history with it.
+   *
+   * The report goes onto the bench synchronously and the history follows,
+   * because the history is a second round trip and the report should not wait on
+   * it. `setRevisions([])` first is not tidiness: without it the previous
+   * project's versions stay in the panel and read as belonging to this one — the
+   * one way a revision list can be actively misleading rather than merely empty.
+   */
+  const handleLoadReport = async (report: SavedReport) => {
     setMessages(report.messages);
     setResult(report.result);
+    setRevisions([]);
     setRailPanel('review');
+    openReportId.current = report.id;
+
+    if (!user) return;
+    try {
+      const { service, sdk, paths } = await loadFirebase();
+      const stored = await sdk.getDocs(
+        sdk.query(
+          paths.versionsCollectionRef(service.db, user.uid, report.id),
+          sdk.orderBy('timestamp', 'desc'),
+        ),
+      );
+      if (openReportId.current !== report.id) return;
+      // Drops any version whose snapshot will not parse, and numbers the rest
+      // downwards from the newest — see the note on `fromVersionDocuments`.
+      setRevisions(fromVersionDocuments(stored.docs.map((entry) => entry.data() as VersionDocument)));
+    } catch (err) {
+      // Deliberately not an error banner. The project opened; the panel is
+      // simply empty, which is the same thing it shows for a project saved
+      // before this existed.
+      console.warn('That project opened, but its version history did not load:', err);
+    }
   };
 
   /**
@@ -2517,8 +2623,12 @@ export default function App() {
     // wherever it was written.
     if (user) {
       try {
-        const { service, sdk, paths } = await loadFirebase();
-        await sdk.deleteDoc(paths.reportDocRef(service.db, user.uid, id));
+        const { service, paths } = await loadFirebase();
+        // Not `deleteDoc(reportDocRef(...))`. Firestore does not delete a
+        // subcollection with its parent, so that would leave the whole version
+        // history behind, under an account that may itself go next, reachable
+        // by nobody -- and it looks exactly like a successful delete.
+        await paths.deleteReportAndVersions(service.db, user.uid, id);
       } catch (err) {
         reportFirestoreFailure(err, OperationType.DELETE, `users/${user.uid}/reports/${id}`,
           'That project could not be deleted from your account. It is still listed — try again in a moment.');
@@ -3856,7 +3966,7 @@ export default function App() {
                 <div
                   key={report.id}
                   className={`wb-card${result?.title === report.name ? ' wb-is-open' : ''}`}
-                  onClick={() => handleLoadReport(report)}
+                  onClick={() => void handleLoadReport(report)}
                 >
                   <div className="wb-nm">{report.name}</div>
                   <div className="wb-sub">{new Date(report.timestamp).toLocaleDateString()}</div>
@@ -3891,6 +4001,7 @@ export default function App() {
               <RevisionsPanel
                 revisions={revisions}
                 current={result?.repxContent}
+                persisted={!!user}
                 onRestore={(revision) => {
                   /* Restoring is itself a change worth recording, so the
                      version being left is not lost by returning to an older
@@ -3988,7 +4099,7 @@ export default function App() {
                   <div
                     key={report.id}
                     className={`wb-card${leaving ? ' wb-leaving' : ''}`}
-                    onClick={() => handleLoadReport(report)}
+                    onClick={() => void handleLoadReport(report)}
                   >
                     <div className="wb-nm">{report.name}</div>
                     <div className="wb-sub">
