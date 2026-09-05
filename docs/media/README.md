@@ -9,11 +9,19 @@ served publicly. These files are for people reading the repository, not for the 
 | File | What it shows |
 |---|---|
 | `screenshot.png` | The home page at `/`, 2400×1500. The README's lead image. |
-| `workspace.png` | The workspace at `/workspace` with no key supplied, 3200×2000. The real shell — review pane, canvas, status bar — and the banner stating that Forma ships no key of its own. |
+| `workspace.png` | The workspace at `/workspace` with no key supplied, 3200×2000. The real shell — five-panel rail, review pane, canvas, status bar — and the banner stating that Forma ships no key of its own. |
 
-Both were captured on 2026-09-01 from `localhost:3000` over CDP against a headless
-Edge, at a device scale factor of 1.5 and 2 respectively. A placeholder SVG stood here
-until they were taken; it was deleted in the same commit, per step 7 below.
+Both were captured from `localhost:3000` over CDP against a headless Edge, at a device
+scale factor of 1.5 and 2 respectively. A placeholder SVG stood here until they were
+taken; it was deleted in the same commit, per step 7 below.
+
+`screenshot.png` is from 2026-09-01 and is still current — the home page has not
+changed since. **`workspace.png` was recaptured on 2026-09-05**, because the rail had
+grown two buttons it did not show: Revisions and Batch. That is the failure mode worth
+naming here. A screenshot goes stale by *omission*, not by breaking — the old image was
+a correct picture of a workspace that no longer exists, and nothing in the build, the
+tests or the encoding sweep can tell. **When a rail button, a pane or a status field is
+added, this file is a second place to change.**
 
 **Neither shows generated output, and that is deliberate.** Generating a report needs a
 Gemini key, which is the user's and does not belong in a capture. `VITE_FORMA_MOCK=true`
