@@ -20,12 +20,22 @@
  * headings across pages, and no `ReportFooter` for totals — the table arrives as
  * a static `XRTable` with every row hard-coded.
  *
- * `banded` is now the default: reproducing a picture was never the goal, and a
- * file that cannot take a data source fails at the one thing a `.repx` is for.
- * `flat` remains behind `VITE_FORMA_FLAT=true` because it is the shape with a
- * designer verdict behind it, so there is a one-variable way back if a real
- * document comes out worse. It is a fallback, not an experiment; when the banded
- * shape has its own designer check, this module collapses to one string.
+ * `banded` is the only shape now: reproducing a picture was never the goal, and
+ * a file that cannot take a data source fails at the one thing a `.repx` is for.
+ *
+ * **`flat` and its `VITE_FORMA_FLAT` flag were removed on 2026-09-05, and not
+ * for the reason this comment used to give.** The plan was to keep it until the
+ * banded shape had its own designer verdict — that verdict still has not
+ * happened, and it stopped being the deciding question. Grouping, parameters,
+ * charts, cross-tabs and summaries were all added to the banded branch and to
+ * nothing else, so by the time anyone reached for the flag it would no longer
+ * have produced the old report: it would have produced a report missing every
+ * feature added since 2026-09-03, silently, at the moment someone was already
+ * troubleshooting. A fallback that has rotted is worse than none, because it
+ * looks like a way back.
+ *
+ * `git show 696ac75:src/lib/reportBands.ts` has the flat text if it is ever
+ * wanted, and it is the version to read rather than reconstructing one.
  *
  * ## The part that will break first
  *
@@ -67,45 +77,6 @@ export interface RootStructureOptions {
   reportUnit: string;
   targetVersion: string;
   targetSerializerVersion: string;
-}
-
-/**
- * Is the old single-band shape forced back on?
- *
- * Env-driven rather than a `ReportConfig` field on purpose. `reportConfigStore`
- * persists config through an allowlist whose whole job is keeping the API key
- * off disk; adding a field there means touching the one piece of storage code
- * with a security invariant. A `VITE_` flag is the same shape as
- * `VITE_FORMA_MOCK`, needs no persistence, and disappears with the fallback.
- */
-export function flatLayoutEnabled(env: Record<string, string | undefined>): boolean {
-  return env.VITE_FORMA_FLAT === 'true';
-}
-
-/** The original single-band structure. Kept as the fallback, behaviour unchanged. */
-function flatRootStructure({ page, reportUnit, targetVersion, targetSerializerVersion }: RootStructureOptions): string {
-  return `
-          - ROOT STRUCTURE: The entire repxContent MUST be wrapped exactly like this:
-            <?xml version="1.0" encoding="utf-8"?>
-            <XtraReportsLayoutSerializer SerializerVersion="${targetSerializerVersion}" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="${reportUnit}" Margins="0, 0, 0, 0" PageWidth="${page.width}" PageHeight="${page.height}" Version="${targetVersion}">
-              <Bands>
-                <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
-                <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${page.height}">
-                  <Controls>
-                    <!-- Your controls go here -->
-                  </Controls>
-                </Item2>
-                <Item3 Ref="3" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
-              </Bands>
-            </XtraReportsLayoutSerializer>
-
-          - COORDINATE FRAME — the single most common way this output comes out wrong.
-            A control's LocationFloat is measured from the TOP-LEFT OF ITS BAND, and a band begins at the page's left margin. The margins above are therefore ZERO on purpose: it makes the band's coordinate space identical to the paper's, so the numbers from PHASE 1 and from any extracted PDF text can be used directly.
-            - Do NOT set non-zero Margins. Do NOT give the margin bands a height.
-            - Do NOT subtract or add anything to the PHASE 1 coordinates when writing LocationFloat.
-            - Every control must satisfy x + width <= ${page.width} and fit inside its band's height. Anything wider than the page is silently clipped or pushed onto a second page by the designer.
-            - Make the Detail band tall enough to contain the tallest element you place in it.
-`;
 }
 
 /**
@@ -266,8 +237,8 @@ function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializer
  * keeping it here rather than inline in `geminiService.ts` is what lets both
  * variants be asserted without calling the model.
  */
-export function rootStructurePrompt(options: RootStructureOptions, banded: boolean): string {
-  return banded ? bandedRootStructure(options) : flatRootStructure(options);
+export function rootStructurePrompt(options: RootStructureOptions): string {
+  return bandedRootStructure(options);
 }
 
 /**
@@ -279,8 +250,6 @@ export function rootStructurePrompt(options: RootStructureOptions, banded: boole
  * two artifacts are required to agree everywhere else in the prompt, so the one
  * place they deliberately do not has to be said out loud.
  */
-export function tableRowsRule(banded: boolean): string {
-  return banded
-    ? 'Reproduce EVERY row and column you can read in the layout JSON and in the markdown specification — the mockup is a picture of the source, so nothing is dropped there. In repxContent the same region is SPLIT ACROSS BANDS as described under ROOT STRUCTURE above: the heading row goes in PageHeader, ONE data row goes in Detail, and any totals row goes in ReportFooter. That is the one place the two artifacts are meant to differ, and it is why the file can be bound to data at all.'
-    : 'Reproduce EVERY row and column you can read, including the header and any totals row, in both artifacts. Do not sample the rows and do not invent placeholders.';
+export function tableRowsRule(): string {
+  return 'Reproduce EVERY row and column you can read in the layout JSON and in the markdown specification — the mockup is a picture of the source, so nothing is dropped there. In repxContent the same region is SPLIT ACROSS BANDS as described under ROOT STRUCTURE above: the heading row goes in PageHeader, ONE data row goes in Detail, and any totals row goes in ReportFooter. That is the one place the two artifacts are meant to differ, and it is why the file can be bound to data at all.';
 }

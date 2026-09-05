@@ -291,8 +291,10 @@ src/
                        into the report's own Margins and margin bands),
                        reportBands (the band skeleton the prompt asks for — a
                        real ReportHeader / PageHeader / one-row Detail /
-                       ReportFooter / PageFooter, with the old single
-                       page-sized DetailBand kept behind VITE_FORMA_FLAT),
+                       ReportFooter / PageFooter; the old single page-sized
+                       DetailBand and its VITE_FORMA_FLAT flag were removed on
+                       2026-09-05, once the fallback could no longer produce a
+                       comparable report),
                        repxTruncation (did the model stop writing the XML
                        part-way, asked at the parse rather than at Export),
                        repxBindings (column headings to DevExpress field names

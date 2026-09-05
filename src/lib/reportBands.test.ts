@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule, type RootStructureOptions } from './reportBands';
+import { rootStructurePrompt, tableRowsRule, type RootStructureOptions } from './reportBands';
 
 const OPTS: RootStructureOptions = {
   page: { width: 850, height: 1100 },
@@ -8,47 +8,7 @@ const OPTS: RootStructureOptions = {
   targetSerializerVersion: '23.2.3.0',
 };
 
-const flat = rootStructurePrompt(OPTS, false);
-const banded = rootStructurePrompt(OPTS, true);
-
-describe('flatLayoutEnabled', () => {
-  it('leaves the banded default in place unless the flag is exactly "true"', () => {
-    for (const env of [{}, { VITE_FORMA_FLAT: 'false' }, { VITE_FORMA_FLAT: '1' }, { VITE_FORMA_FLAT: 'TRUE' }]) {
-      expect(flatLayoutEnabled(env), JSON.stringify(env)).toBe(false);
-    }
-    expect(flatLayoutEnabled({ VITE_FORMA_FLAT: 'true' })).toBe(true);
-  });
-});
-
-/**
- * The flat variant is the fallback a bad result gets rolled back to, so it has
- * to stay exactly what earned the designer verdict on 2026-09-03. These are the
- * assertions that would catch a stray edit while the banded prompt is tuned.
- */
-describe('the flat fallback is unchanged from what shipped', () => {
-  it('still asks for exactly three bands, Detail at full page height', () => {
-    expect(flat).toContain('ControlType="TopMarginBand" Name="TopMargin" HeightF="0"');
-    expect(flat).toContain('ControlType="DetailBand" Name="Detail" HeightF="1100"');
-    expect(flat).toContain('ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0"');
-    for (const band of ['ReportHeaderBand', 'PageHeaderBand', 'ReportFooterBand', 'PageFooterBand']) {
-      expect(flat, `flat must not mention ${band}`).not.toContain(band);
-    }
-  });
-
-  it('still tells the model not to convert coordinates', () => {
-    // The load-bearing sentence: with one band at y=0 the page frame and the
-    // band frame are the same, which is why flat output is reliably placed.
-    expect(flat).toContain('Do NOT subtract or add anything to the PHASE 1 coordinates');
-  });
-
-  it('carries the page and version values through', () => {
-    expect(flat).toContain('PageWidth="850"');
-    expect(flat).toContain('PageHeight="1100"');
-    expect(flat).toContain('ReportUnit="HundredthsOfAnInch"');
-    expect(flat).toContain('SerializerVersion="23.2.3.0"');
-    expect(flat).toContain('Version="23.2"');
-  });
-});
+const banded = rootStructurePrompt(OPTS);
 
 describe('the banded default', () => {
   it('emits the five content bands in the order XtraReports reads them', () => {
@@ -75,11 +35,13 @@ describe('the banded default', () => {
     expect(banded).toContain('336 - 320 = 16');
   });
 
-  it('keeps the rules that are true in both shapes', () => {
-    for (const shape of [flat, banded]) {
-      expect(shape).toContain('Do NOT set non-zero Margins');
-      expect(shape).toContain('x + width <= 850');
-    }
+  it('keeps the two rules that predate the banded shape', () => {
+    // These were asserted against both variants until the flat one was removed
+    // on 2026-09-05. They are older than the band skeleton and independent of
+    // it, which is why they are still worth pinning separately from the rules
+    // above rather than folded into them.
+    expect(banded).toContain('Do NOT set non-zero Margins');
+    expect(banded).toContain('x + width <= 850');
   });
 
   it('says where each part of a document belongs', () => {
@@ -136,31 +98,24 @@ describe('the banded default', () => {
 
 /**
  * The rule these sentences close ends by demanding every row of a repeating
- * region. That is right for the flat shape and for the layout JSON in both, and
- * wrong for a banded Detail band — which is the single reason the file can be
- * bound to data. Getting the wrong sentence into the wrong shape reintroduces
- * the defect the band split exists to fix.
+ * region. That is right for the layout JSON and wrong for a banded Detail band —
+ * which is the single reason the file can be bound to data at all. The sentence
+ * therefore has to say both things about one region without contradicting
+ * itself, and losing that distinction reintroduces the defect the band split
+ * exists to fix.
  */
 describe('tableRowsRule', () => {
-  it('keeps every row in the flat shape', () => {
-    const rule = tableRowsRule(false);
-    expect(rule).toMatch(/EVERY row and column/);
-    expect(rule).not.toMatch(/PageHeader|Detail|ReportFooter/);
-  });
-
-  it('splits the table across bands in the banded shape', () => {
-    const rule = tableRowsRule(true);
+  it('splits the table across bands', () => {
+    const rule = tableRowsRule();
     expect(rule).toMatch(/heading row goes in PageHeader/i);
     expect(rule).toMatch(/ONE data row goes in Detail/i);
     expect(rule).toMatch(/totals row goes in ReportFooter/i);
   });
 
-  it('still keeps every row in the mockup, whichever shape is on', () => {
+  it('still keeps every row in the mockup', () => {
     // The rows are not discarded by the split — they move to the artifact whose
     // job is showing the source. A version of this rule that drops them from the
     // layout too would look like the truncation bug.
-    for (const banded of [true, false]) {
-      expect(tableRowsRule(banded), `banded=${banded}`).toMatch(/EVERY row/);
-    }
+    expect(tableRowsRule()).toMatch(/EVERY row/);
   });
 });

@@ -225,9 +225,14 @@ describe('paginating a real report', () => {
   });
 
   it('diagnoses a page-tall Detail band instead of paginating forever', () => {
-    // This is the flat shape reportBands.ts keeps behind VITE_FORMA_FLAT: one
-    // DetailBand at the full page height, which prints the entire design once
-    // per record. 1100 exceeds the 1050 of usable body, so it can never fit.
+    // The shape the prompt asked for until 2026-09-03: one DetailBand at the
+    // full page height, which prints the entire design once per record. 1100
+    // exceeds the 1050 of usable body, so it can never fit.
+    //
+    // Forma no longer emits this -- reportBands.ts dropped the flat variant on
+    // 2026-09-05 -- but an UPLOADED .repx can still be shaped this way, which is
+    // the case that matters: the diagnosis has to survive the removal of the
+    // thing that used to produce it.
     const pageTall = banded.replace('Name="Detail" HeightF="25"', 'Name="Detail" HeightF="1100"');
     const result = paginate(parseReportStructure(pageTall), 4);
     expect(result.problems.join(' ')).toMatch(/Detail band is 1100 units tall and only 1050 fit/);

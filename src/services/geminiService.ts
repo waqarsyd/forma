@@ -9,7 +9,7 @@ import { normalizeItemNames } from "../lib/repxItems";
 import { instructionBlock } from "../lib/userInstructions";
 import { auditRepx } from "../lib/repxAudit";
 import { liftParameterTypes } from "../lib/repxParameters";
-import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
+import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import {
   pageSizeInUnits,
@@ -995,12 +995,11 @@ export async function analyzeReportDesign(
   const page = pageSizeInUnits(pageSize, reportUnit);
   const unitsPerInchForReport = unitsPerInch(reportUnit);
 
-  /* A real band skeleton — ReportHeader / PageHeader / a ONE-ROW Detail /
+  /* The band skeleton — ReportHeader / PageHeader / a ONE-ROW Detail /
      ReportFooter / PageFooter — rather than one page-sized DetailBand, which
      printed the whole page once per record the moment a data source was bound.
-     VITE_FORMA_FLAT=true asks for the old shape back; see lib/reportBands.ts for
-     why the fallback still exists and what depends on this text. */
-  const useBandedLayout = !flatLayoutEnabled(viteEnv);
+     There is no longer a flag for the old shape; see lib/reportBands.ts for why
+     the fallback was removed rather than kept, and what depends on this text. */
 
   // Anchors for the font-size rule in the prompt. Ordinary printed body text is
   // 9-11pt; expressed in the layout's own unit it becomes a range the model can
@@ -1187,7 +1186,7 @@ export async function analyzeReportDesign(
           PHASE 2: DEVEXPRESS CHEAT SHEET (STRICT SYNTAX)
           When generating the "repxContent" XML, you MUST use these exact structures:
           
-${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion }, useBandedLayout)}
+${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion })}
           - Labels: <Item1 Ref="1" ControlType="XRLabel" Name="label1" Text="My Text" LocationFloat="0,10" SizeF="200,30" Padding="2,2,0,0,100" />
           - Tables — rows and cells, with cells sized by Weight and never by coordinates: <Item2 Ref="2" ControlType="XRTable" Name="table1" LocationFloat="0,50" SizeF="750,40" Borders="All"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="rowHeader" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="cellHeadDesc" Text="Description" Weight="3" Font="Arial, 9.75pt, style=Bold" /><Item2 Ref="5" ControlType="XRTableCell" Name="cellHeadAmount" Text="Amount" Weight="1" TextAlignment="MiddleRight" Font="Arial, 9.75pt, style=Bold" /></Cells></Item1><Item2 Ref="6" ControlType="XRTableRow" Name="row1" Weight="1"><Cells><Item1 Ref="7" ControlType="XRTableCell" Name="cellDesc1" Text="Widget" Weight="3" /><Item2 Ref="8" ControlType="XRTableCell" Name="cellAmount1" Text="1,240.00" Weight="1" TextAlignment="MiddleRight" /></Cells></Item2></Rows></Item2>
           - Images: <Item3 Ref="5" ControlType="XRPictureBox" Name="pictureBox1" Sizing="ZoomImage" LocationFloat="0,100" SizeF="150,150" />
@@ -1218,7 +1217,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - **A grid of XRLabels is always the wrong answer for such a region**, however exactly its coordinates match the source. It looks identical in a preview and is a failed report: those columns cannot be re-bound to data, resized, or repeated per record, which is the whole purpose of the file being a .repx instead of a picture.
             - Column widths are relative Weight values on the cells, not coordinates — a column twice as wide as its neighbour gets twice the Weight. **An XRTableCell has no LocationFloat and no SizeF**; do not compute them. The XRTable's own SizeF sets the width the weights are distributed across.
             - Carry the source's own formatting onto the cells: bold the header row, and give money, quantity and date columns a TextAlignment ending in Right if that is how they are set.
-            - ${tableRowsRule(useBandedLayout)}
+            - ${tableRowsRule()}
             - The same region must be ONE "type": "table" element in the layout JSON, carrying the same rows and cells — see TABLES / GRIDS IN THE LAYOUT below. The two artifacts describe one report and must agree about where its tables are.
 
           - APPEARANCE IS PART OF THE REPORT, NOT JUST OF THE PREVIEW.
@@ -1617,7 +1616,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
           A previous attempt produced this report's specification correctly but stopped part-way through the XML. The layout below is complete and correct — transcribe it, do not redesign it, and do not re-measure anything.
 
           Output the XML and NOTHING else: no explanation, no markdown fences, no JSON. Start with <?xml and end with </XtraReportsLayoutSerializer>.
-${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion }, useBandedLayout)}
+${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion })}
           - Each layout element becomes one control: "label" -> XRLabel, "table" -> XRTable with XRTableRow/XRTableCell (cells take Weight, never LocationFloat or SizeF), "image" -> XRPictureBox, "line" -> XRLine, "barcode" -> XRBarCode.
           - x, y, width and height are already in ${reportUnit} and become LocationFloat="x,y" and SizeF="width,height", with no space after the comma.
           - FONT SIZE IS IN POINTS, and the layout's fontSize is in report units: points = fontSize * 72 / ${unitsPerInchForReport}. Writing the layout number straight into Font makes every piece of text far too large.
