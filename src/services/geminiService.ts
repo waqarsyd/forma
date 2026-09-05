@@ -953,6 +953,32 @@ ${transcript}`,
  * only when set, and a field with nothing but a name, a type and an expression
  * is complete — so this is usable in a tool that never opens a connection.
  */
+/**
+ * Sorting the detail rows.
+ *
+ * Measured with `RepxProbe emit-sort`. Three things a class reference would not
+ * have said: the collection lives on the **DetailBand** rather than on the
+ * report; `SortOrder` is written only for `Descending`; and `<SortFields>` and
+ * `<GroupFields>` have *identical item shapes*, so only the parent element name
+ * tells them apart.
+ */
+const SORTING_BLOCK = `          - SORTING THE DETAIL ROWS — a property of the band, not of the report.
+            If the source document's rows are plainly in an order — by date, by customer, largest first — say so, or the report prints them in whatever order the data arrives.
+            <Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="20">
+              <SortFields>
+                <Item1 Ref="5" FieldName="CustomerName" />
+                <Item2 Ref="6" FieldName="OrderDate" SortOrder="Descending" />
+              </SortFields>
+              <Controls> ... </Controls>
+            </Item3>
+            - <SortFields> is a SIBLING of <Controls> and is written BEFORE it, exactly like <GroupFields> on a GroupHeaderBand.
+            - **Write SortOrder ONLY for Descending.** Ascending is the default and DevExpress writes nothing at all for it — an item is just <Item1 Ref="5" FieldName="CustomerName" />. Writing SortOrder="Ascending" is not an error but it is not what the serializer produces.
+            - Items carry FieldName and NO ControlType, like every other collection item.
+            - Item order is sort precedence: the first field is the primary sort.
+            - **A GroupHeaderBand's <GroupFields> already sorts by its own field.** Do not repeat that field in the Detail band's <SortFields> — the grouping did it, and a second sort on the same field says nothing.
+            - Only sort by a field the data actually has. An order you can see in the printed page is evidence of a sort; a column heading is not.
+`;
+
 const CALCULATED_BLOCK = `          - CALCULATED FIELDS — a column the report can RECOMPUTE, not a number it remembers.
             An invoice line showing 3 x 12.50 = 37.50 has a total column that is arithmetic over two other columns. Written as the literal 37.50 it is correct once and wrong for every other row; written as a calculated field it is correct for all of them, which is the difference between a picture and a report.
             The collection is root-level and written BEFORE <Bands>, like <FormattingRuleSheet> and unlike <StyleSheet>:
@@ -1298,7 +1324,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
             - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
-${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
             Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.

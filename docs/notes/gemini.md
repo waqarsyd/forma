@@ -585,6 +585,25 @@ So a language model cannot write one. Asking for it would produce a blob that ei
 
 Three audit checks, all silent failures: an empty `Expression` (**error** — every bound cell prints blank), two fields sharing a `Name` (**error** — the later wins and bindings compute the wrong thing), and a field nothing uses (warning — usually the cell that should carry it still holds a literal).
 
+### Sorting, and two collections that look identical (2026-09-05)
+
+`RepxProbe emit-sort`. Three answers, and the third is a trap.
+
+```xml
+<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="20">
+  <SortFields>
+    <Item1 Ref="5" FieldName="CustomerName" />
+    <Item2 Ref="6" FieldName="OrderDate" SortOrder="Descending" />
+  </SortFields>
+  <Controls> ... </Controls>
+```
+
+- **Sorting is a property of the DetailBand, not of the report** — which is not what "sort fields" suggests. On any other band DevExpress keeps the collection and never applies it, so a sort on a PageHeader is a sort that silently does not happen. `repxAudit.ts` warns about exactly that.
+- **`SortOrder` is written only for `Descending`.** Ascending is the default and writes nothing, confirming what `emit-group` found for `<GroupFields>`. The prompt has to say so, or the model writes `SortOrder="Ascending"` and produces a file DevExpress would not have written.
+- **`<SortFields>` and `<GroupFields>` have identical item shapes** — `FieldName` plus an optional `SortOrder`, no `ControlType` — so **only the parent element name distinguishes them**. Anything reading these has to key on the parent: an audit that did not would report every grouped report as mis-sorted, and a preview parser that took a band's first child collection would read sort fields as controls. Both are pinned by tests now.
+
+That last point is the same shape as the `<GroupFields>` finding recorded above, arriving a second time. **Assume any new band-level collection is written before `<Controls>` and shaped like these two**, and check the parent name rather than the item.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

@@ -105,6 +105,20 @@ describe('reading the report out of the REPX', () => {
     expect(reversed).not.toBe(banded);
   });
 
+it('does not read a SortFields item as a control of the band', () => {
+    // <SortFields> is a sibling of <Controls> written BEFORE it, exactly like
+    // <GroupFields> -- so a parser taking a band's first child collection reads
+    // sort fields as controls and draws them at coordinates they do not have.
+    const sorted = parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="40">' +
+      '<SortFields><Item1 Ref="2" FieldName="OrderDate" SortOrder="Descending" /></SortFields>' +
+      '<Controls><Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" LocationFloat="0,0" /></Controls>' +
+      '</Item1></Bands></XtraReportsLayoutSerializer>'
+    ).bands[0];
+    expect(sorted.controls.map((c) => c.name)).toEqual(['l']);
+  });
+
   it('survives a band with no controls at all', () => {
     const footer = structure.bands.find((b) => b.kind === 'ReportFooter')!;
     expect(footer.height).toBe(60);

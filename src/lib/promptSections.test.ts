@@ -163,7 +163,7 @@ describe('ALL_SECTIONS', () => {
     // Written out by hand on purpose: deriving it the same way the module does
     // would make this test agree with itself rather than with the type.
     const expected: PromptSection[] = [
-      'grouping', 'parameters', 'charts', 'rules', 'calculated',
+      'grouping', 'parameters', 'charts', 'rules', 'calculated', 'sorting',
       'checkbox', 'crossband', 'containers', 'shapes',
     ];
     expect([...ALL_SECTIONS].sort()).toEqual([...expected].sort());
@@ -211,6 +211,35 @@ describe('calculated fields as a section', () => {
       'add a derived column',
     ]) {
       expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('calculated');
+    }
+  });
+});
+
+describe('sorting as a section', () => {
+  const plain = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+
+  it('is kept when the source sorts', () => {
+    const sorted = '<XtraReportsLayoutSerializer><Bands><Item1 ControlType="DetailBand"><SortFields><Item1 FieldName="D" /></SortFields></Item1></Bands></XtraReportsLayoutSerializer>';
+    expect(sectionsFor({ texts: [sorted] })).toEqual(['sorting']);
+  });
+
+  it('is NOT kept by a grouped report alone', () => {
+    // GroupFields sorts implicitly, but it is not a <SortFields> and the
+    // sorting block would be dead weight for it.
+    const grouped = '<XtraReportsLayoutSerializer><Bands><Item1 ControlType="GroupHeaderBand"><GroupFields><Item1 FieldName="Region" /></GroupFields></Item1></Bands></XtraReportsLayoutSerializer>';
+    const sections = sectionsFor({ texts: [grouped] });
+    expect(sections).toContain('grouping');
+    expect(sections).not.toContain('sorting');
+  });
+
+  it('is kept when the user asks for an order in their own words', () => {
+    for (const instruction of [
+      'sort by customer name',
+      'newest first please',
+      'list them alphabetical',
+      'order by amount descending',
+    ]) {
+      expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('sorting');
     }
   });
 });

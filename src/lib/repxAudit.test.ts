@@ -546,3 +546,60 @@ describe('calculated fields', () => {
     expect(findings.some((f) => f.code.startsWith('calculated-field'))).toBe(false);
   });
 });
+
+/**
+ * Sorting, and the mistake that is invisible in the file.
+ *
+ * <SortFields> belongs to the DetailBand. On any other band DevExpress keeps it
+ * and never applies it, so the rows print unsorted with nothing to say why.
+ *
+ * <SortFields> and <GroupFields> have IDENTICAL item shapes -- FieldName plus an
+ * optional SortOrder, no ControlType (RepxProbe emit-sort) -- so the parent
+ * element name is the only thing telling them apart.
+ */
+describe('sorting', () => {
+  const band = (kind: string, inner: string) =>
+    `<Item1 Ref="1" ControlType="${kind}" Name="B" HeightF="20">${inner}</Item1>`;
+
+  const doc = (bands: string) =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+    `<Bands>${bands}</Bands></XtraReportsLayoutSerializer>`;
+
+  const sortFields = '<SortFields><Item1 Ref="2" FieldName="OrderDate" SortOrder="Descending" /></SortFields>';
+
+  it('accepts sorting on the Detail band', () => {
+    const findings = auditRepx(doc(band('DetailBand', sortFields)), null).findings;
+    expect(findings.some((f) => f.code.startsWith('sort-'))).toBe(false);
+  });
+
+  it('warns when the sort sits on a band that will never apply it', () => {
+    const findings = auditRepx(doc(band('PageHeaderBand', sortFields)), null).findings;
+    const wrong = findings.find((f) => f.code === 'sort-on-wrong-band');
+    expect(wrong?.message).toContain('PageHeaderBand');
+  });
+
+  it('does not mistake a GroupHeaderBand GroupFields for a sort', () => {
+    // Identical item shape, different parent. Confusing the two would report a
+    // grouped report as mis-sorted on every generation.
+    const grouped = band('GroupHeaderBand', '<GroupFields><Item1 Ref="2" FieldName="Region" /></GroupFields>');
+    const findings = auditRepx(doc(grouped), null).findings;
+    expect(findings.some((f) => f.code.startsWith('sort-'))).toBe(false);
+  });
+
+  it('reports a sort field naming nothing', () => {
+    const blank = '<SortFields><Item1 Ref="2" FieldName="" /></SortFields>';
+    expect(auditRepx(doc(band('DetailBand', blank)), null).findings.some((f) => f.code === 'sort-field-empty')).toBe(true);
+  });
+
+  it('reports the same field sorted twice', () => {
+    const twice = '<SortFields><Item1 Ref="2" FieldName="Name" /><Item2 Ref="3" FieldName="Name" /></SortFields>';
+    const findings = auditRepx(doc(band('DetailBand', twice)), null).findings;
+    expect(findings.find((f) => f.code === 'sort-field-duplicate')?.message).toContain('Name');
+  });
+
+  it('stays quiet about a report that sorts nothing', () => {
+    const plain = band('DetailBand', '<Controls><Item1 Ref="2" ControlType="XRLabel" Name="l" Text="x" SizeF="10,10" LocationFloat="0,0" /></Controls>');
+    expect(auditRepx(doc(plain), null).findings.some((f) => f.code.startsWith('sort-'))).toBe(false);
+  });
+});

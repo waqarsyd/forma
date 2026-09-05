@@ -320,6 +320,49 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
    * outside the box that was meant to contain them.
    */
   /*
+   * Sorting, and the one mistake that is invisible in the file.
+   *
+   * `<SortFields>` belongs to the DetailBand. On any other band DevExpress reads
+   * it, keeps it, and never applies it — measured indirectly: the collection is
+   * a band property and only the detail band iterates rows. So a sort written on
+   * a PageHeader is a sort that silently does not happen.
+   *
+   * `<SortFields>` and `<GroupFields>` have identical item shapes — `FieldName`
+   * plus an optional `SortOrder`, no `ControlType` (`RepxProbe emit-sort`) — so
+   * the parent element name is the only thing distinguishing them, both here and
+   * in any parser that reads them.
+   */
+  for (const band of text.matchAll(/<Item\d+\b[^>]*ControlType="(\w+Band)"[^>]*>([\s\S]*?)(?=<Item\d+\b[^>]*ControlType="\w+Band"|<\/Bands>)/g)) {
+    const [, kind, body] = band;
+    if (!/<SortFields>/.test(body)) continue;
+    if (kind === 'DetailBand' || kind === 'DetailReportBand') continue;
+    add(
+      'warning',
+      'sort-on-wrong-band',
+      `A <SortFields> collection sits on a ${kind}. Sorting is a property of the Detail band — ` +
+        'DevExpress keeps this and never applies it, so the rows print unsorted with nothing to say why.',
+    );
+  }
+
+  const sortBlocks = [...text.matchAll(/<SortFields>([\s\S]*?)<\/SortFields>/g)];
+  for (const block of sortBlocks) {
+    const fields = [...block[1].matchAll(/FieldName="([^"]*)"/g)].map((m) => m[1]);
+    const blank = fields.filter((f) => !f.trim()).length;
+    if (blank) {
+      add('warning', 'sort-field-empty', `${blank} sort field(s) name no field, so they sort by nothing.`);
+    }
+    const repeated = [...new Set(fields.filter((f, i) => f && fields.indexOf(f) !== i))];
+    if (repeated.length) {
+      add(
+        'warning',
+        'sort-field-duplicate',
+        `${repeated.map((f) => `"${f}"`).join(', ')} appears twice in one <SortFields>. ` +
+          'The second occurrence cannot change the order and is usually a field meant for a different position.',
+      );
+    }
+  }
+
+  /*
    * Calculated fields. A control references one exactly as it references a real
    * data field — `Expression="[LineTotal]"` says nothing about where the field
    * comes from (measured, `RepxProbe emit-calc`). That symmetry is convenient

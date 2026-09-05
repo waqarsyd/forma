@@ -58,6 +58,7 @@ export type PromptSection =
   | 'charts'
   | 'rules'
   | 'calculated'
+  | 'sorting'
   | 'checkbox'
   | 'crossband'
   /** Panels and the instruction not to invent a subreport. */
@@ -102,6 +103,7 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   shapes: /XRShape|XRRichText/i,
   rules: /<FormattingRuleSheet|<FormattingRuleLinks/i,
   calculated: /<CalculatedFields/i,
+  sorting: /<SortFields/i,
 };
 
 /**
@@ -121,6 +123,7 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
   containers: /\bpanel\b|\bsubreport|\bbox\b|\bgroup(ed)? box|\bbordered block/i,
   shapes: /\bshape\b|\bcircle\b|\bellipse\b|\barrow\b|\brich ?text|\bdiagonal\b/i,
   calculated: /\bcalculat|\bcomputed\b|\bderived\b|\bformula\b|\bexpression\b|\bmultipl|\btimes\b|\bline total/i,
+  sorting: /\bsort|\border(ed)? by\b|\balphabetical|\bdescending|\bascending|\b(newest|oldest|largest|smallest) first/i,
   // Deliberately generous: conditional formatting is asked for in a dozen
   // different words, and every miss costs the feature entirely.
   rules: /\bconditional|\bhighlight|\bin red\b|\boverdue|\bnegative|\bwhen .{0,20}(exceed|over|above|below|under)|\bcolour when|\bcolor when|\bflag\b/i,

@@ -43,6 +43,7 @@ static class Program {
             case "emit-rich":  EmitRich(args[1]);  return 0;
             case "emit-rules": EmitRules(args[1]); return 0;
             case "emit-calc":  EmitCalc(args[1]);  return 0;
+            case "emit-sort":  EmitSort(args[1]);  return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -707,6 +708,57 @@ static class Program {
         report.Bands.AddRange(new Band[] {
             new TopMarginBand(),
             Band(new DetailBand(), "Detail", table),
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes SORTING on the detail rows, the last data-shaping feature missing.
+    ///
+    /// Open questions:
+    ///
+    ///   - Where does it live? Sorting the DATA is a property of the DetailBand
+    ///     in DevExpress, not of the report, which is not what the phrase "sort
+    ///     fields" suggests and is worth confirming rather than assuming.
+    ///   - `emit-group` already showed SortOrder is omitted for the ascending
+    ///     default. So the only case that writes anything is DESCENDING, and if
+    ///     that is true the ascending instruction is "write nothing at all",
+    ///     which the prompt has to say plainly or the model will write it.
+    ///   - Does the element name collide with a GroupHeaderBand's <GroupFields>?
+    ///     If both are `GroupField` objects serialized under different element
+    ///     names, a parser keying on the item shape cannot tell them apart.
+    static void EmitSort(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeSort";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRTableCell cell = Cell("cellName", "Widget", 1);
+        XRTable table = Table("tableDetail", new XRTableCell[] { cell });
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 20;
+        detail.Controls.Add(table);
+        // Ascending first, then descending, so the pair shows which is written.
+        detail.SortFields.Add(new GroupField("CustomerName", XRColumnSortOrder.Ascending));
+        detail.SortFields.Add(new GroupField("OrderDate", XRColumnSortOrder.Descending));
+
+        // A group band too, so the two collections can be compared side by side.
+        GroupHeaderBand group = new GroupHeaderBand();
+        group.Name = "GroupHeader";
+        group.HeightF = 20;
+        group.GroupFields.Add(new GroupField("Region", XRColumnSortOrder.Descending));
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            group,
+            detail,
             new BottomMarginBand()
         });
 
