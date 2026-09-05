@@ -79,6 +79,7 @@ describe('with a .repx source, omitting only what it rules out', () => {
       ['XRCrossBandLine', 'crossband'],
       ['XRPanel', 'containers'],
       ['XRSubreport', 'containers'],
+      ['XRPdfContent', 'containers'],
       ['XRShape', 'shapes'],
       ['XRRichText', 'shapes'],
     ] as [string, PromptSection][]) {

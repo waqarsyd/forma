@@ -737,6 +737,16 @@ $asm = [Reflection.Assembly]::LoadFrom("$bin\DevExpress.XtraReports.v20.1.dll")
 $asm.GetType('DevExpress.XtraReports.UI.XRCharacterComb').GetProperties() | Where-Object DeclaringType -eq $_
 ```
 
+### The two PDF controls, and one that does not exist (2026-09-05)
+
+The last two names on the DevExpress comparison. **Reflection answered both before a probe was written**, which is the note worth taking from this one.
+
+**`XRPdfSignature` is not in DevExpress 20.1 at all.** It is a later addition, so it was never a gap against the version this project targets — the comparison list had been read off the *current* documentation. Anything taken from `docs.devexpress.com` describes the newest release; the installed assembly is the authority for what 20.1 has, and `\$asm.GetType(...)` settles it in a second.
+
+**`XRPdfContent` is authorable, and still refused.** `RepxProbe emit-pdf` shows two forms — `SourceUrl="Terms.pdf"`, a plain path, and `SourceSerializable="…"`, the whole PDF as base64. So unlike `XRRichText` this is not a blob-only control. It is refused anyway, for the subreport's reason: the model has no basis to invent either one. A path names a file that will not exist on the reader's machine, and base64 means inventing a document. The prompt says do not create one; if an uploaded `.repx` has one, copy the attribute across byte for byte.
+
+**And a measurement that outgrew the question.** A control set to `SizeF="800,400"` came back `650` wide — which is 850 less the default 100-unit margins. Re-running with `Margins` zeroed returned **850**, not the 800 that was set. So `XRPdfContent` does not clamp to the printable width, it *is* the printable width: the `SizeF` width is ignored outright and the height is honoured. Worth knowing before anyone spends effort computing a number the control discards — and worth the second run, because "it clamped to the margins" was a tidy explanation that happened to be wrong.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

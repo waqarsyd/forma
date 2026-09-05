@@ -51,6 +51,7 @@ static class Program {
             case "emit-toc":   EmitToc(args[1]);   return 0;
             case "emit-comb":  EmitComb(args[1]);  return 0;
             case "render-cols": return RenderColumns();
+            case "emit-pdf":   EmitPdfContent(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -1277,6 +1278,68 @@ static class Program {
             foreach (DevExpress.XtraPrinting.Brick child in composite.InnerBricks) Dump(child, depth + 1);
         }
         foreach (DevExpress.XtraPrinting.Brick child in brick.Bricks) Dump(child, depth + 1);
+    }
+
+    /// Writes an XRPdfContent -- an existing PDF page embedded in the report.
+    ///
+    /// Reflection already answered half of this before any code was written:
+    /// the control has a `SourceUrl` alongside the byte array, so unlike
+    /// XRRichText it is not necessarily a blob. Which form the serializer
+    /// prefers decides whether a model can author one.
+    ///
+    /// Both are set on separate controls, and the output is printed with long
+    /// attribute values elided so a base64 payload shows as a payload rather
+    /// than filling the terminal -- the same treatment the image watermark got.
+    ///
+    /// (XRPdfSignature does not exist in DevExpress 20.1 at all; it is a later
+    /// addition. Confirmed by reflection, so there is nothing to probe.)
+    static void EmitPdfContent(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbePdf";
+        // Zero margins, so the printable width is the page width. Without this
+        // a control set to 800 came back 650 -- 850 less the default 100-unit
+        // margins each side -- and that clamp would otherwise be read as an
+        // XRPdfContent quirk rather than an ordinary width constraint.
+        report.Margins = new System.Drawing.Printing.Margins(0, 0, 0, 0);
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRPdfContent byUrl = new XRPdfContent();
+        byUrl.Name = "pdfByUrl";
+        byUrl.LocationF = new PointF(0, 0);
+        byUrl.SizeF = new SizeF(800, 400);
+        byUrl.SourceUrl = "Terms.pdf";
+
+        // The smallest thing that is recognisably a PDF. DevExpress may or may
+        // not validate on set; if it throws, that is the answer too.
+        XRPdfContent byBytes = new XRPdfContent();
+        byBytes.Name = "pdfByBytes";
+        byBytes.LocationF = new PointF(0, 420);
+        byBytes.SizeF = new SizeF(800, 400);
+        byBytes.Source = System.Text.Encoding.ASCII.GetBytes(
+            "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF");
+
+        XRPdfContent plain = new XRPdfContent();
+        plain.Name = "pdfPlain";
+        plain.LocationF = new PointF(0, 840);
+        plain.SizeF = new SizeF(800, 100);
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 950;
+        detail.Controls.AddRange(new XRControl[] { byUrl, byBytes, plain });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(), detail, new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        string xml = File.ReadAllText(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath) + "  (" + xml.Length + " chars)");
+        Console.WriteLine();
+        Console.WriteLine(Regex.Replace(xml, "\"([^\"]{60,})\"", m =>
+            "\"<" + m.Groups[1].Value.Length + " chars elided>\""));
     }
 
     /// Writes a GROUPED report, to settle how grouping is serialized.
