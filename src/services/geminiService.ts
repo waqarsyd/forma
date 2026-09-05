@@ -90,7 +90,7 @@ export interface ReportConfig {
  * HundredthsOfAnInch is 11.52pt, not 16pt.
  */
 const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
-  markdown: `# Mock Invoice Report\n\nThis is a canned layout returned by \`VITE_FORMA_MOCK\`, not generated output.\n\n## Bands\n- **Report Header**: the invoice title, printed once.\n- **Detail**: one line item and its amount, printed once per record.`,
+  markdown: `# Mock Invoice Report\n\nThis is a canned layout returned by \`VITE_FORMA_MOCK\`, not generated output.\n\n## Bands\n- **Report Header**: the invoice title, printed once.\n- **Page Header**: the column headings, repeated on every sheet.\n- **Detail**: one line item, printed once per record.`,
   repxContent: `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100" Version="23.2">
   <Bands>
@@ -100,13 +100,35 @@ const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
         <Item1 Ref="3" ControlType="XRLabel" Name="labelTitle" Text="INVOICE - FORMA MOCK ENGINE" LocationFloat="20,20" SizeF="500,40" Font="Arial, 11.52pt" Padding="2,2,0,0,100" />
       </Controls>
     </Item2>
-    <Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="150">
+    <Item3 Ref="4" ControlType="PageHeaderBand" Name="PageHeader" HeightF="30">
       <Controls>
-        <Item1 Ref="5" ControlType="XRLabel" Name="labelDescription" Text="Item Description: Mock Layout Development Service" LocationFloat="20,20" SizeF="400,25" Font="Arial, 7.2pt" Padding="2,2,0,0,100" />
-        <Item2 Ref="6" ControlType="XRLabel" Name="labelAmount" Text="Total: $1,250.00" LocationFloat="600,20" SizeF="200,25" Font="Arial, 8.64pt" TextAlignment="TopRight" Padding="2,2,0,0,100" />
+        <Item1 Ref="5" ControlType="XRTable" Name="tableHead" LocationFloat="20,5" SizeF="810,20">
+          <Rows>
+            <Item1 Ref="6" ControlType="XRTableRow" Name="rowHead" Weight="1">
+              <Cells>
+                <Item1 Ref="7" ControlType="XRTableCell" Name="headDescription" Text="Item Description" Weight="3" Font="Arial, 7.2pt, style=Bold" />
+                <Item2 Ref="8" ControlType="XRTableCell" Name="headAmount" Text="Amount" Weight="1" Font="Arial, 7.2pt, style=Bold" TextAlignment="MiddleRight" />
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item1>
       </Controls>
     </Item3>
-    <Item4 Ref="7" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
+    <Item4 Ref="9" ControlType="DetailBand" Name="Detail" HeightF="40">
+      <Controls>
+        <Item1 Ref="10" ControlType="XRTable" Name="tableDetail" LocationFloat="20,5" SizeF="810,25">
+          <Rows>
+            <Item1 Ref="11" ControlType="XRTableRow" Name="rowDetail" Weight="1">
+              <Cells>
+                <Item1 Ref="12" ControlType="XRTableCell" Name="cellDescription" Text="Mock Layout Development Service" Weight="3" Font="Arial, 7.2pt" />
+                <Item2 Ref="13" ControlType="XRTableCell" Name="cellAmount" Text="1,250.00" Weight="1" Font="Arial, 7.2pt" TextAlignment="MiddleRight" />
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item1>
+      </Controls>
+    </Item4>
+    <Item5 Ref="14" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
   </Bands>
 </XtraReportsLayoutSerializer>`,
   layout: {
@@ -123,13 +145,35 @@ const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
         ]
       },
       {
+        id: "page-header",
+        name: "PageHeader",
+        type: "header",
+        height: 30,
+        elements: [
+          {
+            id: "tbl-head", type: "table", content: "", x: 20, y: 5, width: 810, height: 20, fontSize: 10,
+            rows: [{ cells: [{ content: "Item Description", bold: true }, { content: "Amount", bold: true, textAlign: "right" }] }]
+          }
+        ]
+      },
+      {
         id: "detail",
         name: "Detail",
         type: "detail",
-        height: 150,
+        height: 40,
         elements: [
-          { id: "lbl-detail", type: "label", content: "Item Description: Mock Layout Development Service", x: 20, y: 20, width: 400, height: 25, fontSize: 10 },
-          { id: "lbl-amount", type: "label", content: "Total: $1,250.00", x: 600, y: 20, width: 200, height: 25, fontSize: 12, textAlign: "right" }
+          {
+            /* Every row the model could read, which is the one deliberate
+               difference from the Detail BAND above — and what the preview
+               counts records from. */
+            id: "tbl-detail", type: "table", content: "", x: 20, y: 5, width: 810, height: 25, fontSize: 10,
+            rows: [
+              { cells: [{ content: "Item Description" }, { content: "Amount", textAlign: "right" }] },
+              { cells: [{ content: "Mock Layout Development Service" }, { content: "1,250.00", textAlign: "right" }] },
+              { cells: [{ content: "Second Mock Line Item" }, { content: "480.00", textAlign: "right" }] },
+              { cells: [{ content: "Third Mock Line Item" }, { content: "95.50", textAlign: "right" }] }
+            ]
+          }
         ]
       }
     ]

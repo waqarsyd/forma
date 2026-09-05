@@ -271,6 +271,78 @@ describe('bindDetailRow', () => {
   });
 });
 
+/**
+ * The same pass, driven by a mapping the user chose instead of names the report
+ * guessed at. This is what the binding screen calls.
+ */
+describe('bindDetailRow with an explicit mapping', () => {
+  const twoColumns = () => banded(['Description', 'Amount'], ['Widget', '1.00']);
+
+  it('binds to the supplied names, not the derived ones', () => {
+    const { xml, applied, fields } = bindDetailRow(twoColumns(), ['DESCR', 'NET_TOTAL']);
+    expect(applied).toBe(true);
+    expect(xml).toContain('Expression="[DESCR]"');
+    expect(xml).toContain('Expression="[NET_TOTAL]"');
+    expect(xml).not.toContain('[Description]');
+    expect(fields.map((f) => f.name)).toEqual(['DESCR', 'NET_TOTAL']);
+  });
+
+  it('keeps the heading each supplied name was mapped onto', () => {
+    const { fields } = bindDetailRow(twoColumns(), ['DESCR', 'NET_TOTAL']);
+    expect(fields.map((f) => f.header)).toEqual(['Description', 'Amount']);
+    expect(fields.every((f) => f.synthesised === false)).toBe(true);
+  });
+
+  it('accepts a name with a space, because DevExpress reads [Unit Price]', () => {
+    const { xml } = bindDetailRow(twoColumns(), ['Item Description', 'Unit Price']);
+    expect(xml).toContain('Expression="[Item Description]"');
+    expect(xml).toContain('Expression="[Unit Price]"');
+  });
+
+  it('leaves a null column completely alone', () => {
+    const { xml, fields } = bindDetailRow(twoColumns(), [null, 'NET_TOTAL']);
+    expect(fields.map((f) => f.name)).toEqual(['NET_TOTAL']);
+    expect(xml).toContain('Expression="[NET_TOTAL]"');
+    // Not merely unbound: no format either. A column the user declined to map
+    // is one they said not to touch.
+    const descriptionCell = /<Item1 [^>]*Text="Widget"[\s\S]*?(?:\/>|<\/Item1>)/.exec(xml)![0];
+    expect(descriptionCell).not.toContain('ExpressionBindings');
+    expect(descriptionCell).not.toContain('TextFormatString');
+  });
+
+  it('treats an empty string the same as null', () => {
+    const { fields } = bindDetailRow(twoColumns(), ['  ', 'NET_TOTAL']);
+    expect(fields.map((f) => f.name)).toEqual(['NET_TOTAL']);
+  });
+
+  it('declines rather than rewriting anything when nothing was mapped', () => {
+    const before = twoColumns();
+    const { xml, applied, reason } = bindDetailRow(before, [null, null]);
+    expect(applied).toBe(false);
+    expect(xml).toBe(before);
+    expect(reason).toBe('no columns were mapped to a field');
+  });
+
+  it('counts only what it bound in the reason', () => {
+    const { reason } = bindDetailRow(twoColumns(), [null, 'NET_TOTAL']);
+    expect(reason).toMatch(/^bound 1 columns: NET_TOTAL/);
+  });
+
+  it('still declines when the plan itself could not be proved', () => {
+    const flat = report(band('DetailBand', cell('c', 'x')));
+    const { applied, xml } = bindDetailRow(flat, ['ANY']);
+    expect(applied).toBe(false);
+    expect(xml).toBe(flat);
+  });
+
+  it('leaves the derived behaviour untouched when no mapping is passed', () => {
+    // The regression that matters: the screen must not change what generation
+    // already does behind VITE_FORMA_BIND.
+    expect(bindDetailRow(twoColumns()).xml).toBe(bindDetailRow(twoColumns(), undefined).xml);
+    expect(bindDetailRow(twoColumns()).xml).toContain('Expression="[Description]"');
+  });
+});
+
 /** Headings, a detail row, and a footer row -- for the totals pass. */
 const withFooter = (headings: string[], values: string[], footer: string[]) =>
   report(

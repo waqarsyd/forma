@@ -132,6 +132,9 @@ const AccountDialog = lazy(() => import('./components/AccountDialog'));
 /* The paginated print preview. Lazy because it is reachable only from the
    workspace with a finished report, and it carries its own print stylesheet. */
 const ReportPreview = lazy(() => import('./components/ReportPreview'));
+/* The binding screen. Lazy for the same reason as the preview: workspace-only,
+   reachable only with a finished report, and it carries its own styles. */
+const DataBinding = lazy(() => import('./components/DataBinding'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -2044,7 +2047,7 @@ export default function App() {
     setKeyCheck(null);
     setVaultNotice({ tone: 'ok', text: 'Key cleared from this browser session.' });
   };
-  const [activeTab, setActiveTab] = useState<'spec' | 'ui' | 'print'>('ui');
+  const [activeTab, setActiveTab] = useState<'spec' | 'ui' | 'print' | 'data'>('ui');
   // Sub-view inside the "Specs & REPX" tab. The tab has always been named for
   // both, but only ever rendered the specification.
   const [specView, setSpecView] = useState<'spec' | 'repx'>('spec');
@@ -3272,11 +3275,13 @@ export default function App() {
   const plate =
     activeTab === 'ui' ? 'proof'
     : activeTab === 'print' ? 'print'
+    : activeTab === 'data' ? 'data'
     : specView === 'repx' ? 'xml'
     : 'spec';
-  const showPlate = (next: 'proof' | 'print' | 'spec' | 'xml') => {
+  const showPlate = (next: 'proof' | 'print' | 'data' | 'spec' | 'xml') => {
     if (next === 'proof') { setActiveTab('ui'); return; }
     if (next === 'print') { setActiveTab('print'); return; }
+    if (next === 'data') { setActiveTab('data'); return; }
     setActiveTab('spec');
     setSpecView(next === 'xml' ? 'repx' : 'spec');
   };
@@ -3923,6 +3928,7 @@ export default function App() {
               {/* Between the picture and the file, because that is what it is:
                   the REPX laid out as it prints. See components/ReportPreview. */}
               <button role="tab" aria-selected={plate === 'print'} onClick={() => showPlate('print')}>Preview</button>
+              <button role="tab" aria-selected={plate === 'data'} onClick={() => showPlate('data')}>Data</button>
               <button role="tab" aria-selected={plate === 'spec'} onClick={() => showPlate('spec')}>Spec</button>
               <button role="tab" aria-selected={plate === 'xml'} onClick={() => showPlate('xml')}>REPX</button>
             </div>
@@ -3999,6 +4005,24 @@ export default function App() {
                       repxContent={result.repxContent}
                       layout={result.layout}
                       title={result.title}
+                    />
+                  </Suspense>
+                </div>
+              )}
+
+              {plate === 'data' && (
+                <div className="wb-sheet wb-reg-marks">
+                  <Suspense fallback={null}>
+                    <DataBinding
+                      repxContent={result.repxContent}
+                      /* Rewrites only the REPX. The layout and the spec still
+                         describe the same report — a binding changes where a
+                         cell's text comes from at print time, not what the
+                         document is. */
+                      onApply={(xml, summary) => {
+                        setResult({ ...result, repxContent: xml });
+                        setSaveNotice(summary);
+                      }}
                     />
                   </Suspense>
                 </div>

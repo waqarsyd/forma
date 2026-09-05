@@ -288,6 +288,11 @@ src/
                        out across real pages — Detail once per record,
                        PageHeader on every sheet — which is what the Preview
                        pane and the PDF export are drawn from),
+                       dataSource (reads the fields out of whatever the user
+                       pastes — a JSON row, a CSV export, a CREATE TABLE or a
+                       list of names — and suggests which column each belongs
+                       to, so binding uses the data's own field names instead
+                       of names guessed from the column headings),
                        userInstructions (an empty composer means "no request",
                        not an invented one — the two cases are different
                        prompts rather than one with a placeholder in it),

@@ -505,18 +505,56 @@ export function bindingEnabled(env: Record<string, string | undefined>): boolean
   return env.VITE_FORMA_BIND === 'true';
 }
 
-export function bindDetailRow(xml: string | undefined | null): BoundRepx {
+/**
+ * Bind the detail row, optionally to names the user chose.
+ *
+ * Without `names` this behaves exactly as it did: field names are derived from
+ * the column headings, which is a guess made by the report about what the data
+ * is called. With `names` -- one entry per column, `null` to leave a column
+ * unbound -- the mapping comes from a data source the user actually pasted, and
+ * that is the whole point of the binding screen. The report is no longer the
+ * authority on its own field names; the data is.
+ *
+ * Two consequences worth stating:
+ *
+ * - **A `null` skips the cell entirely.** No binding, and no format either: a
+ *   column the user declined to map is one they are telling us not to touch,
+ *   and quietly adding a `TextFormatString` to it would be acting on a mapping
+ *   they refused to make.
+ * - **A supplied name is not held to the `[A-Za-z0-9_]+` alphabet** that
+ *   `deriveFieldNames` guarantees, because a real column can be called `Unit
+ *   Price` and DevExpress reads `[Unit Price]` perfectly well. It is still held
+ *   to being safe in an attribute and inside brackets -- `dataSource.ts`'s
+ *   `cleanFieldName` is what strips the characters that would end either early,
+ *   and callers pass names that have been through it.
+ */
+export function bindDetailRow(
+  xml: string | undefined | null,
+  names?: readonly (string | null)[],
+): BoundRepx {
   const text = xml ?? '';
   const { plan, reason } = planDetailBinding(text);
   if (!plan) return { xml: text, applied: false, reason, fields: [] };
+
+  const chosen = (index: number): string | null => {
+    if (!names) return plan.fields[index].name;
+    const name = (names[index] ?? '').trim();
+    return name || null;
+  };
+
+  if (names && plan.cells.every((_, i) => chosen(i) === null)) {
+    return { xml: text, applied: false, reason: 'no columns were mapped to a field', fields: [] };
+  }
 
   let out = text;
   let formatted = 0;
 
   for (let i = plan.cells.length - 1; i >= 0; i--) {
+    const name = chosen(i);
+    if (name === null) continue;
     const cell = plan.cells[i];
     let slice = out.slice(cell.start, cell.end);
-    const children = bindingElement(plan.fields[i].name);
+    const children = bindingElement(name);
 
     // A format, where the column's meaning is not in doubt. Never overwrite one
     // the model already chose -- it saw the document and this only sees one
@@ -543,12 +581,21 @@ export function bindDetailRow(xml: string | undefined | null): BoundRepx {
     out = out.slice(0, cell.start) + rewritten + out.slice(cell.end);
   }
 
+  const applied: DerivedField[] = plan.cells
+    .map((_, i) => ({ index: i, name: chosen(i) }))
+    .filter((entry): entry is { index: number; name: string } => entry.name !== null)
+    .map((entry) => ({
+      header: plan.headings[entry.index] ?? '',
+      name: entry.name,
+      synthesised: names ? false : plan.fields[entry.index].synthesised,
+    }));
+
   return {
     xml: out,
     applied: true,
     reason:
-      `bound ${plan.fields.length} columns: ${plan.fields.map((f) => f.name).join(', ')}` +
+      `bound ${applied.length} columns: ${applied.map((f) => f.name).join(', ')}` +
       (formatted ? `; formatted ${formatted}` : ''),
-    fields: plan.fields,
+    fields: applied,
   };
 }
