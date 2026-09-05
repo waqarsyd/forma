@@ -26,6 +26,13 @@
  * way on 2026-09-05. The test of the difference is simple: a raise made because
  * something grew names the growth; a retune names the percentage.
  *
+ * That test has one gap, found on 2026-09-06 and written up on the geminiService-
+ * cap below: growth that stays UNDER a budget is invisible until it is nearly over
+ * it, so a cap can arrive at 97% with real growth behind it and no single commit to
+ * name. Both categories then apply at once. The habit that catches it earlier is
+ * reading the percentages on a GREEN run -- a passing check says nothing about how
+ * nearly it failed, and `--print` exists for exactly that.
+ *
  * Usage:  node scripts/check-bundle-size.mjs        (exit 1 on any breach)
  *         node scripts/check-bundle-size.mjs --print (report only, exit 0)
  */
@@ -152,7 +159,32 @@ const BUDGETS = [
   // specified — so the number tracking it grows too, and a cap that never moved
   // would mean nothing had shipped. The signal to act on is a move with no
   // reason beside it.
-  { prefix: 'geminiService-', ext: '.js', max: 100_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
+  //
+  // Retuned to 104_000 on 2026-09-06, and this one does not fit the header's two
+  // categories cleanly, which is the part worth recording.
+  //
+  // It names the percentage, as a retune must: 97,274 B is 97.3% of 100,000,
+  // which is the state the header rejects — a cap the next routine change trips
+  // teaches whoever meets it to raise the number rather than read it.
+  //
+  // But there IS growth behind it, and the growth never tripped anything.
+  // 93,874 -> 97,274 B, +3,400 B over four commits since the gauge raise: the
+  // table-of-contents section (`ebb620c`), the character-comb section
+  // (`0dc38f7`) and the XRPdfContent refusal (`a6d9dec`), plus two near-neutral
+  // rewrites of the multi-column instruction (`3cb9aff` at 18/18 lines and
+  // `05236ff` at 34/33) that corrected what it said rather than adding to it.
+  // Every one of them fit, so the cap absorbed all four in silence and then
+  // surfaced as a percentage with no single commit to blame.
+  //
+  // **So the header's split -- a raise names the growth, a retune names the
+  // percentage -- has a gap: growth UNDER a cap is invisible until it is nearly
+  // over it.** A passing check says nothing about how nearly it failed, which is
+  // the same thing the 2026-09-05 TOTAL_MAX entry found the hard way. Both point
+  // at one habit: read the percentages on a GREEN run, not only on a red one.
+  //
+  // 104_000 puts it at 93.5%, where the 81_000 entry sat, inside the 93-94% band
+  // every other cap in this file uses.
+  { prefix: 'geminiService-', ext: '.js', max: 104_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it
