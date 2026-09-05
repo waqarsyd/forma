@@ -393,6 +393,32 @@ Both files round-trip: the designer's own output and a hand-written Forma-shaped
 
 `repxAudit.ts` gained two checks from this, both for failures DevExpress accepts silently: a `GroupHeaderBand` with no `<GroupFields>` groups by nothing and prints once, which looks like a heading; and a `GroupFooterBand` with no header never breaks, so its subtotal becomes a second grand total above the real one.
 
+### Parameters, and the first measurement that was a *negative* result (2026-09-05)
+
+`RepxProbe emit-params` settled how a parameter serializes, and the shape is not guessable:
+
+```xml
+<Parameters>
+  <Item1 Ref="2" Description="From date" ValueInfo="2026-01-01" Name="DateFrom" Type="#Ref-1" />
+  <Item2 Ref="4" Description="Region" ValueInfo="North" Name="Region" />
+</Parameters>
+…
+<ObjectStorage>
+  <Item1 ObjectType="DevExpress.XtraReports.Serialization.ObjectStorageInfo, DevExpress.XtraReports.v20.1"
+         Ref="1" Content="System.DateTime" Type="System.Type" />
+</ObjectStorage>
+```
+
+The default is **`ValueInfo`**, not `Value`. A **string** parameter carries **no `Type` at all**. And any other type is a **`#Ref-N` pointer into an `<ObjectStorage>` block at the end of the document**, whose `ObjectType` is assembly-qualified and therefore version-specific.
+
+**Then the measurement that mattered.** A hand-written file declaring `Type="System.DateTime"` inline — the form anyone would write from the class reference — loads without complaint, and the parameter comes back as `System.String` holding the text `2026-01-01`. `System.Int32` likewise. No exception, no warning, the file opens in the designer and the report's date filter compares strings.
+
+That is the first time the probe has been used to establish that an obvious form is *wrong* rather than to discover the right one, and it is the better use of it. Everything else in this section could eventually have been found by trial; this could not, because the trial succeeds.
+
+**So the conversion is code, not prompt.** Asking the model for an `ObjectStorage` section means asking it to allocate a `Ref` unique across a part of the document it never otherwise touches, and `Ref` collisions are already what `repxRefs.ts` exists to repair. The prompt asks for the readable `Type="System.DateTime"`; `liftParameterTypes` in `repxParameters.ts` rewrites it, allocating refs above every `Ref` already present, sharing one entry between parameters of the same type, merging into an existing `ObjectStorage` rather than writing a second, and removing a redundant `System.String` because that is what the serializer does. It declines on a type it does not recognise, since a bad `ObjectStorage` entry can stop the file loading at all — worse than a parameter that quietly falls back to string.
+
+Verified end to end rather than by unit test alone: a file with inline types went through the real lift and back into DevExpress, which then reported `DateFrom : System.DateTime` and `MaxRows : System.Int32`. `RepxProbe inspect` grew a parameter readout for exactly this, and it prints `PARAMETERS LOST` when the declared and loaded counts disagree.
+
 **`{0:n0}` is deliberately never emitted.** It renders 12345 as "12,345", which is right for a quantity and wrong for an invoice number, order id, product code or year — all columns of bare integers that one sample value cannot distinguish from a count. A format that mangles an identifier is worse than none, because the unformatted column was already correct. Currency and dates only, where the meaning is not in doubt.
 
 ## The API key gates the entire workspace

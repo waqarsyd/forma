@@ -6,6 +6,7 @@ documentation.
 ```powershell
 RepxProbe emit <out.repx>        # what does the serializer WRITE for a feature?
 RepxProbe emit-group <out.repx>  # the same, for a GROUPED report
+RepxProbe emit-params <out.repx> # the same, for a PARAMETERISED report
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 
@@ -117,6 +118,22 @@ And from `emit-group` on 2026-09-05, for the grouping work:
   the cell's `<Summary>`; the expression is the same `sumSum([Amount])`, and
   `Func="Sum"` is omitted as the default. Leaving `Running` off does not fail —
   it totals the whole report at every group break.
+
+And from `emit-params` the same day, which produced the first useful **negative**
+result:
+
+- A parameter's default is **`ValueInfo`**, not `Value`, and a **string**
+  parameter carries **no `Type`**.
+- Any other type is a **`#Ref-N` pointer into an `<ObjectStorage>` block** at
+  the end of the document, with an assembly-qualified `ObjectType`.
+- **Writing the type inline is accepted and silently ignored.**
+  `Type="System.DateTime"` loads a `System.String` holding the date as text —
+  no exception, no warning, and the report's date filter then compares strings.
+  This is the case the tool is *most* worth reaching for: trial and error
+  cannot find it, because the trial appears to succeed.
+
+`inspect` reports parameters for this reason, and prints `PARAMETERS LOST` when
+the declared and loaded counts disagree.
 
 ## Related
 

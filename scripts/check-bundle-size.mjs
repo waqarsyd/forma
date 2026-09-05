@@ -74,7 +74,16 @@ const BUDGETS = [
    * path, which is what a value import in App.tsx would do -- does not show up
    * here. It shows up as the entry chunk jumping ~61 kB against the cap above.
    */
-  { prefix: 'geminiService-', ext: '.js', max: 70_000, note: 'the mega-prompt + generation service, lazy' },
+  // Raised from 70_000 on 2026-09-05, and this is the case the budget was put
+  // here for: the chunk is almost entirely one template literal, and it grew
+  // 63,492 -> 70,651 B when the prompt gained a GROUPING section and a
+  // PARAMETERS section. Two features, ~7.2 kB of instruction, and nothing else
+  // in the build would have said so.
+  //
+  // 75_000 puts it at 94.2%, where the index- and firebase- caps sit. This is a
+  // raise, not a retune, so per the header it names the growth: grouping and
+  // parameters, in the commit that added them.
+  { prefix: 'geminiService-', ext: '.js', max: 75_000, note: 'the mega-prompt + generation service, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it

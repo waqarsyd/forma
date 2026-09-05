@@ -181,6 +181,21 @@ function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializer
             - Emit GroupFooter only if the design actually shows a per-group line. A GroupHeaderBand alone is normal and correct.
             - In the layout JSON these are sections of \`"type": "group"\`, in the same position and order as the bands.
 
+          - PARAMETERS — ONLY WHEN THE DESIGN SHOWS THE READER BEING ASKED SOMETHING.
+            Look for a criteria block near the top: "Date range: ____ to ____", "Region: All", "Customer: [blank]", a filled-in filter line, or a from/to pair printed as part of the header. Those are values the reader supplies before the report runs, and they belong in a \`<Parameters>\` collection, which is a child of the root written BEFORE \`<Bands>\`:
+
+            <Parameters>
+              <Item1 Ref="1" Name="DateFrom" Description="From date" Type="System.DateTime" ValueInfo="2026-01-01" />
+              <Item2 Ref="2" Name="Region" Description="Region" ValueInfo="North" />
+            </Parameters>
+
+            - \`Name\` is an identifier: letters, digits and underscore, no spaces. \`Description\` is what the reader is shown, so it is the label as the document words it.
+            - \`ValueInfo\` — NOT \`Value\` — carries the default, written as text.
+            - \`Type\` is one of \`System.String\`, \`System.DateTime\`, \`System.Int32\`, \`System.Decimal\`, \`System.Double\`, \`System.Boolean\`. Omit it entirely for a string, which is the default. **Write the plain type name; do not attempt an \`ObjectStorage\` section — a later pass converts it into the form DevExpress actually reads.**
+            - \`MultiValue="true"\` when the document shows a list being chosen from.
+            - USE every parameter you declare, in one of the two ways, or do not declare it. In the report's \`FilterString\` attribute on the root: \`FilterString="[OrderDate] &gt;= ?DateFrom"\` — note the \`?Name\` form and that \`>\` must be written \`&gt;\`. Or in a control's expression: \`Expression="'Region: ' + [Parameters.Region]"\` — note the \`[Parameters.Name]\` form. A declared parameter nobody uses still stops the reader and asks them a question that changes nothing.
+            - If the design shows no such block, emit NO \`<Parameters>\` element. An invented parameter turns a report that runs into one that interrogates the reader first.
+
           - THE DETAIL BAND IS ONE ROW, NOT THE TABLE.
             This is the whole point of the exercise. A DetailBand is printed once PER RECORD, so it must contain a single row's worth of controls:
             - HeightF is ONE ROW's height, not the table's height.

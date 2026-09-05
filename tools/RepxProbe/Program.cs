@@ -18,12 +18,15 @@ using System.IO;
 using System.Text.RegularExpressions;
 using DevExpress.XtraReports.UI;
 using DevExpress.XtraReports.Expressions;
+// Parameter is NOT in the UI namespace, unlike every band and control here.
+using DevExpress.XtraReports.Parameters;
 
 static class Program {
     static int Main(string[] args) {
         if (args.Length < 2) {
             Console.WriteLine("usage: RepxProbe emit <out.repx>");
             Console.WriteLine("       RepxProbe emit-group <out.repx>");
+            Console.WriteLine("       RepxProbe emit-params <out.repx>");
             Console.WriteLine("       RepxProbe inspect <in.repx>");
             return 2;
         }
@@ -31,6 +34,7 @@ static class Program {
             switch (args[0]) {
                 case "emit":       Emit(args[1]);      return 0;
                 case "emit-group": EmitGroup(args[1]); return 0;
+                case "emit-params": EmitParams(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -176,6 +180,81 @@ static class Program {
         Console.WriteLine(File.ReadAllText(outPath));
     }
 
+    /// Writes a PARAMETERISED report, to settle how parameters serialize.
+    ///
+    /// Open questions, none of which the class reference answers: where the
+    /// Parameters collection sits relative to Bands, how a CLR type is spelled
+    /// in the file, whether a default Value is written, what a multi-value
+    /// parameter adds, how FilterString escapes its comparison, and how a
+    /// parameter is referenced from a control's expression.
+    static void EmitParams(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeParams";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        Parameter from = new Parameter();
+        from.Name = "DateFrom";
+        from.Type = typeof(DateTime);
+        from.Description = "From date";
+        from.Value = new DateTime(2026, 1, 1);
+        report.Parameters.Add(from);
+
+        Parameter region = new Parameter();
+        region.Name = "Region";
+        region.Type = typeof(string);
+        region.Description = "Region";
+        region.Value = "North";
+        report.Parameters.Add(region);
+
+        // Multi-value and hidden, to see what each adds to the element.
+        Parameter categories = new Parameter();
+        categories.Name = "Categories";
+        categories.Type = typeof(string);
+        categories.Description = "Categories";
+        categories.MultiValue = true;
+        report.Parameters.Add(categories);
+
+        Parameter internalOnly = new Parameter();
+        internalOnly.Name = "RunBy";
+        internalOnly.Type = typeof(string);
+        internalOnly.Visible = false;
+        report.Parameters.Add(internalOnly);
+
+        // The two ways a parameter is used: filtering the data, and printing.
+        report.FilterString = "[OrderDate] >= ?DateFrom And [Region] = ?Region";
+
+        XRLabel caption = new XRLabel();
+        caption.Name = "labelCaption";
+        caption.LocationF = new PointF(0, 0);
+        caption.SizeF = new SizeF(600, 20);
+        caption.Text = "Region";
+        caption.ExpressionBindings.Add(
+            new ExpressionBinding("BeforePrint", "Text", "'Region: ' + [Parameters.Region]"));
+
+        ReportHeaderBand head = new ReportHeaderBand();
+        head.Name = "ReportHeader";
+        head.HeightF = 20;
+        head.Controls.Add(caption);
+
+        XRTable detail = Table("tableDetail", new XRTableCell[] {
+            Cell("cellItem", "Widget", 3), Cell("cellAmount", "1240.00", 1)
+        });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            head,
+            Band(new DetailBand(), "Detail", detail),
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
     // ------------------------------------------------------------- inspect
 
     /// Loads a file and reports what DevExpress actually sees in it.
@@ -228,6 +307,23 @@ static class Program {
         Console.WriteLine("loaded   : " + tables + " tables, " + cells + " cells, "
                           + bindings + " bindings");
         foreach (string line in lines) Console.WriteLine(line);
+
+        // Parameters, because the file can DECLARE a type the loader silently
+        // refuses. A parameter that comes back as System.String when the file
+        // said System.DateTime is a report whose date filter compares text.
+        int rawParams = Regex.Matches(xml, "<Parameters>").Count == 0
+            ? 0 : Regex.Matches(Regex.Match(xml, "<Parameters>[\\s\\S]*?</Parameters>").Value, "\\sName=\"").Count;
+        Console.WriteLine("params   : " + rawParams + " declared, " + r.Parameters.Count + " loaded");
+        foreach (Parameter p in r.Parameters)
+            Console.WriteLine("             " + p.Name + " : " + p.Type.FullName
+                              + (p.MultiValue ? " multi" : "")
+                              + (p.Visible ? "" : " hidden")
+                              + (p.Value == null ? "" : "  = " + p.Value));
+        if (!string.IsNullOrEmpty(r.FilterString))
+            Console.WriteLine("filter   : " + r.FilterString);
+        if (rawParams != r.Parameters.Count)
+            Console.WriteLine("           PARAMETERS LOST: declared " + rawParams
+                              + ", loaded " + r.Parameters.Count + ".");
 
         r.SaveLayoutToXml(path + ".resaved");
         Console.WriteLine("           re-saved OK -> " + Path.GetFileName(path) + ".resaved");

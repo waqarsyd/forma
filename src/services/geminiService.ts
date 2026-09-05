@@ -9,6 +9,7 @@ import { normalizeItemNames } from "../lib/repxItems";
 import { instructionBlock } from "../lib/userInstructions";
 import { auditRepx } from "../lib/repxAudit";
 import { bindDetailRow, bindFooterTotals, bindingEnabled } from "../lib/repxBindingPlan";
+import { liftParameterTypes } from "../lib/repxParameters";
 import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import {
@@ -1711,6 +1712,22 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.log(`Margins: ${lift.reason}.`);
     } else {
       console.log(`Margins left as generated: ${lift.reason}.`);
+    }
+
+    // A parameter's type is the one thing in this file the model CANNOT write
+    // correctly, and the failure is silent: DevExpress accepts an inline
+    // `Type="System.DateTime"` and loads a String holding the date as text, so
+    // the report's date filter then compares strings. The real form is a
+    // `#Ref-N` pointer into an `<ObjectStorage>` block, which needs a Ref
+    // unique across a section the model never sees. Measured 2026-09-05; see
+    // `repxParameters.ts`. Not behind a flag, because leaving it off means
+    // shipping a parameter that is quietly the wrong type.
+    const params = liftParameterTypes(parsed.repxContent, targetVersion);
+    if (params.applied) {
+      parsed.repxContent = params.xml;
+      console.log(`Parameters: ${params.reason}.`);
+    } else {
+      console.log(`Parameters left as generated: ${params.reason}.`);
     }
 
     // Opt-in, and last, because it is the only pass here that changes what the

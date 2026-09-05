@@ -39,6 +39,7 @@
 import { checkRepxComplete } from './repxTruncation';
 import { normalizeItemNames } from './repxItems';
 import { auditRefs } from './repxRefs';
+import { parseParameters, parameterReferences } from './repxParameters';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -245,6 +246,43 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
       'group-footer-without-header',
       'There is a GroupFooterBand but no GroupHeaderBand, so nothing defines where a group ends. ' +
         'Its contents print once at the end rather than once per group.',
+    );
+  }
+
+  /*
+   * Parameters the report uses but never declares.
+   *
+   * `?Name` in a filter and `[Parameters.Name]` in an expression both resolve
+   * against the <Parameters> collection, and a name that is not there is a
+   * filter that throws at run time or a label that prints nothing. Neither
+   * shows up when the file is opened.
+   *
+   * A warning rather than an error because the reference scan is a text scan:
+   * `Text="Ready?Now"` is indistinguishable from a filter reference, and
+   * `repxParameters.ts` says so at the point it admits the limit. Blocking an
+   * export on a false positive would be worse than naming a real one.
+   */
+  const declared = new Set(parseParameters(text).map((p) => p.name));
+  const undeclared = parameterReferences(text).filter((name) => !declared.has(name));
+  if (undeclared.length) {
+    add(
+      'warning',
+      'undeclared-parameter',
+      `The report refers to ${undeclared.map((n) => `"${n}"`).join(', ')} but declares no such parameter. ` +
+        'A filter comparing an undeclared parameter fails when the report runs, and an expression using one prints nothing.',
+    );
+  }
+
+  // The other direction: a parameter nobody uses still appears in the
+  // parameters panel, so the reader is asked a question that changes nothing.
+  const referenced = new Set(parameterReferences(text));
+  const unused = [...declared].filter((name) => !referenced.has(name));
+  if (unused.length) {
+    add(
+      'warning',
+      'unused-parameter',
+      `${unused.map((n) => `"${n}"`).join(', ')} ${unused.length === 1 ? 'is' : 'are'} declared but never used in a filter or an expression. ` +
+        'DevExpress still prompts for it before the report runs, so the reader answers a question that changes nothing.',
     );
   }
 

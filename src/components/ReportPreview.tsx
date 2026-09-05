@@ -37,6 +37,7 @@ import {
   type PreviewControl,
   type PaginatedReport,
 } from '../lib/reportPreview';
+import { parseParameters } from '../lib/repxParameters';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
 import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
 import type { ReportLayout } from '../lib/reportTypes';
@@ -242,6 +243,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
     return { structure: parsed, report: paginate(parsed, recordCountFromLayout(layout)) as PaginatedReport };
   }, [repxContent, layout]);
   const structureBands = structure.bands;
+  const parameters = useMemo(() => parseParameters(repxContent), [repxContent]);
 
   const pageW = unitsToPx(report.page.width, report.unit);
   const pageH = unitsToPx(report.page.height, report.unit);
@@ -560,6 +562,21 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
         }
         .rp-sel b { font-weight: 600; }
         .rp-over { color: var(--warn, #b45309); }
+        .rp-params {
+          display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+        }
+        .rp-params-label {
+          font-family: var(--font-code, monospace); font-size: 10px; letter-spacing: .1em;
+          text-transform: uppercase; opacity: .55;
+        }
+        .rp-param {
+          display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px;
+          padding: 3px 9px; border-radius: 999px;
+          border: 1px solid var(--paper-rule, #d7dee7);
+        }
+        .rp-param small { font-family: var(--font-code, monospace); font-size: 10px; opacity: .55; }
+        .rp-param em { font-style: normal; font-family: var(--font-code, monospace); font-size: 11px; opacity: .8; }
+        @media print { .rp-params { display: none !important; } }
 
         /* Printing renders the pages a SECOND time, into a portal attached to
            document.body, and hides everything else. The obvious approach --
@@ -646,6 +663,23 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
           Export PDF
         </button>
       </div>
+
+      {/* Parameters are asked BEFORE the report prints, so they belong above
+          the paper rather than on it — DevExpress shows them in a panel the
+          reader fills in first, and a preview that omitted them would suggest
+          the report just runs. */}
+      {parameters.length > 0 && (
+        <div className="rp-params">
+          <span className="rp-params-label">Asked before printing</span>
+          {parameters.map((p) => (
+            <span className="rp-param" key={p.name}>
+              {p.description || p.name}
+              <small>{p.lifted ? 'typed' : p.type.replace('System.', '')}{p.multiValue ? ' · many' : ''}</small>
+              {p.value && <em>{p.value}</em>}
+            </span>
+          ))}
+        </div>
+      )}
 
       {report.problems.length > 0 && (
         <div className="rp-problems" role="status">

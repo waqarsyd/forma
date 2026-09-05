@@ -225,6 +225,48 @@ describe('auditRepx on group bands', () => {
   });
 });
 
+describe('auditRepx on parameters', () => {
+  const withParams = (params: string, extra = '') =>
+    report(TOP + detailWithTable + bottom(3, 9))
+      .replace('<Bands>', `<Parameters>${params}</Parameters><Bands>`)
+      .replace('<XtraReportsLayoutSerializer', `<XtraReportsLayoutSerializer${extra}`);
+
+  it('says nothing when every parameter is declared and used', () => {
+    const xml = withParams(
+      '<Item1 Ref="30" Name="Region" Description="Region" />',
+      ' FilterString="[Region] = ?Region"',
+    );
+    expect(codes(xml)).not.toContain('undeclared-parameter');
+    expect(codes(xml)).not.toContain('unused-parameter');
+  });
+
+  it('reports a filter referring to a parameter that does not exist', () => {
+    const xml = withParams(
+      '<Item1 Ref="30" Name="Region" />',
+      ' FilterString="[Region] = ?Region And [D] &gt;= ?DateFrom"',
+    );
+    const finding = auditRepx(xml).findings.find((f) => f.code === 'undeclared-parameter');
+    expect(finding?.message).toContain('"DateFrom"');
+  });
+
+  it('reports a declared parameter nobody uses', () => {
+    const xml = withParams('<Item1 Ref="30" Name="Unused" />');
+    expect(auditRepx(xml).findings.find((f) => f.code === 'unused-parameter')?.message)
+      .toContain('"Unused"');
+  });
+
+  it('counts an expression reference as use', () => {
+    const xml = withParams('<Item1 Ref="30" Name="Region" />')
+      .replace('Text="A"', 'Text="A" Expression="[Parameters.Region]"');
+    expect(codes(xml)).not.toContain('unused-parameter');
+  });
+
+  it('says nothing at all about a report with no parameters', () => {
+    expect(codes(healthy)).not.toContain('undeclared-parameter');
+    expect(codes(healthy)).not.toContain('unused-parameter');
+  });
+});
+
 describe('auditRepx cross-checked against the layout', () => {
   it('says nothing extra when the report and the mockup agree', () => {
     // One section, one content band (Detail), and a table in both.
