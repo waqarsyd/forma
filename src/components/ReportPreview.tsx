@@ -37,7 +37,8 @@ import {
   type PreviewControl,
   type PaginatedReport,
 } from '../lib/reportPreview';
-import { unitsToPx, unitsPerInch } from '../lib/reportGeometry';
+import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
+import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
 import type { ReportLayout } from '../lib/reportTypes';
 
 interface Props {
@@ -45,7 +46,37 @@ interface Props {
   layout?: ReportLayout | null;
   /** Shown in the print header line and used for the suggested file name. */
   title?: string;
+  /**
+   * Supplied to make the pane editable. Without it the preview is read-only,
+   * which is what the print portal wants and what a loaded report gets before
+   * anything is selected.
+   */
+  onEdit?: (xml: string, reason: string) => void;
 }
+
+/**
+ * A drag in progress. Null between gestures.
+ *
+ * `baseXml` and the origin geometry are captured once, at pointerdown, and
+ * every move recomputes from them rather than applying a delta to the previous
+ * frame. Incremental application accumulates rounding — each move rounds to a
+ * whole report unit — so a slow drag across the page would land somewhere other
+ * than the pointer. It also keeps undo to one entry per gesture instead of one
+ * per mouse move.
+ */
+type Gesture = {
+  ref: ControlRef;
+  mode: 'move' | 'resize';
+  baseXml: string;
+  /** Pointer position when the gesture began, in client px. */
+  fromX: number;
+  fromY: number;
+  /** The control's geometry when the gesture began, in report units. */
+  originX: number;
+  originY: number;
+  originW: number;
+  originH: number;
+} | null;
 
 /** Bands the reader should be able to tell apart on screen. */
 const BAND_TINT: Record<string, string> = {
@@ -168,15 +199,49 @@ function ControlBox({
   return <div style={frame}>{control.text}</div>;
 }
 
-export default function ReportPreview({ repxContent, layout, title }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [showBands, setShowBands] = useState(true);
+  const [selected, setSelected] = useState<ControlRef | null>(null);
+  const [editingText, setEditingText] = useState<string | null>(null);
+  const gesture = useRef<Gesture>(null);
+  const editable = Boolean(onEdit);
 
-  const report: PaginatedReport = useMemo(() => {
-    const structure = parseReportStructure(repxContent);
-    return paginate(structure, recordCountFromLayout(layout));
+  /*
+   * Undo, kept here rather than in App.
+   *
+   * Direct manipulation without undo is a feature people are afraid to use: a
+   * drag is cheap to make and, until now, impossible to take back short of
+   * regenerating the whole report — which is the cost this pane exists to
+   * remove. The stack holds the REPX before each edit, which is small, exact,
+   * and needs no diffing.
+   */
+  const undoStack = useRef<{ xml: string; reason: string }[]>([]);
+  const [undoDepth, setUndoDepth] = useState(0);
+
+  const commit = (result: { xml: string; applied: boolean; reason: string }, previous: string) => {
+    if (!result.applied || !onEdit) return;
+    undoStack.current.push({ xml: previous, reason: result.reason });
+    setUndoDepth(undoStack.current.length);
+    onEdit(result.xml, result.reason);
+  };
+
+  const undo = () => {
+    const step = undoStack.current.pop();
+    if (!step || !onEdit) return;
+    setUndoDepth(undoStack.current.length);
+    onEdit(step.xml, `undid: ${step.reason}`);
+  };
+
+  /* The structure is kept alongside the pagination because editing addresses a
+     control by its index in `structure.bands`, and `paginate` reuses the very
+     same band objects — so a placed band's identity finds its index. */
+  const { structure, report } = useMemo(() => {
+    const parsed = parseReportStructure(repxContent);
+    return { structure: parsed, report: paginate(parsed, recordCountFromLayout(layout)) as PaginatedReport };
   }, [repxContent, layout]);
+  const structureBands = structure.bands;
 
   const pageW = unitsToPx(report.page.width, report.unit);
   const pageH = unitsToPx(report.page.height, report.unit);
@@ -195,6 +260,92 @@ export default function ReportPreview({ repxContent, layout, title }: Props) {
   }, [pageW]);
 
   const inches = (units: number) => (units / unitsPerInch(report.unit)).toFixed(2);
+
+  /** The selected control, read out of the current parse rather than cached. */
+  const selectedControl =
+    selected ? structureBands[selected.band]?.controls[selected.control] ?? null : null;
+
+  const beginGesture = (
+    event: React.PointerEvent,
+    ref: ControlRef,
+    mode: 'move' | 'resize',
+  ) => {
+    if (!editable || !repxContent) return;
+    const control = structureBands[ref.band]?.controls[ref.control];
+    if (!control) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelected(ref);
+    setEditingText(null);
+    // One undo entry per gesture, recorded before the first frame of it.
+    undoStack.current.push({ xml: repxContent, reason: mode === 'move' ? 'move' : 'resize' });
+    setUndoDepth(undoStack.current.length);
+    gesture.current = {
+      ref,
+      mode,
+      baseXml: repxContent,
+      fromX: event.clientX,
+      fromY: event.clientY,
+      originX: control.x,
+      originY: control.y,
+      originW: control.width,
+      originH: control.height,
+    };
+  };
+
+  useEffect(() => {
+    if (!editable) return;
+    const onMove = (event: PointerEvent) => {
+      const g = gesture.current;
+      if (!g || !onEdit) return;
+      // Divide out the zoom first: it is a presentation scale, not a unit.
+      const dx = pxToUnits((event.clientX - g.fromX) / scale, report.unit);
+      const dy = pxToUnits((event.clientY - g.fromY) / scale, report.unit);
+      const result =
+        g.mode === 'move'
+          ? moveControl(g.baseXml, g.ref, g.originX + dx, g.originY + dy)
+          : resizeControl(g.baseXml, g.ref, g.originW + dx, g.originH + dy);
+      if (result.applied) onEdit(result.xml, result.reason);
+    };
+    const onUp = () => { gesture.current = null; };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [editable, onEdit, scale, report.unit]);
+
+  useEffect(() => {
+    if (!editable) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (editingText !== null) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        undo();
+        return;
+      }
+      if (event.key === 'Escape') { setSelected(null); return; }
+      if (!selected || !selectedControl || !repxContent) return;
+      const step = event.shiftKey ? 10 : 1;
+      const nudge: Record<string, [number, number]> = {
+        ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
+      };
+      const delta = nudge[event.key];
+      if (!delta) return;
+      // Arrow keys are the precision half of direct manipulation: a drag gets
+      // you close, one unit at a time gets you exact.
+      event.preventDefault();
+      commit(
+        moveControl(repxContent, selected, selectedControl.x + delta[0], selectedControl.y + delta[1]),
+        repxContent,
+      );
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   /*
    * Printing is the PDF export, and it needs the pages at true size rather than
@@ -222,8 +373,14 @@ export default function ReportPreview({ repxContent, layout, title }: Props) {
 
   const exportPdf = useCallback(() => setPrinting(true), []);
 
-  /** The pages themselves, drawn at `zoom`. Used by the pane and the printer. */
-  const renderPages = (zoom: number) => (
+  /**
+   * The pages themselves, drawn at `zoom`.
+   *
+   * `editing` is a parameter rather than the `editable` prop because this is
+   * called twice: once for the pane, and once into the print portal, where hit
+   * targets and selection outlines have no business existing.
+   */
+  const renderPages = (zoom: number, editing: boolean) => (
     <div className="rp-pages">
       {report.pages.map((page) => (
         <div className="rp-page-wrap" key={page.number}>
@@ -253,15 +410,89 @@ export default function ReportPreview({ repxContent, layout, title }: Props) {
                       </span>
                     </>
                   )}
-                  {placed.band.controls.map((control, c) => (
-                    <ControlBox
-                      key={c}
-                      control={control}
-                      unit={report.unit}
-                      pageNumber={page.number}
-                      pageCount={report.pages.length}
-                    />
-                  ))}
+                  {placed.band.controls.map((control, c) => {
+                    const bandIndex = structureBands.indexOf(placed.band);
+                    const isSelected =
+                      editing && selected?.band === bandIndex && selected.control === c;
+                    return (
+                      /* A Fragment, not a wrapper div. An `inset: 0` wrapper
+                         stretches to the whole band, so in a band with several
+                         controls the last one's wrapper lies over every earlier
+                         control's hit target and only the last is selectable.
+                         The mock has one control per band, which is exactly the
+                         shape that hides this. */
+                      <React.Fragment key={c}>
+                        <ControlBox
+                          control={control}
+                          unit={report.unit}
+                          pageNumber={page.number}
+                          pageCount={report.pages.length}
+                        />
+                        {editing && (
+                          /* A transparent hit target over the control rather
+                             than handlers on the control itself: the control's
+                             own markup varies by type (a table is a grid of
+                             divs, a barcode is 28 bars) and putting a drag
+                             handler on each shape would mean the gesture works
+                             on a label and not on a table. */
+                          <div
+                            className={`rp-hit${isSelected ? ' is-selected' : ''}`}
+                            style={{
+                              left: unitsToPx(control.x, report.unit),
+                              top: unitsToPx(control.y, report.unit),
+                              width: unitsToPx(control.width, report.unit),
+                              height: unitsToPx(control.height, report.unit),
+                            }}
+                            onPointerDown={(e) => beginGesture(e, { band: bandIndex, control: c }, 'move')}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              if (control.type !== 'XRLabel') return;
+                              setSelected({ band: bandIndex, control: c });
+                              setEditingText(control.text);
+                            }}
+                          >
+                            {isSelected && editingText === null && (
+                              <span
+                                className="rp-handle"
+                                onPointerDown={(e) =>
+                                  beginGesture(e, { band: bandIndex, control: c }, 'resize')
+                                }
+                              />
+                            )}
+                            {isSelected && editingText !== null && (
+                              <input
+                                className="rp-textedit"
+                                autoFocus
+                                value={editingText}
+                                aria-label="Edit the control's text"
+                                style={{
+                                  inset: 0,
+                                  fontSize: control.fontSize ? `${control.fontSize}pt` : '9pt',
+                                  fontWeight: control.bold ? 700 : 400,
+                                }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onChange={(e) => setEditingText(e.target.value)}
+                                onBlur={() => {
+                                  if (repxContent && editingText !== control.text) {
+                                    commit(setControlText(repxContent, { band: bandIndex, control: c }, editingText), repxContent);
+                                  }
+                                  setEditingText(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') { e.currentTarget.blur(); }
+                                  // Escape abandons the edit rather than
+                                  // committing it, which is what Escape means
+                                  // everywhere else in this app.
+                                  if (e.key === 'Escape') { setEditingText(null); }
+                                  e.stopPropagation();
+                                }}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -307,6 +538,28 @@ export default function ReportPreview({ repxContent, layout, title }: Props) {
         }
         .rp-problems p { margin: 0 0 6px; }
         .rp-problems p:last-child { margin: 0; }
+
+        /* Editing chrome. Absolutely positioned over each control, transparent
+           until hovered so the report reads as a report at rest. */
+        .rp-hit { position: absolute; cursor: move; outline: 1px solid transparent; }
+        .rp-hit:hover { outline-color: rgba(226, 89, 12, .5); }
+        .rp-hit.is-selected { outline: 1.5px solid #e8590c; }
+        .rp-handle {
+          position: absolute; right: -4px; bottom: -4px; width: 9px; height: 9px;
+          background: #e8590c; border: 1px solid #fff; border-radius: 1px;
+          cursor: nwse-resize;
+        }
+        .rp-textedit {
+          position: absolute; z-index: 2; box-sizing: border-box;
+          border: 1.5px solid #e8590c; background: #fff; color: #111418;
+          padding: 0 2px; font-family: inherit;
+        }
+        .rp-sel {
+          font-family: var(--font-code, monospace); font-size: 11px;
+          letter-spacing: .04em; opacity: .8;
+        }
+        .rp-sel b { font-weight: 600; }
+        .rp-over { color: var(--warn, #b45309); }
 
         /* Printing renders the pages a SECOND time, into a portal attached to
            document.body, and hides everything else. The obvious approach --
@@ -354,11 +607,41 @@ export default function ReportPreview({ repxContent, layout, title }: Props) {
           <input type="checkbox" checked={showBands} onChange={(e) => setShowBands(e.target.checked)} />
           Show bands
         </label>
+        {editable && (
+          <span className="rp-sel">
+            {selectedControl
+              ? <>
+                  <b>{selectedControl.type}</b>
+                  {selectedControl.name ? ` ${selectedControl.name}` : ''}
+                  {' · '}{Math.round(selectedControl.x)},{Math.round(selectedControl.y)}
+                  {' · '}{Math.round(selectedControl.width)}×{Math.round(selectedControl.height)}
+                  {/* Said rather than prevented. A control dragged past its
+                      band's HeightF is a real edit with a real consequence --
+                      the designer pushes the band taller or drops the control
+                      onto a second page -- and refusing the drag would be
+                      guessing at what the user meant. */}
+                  {selected && overflowsBand(selectedControl, structureBands[selected.band]?.height ?? 0) && (
+                    <span className="rp-over"> · past the band’s {Math.round(structureBands[selected.band]?.height ?? 0)}-unit height</span>
+                  )}
+                </>
+              : 'Click a control to move it · double-click a label to retype it'}
+          </span>
+        )}
+        {editable && (
+          <button
+            className="wb-pill wb-pill--outline"
+            onClick={undo}
+            disabled={undoDepth === 0}
+            style={{ marginLeft: 'auto' }}
+          >
+            Undo
+          </button>
+        )}
         <button
           className="wb-pill wb-pill--outline"
           onClick={exportPdf}
           disabled={!report.pages.length}
-          style={{ marginLeft: 'auto' }}
+          style={editable ? undefined : { marginLeft: 'auto' }}
         >
           Export PDF
         </button>
@@ -372,12 +655,12 @@ export default function ReportPreview({ repxContent, layout, title }: Props) {
         </div>
       )}
 
-      <div ref={viewportRef} style={{ width: '100%' }}>
-        {renderPages(scale)}
+      <div ref={viewportRef} style={{ width: '100%' }} onPointerDown={() => setSelected(null)}>
+        {renderPages(scale, editable)}
       </div>
 
       {/* True size, outside the workspace tree, only while printing. */}
-      {printing && createPortal(<div className="rp-print-host">{renderPages(1)}</div>, document.body)}
+      {printing && createPortal(<div className="rp-print-host">{renderPages(1, false)}</div>, document.body)}
     </div>
   );
 }

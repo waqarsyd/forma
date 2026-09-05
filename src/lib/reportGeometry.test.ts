@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import {
   unitsPerInch,
   unitsToPx,
+  pxToUnits,
   pointsToUnits,
   unitsToPoints,
   pdfTopFromBaseline,
@@ -39,6 +40,30 @@ describe('unitsPerInch', () => {
   it('falls back to hundredths for anything unknown or missing', () => {
     expect(unitsPerInch(undefined)).toBe(100);
     expect(unitsPerInch('SomethingElse')).toBe(100);
+  });
+});
+
+describe('pxToUnits', () => {
+  it('is the exact inverse of unitsToPx', () => {
+    for (const unit of ['HundredthsOfAnInch', 'TenthsOfAMillimeter', 'Pixels', 'Document']) {
+      for (const value of [0, 1, 37, 250, 850, 1100]) {
+        expect(pxToUnits(unitsToPx(value, unit), unit)).toBeCloseTo(value, 9);
+      }
+    }
+  });
+
+  it('converts a drag on screen into the report grid', () => {
+    // 96 CSS px is an inch, which is 100 hundredths of an inch.
+    expect(pxToUnits(96)).toBe(100);
+    expect(pxToUnits(48)).toBe(50);
+  });
+
+  it('is a no-op for Pixels, matching unitsToPx', () => {
+    expect(pxToUnits(500, 'Pixels')).toBe(500);
+  });
+
+  it('handles a negative delta, because a drag goes both ways', () => {
+    expect(pxToUnits(-96)).toBe(-100);
   });
 });
 

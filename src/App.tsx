@@ -4005,6 +4005,14 @@ export default function App() {
                       repxContent={result.repxContent}
                       layout={result.layout}
                       title={result.title}
+                      /* Editing writes the REPX only. The layout and the spec
+                         still describe the source document, which is what the
+                         Mockup is for — nudging a control in the file does not
+                         change what was uploaded. */
+                      onEdit={(xml, reason) => {
+                        setResult({ ...result, repxContent: xml });
+                        setSaveNotice(reason);
+                      }}
                     />
                   </Suspense>
                 </div>

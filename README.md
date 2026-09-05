@@ -288,6 +288,10 @@ src/
                        out across real pages — Detail once per record,
                        PageHeader on every sheet — which is what the Preview
                        pane and the PDF export are drawn from),
+                       repxEdit (move, resize and retype one control by
+                       splicing its opening tag — the direct manipulation the
+                       Preview pane offers, written into the REPX itself so
+                       every other byte the model wrote survives),
                        dataSource (reads the fields out of whatever the user
                        pastes — a JSON row, a CSV export, a CREATE TABLE or a
                        list of names — and suggests which column each belongs

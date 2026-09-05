@@ -102,6 +102,25 @@ export function unitsToPx(value: number, reportUnit?: string): number {
   return (value / unitsPerInch(reportUnit)) * CSS_PX_PER_INCH;
 }
 
+/**
+ * CSS pixels → report units, for a control dragged on screen.
+ *
+ * The inverse of `unitsToPx`, and it lives here for the reason this whole
+ * module exists: direct manipulation converts a pointer delta into a
+ * `LocationFloat` on every mouse move, and doing that arithmetic inline in a
+ * component would put a second conversion site in the codebase — the exact
+ * failure the units audit of 2026-08-26 was about. A drag that converts with
+ * the wrong scale renders a plausible layout in the wrong place and never
+ * throws.
+ *
+ * Note the caller must divide out the preview's zoom BEFORE calling this: zoom
+ * is a presentation scale with no unit of its own, and folding it in here would
+ * make this function about the screen rather than about the report.
+ */
+export function pxToUnits(px: number, reportUnit?: string): number {
+  return (px / CSS_PX_PER_INCH) * unitsPerInch(reportUnit);
+}
+
 /** PDF points → report units, for text lifted out of an uploaded PDF. */
 export function pointsToUnits(points: number, reportUnit?: string): number {
   return (points / POINTS_PER_INCH) * unitsPerInch(reportUnit);

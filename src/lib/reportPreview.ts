@@ -102,6 +102,14 @@ export interface PreviewControl {
   borders: { top: boolean; right: boolean; bottom: boolean; left: boolean };
   /** Populated for XRTable only. */
   rows: PreviewRow[];
+  /**
+   * Where this control's opening tag sits in the source REPX: `openStart` is
+   * the `<`, `openEnd` the matching `>`. Absolute offsets into the document
+   * that was parsed, which is what lets an edit rewrite one attribute list and
+   * leave every other byte alone. Meaningless against any other string.
+   */
+  openStart: number;
+  openEnd: number;
 }
 
 export interface PreviewBand {
@@ -212,11 +220,19 @@ function parseBorders(value: string | null) {
 // ------------------------------------------------------------------ parsing
 
 /**
- * The substring of `xml` inside the element that starts at `openIndex`,
- * counting nested opens so a `<Controls>` inside a `<Controls>` does not end
- * the outer one early. Returns null for a self-closing or unterminated element.
+ * The substring of `xml` inside the element that starts at `openIndex`, and
+ * where that substring begins.
+ *
+ * The offset is what makes editing possible: a control parsed out of a band's
+ * inner text knows its position within that slice, and adding the slice's own
+ * start walks it back to a real offset in the document. `repxEdit.ts` splices
+ * at those offsets, so everything the model wrote that is not being changed
+ * survives byte for byte.
+ *
+ * Nested opens are counted so a `<Controls>` inside a `<Controls>` does not end
+ * the outer one early. Null for a self-closing or unterminated element.
  */
-function innerXml(xml: string, tagName: string, openIndex: number): string | null {
+function innerSpan(xml: string, tagName: string, openIndex: number): { text: string; start: number } | null {
   const openEnd = xml.indexOf('>', openIndex);
   if (openEnd === -1) return null;
   if (xml[openEnd - 1] === '/') return null; // self-closing: no children
@@ -237,11 +253,18 @@ function innerXml(xml: string, tagName: string, openIndex: number): string | nul
       cursor = nextOpen.index + 1;
     } else {
       depth--;
-      if (depth === 0) return xml.slice(openEnd + 1, nextClose.index);
+      if (depth === 0) {
+        return { text: xml.slice(openEnd + 1, nextClose.index), start: openEnd + 1 };
+      }
       cursor = nextClose.index + 1;
     }
   }
   return null;
+}
+
+/** The inner text alone, for the callers that do not need to splice. */
+function innerXml(xml: string, tagName: string, openIndex: number): string | null {
+  return innerSpan(xml, tagName, openIndex)?.text ?? null;
 }
 
 /**
@@ -297,11 +320,15 @@ function parseTableRows(xml: string, controlStart: number): PreviewRow[] {
   return rows;
 }
 
-function parseControls(bandInner: string): PreviewControl[] {
+function parseControls(bandInner: string, bandInnerStart: number): PreviewControl[] {
   const controlsIdx = bandInner.indexOf('<Controls');
   if (controlsIdx === -1) return [];
-  const inner = innerXml(bandInner, 'Controls', controlsIdx);
-  if (!inner) return [];
+  const span = innerSpan(bandInner, 'Controls', controlsIdx);
+  if (!span) return [];
+  const inner = span.text;
+  // Where `inner` begins in the whole document, so a control's offset within
+  // it can be reported absolutely.
+  const innerStart = bandInnerStart + span.start;
   const controls: PreviewControl[] = [];
   for (const item of collectionItems(inner)) {
     const type = attrOf(item.attrs, 'ControlType');
@@ -326,6 +353,8 @@ function parseControls(bandInner: string): PreviewControl[] {
       vAlign: alignment.vAlign,
       borders: parseBorders(attrOf(item.attrs, 'Borders')),
       rows: type === 'XRTable' ? parseTableRows(inner, item.start) : [],
+      openStart: innerStart + item.start,
+      openEnd: innerStart + inner.indexOf('>', item.start),
     });
   }
   return controls;
@@ -385,11 +414,12 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
   };
 
   const bandsIdx = text.indexOf('<Bands');
-  const bandsInner = bandsIdx === -1 ? null : innerXml(text, 'Bands', bandsIdx);
-  if (!bandsInner) {
+  const bandsSpan = bandsIdx === -1 ? null : innerSpan(text, 'Bands', bandsIdx);
+  if (!bandsSpan) {
     problems.push('The report has no <Bands> element, so there is nothing to lay out.');
     return structure;
   }
+  const bandsInner = bandsSpan.text;
 
   for (const item of collectionItems(bandsInner)) {
     const controlType = attrOf(item.attrs, 'ControlType');
@@ -398,12 +428,14 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     if (kind === 'Unknown') {
       problems.push(`Unrecognised band type "${controlType}" — it is drawn in file order.`);
     }
-    const inner = innerXml(bandsInner, item.tag, item.start) ?? '';
+    const bandSpan = innerSpan(bandsInner, item.tag, item.start);
     structure.bands.push({
       kind,
       name: attrOf(item.attrs, 'Name') || controlType,
       height: numAttr(item.attrs, 'HeightF', 0),
-      controls: parseControls(inner),
+      controls: bandSpan
+        ? parseControls(bandSpan.text, bandsSpan.start + bandSpan.start)
+        : [],
     });
   }
 
