@@ -35,7 +35,14 @@ export default defineConfig({
   test: {
     // Per-file opt-in via `// @vitest-environment jsdom`; see the note above.
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    /*
+     * `.tsx` was added 2026-09-05 for the first component tests. It matters
+     * more than it looks: the pattern was `*.test.ts` only, so a component test
+     * written as `.test.tsx` is not "failing" — it is not collected at all, and
+     * the suite reports the same green it did before the file existed. That is
+     * the same silence the `src/**` scoping note below is about.
+     */
+    include: ['src/**/*.test.{ts,tsx}'],
     reporters: 'default',
     /**
      * Coverage, added 2026-08-27 (audit INV-004). `coverage/` was gitignored

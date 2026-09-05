@@ -165,6 +165,10 @@ import type { LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
 import { titleForRoute, viewForRoute } from './lib/routes';
+/* App.tsx's own view state, extracted so it can be tested — see the header of
+   each for the failure it was carrying while it lived here. */
+import { plateFor, stateForPlate, type Plate, type ActiveTab, type SpecView } from './lib/workspaceView';
+import { countStagedUploads, admitFiles } from './lib/attachmentBudget';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
@@ -1759,12 +1763,10 @@ export default function App() {
    * sixteen of the twelve allowed slots, and the next drop was refused with
    * "you can attach up to 12 items" after the user had attached one.
    */
-  const stagedUploads = useMemo(() => {
-    const ids = new Set<string>();
-    for (const m of previewMeta) ids.add(m.uploadId);
-    for (const t of attachmentTexts) ids.add(t.uploadId);
-    return ids.size;
-  }, [previewMeta, attachmentTexts]);
+  const stagedUploads = useMemo(
+    () => countStagedUploads(previewMeta, attachmentTexts),
+    [previewMeta, attachmentTexts],
+  );
   const [config, setConfig] = useState<ReportConfig>(() => {
     // Forma never ships a key of its own, so the only key in play is the user's.
     // It lives in sessionStorage, which the browser clears when the tab closes;
@@ -2051,10 +2053,10 @@ export default function App() {
     setKeyCheck(null);
     setVaultNotice({ tone: 'ok', text: 'Key cleared from this browser session.' });
   };
-  const [activeTab, setActiveTab] = useState<'spec' | 'ui' | 'print' | 'data'>('ui');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('ui');
   // Sub-view inside the "Specs & REPX" tab. The tab has always been named for
   // both, but only ever rendered the specification.
-  const [specView, setSpecView] = useState<'spec' | 'repx'>('spec');
+  const [specView, setSpecView] = useState<SpecView>('spec');
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     if (saved !== null) {
@@ -2207,18 +2209,17 @@ export default function App() {
     if (incoming.length === 0) return;
     setUploadNotices([]);
 
-    // Files, not rows — a PDF's pages are ours, not something the user attached.
-    const room = MAX_ATTACHMENTS - stagedUploads;
-    if (room <= 0) {
-      setUploadNotices([`You can attach up to ${MAX_ATTACHMENTS} items. Remove one to add another.`]);
+    // Files, not rows — a PDF's pages are ours, not something the user
+    // attached. The arithmetic and its wording are in lib/attachmentBudget.ts,
+    // which records the off-by-eight this had before it was countable.
+    const admission = admitFiles(incoming, stagedUploads, MAX_ATTACHMENTS);
+    if (admission.full) {
+      setUploadNotices(admission.notices);
       return;
     }
 
-    const accepted = incoming.slice(0, room);
-    const notices: string[] = [];
-    if (incoming.length > accepted.length) {
-      notices.push(`Only the first ${accepted.length} of ${incoming.length} files were added (limit ${MAX_ATTACHMENTS}).`);
-    }
+    const accepted = admission.accepted;
+    const notices: string[] = [...admission.notices];
 
     setIsIngesting(true);
     try {
@@ -3310,18 +3311,15 @@ export default function App() {
    *
    * `sheet` supplies the palette (see index.css); `wb-root` the type and ground.
    */
-  const plate =
-    activeTab === 'ui' ? 'proof'
-    : activeTab === 'print' ? 'print'
-    : activeTab === 'data' ? 'data'
-    : specView === 'repx' ? 'xml'
-    : 'spec';
-  const showPlate = (next: 'proof' | 'print' | 'data' | 'spec' | 'xml') => {
-    if (next === 'proof') { setActiveTab('ui'); return; }
-    if (next === 'print') { setActiveTab('print'); return; }
-    if (next === 'data') { setActiveTab('data'); return; }
-    setActiveTab('spec');
-    setSpecView(next === 'xml' ? 'repx' : 'spec');
+  /* The derivation and the setter were two ternaries forty lines apart, and a
+     plate present in one and not the other highlights its button and never
+     opens its pane. They are one module now, with a round-trip test that fails
+     on exactly that. See lib/workspaceView.ts. */
+  const plate = plateFor({ activeTab, specView });
+  const showPlate = (next: Plate) => {
+    const state = stateForPlate(next, { activeTab, specView });
+    setActiveTab(state.activeTab);
+    setSpecView(state.specView);
   };
   const railBtn = (panel: RailPanel, label: string, icon: React.ReactNode) => (
     <button

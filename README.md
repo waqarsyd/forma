@@ -288,6 +288,15 @@ src/
                        out across real pages — Detail once per record,
                        PageHeader on every sheet — which is what the Preview
                        pane and the PDF export are drawn from),
+                       workspaceView (which pane the bench shows, held in two
+                       pieces of state — extracted from App.tsx so the pair
+                       can be round-trip tested, because a plate present in
+                       the derivation and not the setter highlights its
+                       button and never opens its pane),
+                       attachmentBudget (how many files are staged and how
+                       many more fit — counted as FILES, which is what an
+                       eight-page PDF spending sixteen of twelve slots was
+                       about),
                        batchQueue (the state of a folder of source documents
                        being turned into a report each — pending, running,
                        done, failed — and the audit verdict per row, because
@@ -512,7 +521,7 @@ Forma is usable but young, and some things are worth knowing before you rely on 
 - **Models are detected at runtime, never hardcoded.** Google retires models "for new users", so a pinned id works for existing projects and 404s for every new key. Forma probes a preference list on first use and caches the winner for the session.
 - **Reports with large images may not sync to the cloud.** A single detailed 2048px upload can exceed Firestore's 1 MiB document limit on its own; Forma saves the spec and REPX without the images in that case, and says so.
 - **PDFs are read to 8 pages.** Beyond that, later pages are ignored.
-- **No component or render tests.** Neither suite touches React components or `App.tsx`'s stateful logic.
+- **Component coverage is two components deep.** `DataBinding` and `BatchPanel` have render tests; nothing else does, and `App.tsx` is 4,500 lines of which only its pane state machine and attachment budget have been extracted and tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`.
 
 ---
 
