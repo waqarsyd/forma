@@ -335,8 +335,10 @@ describe('bindDetailRow with an explicit mapping', () => {
   });
 
   it('leaves the derived behaviour untouched when no mapping is passed', () => {
-    // The regression that matters: the screen must not change what generation
-    // already does behind VITE_FORMA_BIND.
+    // The regression that matters: passing no mapping must behave exactly as
+    // the derived path did. That path was the whole of binding until the Data
+    // tab landed, and it survives as the no-mapping default -- so an edit to
+    // the mapped case must not quietly change the unmapped one.
     expect(bindDetailRow(twoColumns()).xml).toBe(bindDetailRow(twoColumns(), undefined).xml);
     expect(bindDetailRow(twoColumns()).xml).toContain('Expression="[Description]"');
   });
