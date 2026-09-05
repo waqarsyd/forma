@@ -66,10 +66,17 @@ const CONTROL_TYPE = /\sControlType\s*=\s*"/;
 /**
  * A pointer to a `Ref`, written as the attribute value `#Ref-N`.
  *
- * Three places use this form, and none of them were known when this module was
- * written: a parameter's `Type` pointing into `<ObjectStorage>`, and a
- * cross-band control's `StartBand` and `EndBand` pointing at bands
- * (`RepxProbe emit-params` and `emit-marks` respectively).
+ * Four places use this form, and none of them were known when this module was
+ * written: a parameter's `Type` pointing into `<ObjectStorage>`, a cross-band
+ * control's `StartBand` and `EndBand` pointing at bands, and a
+ * `<FormattingRuleLinks>` item's `Value` pointing at a rule in the
+ * `<FormattingRuleSheet>` (`RepxProbe emit-params`, `emit-marks` and
+ * `emit-rules` respectively).
+ *
+ * The pattern matched the fourth one without being changed, because it matches
+ * the attribute *value* rather than any particular attribute name. That is the
+ * property worth preserving if this is ever edited: a fifth pointer attribute
+ * should need no change here either.
  *
  * **They have to move when their target is renumbered.** Renumbering a
  * duplicate definition and leaving the pointer behind aims it at whichever
@@ -238,8 +245,9 @@ export function ensureUniqueRefs(xml: string | undefined | null): RefRepair {
       (skipped ? `; left ${skipped} back-reference(s) alone` : '') +
       (ambiguous.size
         ? `; WARNING: ${ambiguous.size} renumbered Ref(s) had a #Ref- pointer to them ` +
-          `(${[...ambiguous].join(', ')}) — a parameter type or cross-band band reference ` +
-          `may now name the wrong element, and the file cannot say which was meant`
+          `(${[...ambiguous].join(', ')}) — a parameter type, a cross-band band reference ` +
+          `or a formatting-rule link may now name the wrong element, and the file cannot ` +
+          `say which was meant`
         : ''),
     renumbered: rewrites.length,
   };

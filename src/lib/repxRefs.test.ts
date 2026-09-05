@@ -242,6 +242,21 @@ describe('ensureUniqueRefs and #Ref- pointers', () => {
     expect(ensureUniqueRefs(xml).applied).toBe(false);
   });
 
+it('warns that a formatting-rule link may now be wrong', () => {
+    // The fourth pointer attribute, and the pattern matched it without being
+    // changed because it matches the VALUE rather than the attribute name.
+    const xml = report(
+      '<Item1 Ref="4" ControlType="PageHeaderBand" Name="PageHeader" />' +
+      '<Item2 Ref="4" ControlType="DetailBand" Name="Detail">' +
+      '<FormattingRuleLinks><Item1 Ref="9" Value="#Ref-4" /></FormattingRuleLinks>' +
+      '</Item2>'
+    );
+    const { reason, xml: out } = ensureUniqueRefs(xml);
+    expect(reason).toContain('WARNING');
+    expect(reason).toContain('formatting-rule link');
+    expect(out).toContain('Value="#Ref-4"');
+  });
+
   it('leaves a parameter type pointer alone the same way', () => {
     const xml = withPointer(
       '<Item1 Ref="7" ControlType="DetailBand" Name="Detail" />' +

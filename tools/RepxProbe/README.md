@@ -13,6 +13,7 @@ RepxProbe emit-marks <out.repx>  # the same, for CHECKBOXES and CROSS-BAND contr
 RepxProbe emit-container <out.repx> # the same, for XRPanel and XRSubreport
 RepxProbe emit-styles <out.repx> # the same, for a STYLE SHEET
 RepxProbe emit-rich <out.repx>   # the same, for XRRichText and XRShape
+RepxProbe emit-rules <out.repx>  # the same, for CONDITIONAL FORMATTING
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 
@@ -178,7 +179,16 @@ And from `emit-styles` and `emit-rich` the same day:
   `Html` produces RTF too. There is no readable form in the file, so a model
   cannot write one and an approximation loads as an empty box.
 
-**Three of seven measurements have been negative** (`Type=` inline is silently
+And from `emit-rules`:
+
+- **`<FormattingRuleSheet>` is root-level and written BEFORE `<Bands>`** -- the
+  opposite side from `<StyleSheet>`, which is written after.
+- **A control links a rule by `Value="#Ref-N"`, the fourth pointer attribute**
+  in this format. `repxRefs.ts` matched it without being changed, because its
+  pattern matches the attribute VALUE rather than any attribute name -- keep
+  that property if it is ever edited.
+
+**Three of eight measurements have been negative** (`Type=` inline is silently
 ignored; auto-sizing needs nothing; rich text cannot be written), and all three
 looked like real gaps beforehand. A grep proving an attribute is absent says
 nothing about what the absence means, because this serializer omits every default

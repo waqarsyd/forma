@@ -319,6 +319,54 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
    * coordinate rule exists to prevent and which leaves the controls sitting
    * outside the box that was meant to contain them.
    */
+  /*
+   * Conditional formatting, and its two silent failures.
+   *
+   * A `<FormattingRuleLinks>` item points at a rule by `Value="#Ref-N"`
+   * (measured, `RepxProbe emit-rules`). Two things go wrong without a word:
+   *
+   *   - a link naming a Ref that is not a rule in the sheet. The rule never
+   *     fires, so the overdue rows print black and the report looks like the
+   *     condition was never met;
+   *   - a rule nothing links, which is the same defect seen from the other end
+   *     and usually means the link was written on the wrong element.
+   *
+   * Both are errors of *behaviour* rather than of content, which is why they
+   * cannot be caught by counting controls the way the checks above do.
+   */
+  const ruleRefs = new Set(
+    [...text.matchAll(/<FormattingRuleSheet>([\s\S]*?)<\/FormattingRuleSheet>/g)]
+      .flatMap((sheet) => [...sheet[1].matchAll(/<Item\d+\s+Ref="(\d+)"/g)])
+      .map((item) => item[1]),
+  );
+  const linked = [...text.matchAll(/<FormattingRuleLinks>([\s\S]*?)<\/FormattingRuleLinks>/g)]
+    .flatMap((block) => [...block[1].matchAll(/Value="#Ref-(\d+)"/g)])
+    .map((link) => link[1]);
+
+  if (ruleRefs.size || linked.length) {
+    const dangling = [...new Set(linked.filter((ref) => !ruleRefs.has(ref)))];
+    if (dangling.length) {
+      add(
+        'error',
+        'formatting-rule-link-dangling',
+        `${dangling.length} formatting-rule link(s) point at Ref ${dangling.join(', ')}, which is not a ` +
+          'rule in the <FormattingRuleSheet>. The rule never fires, so the report prints as though the ' +
+          'condition was never met — no error, just the wrong colours.',
+      );
+    }
+
+    const usedRefs = new Set(linked);
+    const unused = [...ruleRefs].filter((ref) => !usedRefs.has(ref));
+    if (unused.length) {
+      add(
+        'warning',
+        'formatting-rule-unused',
+        `${unused.length} formatting rule(s) are declared and linked to nothing. Usually the link was ` +
+          'written on the wrong element, so the formatting the report was meant to have is simply absent.',
+      );
+    }
+  }
+
   const panels = (text.match(/ControlType="XRPanel"/g) ?? []).length;
   if (panels) {
     const withChildren = (text.match(/ControlType="XRPanel"[^>]*>\s*<Controls>/g) ?? []).length;

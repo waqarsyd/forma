@@ -936,6 +936,31 @@ ${transcript}`,
  * a request that provably does not need it. Text unchanged from when it was
  * inline -- moved by script rather than retyped.
  */
+/**
+ * Conditional formatting, in its own section because it is asked for rather than
+ * seen — see `lib/promptSections.ts`.
+ *
+ * Syntax measured with `RepxProbe emit-rules`. The two things a class reference
+ * would not have told us: the sheet is written BEFORE `<Bands>` (the style sheet
+ * is written after, so the two root collections sit on opposite sides), and a
+ * control links a rule through a `#Ref-N` pointer rather than by name.
+ */
+const RULES_BLOCK = `          - CONDITIONAL FORMATTING — a rule the report applies at print time, not a colour you saw once.
+            "Print overdue amounts in red" is a rule. A single red figure in a scanned document is NOT evidence of one: it is one row that happened to be overdue on the day that page was printed, and you cannot see the condition from the result. **Do not invent a rule from an image.** Emit one only when the uploaded .repx already has it, or when the user asks for it in words.
+            The sheet is a root-level collection written BEFORE <Bands> — note that this is the opposite side from <StyleSheet>, which is written after:
+            <FormattingRuleSheet>
+              <Item1 Ref="1" Name="OverdueRule" Condition="[DaysOverdue] &gt; 30">
+                <Formatting Ref="2" ForeColor="Red" Font="Arial, 9pt, style=Bold" />
+              </Item1>
+            </FormattingRuleSheet>
+            - The condition is an expression over the data, XML-escaped: &gt; and &lt; and &amp;, never a raw > or <.
+            - A control or a BAND takes rules through a <FormattingRuleLinks> child, and each link is a **"#Ref-N" POINTER at the rule's Ref** — not its name:
+              <FormattingRuleLinks><Item1 Ref="9" Value="#Ref-1" /></FormattingRuleLinks>
+            - Link order is application order: a later link wins where two rules touch the same property.
+            - Put the link on the BAND when the whole row changes, and on the control when one figure does. A row highlight expressed as a rule on every cell is the same picture and a worse report.
+            - A rule nothing links is dead, and a link pointing at a Ref that is not a rule silently never fires. Both load without complaint.
+`;
+
 const CONTAINERS_BLOCK = `          - Checkbox: <Item7 Ref="9" ControlType="XRCheckBox" Name="checkBox1" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="0,320" SizeF="200,20" />
             - A tick, cross or filled square on a form line IS a checkbox. Do not draw one as a label containing "X" or a bordered empty label — those cannot be bound, cannot be toggled, and are the same failure as building a table out of labels.
             - The caption goes in Text, like every other control. The box itself is drawn by the control; do not add a separate label beside it.
@@ -1246,7 +1271,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
             - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
-${sections.includes('containers') ? CONTAINERS_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('containers') ? CONTAINERS_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
             Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.

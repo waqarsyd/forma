@@ -538,6 +538,32 @@ So a language model cannot write one. Asking for it would produce a blob that ei
 
 **Three negative results now** — inline parameter `Type=` ignored, auto-sizing needing nothing, and this. All three looked like gaps beforehand. That is a third of what this tool has been asked, and it is the argument for reaching for it before writing the fix rather than only before writing the syntax.
 
+### Conditional formatting, and the fourth pointer (2026-09-05)
+
+`RepxProbe emit-rules`. "Print overdue amounts in red" is what every statement and aged-debt report does, and Forma could not express it at all.
+
+```xml
+  <FormattingRuleSheet>
+    <Item1 Ref="1" Name="OverdueRule" Condition="[DaysOverdue] &gt; 30">
+      <Formatting Ref="2" Font="Arial, 9pt, style=Bold" ForeColor="Red" />
+    </Item1>
+  </FormattingRuleSheet>
+  <Bands>
+    <Item2 Ref="6" ControlType="DetailBand" Name="Detail" HeightF="60">
+      <FormattingRuleLinks><Item1 Ref="7" Value="#Ref-1" /></FormattingRuleLinks>
+```
+
+- **The sheet is root-level and written BEFORE `<Bands>`** — the opposite side from `<StyleSheet>`, which is written after. Two root collections, opposite ends, no reason visible in either.
+- **A control links a rule by `#Ref-N`, in a `Value` attribute — the fourth pointer in this format**, after a parameter's `Type` and a cross-band control's `StartBand`/`EndBand`. Bands take links the same way, which is how a whole row is highlighted.
+- Link order is application order. The link item carries a `Ref` and **no `ControlType`** — the eighth collection where that holds.
+- `Condition` is an ordinary expression, XML-escaped.
+
+**`repxRefs.ts` needed no change, and that is worth knowing rather than assuming.** Its `REF_POINTER` matched `Value="#Ref-1"` on the first try because it matches the attribute *value* rather than any particular attribute name — so the ambiguity warning already fires when a linked rule's `Ref` is renumbered. Only the warning's wording was extended to name rule links. **Keep that property if the pattern is ever edited: a fifth pointer attribute should need no change either.**
+
+**The prompt does not let the model invent a rule from an image, and the reason is not caution.** Conditional formatting is a *behaviour*; a scanned page shows one row that happened to be overdue the day it printed, not the condition. So a rule is emitted only when the uploaded `.repx` already has one or the user asks in words — the same shape as the subreport and rich-text decisions, arrived at from a different direction.
+
+**Two audit checks, both for failures of behaviour rather than of content**, which is why nothing above them could have caught these: a link naming a `Ref` that is not a rule (an **error** — it never fires, so the report prints as though the condition was never met), and a rule nothing links to (a warning — usually the link went on the wrong element).
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

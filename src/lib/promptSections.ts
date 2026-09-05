@@ -39,14 +39,7 @@
  * lines, and that is the right way round.
  */
 
-export type PromptSection = 'grouping' | 'parameters' | 'charts' | 'containers';
-
-export const ALL_SECTIONS: readonly PromptSection[] = [
-  'grouping',
-  'parameters',
-  'charts',
-  'containers',
-];
+export type PromptSection = 'grouping' | 'parameters' | 'charts' | 'containers' | 'rules';
 
 export interface SectionEvidence {
   /**
@@ -81,6 +74,7 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   parameters: /<Parameters\b|\[Parameters\.|FilterString\s*=\s*"[^"]*\?/i,
   charts: /XRChart|XRCrossTab|XRPivotGrid|XRSparkline/i,
   containers: /XRCheckBox|XRPanel|XRSubreport|XRCrossBand|XRShape|XRRichText/i,
+  rules: /<FormattingRuleSheet|<FormattingRuleLinks/i,
 };
 
 /**
@@ -96,7 +90,26 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
   parameters: /\bparameter|\bprompt\b|\bdate range\b|\bfilter|\bask the (reader|user)\b/i,
   charts: /\bchart|\bgraph|\bplot\b|cross.?tab|\bpivot|\bmatrix\b/i,
   containers: /\bcheck ?box|\btick\b|\bpanel\b|\bbox\b|\bsubreport|\brule\b|\bborder|\bshape\b|\bcircle\b|\barrow\b|\brich ?text/i,
+  // Deliberately generous: conditional formatting is asked for in a dozen
+  // different words, and every miss costs the feature entirely.
+  rules: /\bconditional|\bhighlight|\bin red\b|\boverdue|\bnegative|\bwhen .{0,20}(exceed|over|above|below|under)|\bcolour when|\bcolor when|\bflag\b/i,
 };
+
+/**
+ * Every section, derived from the signal map rather than listed again.
+ *
+ * **This was a hand-written array and it silently went stale within an hour.**
+ * Adding `rules` to the union and to both `Record`s typechecked cleanly — a
+ * `Record<PromptSection, RegExp>` forces every key, but a
+ * `readonly PromptSection[]` is satisfied by any subset. So `sectionsFor` never
+ * returned the new section, the prompt block it gated was never sent, and
+ * nothing failed: the feature simply did not exist.
+ *
+ * Deriving it from `XML_SIGNALS` makes the two impossible to disagree, because
+ * the `Record` is the thing the compiler does check. A new section is now one
+ * edit to the union and two to the maps, and this constant follows on its own.
+ */
+export const ALL_SECTIONS: readonly PromptSection[] = Object.keys(XML_SIGNALS) as PromptSection[];
 
 /**
  * The sections to include for this request.

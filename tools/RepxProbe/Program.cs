@@ -41,6 +41,7 @@ static class Program {
             case "emit-container": EmitContainer(args[1]); return 0;
             case "emit-styles": EmitStyles(args[1]); return 0;
             case "emit-rich":  EmitRich(args[1]);  return 0;
+            case "emit-rules": EmitRules(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -566,6 +567,77 @@ static class Program {
         detail.Controls.AddRange(new XRControl[] {
             plain, html, rectangle, ellipse, line, starred, untouched
         });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            detail,
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes CONDITIONAL FORMATTING, the highest-value report-level feature
+    /// still missing: "print overdue amounts in red" is a thing every statement
+    /// and aged-debt report does, and Forma cannot express it at all.
+    ///
+    /// The question that decides how much work this is:
+    ///
+    ///   **How does a control refer to a rule?** If by name, like a style, this
+    ///   is straightforward. If by a "#Ref-N" pointer, it is the THIRD pointer
+    ///   attribute in this format and repxRefs.ts has to learn about it, because
+    ///   renumbering a duplicate would silently repoint every control using that
+    ///   rule -- and the symptom would be a report that formats the wrong rows.
+    ///
+    /// Also open: whether the sheet is root-level like StyleSheet, what a
+    /// condition looks like as text, and whether a rule's appearance is a nested
+    /// element or flat attributes.
+    static void EmitRules(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeRules";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        FormattingRule overdue = new FormattingRule();
+        overdue.Name = "OverdueRule";
+        overdue.Condition = "[DaysOverdue] > 30";
+        overdue.Formatting.ForeColor = Color.Red;
+        overdue.Formatting.Font = new Font("Arial", 9, FontStyle.Bold);
+
+        FormattingRule credit = new FormattingRule();
+        credit.Name = "CreditRule";
+        credit.Condition = "[Amount] < 0";
+        credit.Formatting.BackColor = Color.FromArgb(0xFF, 0xEE, 0xEE);
+
+        report.FormattingRuleSheet.AddRange(new FormattingRule[] { overdue, credit });
+
+        XRLabel amount = new XRLabel();
+        amount.Name = "labelAmount";
+        amount.Text = "1,250.00";
+        amount.LocationF = new PointF(0, 0);
+        amount.SizeF = new SizeF(200, 20);
+        amount.FormattingRules.Add(overdue);
+
+        // Two rules on one control, to see whether order is expressed and how.
+        XRLabel both = new XRLabel();
+        both.Name = "labelBoth";
+        both.Text = "-40.00";
+        both.LocationF = new PointF(0, 25);
+        both.SizeF = new SizeF(200, 20);
+        both.FormattingRules.Add(overdue);
+        both.FormattingRules.Add(credit);
+
+        // A rule on a BAND rather than a control -- the usual way a whole row is
+        // highlighted, and worth knowing whether it serializes the same way.
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 60;
+        detail.Controls.AddRange(new XRControl[] { amount, both });
+        detail.FormattingRules.Add(credit);
 
         report.Bands.AddRange(new Band[] {
             new TopMarginBand(),

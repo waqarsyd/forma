@@ -136,3 +136,44 @@ describe('describeSections', () => {
     expect(line).toContain('.repx');
   });
 });
+
+/**
+ * The list of sections must not drift from the signal maps.
+ *
+ * This is a regression test for a bug that shipped for about an hour: adding a
+ * fifth section to the union and to both Records typechecked cleanly, because a
+ * Record<PromptSection, RegExp> forces every key while a readonly
+ * PromptSection[] is satisfied by any subset. ALL_SECTIONS stayed at four, so
+ * sectionsFor could never return the new one and the prompt block it gated was
+ * never sent. Nothing failed; the feature simply did not exist.
+ */
+describe('ALL_SECTIONS', () => {
+  it('covers every section the type allows', () => {
+    // Written out by hand on purpose: deriving it the same way the module does
+    // would make this test agree with itself rather than with the type.
+    const expected: PromptSection[] = ['grouping', 'parameters', 'charts', 'containers', 'rules'];
+    expect([...ALL_SECTIONS].sort()).toEqual([...expected].sort());
+  });
+
+  it('can actually return the newest section', () => {
+    const withRules = '<XtraReportsLayoutSerializer><FormattingRuleSheet><Item1 Ref="1" Name="R" /></FormattingRuleSheet></XtraReportsLayoutSerializer>';
+    expect(sectionsFor({ texts: [withRules] })).toContain('rules');
+  });
+
+  it('drops rules for a report that has none and an instruction that wants none', () => {
+    const plain = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+    expect(sectionsFor({ texts: [plain] })).not.toContain('rules');
+  });
+
+  it('keeps rules when the user asks for conditional formatting in their own words', () => {
+    const plain = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+    for (const instruction of [
+      'highlight overdue rows',
+      'show negative amounts in red',
+      'flag anything when the total exceeds 10000',
+      'add conditional formatting',
+    ]) {
+      expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('rules');
+    }
+  });
+});

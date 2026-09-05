@@ -444,3 +444,51 @@ describe('empty containers', () => {
     expect(findings.some((f) => f.code === 'subreport-without-source')).toBe(false);
   });
 });
+
+/**
+ * Conditional formatting fails as BEHAVIOUR, not as missing content.
+ *
+ * A link points at a rule by Value="#Ref-N" (RepxProbe emit-rules). If it names
+ * something that is not a rule, the rule never fires and the report prints as
+ * though the condition was never met -- no error, just the wrong colours. That
+ * cannot be caught by counting controls the way the other checks here do.
+ */
+describe('formatting rules', () => {
+  const withRules = (sheet: string, body: string) =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+    sheet +
+    '<Bands><Item1 Ref="50" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>' + body +
+    '</Controls></Item1></Bands></XtraReportsLayoutSerializer>';
+
+  const sheet = '<FormattingRuleSheet><Item1 Ref="1" Name="Overdue" Condition="[Days] &gt; 30" /></FormattingRuleSheet>';
+  const link = (ref: number) =>
+    `<Item1 Ref="60" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" LocationFloat="0,0">` +
+    `<FormattingRuleLinks><Item1 Ref="61" Value="#Ref-${ref}" /></FormattingRuleLinks></Item1>`;
+
+  it('accepts a link that names a real rule', () => {
+    const findings = auditRepx(withRules(sheet, link(1)), null).findings;
+    expect(findings.some((f) => f.code === 'formatting-rule-link-dangling')).toBe(false);
+    expect(findings.some((f) => f.code === 'formatting-rule-unused')).toBe(false);
+  });
+
+  it('reports a link that names something which is not a rule', () => {
+    // Ref 50 is the Detail band, not a rule. The file loads perfectly.
+    const findings = auditRepx(withRules(sheet, link(50)), null).findings;
+    const dangling = findings.find((f) => f.code === 'formatting-rule-link-dangling');
+    expect(dangling?.severity).toBe('error');
+    expect(dangling?.message).toContain('50');
+  });
+
+  it('reports a rule nothing links to', () => {
+    const plainLabel = '<Item1 Ref="60" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" LocationFloat="0,0" />';
+    const findings = auditRepx(withRules(sheet, plainLabel), null).findings;
+    expect(findings.some((f) => f.code === 'formatting-rule-unused')).toBe(true);
+  });
+
+  it('stays quiet about a report with no conditional formatting at all', () => {
+    const plain = withRules('', '<Item1 Ref="60" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" LocationFloat="0,0" />');
+    const findings = auditRepx(plain, null).findings;
+    expect(findings.some((f) => f.code.startsWith('formatting-rule'))).toBe(false);
+  });
+});
