@@ -194,18 +194,38 @@ await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, de
  * Unlock the workspace without a real key. hasApiKey is a non-empty check and
  * nothing validates the value until a request is made, so mock mode never sees
  * it. Seeded before navigation so the first render is already unlocked.
+ *
+ * --no-key REMOVES the key rather than merely not setting it, and that is the
+ * whole trick. The browser outlives any single run of this script: sessionStorage
+ * survives in the tab, and a Page.addScriptToEvaluateOnNewDocument registered by
+ * an EARLIER run keeps firing on every navigation, with no identifier this
+ * process could use to unregister it. So "just don't seed it" leaves the
+ * workspace unlocked and --no-key reports the opposite of what it did. Observed
+ * exactly that. Registered scripts run in registration order, so a removal
+ * registered now lands after any earlier seed and wins.
  */
-if (opts.key) {
-  await send('Page.addScriptToEvaluateOnNewDocument', {
-    source: "try { sessionStorage.setItem('geminiApiKey:session', 'AIzaSy-FORMA-LOCAL-DRIVER-PLACEHOLDER'); } catch (e) {}",
-  });
-}
+await send('Page.addScriptToEvaluateOnNewDocument', {
+  source: opts.key
+    ? "try { sessionStorage.setItem('geminiApiKey:session', 'AIzaSy-FORMA-LOCAL-DRIVER-PLACEHOLDER'); } catch (e) {}"
+    : "try { sessionStorage.removeItem('geminiApiKey:session'); } catch (e) {}",
+});
 
 await send('Page.navigate', { url: opts.url });
 await until('the page to render', `!!document.querySelector(${JSON.stringify(SEL.composer)})`, 30);
 console.log('title  ' + (await evalJs('document.title')));
 console.log('path   ' + (await evalJs('location.pathname')));
-console.log('key    ' + (await evalJs(`!document.querySelector(${JSON.stringify(SEL.composer)}).disabled`) ? 'accepted, composer enabled' : 'MISSING, composer locked'));
+/*
+ * Assert rather than report. An unlocked composer under --no-key is not a
+ * curiosity to print and move past -- it means the key state is not what was
+ * asked for, and every step after this would be testing the wrong thing.
+ */
+const unlocked = await evalJs(`!document.querySelector(${JSON.stringify(SEL.composer)}).disabled`);
+console.log('key    ' + (unlocked ? 'present, composer enabled' : 'absent, composer locked'));
+if (unlocked !== opts.key) {
+  throw new Error(opts.key
+    ? 'the seeded key did not take -- the composer is still locked'
+    : '--no-key was asked for but the composer is unlocked; a key survived in this tab');
+}
 await shot(shotName('loaded'));
 
 if (opts.attach.length) {

@@ -101,6 +101,16 @@ findings out of its `title` attribute, or `clean` when there is no chip. It exit
 non-zero when a step cannot complete, so it works as a check and not only as a
 demo. Every screenshot is numbered in order.
 
+**The browser outlives any one run, and that matters for `--no-key`.** Re-running
+the driver against the same Edge instance reuses the same tab: `sessionStorage`
+persists, and a `Page.addScriptToEvaluateOnNewDocument` registered by an earlier
+run keeps firing on every navigation with no identifier a later process could use
+to unregister it. So `--no-key` *removes* the key rather than merely not seeding
+one, and the driver **asserts** the resulting state instead of printing it — an
+unlocked composer under `--no-key` throws, because every step after that would be
+testing the wrong thing. Skipping the seed was the first implementation, and it
+cheerfully reported `composer enabled` on a run that had asked for the opposite.
+
 `docs/media/screenshot.png` is a convenient thing to attach: it is committed, it
 is a real image, and it is large enough to exercise the upload optimiser.
 
@@ -110,11 +120,19 @@ is a real image, and it is large enough to exercise the upload optimiser.
 # stop the dev server (TaskStop on the background shell), then:
 Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
   Where-Object { $_.CommandLine -like '*<your session id>*' } |
-  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 ```
 
 **Filter by the profile path in the command line. Never kill `msedge` by name** —
 this is a shared RDP server with other live users on it.
+
+`-ErrorAction SilentlyContinue` is load-bearing, not decoration. Edge is a process
+tree; killing the browser takes its renderers and GPU process with it, so most of
+the PIDs the `Get-CimInstance` snapshot collected are already gone by the time the
+loop reaches them. Without it you get one red `Cannot find a process with the
+process identifier NNN` block per child — seven of them on a normal run — and a
+teardown that fully succeeded reads as a wall of failure. Confirm by re-querying
+for the count, which is the only signal worth trusting here.
 
 Then delete the profile, because `sessionStorage` lives inside it:
 
@@ -122,12 +140,15 @@ Then delete the profile, because `sessionStorage` lives inside it:
 $empty = Join-Path $sp "_empty"; New-Item -ItemType Directory -Force $empty | Out-Null
 & robocopy $empty "$sp\edge-profile" /MIR /NFL /NDL /NJH /NJS /R:0 /W:0 | Out-Null
 Remove-Item -LiteralPath "$sp\edge-profile","$empty" -Recurse -Force
+if (-not (Test-Path "$sp\edge-profile")) { "profile removed" }   # keep this line
 ```
 
 `Remove-Item -Recurse` alone fails with *"Could not find a part of the path
 'noto-sans-regular.woff'"* — Edge's font cache exceeds the classic path limit.
 The robocopy mirror-from-empty gets under it. Robocopy exits 1-3 on success, so
-its non-zero exit is not a failure.
+its non-zero exit is not a failure — but it does become the block's exit code,
+which is why the check on the end is not optional: it leaves the block exiting 0
+on success, instead of reporting a 2 that means "files were copied".
 
 Finish by confirming port 3000 has no listener and `git status` is clean.
 
