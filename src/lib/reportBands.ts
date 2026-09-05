@@ -130,16 +130,25 @@ function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializer
                 <Item3 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="...">
                   <Controls><!-- repeated at the top of EVERY page --></Controls>
                 </Item3>
-                <Item4 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="...">
-                  <Controls><!-- ONE repeating record. See DETAIL BAND below. --></Controls>
+                <Item4 Ref="4" ControlType="GroupHeaderBand" Name="GroupHeader" HeightF="..." RepeatEveryPage="true">
+                  <GroupFields>
+                    <Item1 Ref="5" FieldName="Region" />
+                  </GroupFields>
+                  <Controls><!-- printed once BEFORE each group. OMIT THIS BAND unless the design is grouped -- see GROUPING below. --></Controls>
                 </Item4>
-                <Item5 Ref="5" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="...">
-                  <Controls><!-- printed ONCE, after the last record --></Controls>
+                <Item5 Ref="6" ControlType="DetailBand" Name="Detail" HeightF="...">
+                  <Controls><!-- ONE repeating record. See DETAIL BAND below. --></Controls>
                 </Item5>
-                <Item6 Ref="6" ControlType="PageFooterBand" Name="PageFooter" HeightF="...">
-                  <Controls><!-- repeated at the bottom of EVERY page --></Controls>
+                <Item6 Ref="7" ControlType="GroupFooterBand" Name="GroupFooter" HeightF="...">
+                  <Controls><!-- printed once AFTER each group -- the per-group subtotal --></Controls>
                 </Item6>
-                <Item7 Ref="7" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
+                <Item7 Ref="8" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="...">
+                  <Controls><!-- printed ONCE, after the last record --></Controls>
+                </Item7>
+                <Item8 Ref="9" ControlType="PageFooterBand" Name="PageFooter" HeightF="...">
+                  <Controls><!-- repeated at the bottom of EVERY page --></Controls>
+                </Item8>
+                <Item9 Ref="10" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
               </Bands>
             </XtraReportsLayoutSerializer>
 
@@ -148,7 +157,8 @@ function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializer
             - ReportHeader — the document title, the issuing company, the invoice/report number, dates, and the "bill to"/"ship to"/"terms" blocks. Anything that identifies this one document and would be wrong to print twice.
             - PageHeader — the COLUMN HEADING ROW of the main table, and any running title. This repeats, so a reader on page 3 still knows what each column means.
             - Detail — exactly ONE row of the repeating data. See below; this is the band most often got wrong.
-            - ReportFooter — subtotal, tax and grand-total lines, sign-off blocks, terms paragraphs that close the document.
+            - GroupHeader / GroupFooter — ONLY when the rows break into runs by a shared value with something printed at each break. See GROUPING below for the visible test; if the design shows no such break, omit both bands.
+            - ReportFooter — the GRAND total, tax and sign-off blocks, terms paragraphs that close the document. A total that repeats partway down the page is a GROUP footer, not this one.
             - PageFooter — page numbers (XRPageInfo), the registration line, anything repeated at the foot of every sheet.
             WHETHER THE DESIGN HAS REPEATING ROWS IS A TEST, NOT A JUDGEMENT CALL. Apply it before you decide:
             **a heading row with two or more rows of like-kind values aligned under the same columns IS repeating data**, and that block belongs in Detail as ONE row. Nothing else about the document changes that.
@@ -156,6 +166,20 @@ function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializer
             - Ask it of the ROWS, not of the page. A single-record letter has no such block anywhere. A job card has one in the middle of it.
             Only when NO block anywhere in the design passes that test — a certificate, a single-record letter, a title page — put the body in ReportHeader, leave Detail out, and say so in the markdown specification.
             THE COST OF GETTING THIS WRONG IS THE WHOLE ARTIFACT. DevExpress treats DetailBand as a mandatory band. A report without one prints its content exactly once and CANNOT be bound to a data source, so it is a picture of the document rather than a report that can produce it for every record. The output still opens in the designer and still looks right, which is why this is stated at length instead of left to judgement.
+
+          - GROUPING — ONLY WHEN THE DESIGN ACTUALLY GROUPS, AND THE TEST IS VISIBLE.
+            A grouped report is one whose rows are broken into runs by a shared value, with something printed at each break. You are looking for ONE of these in the source document, not for a feeling that the data could be grouped:
+            - a heading line INSIDE the table that is not a data row — "North Region", "Category: Fasteners", a bare bold value on its own across the full width — with like rows beneath it, then another such line, then more rows;
+            - a SUBTOTAL line partway down — "Region total", "Subtotal" — repeating at each break, as distinct from the single grand total at the end.
+            If neither appears, the document is NOT grouped: omit both GroupHeaderBand and GroupFooterBand entirely. A flat list of forty rows with one total at the bottom is an ungrouped report, and inventing a grouping changes what the file prints.
+            When it IS grouped:
+            - \`<GroupFields>\` is a SIBLING of \`<Controls>\` and is written BEFORE it. Its items carry \`FieldName\` and NO \`ControlType\` — that is the one place besides \`<ExpressionBindings>\` where an item has no control type, and it is measured from the DevExpress serializer rather than inferred.
+            - \`FieldName\` is the DATA field the rows break on, spelled as the data spells it — the same name you would put in an expression, WITHOUT the square brackets. If the source shows a caption like "Region: North", the field is \`Region\`.
+            - Do NOT write a \`SortOrder\` attribute. The serializer omits it for the ascending default, so writing one adds a difference from what DevExpress itself produces for no gain.
+            - The group header usually restates the value it groups on, which is an ordinary expression binding to the same field: \`Expression="[Region]"\`.
+            - A per-group subtotal is a cell carrying \`<Summary Ref="..." Running="Group" FormatString="{0:c2}" />\` BEFORE its \`<ExpressionBindings>\`, with the expression \`sumSum([Amount])\`. \`Running="Group"\` is the whole difference between a group subtotal and the grand total in ReportFooter — the expression is identical, so omitting it silently produces a running total of the entire report at every break.
+            - Emit GroupFooter only if the design actually shows a per-group line. A GroupHeaderBand alone is normal and correct.
+            - In the layout JSON these are sections of \`"type": "group"\`, in the same position and order as the bands.
 
           - THE DETAIL BAND IS ONE ROW, NOT THE TABLE.
             This is the whole point of the exercise. A DetailBand is printed once PER RECORD, so it must contain a single row's worth of controls:

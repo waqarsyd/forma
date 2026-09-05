@@ -168,6 +168,63 @@ const layoutWith = (rows: number, sections = 1): any => ({
   })),
 });
 
+/**
+ * Grouping. The serialized shape here was measured with `tools/RepxProbe` on
+ * 2026-09-05: `<GroupFields>` is a sibling of `<Controls>`, written first, and
+ * its items carry `FieldName` and no `ControlType`.
+ */
+describe('auditRepx on group bands', () => {
+  const groupHeader = (fields: string | null, n: number, ref: number) =>
+    `<Item${n} Ref="${ref}" ControlType="GroupHeaderBand" Name="GroupHeader" HeightF="20">` +
+    (fields ? `<GroupFields><Item1 Ref="${ref + 100}" FieldName="${fields}" /></GroupFields>` : '') +
+    '</Item' + n + '>';
+
+  it('says nothing about a group header that has its fields', () => {
+    const xml = report(TOP + groupHeader('Region', 2, 20) + detailWithTable.replace('Item2', 'Item3') + bottom(4, 9));
+    expect(codes(xml)).not.toContain('group-without-fields');
+  });
+
+  it('reports a group header that groups by nothing', () => {
+    // DevExpress accepts it and prints the band once, so the report looks like
+    // it has a heading and its grouping simply does not happen.
+    const xml = report(TOP + groupHeader(null, 2, 20) + detailWithTable.replace('Item2', 'Item3') + bottom(4, 9));
+    const finding = auditRepx(xml).findings.find((f) => f.code === 'group-without-fields');
+    expect(finding?.message).toMatch(/1 of 1 group header band\(s\) carry no <GroupFields>/);
+  });
+
+  it('counts each band separately when only one of several is missing its fields', () => {
+    const xml = report(
+      TOP + groupHeader('Region', 2, 20) + groupHeader(null, 3, 21) +
+      detailWithTable.replace('Item2', 'Item4') + bottom(5, 9),
+    );
+    expect(auditRepx(xml).findings.find((f) => f.code === 'group-without-fields')?.message)
+      .toMatch(/1 of 2 group header band\(s\)/);
+  });
+
+  it('reports a group footer with no header to close', () => {
+    const xml = report(
+      TOP + detailWithTable +
+      '<Item3 Ref="20" ControlType="GroupFooterBand" Name="GroupFooter" HeightF="20" />' +
+      bottom(4, 9),
+    );
+    expect(codes(xml)).toContain('group-footer-without-header');
+  });
+
+  it('says nothing about a group footer that has one', () => {
+    const xml = report(
+      TOP + groupHeader('Region', 2, 20) + detailWithTable.replace('Item2', 'Item3') +
+      '<Item4 Ref="21" ControlType="GroupFooterBand" Name="GroupFooter" HeightF="20" />' +
+      bottom(5, 9),
+    );
+    expect(codes(xml)).not.toContain('group-footer-without-header');
+  });
+
+  it('says nothing at all about an ungrouped report', () => {
+    expect(codes(healthy)).not.toContain('group-without-fields');
+    expect(codes(healthy)).not.toContain('group-footer-without-header');
+  });
+});
+
 describe('auditRepx cross-checked against the layout', () => {
   it('says nothing extra when the report and the mockup agree', () => {
     // One section, one content band (Detail), and a table in both.

@@ -271,6 +271,82 @@ describe('paginating a real report', () => {
   });
 });
 
+/**
+ * Grouping, whose serialized shape was measured with `tools/RepxProbe` on
+ * 2026-09-05 rather than taken from the class reference: `<GroupFields>` is a
+ * sibling of `<Controls>` written before it, and its items carry `FieldName`
+ * and no `ControlType`.
+ */
+describe('group bands', () => {
+  const grouped = (headers: string[], footers: string[]) => `<?xml version="1.0"?>
+<XtraReportsLayoutSerializer ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100">
+  <Bands>
+    <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
+    <Item2 Ref="2" ControlType="PageHeaderBand" Name="PageHeader" HeightF="20" />
+    ${headers.map((field, i) => `<Item${i + 3} Ref="${10 + i}" ControlType="GroupHeaderBand" Name="Group${field}" HeightF="24">
+      <GroupFields><Item1 Ref="${20 + i}" FieldName="${field}" /></GroupFields>
+      <Controls><Item1 Ref="${30 + i}" ControlType="XRLabel" Name="cap${field}" Text="${field}" LocationFloat="0,0" SizeF="400,20" /></Controls>
+    </Item${i + 3}>`).join('\n    ')}
+    <Item9 Ref="40" ControlType="DetailBand" Name="Detail" HeightF="22" />
+    ${footers.map((field, i) => `<Item${i + 10} Ref="${50 + i}" ControlType="GroupFooterBand" Name="Foot${field}" HeightF="18" />`).join('\n    ')}
+    <Item20 Ref="60" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="30" />
+    <Item21 Ref="61" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+
+  it('reads a group header and the field it groups on', () => {
+    const s = parseReportStructure(grouped(['Region'], []));
+    const header = s.bands.find((b) => b.kind === 'GroupHeader')!;
+    expect(header.name).toBe('GroupRegion');
+    expect(header.height).toBe(24);
+    // The caption control must still be found: <GroupFields> sits before
+    // <Controls>, so a parser that took the first collection would read the
+    // group field as the band's controls and draw nothing.
+    expect(header.controls).toHaveLength(1);
+    expect(header.controls[0].text).toBe('Region');
+  });
+
+  it('keeps every band of a nested grouping, in nesting order', () => {
+    const s = parseReportStructure(grouped(['Region', 'Category'], []));
+    const headers = s.bands.filter((b) => b.kind === 'GroupHeader');
+    expect(headers.map((b) => b.name)).toEqual(['GroupRegion', 'GroupCategory']);
+  });
+
+  it('places every group header, not just the first', () => {
+    // The bug this pins: `find` returned one band and the inner group vanished
+    // from the preview while the file still contained it.
+    const result = paginate(parseReportStructure(grouped(['Region', 'Category'], [])), 2);
+    const placed = result.pages.flatMap((p) => p.bands.filter((b) => b.band.kind === 'GroupHeader'));
+    expect(placed.map((b) => b.band.name)).toEqual(['GroupRegion', 'GroupCategory']);
+  });
+
+  it('prints group headers before the records and footers after', () => {
+    const result = paginate(parseReportStructure(grouped(['Region'], ['Region'])), 3);
+    const order = result.pages[0].bands
+      .filter((b) => b.band.kind !== 'PageFooter')
+      .sort((a, b) => a.top - b.top)
+      .map((b) => b.band.kind);
+    expect(order).toEqual([
+      'PageHeader', 'GroupHeader', 'Detail', 'Detail', 'Detail', 'GroupFooter', 'ReportFooter',
+    ]);
+  });
+
+  it('closes nested groups in the reverse of the order it opened them', () => {
+    const result = paginate(parseReportStructure(grouped(['Region', 'Category'], ['Region', 'Category'])), 1);
+    const footers = result.pages[0].bands
+      .filter((b) => b.band.kind === 'GroupFooter')
+      .sort((a, b) => a.top - b.top)
+      .map((b) => b.band.name);
+    // Innermost group closes first, which is the reverse of the file order.
+    expect(footers).toEqual(['FootCategory', 'FootRegion']);
+  });
+
+  it('is unaffected when the report has no grouping at all', () => {
+    const plain = paginate(structure, 3);
+    expect(plain.pages[0].bands.some((b) => b.band.kind === 'GroupHeader')).toBe(false);
+  });
+});
+
 describe('choosing how many records to preview', () => {
   const layoutWith = (rows: number) => ({
     sections: [

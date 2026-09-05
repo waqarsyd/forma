@@ -444,6 +444,12 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
   // Print order, not file order. A file listing PageHeader after Detail is a
   // different report, and repxAudit reports that -- but the preview should not
   // compound it by drawing them upside down.
+  //
+  // Array.prototype.sort has been stable since ES2019, which is load-bearing
+  // here rather than incidental: nested groups produce several GroupHeaderBands
+  // that all share one rank, and their relative order is the nesting. An
+  // unstable sort would reorder region-then-category into category-then-region,
+  // which is a different report.
   structure.bands.sort(
     (a, b) => BAND_ORDER.indexOf(a.kind) - BAND_ORDER.indexOf(b.kind),
   );
@@ -491,10 +497,12 @@ const findBand = (bands: PreviewBand[], kind: BandKind) => bands.find((b) => b.k
  * - ReportHeader prints once, at the top of page 1 only.
  * - PageHeader repeats below the top margin of EVERY page.
  * - Detail repeats once per record and flows onto as many pages as it needs.
- * - GroupHeader prints once before the records, GroupFooter once after. Forma
- *   does not emit either yet; they are handled because a `.repx` opened from
- *   elsewhere can contain them, and dropping a band silently is the failure
- *   this preview exists to catch.
+ * - GroupHeader prints once before the records, GroupFooter once after, and
+ *   EVERY such band is placed rather than the first — nested groups are
+ *   several of each. This preview knows nothing about the data, so it cannot
+ *   know how many groups there are: what it draws is one group, which is an
+ *   honest picture of the band structure and not of the record breaks. The
+ *   band count and their order are what it is being asked about.
  * - ReportFooter prints once after the last record, moving to a new page if it
  *   does not fit.
  * - PageFooter sits ON the bottom margin of every page, not after the content.
@@ -518,11 +526,23 @@ export function paginate(
 
   const reportHeader = findBand(bands, 'ReportHeader');
   const pageHeader = findBand(bands, 'PageHeader');
-  const groupHeader = findBand(bands, 'GroupHeader');
   const detail = findBand(bands, 'Detail');
-  const groupFooter = findBand(bands, 'GroupFooter');
   const reportFooter = findBand(bands, 'ReportFooter');
   const pageFooter = findBand(bands, 'PageFooter');
+
+  /*
+   * Every group band, not the first.
+   *
+   * DevExpress nests groups by emitting several GroupHeaderBands, each with its
+   * own GroupFields and Level -- region, then category within it. Taking only
+   * `find`'s first match drew the outer group and silently dropped the inner
+   * one, which is precisely the "looks right, is missing content" failure this
+   * preview exists to expose. Headers print outermost-first, footers in the
+   * reverse order, which is what the file order already gives once the footers
+   * are read back to front.
+   */
+  const groupHeaders = bands.filter((b) => b.kind === 'GroupHeader');
+  const groupFooters = [...bands.filter((b) => b.kind === 'GroupFooter')].reverse();
 
   const pageBottom = structure.page.height - bottomMargin - (pageFooter?.height ?? 0);
 
@@ -563,7 +583,7 @@ export function paginate(
     current!.bands.push({ band: reportHeader, top: cursor, record: null });
     cursor += reportHeader.height;
   }
-  if (groupHeader) place(groupHeader, null);
+  for (const header of groupHeaders) place(header, null);
 
   let placedRecords = 0;
   if (detail && records > 0) {
@@ -582,7 +602,7 @@ export function paginate(
     }
   }
 
-  if (groupFooter) place(groupFooter, null);
+  for (const footer of groupFooters) place(footer, null);
   if (reportFooter) place(reportFooter, null);
 
   if (placedRecords < records) {

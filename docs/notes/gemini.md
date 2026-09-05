@@ -362,6 +362,37 @@ Two defects survived unit tests and were caught by loading the output back:
 - **The wiring order was impossible.** `bindFooterTotals` called `planDetailBinding`, which declines once the detail row is bound, so the detail-then-totals order could never have applied a total. The two callers disagree about what "already bound" means — a stop condition for one, the expected state for the other — and folding that judgement into the shared analysis is what made the order unsatisfiable.
 - **A sum was bound over a label.** The loader read back `ReportFooter.cell2: sumSum([UnitPrice])` on a cell whose text was `"Total"`. A binding overrides `Text` at print time, so the label would have silently become a number. The footer pass now also requires the cell to hold a figure itself.
 
+### Grouping, measured the same way (2026-09-05)
+
+Step 4 of the build order needed group bands, and `GroupFields` is exactly the kind of thing the class reference describes as an object and never as a file. So it was asked rather than guessed: `RepxProbe emit-group` builds a report with a `GroupHeaderBand`, a grouping field, `RepeatEveryPage`, a group-scoped summary and a `GroupFooterBand`, and prints what the serializer writes.
+
+```xml
+<Item3 Ref="7" ControlType="GroupHeaderBand" Name="GroupHeader" RepeatEveryPage="true" HeightF="20">
+  <GroupFields>
+    <Item1 Ref="8" FieldName="Category" />
+  </GroupFields>
+  <Controls>…</Controls>
+</Item3>
+…
+<Item1 Ref="23" ControlType="XRTableCell" Name="cellGroupTotal" Weight="1">
+  <Summary Ref="24" FormatString="{0:c2}" Running="Group" />
+  <ExpressionBindings>
+    <Item1 Ref="25" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Amount])" />
+  </ExpressionBindings>
+</Item1>
+```
+
+Four things in there shape the prompt and the audit:
+
+- **`<GroupFields>` is a sibling of `<Controls>`, written before it.** A parser that takes a band's first child collection reads the grouping fields as its controls; `reportPreview.ts` has a test asserting the caption control is still found, because that is the shape that would silently draw an empty band.
+- **A group field item carries no `ControlType`.** It is the second place after an `ExpressionBindings` item where that is true, and for the same reason it is invisible to anything that locates elements by control type.
+- **`SortOrder` is omitted for the ascending default** — it was set *explicitly* to `Ascending` in the probe and still did not appear. So the prompt says not to write one, which keeps Forma's output identical to what DevExpress itself produces.
+- **A group subtotal differs from the grand total only by `Running="Group"`.** The expression is the same `sumSum([Amount])`, so leaving `Running` off does not fail — it produces a running total of the whole report at every group break, which reads as a plausible number and is wrong. `Func="Sum"` is omitted as the default, so `Running` really is the whole discriminator.
+
+Both files round-trip: the designer's own output and a hand-written Forma-shaped one (`Margins="0, 0, 0, 0"`, our `ItemN` numbering, unqualified `ControlType`) each load with nothing lost, and re-save with the group fields, `RepeatEveryPage` and the group `Summary` intact.
+
+`repxAudit.ts` gained two checks from this, both for failures DevExpress accepts silently: a `GroupHeaderBand` with no `<GroupFields>` groups by nothing and prints once, which looks like a heading; and a `GroupFooterBand` with no header never breaks, so its subtotal becomes a second grand total above the real one.
+
 **`{0:n0}` is deliberately never emitted.** It renders 12345 as "12,345", which is right for a quantity and wrong for an invoice number, order id, product code or year — all columns of bare integers that one sample value cannot distinguish from a count. A format that mangles an identifier is worse than none, because the unformatted column was already correct. Currency and dates only, where the meaning is not in doubt.
 
 ## The API key gates the entire workspace

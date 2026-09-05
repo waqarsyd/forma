@@ -208,6 +208,46 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
     }
   }
 
+  /*
+   * A GroupHeaderBand with no <GroupFields> groups by nothing.
+   *
+   * DevExpress accepts it and prints the band exactly once, so the report looks
+   * like a report with a heading and is really a report whose grouping does not
+   * exist -- the same class of silent wrongness as a Detail band that never
+   * repeats. The two are easy to confuse in the file because the band is
+   * present and correctly named; only the absent collection distinguishes them.
+   *
+   * Counted rather than tested with `has`, because nested grouping is several
+   * bands and one of them missing its fields is the interesting case. The
+   * `[^]*?` is lazy so two consecutive group headers do not read as one.
+   */
+  const groupHeaders = (text.match(/ControlType="GroupHeaderBand"/g) ?? []).length;
+  if (groupHeaders) {
+    const withFields = (
+      text.match(/ControlType="GroupHeaderBand"[^>]*>[^]*?<GroupFields>/g) ?? []
+    ).length;
+    if (withFields < groupHeaders) {
+      add(
+        'warning',
+        'group-without-fields',
+        `${groupHeaders - withFields} of ${groupHeaders} group header band(s) carry no <GroupFields>, so they group by nothing. ` +
+          'DevExpress prints such a band once instead of once per group, which looks like a heading and is a grouping that does not happen.',
+      );
+    }
+  }
+
+  // A group footer with no header has nothing to close. DevExpress does not
+  // reject it; it simply never breaks, so the subtotal it carries becomes a
+  // second grand total sitting above the real one.
+  if (has(text, 'GroupFooterBand') && !groupHeaders) {
+    add(
+      'warning',
+      'group-footer-without-header',
+      'There is a GroupFooterBand but no GroupHeaderBand, so nothing defines where a group ends. ' +
+        'Its contents print once at the end rather than once per group.',
+    );
+  }
+
   if (!has(text, 'TopMarginBand') || !has(text, 'BottomMarginBand')) {
     add(
       'warning',

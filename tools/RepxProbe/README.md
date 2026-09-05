@@ -4,8 +4,9 @@ Ask DevExpress what a `.repx` really contains, instead of guessing from the API
 documentation.
 
 ```powershell
-RepxProbe emit <out.repx>     # what does the serializer WRITE for a feature?
-RepxProbe inspect <in.repx>   # what does the loader SEE in a file we produced?
+RepxProbe emit <out.repx>        # what does the serializer WRITE for a feature?
+RepxProbe emit-group <out.repx>  # the same, for a GROUPED report
+RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 
 ## Why this exists
@@ -102,6 +103,20 @@ short version:
   and discard the second's content, with no error. Measured on one document
   differing only in its `Ref` values: unique gave 6 cells and 3 bindings,
   duplicated gave 3 cells and 0 bindings.
+
+And from `emit-group` on 2026-09-05, for the grouping work:
+
+- **`<GroupFields>` is a sibling of `<Controls>` and is written before it**, so
+  a parser that takes a band's first child collection reads the grouping fields
+  as its controls.
+- **A group field item carries no `ControlType`** — the second place after an
+  `ExpressionBindings` item where that holds.
+- **`SortOrder` is not written for the ascending default**, even when set
+  explicitly, so Forma emits none.
+- **A group subtotal differs from a grand total only by `Running="Group"`** on
+  the cell's `<Summary>`; the expression is the same `sumSum([Amount])`, and
+  `Func="Sum"` is omitted as the default. Leaving `Running` off does not fail —
+  it totals the whole report at every group break.
 
 ## Related
 

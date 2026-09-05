@@ -23,13 +23,15 @@ static class Program {
     static int Main(string[] args) {
         if (args.Length < 2) {
             Console.WriteLine("usage: RepxProbe emit <out.repx>");
+            Console.WriteLine("       RepxProbe emit-group <out.repx>");
             Console.WriteLine("       RepxProbe inspect <in.repx>");
             return 2;
         }
         try {
             switch (args[0]) {
-                case "emit":    Emit(args[1]);    return 0;
-                case "inspect": return Inspect(args[1]);
+                case "emit":       Emit(args[1]);      return 0;
+                case "emit-group": EmitGroup(args[1]); return 0;
+                case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
                     return 2;
@@ -102,6 +104,69 @@ static class Program {
             Band(new PageHeaderBand(), "PageHeader", header),
             Band(new DetailBand(), "Detail", detail),
             Band(new ReportFooterBand(), "ReportFooter", footer),
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes a GROUPED report, to settle how grouping is serialized.
+    ///
+    /// The open questions this answers, none of which the class reference
+    /// states: what a GroupHeaderBand's grouping field looks like in the file,
+    /// whether the collection is named GroupFields, whether the sort order is
+    /// written when it is the default, where RepeatEveryPage lands, and how a
+    /// group-scoped summary differs from a report-scoped one.
+    static void EmitGroup(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeGroup";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRTable pageHead = Table("tableHeader", new XRTableCell[] {
+            Cell("cellHeadDesc", "Description", 3),
+            Cell("cellHeadAmount", "Amount", 1)
+        });
+
+        // The group header: a caption bound to the very field being grouped on,
+        // which is the ordinary shape and exercises both at once.
+        XRTableCell groupCaption = Cell("cellGroupCaption", "Category", 4);
+        groupCaption.ExpressionBindings.Add(new ExpressionBinding("BeforePrint", "Text", "[Category]"));
+        XRTable groupHead = Table("tableGroupHeader", new XRTableCell[] { groupCaption });
+
+        XRTableCell desc = Cell("cellDesc", "Widget", 3);
+        desc.ExpressionBindings.Add(new ExpressionBinding("BeforePrint", "Text", "[Description]"));
+        XRTableCell amount = Cell("cellAmount", "1240.00", 1);
+        amount.ExpressionBindings.Add(new ExpressionBinding("BeforePrint", "Text", "[Amount]"));
+        XRTable detail = Table("tableDetail", new XRTableCell[] { desc, amount });
+
+        // A group-scoped total, to see how it differs from the report-scoped
+        // one in Emit(). Two ways exist -- an XRSummary with Running=Group, and
+        // a sumSum() expression -- so both go in and the file says which the
+        // serializer records.
+        XRTableCell groupTotal = Cell("cellGroupTotal", "", 1);
+        groupTotal.Summary.Running = SummaryRunning.Group;
+        groupTotal.Summary.Func = SummaryFunc.Sum;
+        groupTotal.Summary.FormatString = "{0:c2}";
+        groupTotal.ExpressionBindings.Add(new ExpressionBinding("BeforePrint", "Text", "sumSum([Amount])"));
+        XRTable groupFoot = Table("tableGroupFooter", new XRTableCell[] { groupTotal });
+
+        GroupHeaderBand gh = new GroupHeaderBand();
+        gh.GroupFields.Add(new GroupField("Category", XRColumnSortOrder.Ascending));
+        gh.RepeatEveryPage = true;
+
+        GroupFooterBand gf = new GroupFooterBand();
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            Band(new PageHeaderBand(), "PageHeader", pageHead),
+            Band(gh, "GroupHeader", groupHead),
+            Band(new DetailBand(), "Detail", detail),
+            Band(gf, "GroupFooter", groupFoot),
             new BottomMarginBand()
         });
 
