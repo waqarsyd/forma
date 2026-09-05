@@ -179,8 +179,38 @@ export interface ReportStructure {
   margins: { top: number; bottom: number };
   unit: string;
   bands: PreviewBand[];
+  /**
+   * The page watermark, or null when there is none.
+   *
+   * Page-level rather than band-level, so it is read once and drawn on every
+   * page rather than living in the band list.
+   */
+  watermark: PreviewWatermark | null;
   /** Non-fatal parse complaints, for the UI to surface rather than swallow. */
   problems: string[];
+}
+
+/**
+ * A text watermark, as the file carries it.
+ *
+ * **Image watermarks are deliberately not represented.** `RepxProbe emit-mark`
+ * showed one serializes as `ImageSource="…"`, base64 — 172 characters for a 4×4
+ * bitmap — so Forma never writes one, and an uploaded file that has one is
+ * carried through untouched rather than drawn here. Reporting `null` for that
+ * case is honest: the preview cannot show it, and pretending otherwise by
+ * drawing a placeholder over every page would be worse than the omission.
+ */
+export interface PreviewWatermark {
+  text: string;
+  /** Points, like every other font size in this file. */
+  fontSize: number | null;
+  fontFamily: string | null;
+  bold: boolean;
+  color: string | null;
+  /** 0–255 as DevExpress writes it; 255 is opaque. */
+  transparency: number;
+  /** `BackwardDiagonal`, `ForwardDiagonal` or `Horizontal`. */
+  direction: string;
 }
 
 // --------------------------------------------------------------- attributes
@@ -194,6 +224,32 @@ export type CheckState = 'unchecked' | 'checked' | 'indeterminate';
  * band can hold two shapes and the second's `<Shape>` must not be read as the
  * first's.
  */
+/**
+ * The page watermark, if the report carries a text one.
+ *
+ * Returns null for an image watermark — see `PreviewWatermark`. The
+ * discriminator is `Text`: `RepxProbe emit-mark` showed a text watermark writes
+ * `Text=` and an image one writes `ImageSource=` instead, never both.
+ */
+function parseWatermark(text: string): PreviewWatermark | null {
+  const tag = /<Watermark\b([^>]*)\/?>/.exec(text);
+  if (!tag) return null;
+  const attrs = tag[1];
+  const caption = decodeXmlText(attrOf(attrs, 'Text') ?? '');
+  if (!caption) return null;
+  const font = parseFont(attrOf(attrs, 'Font'));
+  return {
+    text: caption,
+    fontSize: font.size,
+    fontFamily: font.family,
+    bold: font.bold,
+    color: attrOf(attrs, 'ForeColor'),
+    // 255 is opaque; DevExpress omits the attribute when it is fully opaque.
+    transparency: numAttr(attrs, 'TextTransparency', 255),
+    direction: attrOf(attrs, 'TextDirection') || 'Horizontal',
+  };
+}
+
 function parseShapeName(inner: string, controlStart: number, controlEnd: number): string {
   const match = /<Shape\b[^>]*\sShapeName="([^"]*)"/.exec(inner.slice(controlStart, controlEnd));
   // Absent means Ellipse, measured — not "unknown".
@@ -584,6 +640,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     margins: { top: 0, bottom: 0 },
     unit: 'HundredthsOfAnInch',
     bands: [],
+    watermark: null,
     problems,
   };
 
@@ -615,6 +672,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     margins: { top: marginRaw[2] ?? 0, bottom: marginRaw[3] ?? 0 },
     unit: attrOf(rootAttrs, 'ReportUnit') || 'HundredthsOfAnInch',
     bands: [],
+    watermark: parseWatermark(text),
     problems,
   };
 

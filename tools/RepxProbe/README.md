@@ -16,6 +16,7 @@ RepxProbe emit-rich <out.repx>   # the same, for XRRichText and XRShape
 RepxProbe emit-rules <out.repx>  # the same, for CONDITIONAL FORMATTING
 RepxProbe emit-calc <out.repx>   # the same, for CALCULATED FIELDS
 RepxProbe emit-sort <out.repx>   # the same, for SORTING the detail rows
+RepxProbe emit-mark <out.repx>   # the same, for a WATERMARK (text and image)
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 

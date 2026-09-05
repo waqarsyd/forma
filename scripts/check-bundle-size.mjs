@@ -130,7 +130,17 @@ const BUDGETS = [
   // checkbox now sends 921 bytes of that block instead of 5,074. The two
   // measurements move independently and confusing them is easy: this chunk holds
   // every block whether or not a given request sends it.
-  { prefix: 'geminiService-', ext: '.js', max: 90_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
+  //
+  // Raised to 95_000 on 2026-09-05, naming the growth: 83,134 -> 88,340 B across
+  // the conditional-formatting, calculated-field, sorting and watermark blocks,
+  // roughly 1.3 kB of instruction text each. 95_000 puts it at 93.0%.
+  //
+  // **Six movements on this cap in one day is the honest shape of the work, not
+  // drift.** Each names a feature. What would be worth stopping for is a raise
+  // with no feature behind it -- and one nearly happened: the containers split
+  // moved this number without adding anything, which is why that entry says so
+  // explicitly. Read the reason before the number.
+  { prefix: 'geminiService-', ext: '.js', max: 95_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it

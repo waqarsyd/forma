@@ -163,7 +163,7 @@ describe('ALL_SECTIONS', () => {
     // Written out by hand on purpose: deriving it the same way the module does
     // would make this test agree with itself rather than with the type.
     const expected: PromptSection[] = [
-      'grouping', 'parameters', 'charts', 'rules', 'calculated', 'sorting',
+      'grouping', 'parameters', 'charts', 'rules', 'calculated', 'sorting', 'watermark',
       'checkbox', 'crossband', 'containers', 'shapes',
     ];
     expect([...ALL_SECTIONS].sort()).toEqual([...expected].sort());
@@ -240,6 +240,29 @@ describe('sorting as a section', () => {
       'order by amount descending',
     ]) {
       expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('sorting');
+    }
+  });
+});
+
+describe('watermark as a section', () => {
+  const plain = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+
+  it('is kept for a text watermark and for an image one alike', () => {
+    // An image watermark cannot be authored, but a source that HAS one still
+    // needs the block: it carries the instruction to copy ImageSource across.
+    for (const mark of ['<Watermark Ref="1" Text="DRAFT" />', '<Watermark Ref="1" ImageSource="AAAA" />']) {
+      const xml = `<XtraReportsLayoutSerializer><Bands />${mark}</XtraReportsLayoutSerializer>`;
+      expect(sectionsFor({ texts: [xml] }), mark).toEqual(['watermark']);
+    }
+  });
+
+  it('is dropped for a report with none', () => {
+    expect(sectionsFor({ texts: [plain] })).not.toContain('watermark');
+  });
+
+  it('is kept when the user asks for one in their own words', () => {
+    for (const instruction of ['add a DRAFT watermark', 'stamp CONFIDENTIAL across it', 'mark it as draft']) {
+      expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('watermark');
     }
   });
 });

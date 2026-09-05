@@ -954,6 +954,22 @@ ${transcript}`,
  * is complete — so this is usable in a tool that never opens a connection.
  */
 /**
+ * A page watermark.
+ *
+ * Measured with `RepxProbe emit-mark`. The half that matters is the split: a
+ * TEXT watermark is six attributes, an IMAGE one is `ImageSource=` carrying
+ * base64 -- 172 characters for a 4x4 bitmap -- so only one half is authorable.
+ */
+const WATERMARK_BLOCK = `          - WATERMARK — DRAFT, COPY, CONFIDENTIAL across the page.
+            A word printed large and pale behind the content, usually diagonal. It is a property of the REPORT, written as a single element AFTER </Bands>:
+            <Watermark Ref="20" Text="DRAFT" Font="Arial, 72pt, style=Bold" ForeColor="Silver" TextTransparency="150" TextDirection="BackwardDiagonal" />
+            - TextDirection is one of: Horizontal, ForwardDiagonal, BackwardDiagonal.
+            - TextTransparency is 0-255 where 255 is opaque. A watermark meant to be read through is around 120-180; 0 makes it invisible, which is not what "transparency" suggests in either direction, so pick from that range rather than reasoning about it.
+            - The element carries a Ref and NO ControlType, like every other non-control element.
+            - **Only emit one when the source document actually shows one.** A pale diagonal word across the page is the evidence. Do not add DRAFT to a report because it looks like a draft.
+            - **Do not write an image watermark.** DevExpress stores it as ImageSource="..." holding base64 image data, which cannot be authored as readable XML — the same reason XRRichText is refused. If the uploaded .repx has one, copy the ImageSource attribute across byte for byte and change nothing about it.
+`;
+/**
  * Sorting the detail rows.
  *
  * Measured with `RepxProbe emit-sort`. Three things a class reference would not
@@ -1324,7 +1340,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
             - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
-${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+${sections.includes('watermark') ? WATERMARK_BLOCK : ''}${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
             Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.

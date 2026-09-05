@@ -604,6 +604,26 @@ Three audit checks, all silent failures: an empty `Expression` (**error** — ev
 
 That last point is the same shape as the `<GroupFields>` finding recorded above, arriving a second time. **Assume any new band-level collection is written before `<Controls>` and shaped like these two**, and check the parent name rather than the item.
 
+### Watermarks, and half a feature (2026-09-05)
+
+`RepxProbe emit-mark`, and the answer splits the way rich text did.
+
+**A text watermark is six attributes and fully authorable**, written as a single element AFTER `</Bands>` — the same side as `<StyleSheet>`, the opposite side from `<FormattingRuleSheet>` and `<CalculatedFields>`:
+
+```xml
+<Watermark Ref="7" TextDirection="BackwardDiagonal" Text="DRAFT" Font="Arial, 72pt, style=Bold" ForeColor="Silver" TextTransparency="150" />
+```
+
+**An image watermark is not.** It writes `ImageSource="…"` carrying base64 — **172 characters for a 4x4 bitmap** — so a real picture is enormous and a model cannot author one. The prompt asks for text watermarks and, for an uploaded file that has an image one, to copy `ImageSource` across byte for byte.
+
+Three smaller things worth having written down:
+
+- `TextTransparency` is 0–255 and **255 is opaque**, which is the opposite of what the name suggests to most readers; 0 makes the watermark invisible. The prompt gives a usable range rather than asking the model to reason about it.
+- The element carries a `Ref` and no `ControlType`, like every other non-control element here.
+- `ForeColor="Silver"` came back for a `#C0C0C0` input — DevExpress resolves to a named colour where one exists, as it did for `ForeColor="Red"` in the formatting-rule probe.
+
+The Preview draws it behind the bands on every page, with `pointer-events: none`. That last part is not incidental: the watermark covers the whole sheet, and without it nothing underneath could be selected or dragged — the same mistake the panel wrapper made earlier the same day, which is why it is stated rather than assumed.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

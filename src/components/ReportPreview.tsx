@@ -405,6 +405,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
     return { structure: parsed, report: paginate(parsed, recordCountFromLayout(layout)) as PaginatedReport };
   }, [repxContent, layout]);
   const structureBands = structure.bands;
+  const watermark = structure.watermark;
   const parameters = useMemo(() => parseParameters(repxContent), [repxContent]);
 
   const pageW = unitsToPx(report.page.width, report.unit);
@@ -555,6 +556,44 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
               overlap; the sheet itself is drawn at true size and scaled. */}
           <div className="rp-stage" style={{ width: pageW * zoom, height: pageH * zoom }}>
             <div className="rp-page" style={{ width: pageW, height: pageH, transform: `scale(${zoom})` }}>
+              {/* The watermark, behind the bands and on every page.
+                  `pointer-events: none` matters: it covers the whole sheet, so
+                  without it nothing underneath could be selected or dragged --
+                  the same mistake the panel wrapper made, and the reason it is
+                  worth stating rather than assuming. */}
+              {watermark && (
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
+                    overflow: 'hidden',
+                    zIndex: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      color: watermark.color ?? '#999',
+                      // DevExpress writes 0-255 where 255 is opaque; CSS wants 0-1.
+                      opacity: Math.max(0, Math.min(1, watermark.transparency / 255)),
+                      fontFamily: watermark.fontFamily ?? 'inherit',
+                      fontSize: watermark.fontSize ? `${watermark.fontSize}pt` : '48pt',
+                      fontWeight: watermark.bold ? 700 : 400,
+                      whiteSpace: 'nowrap',
+                      transform:
+                        watermark.direction === 'BackwardDiagonal' ? 'rotate(-45deg)'
+                        : watermark.direction === 'ForwardDiagonal' ? 'rotate(45deg)'
+                        : 'none',
+                    }}
+                  >
+                    {watermark.text}
+                  </span>
+                </div>
+              )}
               {page.bands.map((placed, i) => (
                 <div
                   key={i}

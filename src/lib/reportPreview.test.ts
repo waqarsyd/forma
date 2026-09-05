@@ -715,3 +715,50 @@ describe('shapes', () => {
     expect(both.map((c) => c.shape)).toEqual(['Ellipse', 'Star']);
   });
 });
+
+/**
+ * Watermarks, and the half that cannot be written.
+ *
+ * RepxProbe emit-mark: a TEXT watermark is six attributes; an IMAGE one is
+ * ImageSource= carrying base64 -- 172 characters for a 4x4 bitmap. So the
+ * parser reports a text watermark and reports null for an image one, which is
+ * honest rather than lossy: the preview cannot draw a picture it does not have,
+ * and a placeholder over every page would be worse than nothing.
+ */
+describe('watermarks', () => {
+  const withMark = (mark: string) =>
+    parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="20" /></Bands>' +
+      mark +
+      '</XtraReportsLayoutSerializer>'
+    ).watermark;
+
+  it('reads a text watermark with its appearance', () => {
+    const mark = withMark('<Watermark Ref="7" Text="DRAFT" Font="Arial, 72pt, style=Bold" ForeColor="Silver" TextTransparency="150" TextDirection="BackwardDiagonal" />');
+    expect(mark).toMatchObject({
+      text: 'DRAFT', fontSize: 72, fontFamily: 'Arial', bold: true,
+      color: 'Silver', transparency: 150, direction: 'BackwardDiagonal',
+    });
+  });
+
+  it('reports null for an image watermark rather than half of one', () => {
+    expect(withMark('<Watermark Ref="7" ImageSource="iVBORw0KGgo=" />')).toBeNull();
+  });
+
+  it('reports null when there is no watermark at all', () => {
+    expect(withMark('')).toBeNull();
+  });
+
+  it('defaults transparency to opaque and direction to horizontal', () => {
+    // DevExpress omits both when they are at their defaults, so absence is a
+    // real answer here as it is for CanGrow and for a shape with no <Shape>.
+    const mark = withMark('<Watermark Ref="7" Text="COPY" />');
+    expect(mark?.transparency).toBe(255);
+    expect(mark?.direction).toBe('Horizontal');
+  });
+
+  it('decodes entities in the caption', () => {
+    expect(withMark('<Watermark Ref="7" Text="DRAFT &amp; COPY" />')?.text).toBe('DRAFT & COPY');
+  });
+});

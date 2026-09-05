@@ -59,6 +59,7 @@ export type PromptSection =
   | 'rules'
   | 'calculated'
   | 'sorting'
+  | 'watermark'
   | 'checkbox'
   | 'crossband'
   /** Panels and the instruction not to invent a subreport. */
@@ -104,6 +105,7 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   rules: /<FormattingRuleSheet|<FormattingRuleLinks/i,
   calculated: /<CalculatedFields/i,
   sorting: /<SortFields/i,
+  watermark: /<Watermark\b/i,
 };
 
 /**
@@ -123,6 +125,7 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
   containers: /\bpanel\b|\bsubreport|\bbox\b|\bgroup(ed)? box|\bbordered block/i,
   shapes: /\bshape\b|\bcircle\b|\bellipse\b|\barrow\b|\brich ?text|\bdiagonal\b/i,
   calculated: /\bcalculat|\bcomputed\b|\bderived\b|\bformula\b|\bexpression\b|\bmultipl|\btimes\b|\bline total/i,
+  watermark: /\bwatermark|\bdraft\b|\bconfidential\b|\bstamp(ed)? across|\bbehind the (content|text)/i,
   sorting: /\bsort|\border(ed)? by\b|\balphabetical|\bdescending|\bascending|\b(newest|oldest|largest|smallest) first/i,
   // Deliberately generous: conditional formatting is asked for in a dozen
   // different words, and every miss costs the feature entirely.

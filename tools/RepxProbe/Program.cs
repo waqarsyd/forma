@@ -44,6 +44,7 @@ static class Program {
             case "emit-rules": EmitRules(args[1]); return 0;
             case "emit-calc":  EmitCalc(args[1]);  return 0;
             case "emit-sort":  EmitSort(args[1]);  return 0;
+            case "emit-mark":  EmitWatermark(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -766,6 +767,62 @@ static class Program {
         Console.WriteLine("written: " + Path.GetFullPath(outPath));
         Console.WriteLine();
         Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes a WATERMARK -- "DRAFT" across the page, which is the one thing on
+    /// the remaining list a reader notices immediately when it is missing.
+    ///
+    /// The question, and it is the rich-text question again: **is the content
+    /// authorable?** A TEXT watermark should be a handful of attributes. An
+    /// IMAGE watermark almost certainly carries the picture, and if that is a
+    /// base64 blob then half of this feature is unwritable by a model and the
+    /// prompt has to say which half.
+    ///
+    /// Also open: whether a watermark left at its defaults writes anything at
+    /// all, since so much here is omitted when default.
+    static void EmitWatermark(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeWatermark";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        report.Watermark.Text = "DRAFT";
+        report.Watermark.Font = new Font("Arial", 72, FontStyle.Bold);
+        report.Watermark.ForeColor = Color.FromArgb(0xC0, 0xC0, 0xC0);
+        report.Watermark.TextTransparency = 150;
+        report.Watermark.TextDirection = DevExpress.XtraPrinting.Drawing.DirectionMode.BackwardDiagonal;
+        report.Watermark.ShowBehind = true;
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            Band(new DetailBand(), "Detail", Table("tableDetail", new XRTableCell[] { Cell("cellA", "A", 1) })),
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("=== TEXT watermark ===");
+        Console.WriteLine(File.ReadAllText(outPath));
+
+        // Now the image half, into a second file, so the two can be compared.
+        XtraReport withImage = new XtraReport();
+        withImage.Name = "RepxProbeWatermarkImage";
+        withImage.PageWidth = 850;
+        withImage.PageHeight = 1100;
+        Bitmap bitmap = new Bitmap(4, 4);
+        using (Graphics g = Graphics.FromImage(bitmap)) g.Clear(Color.Gray);
+        withImage.Watermark.Image = bitmap;
+        withImage.Bands.Add(new DetailBand());
+
+        string imagePath = outPath + ".image.repx";
+        withImage.SaveLayoutToXml(imagePath);
+        string imageXml = File.ReadAllText(imagePath);
+        Console.WriteLine();
+        Console.WriteLine("=== IMAGE watermark: " + imageXml.Length + " chars total ===");
+        // Print it with any long attribute value elided, so a base64 blob is
+        // visible as a blob rather than filling the terminal.
+        Console.WriteLine(Regex.Replace(imageXml, "\"([^\"]{80,})\"", m =>
+            "\"<" + (m.Groups[1].Value.Length) + " chars elided>\""));
     }
 
     /// Writes a GROUPED report, to settle how grouping is serialized.
