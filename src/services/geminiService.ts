@@ -961,21 +961,27 @@ const RULES_BLOCK = `          - CONDITIONAL FORMATTING — a rule the report ap
             - A rule nothing links is dead, and a link pointing at a Ref that is not a rule silently never fires. Both load without complaint.
 `;
 
-const CONTAINERS_BLOCK = `          - Checkbox: <Item7 Ref="9" ControlType="XRCheckBox" Name="checkBox1" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="0,320" SizeF="200,20" />
+const CHECKBOX_BLOCK = `          - Checkbox: <Item7 Ref="9" ControlType="XRCheckBox" Name="checkBox1" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="0,320" SizeF="200,20" />
             - A tick, cross or filled square on a form line IS a checkbox. Do not draw one as a label containing "X" or a bordered empty label — those cannot be bound, cannot be toggled, and are the same failure as building a table out of labels.
             - The caption goes in Text, like every other control. The box itself is drawn by the control; do not add a separate label beside it.
             - **Only write the two state attributes for a TICKED box, and always write them as a pair.** Unchecked is the default and DevExpress writes neither attribute, so an empty box is just <Item ControlType="XRCheckBox" Text="..." />. Writing Checked without CheckBoxState, or either one with "false", is not what the serializer produces.
-          - Cross-band lines and boxes — a vertical rule that runs THROUGH more than one band. **These do NOT go inside a band.** They form a <CrossBandControls> collection that is a SIBLING of <Bands>, written after </Bands>:
+`;
+
+const CROSSBAND_BLOCK = `          - Cross-band lines and boxes — a vertical rule that runs THROUGH more than one band. **These do NOT go inside a band.** They form a <CrossBandControls> collection that is a SIBLING of <Bands>, written after </Bands>:
             <CrossBandControls><Item1 Ref="12" ControlType="XRCrossBandLine" Name="columnRule" WidthF="1" StartBand="#Ref-2" EndBand="#Ref-3" StartPointFloat="300,0" EndPointFloat="300,110" /></CrossBandControls>
             - StartBand and EndBand are **"#Ref-N" POINTERS at the Ref values of the band elements** — not names, not indexes. #Ref-2 means the band whose Ref="2". Point them at the wrong bands and the rule attaches in the wrong place with no error at all.
             - Use one when the source draws a column separator running from the heading row down through the detail rows, which is how most older table-heavy reports are ruled. **A vertical rule spanning bands cannot be an XRLine** — an XRLine lives inside one band and stops at its edge, so drawing the same thing with XRLines gives a rule that breaks at every band boundary.
             - Only for rules that genuinely cross a band boundary. A rule inside a single band is an XRLine, and a cell border is Borders= on the cell — reach for those first.
-          - Panel — a bordered box that CONTAINS other controls: <Item8 Ref="10" ControlType="XRPanel" Name="panelBillTo" LocationFloat="100,100" SizeF="400,80" Borders="All"><Controls><Item1 Ref="11" ControlType="XRLabel" Name="billToName" Text="Acme Ltd" LocationFloat="10,10" SizeF="200,20" /></Controls></Item8>
+`;
+
+const PANEL_BLOCK = `          - Panel — a bordered box that CONTAINS other controls: <Item8 Ref="10" ControlType="XRPanel" Name="panelBillTo" LocationFloat="100,100" SizeF="400,80" Borders="All"><Controls><Item1 Ref="11" ControlType="XRLabel" Name="billToName" Text="Acme Ltd" LocationFloat="10,10" SizeF="200,20" /></Controls></Item8>
             - **A child's LocationFloat is relative to the PANEL, not to the band.** A child at "10,10" inside a panel at "100,100" prints at 110,110 on the page. Writing band coordinates on a child pushes it outside the panel it belongs to, and the file still loads.
             - Use one for a boxed block on a form — a "Bill To" address box, a bordered summary, a signature block. One border on the panel replaces a border on each control, and the group stays together across a page break.
             - Do NOT use one just to draw a rectangle. A single bordered XRLabel, or Borders= on the cells, is the simpler answer, and a panel holding one control is always the wrong choice.
           - **Subreports: do not create one.** XRSubreport embeds an entire second report, and everything you are asked to produce belongs in ONE report expressed as bands. If the uploaded .repx already contains an XRSubreport, keep it exactly as it is — including a nested <ReportSource> if it has one — rather than expanding it into bands or dropping it.
-          - Shapes — a drawn rectangle, ellipse, line, arrow or bracket that is decoration rather than a container: <Item9 Ref="13" ControlType="XRShape" Name="shape1" LocationFloat="0,340" SizeF="200,80"><Shape Ref="14" ShapeName="Rectangle" /></Item9>
+`;
+
+const SHAPES_BLOCK = `          - Shapes — a drawn rectangle, ellipse, line, arrow or bracket that is decoration rather than a container: <Item9 Ref="13" ControlType="XRShape" Name="shape1" LocationFloat="0,340" SizeF="200,80"><Shape Ref="14" ShapeName="Rectangle" /></Item9>
             - ShapeName is one of: Rectangle, Ellipse, Line, Arrow, Polygon, Star, Bracket, Brace, Cross. A Star also takes StarPointCount on the same element.
             - **Ellipse is the default and writes NO <Shape> element at all.** An XRShape with no child is an ellipse, so a rectangle must say so explicitly or it comes out round.
             - Reach for this last. A box around content is Borders= on the control or an XRPanel; a horizontal rule is an XRLine; a vertical rule crossing bands is an XRCrossBandLine. XRShape is for a genuine drawn figure — a callout arrow, a diagonal, a circle — that none of those can express.
@@ -1271,7 +1277,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
             - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
-${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('containers') ? CONTAINERS_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
             Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.

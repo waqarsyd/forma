@@ -35,11 +35,33 @@
  * Every signal errs toward inclusion. A keyword list that is too broad costs a
  * section that was not needed; one that is too narrow costs a feature the report
  * should have had. Those are not symmetric, so the lists below are deliberately
- * generous — `box` and `rule` match far more than checkboxes and cross-band
- * lines, and that is the right way round.
+ * generous — `box` and `rule` match far more than panels and cross-band lines,
+ * and that is the right way round.
+ *
+ * ## Why the sections are fine-grained
+ *
+ * They started coarser: one `containers` section carried checkboxes, cross-band
+ * rules, panels, subreports, shapes and rich text together, so a `.repx` with a
+ * single checkbox paid for all six — 5,074 bytes to say 921 bytes' worth. The
+ * split is by *control*, because that is the grain the evidence has: a file
+ * either contains an `XRPanel` or it does not.
+ *
+ * `containers` kept its name for panels and the subreport refusal, which is the
+ * one grouping that is not one-control-per-section. **Splitting further has a
+ * floor**: a section whose signal cannot distinguish it from its neighbour buys
+ * nothing and adds a way to get the mapping wrong.
  */
 
-export type PromptSection = 'grouping' | 'parameters' | 'charts' | 'containers' | 'rules';
+export type PromptSection =
+  | 'grouping'
+  | 'parameters'
+  | 'charts'
+  | 'rules'
+  | 'checkbox'
+  | 'crossband'
+  /** Panels and the instruction not to invent a subreport. */
+  | 'containers'
+  | 'shapes';
 
 export interface SectionEvidence {
   /**
@@ -73,7 +95,10 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   grouping: /GroupHeaderBand|GroupFooterBand|<GroupFields|Running="Group"/i,
   parameters: /<Parameters\b|\[Parameters\.|FilterString\s*=\s*"[^"]*\?/i,
   charts: /XRChart|XRCrossTab|XRPivotGrid|XRSparkline/i,
-  containers: /XRCheckBox|XRPanel|XRSubreport|XRCrossBand|XRShape|XRRichText/i,
+  checkbox: /XRCheckBox/i,
+  crossband: /XRCrossBand/i,
+  containers: /XRPanel|XRSubreport/i,
+  shapes: /XRShape|XRRichText/i,
   rules: /<FormattingRuleSheet|<FormattingRuleLinks/i,
 };
 
@@ -89,7 +114,10 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
   grouping: /\bgroup|\bsubtotal|\bbreak\b|\bper (region|customer|category|department)\b/i,
   parameters: /\bparameter|\bprompt\b|\bdate range\b|\bfilter|\bask the (reader|user)\b/i,
   charts: /\bchart|\bgraph|\bplot\b|cross.?tab|\bpivot|\bmatrix\b/i,
-  containers: /\bcheck ?box|\btick\b|\bpanel\b|\bbox\b|\bsubreport|\brule\b|\bborder|\bshape\b|\bcircle\b|\barrow\b|\brich ?text/i,
+  checkbox: /\bcheck ?box|\btick\b|\bticked\b|\bcross\b/i,
+  crossband: /cross.?band|vertical (rule|line)|column (rule|separator|divider)|\brule\b/i,
+  containers: /\bpanel\b|\bsubreport|\bbox\b|\bgroup(ed)? box|\bbordered block/i,
+  shapes: /\bshape\b|\bcircle\b|\bellipse\b|\barrow\b|\brich ?text|\bdiagonal\b/i,
   // Deliberately generous: conditional formatting is asked for in a dozen
   // different words, and every miss costs the feature entirely.
   rules: /\bconditional|\bhighlight|\bin red\b|\boverdue|\bnegative|\bwhen .{0,20}(exceed|over|above|below|under)|\bcolour when|\bcolor when|\bflag\b/i,

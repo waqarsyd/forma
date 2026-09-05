@@ -70,9 +70,19 @@ describe('with a .repx source, omitting only what it rules out', () => {
     expect(has(sectionsFor({ texts: [repx('<Controls><Item1 Text="[Parameters.Region]" /></Controls>')] }), 'parameters')).toBe(true);
   });
 
-  it('keeps containers for any of the four controls', () => {
-    for (const marker of ['XRCheckBox', 'XRPanel', 'XRSubreport', 'XRCrossBandLine']) {
-      expect(has(sectionsFor({ texts: [repx(`<Controls><Item1 ControlType="${marker}" /></Controls>`)] }), 'containers'), marker).toBe(true);
+  it('keeps only the section a control belongs to', () => {
+    // The split: a .repx with a checkbox must not pay for panels, subreports,
+    // cross-band rules and shapes as well.
+    for (const [marker, section] of [
+      ['XRCheckBox', 'checkbox'],
+      ['XRCrossBandLine', 'crossband'],
+      ['XRPanel', 'containers'],
+      ['XRSubreport', 'containers'],
+      ['XRShape', 'shapes'],
+      ['XRRichText', 'shapes'],
+    ] as [string, PromptSection][]) {
+      const sections = sectionsFor({ texts: [repx(`<Controls><Item1 ControlType="${marker}" /></Controls>`)] });
+      expect(sections, marker).toEqual([section]);
     }
   });
 
@@ -97,7 +107,7 @@ describe('with a .repx source, omitting only what it rules out', () => {
       ['Add a bar chart of amount by region', 'charts'],
       ['Group the rows by customer', 'grouping'],
       ['Let the reader pick a date range', 'parameters'],
-      ['Put a tick box next to each line', 'containers'],
+      ['Put a tick box next to each line', 'checkbox'],
     ] as [string, PromptSection][]) {
       const sections = sectionsFor({ texts: [repx()], instruction });
       expect(has(sections, section), instruction).toBe(true);
@@ -109,7 +119,7 @@ describe('with a .repx source, omitting only what it rules out', () => {
     // That is deliberate: a needless section costs tokens, a missing one costs
     // a feature.
     expect(has(sectionsFor({ texts: [repx()], instruction: 'draw a box round the total' }), 'containers')).toBe(true);
-    expect(has(sectionsFor({ texts: [repx()], instruction: 'add a rule under the heading' }), 'containers')).toBe(true);
+    expect(has(sectionsFor({ texts: [repx()], instruction: 'add a rule under the heading' }), 'crossband')).toBe(true);
   });
 
   it('is case-insensitive about what the user typed', () => {
@@ -132,6 +142,7 @@ describe('describeSections', () => {
     expect(line).toContain('charts');
     expect(line).toContain('parameters');
     expect(line).toContain('containers');
+    expect(line).toContain('shapes');
     expect(line).not.toMatch(/omitted[^—]*grouping/);
     expect(line).toContain('.repx');
   });
@@ -151,7 +162,10 @@ describe('ALL_SECTIONS', () => {
   it('covers every section the type allows', () => {
     // Written out by hand on purpose: deriving it the same way the module does
     // would make this test agree with itself rather than with the type.
-    const expected: PromptSection[] = ['grouping', 'parameters', 'charts', 'containers', 'rules'];
+    const expected: PromptSection[] = [
+      'grouping', 'parameters', 'charts', 'rules',
+      'checkbox', 'crossband', 'containers', 'shapes',
+    ];
     expect([...ALL_SECTIONS].sort()).toEqual([...expected].sort());
   });
 

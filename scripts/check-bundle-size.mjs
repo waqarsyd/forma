@@ -116,7 +116,21 @@ const BUDGETS = [
   // three separate places -- `geminiService.ts`, `lib/reportBands.ts` (the
   // prompt), and any pure module the service imports for an output pass. A raise
   // should say which. 85_000 puts it at 93.3%.
-  { prefix: 'geminiService-', ext: '.js', max: 85_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
+  //
+  // Retuned to 90_000 on 2026-09-05 -- a RETUNE, so per the header it names the
+  // percentage rather than a growth: 83,134 B is 97.8% of 85,000, close enough
+  // to the ~99% the header warns about that the next routine edit trips it, and
+  // what that teaches is to raise the number without reading it.
+  //
+  // Worth recording because it corrects an expectation set earlier the same
+  // day. Splitting the containers block into four was expected to relieve this
+  // cap and did the opposite: 82,818 -> 83,134 B, because four constants and
+  // four conditional interpolations cost slightly more than one of each. **That
+  // split buys per-REQUEST prompt size, not bundle size** -- a .repx with only a
+  // checkbox now sends 921 bytes of that block instead of 5,074. The two
+  // measurements move independently and confusing them is easy: this chunk holds
+  // every block whether or not a given request sends it.
+  { prefix: 'geminiService-', ext: '.js', max: 90_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it
