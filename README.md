@@ -284,6 +284,10 @@ src/
                        report after every repair has run — errors mean content
                        will be lost, warnings mean it opens and is a worse
                        report than it should be),
+                       reportPreview (reads the exported REPX back and lays it
+                       out across real pages — Detail once per record,
+                       PageHeader on every sheet — which is what the Preview
+                       pane and the PDF export are drawn from),
                        userInstructions (an empty composer means "no request",
                        not an invented one — the two cases are different
                        prompts rather than one with a placeholder in it),

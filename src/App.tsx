@@ -129,6 +129,9 @@ import { User } from 'firebase/auth';
    modals — neither can be on screen at first paint. */
 const LoginPage = lazy(() => import('./components/LoginPage'));
 const AccountDialog = lazy(() => import('./components/AccountDialog'));
+/* The paginated print preview. Lazy because it is reachable only from the
+   workspace with a finished report, and it carries its own print stylesheet. */
+const ReportPreview = lazy(() => import('./components/ReportPreview'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -2041,7 +2044,7 @@ export default function App() {
     setKeyCheck(null);
     setVaultNotice({ tone: 'ok', text: 'Key cleared from this browser session.' });
   };
-  const [activeTab, setActiveTab] = useState<'spec' | 'ui'>('ui');
+  const [activeTab, setActiveTab] = useState<'spec' | 'ui' | 'print'>('ui');
   // Sub-view inside the "Specs & REPX" tab. The tab has always been named for
   // both, but only ever rendered the specification.
   const [specView, setSpecView] = useState<'spec' | 'repx'>('spec');
@@ -3266,9 +3269,14 @@ export default function App() {
    *
    * `sheet` supplies the palette (see index.css); `wb-root` the type and ground.
    */
-  const plate = activeTab === 'ui' ? 'proof' : specView === 'repx' ? 'xml' : 'spec';
-  const showPlate = (next: 'proof' | 'spec' | 'xml') => {
+  const plate =
+    activeTab === 'ui' ? 'proof'
+    : activeTab === 'print' ? 'print'
+    : specView === 'repx' ? 'xml'
+    : 'spec';
+  const showPlate = (next: 'proof' | 'print' | 'spec' | 'xml') => {
     if (next === 'proof') { setActiveTab('ui'); return; }
+    if (next === 'print') { setActiveTab('print'); return; }
     setActiveTab('spec');
     setSpecView(next === 'xml' ? 'repx' : 'spec');
   };
@@ -3912,6 +3920,9 @@ export default function App() {
           {result && (
             <div className="wb-plates" role="tablist" aria-label="View">
               <button role="tab" aria-selected={plate === 'proof'} onClick={() => showPlate('proof')}>Mockup</button>
+              {/* Between the picture and the file, because that is what it is:
+                  the REPX laid out as it prints. See components/ReportPreview. */}
+              <button role="tab" aria-selected={plate === 'print'} onClick={() => showPlate('print')}>Preview</button>
               <button role="tab" aria-selected={plate === 'spec'} onClick={() => showPlate('spec')}>Spec</button>
               <button role="tab" aria-selected={plate === 'xml'} onClick={() => showPlate('xml')}>REPX</button>
             </div>
@@ -3976,6 +3987,20 @@ export default function App() {
                       artifact's proof frame itself (see its root), so wrapping it
                       in `.wb-proof` would draw that frame twice. */}
                   <ReportMockup layout={result.layout!} sourceImages={mockupSourceImages} reportUnit={config.unit} />
+                </div>
+              )}
+
+              {plate === 'print' && (
+                <div className="wb-proof-holder wb-rise wb-rise-2">
+                  {/* Lazy for its own sake: the pane is workspace-only and the
+                      marketing pages were just taken off the entry chunk. */}
+                  <Suspense fallback={null}>
+                    <ReportPreview
+                      repxContent={result.repxContent}
+                      layout={result.layout}
+                      title={result.title}
+                    />
+                  </Suspense>
                 </div>
               )}
 
