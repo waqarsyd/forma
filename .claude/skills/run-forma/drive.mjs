@@ -52,6 +52,35 @@ function parseArgs(argv) {
 const opts = parseArgs(process.argv.slice(2));
 fs.mkdirSync(opts.out, { recursive: true });
 
+/*
+ * Which route was asked for, and therefore what "loaded" means.
+ *
+ * --url was documented from the moment this script existed and only ever worked
+ * on /workspace: the readiness wait polled for the workspace composer, so every
+ * marketing route sat there until the 30s timeout and reported a broken
+ * selector. A flag nobody exercised is a claim, not a feature.
+ */
+const isWorkspace = new URL(opts.url).pathname.startsWith('/workspace');
+
+/*
+ * Refuse the impossible up front rather than timing out inside it. Every one of
+ * these acts on the composer, which exists only in the workspace, so asking for
+ * them on /docs is a mistake worth naming at the point it was made.
+ */
+if (!isWorkspace) {
+  const workspaceOnly = [
+    opts.attach.length && '--attach',
+    opts.prompt && '--prompt',
+    opts.say.length && '--say',
+    opts.pane && '--pane',
+  ].filter(Boolean);
+  if (workspaceOnly.length) {
+    const verb = workspaceOnly.length === 1 ? 'needs' : 'need';
+    console.error(`${workspaceOnly.join(', ')} ${verb} the workspace, but --url points at ${opts.url}`);
+    process.exit(2);
+  }
+}
+
 // ------------------------------------------------------------- CDP plumbing
 
 const targets = await (await fetch(`http://127.0.0.1:${opts.port}/json/list`)).json();
@@ -211,20 +240,47 @@ await send('Page.addScriptToEvaluateOnNewDocument', {
 });
 
 await send('Page.navigate', { url: opts.url });
-await until('the page to render', `!!document.querySelector(${JSON.stringify(SEL.composer)})`, 30);
+// What counts as rendered depends on the route: the workspace has no <h1> until
+// a report exists, and a marketing page has no composer at all.
+await until(
+  'the page to render',
+  isWorkspace
+    ? `!!document.querySelector(${JSON.stringify(SEL.composer)})`
+    : `!!document.querySelector('h1')`,
+  30,
+);
 console.log('title  ' + (await evalJs('document.title')));
 console.log('path   ' + (await evalJs('location.pathname')));
+
 /*
- * Assert rather than report. An unlocked composer under --no-key is not a
- * curiosity to print and move past -- it means the key state is not what was
- * asked for, and every step after this would be testing the wrong thing.
+ * A rendered element is not a rendered page. The skill's own advice is that a
+ * blank frame is a failed launch and no wait above would notice -- so measure
+ * the text and say so. The floor is deliberately low: the empty workspace is
+ * about 310 characters, and this is meant to catch nothing at all, not to judge
+ * how much a page should say.
  */
-const unlocked = await evalJs(`!document.querySelector(${JSON.stringify(SEL.composer)}).disabled`);
-console.log('key    ' + (unlocked ? 'present, composer enabled' : 'absent, composer locked'));
-if (unlocked !== opts.key) {
-  throw new Error(opts.key
-    ? 'the seeded key did not take -- the composer is still locked'
-    : '--no-key was asked for but the composer is unlocked; a key survived in this tab');
+const bodyLen = await evalJs('document.body.innerText.trim().length');
+const heading = await evalJs(`(document.querySelector('h1')?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 70)`);
+console.log(`text   ${bodyLen} chars` + (heading ? ` | h1: ${heading}` : ''));
+if (bodyLen < 50) throw new Error(`the page rendered ${bodyLen} characters -- it is blank`);
+
+if (isWorkspace) {
+  /*
+   * Assert rather than report. An unlocked composer under --no-key is not a
+   * curiosity to print and move past -- it means the key state is not what was
+   * asked for, and every step after this would be testing the wrong thing.
+   */
+  const unlocked = await evalJs(`!document.querySelector(${JSON.stringify(SEL.composer)}).disabled`);
+  console.log('key    ' + (unlocked ? 'present, composer enabled' : 'absent, composer locked'));
+  if (unlocked !== opts.key) {
+    throw new Error(opts.key
+      ? 'the seeded key did not take -- the composer is still locked'
+      : '--no-key was asked for but the composer is unlocked; a key survived in this tab');
+  }
+} else {
+  // The key is still seeded, and still irrelevant here: there is nothing on a
+  // marketing page it could unlock.
+  console.log('key    n/a -- not the workspace');
 }
 await shot(shotName('loaded'));
 
@@ -276,14 +332,18 @@ if (opts.pane) {
 
 // --------------------------------------------------------------- what it says
 
-console.log('status ' + (await evalJs(STATUS_TEXT)));
+// The status bar and its audit chip belong to the workspace shell. Reporting
+// "audit clean" for a page that has no audit would be a comforting lie.
+if (isWorkspace) {
+  console.log('status ' + (await evalJs(STATUS_TEXT)));
 
-const audit = await evalJs(READ_AUDIT);
-if (audit) {
-  console.log('audit  ' + audit.chip);
-  for (const finding of (audit.findings || '').split('\n\n')) console.log('       ' + finding);
-} else {
-  console.log('audit  clean (no chip in the status bar)');
+  const audit = await evalJs(READ_AUDIT);
+  if (audit) {
+    console.log('audit  ' + audit.chip);
+    for (const finding of (audit.findings || '').split('\n\n')) console.log('       ' + finding);
+  } else {
+    console.log('audit  clean (no chip in the status bar)');
+  }
 }
 
 const noisy = consoleLines.filter((l) => l.startsWith('[error]') || l.startsWith('[exception]'));

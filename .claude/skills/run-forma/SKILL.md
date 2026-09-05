@@ -87,19 +87,40 @@ node .claude/skills/run-forma/drive.mjs --out $sp `
 | Flag | |
 |---|---|
 | `--out <dir>` | screenshots and `console.txt` land here |
-| `--url <url>` | default `http://localhost:3000/workspace` |
-| `--attach <file>` | attach before generating; repeatable |
-| `--prompt <text>` | text sent with the generation |
-| `--say <text>` | a chat turn after the report; repeatable |
-| `--pane <name>` | open `Mockup`, `Spec` or `REPX` at the end |
-| `--no-key` | skip the seeded key, to see the locked state |
+| `--url <url>` | any route — default `http://localhost:3000/workspace` |
+| `--attach <file>` | attach before generating; repeatable — workspace only |
+| `--prompt <text>` | text sent with the generation — workspace only |
+| `--say <text>` | a chat turn after the report; repeatable — workspace only |
+| `--pane <name>` | open `Mockup`, `Spec` or `REPX` at the end — workspace only |
+| `--no-key` | remove the key, to see the locked state |
 | `--wait <s>` | generation timeout, default 60 |
 
-It prints the document title, whether the composer unlocked, how long the
-generation took, **the status bar text, and the REPX audit** — chip plus the full
-findings out of its `title` attribute, or `clean` when there is no chip. It exits
-non-zero when a step cannot complete, so it works as a check and not only as a
-demo. Every screenshot is numbered in order.
+**`--url` works on any route**, and the driver adapts to it: it waits for the
+composer on `/workspace` and for an `<h1>` anywhere else, since the workspace has
+no heading until a report exists and a marketing page has no composer at all. The
+four workspace-only flags are refused up front with exit 2 rather than timing out
+inside a step that could never work. Verifying the marketing routes is therefore
+one call per route:
+
+```powershell
+foreach ($r in '/','/features','/docs','/contact','/terms','/privacy','/nope') {
+  node .claude/skills/run-forma/drive.mjs --out "$sp$($r -replace '/','-')" --url "http://localhost:3000$r"
+}
+```
+
+It prints the document title, the rendered character count and `h1`, whether the
+composer unlocked, how long the generation took, and — on the workspace — **the
+status bar text and the REPX audit**, chip plus the full findings out of its
+`title` attribute, or `clean` when there is no chip. It exits non-zero when a
+step cannot complete, so it works as a check and not only as a demo. Every
+screenshot is numbered in order.
+
+The character count is there because **a rendered element is not a rendered
+page**: every wait in this script would pass on a blank frame, so it measures the
+text and throws below 50 characters. That is a floor for "nothing at all", not a
+judgement about how much a page should say — the empty workspace is about 310.
+It does not replace looking at the screenshot; it catches the case where nobody
+does.
 
 **The browser outlives any one run, and that matters for `--no-key`.** Re-running
 the driver against the same Edge instance reuses the same tab: `sessionStorage`
