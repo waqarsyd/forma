@@ -71,18 +71,42 @@ export interface ReportConfig {
   thinkingBudget?: number;
 }
 
+/**
+ * The canned response `VITE_FORMA_MOCK` returns.
+ *
+ * It is worth keeping this *correct* rather than merely plausible. The mock path
+ * returns before the repair passes and before this file's own `auditRepx` call,
+ * so what is written here is exactly what the UI audits — a fixture that breaks
+ * a rule shows the user a warning about the fixture, and the next person has to
+ * work out whether the app or the fake data is at fault. It happened: two
+ * sections against one content band lit "1 REPX warning" in the status bar on
+ * every mock run.
+ *
+ * So the two artifacts obey what `reportBands.ts` asks the real model for. One
+ * content band per layout section, in the same order, with the same height and
+ * the same band-relative coordinates; `Margins="0, 0, 0, 0"` with both margin
+ * bands at `HeightF="0"`; and font sizes converted to points, since a layout
+ * `fontSize` is in report units and `Font=` is not — 16 units at
+ * HundredthsOfAnInch is 11.52pt, not 16pt.
+ */
 const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
-  markdown: `# Mock Invoice Report\n\nThis is a mock layout generated dynamically during fallback mode.\n\n## Elements\n- **Header**: Invoice Title, Logo, Status.\n- **Detail**: Items Table.\n- **Footer**: Thank you note.`,
+  markdown: `# Mock Invoice Report\n\nThis is a canned layout returned by \`VITE_FORMA_MOCK\`, not generated output.\n\n## Bands\n- **Report Header**: the invoice title, printed once.\n- **Detail**: one line item and its amount, printed once per record.`,
   repxContent: `<?xml version="1.0" encoding="utf-8"?>
-<XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="100, 100, 100, 100" PageWidth="850" PageHeight="1100" Version="23.2">
+<XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100" Version="23.2">
   <Bands>
-    <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="100" />
-    <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="100">
+    <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
+    <Item2 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="100">
       <Controls>
-        <Item1 Ref="3" ControlType="XRLabel" Name="label1" Text="MOCK INVOICE REPORT" LocationFloat="0,10" SizeF="400,30" Padding="2,2,0,0,100" />
+        <Item1 Ref="3" ControlType="XRLabel" Name="labelTitle" Text="INVOICE - FORMA MOCK ENGINE" LocationFloat="20,20" SizeF="500,40" Font="Arial, 11.52pt" Padding="2,2,0,0,100" />
       </Controls>
     </Item2>
-    <Item3 Ref="4" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="100" />
+    <Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="150">
+      <Controls>
+        <Item1 Ref="5" ControlType="XRLabel" Name="labelDescription" Text="Item Description: Mock Layout Development Service" LocationFloat="20,20" SizeF="400,25" Font="Arial, 7.2pt" Padding="2,2,0,0,100" />
+        <Item2 Ref="6" ControlType="XRLabel" Name="labelAmount" Text="Total: $1,250.00" LocationFloat="600,20" SizeF="200,25" Font="Arial, 8.64pt" TextAlignment="TopRight" Padding="2,2,0,0,100" />
+      </Controls>
+    </Item3>
+    <Item4 Ref="7" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
   </Bands>
 </XtraReportsLayoutSerializer>`,
   layout: {
@@ -90,8 +114,8 @@ const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
     pageWidth: 850,
     sections: [
       {
-        id: "header",
-        name: "Header",
+        id: "report-header",
+        name: "ReportHeader",
         type: "header",
         height: 100,
         elements: [
@@ -100,7 +124,7 @@ const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
       },
       {
         id: "detail",
-        name: "Detail Band",
+        name: "Detail",
         type: "detail",
         height: 150,
         elements: [
