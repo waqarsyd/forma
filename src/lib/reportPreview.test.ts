@@ -762,3 +762,40 @@ describe('watermarks', () => {
     expect(withMark('<Watermark Ref="7" Text="DRAFT &amp; COPY" />')?.text).toBe('DRAFT & COPY');
   });
 });
+
+/**
+ * Multi-column detail, and the absence that means something.
+ *
+ * RepxProbe emit-cols: a band left alone writes NO <MultiColumn> element, so
+ * null is "one column" rather than "not known" -- the same shape as CanGrow and
+ * as a shape with no <Shape> child.
+ */
+describe('multi-column bands', () => {
+  const band = (inner: string) =>
+    parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      `<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="40">${inner}</Item1></Bands>` +
+      '</XtraReportsLayoutSerializer>'
+    ).bands[0];
+
+  it('reads the declaration', () => {
+    const b = band('<MultiColumn Ref="3" ColumnCount="3" ColumnSpacing="20" Layout="AcrossThenDown" Mode="UseColumnCount" />');
+    expect(b.columns).toEqual({ count: 3, spacing: 20, layout: 'AcrossThenDown', mode: 'UseColumnCount' });
+  });
+
+  it('reports null for a band that declares none', () => {
+    expect(band('<Controls />').columns).toBeNull();
+  });
+
+  it('reads Layout, which is what the obsolete Direction property serializes as', () => {
+    expect(band('<MultiColumn Ref="3" ColumnCount="2" Layout="DownThenAcross" />').columns?.layout).toBe('DownThenAcross');
+  });
+
+  it('does not read a MultiColumn item as a control', () => {
+    // It is a band-level child written BEFORE <Controls>, like SortFields and
+    // GroupFields -- the third of them, and the reason that generalisation is
+    // written down rather than rediscovered a fourth time.
+    const b = band('<MultiColumn Ref="3" ColumnCount="2" /><Controls><Item1 Ref="4" ControlType="XRLabel" Name="l" Text="x" SizeF="10,10" LocationFloat="0,0" /></Controls>');
+    expect(b.controls.map((c) => c.name)).toEqual(['l']);
+  });
+});

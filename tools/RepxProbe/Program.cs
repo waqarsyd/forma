@@ -45,6 +45,7 @@ static class Program {
             case "emit-calc":  EmitCalc(args[1]);  return 0;
             case "emit-sort":  EmitSort(args[1]);  return 0;
             case "emit-mark":  EmitWatermark(args[1]); return 0;
+            case "emit-cols":  EmitColumns(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -823,6 +824,57 @@ static class Program {
         // visible as a blob rather than filling the terminal.
         Console.WriteLine(Regex.Replace(imageXml, "\"([^\"]{80,})\"", m =>
             "\"<" + (m.Groups[1].Value.Length) + " chars elided>\""));
+    }
+
+    /// Writes a MULTI-COLUMN detail band -- a label sheet, a phone list, a
+    /// two-up catalogue: records flowing down one column and then into the next
+    /// rather than one per full-width row.
+    ///
+    /// Open questions:
+    ///
+    ///   - Is it a child element of the band or a set of attributes on it?
+    ///   - Which of the several properties are written, and which are omitted as
+    ///     defaults? ColumnCount and ColumnWidth are alternative ways to say the
+    ///     same thing, selected by a Mode, and if the mode is omitted when
+    ///     default then writing the wrong one of the pair silently does nothing.
+    ///   - Does a band left alone write an empty element or nothing at all?
+    ///     That decides whether a parser can treat absence as "one column".
+    static void EmitColumns(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeColumns";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        DetailBand columns = new DetailBand();
+        columns.Name = "Detail";
+        columns.HeightF = 40;
+        columns.Controls.Add(Table("tableDetail", new XRTableCell[] { Cell("cellA", "A", 1) }));
+        columns.MultiColumn.ColumnCount = 3;
+        columns.MultiColumn.ColumnSpacing = 20;
+        columns.MultiColumn.Mode = MultiColumnMode.UseColumnCount;
+        columns.MultiColumn.Direction = ColumnDirection.AcrossThenDown;
+
+        // A second detail band left completely alone, so the difference between
+        // "one column" and "not configured" is visible in one file.
+        DetailReportBand nested = new DetailReportBand();
+        nested.Name = "DetailReport";
+        DetailBand plain = new DetailBand();
+        plain.Name = "PlainDetail";
+        plain.HeightF = 20;
+        nested.Bands.Add(plain);
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            columns,
+            nested,
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
     }
 
     /// Writes a GROUPED report, to settle how grouping is serialized.

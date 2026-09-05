@@ -60,6 +60,7 @@ export type PromptSection =
   | 'calculated'
   | 'sorting'
   | 'watermark'
+  | 'columns'
   | 'checkbox'
   | 'crossband'
   /** Panels and the instruction not to invent a subreport. */
@@ -106,6 +107,7 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   calculated: /<CalculatedFields/i,
   sorting: /<SortFields/i,
   watermark: /<Watermark\b/i,
+  columns: /<MultiColumn\b/i,
 };
 
 /**
@@ -125,6 +127,7 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
   containers: /\bpanel\b|\bsubreport|\bbox\b|\bgroup(ed)? box|\bbordered block/i,
   shapes: /\bshape\b|\bcircle\b|\bellipse\b|\barrow\b|\brich ?text|\bdiagonal\b/i,
   calculated: /\bcalculat|\bcomputed\b|\bderived\b|\bformula\b|\bexpression\b|\bmultipl|\btimes\b|\bline total/i,
+  columns: /\bmulti.?column|\bcolumns?\b|\blabel sheet|\btwo.?up\b|\bside by side|\bacross the page/i,
   watermark: /\bwatermark|\bdraft\b|\bconfidential\b|\bstamp(ed)? across|\bbehind the (content|text)/i,
   sorting: /\bsort|\border(ed)? by\b|\balphabetical|\bdescending|\bascending|\b(newest|oldest|largest|smallest) first/i,
   // Deliberately generous: conditional formatting is asked for in a dozen

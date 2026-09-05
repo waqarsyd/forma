@@ -167,11 +167,36 @@ export interface PreviewControl {
   openEnd: number;
 }
 
+/**
+ * A band's multi-column layout, or null for the ordinary single-column case.
+ *
+ * `RepxProbe emit-cols`: a band left alone writes **no `<MultiColumn>` element
+ * at all**, so absence is "one column" rather than "not known" — the same shape
+ * as `CanGrow` and as a shape with no `<Shape>` child.
+ */
+export interface PreviewColumns {
+  count: number;
+  spacing: number;
+  /** `AcrossThenDown` or `DownThenAcross`. */
+  layout: string;
+  /** `UseColumnCount` or `UseColumnWidth`. */
+  mode: string;
+}
+
 export interface PreviewBand {
   kind: BandKind;
   name: string;
   height: number;
   controls: PreviewControl[];
+  /**
+   * Multi-column flow, when the band declares it.
+   *
+   * **`paginate` does not honour this yet** — it lays every record out in one
+   * column. The Preview says so rather than drawing a single-column page as
+   * though it were the truth, because a multi-column report previewed as
+   * single-column looks right and is wrong, which is worse than a stated gap.
+   */
+  columns: PreviewColumns | null;
 }
 
 export interface ReportStructure {
@@ -224,6 +249,28 @@ export type CheckState = 'unchecked' | 'checked' | 'indeterminate';
  * band can hold two shapes and the second's `<Shape>` must not be read as the
  * first's.
  */
+/**
+ * A band's `<MultiColumn>` declaration, if it has one.
+ *
+ * Bounded to the band's own inner XML by the caller, which is enough because
+ * bands do not nest here — a `DetailReportBand` does, and its inner bands are
+ * parsed separately, so a nested band's columns cannot be read as its parent's.
+ *
+ * Note `Layout` rather than `Direction`: the API property that was called
+ * `Direction` is obsolete and the serializer writes `Layout` (`emit-cols`).
+ */
+function parseColumns(bandInner: string): PreviewColumns | null {
+  const tag = /<MultiColumn\b([^>]*)\/?>/.exec(bandInner);
+  if (!tag) return null;
+  const attrs = tag[1];
+  return {
+    count: numAttr(attrs, 'ColumnCount', 1),
+    spacing: numAttr(attrs, 'ColumnSpacing', 0),
+    layout: attrOf(attrs, 'Layout') || 'AcrossThenDown',
+    mode: attrOf(attrs, 'Mode') || 'UseColumnCount',
+  };
+}
+
 /**
  * The page watermark, if the report carries a text one.
  *
@@ -699,6 +746,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
       controls: bandSpan
         ? parseControls(bandSpan.text, bandsSpan.start + bandSpan.start)
         : [],
+      columns: bandSpan ? parseColumns(bandSpan.text) : null,
     });
   }
 

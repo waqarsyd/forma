@@ -954,6 +954,28 @@ ${transcript}`,
  * is complete — so this is usable in a tool that never opens a connection.
  */
 /**
+ * Multi-column detail flow — a label sheet, a phone list, a two-up catalogue.
+ *
+ * Measured with `RepxProbe emit-cols`. Three things: it is a child element of
+ * the BAND written before `<Controls>`, a band left alone writes nothing at all
+ * (so absence is one column), and the obsolete `Direction` property serializes
+ * as `Layout`.
+ */
+const COLUMNS_BLOCK = `          - MULTI-COLUMN DETAIL — records flowing into columns rather than one per full-width row.
+            A label sheet, a phone list, a two-up catalogue. It is a property of the DETAIL BAND, written as a child element BEFORE <Controls>:
+            <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="40">
+              <MultiColumn Ref="3" ColumnCount="3" ColumnSpacing="20" Layout="AcrossThenDown" Mode="UseColumnCount" />
+              <Controls> ... </Controls>
+            </Item2>
+            - **Mode decides which of the two size properties is read.** Mode="UseColumnCount" reads ColumnCount and ignores ColumnWidth; Mode="UseColumnWidth" does the opposite. Write the mode that matches the property you set, or the one you set is silently ignored and the report prints in one column.
+            - Layout is AcrossThenDown (fill left to right, then the next row) or DownThenAcross (fill the first column top to bottom, then the next). The attribute is **Layout**, not Direction.
+            - ColumnSpacing is in the report's own units, like every other measurement except font size and border width.
+            - The element carries a Ref and NO ControlType.
+            - **Omit it entirely for an ordinary report.** A band with no <MultiColumn> prints one column, which is what almost every document wants. Only emit it when the source visibly repeats its records side by side across the page.
+            - The Detail band's own width stays the full page width; DevExpress divides it. Do not narrow the controls to a third of the page as well, or each column ends up a third of a third.
+`;
+
+/**
  * A page watermark.
  *
  * Measured with `RepxProbe emit-mark`. The half that matters is the split: a
@@ -1340,7 +1362,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
             - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
-${sections.includes('watermark') ? WATERMARK_BLOCK : ''}${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+${sections.includes('columns') ? COLUMNS_BLOCK : ''}${sections.includes('watermark') ? WATERMARK_BLOCK : ''}${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
             Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.

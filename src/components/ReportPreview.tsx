@@ -406,6 +406,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
   }, [repxContent, layout]);
   const structureBands = structure.bands;
   const watermark = structure.watermark;
+  // Any band declaring columns; in practice only Detail ever does.
+  const multiColumn = structureBands.find((b) => b.columns && b.columns.count > 1)?.columns ?? null;
   const parameters = useMemo(() => parseParameters(repxContent), [repxContent]);
 
   const pageW = unitsToPx(report.page.width, report.unit);
@@ -825,6 +827,17 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
           <input type="checkbox" checked={showBands} onChange={(e) => setShowBands(e.target.checked)} />
           Show bands
         </label>
+        {/* Stated, not drawn.
+            `paginate` flows every record down one column. A multi-column report
+            rendered that way looks correct and is not, which is worse than an
+            admitted gap -- the same call as reporting null for an image
+            watermark rather than drawing a placeholder for it. */}
+        {multiColumn && (
+          <span className="rp-over">
+            prints in {multiColumn.count} columns ({multiColumn.layout === 'DownThenAcross' ? 'down then across' : 'across then down'})
+            {' — '}the preview shows one
+          </span>
+        )}
         {editable && (
           <span className="rp-sel">
             {selectedControl

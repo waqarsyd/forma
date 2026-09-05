@@ -163,7 +163,7 @@ describe('ALL_SECTIONS', () => {
     // Written out by hand on purpose: deriving it the same way the module does
     // would make this test agree with itself rather than with the type.
     const expected: PromptSection[] = [
-      'grouping', 'parameters', 'charts', 'rules', 'calculated', 'sorting', 'watermark',
+      'grouping', 'parameters', 'charts', 'rules', 'calculated', 'sorting', 'watermark', 'columns',
       'checkbox', 'crossband', 'containers', 'shapes',
     ];
     expect([...ALL_SECTIONS].sort()).toEqual([...expected].sort());
@@ -263,6 +263,25 @@ describe('watermark as a section', () => {
   it('is kept when the user asks for one in their own words', () => {
     for (const instruction of ['add a DRAFT watermark', 'stamp CONFIDENTIAL across it', 'mark it as draft']) {
       expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('watermark');
+    }
+  });
+});
+
+describe('multi-column as a section', () => {
+  const plain = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+
+  it('is kept when a band declares columns', () => {
+    const cols = '<XtraReportsLayoutSerializer><Bands><Item1 ControlType="DetailBand"><MultiColumn Ref="3" ColumnCount="3" /></Item1></Bands></XtraReportsLayoutSerializer>';
+    expect(sectionsFor({ texts: [cols] })).toEqual(['columns']);
+  });
+
+  it('is dropped for an ordinary single-column report', () => {
+    expect(sectionsFor({ texts: [plain] })).not.toContain('columns');
+  });
+
+  it('is kept when the user describes the shape rather than naming it', () => {
+    for (const instruction of ['print it two-up', 'lay the records out side by side', 'make it a label sheet']) {
+      expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('columns');
     }
   });
 });

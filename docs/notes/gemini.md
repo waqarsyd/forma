@@ -624,6 +624,24 @@ Three smaller things worth having written down:
 
 The Preview draws it behind the bands on every page, with `pointer-events: none`. That last part is not incidental: the watermark covers the whole sheet, and without it nothing underneath could be selected or dragged — the same mistake the panel wrapper made earlier the same day, which is why it is stated rather than assumed.
 
+### Multi-column detail, and a third element before `<Controls>` (2026-09-05)
+
+`RepxProbe emit-cols`. Records flowing into columns — a label sheet, a phone list, a two-up catalogue.
+
+```xml
+<Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="40">
+  <MultiColumn Ref="3" ColumnCount="3" ColumnSpacing="20" Layout="AcrossThenDown" Mode="UseColumnCount" />
+  <Controls> ... </Controls>
+```
+
+- **It is a child of the BAND, written before `<Controls>`** — the third band-level element to sit there, after `<GroupFields>` and `<SortFields>`. The generalisation written when the second one turned up held for the third, which is the only real evidence a generalisation ever gets.
+- **A band left alone writes nothing at all**, so absence means one column rather than "not configured". Same shape as `CanGrow` and as a shape with no `<Shape>` child.
+- **The attribute is `Layout`, not `Direction`.** The API property called `Direction` is obsolete and the serializer writes `Layout`, so code written from the class reference names an attribute that does not exist.
+- **`Mode` decides which size property is read.** `UseColumnCount` reads `ColumnCount` and ignores `ColumnWidth`; `UseColumnWidth` does the reverse. Setting one and declaring the other mode is silently a single-column report.
+- `DetailReportBand` writes `Level="0"`, noticed in passing and worth knowing before something tries to parse one.
+
+**The Preview does not draw the columns, and says so.** `paginate` flows every record down one column, and a multi-column report rendered that way *looks correct and is not* — worse than an admitted gap. The pane carries a line saying how many columns the report prints in and that it is showing one. Drawing it properly means giving `PlacedBand` an x-offset and a width and threading a column index through pagination, which is a real change to the most-tested function in that module; it is worth doing and worth doing deliberately, not as a footnote to a syntax change.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.
