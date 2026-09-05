@@ -186,8 +186,8 @@ broken, and nothing in the toolchain enforces any of them.
   was written. The counts on either side of the arrow move with every commit — the
   forty-two is the durable number, and it is `6 + 26 + 10` from the first bullet.)
 - **File naming: `PascalCase.tsx` for React components, `camelCase.ts` for everything
-  else.** 100% consistent today — **25** PascalCase components and **103** `.ts` files
-  (that is `git ls-files src`, tests included; **repo-wide the answer is 110**, because
+  else.** 100% consistent today — **25** PascalCase components and **107** `.ts` files
+  (that is `git ls-files src`, tests included; **repo-wide the answer is 114**, because
   `server.ts` and the four root configs are also `.ts`. State the scope whenever you
   quote this number — an unqualified "67" is the next thing someone will "correct" to 73.)
   (59 until 2026-09-01, when `lib/firebaseClient.ts` and `lib/firestoreOps.ts` were
@@ -195,7 +195,11 @@ broken, and nothing in the toolchain enforces any of them.
   `lib/reportBands.ts` and `lib/repxTruncation.ts` with their tests on 2026-09-02 and
   2026-09-03 — this bullet still said 61 after the first of those pairs landed; then
   `lib/reportPreview.ts`, `lib/dataSource.ts` `lib/repxEdit.ts` `lib/repxParameters.ts`, `lib/zip.ts` and `lib/batchQueue.ts` with their tests
-  on 2026-09-05, and `lib/revisions.ts` and `lib/revisionStore.ts` with theirs the same day).
+  on 2026-09-05, and `lib/revisions.ts` and `lib/revisionStore.ts` with theirs the same day;
+  then `lib/repxStyles.ts` and `lib/promptSections.ts` with theirs, which are the four
+  files that took it from 103 to 107 — the pair landed while the count stayed put, and a
+  2026-09-06 audit is what caught it. Both numbers here move together, so correcting one
+  and not the other is the next way this bullet goes wrong).
   The single exception is `src/vite-env.d.ts`, which is Vite's own required name.
   **Do not "correct" the 25 to 30 by counting `.tsx` files.** There are 30, and the
   three that are not PascalCase are deliberate: `main.tsx` is the entry point, and

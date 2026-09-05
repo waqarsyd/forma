@@ -296,6 +296,10 @@ src/
                        DetailBand and its VITE_FORMA_FLAT flag were removed on
                        2026-09-05, once the fallback could no longer produce a
                        comparable report),
+                       promptSections (which optional blocks the mega-prompt
+                       carries for a given request — a section is dropped only
+                       when an uploaded .repx proves the feature is absent, so
+                       an image or a bare instruction still gets all of them),
                        repxTruncation (did the model stop writing the XML
                        part-way, asked at the parse rather than at Export),
                        repxBindings (column headings to DevExpress field names
