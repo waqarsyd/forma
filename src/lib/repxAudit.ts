@@ -344,6 +344,27 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
     if (ref && mark !== undefined) bookmarked.set(ref, mark);
   }
 
+  /*
+   * A table of contents with nothing to list.
+   *
+   * It is populated from the report's bookmarks at print time, so a TOC in a
+   * report that declares none prints its heading and an empty page — which is
+   * the worst possible version of this control, because the heading makes it
+   * look like the content is coming.
+   *
+   * DevExpress itself refuses the two placement mistakes by throwing (only in a
+   * ReportHeader or ReportFooter; only one per report), so those need no check
+   * here — a file that gets them wrong never loads. This one it accepts.
+   */
+  if (/ControlType="XRTableOfContents"/.test(text) && bookmarked.size === 0) {
+    add(
+      'warning',
+      'toc-without-bookmarks',
+      'The report has a table of contents and no bookmarks, so it prints a "Contents" heading with ' +
+        'nothing under it. A table of contents lists bookmarks; without them it is an empty page.',
+    );
+  }
+
   const parents = [...text.matchAll(/BookmarkParent="#Ref-(\d+)"/g)].map((m) => m[1]);
   const orphans = [...new Set(parents.filter((ref) => !bookmarked.has(ref)))];
   if (orphans.length) {

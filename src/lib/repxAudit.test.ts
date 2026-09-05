@@ -658,3 +658,30 @@ describe('bookmarks', () => {
     expect(auditRepx(doc(label(3, '')), null).findings.some((f) => f.code.startsWith('bookmark'))).toBe(false);
   });
 });
+
+describe('table of contents', () => {
+  const doc = (controls: string) =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+    '<Bands><Item1 Ref="50" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="200"><Controls>' + controls +
+    '</Controls></Item1></Bands></XtraReportsLayoutSerializer>';
+
+  const toc = '<Item1 Ref="3" ControlType="XRTableOfContents" Name="toc" LocationFloat="0,0"><LevelTitle Ref="4" Text="Contents" /></Item1>';
+
+  it('warns about a contents page with nothing to list', () => {
+    // The worst version of this control: the heading makes it look like the
+    // content is coming.
+    const finding = auditRepx(doc(toc), null).findings.find((f) => f.code === 'toc-without-bookmarks');
+    expect(finding?.severity).toBe('warning');
+  });
+
+  it('stays quiet when the report has bookmarks for it to list', () => {
+    const withMark = toc + '<Item2 Ref="5" ControlType="XRLabel" Name="l" Text="North" Bookmark="North" SizeF="10,10" LocationFloat="0,50" />';
+    expect(auditRepx(doc(withMark), null).findings.some((f) => f.code === 'toc-without-bookmarks')).toBe(false);
+  });
+
+  it('stays quiet about a report with no contents page', () => {
+    const plain = '<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="10,10" LocationFloat="0,0" />';
+    expect(auditRepx(doc(plain), null).findings.some((f) => f.code === 'toc-without-bookmarks')).toBe(false);
+  });
+});

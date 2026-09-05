@@ -686,6 +686,24 @@ The Preview draws both as their **settings** rather than their data: the range, 
 
 **One signal was narrowed while doing this.** `XRSparkline` had been a *charts* signal in `promptSections`, so a report containing a sparkline pulled in three kilobytes of chart and cross-tab syntax it had no use for. It is now only a gauges signal, and a test pins that the two sections do not drag each other in.
 
+### The table of contents, and an exception that names the wrong rule (2026-09-05)
+
+`RepxProbe emit-toc`. Folded into the bookmarks section rather than given its own, because the two are useless apart: a table of contents lists bookmarks, and a report with neither needs neither.
+
+```xml
+<Item1 Ref="3" ControlType="XRTableOfContents" Name="tocStyled" LocationFloat="0,220">
+  <LevelTitle Ref="4" Text="Contents" Font="Arial, 16pt, style=Bold" Padding="0,0,0,0,100" />
+  <LevelDefault Ref="5" Height="177" Font="Arial, 11pt, style=Bold" Padding="0,0,0,0,100" />
+</Item1>
+```
+
+- **No `SizeF` is written.** It was set to 800x200 and discarded — the control sizes itself from the entries it finds, so `LocationFloat` is written and the size is not. That is the first control here that ignores a size outright.
+- `LevelTitle` is the heading, `LevelDefault` styles the rows; both are children with their own `Ref`. `LevelDefault` came back carrying `Height="177"`, computed rather than set.
+
+**This is one of the very few places DevExpress throws instead of silently ignoring — and the message names the wrong constraint.** Adding a second table of contents raises *"The Table Of Contents can be placed only into Report Header and Report Footer bands"*, which is a true statement about a different rule: the band was already a ReportHeader. The actual violation is that a report may hold only **one**. Isolating it took adding the two controls separately and watching which call threw; the first succeeded.
+
+So the audit checks neither placement rule — a file breaking either never loads at all — and checks the one DevExpress accepts: **a contents page in a report with no bookmarks**, which prints a "Contents" heading over an empty page. That is the worst version of this control, because the heading makes it look like the content is still coming.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

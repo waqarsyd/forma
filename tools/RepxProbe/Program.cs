@@ -48,6 +48,7 @@ static class Program {
             case "emit-cols":  EmitColumns(args[1]); return 0;
             case "emit-book":  EmitBookmarks(args[1]); return 0;
             case "emit-gauge": EmitGauge(args[1]); return 0;
+            case "emit-toc":   EmitToc(args[1]);   return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -1028,6 +1029,74 @@ static class Program {
             detail,
             new BottomMarginBand()
         });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes an XRTableOfContents.
+    ///
+    /// The interesting part is what it is BUILT FROM. A table of contents in
+    /// DevExpress is generated from the report's BOOKMARKS -- so if that is
+    /// true, this control is nearly free now that bookmarks exist, and it is
+    /// useless without them. Confirming the dependency is the point, because a
+    /// TOC emitted into a report with no bookmarks prints an empty heading and
+    /// nothing else.
+    ///
+    /// Also open: whether the level styling is a collection of levels or flat
+    /// attributes, and whether a TOC left alone writes anything at all.
+    static void EmitToc(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeToc";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+
+        // Titled and with a level styled, to see how levels serialize.
+        XRTableOfContents styled = new XRTableOfContents();
+        styled.Name = "tocStyled";
+        styled.LocationF = new PointF(0, 220);
+        styled.SizeF = new SizeF(800, 200);
+        // LevelTitle is the "Contents" heading; LevelDefault styles the rows.
+        styled.LevelTitle.Text = "Contents";
+        styled.LevelTitle.Font = new Font("Arial", 16, FontStyle.Bold);
+        styled.LevelDefault.Font = new Font("Arial", 11, FontStyle.Bold);
+
+        ReportHeaderBand header = new ReportHeaderBand();
+        header.Name = "ReportHeader";
+        header.HeightF = 440;
+
+        // A bookmarked control, so the TOC has something to list.
+        XRLabel section = new XRLabel();
+        section.Name = "labelSection";
+        section.Text = "Northern Region";
+        section.LocationF = new PointF(0, 0);
+        section.SizeF = new SizeF(400, 30);
+        section.Bookmark = "Northern Region";
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 40;
+        detail.Controls.Add(section);
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            header,
+            detail,
+            new BottomMarginBand()
+        });
+
+        // AFTER the band joins the report. DevExpress validates the placement
+        // when the control is added and THROWS -- "The Table Of Contents can be
+        // placed only into Report Header and Report Footer bands" -- and an
+        // orphan band cannot answer the question, so adding first fails even
+        // when the band is the right kind.
+        // ONE only. Adding a second throws -- with a message naming the wrong
+        // constraint, see the comment above the declarations.
+        header.Controls.Add(styled);
 
         report.SaveLayoutToXml(outPath);
         Console.WriteLine("written: " + Path.GetFullPath(outPath));

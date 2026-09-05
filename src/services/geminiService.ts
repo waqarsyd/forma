@@ -986,6 +986,12 @@ const BOOKMARKS_BLOCK = `          - BOOKMARKS — the navigation tree beside a 
             - A bookmark that repeats per record should be an EXPRESSION, not a literal: an <ExpressionBindings> item with PropertyName="Bookmark" and Expression="[Region]". A literal on a control inside the Detail band produces the same caption on every row, which is a document map with forty identical entries.
             - Put the bookmark on the control that already carries the section's caption. A second invisible label existing only to hold a bookmark is a control that can be moved out of alignment with the thing it names.
             - **Only when the report has sections.** A one-page invoice needs no document map, and a bookmark on its title adds a tree with one entry.
+            - A TABLE OF CONTENTS lists those bookmarks on a page of its own:
+              <Item1 Ref="3" ControlType="XRTableOfContents" Name="toc" LocationFloat="0,0"><LevelTitle Ref="4" Text="Contents" Font="Arial, 16pt, style=Bold" /><LevelDefault Ref="5" Font="Arial, 11pt" /></Item1>
+              - **It may go ONLY in a ReportHeader or a ReportFooter band, and there may be only ONE in a report.** DevExpress throws on both, and on the second one the message names the wrong rule -- it complains about the band -- so a file with two is a confusing failure rather than a clear one.
+              - **Write no SizeF.** The control sizes itself from the entries it finds; setting a size is discarded. LocationFloat is written, SizeF is not.
+              - LevelTitle is the "Contents" heading. LevelDefault styles the rows. Both are child elements with their own Ref.
+              - It lists the report's BOOKMARKS, so a table of contents in a report with no bookmarks prints its heading and nothing else. Emit the bookmarks first, or neither.
 `;
 /**
  * Multi-column detail flow — a label sheet, a phone list, a two-up catalogue.

@@ -111,7 +111,7 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   watermark: /<Watermark\b/i,
   columns: /<MultiColumn\b/i,
   gauges: /XRGauge|XRSparkline/i,
-  bookmarks: /\sBookmark=|\sBookmarkParent=|PropertyName="Bookmark"/i,
+  bookmarks: /\sBookmark=|\sBookmarkParent=|PropertyName="Bookmark"|XRTableOfContents/i,
 };
 
 /**

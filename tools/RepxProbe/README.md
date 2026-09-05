@@ -20,6 +20,7 @@ RepxProbe emit-mark <out.repx>   # the same, for a WATERMARK (text and image)
 RepxProbe emit-cols <out.repx>   # the same, for MULTI-COLUMN detail flow
 RepxProbe emit-book <out.repx>   # the same, for BOOKMARKS / the document map
 RepxProbe emit-gauge <out.repx>  # the same, for XRGauge and XRSparkline
+RepxProbe emit-toc <out.repx>    # the same, for a TABLE OF CONTENTS
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 
