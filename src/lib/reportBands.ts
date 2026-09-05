@@ -66,6 +66,8 @@
  *   because the rest of the prompt insists the two artifacts agree.
  */
 
+import { ALL_SECTIONS, type PromptSection } from './promptSections';
+
 /** Page geometry in the report's own units, as `pageSizeInUnits` returns it. */
 export interface PageBox {
   width: number;
@@ -80,13 +82,99 @@ export interface RootStructureOptions {
 }
 
 /**
+ * The three optional blocks, lifted out so a request that provably does not
+ * need one can leave it out -- see `lib/promptSections.ts` for what counts as
+ * proof, which is narrower than it sounds.
+ *
+ * Text unchanged from when they were inline; they were moved by script rather
+ * than retyped, because a hand-copied instruction that reads the same and is
+ * not the same is exactly the edit nothing here would catch.
+ */
+const GROUPING_BLOCK = `          - GROUPING — ONLY WHEN THE DESIGN ACTUALLY GROUPS, AND THE TEST IS VISIBLE.
+            A grouped report is one whose rows are broken into runs by a shared value, with something printed at each break. You are looking for ONE of these in the source document, not for a feeling that the data could be grouped:
+            - a heading line INSIDE the table that is not a data row — "North Region", "Category: Fasteners", a bare bold value on its own across the full width — with like rows beneath it, then another such line, then more rows;
+            - a SUBTOTAL line partway down — "Region total", "Subtotal" — repeating at each break, as distinct from the single grand total at the end.
+            If neither appears, the document is NOT grouped: omit both GroupHeaderBand and GroupFooterBand entirely. A flat list of forty rows with one total at the bottom is an ungrouped report, and inventing a grouping changes what the file prints.
+            When it IS grouped:
+            - \`<GroupFields>\` is a SIBLING of \`<Controls>\` and is written BEFORE it. Its items carry \`FieldName\` and NO \`ControlType\` — that is the one place besides \`<ExpressionBindings>\` where an item has no control type, and it is measured from the DevExpress serializer rather than inferred.
+            - \`FieldName\` is the DATA field the rows break on, spelled as the data spells it — the same name you would put in an expression, WITHOUT the square brackets. If the source shows a caption like "Region: North", the field is \`Region\`.
+            - Do NOT write a \`SortOrder\` attribute. The serializer omits it for the ascending default, so writing one adds a difference from what DevExpress itself produces for no gain.
+            - The group header usually restates the value it groups on, which is an ordinary expression binding to the same field: \`Expression="[Region]"\`.
+            - A per-group subtotal is a cell carrying \`<Summary Ref="..." Running="Group" FormatString="{0:c2}" />\` BEFORE its \`<ExpressionBindings>\`, with the expression \`sumSum([Amount])\`. \`Running="Group"\` is the whole difference between a group subtotal and the grand total in ReportFooter — the expression is identical, so omitting it silently produces a running total of the entire report at every break.
+            - Emit GroupFooter only if the design actually shows a per-group line. A GroupHeaderBand alone is normal and correct.
+            - In the layout JSON these are sections of \`"type": "group"\`, in the same position and order as the bands.
+
+`;
+
+const CHARTS_BLOCK = `          - A CHART IN THE SOURCE IS AN XRChart, NOT A PICTURE OF ONE.
+            If the document shows a bar, column, line or pie chart, emit an \`XRChart\`. Drawing it as labels and rectangles reproduces the picture and produces a report that can never plot anything.
+
+            <Item1 Ref="4" ControlType="XRChart" Name="chartByRegion" LocationFloat="20,50" SizeF="600,140">
+              <Chart Ref="5">
+                <DataContainer Ref="6" ValidateDataMembers="true">
+                  <SeriesSerializable>
+                    <Item1 Ref="7" Name="Sales" ArgumentDataMember="Region" ValueDataMembersSerializable="Amount" />
+                  </SeriesSerializable>
+                </DataContainer>
+                <Diagram Ref="8" TypeNameSerializable="XYDiagram">
+                  <AxisX Ref="9" VisibleInPanesSerializable="-1" />
+                  <AxisY Ref="10" VisibleInPanesSerializable="-1" />
+                </Diagram>
+              </Chart>
+            </Item1>
+
+            - \`ArgumentDataMember\` is the field along the category axis — what the bars or slices are OF — and \`ValueDataMembersSerializable\` is the field plotted, comma-separated for more than one. Both are plain field names, no brackets. Read them from the chart's own axis titles and legend.
+            - The series item carries NO \`ControlType\`, like a group field and an expression binding.
+            - **A bar or column chart writes no view type at all** — that is the default. For anything else add \`<View Ref="..." TypeNameSerializable="PieSeriesView" />\` (or \`LineSeriesView\`, \`AreaSeriesView\`, \`ScatterLineSeriesView\`) as a child of the series item.
+            - A **pie** chart takes NO \`<Diagram>\` element. Only the XY types do.
+            - A chart with no \`<SeriesSerializable>\` is an empty frame on the page and looks exactly like a chart waiting for data, so always emit at least one series.
+
+          - A MATRIX WITH TOTALS DOWN AND ACROSS IS AN XRCrossTab.
+            A region-by-quarter grid, a category-by-month grid — anything whose rows and columns are both VALUES with a figure at each intersection — is a cross-tab, not a table. A table has fixed columns; a cross-tab grows a column per distinct value in the data.
+
+            <Item1 Ref="17" ControlType="XRCrossTab" Name="crossByQuarter" LocationFloat="20,10" SizeF="810,220">
+              <LayoutOptions Ref="18" />
+              <PrintOptions Ref="19" />
+              <RowFields><Item1 Ref="20" FieldName="Region" /></RowFields>
+              <ColumnFields><Item1 Ref="21" FieldName="Quarter" /></ColumnFields>
+              <DataFields><Item1 Ref="22" FieldName="Amount" /></DataFields>
+            </Item1>
+
+            - The row field is what the LEFT-hand column lists, the column field what the HEADING ROW lists, and the data field what sits at each intersection. Get those three from the grid's own labels.
+            - The items carry \`FieldName\` and no \`ControlType\`; \`<LayoutOptions />\` and \`<PrintOptions />\` are written empty.
+            - All three collections are required. A cross-tab missing one prints nothing where the grid was.
+            - When the columns are FIXED headings rather than values from the data — "Item, Qty, Amount" — it is an ordinary XRTable, and the DETAIL BAND rules above apply instead.
+
+`;
+
+const PARAMETERS_BLOCK = `          - PARAMETERS — ONLY WHEN THE DESIGN SHOWS THE READER BEING ASKED SOMETHING.
+            Look for a criteria block near the top: "Date range: ____ to ____", "Region: All", "Customer: [blank]", a filled-in filter line, or a from/to pair printed as part of the header. Those are values the reader supplies before the report runs, and they belong in a \`<Parameters>\` collection, which is a child of the root written BEFORE \`<Bands>\`:
+
+            <Parameters>
+              <Item1 Ref="1" Name="DateFrom" Description="From date" Type="System.DateTime" ValueInfo="2026-01-01" />
+              <Item2 Ref="2" Name="Region" Description="Region" ValueInfo="North" />
+            </Parameters>
+
+            - \`Name\` is an identifier: letters, digits and underscore, no spaces. \`Description\` is what the reader is shown, so it is the label as the document words it.
+            - \`ValueInfo\` — NOT \`Value\` — carries the default, written as text.
+            - \`Type\` is one of \`System.String\`, \`System.DateTime\`, \`System.Int32\`, \`System.Decimal\`, \`System.Double\`, \`System.Boolean\`. Omit it entirely for a string, which is the default. **Write the plain type name; do not attempt an \`ObjectStorage\` section — a later pass converts it into the form DevExpress actually reads.**
+            - \`MultiValue="true"\` when the document shows a list being chosen from.
+            - USE every parameter you declare, in one of the two ways, or do not declare it. In the report's \`FilterString\` attribute on the root: \`FilterString="[OrderDate] &gt;= ?DateFrom"\` — note the \`?Name\` form and that \`>\` must be written \`&gt;\`. Or in a control's expression: \`Expression="'Region: ' + [Parameters.Region]"\` — note the \`[Parameters.Name]\` form. A declared parameter nobody uses still stops the reader and asks them a question that changes nothing.
+            - If the design shows no such block, emit NO \`<Parameters>\` element. An invented parameter turns a report that runs into one that interrogates the reader first.
+
+`;
+
+/**
  * The default: a real report skeleton instead of one page-sized band.
  *
  * Band order is not stylistic — XtraReports reads the sequence, and a
  * `PageHeaderBand` written after `Detail` is a different report. The order below
  * is the one the designer itself emits.
  */
-function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializerVersion }: RootStructureOptions): string {
+function bandedRootStructure(
+  { page, reportUnit, targetVersion, targetSerializerVersion }: RootStructureOptions,
+  sections: readonly PromptSection[],
+): string {
   return `
           - ROOT STRUCTURE — A BANDED REPORT, NOT ONE PAGE-SIZED BAND.
             You are producing a real DevExpress report, so the page is split into bands that each play a different role at print time. Emit ONLY the content bands the design actually needs; omit any you have no content for, but keep the ones you emit in exactly this order. TopMargin and BottomMargin are NOT optional — always emit both, always at HeightF="0".
@@ -138,75 +226,7 @@ function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializer
             Only when NO block anywhere in the design passes that test — a certificate, a single-record letter, a title page — put the body in ReportHeader, leave Detail out, and say so in the markdown specification.
             THE COST OF GETTING THIS WRONG IS THE WHOLE ARTIFACT. DevExpress treats DetailBand as a mandatory band. A report without one prints its content exactly once and CANNOT be bound to a data source, so it is a picture of the document rather than a report that can produce it for every record. The output still opens in the designer and still looks right, which is why this is stated at length instead of left to judgement.
 
-          - GROUPING — ONLY WHEN THE DESIGN ACTUALLY GROUPS, AND THE TEST IS VISIBLE.
-            A grouped report is one whose rows are broken into runs by a shared value, with something printed at each break. You are looking for ONE of these in the source document, not for a feeling that the data could be grouped:
-            - a heading line INSIDE the table that is not a data row — "North Region", "Category: Fasteners", a bare bold value on its own across the full width — with like rows beneath it, then another such line, then more rows;
-            - a SUBTOTAL line partway down — "Region total", "Subtotal" — repeating at each break, as distinct from the single grand total at the end.
-            If neither appears, the document is NOT grouped: omit both GroupHeaderBand and GroupFooterBand entirely. A flat list of forty rows with one total at the bottom is an ungrouped report, and inventing a grouping changes what the file prints.
-            When it IS grouped:
-            - \`<GroupFields>\` is a SIBLING of \`<Controls>\` and is written BEFORE it. Its items carry \`FieldName\` and NO \`ControlType\` — that is the one place besides \`<ExpressionBindings>\` where an item has no control type, and it is measured from the DevExpress serializer rather than inferred.
-            - \`FieldName\` is the DATA field the rows break on, spelled as the data spells it — the same name you would put in an expression, WITHOUT the square brackets. If the source shows a caption like "Region: North", the field is \`Region\`.
-            - Do NOT write a \`SortOrder\` attribute. The serializer omits it for the ascending default, so writing one adds a difference from what DevExpress itself produces for no gain.
-            - The group header usually restates the value it groups on, which is an ordinary expression binding to the same field: \`Expression="[Region]"\`.
-            - A per-group subtotal is a cell carrying \`<Summary Ref="..." Running="Group" FormatString="{0:c2}" />\` BEFORE its \`<ExpressionBindings>\`, with the expression \`sumSum([Amount])\`. \`Running="Group"\` is the whole difference between a group subtotal and the grand total in ReportFooter — the expression is identical, so omitting it silently produces a running total of the entire report at every break.
-            - Emit GroupFooter only if the design actually shows a per-group line. A GroupHeaderBand alone is normal and correct.
-            - In the layout JSON these are sections of \`"type": "group"\`, in the same position and order as the bands.
-
-          - A CHART IN THE SOURCE IS AN XRChart, NOT A PICTURE OF ONE.
-            If the document shows a bar, column, line or pie chart, emit an \`XRChart\`. Drawing it as labels and rectangles reproduces the picture and produces a report that can never plot anything.
-
-            <Item1 Ref="4" ControlType="XRChart" Name="chartByRegion" LocationFloat="20,50" SizeF="600,140">
-              <Chart Ref="5">
-                <DataContainer Ref="6" ValidateDataMembers="true">
-                  <SeriesSerializable>
-                    <Item1 Ref="7" Name="Sales" ArgumentDataMember="Region" ValueDataMembersSerializable="Amount" />
-                  </SeriesSerializable>
-                </DataContainer>
-                <Diagram Ref="8" TypeNameSerializable="XYDiagram">
-                  <AxisX Ref="9" VisibleInPanesSerializable="-1" />
-                  <AxisY Ref="10" VisibleInPanesSerializable="-1" />
-                </Diagram>
-              </Chart>
-            </Item1>
-
-            - \`ArgumentDataMember\` is the field along the category axis — what the bars or slices are OF — and \`ValueDataMembersSerializable\` is the field plotted, comma-separated for more than one. Both are plain field names, no brackets. Read them from the chart's own axis titles and legend.
-            - The series item carries NO \`ControlType\`, like a group field and an expression binding.
-            - **A bar or column chart writes no view type at all** — that is the default. For anything else add \`<View Ref="..." TypeNameSerializable="PieSeriesView" />\` (or \`LineSeriesView\`, \`AreaSeriesView\`, \`ScatterLineSeriesView\`) as a child of the series item.
-            - A **pie** chart takes NO \`<Diagram>\` element. Only the XY types do.
-            - A chart with no \`<SeriesSerializable>\` is an empty frame on the page and looks exactly like a chart waiting for data, so always emit at least one series.
-
-          - A MATRIX WITH TOTALS DOWN AND ACROSS IS AN XRCrossTab.
-            A region-by-quarter grid, a category-by-month grid — anything whose rows and columns are both VALUES with a figure at each intersection — is a cross-tab, not a table. A table has fixed columns; a cross-tab grows a column per distinct value in the data.
-
-            <Item1 Ref="17" ControlType="XRCrossTab" Name="crossByQuarter" LocationFloat="20,10" SizeF="810,220">
-              <LayoutOptions Ref="18" />
-              <PrintOptions Ref="19" />
-              <RowFields><Item1 Ref="20" FieldName="Region" /></RowFields>
-              <ColumnFields><Item1 Ref="21" FieldName="Quarter" /></ColumnFields>
-              <DataFields><Item1 Ref="22" FieldName="Amount" /></DataFields>
-            </Item1>
-
-            - The row field is what the LEFT-hand column lists, the column field what the HEADING ROW lists, and the data field what sits at each intersection. Get those three from the grid's own labels.
-            - The items carry \`FieldName\` and no \`ControlType\`; \`<LayoutOptions />\` and \`<PrintOptions />\` are written empty.
-            - All three collections are required. A cross-tab missing one prints nothing where the grid was.
-            - When the columns are FIXED headings rather than values from the data — "Item, Qty, Amount" — it is an ordinary XRTable, and the DETAIL BAND rules above apply instead.
-
-          - PARAMETERS — ONLY WHEN THE DESIGN SHOWS THE READER BEING ASKED SOMETHING.
-            Look for a criteria block near the top: "Date range: ____ to ____", "Region: All", "Customer: [blank]", a filled-in filter line, or a from/to pair printed as part of the header. Those are values the reader supplies before the report runs, and they belong in a \`<Parameters>\` collection, which is a child of the root written BEFORE \`<Bands>\`:
-
-            <Parameters>
-              <Item1 Ref="1" Name="DateFrom" Description="From date" Type="System.DateTime" ValueInfo="2026-01-01" />
-              <Item2 Ref="2" Name="Region" Description="Region" ValueInfo="North" />
-            </Parameters>
-
-            - \`Name\` is an identifier: letters, digits and underscore, no spaces. \`Description\` is what the reader is shown, so it is the label as the document words it.
-            - \`ValueInfo\` — NOT \`Value\` — carries the default, written as text.
-            - \`Type\` is one of \`System.String\`, \`System.DateTime\`, \`System.Int32\`, \`System.Decimal\`, \`System.Double\`, \`System.Boolean\`. Omit it entirely for a string, which is the default. **Write the plain type name; do not attempt an \`ObjectStorage\` section — a later pass converts it into the form DevExpress actually reads.**
-            - \`MultiValue="true"\` when the document shows a list being chosen from.
-            - USE every parameter you declare, in one of the two ways, or do not declare it. In the report's \`FilterString\` attribute on the root: \`FilterString="[OrderDate] &gt;= ?DateFrom"\` — note the \`?Name\` form and that \`>\` must be written \`&gt;\`. Or in a control's expression: \`Expression="'Region: ' + [Parameters.Region]"\` — note the \`[Parameters.Name]\` form. A declared parameter nobody uses still stops the reader and asks them a question that changes nothing.
-            - If the design shows no such block, emit NO \`<Parameters>\` element. An invented parameter turns a report that runs into one that interrogates the reader first.
-
-          - THE DETAIL BAND IS ONE ROW, NOT THE TABLE.
+${sections.includes('grouping') ? GROUPING_BLOCK : ''}${sections.includes('charts') ? CHARTS_BLOCK : ''}${sections.includes('parameters') ? PARAMETERS_BLOCK : ''}          - THE DETAIL BAND IS ONE ROW, NOT THE TABLE.
             This is the whole point of the exercise. A DetailBand is printed once PER RECORD, so it must contain a single row's worth of controls:
             - HeightF is ONE ROW's height, not the table's height.
             - Emit an XRTable holding exactly ONE XRTableRow — the same columns, in the same order, with the SAME cell Weight values and the same LocationFloat x and SizeF width as the heading table you put in PageHeader. Those two tables print directly above one another, so any difference in weights shows up as columns that do not line up.
@@ -237,8 +257,11 @@ function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializer
  * keeping it here rather than inline in `geminiService.ts` is what lets both
  * variants be asserted without calling the model.
  */
-export function rootStructurePrompt(options: RootStructureOptions): string {
-  return bandedRootStructure(options);
+export function rootStructurePrompt(
+  options: RootStructureOptions,
+  sections: readonly PromptSection[] = ALL_SECTIONS,
+): string {
+  return bandedRootStructure(options, sections);
 }
 
 /**

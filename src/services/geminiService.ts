@@ -10,6 +10,7 @@ import { instructionBlock } from "../lib/userInstructions";
 import { auditRepx } from "../lib/repxAudit";
 import { liftParameterTypes } from "../lib/repxParameters";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
+import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import {
   pageSizeInUnits,
@@ -926,6 +927,30 @@ ${transcript}`,
    top of this file; `toAttachmentParts` in lib/ builds these, so it could not
    keep importing the shape from here. */
 
+/**
+ * The control syntax a document only sometimes needs: checkboxes, cross-band
+ * rules, panels, and the instruction NOT to invent a subreport.
+ *
+ * Lifted out of the cheat sheet so `lib/promptSections.ts` can leave it out of
+ * a request that provably does not need it. Text unchanged from when it was
+ * inline -- moved by script rather than retyped.
+ */
+const CONTAINERS_BLOCK = `          - Checkbox: <Item7 Ref="9" ControlType="XRCheckBox" Name="checkBox1" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="0,320" SizeF="200,20" />
+            - A tick, cross or filled square on a form line IS a checkbox. Do not draw one as a label containing "X" or a bordered empty label — those cannot be bound, cannot be toggled, and are the same failure as building a table out of labels.
+            - The caption goes in Text, like every other control. The box itself is drawn by the control; do not add a separate label beside it.
+            - **Only write the two state attributes for a TICKED box, and always write them as a pair.** Unchecked is the default and DevExpress writes neither attribute, so an empty box is just <Item ControlType="XRCheckBox" Text="..." />. Writing Checked without CheckBoxState, or either one with "false", is not what the serializer produces.
+          - Cross-band lines and boxes — a vertical rule that runs THROUGH more than one band. **These do NOT go inside a band.** They form a <CrossBandControls> collection that is a SIBLING of <Bands>, written after </Bands>:
+            <CrossBandControls><Item1 Ref="12" ControlType="XRCrossBandLine" Name="columnRule" WidthF="1" StartBand="#Ref-2" EndBand="#Ref-3" StartPointFloat="300,0" EndPointFloat="300,110" /></CrossBandControls>
+            - StartBand and EndBand are **"#Ref-N" POINTERS at the Ref values of the band elements** — not names, not indexes. #Ref-2 means the band whose Ref="2". Point them at the wrong bands and the rule attaches in the wrong place with no error at all.
+            - Use one when the source draws a column separator running from the heading row down through the detail rows, which is how most older table-heavy reports are ruled. **A vertical rule spanning bands cannot be an XRLine** — an XRLine lives inside one band and stops at its edge, so drawing the same thing with XRLines gives a rule that breaks at every band boundary.
+            - Only for rules that genuinely cross a band boundary. A rule inside a single band is an XRLine, and a cell border is Borders= on the cell — reach for those first.
+          - Panel — a bordered box that CONTAINS other controls: <Item8 Ref="10" ControlType="XRPanel" Name="panelBillTo" LocationFloat="100,100" SizeF="400,80" Borders="All"><Controls><Item1 Ref="11" ControlType="XRLabel" Name="billToName" Text="Acme Ltd" LocationFloat="10,10" SizeF="200,20" /></Controls></Item8>
+            - **A child's LocationFloat is relative to the PANEL, not to the band.** A child at "10,10" inside a panel at "100,100" prints at 110,110 on the page. Writing band coordinates on a child pushes it outside the panel it belongs to, and the file still loads.
+            - Use one for a boxed block on a form — a "Bill To" address box, a bordered summary, a signature block. One border on the panel replaces a border on each control, and the group stays together across a page break.
+            - Do NOT use one just to draw a rectangle. A single bordered XRLabel, or Borders= on the cells, is the simpler answer, and a panel holding one control is always the wrong choice.
+          - **Subreports: do not create one.** XRSubreport embeds an entire second report, and everything you are asked to produce belongs in ONE report expressed as bands. If the uploaded .repx already contains an XRSubreport, keep it exactly as it is — including a nested <ReportSource> if it has one — rather than expanding it into bands or dropping it.
+`;
+
 export async function analyzeReportDesign(
   prompt: string,
   imageParts: AttachmentPart[],
@@ -973,6 +998,26 @@ export async function analyzeReportDesign(
    */
   const targetVersion = config?.version || '23.2';
   const targetSerializerVersion = `${targetVersion}.3.0`;
+
+  /*
+   * Which optional prompt sections this request needs.
+   *
+   * Everything is included unless the evidence positively rules a section out,
+   * which in practice means: the source is an uploaded .repx and neither it, nor
+   * the report being refined, nor the user's own words mention the feature. An
+   * image or a PDF proves nothing about what the document contains, so it gets
+   * the whole prompt -- see lib/promptSections.ts for why omitting on a guess is
+   * the wrong trade here.
+   *
+   * Logged when anything is dropped, because "the model stopped emitting charts"
+   * and "we stopped asking for charts" are indistinguishable from the outside.
+   */
+  const sections = sectionsFor({
+    texts: imageParts.flatMap((part) => ('text' in part ? [part.text] : [])),
+    previousRepx: previousState?.repxContent,
+    instruction: prompt,
+  });
+  if (sections.length < ALL_SECTIONS.length) console.info(describeSections(sections));
 
   /**
    * The page the model is told to map onto, derived rather than hardcoded.
@@ -1186,7 +1231,7 @@ export async function analyzeReportDesign(
           PHASE 2: DEVEXPRESS CHEAT SHEET (STRICT SYNTAX)
           When generating the "repxContent" XML, you MUST use these exact structures:
           
-${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion })}
+${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion }, sections)}
           - Labels: <Item1 Ref="1" ControlType="XRLabel" Name="label1" Text="My Text" LocationFloat="0,10" SizeF="200,30" Padding="2,2,0,0,100" />
           - Tables — rows and cells, with cells sized by Weight and never by coordinates: <Item2 Ref="2" ControlType="XRTable" Name="table1" LocationFloat="0,50" SizeF="750,40" Borders="All"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="rowHeader" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="cellHeadDesc" Text="Description" Weight="3" Font="Arial, 9.75pt, style=Bold" /><Item2 Ref="5" ControlType="XRTableCell" Name="cellHeadAmount" Text="Amount" Weight="1" TextAlignment="MiddleRight" Font="Arial, 9.75pt, style=Bold" /></Cells></Item1><Item2 Ref="6" ControlType="XRTableRow" Name="row1" Weight="1"><Cells><Item1 Ref="7" ControlType="XRTableCell" Name="cellDesc1" Text="Widget" Weight="3" /><Item2 Ref="8" ControlType="XRTableCell" Name="cellAmount1" Text="1,240.00" Weight="1" TextAlignment="MiddleRight" /></Cells></Item2></Rows></Item2>
           - Images: <Item3 Ref="5" ControlType="XRPictureBox" Name="pictureBox1" Sizing="ZoomImage" LocationFloat="0,100" SizeF="150,150" />
@@ -1195,21 +1240,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
             - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
-          - Checkbox: <Item7 Ref="9" ControlType="XRCheckBox" Name="checkBox1" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="0,320" SizeF="200,20" />
-            - A tick, cross or filled square on a form line IS a checkbox. Do not draw one as a label containing "X" or a bordered empty label — those cannot be bound, cannot be toggled, and are the same failure as building a table out of labels.
-            - The caption goes in Text, like every other control. The box itself is drawn by the control; do not add a separate label beside it.
-            - **Only write the two state attributes for a TICKED box, and always write them as a pair.** Unchecked is the default and DevExpress writes neither attribute, so an empty box is just <Item ControlType="XRCheckBox" Text="..." />. Writing Checked without CheckBoxState, or either one with "false", is not what the serializer produces.
-          - Cross-band lines and boxes — a vertical rule that runs THROUGH more than one band. **These do NOT go inside a band.** They form a <CrossBandControls> collection that is a SIBLING of <Bands>, written after </Bands>:
-            <CrossBandControls><Item1 Ref="12" ControlType="XRCrossBandLine" Name="columnRule" WidthF="1" StartBand="#Ref-2" EndBand="#Ref-3" StartPointFloat="300,0" EndPointFloat="300,110" /></CrossBandControls>
-            - StartBand and EndBand are **"#Ref-N" POINTERS at the Ref values of the band elements** — not names, not indexes. #Ref-2 means the band whose Ref="2". Point them at the wrong bands and the rule attaches in the wrong place with no error at all.
-            - Use one when the source draws a column separator running from the heading row down through the detail rows, which is how most older table-heavy reports are ruled. **A vertical rule spanning bands cannot be an XRLine** — an XRLine lives inside one band and stops at its edge, so drawing the same thing with XRLines gives a rule that breaks at every band boundary.
-            - Only for rules that genuinely cross a band boundary. A rule inside a single band is an XRLine, and a cell border is Borders= on the cell — reach for those first.
-          - Panel — a bordered box that CONTAINS other controls: <Item8 Ref="10" ControlType="XRPanel" Name="panelBillTo" LocationFloat="100,100" SizeF="400,80" Borders="All"><Controls><Item1 Ref="11" ControlType="XRLabel" Name="billToName" Text="Acme Ltd" LocationFloat="10,10" SizeF="200,20" /></Controls></Item8>
-            - **A child's LocationFloat is relative to the PANEL, not to the band.** A child at "10,10" inside a panel at "100,100" prints at 110,110 on the page. Writing band coordinates on a child pushes it outside the panel it belongs to, and the file still loads.
-            - Use one for a boxed block on a form — a "Bill To" address box, a bordered summary, a signature block. One border on the panel replaces a border on each control, and the group stays together across a page break.
-            - Do NOT use one just to draw a rectangle. A single bordered XRLabel, or Borders= on the cells, is the simpler answer, and a panel holding one control is always the wrong choice.
-          - **Subreports: do not create one.** XRSubreport embeds an entire second report, and everything you are asked to produce belongs in ONE report expressed as bands. If the uploaded .repx already contains an XRSubreport, keep it exactly as it is — including a nested <ReportSource> if it has one — rather than expanding it into bands or dropping it.
-          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+${sections.includes('containers') ? CONTAINERS_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
             Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.
@@ -1616,7 +1647,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
           A previous attempt produced this report's specification correctly but stopped part-way through the XML. The layout below is complete and correct — transcribe it, do not redesign it, and do not re-measure anything.
 
           Output the XML and NOTHING else: no explanation, no markdown fences, no JSON. Start with <?xml and end with </XtraReportsLayoutSerializer>.
-${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion })}
+${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion }, sections)}
           - Each layout element becomes one control: "label" -> XRLabel, "table" -> XRTable with XRTableRow/XRTableCell (cells take Weight, never LocationFloat or SizeF), "image" -> XRPictureBox, "line" -> XRLine, "barcode" -> XRBarCode.
           - x, y, width and height are already in ${reportUnit} and become LocationFloat="x,y" and SizeF="width,height", with no space after the comma.
           - FONT SIZE IS IN POINTS, and the layout's fontSize is in report units: points = fontSize * 72 / ${unitsPerInchForReport}. Writing the layout number straight into Font makes every piece of text far too large.
