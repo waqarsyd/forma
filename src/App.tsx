@@ -131,11 +131,27 @@ const LoginPage = lazy(() => import('./components/LoginPage'));
 const AccountDialog = lazy(() => import('./components/AccountDialog'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
-import FeaturesPage from './components/FeaturesPage';
-import DocsPage from './components/DocsPage';
-import ContactPage from './components/ContactPage';
-import LegalPage, { type LegalDoc } from './components/LegalPage';
-import NotFoundPage from './components/NotFoundPage';
+/* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
+   chunk, and a visitor renders exactly one of the six. Sourcemap attribution put
+   DocsPage at 40,891 B, FeaturesPage at 34,498 and ContactPage at 20,269 — every
+   one of them downloaded by someone who opened /workspace and will never see a
+   marketing page.
+
+   `LandingPage` stays eager, deliberately. It is the default route, so deferring
+   it puts a second round trip in front of the home page's first paint — the one
+   page that cannot afford one, and the reason index.html carries a pre-paint
+   theme resolver at all. 24 kB is a fair price for that.
+
+   The `LegalDoc` import below must stay a TYPE import. Making it a value import
+   again pulls LegalPage straight back into the entry chunk, exactly as a static
+   import of `services/firebase` would undo that deferral, and nothing would
+   report it except this chunk's budget. */
+const FeaturesPage = lazy(() => import('./components/FeaturesPage'));
+const DocsPage = lazy(() => import('./components/DocsPage'));
+const ContactPage = lazy(() => import('./components/ContactPage'));
+const LegalPage = lazy(() => import('./components/LegalPage'));
+const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
+import type { LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
 import { titleForRoute, viewForRoute } from './lib/routes';
@@ -2996,6 +3012,45 @@ export default function App() {
   }, [showWorkspace]);
 
   /**
+   * Warm the lazy marketing chunks once the page is idle.
+   *
+   * Deferring those pages took ~105 kB off the entry chunk, and left a gap: a
+   * visitor on the landing page who clicks "Docs" waits for a request that used
+   * to have already happened. Fetching them during idle puts the bytes back
+   * within reach without putting them back on the critical path — first paint no
+   * longer waits for code the visitor may never render, which was the point.
+   *
+   * Only from a marketing page, and that condition is the whole reason this is
+   * not just a prefetch of everything. Someone working in `/workspace` has no
+   * link to any of these, so fetching them there would move the waste rather
+   * than remove it — the exact criticism that would otherwise apply to warming
+   * chunks at all.
+   *
+   * `lazy` reads through the module registry, so a chunk fetched here resolves
+   * synchronously when the route changes; the two are not separate downloads.
+   * Failures are swallowed on purpose: this is a nicety, and the real navigation
+   * will surface a genuine network problem on its own.
+   */
+  useEffect(() => {
+    if (showWorkspace) return;
+    const warm = () => {
+      void import('./components/FeaturesPage').catch(() => {});
+      void import('./components/DocsPage').catch(() => {});
+      void import('./components/ContactPage').catch(() => {});
+      void import('./components/LegalPage').catch(() => {});
+    };
+    // requestIdleCallback is still unimplemented in Safari; the timeout is the
+    // documented fallback rather than a second strategy.
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    if (ric) {
+      const id = ric(warm);
+      return () => (window as unknown as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(id);
+    }
+    const id = window.setTimeout(warm, 2000);
+    return () => window.clearTimeout(id);
+  }, [showWorkspace]);
+
+  /**
    * Hand the generated XML straight to the local designer — no download, no file
    * dialog. Only reachable when `designerReady`, and only meaningful when the
    * model actually returned XML: there is nothing for a report designer to open
@@ -3078,6 +3133,13 @@ export default function App() {
          the part that was actually wrong. */
       <>
         <div className="h-full w-full" inert={showLogin || undefined}>
+          {/* `fallback={null}` because the alternative is worse, not because
+              nothing was considered. The page chrome lives inside each page
+              component, so there is no header to hold still while the rest
+              arrives — any fallback here is a skeleton of a page we are about to
+              replace. The gap is one same-origin request for at most 41 kB, and
+              the effect below has usually fetched it before the click. */}
+          <Suspense fallback={null}>
           {isNotFound ? (
           <NotFoundPage
             onEnterWorkspace={() => {
@@ -3176,6 +3238,7 @@ export default function App() {
             setIsDarkMode={setTheme}
           />
           )}
+          </Suspense>
         </div>
         {loginModal}
       </>
