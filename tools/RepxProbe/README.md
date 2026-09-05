@@ -8,6 +8,7 @@ RepxProbe emit <out.repx>        # what does the serializer WRITE for a feature?
 RepxProbe emit-group <out.repx>  # the same, for a GROUPED report
 RepxProbe emit-params <out.repx> # the same, for a PARAMETERISED report
 RepxProbe emit-chart <out.repx>  # the same, for a CHART and a CROSS-TAB
+RepxProbe emit-grow <out.repx>   # the same, for AUTO-SIZING (CanGrow/CanShrink/WordWrap)
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 
@@ -145,6 +146,26 @@ And from `emit-chart`:
 - **A pie chart writes no `<Diagram>`.** The XY types write one.
 - A cross-tab is `<RowFields>`, `<ColumnFields>` and `<DataFields>` beside an
   empty `<LayoutOptions />` and `<PrintOptions />`.
+
+And from `emit-grow`, which produced the second negative result — **a defect
+that was not there**:
+
+- **`CanGrow` defaults to `true`** on `XRLabel`, on `XRTableCell` and on a band,
+  and so does `WordWrap`. Setting them to `true` writes nothing at all; only the
+  `false` values appear in the file. `CanShrink` is the exception, defaulting to
+  `false`.
+- So text already grows and wraps, and **Forma emitting none of them is
+  correct**. `CanGrow="true"` on every control would be pure bloat — the same
+  waste `emit-group` found for `SortOrder`.
+- The real risk is the inverse of the one suspected: a `CanGrow="false"` in
+  generated output *would* clip, because that is the non-default.
+
+**Two of five measurements have now been negative** (`Type=` inline is silently
+ignored; auto-sizing needs nothing), and both looked like real defects
+beforehand. A grep proving an attribute is absent says nothing about what the
+absence means, because this serializer omits every default — so absence is the
+normal case. **Reach for this tool before writing the fix, not only before
+writing the syntax.**
 
 **The pattern across four measurements:** a collection item carries no
 `ControlType` — bindings, group fields, chart series, cross-tab fields. Anything

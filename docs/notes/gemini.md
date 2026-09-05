@@ -463,6 +463,30 @@ Both a designer-written file and a hand-written Forma-shaped one load with the s
 
 **`{0:n0}` is deliberately never emitted.** It renders 12345 as "12,345", which is right for a quantity and wrong for an invoice number, order id, product code or year — all columns of bare integers that one sample value cannot distinguish from a count. A format that mangles an identifier is worse than none, because the unformatted column was already correct. Currency and dates only, where the meaning is not in doubt.
 
+### Auto-sizing: the bug that was not there (2026-09-05)
+
+`RepxProbe emit-grow`, and the answer is that **there was nothing to fix**. It is recorded because the reasoning that produced the "defect" is reasonable, cheap to repeat, and wrong.
+
+The claim was: DevExpress clips a label whose text is longer than its box unless `CanGrow` is set, `git grep CanGrow -- src/` finds nothing, therefore every generated report silently truncates any value longer than the sample the model saw. Plausible, matches a real DevExpress behaviour, and it is the same shape as the units and `Ref` defects — renders fine, fails on real data.
+
+The measurement sets each property both ways on separate controls, so whichever value is *absent* from the file is the default:
+
+| set to | written? | so the default is |
+|---|---|---|
+| `CanGrow = true` on `XRLabel` | **no** | `true` |
+| `CanGrow = false` on `XRLabel` | yes | — |
+| `WordWrap = true` | **no** | `true` |
+| `WordWrap = false` | yes | — |
+| `CanShrink = true` | yes | `false` |
+| `CanGrow = true` on `XRTableCell` | **no** | `true` |
+| `CanGrow = true` on `DetailBand` | **no** | `true` |
+
+**Labels, table cells and bands all grow by default.** Emitting `CanGrow="true"` would put a redundant attribute on every control in every file — the same waste the grouping probe found for `SortOrder`, which DevExpress also omits when it is the default. Forma's silence is the correct output.
+
+Two things follow. **`CanShrink` is the only one of the three that has to be asked for**, so if a report should collapse an empty row it needs it explicitly. And **the only real risk in this area is the opposite of the one suspected**: a `CanGrow="false"` or `WordWrap="false"` in generated output *would* clip, because those are non-defaults that have to be written deliberately. Neither has ever been seen; nothing in the prompt asks for them.
+
+**The method note, which is the transferable part.** A grep for an absent attribute proves the attribute is absent. It says nothing about what the absence *means* — and for a serializer that omits every default, absence is the normal case rather than the exceptional one. Two of the five things this probe has now settled were negative results (`Type=` inline is ignored; auto-sizing needs nothing), and both looked like defects until measured. **Reach for `RepxProbe` before writing the fix, not only before writing the syntax.**
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

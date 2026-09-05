@@ -36,6 +36,7 @@ static class Program {
                 case "emit-group": EmitGroup(args[1]); return 0;
                 case "emit-params": EmitParams(args[1]); return 0;
                 case "emit-chart": EmitChart(args[1]); return 0;
+            case "emit-grow":  EmitGrow(args[1]);  return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -109,6 +110,85 @@ static class Program {
             Band(new PageHeaderBand(), "PageHeader", header),
             Band(new DetailBand(), "Detail", detail),
             Band(new ReportFooterBand(), "ReportFooter", footer),
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes a report exercising AUTO-SIZING, to settle how it is serialized.
+    ///
+    /// The question: a label holding text longer than its box is clipped by
+    /// DevExpress unless CanGrow is on, and Forma has never emitted it. Before
+    /// adding it to the prompt we need to know what the serializer actually
+    /// writes -- and specifically whether the DEFAULT is written at all, because
+    /// the grouping probe already found SortOrder omitted when it is the
+    /// default, and emitting a redundant attribute on every control would bloat
+    /// every file we produce.
+    ///
+    /// So this sets each of the three properties BOTH ways on separate cells:
+    /// whatever appears in the file is the non-default, and whatever is missing
+    /// is what DevExpress assumes. Labels and table cells are both covered
+    /// because they inherit from different places and may differ.
+    static void EmitGrow(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeGrow";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        // A label left entirely alone, for comparison against the ones below.
+        XRLabel plain = new XRLabel();
+        plain.Name = "labelPlain";
+        plain.Text = "untouched";
+        plain.LocationF = new PointF(0, 0);
+        plain.SizeF = new SizeF(300, 20);
+
+        XRLabel grows = new XRLabel();
+        grows.Name = "labelGrows";
+        grows.Text = "a long value that will not fit inside three hundred units of width";
+        grows.LocationF = new PointF(0, 25);
+        grows.SizeF = new SizeF(300, 20);
+        grows.CanGrow = true;
+        grows.WordWrap = true;
+
+        XRLabel shrinks = new XRLabel();
+        shrinks.Name = "labelShrinks";
+        shrinks.Text = "short";
+        shrinks.LocationF = new PointF(0, 50);
+        shrinks.SizeF = new SizeF(300, 20);
+        shrinks.CanShrink = true;
+
+        // The other way round, to find out which value is the default: whichever
+        // of true/false is ABSENT from the file is what DevExpress assumes.
+        XRLabel noGrow = new XRLabel();
+        noGrow.Name = "labelNoGrow";
+        noGrow.Text = "explicitly not growing";
+        noGrow.LocationF = new PointF(0, 75);
+        noGrow.SizeF = new SizeF(300, 20);
+        noGrow.CanGrow = false;
+        noGrow.WordWrap = false;
+
+        XRTableCell growCell = Cell("cellGrows", "a cell holding rather more text than its column is wide", 3);
+        growCell.CanGrow = true;
+        XRTableCell plainCell = Cell("cellPlain", "untouched", 1);
+        XRTable table = Table("tableDetail", new XRTableCell[] { growCell, plainCell });
+        table.LocationF = new PointF(0, 100);
+
+        // A band can grow too, and whether that is required for a control's
+        // growth to have any visible effect is the second half of the question.
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 130;
+        detail.CanGrow = true;
+        detail.Controls.AddRange(new XRControl[] { plain, grows, shrinks, noGrow, table });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            detail,
             new BottomMarginBand()
         });
 
