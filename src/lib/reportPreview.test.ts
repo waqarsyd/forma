@@ -799,3 +799,93 @@ describe('multi-column bands', () => {
     expect(b.controls.map((c) => c.name)).toEqual(['l']);
   });
 });
+
+/**
+ * Multi-column pagination.
+ *
+ * The one thing `place` cannot express: two records at the same height. So the
+ * column flow is arithmetic on a rows x count grid rather than a vertical
+ * cursor, and these tests are mostly about the grid being right at its edges --
+ * the page break, the short first page, and the cursor left behind for whatever
+ * follows the detail flow.
+ */
+describe('paginating into columns', () => {
+  const build = (count: number, layout: string, detailHeight: number, extra = '') =>
+    parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="900" PageHeight="1000">' +
+      '<Bands>' +
+      extra +
+      `<Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${detailHeight}">` +
+      `<MultiColumn Ref="3" ColumnCount="${count}" ColumnSpacing="20" Layout="${layout}" Mode="UseColumnCount" />` +
+      '<Controls><Item1 Ref="4" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" LocationFloat="0,0" /></Controls>' +
+      '</Item2>' +
+      '</Bands></XtraReportsLayoutSerializer>'
+    );
+
+  const details = (result: ReturnType<typeof paginate>, page = 0) =>
+    result.pages[page].bands.filter((b) => b.band.kind === 'Detail');
+
+  it('gives each column its share of the width, less the spacing', () => {
+    // 900 wide, 3 columns, 20 spacing => (900 - 40) / 3.
+    const placed = details(paginate(build(3, 'AcrossThenDown', 100), 3));
+    expect(placed.map((b) => Math.round(b.width))).toEqual([287, 287, 287]);
+    expect(placed.map((b) => Math.round(b.left))).toEqual([0, 307, 613]);
+  });
+
+  it('fills across then down', () => {
+    const placed = details(paginate(build(2, 'AcrossThenDown', 100), 4));
+    // Records 1,2 share the first row; 3,4 the second.
+    expect(placed.map((b) => `${b.record}@${b.top},${Math.round(b.left)}`))
+      .toEqual(['1@0,0', '2@0,460', '3@100,0', '4@100,460']);
+  });
+
+  it('fills down then across', () => {
+    // 1000 tall, no margins or page furniture, detail 100 => 10 rows a page.
+    const placed = details(paginate(build(2, 'DownThenAcross', 100), 4));
+    // The first four go down the FIRST column, not across the row.
+    expect(placed.map((b) => Math.round(b.left))).toEqual([0, 0, 0, 0]);
+    expect(placed.map((b) => b.top)).toEqual([0, 100, 200, 300]);
+  });
+
+  it('breaks to a new page only when every column is full', () => {
+    // 1000 / 250 = 4 rows, 2 columns => 8 per page.
+    const result = paginate(build(2, 'AcrossThenDown', 250), 10);
+    expect(result.pages).toHaveLength(2);
+    expect(details(result, 0)).toHaveLength(8);
+    expect(details(result, 1)).toHaveLength(2);
+  });
+
+  it('recomputes the grid for a shorter first page', () => {
+    // A 400-unit ReportHeader leaves 600 on page one and 1000 after it, so the
+    // first page fits fewer rows. Computing the grid once would under-fill
+    // every later page, which reads as a bug in the report rather than here.
+    const header = '<Item1 Ref="1" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="400" />';
+    const result = paginate(build(2, 'AcrossThenDown', 200, header), 20);
+    expect(details(result, 0)).toHaveLength(6);   // 3 rows x 2
+    expect(details(result, 1)).toHaveLength(10);  // 5 rows x 2
+  });
+
+  it('leaves a single-column band exactly as it was', () => {
+    // The regression that matters: everything without <MultiColumn> must be
+    // untouched by this code path.
+    const plain = parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="900" PageHeight="1000">' +
+      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100" /></Bands></XtraReportsLayoutSerializer>'
+    );
+    const placed = details(paginate(plain, 3));
+    expect(placed.map((b) => b.left)).toEqual([0, 0, 0]);
+    expect(placed.map((b) => b.width)).toEqual([900, 900, 900]);
+    expect(placed.map((b) => b.top)).toEqual([0, 100, 200]);
+  });
+
+  it('puts the report footer below the columns, not inside them', () => {
+    const footer = '';
+    const structure = build(2, 'AcrossThenDown', 100, footer);
+    structure.bands.push({ kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null });
+    const result = paginate(structure, 4);
+    const rf = result.pages[0].bands.find((b) => b.band.kind === 'ReportFooter')!;
+    // Two rows of 100 used, so the footer starts at 200 rather than overlapping.
+    expect(rf.top).toBe(200);
+    expect(rf.left).toBe(0);
+  });
+});

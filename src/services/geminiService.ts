@@ -117,7 +117,7 @@ const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
         </Item1>
       </Controls>
     </Item3>
-    <Item4 Ref="9" ControlType="DetailBand" Name="Detail" HeightF="40">
+    <Item4 Ref="9" ControlType="DetailBand" Name="Detail" HeightF="40">
       <Controls>
         <Item1 Ref="10" ControlType="XRTable" Name="tableDetail" LocationFloat="20,5" SizeF="810,25">
           <Rows>
@@ -988,7 +988,7 @@ const COLUMNS_BLOCK = `          - MULTI-COLUMN DETAIL — records flowing into 
             - ColumnSpacing is in the report's own units, like every other measurement except font size and border width.
             - The element carries a Ref and NO ControlType.
             - **Omit it entirely for an ordinary report.** A band with no <MultiColumn> prints one column, which is what almost every document wants. Only emit it when the source visibly repeats its records side by side across the page.
-            - The Detail band's own width stays the full page width; DevExpress divides it. Do not narrow the controls to a third of the page as well, or each column ends up a third of a third.
+            - **Size the controls to ONE COLUMN, not to the page.** With ColumnCount="3" and ColumnSpacing="20" on an 850-wide page each column is (850 - 40) / 3 = 270 units, so a table filling a column is SizeF="270,…" and not "810,…". A control wider than its column is the commonest way this comes out wrong, and it looks like a layout bug rather than a column-width one.
 `;
 
 /**

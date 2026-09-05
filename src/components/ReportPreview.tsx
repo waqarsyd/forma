@@ -602,6 +602,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
                   className="rp-band"
                   style={{
                     top: unitsToPx(placed.top, report.unit),
+                    // left/width are the full page for everything except a
+                    // record inside a multi-column Detail band, where they are
+                    // the column. `.rp-band` sets left:0 and width:100% in CSS,
+                    // so both have to be written here to override it.
+                    left: unitsToPx(placed.left, report.unit),
+                    width: unitsToPx(placed.width, report.unit),
                     height: unitsToPx(placed.band.height, report.unit),
                     background: showBands ? BAND_TINT[placed.band.kind] ?? 'transparent' : 'transparent',
                   }}
@@ -827,15 +833,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
           <input type="checkbox" checked={showBands} onChange={(e) => setShowBands(e.target.checked)} />
           Show bands
         </label>
-        {/* Stated, not drawn.
-            `paginate` flows every record down one column. A multi-column report
-            rendered that way looks correct and is not, which is worse than an
-            admitted gap -- the same call as reporting null for an image
-            watermark rather than drawing a placeholder for it. */}
+        {/* Drawn now, and still worth saying: the fill ORDER is not visible from
+            a page of identical records, and it is the half of a multi-column
+            layout most likely to be wrong in the file. */}
         {multiColumn && (
-          <span className="rp-over">
-            prints in {multiColumn.count} columns ({multiColumn.layout === 'DownThenAcross' ? 'down then across' : 'across then down'})
-            {' — '}the preview shows one
+          <span className="rp-stat">
+            {multiColumn.count} columns, {multiColumn.layout === 'DownThenAcross' ? 'down then across' : 'across then down'}
           </span>
         )}
         {editable && (

@@ -191,10 +191,10 @@ export interface PreviewBand {
   /**
    * Multi-column flow, when the band declares it.
    *
-   * **`paginate` does not honour this yet** — it lays every record out in one
-   * column. The Preview says so rather than drawing a single-column page as
-   * though it were the truth, because a multi-column report previewed as
-   * single-column looks right and is wrong, which is worse than a stated gap.
+   * Honoured by `paginate`, which lays the records out on a `rows x count` grid
+   * and gives each placement a `left` and a `width`. Only the Detail band is
+   * divided — headers, footers and group bands span the full page, which is
+   * what DevExpress does.
    */
   columns: PreviewColumns | null;
 }
@@ -774,6 +774,22 @@ export interface PlacedBand {
   band: PreviewBand;
   /** Page-relative top edge, in report units. */
   top: number;
+  /**
+   * Page-relative left edge, in report units.
+   *
+   * 0 for everything except a record in the second or later column of a
+   * multi-column Detail band. Headers and footers always span the full width —
+   * DevExpress divides only the detail flow, not the page.
+   */
+  left: number;
+  /**
+   * How wide this band prints, in report units.
+   *
+   * The full page width except inside a multi-column Detail band, where it is
+   * one column. The renderer needs it because a column's controls are laid out
+   * against the column's width, not the page's.
+   */
+  width: number;
   /** 1-based record number for a repeated Detail band; null for everything else. */
   record: number | null;
 }
@@ -861,18 +877,23 @@ export function paginate(
   let current: PreviewPage | null = null;
   let cursor = 0;
 
+  /** The full page width, which every band gets unless it is in a column. */
+  const fullWidth = structure.page.width;
+
   const startPage = () => {
     current = { number: pages.length + 1, bands: [] };
     pages.push(current);
     cursor = topMargin;
     if (pageHeader) {
-      current.bands.push({ band: pageHeader, top: cursor, record: null });
+      current.bands.push({ band: pageHeader, top: cursor, left: 0, width: fullWidth, record: null });
       cursor += pageHeader.height;
     }
     if (pageFooter) {
       current.bands.push({
         band: pageFooter,
         top: structure.page.height - bottomMargin - pageFooter.height,
+        left: 0,
+        width: fullWidth,
         record: null,
       });
     }
@@ -884,14 +905,14 @@ export function paginate(
     if (cursor + band.height > pageBottom && pages.length < maxPages) {
       startPage();
     }
-    current!.bands.push({ band, top: cursor, record });
+    current!.bands.push({ band, top: cursor, left: 0, width: fullWidth, record });
     cursor += band.height;
   };
 
   startPage();
 
   if (reportHeader) {
-    current!.bands.push({ band: reportHeader, top: cursor, record: null });
+    current!.bands.push({ band: reportHeader, top: cursor, left: 0, width: fullWidth, record: null });
     cursor += reportHeader.height;
   }
   for (const header of groupHeaders) place(header, null);
@@ -906,10 +927,80 @@ export function paginate(
           'design went into one band instead of being split across ReportHeader, PageHeader and Detail.',
       );
     }
-    for (let i = 0; i < records; i++) {
-      if (pages.length >= maxPages && cursor + detail.height > pageBottom) break;
-      place(detail, i + 1);
-      placedRecords++;
+    const columns = detail.columns && detail.columns.count > 1 ? detail.columns : null;
+
+    if (!columns) {
+      for (let i = 0; i < records; i++) {
+        if (pages.length >= maxPages && cursor + detail.height > pageBottom) break;
+        place(detail, i + 1);
+        placedRecords++;
+      }
+    } else {
+      /*
+       * Multi-column flow.
+       *
+       * DevExpress divides the detail area into `count` columns and fills them
+       * in one of two orders. `DownThenAcross` fills a column to the bottom
+       * before starting the next; `AcrossThenDown` places one record in each
+       * column and then moves down a row. Everything else on the page — the
+       * headers, the footers, the group bands — still spans the full width,
+       * because only the detail flow is divided.
+       *
+       * The whole block below is arithmetic on a grid of `rows x count` slots.
+       * `cursor` is deliberately NOT used inside it: `place` advances a single
+       * vertical cursor, which is the one thing that cannot describe two
+       * records at the same height. It is set once at the end, to the bottom of
+       * the last row used, so whatever comes after the detail flow — the group
+       * footers, the report footer — lands below all of the columns rather than
+       * inside them.
+       */
+      const columnWidth = (fullWidth - columns.spacing * (columns.count - 1)) / columns.count;
+      const downThenAcross = columns.layout === 'DownThenAcross';
+
+      /*
+       * Recomputed per page rather than once, because the first page is
+       * shorter: it spends height on the ReportHeader and any group headers.
+       * Computing the grid once from the first page's remaining height would
+       * under-fill every page after it, which reads as a pagination bug in the
+       * report rather than in this function.
+       */
+      let pageTop = cursor;
+      let rowsPerPage = Math.max(1, Math.floor((pageBottom - pageTop) / detail.height));
+      let perPage = rowsPerPage * columns.count;
+      let onPage = 0;
+      let rowsUsed = 0;
+
+      for (let i = 0; i < records; i++) {
+        if (onPage === perPage) {
+          if (pages.length >= maxPages) break;
+          startPage();
+          pageTop = cursor;
+          rowsPerPage = Math.max(1, Math.floor((pageBottom - pageTop) / detail.height));
+          perPage = rowsPerPage * columns.count;
+          onPage = 0;
+          rowsUsed = 0;
+        }
+
+        // Which slot of the rows x count grid, in this layout's fill order.
+        const row = downThenAcross ? onPage % rowsPerPage : Math.floor(onPage / columns.count);
+        const column = downThenAcross ? Math.floor(onPage / rowsPerPage) : onPage % columns.count;
+
+        current!.bands.push({
+          band: detail,
+          top: pageTop + row * detail.height,
+          left: column * (columnWidth + columns.spacing),
+          width: columnWidth,
+          record: i + 1,
+        });
+        onPage++;
+        rowsUsed = Math.max(rowsUsed, row + 1);
+        placedRecords++;
+      }
+
+      // Below every column, so a group or report footer does not land inside
+      // the grid. `place` is not used above precisely because its single
+      // vertical cursor cannot describe two records at the same height.
+      cursor = pageTop + rowsUsed * detail.height;
     }
   }
 
