@@ -288,6 +288,11 @@ src/
                        out across real pages — Detail once per record,
                        PageHeader on every sheet — which is what the Preview
                        pane and the PDF export are drawn from),
+                       revisions (the report's history for the session, and a
+                       structural diff by control name — added, removed,
+                       moved, resized, retyped — because the model rewrites
+                       whitespace freely and a line diff of two REPX files is
+                       almost entirely noise),
                        workspaceView (which pane the bench shows, held in two
                        pieces of state — extracted from App.tsx so the pair
                        can be round-trip tested, because a plate present in

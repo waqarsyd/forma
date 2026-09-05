@@ -35,6 +35,7 @@ import {
   IconEyeOff,
   IconFolder,
   IconHistory,
+  IconRedo,
   IconStack,
   IconKey,
   IconMoon,
@@ -139,6 +140,8 @@ const DataBinding = lazy(() => import('./components/DataBinding'));
 /* Batch intake. Lazy for the same reason as the other two, and it carries the
    ZIP writer, which nobody generating a single report ever needs. */
 const BatchPanel = lazy(() => import('./components/BatchPanel'));
+/* Revision history. Lazy like the other three panels; it carries the diff. */
+const RevisionsPanel = lazy(() => import('./components/RevisionsPanel'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -169,6 +172,7 @@ import { titleForRoute, viewForRoute } from './lib/routes';
    each for the failure it was carrying while it lived here. */
 import { plateFor, stateForPlate, type Plate, type ActiveTab, type SpecView } from './lib/workspaceView';
 import { countStagedUploads, admitFiles } from './lib/attachmentBudget';
+import { pushRevision, type Revision } from './lib/revisions';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
@@ -1192,7 +1196,7 @@ export interface SavedReport {
    `routes.test.ts` now checks rather than asks you to remember. */
 
 /** Which panel the rail's second column is showing. */
-type RailPanel = 'review' | 'projects' | 'history' | 'batch';
+type RailPanel = 'review' | 'projects' | 'history' | 'batch' | 'revisions';
 
 /**
  * The review column's own geometry, remembered between sessions.
@@ -2254,6 +2258,27 @@ export default function App() {
    * with nothing to refine against, and handing it the last file's layout is
    * how forty documents come out looking like the first one.
    */
+  /*
+   * Revision history for the report on the bench.
+   *
+   * Milestones only -- each generation or refinement, and each binding pass.
+   * A drag is not a revision: ReportPreview has its own undo, one entry per
+   * gesture, and pushing here as well would bury the three or four versions
+   * somebody actually wants to return to under forty nudges. See lib/revisions.
+   */
+  const [revisions, setRevisions] = useState<Revision[]>([]);
+  const recordRevision = useCallback((label: string, snapshot: DesignResult) => {
+    setRevisions((list) => pushRevision(list, label, {
+      content: snapshot.content,
+      // Both are optional on DesignResult: a generation that returned no XML
+      // still produced a report worth being able to return to, and the
+      // duplicate check compares REPX, where two empties are correctly equal.
+      repxContent: snapshot.repxContent ?? '',
+      title: snapshot.title ?? '',
+      layout: snapshot.layout,
+    }));
+  }, []);
+
   const batchResults = useRef<Map<string, DesignResult>>(new Map());
   const runOneBatchFile = useCallback(async (file: File, signal: AbortSignal, id: string) => {
     const ingested = await ingestFile(file, `batch-${id}`, config.unit);
@@ -2683,6 +2708,9 @@ export default function App() {
       };
 
       setResult(newResult);
+      // A refinement turn replaces the whole report, so this is the moment the
+      // previous one would otherwise be gone for good.
+      recordRevision(result ? 'Refined' : 'Generated', newResult);
       setActiveTab('ui');
 
       // Add assistant message
@@ -3397,6 +3425,7 @@ export default function App() {
         {railBtn('review', 'Current report', <IconLayout size={19} />)}
         {railBtn('projects', 'Saved projects', <IconFolder size={19} />)}
         {railBtn('history', 'Recent', <IconHistory size={19} />)}
+        {railBtn('revisions', 'Revisions', <IconRedo size={19} />)}
         {railBtn('batch', 'Batch', <IconStack size={19} />)}
         <button data-open-config title="Configure" aria-label="Configure" onClick={() => setIsConfigOpen(true)}>
           <IconTune size={19} />
@@ -3848,6 +3877,41 @@ export default function App() {
         </div>
 
         {/* -------------------------------------------------------- recent */}
+        <div className={`wb-panel-body${railPanel === 'revisions' ? '' : ' wb-hidden'}`}>
+          <div className="wb-col-head">
+            <span className="wb-col-title">Revisions</span>
+            {revisions.length > 0 && (
+              <span className="wb-kicker">
+                {revisions.length === 1 ? '1 version' : `${revisions.length} versions`}
+              </span>
+            )}
+          </div>
+          <div style={{ padding: '0 16px 16px', flex: 1, minHeight: 0, display: 'flex' }}>
+            <Suspense fallback={null}>
+              <RevisionsPanel
+                revisions={revisions}
+                current={result?.repxContent}
+                onRestore={(revision) => {
+                  /* Restoring is itself a change worth recording, so the
+                     version being left is not lost by returning to an older
+                     one -- which would make Restore the very trap this panel
+                     exists to remove. */
+                  const restored = {
+                    ...(result ?? {}),
+                    content: revision.snapshot.content,
+                    repxContent: revision.snapshot.repxContent,
+                    title: revision.snapshot.title,
+                    layout: revision.snapshot.layout,
+                  } as DesignResult;
+                  setResult(restored);
+                  recordRevision(`Restored "${revision.label}"`, restored);
+                  setSaveNotice(`Restored the version from ${new Date(revision.at).toLocaleTimeString()}.`);
+                }}
+              />
+            </Suspense>
+          </div>
+        </div>
+
         <div className={`wb-panel-body${railPanel === 'batch' ? '' : ' wb-hidden'}`}>
           <div className="wb-col-head">
             <span className="wb-col-title">Batch</span>
@@ -4088,7 +4152,11 @@ export default function App() {
                          cell's text comes from at print time, not what the
                          document is. */
                       onApply={(xml, summary) => {
-                        setResult({ ...result, repxContent: xml });
+                        const bound = { ...result, repxContent: xml };
+                        setResult(bound);
+                        // Binding rewrites every mapped cell, so it is a
+                        // milestone in the same sense a refinement is.
+                        recordRevision('Bound to data', bound);
                         setSaveNotice(summary);
                       }}
                     />
