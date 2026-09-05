@@ -107,6 +107,7 @@ Each of these is a shipped code path, not a plan.
 - **Zero-knowledge key vault.** AES-GCM encryption in the browser, PBKDF2-SHA256 key derivation ([`src/services/keyVault.ts`](src/services/keyVault.ts)).
 - **Version history with a structural diff.** Every generation, refinement and binding pass is kept, each row saying what it changed — controls added, removed, moved, resized, retyped — so a refinement that made the report worse is one click from being undone. Signed in, the newest ten are saved with the project ([`src/lib/revisions.ts`](src/lib/revisions.ts), [`src/lib/revisionStore.ts`](src/lib/revisionStore.ts)).
 - **Account deletion that actually deletes**, removing saved reports, their version history and the encrypted key — proven by a test running against the emulator with production rules enforced. The middle one is the part that is easy to miss: Firestore does not delete a subcollection with its parent document, so a report deleted the obvious way leaves its history behind and looks like it worked ([`tests/accountDeletion.test.ts`](tests/accountDeletion.test.ts)).
+- **A shared style sheet, derived rather than asked for.** An appearance used by three or more controls is hoisted onto a `<StyleSheet>` after generation, so restyling a migrated report is one edit instead of forty that have to agree. Grouping is on exact equality, which is what makes it provably equivalent — a style supplies defaults and an explicit attribute still overrides it ([`src/lib/repxStyles.ts`](src/lib/repxStyles.ts)).
 - **A single place for unit conversion.** Four coordinate systems meet in this pipeline and every conversion between them lives in one module, because a mismatch renders a plausible layout in the wrong place and never throws ([`src/lib/reportGeometry.ts`](src/lib/reportGeometry.ts)).
 - **Optional Windows companion** that opens a generated `.repx` in the real DevExpress designer over a loopback listener, feature-detected so the button only appears when it is running ([`tools/RepxDesigner/`](tools/RepxDesigner/), [`src/lib/designerBridge.ts`](src/lib/designerBridge.ts)).
 - **Mock mode** — `VITE_FORMA_MOCK=true` returns a canned invoice after a 3s delay, for exercising loaders and progress bars without spending a request.
@@ -300,6 +301,11 @@ src/
                        repxBindings (column headings to DevExpress field names
                        for expression bindings — derived in code so the guess
                        is testable, not left to the prompt),
+                       repxStyles (hoists an appearance shared by three or
+                       more controls onto a <StyleSheet>, so a migrated
+                       report can be restyled in one place -- a control's
+                       Borders is a style's Sides, which is the kind of
+                       thing only a measurement finds),
                        repxAudit (asks what is still wrong with the finished
                        report after every repair has run — errors mean content
                        will be lost, warnings mean it opens and is a worse

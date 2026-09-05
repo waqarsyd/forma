@@ -39,6 +39,7 @@ static class Program {
             case "emit-grow":  EmitGrow(args[1]);  return 0;
             case "emit-marks": EmitMarks(args[1]); return 0;
             case "emit-container": EmitContainer(args[1]); return 0;
+            case "emit-styles": EmitStyles(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -388,6 +389,96 @@ static class Program {
         detail.Name = "Detail";
         detail.HeightF = 260;
         detail.Controls.AddRange(new XRControl[] { outside, panel, byUrl, byObject });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            detail,
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes a report using a STYLE SHEET, the highest-value thing Forma still
+    /// cannot express: every control currently carries its own font and colour,
+    /// so restyling a migrated report means touching all of them.
+    ///
+    /// The questions, in the order they matter:
+    ///
+    ///   1. Where does the sheet live -- a root-level collection, and under what
+    ///      element name?
+    ///   2. **How does a control REFER to a style?** By name, or by a "#Ref-N"
+    ///      pointer? If it is a pointer, this is the third such attribute and
+    ///      repxRefs.ts has to know about it, because renumbering a duplicate
+    ///      would silently repoint every control using that style.
+    ///   3. Does an explicit property on the control still override the style,
+    ///      and is it still written when it matches the style's value? That
+    ///      decides whether Forma can emit a sheet AND keep per-control
+    ///      overrides, or has to choose.
+    ///   4. Do tables have separate odd/even row style hooks?
+    static void EmitStyles(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeStyles";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRControlStyle heading = new XRControlStyle();
+        heading.Name = "HeadingStyle";
+        heading.Font = new Font("Arial", 12, FontStyle.Bold);
+        heading.ForeColor = Color.FromArgb(0x1A, 0x2B, 0x3C);
+        heading.BackColor = Color.FromArgb(0xEE, 0xEE, 0xEE);
+        heading.TextAlignment = DevExpress.XtraPrinting.TextAlignment.MiddleLeft;
+        heading.Borders = DevExpress.XtraPrinting.BorderSide.Bottom;
+
+        XRControlStyle body = new XRControlStyle();
+        body.Name = "BodyStyle";
+        body.Font = new Font("Arial", 9);
+        body.Padding = new DevExpress.XtraPrinting.PaddingInfo(2, 2, 0, 0, 100F);
+
+        report.StyleSheet.AddRange(new XRControlStyle[] { heading, body });
+
+        // A control taking the style and nothing else.
+        XRLabel styled = new XRLabel();
+        styled.Name = "labelStyled";
+        styled.Text = "styled only";
+        styled.LocationF = new PointF(0, 0);
+        styled.SizeF = new SizeF(300, 20);
+        styled.StyleName = "HeadingStyle";
+
+        // A control taking the style AND overriding one property, to find out
+        // whether the override survives into the file.
+        XRLabel overridden = new XRLabel();
+        overridden.Name = "labelOverridden";
+        overridden.Text = "styled, red text";
+        overridden.LocationF = new PointF(0, 25);
+        overridden.SizeF = new SizeF(300, 20);
+        overridden.StyleName = "HeadingStyle";
+        overridden.ForeColor = Color.Red;
+
+        // A second control on the OTHER style, to confirm both survive.
+        XRLabel byObject = new XRLabel();
+        byObject.Name = "labelByObject";
+        byObject.Text = "style by object";
+        byObject.LocationF = new PointF(0, 50);
+        byObject.SizeF = new SizeF(300, 20);
+        byObject.StyleName = "BodyStyle";
+
+        // A table, for the odd/even row hooks.
+        XRTableCell cellA = Cell("cellA", "A", 1);
+        XRTableCell cellB = Cell("cellB", "B", 1);
+        XRTable table = Table("tableStyled", new XRTableCell[] { cellA, cellB });
+        table.LocationF = new PointF(0, 80);
+        table.OddStyleName = "BodyStyle";
+        table.EvenStyleName = "HeadingStyle";
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 120;
+        detail.Controls.AddRange(new XRControl[] { styled, overridden, byObject, table });
 
         report.Bands.AddRange(new Band[] {
             new TopMarginBand(),

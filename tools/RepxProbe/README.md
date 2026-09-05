@@ -9,6 +9,9 @@ RepxProbe emit-group <out.repx>  # the same, for a GROUPED report
 RepxProbe emit-params <out.repx> # the same, for a PARAMETERISED report
 RepxProbe emit-chart <out.repx>  # the same, for a CHART and a CROSS-TAB
 RepxProbe emit-grow <out.repx>   # the same, for AUTO-SIZING (CanGrow/CanShrink/WordWrap)
+RepxProbe emit-marks <out.repx>  # the same, for CHECKBOXES and CROSS-BAND controls
+RepxProbe emit-container <out.repx> # the same, for XRPanel and XRSubreport
+RepxProbe emit-styles <out.repx> # the same, for a STYLE SHEET
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 

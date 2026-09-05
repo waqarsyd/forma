@@ -9,6 +9,7 @@ import { normalizeItemNames } from "../lib/repxItems";
 import { instructionBlock } from "../lib/userInstructions";
 import { auditRepx } from "../lib/repxAudit";
 import { liftParameterTypes } from "../lib/repxParameters";
+import { liftStyles } from "../lib/repxStyles";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
@@ -1786,6 +1787,28 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.log(`Parameters: ${params.reason}.`);
     } else {
       console.log(`Parameters left as generated: ${params.reason}.`);
+    }
+
+    /*
+     * Shared appearance onto a <StyleSheet>, last of the output passes.
+     *
+     * Last on purpose: it reads every control's attributes and rewrites the ones
+     * it hoists, so anything that also edits attributes -- the margin lift, the
+     * parameter lift -- has to have finished. Running it earlier would let a
+     * later pass write an attribute onto a control whose twin had already had
+     * that attribute removed, splitting a group that was equal when it was
+     * measured.
+     *
+     * Also the least consequential if it declines: a report without a style
+     * sheet prints exactly the same, it is merely tedious to restyle. That is
+     * why it is allowed to decline for any reason at all and only logs.
+     */
+    const styles = liftStyles(parsed.repxContent);
+    if (styles.applied) {
+      parsed.repxContent = styles.xml;
+      console.log(`Styles: ${styles.reason}.`);
+    } else {
+      console.log(`Styles left as generated: ${styles.reason}.`);
     }
 
     /*

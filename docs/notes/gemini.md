@@ -489,6 +489,30 @@ Two things follow. **`CanShrink` is the only one of the three that has to be ask
 
 **The method note, which is the transferable part.** A grep for an absent attribute proves the attribute is absent. It says nothing about what the absence *means* — and for a serializer that omits every default, absence is the normal case rather than the exceptional one. Two of the five things this probe has now settled were negative results (`Type=` inline is ignored; auto-sizing needs nothing), and both looked like defects until measured. **Reach for `RepxProbe` before writing the fix, not only before writing the syntax.**
 
+### The style sheet, and one attribute that changes its name (2026-09-05)
+
+`RepxProbe emit-styles`. Every control the model writes carries its own `Font` and `ForeColor`, so a report using one heading treatment forty times repeats it forty times and restyling means forty edits that have to agree. This was the last remaining gap that improves *every* report rather than the subset containing a particular control.
+
+```xml
+  </Bands>
+  <StyleSheet>
+    <Item1 Ref="11" Name="HeadingStyle" Font="Arial, 12pt, style=Bold" ForeColor="255,26,43,60" Sides="Bottom" />
+  </StyleSheet>
+```
+
+- **`<StyleSheet>` is a root-level collection, a sibling of `<Bands>`, written after it.**
+- **A control refers to a style by NAME — `StyleName="HeadingStyle"` — not by a `#Ref-N` pointer.** That is why this one needs no change in `repxRefs.ts`, unlike parameters and cross-band controls, and it was worth checking rather than assuming given the other two.
+- **A control's `Borders` is a style's `Sides`.** Same concept, different attribute name. Writing `Borders=` inside a style is silently ignored — the one thing here that trial and error would not have found, because the file still loads and the border simply never appears.
+- An explicit attribute on the control still wins: `StyleName="HeadingStyle" ForeColor="Red"` writes both and the red survives. That is what makes hoisting safe.
+- Tables carry `OddStyleName` and `EvenStyleName` of their own.
+- A style item carries a `Ref` and **no `ControlType`** — the sixth collection where that holds, after bindings, group fields, chart series, cross-tab fields and checkbox bindings.
+
+**So it is arithmetic on the output, not a prompt instruction** — `src/lib/repxStyles.ts`, the same shape as the margin lift and the parameter lift, and for the same reason: spotting that forty controls share an appearance is a global property of the document, and the model writes controls one at a time. `liftStyles` groups controls whose appearance attributes are **exactly** equal, hoists the whole set onto a named style, and deletes exactly that set from each member. Equality of the full set is what makes it provably equivalent; near-matches are left alone rather than approximated, because merging them would silently give one control a property it never had.
+
+**Verified through the loader, not just by its own tests.** A lifted file was written out and `RepxProbe inspect` re-saved it through DevExpress: all six labels came back with their `StyleName`, the sheet came back with both styles, `Sides="Bottom"` was understood, and the hex `ForeColor="#1A2B3C"` was resolved to `255,26,43,60` — which incidentally confirms hex is accepted where the prompt already uses it.
+
+**One gap left deliberately.** `BorderColor` and `BorderWidth` are not hoisted, because their spelling inside a style was never measured and a guessed attribute name is *silently ignored* rather than rejected — the exact failure the `Borders`/`Sides` finding demonstrates. They stay on the control, where they still apply.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

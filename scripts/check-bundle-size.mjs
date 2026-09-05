@@ -103,7 +103,20 @@ const BUDGETS = [
   // day and the fourth overall, which is the cadence the paragraph above
   // predicts rather than a sign of anything wrong -- each one names a feature.
   // 81_000 puts it at 93.5%.
-  { prefix: 'geminiService-', ext: '.js', max: 81_000, note: 'the mega-prompt + generation service, lazy' },
+  //
+  // Raised to 85_000 on 2026-09-05, and this is the case the paragraph above
+  // called "the interesting one": it fired WITHOUT a prompt change behind it.
+  // 76,751 -> 79,327 B, +2,576 B, and the cause is `lib/repxStyles.ts` -- a new
+  // module the service imports, so genuinely new code rather than more
+  // instruction text. Checked before raising: the prompt itself got SHORTER in
+  // the same session (the flat fallback went, and the optional sections are now
+  // conditional), so the two movements are unrelated and both are intended.
+  //
+  // Worth knowing for next time: this cap now watches a chunk that grows from
+  // three separate places -- `geminiService.ts`, `lib/reportBands.ts` (the
+  // prompt), and any pure module the service imports for an output pass. A raise
+  // should say which. 85_000 puts it at 93.3%.
+  { prefix: 'geminiService-', ext: '.js', max: 85_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it
