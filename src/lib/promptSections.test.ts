@@ -75,6 +75,7 @@ describe('with a .repx source, omitting only what it rules out', () => {
     // cross-band rules and shapes as well.
     for (const [marker, section] of [
       ['XRCheckBox', 'checkbox'],
+      ['XRCharacterComb', 'checkbox'],
       ['XRCrossBandLine', 'crossband'],
       ['XRPanel', 'containers'],
       ['XRSubreport', 'containers'],
@@ -331,6 +332,23 @@ describe('gauges and sparklines as a section', () => {
   it('is kept when the user asks for one in their own words', () => {
     for (const instruction of ['add a gauge for completion', 'show a trend line', 'a progress bar for each row']) {
       expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('gauges');
+    }
+  });
+});
+
+describe('character combs share the form-control section', () => {
+  const plain = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+
+  it('rides with checkboxes rather than earning a section of its own', () => {
+    // Both are controls only forms use, and a section whose signal cannot be
+    // told from its neighbour's buys nothing -- the floor this file states.
+    const comb = '<XtraReportsLayoutSerializer><Bands><Item1 ControlType="XRCharacterComb" /></Bands></XtraReportsLayoutSerializer>';
+    expect(sectionsFor({ texts: [comb] })).toEqual(['checkbox']);
+  });
+
+  it('is kept when the user describes the shape rather than naming it', () => {
+    for (const instruction of ['one character per box', 'a boxed reference field', 'use a comb for the postcode']) {
+      expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('checkbox');
     }
   });
 });

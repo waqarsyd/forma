@@ -162,6 +162,35 @@ function ControlBox({
   }
 
   /*
+   * A character comb draws one box per character, which is the whole point of
+   * it being one. Drawn from the text the file carries, so an empty or bound
+   * comb shows its boxes rather than nothing — the boxes ARE the content on a
+   * blank form, and a form control that renders as empty space here would look
+   * like a control that got lost.
+   */
+  if (control.type === 'XRCharacterComb') {
+    const characters = control.text ? [...control.text] : new Array(8).fill('');
+    return (
+      <div style={{ ...frame, gap: 2, alignItems: 'center', justifyContent: 'flex-start' }}>
+        {characters.map((character, i) => (
+          <span
+            key={i}
+            style={{
+              border: '1px solid currentColor',
+              minWidth: '1.1em',
+              textAlign: 'center',
+              lineHeight: 1.3,
+              flex: '0 0 auto',
+            }}
+          >
+            {character || ' '}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  /*
    * A gauge and a sparkline, drawn as their SETTINGS rather than as data —
    * the same decision as charts and cross-tabs, and for the same reason: the
    * preview has no data source, so a needle at an invented position on a page

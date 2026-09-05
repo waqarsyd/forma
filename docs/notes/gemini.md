@@ -704,6 +704,27 @@ The Preview draws both as their **settings** rather than their data: the range, 
 
 So the audit checks neither placement rule — a file breaking either never loads at all — and checks the one DevExpress accepts: **a contents page in a report with no bookmarks**, which prints a "Contents" heading over an empty page. That is the worst version of this control, because the heading makes it look like the content is still coming.
 
+### The character comb, and a default that goes the other way (2026-09-05)
+
+`RepxProbe emit-comb`. One boxed cell per character — how a form asks for a postcode, a reference or an account number.
+
+```xml
+<Item1 Ref="3" ControlType="XRCharacterComb" Name="combPlain" Text="AB12" SizeF="400,40" LocationFloat="0,0" />
+<Item2 Ref="4" ControlType="XRCharacterComb" Name="combSized" CellWidth="30" CellHeight="40" CellHorizontalSpacing="6" CellVerticalSpacing="4" CellSizeMode="Custom" ... />
+```
+
+- **Every cell metric has a default, and an untouched comb writes none of them** — just `Text`, `SizeF` and `LocationFloat`.
+- `CellSizeMode="Custom"` is the pairing again: set the cell size *and* the mode, or the size is ignored. That is the third control with this shape, after `MultiColumn`'s `Mode`/`ColumnCount` and the parameter's `Type`. **Assume any DevExpress size property has a mode that switches it on.**
+- **`Borders="All"` was set and NOT written**, so `All` is a comb's default — the opposite way round from an `XRPanel`, where `Borders="All"` *is* written. A default is per-control, not per-attribute, and reading one control's behaviour onto another is how this gets wrong.
+- Text binds normally, which on a form filled from data is what it should be.
+
+Two properties guessed from the class reference did not exist (`CellBorderWidth`, `CellBorderColor`) and the `CellSizeMode` enum was in `DevExpress.XtraPrinting`, not `…UI`. Both were settled by **reflecting on the installed assembly** rather than by a third guess, which is now the faster move whenever a property name is uncertain:
+
+```powershell
+$asm = [Reflection.Assembly]::LoadFrom("$bin\DevExpress.XtraReports.v20.1.dll")
+$asm.GetType('DevExpress.XtraReports.UI.XRCharacterComb').GetProperties() | Where-Object DeclaringType -eq $_
+```
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

@@ -1090,6 +1090,12 @@ const CHECKBOX_BLOCK = `          - Checkbox: <Item7 Ref="9" ControlType="XRChec
             - A tick, cross or filled square on a form line IS a checkbox. Do not draw one as a label containing "X" or a bordered empty label — those cannot be bound, cannot be toggled, and are the same failure as building a table out of labels.
             - The caption goes in Text, like every other control. The box itself is drawn by the control; do not add a separate label beside it.
             - **Only write the two state attributes for a TICKED box, and always write them as a pair.** Unchecked is the default and DevExpress writes neither attribute, so an empty box is just <Item ControlType="XRCheckBox" Text="..." />. Writing Checked without CheckBoxState, or either one with "false", is not what the serializer produces.
+          - CHARACTER COMB — one boxed cell per character, which is how a form asks for a reference number, a postcode or an account number.
+            <Item2 Ref="4" ControlType="XRCharacterComb" Name="combAccount" CellWidth="30" CellHeight="40" CellHorizontalSpacing="6" CellSizeMode="Custom" Text="SW1A1AA" SizeF="400,40" LocationFloat="0,60" />
+            - **Every cell metric has a default and an untouched comb writes none of them** — just Text, SizeF and LocationFloat. Set CellWidth/CellHeight only when the source's boxes are a size you can measure, and set CellSizeMode="Custom" with them or they are ignored, the same pairing MultiColumn has between Mode and ColumnCount.
+            - Borders are NOT written for a comb the way they are for other controls: All is its default, so a boxed comb needs no Borders attribute at all.
+            - The text binds like a label's, and on a form filled from data that is what it should be: an <ExpressionBindings> item with PropertyName="Text".
+            - **A row of boxes drawn as separate bordered labels is the wrong answer**, exactly as a grid of labels is the wrong answer for a table: it cannot be bound, and the character count is frozen into the layout.
 `;
 
 const CROSSBAND_BLOCK = `          - Cross-band lines and boxes — a vertical rule that runs THROUGH more than one band. **These do NOT go inside a band.** They form a <CrossBandControls> collection that is a SIBLING of <Bands>, written after </Bands>:

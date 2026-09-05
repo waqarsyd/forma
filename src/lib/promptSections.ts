@@ -63,6 +63,7 @@ export type PromptSection =
   | 'columns'
   | 'bookmarks'
   | 'gauges'
+  /** Checkboxes and character combs -- the two controls only forms use. */
   | 'checkbox'
   | 'crossband'
   /** Panels and the instruction not to invent a subreport. */
@@ -101,7 +102,7 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   grouping: /GroupHeaderBand|GroupFooterBand|<GroupFields|Running="Group"/i,
   parameters: /<Parameters\b|\[Parameters\.|FilterString\s*=\s*"[^"]*\?/i,
   charts: /XRChart|XRCrossTab|XRPivotGrid/i,
-  checkbox: /XRCheckBox/i,
+  checkbox: /XRCheckBox|XRCharacterComb/i,
   crossband: /XRCrossBand/i,
   containers: /XRPanel|XRSubreport/i,
   shapes: /XRShape|XRRichText/i,
@@ -126,7 +127,7 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
   grouping: /\bgroup|\bsubtotal|\bbreak\b|\bper (region|customer|category|department)\b/i,
   parameters: /\bparameter|\bprompt\b|\bdate range\b|\bfilter|\bask the (reader|user)\b/i,
   charts: /\bchart|\bgraph|\bplot\b|cross.?tab|\bpivot|\bmatrix\b/i,
-  checkbox: /\bcheck ?box|\btick\b|\bticked\b|\bcross\b/i,
+  checkbox: /\bcheck ?box|\btick\b|\bticked\b|\bcross\b|\bcomb\b|\bone (character|letter|digit) per|\bboxed (field|number|reference)/i,
   crossband: /cross.?band|vertical (rule|line)|column (rule|separator|divider)|\brule\b/i,
   containers: /\bpanel\b|\bsubreport|\bbox\b|\bgroup(ed)? box|\bbordered block/i,
   shapes: /\bshape\b|\bcircle\b|\bellipse\b|\barrow\b|\brich ?text|\bdiagonal\b/i,

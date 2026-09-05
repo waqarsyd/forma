@@ -49,6 +49,7 @@ static class Program {
             case "emit-book":  EmitBookmarks(args[1]); return 0;
             case "emit-gauge": EmitGauge(args[1]); return 0;
             case "emit-toc":   EmitToc(args[1]);   return 0;
+            case "emit-comb":  EmitComb(args[1]);  return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -1097,6 +1098,69 @@ static class Program {
         // ONE only. Adding a second throws -- with a message naming the wrong
         // constraint, see the comment above the declarations.
         header.Controls.Add(styled);
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes an XRCharacterComb -- one boxed cell per character, which is how
+    /// government and banking forms ask for a reference number or a postcode.
+    ///
+    /// Questions:
+    ///
+    ///   - Are the cell metrics flat attributes, and which are omitted as
+    ///     defaults? A comb is mostly geometry, so the defaults decide how much
+    ///     the model has to write.
+    ///   - Is the cell size in report units like every other measurement, or in
+    ///     pixels like BorderWidth? That distinction has caught this project
+    ///     twice already and is worth settling rather than assuming.
+    ///   - Does the text bind like a label's?
+    static void EmitComb(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeComb";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        // Untouched, so the defaults show.
+        XRCharacterComb plain = new XRCharacterComb();
+        plain.Name = "combPlain";
+        plain.Text = "AB12";
+        plain.LocationF = new PointF(0, 0);
+        plain.SizeF = new SizeF(400, 40);
+
+        // Every metric set, so each one's serialized name and unit is visible.
+        XRCharacterComb sized = new XRCharacterComb();
+        sized.Name = "combSized";
+        sized.Text = "SW1A1AA";
+        sized.LocationF = new PointF(0, 60);
+        sized.SizeF = new SizeF(400, 40);
+        sized.CellWidth = 30;
+        sized.CellHeight = 40;
+        sized.CellVerticalSpacing = 4;
+        sized.CellHorizontalSpacing = 6;
+        sized.Borders = DevExpress.XtraPrinting.BorderSide.All;
+        sized.CellSizeMode = DevExpress.XtraPrinting.SizeMode.Custom;
+
+        // Bound, which is what a form field on a data row really is.
+        XRCharacterComb bound = new XRCharacterComb();
+        bound.Name = "combBound";
+        bound.LocationF = new PointF(0, 120);
+        bound.SizeF = new SizeF(400, 40);
+        bound.ExpressionBindings.Add(new ExpressionBinding("BeforePrint", "Text", "[AccountNumber]"));
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 180;
+        detail.Controls.AddRange(new XRControl[] { plain, sized, bound });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            detail,
+            new BottomMarginBand()
+        });
 
         report.SaveLayoutToXml(outPath);
         Console.WriteLine("written: " + Path.GetFullPath(outPath));
