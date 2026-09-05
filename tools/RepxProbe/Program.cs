@@ -40,6 +40,7 @@ static class Program {
             case "emit-marks": EmitMarks(args[1]); return 0;
             case "emit-container": EmitContainer(args[1]); return 0;
             case "emit-styles": EmitStyles(args[1]); return 0;
+            case "emit-rich":  EmitRich(args[1]);  return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -479,6 +480,92 @@ static class Program {
         detail.Name = "Detail";
         detail.HeightF = 120;
         detail.Controls.AddRange(new XRControl[] { styled, overridden, byObject, table });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            detail,
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes an XRRichText and several XRShapes, the last two controls from the
+    /// DevExpress comparison that turn up in ordinary documents.
+    ///
+    /// The questions:
+    ///
+    ///   XRRichText -- **is the content usable, or is it a blob?** A terms-and-
+    ///                 conditions paragraph is the obvious use, but if the only
+    ///                 serialized form is base64 RTF then a language model cannot
+    ///                 author one and this is a negative result. Html, Rtf and
+    ///                 plain Text are all set below, on separate controls, to see
+    ///                 which survive and in what shape.
+    ///
+    ///   XRShape    -- how is the shape TYPE written? A child element, an
+    ///                 attribute, an assembly-qualified name? And do the shapes
+    ///                 with parameters (a star's point count) carry them?
+    static void EmitRich(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeRich";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRRichText plain = new XRRichText();
+        plain.Name = "richPlain";
+        plain.LocationF = new PointF(0, 0);
+        plain.SizeF = new SizeF(600, 60);
+        plain.Text = "Plain text set through Text.";
+
+        XRRichText html = new XRRichText();
+        html.Name = "richHtml";
+        html.LocationF = new PointF(0, 70);
+        html.SizeF = new SizeF(600, 60);
+        html.Html = "<p>Terms: payment due <b>30 days</b> from invoice date.</p>";
+
+        XRShape rectangle = new XRShape();
+        rectangle.Name = "shapeRectangle";
+        rectangle.LocationF = new PointF(0, 140);
+        rectangle.SizeF = new SizeF(200, 80);
+        rectangle.Shape = new DevExpress.XtraPrinting.Shape.ShapeRectangle();
+
+        XRShape ellipse = new XRShape();
+        ellipse.Name = "shapeEllipse";
+        ellipse.LocationF = new PointF(220, 140);
+        ellipse.SizeF = new SizeF(200, 80);
+        ellipse.Shape = new DevExpress.XtraPrinting.Shape.ShapeEllipse();
+
+        XRShape line = new XRShape();
+        line.Name = "shapeLine";
+        line.LocationF = new PointF(440, 140);
+        line.SizeF = new SizeF(200, 80);
+        line.Shape = new DevExpress.XtraPrinting.Shape.ShapeLine();
+
+        // A shape with its own parameter, to see whether it is carried.
+        DevExpress.XtraPrinting.Shape.ShapeStar star = new DevExpress.XtraPrinting.Shape.ShapeStar();
+        star.StarPointCount = 6;
+        XRShape starred = new XRShape();
+        starred.Name = "shapeStar";
+        starred.LocationF = new PointF(0, 240);
+        starred.SizeF = new SizeF(120, 120);
+        starred.Shape = star;
+
+        // A shape left entirely alone, so the default shape type is visible.
+        XRShape untouched = new XRShape();
+        untouched.Name = "shapeUntouched";
+        untouched.LocationF = new PointF(140, 240);
+        untouched.SizeF = new SizeF(120, 120);
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 380;
+        detail.Controls.AddRange(new XRControl[] {
+            plain, html, rectangle, ellipse, line, starred, untouched
+        });
 
         report.Bands.AddRange(new Band[] {
             new TopMarginBand(),

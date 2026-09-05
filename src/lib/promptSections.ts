@@ -80,7 +80,7 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   grouping: /GroupHeaderBand|GroupFooterBand|<GroupFields|Running="Group"/i,
   parameters: /<Parameters\b|\[Parameters\.|FilterString\s*=\s*"[^"]*\?/i,
   charts: /XRChart|XRCrossTab|XRPivotGrid|XRSparkline/i,
-  containers: /XRCheckBox|XRPanel|XRSubreport|XRCrossBand/i,
+  containers: /XRCheckBox|XRPanel|XRSubreport|XRCrossBand|XRShape|XRRichText/i,
 };
 
 /**
@@ -95,7 +95,7 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
   grouping: /\bgroup|\bsubtotal|\bbreak\b|\bper (region|customer|category|department)\b/i,
   parameters: /\bparameter|\bprompt\b|\bdate range\b|\bfilter|\bask the (reader|user)\b/i,
   charts: /\bchart|\bgraph|\bplot\b|cross.?tab|\bpivot|\bmatrix\b/i,
-  containers: /\bcheck ?box|\btick\b|\bpanel\b|\bbox\b|\bsubreport|\brule\b|\bborder/i,
+  containers: /\bcheck ?box|\btick\b|\bpanel\b|\bbox\b|\bsubreport|\brule\b|\bborder|\bshape\b|\bcircle\b|\barrow\b|\brich ?text/i,
 };
 
 /**

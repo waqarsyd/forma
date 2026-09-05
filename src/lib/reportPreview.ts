@@ -148,6 +148,13 @@ export interface PreviewControl {
    * has to write back. **The renderer must add these**, or a panel's children
    * draw in the band's corner instead of inside the panel.
    */
+  /**
+   * Populated for XRShape only: `Rectangle`, `Ellipse`, `Line`, `Star`, …
+   *
+   * Never null for a shape. An absent `<Shape>` child means Ellipse, which is a
+   * real answer rather than a missing one.
+   */
+  shape: string | null;
   offsetX: number;
   offsetY: number;
   /**
@@ -179,6 +186,19 @@ export interface ReportStructure {
 // --------------------------------------------------------------- attributes
 
 export type CheckState = 'unchecked' | 'checked' | 'indeterminate';
+
+/**
+ * An `XRShape`'s figure, defaulting to the one DevExpress assumes.
+ *
+ * Bounded by the control's own extent for the same reason `parseSeries` is: a
+ * band can hold two shapes and the second's `<Shape>` must not be read as the
+ * first's.
+ */
+function parseShapeName(inner: string, controlStart: number, controlEnd: number): string {
+  const match = /<Shape\b[^>]*\sShapeName="([^"]*)"/.exec(inner.slice(controlStart, controlEnd));
+  // Absent means Ellipse, measured — not "unknown".
+  return match ? match[1] : 'Ellipse';
+}
 
 /**
  * A checkbox's state, from whichever of the two attributes the file carries.
@@ -506,6 +526,13 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
        * for the default, so the empty box is the silent case.
        */
       checkState: type === 'XRCheckBox' ? parseCheckState(item.attrs) : null,
+      /*
+       * `RepxProbe emit-rich`: the shape lives in a `<Shape ShapeName="..." />`
+       * child, and **Ellipse writes no element at all** because it is the
+       * default. So an absent child is an ellipse, not an unknown — reading it
+       * as "no shape" would draw nothing where DevExpress draws a circle.
+       */
+      shape: type === 'XRShape' ? parseShapeName(inner, item.start, extent) : null,
       offsetX: 0,
       offsetY: 0,
       openStart: innerStart + item.start,

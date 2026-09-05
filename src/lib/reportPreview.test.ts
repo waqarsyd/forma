@@ -646,3 +646,58 @@ describe('panels', () => {
     expect(withBand(table).map((c) => c.name)).toEqual(['t']);
   });
 });
+
+/**
+ * Shapes, and the default that is a real answer rather than a missing one.
+ *
+ * `RepxProbe emit-rich` measured it: the figure lives in a <Shape ShapeName>
+ * child, and Ellipse writes NO element at all because it is the default. So an
+ * XRShape with no child is a circle. Reading that as "unknown" would draw blank
+ * space where DevExpress draws a filled ellipse -- the same class as CanGrow,
+ * where absence means something specific.
+ */
+describe('shapes', () => {
+  const shape = (child: string) =>
+    parseReportStructure(
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item9 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="200"><Controls>' +
+      `<Item1 Ref="2" ControlType="XRShape" Name="s" SizeF="100,80" LocationFloat="0,0">${child}</Item1>` +
+      '</Controls></Item9></Bands></XtraReportsLayoutSerializer>'
+    ).bands[0].controls[0];
+
+  it('reads the named figure', () => {
+    expect(shape('<Shape Ref="3" ShapeName="Rectangle" />').shape).toBe('Rectangle');
+    expect(shape('<Shape Ref="3" ShapeName="Line" />').shape).toBe('Line');
+  });
+
+  it('reads a shape with no child as an ellipse, because that is the default', () => {
+    expect(shape('').shape).toBe('Ellipse');
+  });
+
+  it('reads a figure carrying its own parameter', () => {
+    expect(shape('<Shape Ref="3" StarPointCount="6" ShapeName="Star" />').shape).toBe('Star');
+  });
+
+  it('leaves shape null on every other control type', () => {
+    const label = parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item9 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="50"><Controls>' +
+      '<Item1 Ref="2" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" LocationFloat="0,0" />' +
+      '</Controls></Item9></Bands></XtraReportsLayoutSerializer>'
+    ).bands[0].controls[0];
+    expect(label.shape).toBeNull();
+  });
+
+  it('does not read the next shape figure as this one', () => {
+    // Two shapes in one band: the window has to be bounded by the control.
+    const both = parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item9 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="200"><Controls>' +
+      '<Item1 Ref="2" ControlType="XRShape" Name="first" SizeF="100,80" LocationFloat="0,0" />' +
+      '<Item2 Ref="3" ControlType="XRShape" Name="second" SizeF="100,80" LocationFloat="0,90"><Shape Ref="4" ShapeName="Star" /></Item2>' +
+      '</Controls></Item9></Bands></XtraReportsLayoutSerializer>'
+    ).bands[0].controls;
+    expect(both.map((c) => c.shape)).toEqual(['Ellipse', 'Star']);
+  });
+});

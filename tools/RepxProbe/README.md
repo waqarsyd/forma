@@ -12,6 +12,7 @@ RepxProbe emit-grow <out.repx>   # the same, for AUTO-SIZING (CanGrow/CanShrink/
 RepxProbe emit-marks <out.repx>  # the same, for CHECKBOXES and CROSS-BAND controls
 RepxProbe emit-container <out.repx> # the same, for XRPanel and XRSubreport
 RepxProbe emit-styles <out.repx> # the same, for a STYLE SHEET
+RepxProbe emit-rich <out.repx>   # the same, for XRRichText and XRShape
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 
@@ -163,12 +164,26 @@ that was not there**:
 - The real risk is the inverse of the one suspected: a `CanGrow="false"` in
   generated output *would* clip, because that is the non-default.
 
-**Two of five measurements have now been negative** (`Type=` inline is silently
-ignored; auto-sizing needs nothing), and both looked like real defects
-beforehand. A grep proving an attribute is absent says nothing about what the
-absence means, because this serializer omits every default — so absence is the
-normal case. **Reach for this tool before writing the fix, not only before
-writing the syntax.**
+And from `emit-styles` and `emit-rich` the same day:
+
+- **`<StyleSheet>` is a root-level collection after `</Bands>`**, and a control
+  refers to a style **by name** — `StyleName="HeadingStyle"` — not by a `#Ref-N`
+  pointer. An explicit attribute on the control still overrides it.
+- **A control's `Borders` is a style's `Sides`.** Writing `Borders=` inside a
+  style is silently ignored: the file loads and the border never appears.
+- **`XRShape` puts its figure in a `<Shape ShapeName="…" />` child, and `Ellipse`
+  writes no element at all** — so a bare `XRShape` is a circle.
+- **`XRRichText` cannot be authored.** Its content is `SerializableRtfString`, a
+  base64-encoded UTF-16 RTF document — ~2.5 kB for one sentence, and setting
+  `Html` produces RTF too. There is no readable form in the file, so a model
+  cannot write one and an approximation loads as an empty box.
+
+**Three of seven measurements have been negative** (`Type=` inline is silently
+ignored; auto-sizing needs nothing; rich text cannot be written), and all three
+looked like real gaps beforehand. A grep proving an attribute is absent says
+nothing about what the absence means, because this serializer omits every default
+— so absence is the normal case. **Reach for this tool before writing the fix,
+not only before writing the syntax.**
 
 **The pattern across four measurements:** a collection item carries no
 `ControlType` — bindings, group fields, chart series, cross-tab fields. Anything

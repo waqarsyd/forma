@@ -513,6 +513,31 @@ Two things follow. **`CanShrink` is the only one of the three that has to be ask
 
 **One gap left deliberately.** `BorderColor` and `BorderWidth` are not hoisted, because their spelling inside a style was never measured and a guessed attribute name is *silently ignored* rather than rejected — the exact failure the `Borders`/`Sides` finding demonstrates. They stay on the control, where they still apply.
 
+### Shapes yes, rich text no (2026-09-05)
+
+`RepxProbe emit-rich`, the last two controls from the DevExpress comparison that turn up in ordinary documents. One is cheap; the other is the third negative result.
+
+**`XRShape` is straightforward, with one default worth knowing.**
+
+```xml
+<Item3 Ref="5" ControlType="XRShape" Name="shapeRectangle" SizeF="200,80" LocationFloat="0,140">
+  <Shape Ref="6" ShapeName="Rectangle" />
+</Item3>
+```
+
+- The figure is a `<Shape ShapeName="…" />` child — `Rectangle`, `Line`, `Star`, `Arrow`, `Bracket` and the rest.
+- **`Ellipse` writes no `<Shape>` element at all**, because it is the default. So a bare `XRShape` is a circle, not an unknown, and a rectangle has to say so or it comes out round. `reportPreview.ts` reads absence as Ellipse for that reason.
+- A figure with a parameter carries it on the same element: `<Shape StarPointCount="6" ShapeName="Star" />`.
+- The item carries a `Ref` and **no `ControlType`** — the seventh collection where that holds.
+
+**`XRRichText` cannot be authored, and that is the finding.** Its content serializes as `SerializableRtfString="…"`: a **base64-encoded UTF-16 RTF document**, about 2.5 kB for a single sentence. Setting `.Html` produced RTF as well — there is no HTML or plain-text form in the file at all.
+
+So a language model cannot write one. Asking for it would produce a blob that either fails to load or loads as an empty box, silently, with the rest of the report intact around it. Generating the RTF in code is possible but buys only one thing an `XRLabel` cannot do — formatting that varies *within* a paragraph — at the cost of an RTF encoder whose failure mode is that same empty box.
+
+**The prompt therefore says: do not create one; if the uploaded `.repx` has one, copy its `SerializableRtfString` across byte for byte.** That covers the case that actually occurs — fidelity to a legacy file — and refuses the case that does not. The Preview draws it as a marked block rather than decoding it, because empty space where the printed report has a paragraph reads as a control that got lost.
+
+**Three negative results now** — inline parameter `Type=` ignored, auto-sizing needing nothing, and this. All three looked like gaps beforehand. That is a third of what this tool has been asked, and it is the argument for reaching for it before writing the fix rather than only before writing the syntax.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

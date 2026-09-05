@@ -162,6 +162,65 @@ function ControlBox({
   }
 
   /*
+   * A shape draws its figure. Ellipse is the default when the file carries no
+   * <Shape> child, so an XRShape with nothing in it is a circle rather than
+   * nothing — which is exactly the kind of thing that would otherwise show as a
+   * blank space here and a filled ellipse in DevExpress.
+   *
+   * Only the three figures a report actually uses are drawn as themselves;
+   * anything else falls back to a labelled outline, which is honest about not
+   * knowing rather than drawing the wrong figure confidently.
+   */
+  if (control.type === 'XRShape') {
+    const name = control.shape ?? 'Ellipse';
+    const stroke = { border: '1px solid currentColor', width: '100%', height: '100%' };
+    if (name === 'Ellipse') return <div style={{ ...frame }}><span style={{ ...stroke, borderRadius: '50%' }} /></div>;
+    if (name === 'Rectangle') return <div style={{ ...frame }}><span style={stroke} /></div>;
+    if (name === 'Line') {
+      return (
+        <div style={{ ...frame, alignItems: 'center' }}>
+          <span style={{ width: '100%', borderTop: '1px solid currentColor' }} />
+        </div>
+      );
+    }
+    return (
+      <div style={{ ...frame, alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ ...stroke, borderStyle: 'dashed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, opacity: 0.7 }}>
+          {name}
+        </span>
+      </div>
+    );
+  }
+
+  /*
+   * Rich text is drawn as a marked block, not as its content.
+   *
+   * The content is a base64 UTF-16 RTF document (`RepxProbe emit-rich`), and
+   * decoding it would mean an RTF parser for a control Forma never generates —
+   * it only ever arrives inside an uploaded .repx. Showing the block is what
+   * matters: the alternative is empty space where the printed report has a
+   * paragraph, which reads as a control that got lost.
+   */
+  if (control.type === 'XRRichText') {
+    return (
+      <div style={{ ...frame, alignItems: 'stretch' }}>
+        <span
+          style={{
+            width: '100%',
+            border: '1px dashed currentColor',
+            opacity: 0.55,
+            fontSize: 9,
+            padding: 2,
+            overflow: 'hidden',
+          }}
+        >
+          rich text — carried through from the source
+        </span>
+      </div>
+    );
+  }
+
+  /*
    * A checkbox draws its own box, which is the point of it being one.
    *
    * The alternative the prompt warns against -- a label containing "X", or a
