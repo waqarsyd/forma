@@ -98,6 +98,7 @@ const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
     <Item2 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="100">
       <Controls>
         <Item1 Ref="3" ControlType="XRLabel" Name="labelTitle" Text="INVOICE - FORMA MOCK ENGINE" LocationFloat="20,20" SizeF="500,40" Font="Arial, 11.52pt" Padding="2,2,0,0,100" />
+        <Item2 Ref="15" ControlType="XRCheckBox" Name="checkPaid" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="20,65" SizeF="200,20" Font="Arial, 7.2pt" />
       </Controls>
     </Item2>
     <Item3 Ref="4" ControlType="PageHeaderBand" Name="PageHeader" HeightF="30">
@@ -141,7 +142,8 @@ const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
         type: "header",
         height: 100,
         elements: [
-          { id: "lbl-title", type: "label", content: "INVOICE - FORMA MOCK ENGINE", x: 20, y: 20, width: 500, height: 40, fontSize: 16 }
+          { id: "lbl-title", type: "label", content: "INVOICE - FORMA MOCK ENGINE", x: 20, y: 20, width: 500, height: 40, fontSize: 16 },
+          { id: "chk-paid", type: "checkbox", content: "Paid in full", checked: true, x: 20, y: 65, width: 200, height: 20, fontSize: 10 }
         ]
       },
       {
@@ -1247,7 +1249,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
                 "type": "header" | "detail" | "footer" | "group",
                 "height": 150,
                 "elements": [
-                  { "id": "el-1", "type": "label" | "table" | "chart" | "gauge" | "image" | "line" | "barcode", "content": "Text or description", "x": 10, "y": 10, "width": 200, "height": 30, "color": "#000000", "backgroundColor": "#ffffff", "fontSize": 12 }
+                  { "id": "el-1", "type": "label" | "table" | "chart" | "gauge" | "image" | "line" | "barcode" | "checkbox", "content": "Text or description", "x": 10, "y": 10, "width": 200, "height": 30, "color": "#000000", "backgroundColor": "#ffffff", "fontSize": 12 }
                 ]
               }
             ]
@@ -1338,7 +1340,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
                         type: Type.OBJECT,
                         properties: {
                           id: { type: Type.STRING },
-                          type: { type: Type.STRING, enum: ["label", "table", "chart", "gauge", "image", "line", "barcode"] },
+                          type: { type: Type.STRING, enum: ["label", "table", "chart", "gauge", "image", "line", "barcode", "checkbox"] },
                           content: { type: Type.STRING },
                           x: { type: Type.NUMBER },
                           y: { type: Type.NUMBER },

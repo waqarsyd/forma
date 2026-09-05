@@ -55,7 +55,7 @@ export interface SourceRect {
 
 export interface ReportElement {
   id: string;
-  type: 'label' | 'table' | 'chart' | 'gauge' | 'image' | 'line' | 'barcode';
+  type: 'label' | 'table' | 'chart' | 'gauge' | 'image' | 'line' | 'barcode' | 'checkbox';
   content: string;
   x: number;
   y: number;
@@ -71,6 +71,15 @@ export interface ReportElement {
   /* --- Type fidelity, added so the mockup can resemble the source design. --- *
    * Every field is optional and the renderer falls back to the old behaviour
    * when absent, so layouts saved by earlier builds still render. */
+
+  /**
+   * `checkbox` only: is the box ticked in the source design?
+   *
+   * Optional and absent-means-false, which mirrors the REPX exactly — DevExpress
+   * writes neither state attribute for an unchecked box, so the empty box is
+   * the silent default on both sides.
+   */
+  checked?: boolean;
 
   bold?: boolean;
   italic?: boolean;

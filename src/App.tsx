@@ -1102,6 +1102,7 @@ const ReportMockup = ({
                 const isLine = el.type === 'line';
                 const isLabel = el.type === 'label';
                 const isBarcode = el.type === 'barcode';
+                const isCheckbox = el.type === 'checkbox';
 
                 const verticalAlign =
                   el.verticalAlign === 'top'
@@ -1143,6 +1144,24 @@ const ReportMockup = ({
                         style={{ textAlign: el.textAlign || 'left' }}
                       >
                         {el.content}
+                      </span>
+                    )}
+
+                    {/* A checkbox draws its box and its caption, matching what
+                        the Preview draws from the REPX. The two panes answer
+                        different questions -- fidelity to the source here, the
+                        exported artifact there -- but a control present in one
+                        and missing from the other reads as a generation bug. */}
+                    {isCheckbox && (
+                      <span className="px-1 w-full flex items-center gap-[6px]">
+                        <span
+                          aria-hidden
+                          className="shrink-0 flex items-center justify-center border border-on-paper rounded-[2px]"
+                          style={{ width: 11, height: 11, fontSize: 9, lineHeight: 1 }}
+                        >
+                          {el.checked ? '✓' : ''}
+                        </span>
+                        <span className="truncate">{el.content}</span>
                       </span>
                     )}
 
