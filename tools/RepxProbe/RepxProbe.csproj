@@ -63,6 +63,25 @@
     <Reference Include="DevExpress.XtraReports.v20.1">
       <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.XtraReports.v20.1.dll</HintPath>
     </Reference>
+    <!--
+      Charts and cross-tabs, added 2026-09-05 for emit-chart. XRChart and
+      XRCrossTab live in the XtraReports assembly, but their contents (Series,
+      Diagram, the cross-tab field collections) come from these, and without
+      them the serializer writes a control with an empty body rather than
+      failing, which is the wrong kind of measurement.
+
+      Note an XML comment cannot contain a double hyphen, which is why this one
+      uses parentheses where the rest of the repo would use a dash.
+    -->
+    <Reference Include="DevExpress.XtraCharts.v20.1">
+      <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.XtraCharts.v20.1.dll</HintPath>
+    </Reference>
+    <Reference Include="DevExpress.XtraCharts.v20.1.Extensions">
+      <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.XtraCharts.v20.1.Extensions.dll</HintPath>
+    </Reference>
+    <Reference Include="DevExpress.PivotGrid.v20.1.Core">
+      <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.PivotGrid.v20.1.Core.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />

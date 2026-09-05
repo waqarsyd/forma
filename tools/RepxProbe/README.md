@@ -7,6 +7,7 @@ documentation.
 RepxProbe emit <out.repx>        # what does the serializer WRITE for a feature?
 RepxProbe emit-group <out.repx>  # the same, for a GROUPED report
 RepxProbe emit-params <out.repx> # the same, for a PARAMETERISED report
+RepxProbe emit-chart <out.repx>  # the same, for a CHART and a CROSS-TAB
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 
@@ -134,6 +135,25 @@ result:
 
 `inspect` reports parameters for this reason, and prints `PARAMETERS LOST` when
 the declared and loaded counts disagree.
+
+And from `emit-chart`:
+
+- The collection is **`SeriesSerializable`**, not `Series`, and the plotted
+  field is **`ValueDataMembersSerializable`**, not `ValueDataMembers`.
+- **A bar series writes no view type at all** — it is the default. Anything
+  else adds `<View TypeNameSerializable="LineSeriesView" />` as a child.
+- **A pie chart writes no `<Diagram>`.** The XY types write one.
+- A cross-tab is `<RowFields>`, `<ColumnFields>` and `<DataFields>` beside an
+  empty `<LayoutOptions />` and `<PrintOptions />`.
+
+**The pattern across four measurements:** a collection item carries no
+`ControlType` — bindings, group fields, chart series, cross-tab fields. Anything
+that finds elements *by* control type is blind to all of them. Assume the next
+collection is the same and check.
+
+`inspect` reports charts and cross-tabs too, naming the view type DevExpress
+actually built, and prints `SERIES LOST` or `CROSS-TAB FIELDS LOST` when the
+loader built fewer than the file declares.
 
 ## Related
 

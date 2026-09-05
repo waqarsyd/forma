@@ -225,6 +225,59 @@ describe('auditRepx on group bands', () => {
   });
 });
 
+describe('auditRepx on charts and cross-tabs', () => {
+  const inDetail = (controls: string) =>
+    report(TOP + `<Item2 Ref="2" ControlType="DetailBand" Name="Detail"><Controls>${controls}</Controls></Item2>` + bottom(3, 9));
+
+  const chart = (withSeries: boolean, ref = 3) =>
+    `<Item1 Ref="${ref}" ControlType="XRChart" Name="c${ref}">` +
+    (withSeries
+      ? `<Chart Ref="${ref + 1}"><DataContainer Ref="${ref + 2}"><SeriesSerializable>` +
+        `<Item1 Ref="${ref + 3}" Name="S" ArgumentDataMember="R" ValueDataMembersSerializable="A" />` +
+        '</SeriesSerializable></DataContainer></Chart>'
+      : '') +
+    `</Item${ref === 3 ? '1' : '2'}>`;
+
+  it('says nothing about a chart that has a series', () => {
+    expect(codes(inDetail(chart(true)))).not.toContain('chart-without-series');
+  });
+
+  it('reports a chart that plots nothing', () => {
+    // It loads, and draws an empty frame that reads as "data has not arrived".
+    const finding = auditRepx(inDetail(chart(false))).findings.find((f) => f.code === 'chart-without-series');
+    expect(finding?.message).toMatch(/1 of 1 chart\(s\) declare no series/);
+  });
+
+  it('counts each chart separately', () => {
+    const two = inDetail(chart(true, 3) + chart(false, 10).replace('<Item1 Ref="10"', '<Item2 Ref="10"'));
+    expect(auditRepx(two).findings.find((f) => f.code === 'chart-without-series')?.message)
+      .toMatch(/1 of 2 chart\(s\)/);
+  });
+
+  it('says nothing about a complete cross-tab', () => {
+    const full =
+      '<Item1 Ref="3" ControlType="XRCrossTab" Name="x">' +
+      '<RowFields><Item1 Ref="4" FieldName="R" /></RowFields>' +
+      '<ColumnFields><Item1 Ref="5" FieldName="Q" /></ColumnFields>' +
+      '<DataFields><Item1 Ref="6" FieldName="A" /></DataFields></Item1>';
+    expect(codes(inDetail(full))).not.toContain('crosstab-missing-fields');
+  });
+
+  it('names the collection a cross-tab is missing', () => {
+    const noData =
+      '<Item1 Ref="3" ControlType="XRCrossTab" Name="x">' +
+      '<RowFields><Item1 Ref="4" FieldName="R" /></RowFields>' +
+      '<ColumnFields><Item1 Ref="5" FieldName="Q" /></ColumnFields></Item1>';
+    const finding = auditRepx(inDetail(noData)).findings.find((f) => f.code === 'crosstab-missing-fields');
+    expect(finding?.message).toContain('<DataFields>');
+  });
+
+  it('says nothing at all about a report with neither', () => {
+    expect(codes(healthy)).not.toContain('chart-without-series');
+    expect(codes(healthy)).not.toContain('crosstab-missing-fields');
+  });
+});
+
 describe('auditRepx on parameters', () => {
   const withParams = (params: string, extra = '') =>
     report(TOP + detailWithTable + bottom(3, 9))

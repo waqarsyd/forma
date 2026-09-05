@@ -347,6 +347,101 @@ describe('group bands', () => {
   });
 });
 
+/**
+ * Charts and cross-tabs, whose serialized shape was measured with
+ * `tools/RepxProbe emit-chart` on 2026-09-05. The two facts a reader would get
+ * wrong from the class reference: series live in `<SeriesSerializable>` and
+ * carry `ValueDataMembersSerializable`, and a bar chart writes NO view type
+ * because it is the default.
+ */
+describe('charts and cross-tabs', () => {
+  const series = (name: string, arg: string, value: string, view?: string) =>
+    view
+      ? `<Item1 Ref="7" Name="${name}" ArgumentDataMember="${arg}" ValueDataMembersSerializable="${value}">` +
+        `<View Ref="8" TypeNameSerializable="${view}" /></Item1>`
+      : `<Item1 Ref="7" Name="${name}" ArgumentDataMember="${arg}" ValueDataMembersSerializable="${value}" />`;
+
+  const chartReport = (inner: string) => `<?xml version="1.0"?>
+<XtraReportsLayoutSerializer ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100">
+  <Bands>
+    <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
+    <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="400">
+      <Controls>${inner}</Controls>
+    </Item2>
+    <Item3 Ref="30" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+
+  const chart = (name: string, body: string, ref = 3) =>
+    `<Item1 Ref="${ref}" ControlType="XRChart" Name="${name}" LocationFloat="0,0" SizeF="600,140">` +
+    `<Chart Ref="${ref + 1}"><DataContainer Ref="${ref + 2}" ValidateDataMembers="true">` +
+    `<SeriesSerializable>${body}</SeriesSerializable></DataContainer></Chart></Item1>`;
+
+  const controlOf = (xml: string, i = 0) =>
+    parseReportStructure(xml).bands.find((b) => b.kind === 'Detail')!.controls[i];
+
+  it('reads a series with its argument and value fields', () => {
+    const c = controlOf(chartReport(chart('chartSales', series('Sales', 'Region', 'Amount'))));
+    expect(c.type).toBe('XRChart');
+    expect(c.series).toEqual([{ name: 'Sales', argument: 'Region', value: 'Amount', view: '' }]);
+  });
+
+  it('leaves the view empty for a bar chart, which writes none', () => {
+    const c = controlOf(chartReport(chart('c', series('S', 'R', 'A'))));
+    expect(c.series[0].view).toBe('');
+  });
+
+  it('reads a non-default view type', () => {
+    const c = controlOf(chartReport(chart('c', series('Mix', 'Category', 'Amount', 'PieSeriesView'))));
+    expect(c.series[0].view).toBe('PieSeriesView');
+  });
+
+  it('does not read the next chart\'s series as this one\'s', () => {
+    // Two charts in a band: an unbounded search for <SeriesSerializable> gives
+    // the first chart both series and the second none.
+    const xml = chartReport(
+      chart('first', series('A', 'R', 'X'), 3).replace('<Item1 Ref="3"', '<Item1 Ref="3"') +
+      chart('second', series('B', 'Q', 'Y'), 10).replace('<Item1 Ref="10"', '<Item2 Ref="10"').replace('</Item1>', '</Item2>'),
+    );
+    const structure = parseReportStructure(xml);
+    const controls = structure.bands.find((b) => b.kind === 'Detail')!.controls;
+    expect(controls).toHaveLength(2);
+    expect(controls[0].series.map((s) => s.name)).toEqual(['A']);
+    expect(controls[1].series.map((s) => s.name)).toEqual(['B']);
+  });
+
+  it('reads a chart with no series as having none, rather than throwing', () => {
+    const bare = '<Item1 Ref="3" ControlType="XRChart" Name="empty" LocationFloat="0,0" SizeF="100,100" />';
+    expect(controlOf(chartReport(bare)).series).toEqual([]);
+  });
+
+  it('reads a cross-tab\'s three field collections', () => {
+    const cross =
+      '<Item1 Ref="3" ControlType="XRCrossTab" Name="x" LocationFloat="0,0" SizeF="600,200">' +
+      '<LayoutOptions Ref="4" /><PrintOptions Ref="5" />' +
+      '<RowFields><Item1 Ref="6" FieldName="Region" /></RowFields>' +
+      '<ColumnFields><Item1 Ref="7" FieldName="Quarter" /></ColumnFields>' +
+      '<DataFields><Item1 Ref="8" FieldName="Amount" /></DataFields></Item1>';
+    expect(controlOf(chartReport(cross)).crossTab).toEqual({
+      rows: ['Region'], columns: ['Quarter'], data: ['Amount'],
+    });
+  });
+
+  it('reports an absent collection as empty rather than as missing', () => {
+    const cross =
+      '<Item1 Ref="3" ControlType="XRCrossTab" Name="x" LocationFloat="0,0" SizeF="600,200">' +
+      '<RowFields><Item1 Ref="6" FieldName="Region" /></RowFields></Item1>';
+    expect(controlOf(chartReport(cross)).crossTab).toEqual({ rows: ['Region'], columns: [], data: [] });
+  });
+
+  it('leaves series and crossTab empty on an ordinary label', () => {
+    const label = '<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" LocationFloat="0,0" SizeF="10,10" />';
+    const c = controlOf(chartReport(label));
+    expect(c.series).toEqual([]);
+    expect(c.crossTab).toBeNull();
+  });
+});
+
 describe('choosing how many records to preview', () => {
   const layoutWith = (rows: number) => ({
     sections: [

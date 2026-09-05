@@ -35,6 +35,7 @@ static class Program {
                 case "emit":       Emit(args[1]);      return 0;
                 case "emit-group": EmitGroup(args[1]); return 0;
                 case "emit-params": EmitParams(args[1]); return 0;
+                case "emit-chart": EmitChart(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -255,6 +256,83 @@ static class Program {
         Console.WriteLine(File.ReadAllText(outPath));
     }
 
+    /// Writes a report with an XRChart and an XRCrossTab.
+    ///
+    /// The two remaining fidelity gaps, and the two whose serialized form is
+    /// least guessable: a chart carries a Series collection and a Diagram, and
+    /// a cross-tab carries three separate field collections. Both are drawn as
+    /// flat labels today.
+    static void EmitChart(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeChart";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRChart chart = new XRChart();
+        chart.Name = "chartSales";
+        chart.LocationF = new PointF(0, 0);
+        chart.SizeF = new SizeF(600, 300);
+        // A chart with no series serializes almost empty, which would measure
+        // nothing. One bar series bound to two data members is the ordinary
+        // shape a generated report would want.
+        DevExpress.XtraCharts.Series series = new DevExpress.XtraCharts.Series(
+            "Sales", DevExpress.XtraCharts.ViewType.Bar);
+        series.ArgumentDataMember = "Region";
+        series.ValueDataMembers.AddRange(new string[] { "Amount" });
+        chart.Series.Add(series);
+
+        // A second series with a NON-default view type, because the Bar above
+        // wrote no view type at all and the question is whether that is Bar
+        // being the default or the view type never being written.
+        DevExpress.XtraCharts.Series line = new DevExpress.XtraCharts.Series(
+            "Trend", DevExpress.XtraCharts.ViewType.Line);
+        line.ArgumentDataMember = "Region";
+        line.ValueDataMembers.AddRange(new string[] { "Target" });
+        chart.Series.Add(line);
+
+        // And a pie, whose diagram is a different type entirely.
+        XRChart pie = new XRChart();
+        pie.Name = "chartMix";
+        pie.LocationF = new PointF(0, 540);
+        pie.SizeF = new SizeF(400, 250);
+        DevExpress.XtraCharts.Series slice = new DevExpress.XtraCharts.Series(
+            "Mix", DevExpress.XtraCharts.ViewType.Pie);
+        slice.ArgumentDataMember = "Category";
+        slice.ValueDataMembers.AddRange(new string[] { "Amount" });
+        pie.Series.Add(slice);
+
+        XRCrossTab cross = new XRCrossTab();
+        cross.Name = "crossSales";
+        cross.LocationF = new PointF(0, 320);
+        cross.SizeF = new SizeF(600, 200);
+        cross.RowFields.Add(new DevExpress.XtraReports.UI.CrossTab.CrossTabRowField {
+            FieldName = "Region",
+        });
+        cross.ColumnFields.Add(new DevExpress.XtraReports.UI.CrossTab.CrossTabColumnField {
+            FieldName = "Quarter",
+        });
+        cross.DataFields.Add(new DevExpress.XtraReports.UI.CrossTab.CrossTabDataField {
+            FieldName = "Amount",
+        });
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 800;
+        detail.Controls.Add(chart);
+        detail.Controls.Add(cross);
+        detail.Controls.Add(pie);
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(), detail, new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
     // ------------------------------------------------------------- inspect
 
     /// Loads a file and reports what DevExpress actually sees in it.
@@ -307,6 +385,43 @@ static class Program {
         Console.WriteLine("loaded   : " + tables + " tables, " + cells + " cells, "
                           + bindings + " bindings");
         foreach (string line in lines) Console.WriteLine(line);
+
+        // Charts and cross-tabs, counted in the raw text and again in the
+        // loaded graph. A chart whose series the loader did not build is an
+        // empty frame on the page, and it looks exactly like a chart that has
+        // no data yet.
+        int rawSeries = Regex.Matches(xml, "ArgumentDataMember=\"").Count;
+        int rawCrossFields = Regex.Matches(xml, "<(Row|Column|Data)Fields>").Count;
+        int series = 0, crossFields = 0, charts = 0, crosstabs = 0;
+        foreach (Band b in r.Bands)
+            foreach (XRControl c in b.Controls) {
+                if (c is XRChart) {
+                    charts++;
+                    series += ((XRChart)c).Series.Count;
+                    foreach (DevExpress.XtraCharts.Series s in ((XRChart)c).Series)
+                        Console.WriteLine("             " + b.Name + "." + c.Name + ": series \""
+                                          + s.Name + "\" " + s.View.GetType().Name
+                                          + "  [" + s.ArgumentDataMember + "]");
+                }
+                if (c is XRCrossTab) {
+                    crosstabs++;
+                    XRCrossTab x = (XRCrossTab)c;
+                    crossFields += x.RowFields.Count + x.ColumnFields.Count + x.DataFields.Count;
+                    Console.WriteLine("             " + b.Name + "." + c.Name + ": cross-tab "
+                                      + x.RowFields.Count + " row / " + x.ColumnFields.Count
+                                      + " column / " + x.DataFields.Count + " data field(s)");
+                }
+            }
+        if (charts + crosstabs > 0) {
+            Console.WriteLine("charts   : " + charts + " chart(s) with " + series + " series, "
+                              + crosstabs + " cross-tab(s) with " + crossFields + " field(s)");
+            if (series < rawSeries)
+                Console.WriteLine("           SERIES LOST: the file declares " + rawSeries
+                                  + " and the loader built " + series + ".");
+            if (crossFields == 0 && rawCrossFields > 0)
+                Console.WriteLine("           CROSS-TAB FIELDS LOST: the file declares "
+                                  + rawCrossFields + " collection(s) and the loader built none.");
+        }
 
         // Parameters, because the file can DECLARE a type the loader silently
         // refuses. A parameter that comes back as System.String when the file

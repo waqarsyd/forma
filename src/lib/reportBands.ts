@@ -181,6 +181,45 @@ function bandedRootStructure({ page, reportUnit, targetVersion, targetSerializer
             - Emit GroupFooter only if the design actually shows a per-group line. A GroupHeaderBand alone is normal and correct.
             - In the layout JSON these are sections of \`"type": "group"\`, in the same position and order as the bands.
 
+          - A CHART IN THE SOURCE IS AN XRChart, NOT A PICTURE OF ONE.
+            If the document shows a bar, column, line or pie chart, emit an \`XRChart\`. Drawing it as labels and rectangles reproduces the picture and produces a report that can never plot anything.
+
+            <Item1 Ref="4" ControlType="XRChart" Name="chartByRegion" LocationFloat="20,50" SizeF="600,140">
+              <Chart Ref="5">
+                <DataContainer Ref="6" ValidateDataMembers="true">
+                  <SeriesSerializable>
+                    <Item1 Ref="7" Name="Sales" ArgumentDataMember="Region" ValueDataMembersSerializable="Amount" />
+                  </SeriesSerializable>
+                </DataContainer>
+                <Diagram Ref="8" TypeNameSerializable="XYDiagram">
+                  <AxisX Ref="9" VisibleInPanesSerializable="-1" />
+                  <AxisY Ref="10" VisibleInPanesSerializable="-1" />
+                </Diagram>
+              </Chart>
+            </Item1>
+
+            - \`ArgumentDataMember\` is the field along the category axis — what the bars or slices are OF — and \`ValueDataMembersSerializable\` is the field plotted, comma-separated for more than one. Both are plain field names, no brackets. Read them from the chart's own axis titles and legend.
+            - The series item carries NO \`ControlType\`, like a group field and an expression binding.
+            - **A bar or column chart writes no view type at all** — that is the default. For anything else add \`<View Ref="..." TypeNameSerializable="PieSeriesView" />\` (or \`LineSeriesView\`, \`AreaSeriesView\`, \`ScatterLineSeriesView\`) as a child of the series item.
+            - A **pie** chart takes NO \`<Diagram>\` element. Only the XY types do.
+            - A chart with no \`<SeriesSerializable>\` is an empty frame on the page and looks exactly like a chart waiting for data, so always emit at least one series.
+
+          - A MATRIX WITH TOTALS DOWN AND ACROSS IS AN XRCrossTab.
+            A region-by-quarter grid, a category-by-month grid — anything whose rows and columns are both VALUES with a figure at each intersection — is a cross-tab, not a table. A table has fixed columns; a cross-tab grows a column per distinct value in the data.
+
+            <Item1 Ref="17" ControlType="XRCrossTab" Name="crossByQuarter" LocationFloat="20,10" SizeF="810,220">
+              <LayoutOptions Ref="18" />
+              <PrintOptions Ref="19" />
+              <RowFields><Item1 Ref="20" FieldName="Region" /></RowFields>
+              <ColumnFields><Item1 Ref="21" FieldName="Quarter" /></ColumnFields>
+              <DataFields><Item1 Ref="22" FieldName="Amount" /></DataFields>
+            </Item1>
+
+            - The row field is what the LEFT-hand column lists, the column field what the HEADING ROW lists, and the data field what sits at each intersection. Get those three from the grid's own labels.
+            - The items carry \`FieldName\` and no \`ControlType\`; \`<LayoutOptions />\` and \`<PrintOptions />\` are written empty.
+            - All three collections are required. A cross-tab missing one prints nothing where the grid was.
+            - When the columns are FIXED headings rather than values from the data — "Item, Qty, Amount" — it is an ordinary XRTable, and the DETAIL BAND rules above apply instead.
+
           - PARAMETERS — ONLY WHEN THE DESIGN SHOWS THE READER BEING ASKED SOMETHING.
             Look for a criteria block near the top: "Date range: ____ to ____", "Region: All", "Customer: [blank]", a filled-in filter line, or a from/to pair printed as part of the header. Those are values the reader supplies before the report runs, and they belong in a \`<Parameters>\` collection, which is a child of the root written BEFORE \`<Bands>\`:
 

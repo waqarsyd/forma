@@ -419,6 +419,44 @@ That is the first time the probe has been used to establish that an obvious form
 
 Verified end to end rather than by unit test alone: a file with inline types went through the real lift and back into DevExpress, which then reported `DateFrom : System.DateTime` and `MaxRows : System.Int32`. `RepxProbe inspect` grew a parameter readout for exactly this, and it prints `PARAMETERS LOST` when the declared and loaded counts disagree.
 
+### Charts and cross-tabs, and the pattern that finally became a rule (2026-09-05)
+
+`RepxProbe emit-chart`. Smaller than feared — a chart is about fifteen lines, not the hundred a designer file suggests:
+
+```xml
+<Item1 Ref="3" ControlType="XRChart" Name="chartSales" SizeF="600,300" LocationFloat="0,0">
+  <Chart Ref="4">
+    <DataContainer Ref="5" ValidateDataMembers="true">
+      <SeriesSerializable>
+        <Item1 Ref="6" Name="Sales" ArgumentDataMember="Region" ValueDataMembersSerializable="Amount" />
+        <Item2 Ref="7" Name="Trend" ArgumentDataMember="Region" ValueDataMembersSerializable="Target">
+          <View Ref="8" TypeNameSerializable="LineSeriesView" />
+        </Item2>
+      </SeriesSerializable>
+    </DataContainer>
+    <Diagram Ref="10" TypeNameSerializable="XYDiagram">…</Diagram>
+  </Chart>
+</Item1>
+```
+
+- The collection is **`SeriesSerializable`**, not `Series`, and the plotted field is **`ValueDataMembersSerializable`**, not `ValueDataMembers`. Both would be guessed wrong from the class reference, which names the properties.
+- **A bar series writes no view type at all.** The probe set `ViewType.Bar` explicitly and nothing appeared; the `Line` series beside it produced `<View TypeNameSerializable="LineSeriesView" />`. So bar is the default and every other type is an extra child element.
+- **A pie chart has no `<Diagram>`.** The XY types write one with `AxisX`/`AxisY`; the pie wrote none.
+
+The cross-tab is three sibling collections next to an empty `<LayoutOptions />` and `<PrintOptions />`:
+
+```xml
+<RowFields><Item1 Ref="16" FieldName="Region" /></RowFields>
+<ColumnFields><Item1 Ref="17" FieldName="Quarter" /></ColumnFields>
+<DataFields><Item1 Ref="18" FieldName="Amount" /></DataFields>
+```
+
+**Four measurements in, the pattern is a rule.** An item in a collection carries no `ControlType` — expression bindings, group fields, chart series, and all three cross-tab field lists. Anything in this codebase that locates elements *by* `ControlType` is blind to every one of them, which is why `repxBindingPlan.ts` uses a substring test for bindings and why `reportPreview.ts` reads these collections by name rather than by type. Assume the next collection behaves the same way and check rather than infer.
+
+Both a designer-written file and a hand-written Forma-shaped one load with the series and fields intact — `RepxProbe inspect` reports the view type DevExpress actually built, so `SideBySideBarSeriesView` coming back from a series that declared nothing is the confirmation that bar is the default rather than a guess that happened to work.
+
+`repxAudit.ts` gained two checks, both for controls that load happily and print an empty frame: a chart with no series, and a cross-tab missing one of its three collections.
+
 **`{0:n0}` is deliberately never emitted.** It renders 12345 as "12,345", which is right for a quantity and wrong for an invoice number, order id, product code or year — all columns of bare integers that one sample value cannot distinguish from a count. A format that mangles an identifier is worse than none, because the unformatted column was already correct. Currency and dates only, where the meaning is not in doubt.
 
 ## The API key gates the entire workspace

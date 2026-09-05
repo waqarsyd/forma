@@ -82,6 +82,33 @@ export interface PreviewRow {
   cells: PreviewCell[];
 }
 
+/**
+ * One chart series, as the file declares it.
+ *
+ * Measured 2026-09-05 with `RepxProbe emit-chart`: series live in
+ * `<SeriesSerializable>` inside `<DataContainer>` inside `<Chart>`, carry
+ * `ArgumentDataMember` and `ValueDataMembersSerializable`, and carry NO
+ * `ControlType` -- the fourth place in this format where a collection item
+ * omits it. The view type appears as a `<View TypeNameSerializable="...">`
+ * child ONLY when it is not the default, so a bar series writes nothing.
+ */
+export interface PreviewSeries {
+  name: string;
+  /** The field along the category axis. */
+  argument: string;
+  /** The field(s) plotted. Comma-separated in the file. */
+  value: string;
+  /** `PieSeriesView`, `LineSeriesView`, … or '' for the bar default. */
+  view: string;
+}
+
+/** A cross-tab's three field collections, each item `FieldName` and no type. */
+export interface PreviewCrossTab {
+  rows: string[];
+  columns: string[];
+  data: string[];
+}
+
 export interface PreviewControl {
   /** The DevExpress ControlType verbatim, e.g. `XRLabel`. */
   type: string;
@@ -102,6 +129,10 @@ export interface PreviewControl {
   borders: { top: boolean; right: boolean; bottom: boolean; left: boolean };
   /** Populated for XRTable only. */
   rows: PreviewRow[];
+  /** Populated for XRChart only. */
+  series: PreviewSeries[];
+  /** Populated for XRCrossTab only. */
+  crossTab: PreviewCrossTab | null;
   /**
    * Where this control's opening tag sits in the source REPX: `openStart` is
    * the `<`, `openEnd` the matching `>`. Absolute offsets into the document
@@ -320,6 +351,51 @@ function parseTableRows(xml: string, controlStart: number): PreviewRow[] {
   return rows;
 }
 
+/**
+ * The series of an XRChart, from the slice starting at its opening tag.
+ *
+ * Bounded by the control's own extent rather than searched globally, because a
+ * band can hold two charts and the second's series must not be read as the
+ * first's. `<SeriesSerializable>` does not nest, so a plain match inside that
+ * window is enough.
+ */
+function parseSeries(inner: string, controlStart: number, controlEnd: number): PreviewSeries[] {
+  const slice = inner.slice(controlStart, controlEnd);
+  const block = /<SeriesSerializable>([\s\S]*?)<\/SeriesSerializable>/.exec(slice);
+  if (!block) return [];
+  const out: PreviewSeries[] = [];
+  for (const item of collectionItems(block[1])) {
+    const name = attrOf(item.attrs, 'Name');
+    if (name === null) continue;
+    // The <View> child, when present, belongs to THIS item: take the text from
+    // this item's start to the next one's.
+    const rest = block[1].slice(item.start);
+    const nextItem = /<Item\d+[\s>]/.exec(rest.slice(1));
+    const own = nextItem ? rest.slice(0, nextItem.index + 1) : rest;
+    const view = /TypeNameSerializable="([^"]*)"/.exec(own);
+    out.push({
+      name,
+      argument: attrOf(item.attrs, 'ArgumentDataMember') ?? '',
+      value: attrOf(item.attrs, 'ValueDataMembersSerializable') ?? '',
+      view: view ? view[1] : '',
+    });
+  }
+  return out;
+}
+
+/** The three field collections of an XRCrossTab, in the same bounded window. */
+function parseCrossTab(inner: string, controlStart: number, controlEnd: number): PreviewCrossTab {
+  const slice = inner.slice(controlStart, controlEnd);
+  const fields = (tag: string): string[] => {
+    const block = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(slice);
+    if (!block) return [];
+    return collectionItems(block[1])
+      .map((item) => attrOf(item.attrs, 'FieldName') ?? '')
+      .filter(Boolean);
+  };
+  return { rows: fields('RowFields'), columns: fields('ColumnFields'), data: fields('DataFields') };
+}
+
 function parseControls(bandInner: string, bandInnerStart: number): PreviewControl[] {
   const controlsIdx = bandInner.indexOf('<Controls');
   if (controlsIdx === -1) return [];
@@ -330,9 +406,13 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
   // it can be reported absolutely.
   const innerStart = bandInnerStart + span.start;
   const controls: PreviewControl[] = [];
-  for (const item of collectionItems(inner)) {
+  const items = collectionItems(inner);
+  for (const [index, item] of items.entries()) {
     const type = attrOf(item.attrs, 'ControlType');
     if (!type) continue;
+    // This control's own extent: up to the next sibling, or the end. Used to
+    // stop a chart reading the next chart's series.
+    const extent = items[index + 1]?.start ?? inner.length;
     const loc = pairAttr(item.attrs, 'LocationFloat');
     const size = pairAttr(item.attrs, 'SizeF');
     const font = parseFont(attrOf(item.attrs, 'Font'));
@@ -353,6 +433,8 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
       vAlign: alignment.vAlign,
       borders: parseBorders(attrOf(item.attrs, 'Borders')),
       rows: type === 'XRTable' ? parseTableRows(inner, item.start) : [],
+      series: type === 'XRChart' ? parseSeries(inner, item.start, extent) : [],
+      crossTab: type === 'XRCrossTab' ? parseCrossTab(inner, item.start, extent) : null,
       openStart: innerStart + item.start,
       openEnd: innerStart + inner.indexOf('>', item.start),
     });

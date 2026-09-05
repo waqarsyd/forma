@@ -158,6 +158,67 @@ function ControlBox({
     );
   }
 
+  /*
+   * A chart and a cross-tab are drawn as their STRUCTURE, not as invented data.
+   *
+   * The preview has no data source, so plotting bars would mean making numbers
+   * up and showing them on a page the user is checking for accuracy. What is
+   * actually knowable from the file is the shape and the binding -- a bar chart
+   * of Amount by Region -- and that is the thing worth confirming, because a
+   * chart bound to the wrong field looks identical to a correct one either way.
+   */
+  if (control.type === 'XRChart') {
+    const pie = control.series.some((s) => s.view === 'PieSeriesView');
+    const line = control.series.some((s) => s.view === 'LineSeriesView');
+    return (
+      <div style={{ ...frame, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-end', border: '1px solid #b9c2cc', padding: 4, gap: 3 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 3, minHeight: 0 }}>
+          {pie ? (
+            <div style={{
+              margin: 'auto', width: '46%', aspectRatio: '1', borderRadius: '50%',
+              background: 'conic-gradient(#8fa6bf 0 38%, #b9c2cc 0 65%, #d7dee7 0)',
+            }} />
+          ) : line ? (
+            <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
+              <polyline points="2,34 22,20 42,26 62,10 82,16 98,4" fill="none" stroke="#8fa6bf" strokeWidth="2" />
+            </svg>
+          ) : (
+            [46, 70, 34, 88, 58].map((h, i) => (
+              <span key={i} style={{ flex: 1, height: `${h}%`, background: '#b9c2cc' }} />
+            ))
+          )}
+        </div>
+        {/* The binding, in words. This is the part a reader can check. */}
+        <div style={{ fontSize: '6pt', color: '#5a6672', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          {control.series.length === 0
+            ? 'chart with no series'
+            : control.series.map((s) => `${s.value || '?'} by ${s.argument || '?'}`).join(' · ')}
+        </div>
+      </div>
+    );
+  }
+
+  if (control.type === 'XRCrossTab' && control.crossTab) {
+    const { rows, columns, data } = control.crossTab;
+    const label = (items: string[], kind: string) => items.join(', ') || `no ${kind} field`;
+    return (
+      <div style={{ ...frame, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', border: '1px solid #b9c2cc', fontSize: '6.5pt', color: '#39444f' }}>
+        <div style={{ display: 'flex', borderBottom: '1px solid #b9c2cc', background: '#f2f4f8' }}>
+          <span style={{ flex: '0 0 34%', padding: '2px 4px', borderRight: '1px solid #b9c2cc' }} />
+          <span style={{ flex: 1, padding: '2px 4px' }}>{label(columns, 'column')} →</span>
+        </div>
+        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+          <span style={{ flex: '0 0 34%', padding: '2px 4px', borderRight: '1px solid #b9c2cc', background: '#f2f4f8' }}>
+            {label(rows, 'row')} ↓
+          </span>
+          <span style={{ flex: 1, padding: '2px 4px', color: '#5a6672' }}>
+            {label(data, 'data')}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   if (control.type === 'XRTable') {
     const rowHeight = control.rows.length ? u(control.height) / control.rows.length : u(control.height);
     return (

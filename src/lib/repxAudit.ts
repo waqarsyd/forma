@@ -286,6 +286,43 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
     );
   }
 
+  /*
+   * A chart with no series, and a cross-tab missing one of its three field
+   * collections. Both load without complaint and print an empty frame, which
+   * on a page full of real content reads as "the data has not arrived yet"
+   * rather than as a defect in the file.
+   *
+   * Counted per control, since a report can carry several charts and one of
+   * them being empty is exactly the case worth naming.
+   */
+  const charts = (text.match(/ControlType="XRChart"/g) ?? []).length;
+  if (charts) {
+    const withSeries = (text.match(/ControlType="XRChart"[^>]*>[^]*?<SeriesSerializable>/g) ?? []).length;
+    if (withSeries < charts) {
+      add(
+        'warning',
+        'chart-without-series',
+        `${charts - withSeries} of ${charts} chart(s) declare no series, so they plot nothing. ` +
+          'DevExpress draws an empty frame, which looks like a chart still waiting for its data.',
+      );
+    }
+  }
+
+  const crossTabs = (text.match(/ControlType="XRCrossTab"/g) ?? []).length;
+  if (crossTabs) {
+    for (const collection of ['RowFields', 'ColumnFields', 'DataFields']) {
+      const present = (text.match(new RegExp(`<${collection}>`, 'g')) ?? []).length;
+      if (present < crossTabs) {
+        add(
+          'warning',
+          'crosstab-missing-fields',
+          `A cross-tab has no <${collection}>. All three field collections are required — ` +
+            'without one the control prints nothing where the grid should be.',
+        );
+      }
+    }
+  }
+
   if (!has(text, 'TopMarginBand') || !has(text, 'BottomMarginBand')) {
     add(
       'warning',
