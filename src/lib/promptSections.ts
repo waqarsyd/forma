@@ -62,6 +62,7 @@ export type PromptSection =
   | 'watermark'
   | 'columns'
   | 'bookmarks'
+  | 'gauges'
   | 'checkbox'
   | 'crossband'
   /** Panels and the instruction not to invent a subreport. */
@@ -99,7 +100,7 @@ function repxSourceIn(texts: readonly string[]): string | null {
 const XML_SIGNALS: Record<PromptSection, RegExp> = {
   grouping: /GroupHeaderBand|GroupFooterBand|<GroupFields|Running="Group"/i,
   parameters: /<Parameters\b|\[Parameters\.|FilterString\s*=\s*"[^"]*\?/i,
-  charts: /XRChart|XRCrossTab|XRPivotGrid|XRSparkline/i,
+  charts: /XRChart|XRCrossTab|XRPivotGrid/i,
   checkbox: /XRCheckBox/i,
   crossband: /XRCrossBand/i,
   containers: /XRPanel|XRSubreport/i,
@@ -109,6 +110,7 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   sorting: /<SortFields/i,
   watermark: /<Watermark\b/i,
   columns: /<MultiColumn\b/i,
+  gauges: /XRGauge|XRSparkline/i,
   bookmarks: /\sBookmark=|\sBookmarkParent=|PropertyName="Bookmark"/i,
 };
 
@@ -129,6 +131,7 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
   containers: /\bpanel\b|\bsubreport|\bbox\b|\bgroup(ed)? box|\bbordered block/i,
   shapes: /\bshape\b|\bcircle\b|\bellipse\b|\barrow\b|\brich ?text|\bdiagonal\b/i,
   calculated: /\bcalculat|\bcomputed\b|\bderived\b|\bformula\b|\bexpression\b|\bmultipl|\btimes\b|\bline total/i,
+  gauges: /\bgauge\b|\bdial\b|\bsparkline|\bspark line|\bspeedo|\bprogress (bar|meter)|\btrend line/i,
   bookmarks: /\bbookmark|\bdocument map\b|\boutline\b|\bnavigat|\bjump to\b|\btable of contents/i,
   columns: /\bmulti.?column|\bcolumns?\b|\blabel sheet|\btwo.?up\b|\bside by side|\bacross the page/i,
   watermark: /\bwatermark|\bdraft\b|\bconfidential\b|\bstamp(ed)? across|\bbehind the (content|text)/i,

@@ -140,7 +140,19 @@ const BUDGETS = [
   // with no feature behind it -- and one nearly happened: the containers split
   // moved this number without adding anything, which is why that entry says so
   // explicitly. Read the reason before the number.
-  { prefix: 'geminiService-', ext: '.js', max: 95_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
+  //
+  // Raised to 100_000 on 2026-09-05, naming the growth: 88,340 -> 93,874 B for
+  // the multi-column, bookmark and gauge/sparkline blocks. 100_000 puts it at
+  // 93.9%.
+  //
+  // **This cap has moved eight times in one day and that is worth reading, not
+  // just counting.** Every move but one names a feature; the exception is the
+  // containers split, which is flagged above as the case worth stopping for.
+  // The prompt grows once per feature because the prompt is where features are
+  // specified — so the number tracking it grows too, and a cap that never moved
+  // would mean nothing had shipped. The signal to act on is a move with no
+  // reason beside it.
+  { prefix: 'geminiService-', ext: '.js', max: 100_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it

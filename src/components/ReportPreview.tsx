@@ -162,6 +162,58 @@ function ControlBox({
   }
 
   /*
+   * A gauge and a sparkline, drawn as their SETTINGS rather than as data —
+   * the same decision as charts and cross-tabs, and for the same reason: the
+   * preview has no data source, so a needle at an invented position on a page
+   * someone is checking for accuracy is worse than no needle.
+   *
+   * What IS knowable is the range, the value if it is a literal, and the field
+   * if it is bound. That is what a reader needs to confirm, because a gauge
+   * bound to the wrong field looks identical to a correct one either way.
+   */
+  if (control.type === 'XRGauge' && control.meter) {
+    const m = control.meter;
+    const circular = m.view !== 'Linear';
+    const span = m.max !== null && m.min !== null ? m.max - m.min : null;
+    const fraction = m.value !== null && span ? Math.max(0, Math.min(1, (m.value - (m.min ?? 0)) / span)) : null;
+    return (
+      <div style={{ ...frame, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+        <span
+          aria-hidden
+          style={{
+            width: circular ? Math.min(u(control.width), u(control.height)) * 0.7 : '100%',
+            height: circular ? Math.min(u(control.width), u(control.height)) * 0.7 : 8,
+            border: '1px solid currentColor',
+            borderRadius: circular ? '50%' : 3,
+            borderBottomColor: circular ? 'transparent' : undefined,
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          {!circular && fraction !== null && (
+            <span style={{ position: 'absolute', inset: 0, width: `${fraction * 100}%`, background: 'currentColor', opacity: 0.35 }} />
+          )}
+        </span>
+        <span style={{ fontSize: 9, opacity: 0.75, whiteSpace: 'nowrap' }}>
+          {m.bound ? `[${m.bound}]` : m.value !== null ? m.value : 'no value'}
+          {m.min !== null && m.max !== null ? ` of ${m.min}–${m.max}` : ''}
+        </span>
+      </div>
+    );
+  }
+
+  if (control.type === 'XRSparkline' && control.meter) {
+    return (
+      <div style={{ ...frame, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', gap: 2 }}>
+        <span aria-hidden style={{ height: 1, background: 'currentColor', opacity: 0.5 }} />
+        <span style={{ fontSize: 9, opacity: 0.75, textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          {control.meter.field ? `${control.meter.view} of ${control.meter.field}` : `${control.meter.view} sparkline`}
+        </span>
+      </div>
+    );
+  }
+
+  /*
    * A shape draws its figure. Ellipse is the default when the file carries no
    * <Shape> child, so an XRShape with nothing in it is a circle rather than
    * nothing — which is exactly the kind of thing that would otherwise show as a

@@ -47,6 +47,7 @@ static class Program {
             case "emit-mark":  EmitWatermark(args[1]); return 0;
             case "emit-cols":  EmitColumns(args[1]); return 0;
             case "emit-book":  EmitBookmarks(args[1]); return 0;
+            case "emit-gauge": EmitGauge(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -938,6 +939,89 @@ static class Program {
         detail.Name = "Detail";
         detail.HeightF = 120;
         detail.Controls.AddRange(new XRControl[] { section, child, bound, plain });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            detail,
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes an XRGauge and an XRSparkline.
+    ///
+    /// The gauge is the more pressing of the two: `gauge` is already a valid
+    /// element type in Forma's LAYOUT schema, so the model can put one in the
+    /// mockup while the prompt gives it no REPX syntax at all -- a control that
+    /// exists in one artifact and not the other, which is the divergence the
+    /// prompt forbids everywhere else.
+    ///
+    /// Questions:
+    ///
+    ///   XRGauge     -- flat attributes or a nested view object? Is the value
+    ///                  bindable, or is a gauge always a fixed number?
+    ///   XRSparkline -- **does it need a data source?** It has DataMember and
+    ///                  ValueMember, and Forma never opens a connection. If
+    ///                  either is required this is a negative result like
+    ///                  XRRichText; if not, it is the calculated-field answer
+    ///                  again.
+    static void EmitGauge(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeGauge";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRGauge circular = new XRGauge();
+        circular.Name = "gaugeCircular";
+        circular.LocationF = new PointF(0, 0);
+        circular.SizeF = new SizeF(200, 200);
+        circular.ViewType = DevExpress.XtraGauges.Core.Customization.DashboardGaugeType.Circular;
+        circular.Minimum = 0;
+        circular.Maximum = 100;
+        circular.ActualValue = 72;
+        circular.TargetValue = 90;
+
+        XRGauge linear = new XRGauge();
+        linear.Name = "gaugeLinear";
+        linear.LocationF = new PointF(220, 0);
+        linear.SizeF = new SizeF(300, 60);
+        linear.ViewType = DevExpress.XtraGauges.Core.Customization.DashboardGaugeType.Linear;
+        linear.ActualValue = 40;
+
+        // A gauge whose value comes from the data rather than a literal.
+        XRGauge bound = new XRGauge();
+        bound.Name = "gaugeBound";
+        bound.LocationF = new PointF(0, 220);
+        bound.SizeF = new SizeF(200, 200);
+        bound.ExpressionBindings.Add(new ExpressionBinding("BeforePrint", "ActualValue", "[PercentComplete]"));
+
+        // Untouched, so the defaults are visible.
+        XRGauge plain = new XRGauge();
+        plain.Name = "gaugePlain";
+        plain.LocationF = new PointF(220, 220);
+        plain.SizeF = new SizeF(200, 200);
+
+        XRSparkline spark = new XRSparkline();
+        spark.Name = "sparkTrend";
+        spark.LocationF = new PointF(0, 440);
+        spark.SizeF = new SizeF(200, 40);
+        spark.DataMember = "Monthly";
+        spark.ValueMember = "Amount";
+
+        XRSparkline sparkPlain = new XRSparkline();
+        sparkPlain.Name = "sparkPlain";
+        sparkPlain.LocationF = new PointF(220, 440);
+        sparkPlain.SizeF = new SizeF(200, 40);
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 500;
+        detail.Controls.AddRange(new XRControl[] { circular, linear, bound, plain, spark, sparkPlain });
 
         report.Bands.AddRange(new Band[] {
             new TopMarginBand(),

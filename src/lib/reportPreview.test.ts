@@ -889,3 +889,51 @@ describe('paginating into columns', () => {
     expect(rf.left).toBe(0);
   });
 });
+
+/**
+ * Gauges and sparklines, drawn as their SETTINGS rather than as data.
+ *
+ * RepxProbe emit-gauge: a gauge's numbers are flat attributes and
+ * ViewType="Circular" is NEVER written because it is the default -- so an
+ * absent view type is a dial, not an unknown. A sparkline needs no data source.
+ */
+describe('gauges and sparklines', () => {
+  const control = (xml: string) =>
+    parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="300"><Controls>' + xml +
+      '</Controls></Item1></Bands></XtraReportsLayoutSerializer>'
+    ).bands[0].controls[0];
+
+  it('reads a circular gauge with its scale', () => {
+    const g = control('<Item1 Ref="3" ControlType="XRGauge" Name="g" ActualValue="72" Minimum="0" Maximum="100" TargetValue="90" SizeF="200,200" LocationFloat="0,0" />');
+    expect(g.meter).toEqual({ view: 'Circular', value: 72, target: 90, min: 0, max: 100, field: null, bound: null });
+  });
+
+  it('reads an absent ViewType as Circular, because that is the default', () => {
+    expect(control('<Item1 Ref="3" ControlType="XRGauge" Name="g" SizeF="10,10" LocationFloat="0,0" />').meter?.view).toBe('Circular');
+  });
+
+  it('reads a linear gauge as linear', () => {
+    expect(control('<Item1 Ref="3" ControlType="XRGauge" Name="g" ViewType="Linear" ActualValue="40" SizeF="10,10" LocationFloat="0,0" />').meter?.view).toBe('Linear');
+  });
+
+  it('names the bound property when the value is not a literal', () => {
+    const g = control(
+      '<Item1 Ref="3" ControlType="XRGauge" Name="g" SizeF="10,10" LocationFloat="0,0">' +
+      '<ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="ActualValue" Expression="[Pct]" /></ExpressionBindings></Item1>'
+    );
+    expect(g.meter?.value).toBeNull();
+    expect(g.meter?.bound).toBe('ActualValue');
+  });
+
+  it('reads a sparkline field and view without needing a data source', () => {
+    const s = control('<Item1 Ref="3" ControlType="XRSparkline" Name="s" DataMember="Monthly" ValueMember="Amount" SizeF="10,10" LocationFloat="0,0"><View Type="Bar" /><ValueRange Ref="4" /></Item1>');
+    expect(s.meter?.field).toBe('Amount');
+    expect(s.meter?.view).toBe('Bar');
+  });
+
+  it('leaves meter null on every other control type', () => {
+    expect(control('<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="10,10" LocationFloat="0,0" />').meter).toBeNull();
+  });
+});

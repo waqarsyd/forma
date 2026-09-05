@@ -663,6 +663,29 @@ The Preview draws it behind the bands on every page, with `pointer-events: none`
 
 Two audit checks, both flat-map failures rather than load failures: a `BookmarkParent` naming a control that carries no `Bookmark` of its own (the child cannot nest, so it lands at the top level beside the section it belongs inside), and a literal `Bookmark=` on a control in the Detail band (forty rows, forty identical entries — the map becomes useless in exactly the reports long enough to need one).
 
+### Gauges and sparklines, and a half-feature that had been there all along (2026-09-05)
+
+`RepxProbe emit-gauge`. The reason to do these two now was not that they are common — it is that **`gauge` has been a valid element type in the LAYOUT schema since long before today while the prompt gave no REPX syntax for it at all.** The model could put a gauge in the mockup, the mockup drew it, and the exported file simply never contained one. That is the layout/REPX divergence the prompt forbids everywhere else, sitting in the schema unnoticed.
+
+```xml
+<Item1 Ref="3" ControlType="XRGauge" Name="g" TargetValue="90" ActualValue="72" Minimum="0" Maximum="100" ... />
+<Item2 Ref="4" ControlType="XRGauge" Name="g2" ViewStyle="Horizontal" ViewType="Linear" ActualValue="40" ... />
+<Item5 Ref="8" ControlType="XRSparkline" Name="s" DataMember="Monthly" ValueMember="Amount" ...>
+  <View Type="Line" />
+  <ValueRange Ref="10" />
+</Item5>
+```
+
+- **`ViewType="Circular"` is never written** — Circular is the default, so a dial is just its four numbers. Setting `Linear` also writes `ViewStyle="Horizontal"` as a side effect, which nothing asked for.
+- A gauge's value binds like any other property: `PropertyName="ActualValue"`. Inside a Detail band that is almost always what is wanted.
+- **A sparkline needs no data source.** `DataMember` and `ValueMember` are flat attributes — the same answer calculated fields gave, and the second time that question has come back positive.
+- **`<View Type="Line" />` is the one child element in this format that carries no `Ref`** — while still consuming a number in the sequence. So a gap in the Ref numbering is normal and is *not* evidence of a dropped element, which is worth knowing before something reads a gap as damage.
+- Building the probe needed `DevExpress.XtraGauges.v20.1.Core` referenced, because `XRGauge.ViewType`'s enum lives there. **The `.repx` itself needs nothing extra** — the `ControlType` is a bare `XRGauge` — so the file stays portable; only C# touching the enum pays. The namespace was found by reflecting on the assembly rather than guessed, after two wrong guesses.
+
+The Preview draws both as their **settings** rather than their data: the range, the literal value if there is one, the bound property name if there is not. Same decision as charts and cross-tabs — a needle at an invented position on a page someone is checking for accuracy is worse than no needle.
+
+**One signal was narrowed while doing this.** `XRSparkline` had been a *charts* signal in `promptSections`, so a report containing a sparkline pulled in three kilobytes of chart and cross-tab syntax it had no use for. It is now only a gauges signal, and a test pins that the two sections do not drag each other in.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

@@ -163,7 +163,7 @@ describe('ALL_SECTIONS', () => {
     // Written out by hand on purpose: deriving it the same way the module does
     // would make this test agree with itself rather than with the type.
     const expected: PromptSection[] = [
-      'grouping', 'parameters', 'charts', 'rules', 'calculated', 'sorting', 'watermark', 'columns', 'bookmarks',
+      'grouping', 'parameters', 'charts', 'rules', 'calculated', 'sorting', 'watermark', 'columns', 'bookmarks', 'gauges',
       'checkbox', 'crossband', 'containers', 'shapes',
     ];
     expect([...ALL_SECTIONS].sort()).toEqual([...expected].sort());
@@ -303,6 +303,34 @@ describe('bookmarks as a section', () => {
   it('is kept when the user asks for navigation in their own words', () => {
     for (const instruction of ['add a document map', 'I want to jump to each section', 'give it bookmarks']) {
       expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('bookmarks');
+    }
+  });
+});
+
+describe('gauges and sparklines as a section', () => {
+  const plain = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+
+  it('is kept for either control', () => {
+    for (const marker of ['XRGauge', 'XRSparkline']) {
+      const xml = `<XtraReportsLayoutSerializer><Bands><Item1 ControlType="${marker}" /></Bands></XtraReportsLayoutSerializer>`;
+      expect(sectionsFor({ texts: [xml] }), marker).toEqual(['gauges']);
+    }
+  });
+
+  it('does not drag in the charts section, and is not dragged in by it', () => {
+    // XRSparkline used to be a charts signal as well, so a sparkline pulled in
+    // three kilobytes of chart syntax it had no use for.
+    const chart = '<XtraReportsLayoutSerializer><Bands><Item1 ControlType="XRChart" /></Bands></XtraReportsLayoutSerializer>';
+    expect(sectionsFor({ texts: [chart] })).toEqual(['charts']);
+  });
+
+  it('is dropped for a report with neither', () => {
+    expect(sectionsFor({ texts: [plain] })).not.toContain('gauges');
+  });
+
+  it('is kept when the user asks for one in their own words', () => {
+    for (const instruction of ['add a gauge for completion', 'show a trend line', 'a progress bar for each row']) {
+      expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('gauges');
     }
   });
 });

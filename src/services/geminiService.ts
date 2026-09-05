@@ -954,6 +954,24 @@ ${transcript}`,
  * is complete — so this is usable in a tool that never opens a connection.
  */
 /**
+ * Gauges and sparklines.
+ *
+ * `gauge` has been a valid element type in the LAYOUT schema all along while
+ * the prompt gave no REPX syntax for it, so the model could draw one in the
+ * mockup that the exported file would never contain -- the exact divergence the
+ * prompt forbids everywhere else. Measured with `RepxProbe emit-gauge`.
+ */
+const GAUGES_BLOCK = `          - GAUGES AND SPARKLINES — a dial or a trend line, when the source document shows one.
+            <Item1 Ref="3" ControlType="XRGauge" Name="gaugeComplete" ActualValue="72" Minimum="0" Maximum="100" TargetValue="90" SizeF="200,200" LocationFloat="0,0" />
+            <Item2 Ref="4" ControlType="XRGauge" Name="gaugeLinear" ViewType="Linear" ViewStyle="Horizontal" ActualValue="40" SizeF="300,60" LocationFloat="220,0" />
+            <Item3 Ref="5" ControlType="XRSparkline" Name="sparkTrend" DataMember="Monthly" ValueMember="Amount" SizeF="200,40" LocationFloat="0,220"><View Type="Line" /><ValueRange Ref="6" /></Item3>
+            - **A circular gauge writes NO ViewType.** Circular is the default, so a dial is just the four numbers; only ViewType="Linear" is written, and a linear gauge also takes ViewStyle="Horizontal" or "Vertical".
+            - Minimum and Maximum are the scale, ActualValue the needle, TargetValue an optional marker. Give a gauge its scale: without Minimum and Maximum the needle has nothing to be a proportion of.
+            - A gauge's value can be BOUND instead of literal — an <ExpressionBindings> item with PropertyName="ActualValue". Inside a Detail band that is almost always what is wanted, since a literal repeats per record.
+            - A sparkline needs **no data source**: DataMember names the collection and ValueMember the field, both as plain attributes. <View Type="Line" /> is always written — Line, Bar, Area or WinLoss — and note it is the ONE child element in this format that carries no Ref.
+            - **Only when the source shows one.** A dial drawn because a number looked like a percentage is an invention, and a sparkline needs a series the document does not have on a single-record page.
+`;
+/**
  * Bookmarks -- the document map, and the PDF outline it exports into.
  *
  * Measured with `RepxProbe emit-book`. `BookmarkParent` is a `#Ref-N` pointer,
@@ -1378,7 +1396,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
             - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
-${sections.includes('bookmarks') ? BOOKMARKS_BLOCK : ''}${sections.includes('columns') ? COLUMNS_BLOCK : ''}${sections.includes('watermark') ? WATERMARK_BLOCK : ''}${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks') ? BOOKMARKS_BLOCK : ''}${sections.includes('columns') ? COLUMNS_BLOCK : ''}${sections.includes('watermark') ? WATERMARK_BLOCK : ''}${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
             Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.

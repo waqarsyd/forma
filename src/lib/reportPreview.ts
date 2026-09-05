@@ -109,6 +109,35 @@ export interface PreviewCrossTab {
   data: string[];
 }
 
+/**
+ * What an `XRGauge` or `XRSparkline` is set to show.
+ *
+ * Measured with `RepxProbe emit-gauge`:
+ *
+ * - A gauge's numbers are flat attributes, and **`ViewType="Circular"` is never
+ *   written because it is the default** — so an absent view type is a dial, not
+ *   an unknown.
+ * - A sparkline needs **no data source**: `DataMember` and `ValueMember` are
+ *   flat attributes, the same answer calculated fields gave.
+ * - A sparkline always writes `<View Type="Line" />`, and that element is the
+ *   one child in this format that carries **no `Ref`** while still consuming a
+ *   number in the sequence. A gap in the Ref numbering is therefore normal and
+ *   is not evidence of a dropped element.
+ */
+export interface PreviewMeter {
+  /** `Circular` or `Linear` for a gauge; the sparkline view type otherwise. */
+  view: string;
+  /** Gauge only, and null when the value is bound rather than literal. */
+  value: number | null;
+  target: number | null;
+  min: number | null;
+  max: number | null;
+  /** Sparkline only: the field plotted. */
+  field: string | null;
+  /** The property an expression drives, when one does — e.g. `ActualValue`. */
+  bound: string | null;
+}
+
 export interface PreviewControl {
   /** The DevExpress ControlType verbatim, e.g. `XRLabel`. */
   type: string;
@@ -148,6 +177,15 @@ export interface PreviewControl {
    * has to write back. **The renderer must add these**, or a panel's children
    * draw in the band's corner instead of inside the panel.
    */
+  /**
+   * Populated for XRGauge and XRSparkline: what the control is set to show.
+   *
+   * A gauge carries its numbers as flat attributes; a sparkline carries the
+   * field it plots. Both may instead be bound, in which case the literal is
+   * absent and `bound` says which property drives it — the preview has no data,
+   * so naming the binding is the honest thing to draw.
+   */
+  meter: PreviewMeter | null;
   /**
    * Populated for XRShape only: `Rectangle`, `Ellipse`, `Line`, `Star`, …
    *
@@ -294,6 +332,33 @@ function parseWatermark(text: string): PreviewWatermark | null {
     // 255 is opaque; DevExpress omits the attribute when it is fully opaque.
     transparency: numAttr(attrs, 'TextTransparency', 255),
     direction: attrOf(attrs, 'TextDirection') || 'Horizontal',
+  };
+}
+
+/**
+ * A gauge's numbers or a sparkline's field, plus whichever is bound.
+ *
+ * `slice` is the control's own extent so a second gauge's `<View>` cannot be
+ * read as the first's — the same bounding the chart and cross-tab readers use.
+ */
+function parseMeter(type: string, attrs: string, slice: string): PreviewMeter {
+  const num = (name: string): number | null => {
+    const raw = attrOf(attrs, name);
+    if (raw === null) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  };
+  const binding = /PropertyName="(ActualValue|Value|ValueMember)"/.exec(slice);
+  return {
+    // Absent is Circular for a gauge, measured — not unknown. A sparkline's
+    // <View Type="..."> is always written, so the fallback never applies there.
+    view: attrOf(attrs, 'ViewType') ?? (/<View\b[^>]*\sType="([^"]*)"/.exec(slice)?.[1] ?? 'Circular'),
+    value: type === 'XRGauge' ? num('ActualValue') : null,
+    target: type === 'XRGauge' ? num('TargetValue') : null,
+    min: type === 'XRGauge' ? num('Minimum') : null,
+    max: type === 'XRGauge' ? num('Maximum') : null,
+    field: type === 'XRSparkline' ? attrOf(attrs, 'ValueMember') : null,
+    bound: binding ? binding[1] : null,
   };
 }
 
@@ -636,6 +701,10 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
        * as "no shape" would draw nothing where DevExpress draws a circle.
        */
       shape: type === 'XRShape' ? parseShapeName(inner, item.start, extent) : null,
+      meter:
+        type === 'XRGauge' || type === 'XRSparkline'
+          ? parseMeter(type, item.attrs, inner.slice(item.start, extent))
+          : null,
       offsetX: 0,
       offsetY: 0,
       openStart: innerStart + item.start,

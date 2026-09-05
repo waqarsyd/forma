@@ -48,6 +48,12 @@
       assemblies than the designer needs (no XtraEditors, no WinForms),
       because nothing here draws anything.
     -->
+    <!-- XRGauge lives in XtraReports but its ViewType enum is defined here, so a
+         probe touching gauges needs this assembly even though nothing else does.
+         Worth knowing before assuming a gauge is as cheap as a label. -->
+    <Reference Include="DevExpress.XtraGauges.v20.1.Core">
+      <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.XtraGauges.v20.1.Core.dll</HintPath>
+    </Reference>
     <Reference Include="DevExpress.Data.v20.1">
       <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.Data.v20.1.dll</HintPath>
     </Reference>
