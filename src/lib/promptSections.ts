@@ -61,6 +61,7 @@ export type PromptSection =
   | 'sorting'
   | 'watermark'
   | 'columns'
+  | 'bookmarks'
   | 'checkbox'
   | 'crossband'
   /** Panels and the instruction not to invent a subreport. */
@@ -108,6 +109,7 @@ const XML_SIGNALS: Record<PromptSection, RegExp> = {
   sorting: /<SortFields/i,
   watermark: /<Watermark\b/i,
   columns: /<MultiColumn\b/i,
+  bookmarks: /\sBookmark=|\sBookmarkParent=|PropertyName="Bookmark"/i,
 };
 
 /**
@@ -127,6 +129,7 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
   containers: /\bpanel\b|\bsubreport|\bbox\b|\bgroup(ed)? box|\bbordered block/i,
   shapes: /\bshape\b|\bcircle\b|\bellipse\b|\barrow\b|\brich ?text|\bdiagonal\b/i,
   calculated: /\bcalculat|\bcomputed\b|\bderived\b|\bformula\b|\bexpression\b|\bmultipl|\btimes\b|\bline total/i,
+  bookmarks: /\bbookmark|\bdocument map\b|\boutline\b|\bnavigat|\bjump to\b|\btable of contents/i,
   columns: /\bmulti.?column|\bcolumns?\b|\blabel sheet|\btwo.?up\b|\bside by side|\bacross the page/i,
   watermark: /\bwatermark|\bdraft\b|\bconfidential\b|\bstamp(ed)? across|\bbehind the (content|text)/i,
   sorting: /\bsort|\border(ed)? by\b|\balphabetical|\bdescending|\bascending|\b(newest|oldest|largest|smallest) first/i,

@@ -603,3 +603,58 @@ describe('sorting', () => {
     expect(auditRepx(doc(plain), null).findings.some((f) => f.code.startsWith('sort-'))).toBe(false);
   });
 });
+
+/**
+ * Bookmarks: the document map, and the two ways it comes out wrong.
+ *
+ * BookmarkParent is a #Ref-N pointer at another CONTROL (RepxProbe emit-book) --
+ * the fifth pointer attribute in this format.
+ */
+describe('bookmarks', () => {
+  const doc = (controls: string) =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+    '<Bands><Item1 Ref="50" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="60"><Controls>' + controls +
+    '</Controls></Item1></Bands></XtraReportsLayoutSerializer>';
+
+  const label = (ref: number, attrs: string) =>
+    `<Item1 Ref="${ref}" ControlType="XRLabel" Name="l${ref}" Text="t" ${attrs} SizeF="100,20" LocationFloat="0,0" />`;
+
+  it('accepts a child nesting under a real bookmark', () => {
+    const xml = doc(label(3, 'Bookmark="North"') + label(4, 'Bookmark="Acme" BookmarkParent="#Ref-3"'));
+    expect(auditRepx(xml, null).findings.some((f) => f.code === 'bookmark-parent-unbookmarked')).toBe(false);
+  });
+
+  it('warns when the named parent carries no bookmark of its own', () => {
+    // The child cannot nest, so it lands at the top level beside the entry it
+    // was meant to sit inside -- a flat map where a tree was intended.
+    const xml = doc(label(3, '') + label(4, 'Bookmark="Acme" BookmarkParent="#Ref-3"'));
+    const finding = auditRepx(xml, null).findings.find((f) => f.code === 'bookmark-parent-unbookmarked');
+    expect(finding?.message).toContain('3');
+  });
+
+  it('warns about a literal bookmark inside the Detail band', () => {
+    const detail =
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item1 Ref="50" ControlType="DetailBand" Name="Detail" HeightF="40"><Controls>' +
+      label(3, 'Bookmark="Same every row"') +
+      '</Controls></Item1></Bands></XtraReportsLayoutSerializer>';
+    expect(auditRepx(detail, null).findings.some((f) => f.code === 'bookmark-literal-in-detail')).toBe(true);
+  });
+
+  it('accepts a per-record bookmark written as an expression', () => {
+    const bound =
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item1 Ref="50" ControlType="DetailBand" Name="Detail" HeightF="40"><Controls>' +
+      '<Item1 Ref="3" ControlType="XRLabel" Name="l" SizeF="100,20" LocationFloat="0,0">' +
+      '<ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="Bookmark" Expression="[Region]" /></ExpressionBindings>' +
+      '</Item1></Controls></Item1></Bands></XtraReportsLayoutSerializer>';
+    expect(auditRepx(bound, null).findings.some((f) => f.code === 'bookmark-literal-in-detail')).toBe(false);
+  });
+
+  it('stays quiet about a report with no bookmarks', () => {
+    expect(auditRepx(doc(label(3, '')), null).findings.some((f) => f.code.startsWith('bookmark'))).toBe(false);
+  });
+});

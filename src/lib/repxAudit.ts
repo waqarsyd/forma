@@ -320,6 +320,56 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
    * outside the box that was meant to contain them.
    */
   /*
+   * Bookmarks, and the two ways a document map comes out wrong.
+   *
+   * `BookmarkParent` is a `#Ref-N` pointer at another CONTROL (measured,
+   * `RepxProbe emit-book`). Two failures, neither of which stops the file
+   * loading:
+   *
+   *   - the pointer naming a Ref that carries no `Bookmark`. The child has
+   *     nothing to nest under, so it lands at the top level beside the entry it
+   *     was meant to sit inside — a flat map where a tree was intended;
+   *   - a literal `Bookmark=` on a control inside the Detail band, which repeats
+   *     once per record. Forty rows produce forty identical entries, and the
+   *     map becomes useless in exactly the reports long enough to need one.
+   *
+   * The second is a warning rather than an error because a Detail band that
+   * genuinely prints once — a single-record letter — is a legitimate place for
+   * a literal.
+   */
+  const bookmarked = new Map<string, string>();
+  for (const control of text.matchAll(/<Item\d+\b[^>]*ControlType="XR[^"]*"[^>]*>/g)) {
+    const ref = /\sRef="(\d+)"/.exec(control[0])?.[1];
+    const mark = /\sBookmark="([^"]*)"/.exec(control[0])?.[1];
+    if (ref && mark !== undefined) bookmarked.set(ref, mark);
+  }
+
+  const parents = [...text.matchAll(/BookmarkParent="#Ref-(\d+)"/g)].map((m) => m[1]);
+  const orphans = [...new Set(parents.filter((ref) => !bookmarked.has(ref)))];
+  if (orphans.length) {
+    add(
+      'warning',
+      'bookmark-parent-unbookmarked',
+      `${orphans.length} bookmark(s) name a parent (Ref ${orphans.join(', ')}) that carries no Bookmark of its own. ` +
+        'They cannot nest under it, so they appear at the top of the document map instead of inside the section they belong to.',
+    );
+  }
+
+  for (const detail of text.matchAll(/<Item\d+\b[^>]*ControlType="DetailBand"[^>]*>([\s\S]*?)(?=<Item\d+\b[^>]*ControlType="\w+Band"|<\/Bands>)/g)) {
+    const literals = [...detail[1].matchAll(/\sBookmark="([^"]+)"/g)].length;
+    if (literals) {
+      add(
+        'warning',
+        'bookmark-literal-in-detail',
+        `${literals} literal Bookmark(s) sit on controls in the Detail band, which prints once per record. ` +
+          'Every row produces the same entry, so the document map repeats one caption instead of listing the data. ' +
+          'A per-record bookmark is an ExpressionBindings item with PropertyName="Bookmark".',
+      );
+      break;
+    }
+  }
+
+  /*
    * Sorting, and the one mistake that is invisible in the file.
    *
    * `<SortFields>` belongs to the DetailBand. On any other band DevExpress reads

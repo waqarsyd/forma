@@ -163,7 +163,7 @@ describe('ALL_SECTIONS', () => {
     // Written out by hand on purpose: deriving it the same way the module does
     // would make this test agree with itself rather than with the type.
     const expected: PromptSection[] = [
-      'grouping', 'parameters', 'charts', 'rules', 'calculated', 'sorting', 'watermark', 'columns',
+      'grouping', 'parameters', 'charts', 'rules', 'calculated', 'sorting', 'watermark', 'columns', 'bookmarks',
       'checkbox', 'crossband', 'containers', 'shapes',
     ];
     expect([...ALL_SECTIONS].sort()).toEqual([...expected].sort());
@@ -282,6 +282,27 @@ describe('multi-column as a section', () => {
   it('is kept when the user describes the shape rather than naming it', () => {
     for (const instruction of ['print it two-up', 'lay the records out side by side', 'make it a label sheet']) {
       expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('columns');
+    }
+  });
+});
+
+describe('bookmarks as a section', () => {
+  const plain = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+
+  it('is kept for a literal bookmark and for a bound one', () => {
+    for (const mark of ['<Item1 Bookmark="North" />', '<Item1 PropertyName="Bookmark" Expression="[Region]" />']) {
+      const xml = `<XtraReportsLayoutSerializer><Bands>${mark}</Bands></XtraReportsLayoutSerializer>`;
+      expect(sectionsFor({ texts: [xml] }), mark).toEqual(['bookmarks']);
+    }
+  });
+
+  it('is dropped for a report with none', () => {
+    expect(sectionsFor({ texts: [plain] })).not.toContain('bookmarks');
+  });
+
+  it('is kept when the user asks for navigation in their own words', () => {
+    for (const instruction of ['add a document map', 'I want to jump to each section', 'give it bookmarks']) {
+      expect(sectionsFor({ texts: [plain], instruction }), instruction).toContain('bookmarks');
     }
   });
 });

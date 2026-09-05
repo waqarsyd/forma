@@ -954,6 +954,22 @@ ${transcript}`,
  * is complete — so this is usable in a tool that never opens a connection.
  */
 /**
+ * Bookmarks -- the document map, and the PDF outline it exports into.
+ *
+ * Measured with `RepxProbe emit-book`. `BookmarkParent` is a `#Ref-N` pointer,
+ * the fifth in this format, and the one that tested the prediction written in
+ * `repxRefs.ts` after the fourth.
+ */
+const BOOKMARKS_BLOCK = `          - BOOKMARKS — the navigation tree beside a long report, and the outline it exports into a PDF.
+            A report with sections a reader jumps between should say what those sections are. It is two attributes on the control that heads each section:
+            <Item1 Ref="3" ControlType="XRLabel" Name="labelSection" Text="Northern Region" Bookmark="Northern Region" SizeF="400,30" LocationFloat="0,0" />
+            <Item2 Ref="4" ControlType="XRLabel" Name="labelCustomer" Text="Acme Ltd" Bookmark="Acme Ltd" BookmarkParent="#Ref-3" SizeF="400,20" LocationFloat="20,35" />
+            - **BookmarkParent is a "#Ref-N" POINTER at another CONTROL's Ref** — not a name. #Ref-3 above means the control whose Ref="3". Omit it for a top-level entry.
+            - A bookmark that repeats per record should be an EXPRESSION, not a literal: an <ExpressionBindings> item with PropertyName="Bookmark" and Expression="[Region]". A literal on a control inside the Detail band produces the same caption on every row, which is a document map with forty identical entries.
+            - Put the bookmark on the control that already carries the section's caption. A second invisible label existing only to hold a bookmark is a control that can be moved out of alignment with the thing it names.
+            - **Only when the report has sections.** A one-page invoice needs no document map, and a bookmark on its title adds a tree with one entry.
+`;
+/**
  * Multi-column detail flow — a label sheet, a phone list, a two-up catalogue.
  *
  * Measured with `RepxProbe emit-cols`. Three things: it is a child element of
@@ -1362,7 +1378,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
             - PageInfo is an ENUM and only these eight values exist: None, Number, NumberOfTotal, Total, RomLowNumber, RomHiNumber, DateTime, UserName. Anything else is dropped on load and the control prints nothing. Do NOT invent a value and do NOT combine two of them.
             - For "Page 1 of 12" use PageInfo="NumberOfTotal" with TextFormatString="Page {0} of {1}". For a bare number use PageInfo="Number". The property is **TextFormatString**, NOT Format — a real generation emitted Format= and PageInfo="NumberOfPagesNoWith  PageNumber" on 2026-09-04, and DevExpress discarded the page numbering without a word.
           - Barcode: <Item6 Ref="8" ControlType="XRBarCode" Name="barcode1" LocationFloat="0,300" SizeF="200,50"><Symbology Name="Code128" /></Item6>
-${sections.includes('columns') ? COLUMNS_BLOCK : ''}${sections.includes('watermark') ? WATERMARK_BLOCK : ''}${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
+${sections.includes('bookmarks') ? BOOKMARKS_BLOCK : ''}${sections.includes('columns') ? COLUMNS_BLOCK : ''}${sections.includes('watermark') ? WATERMARK_BLOCK : ''}${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
             Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.

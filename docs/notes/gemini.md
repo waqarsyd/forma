@@ -642,6 +642,23 @@ The Preview draws it behind the bands on every page, with `pointer-events: none`
 
 **The Preview does not draw the columns, and says so.** `paginate` flows every record down one column, and a multi-column report rendered that way *looks correct and is not* — worse than an admitted gap. The pane carries a line saying how many columns the report prints in and that it is showing one. Drawing it properly means giving `PlacedBand` an x-offset and a width and threading a column index through pagination, which is a real change to the most-tested function in that module; it is worth doing and worth doing deliberately, not as a footnote to a syntax change.
 
+### Bookmarks, and a prediction that held (2026-09-05)
+
+`RepxProbe emit-book`. The document map beside a long report, and the outline it exports into a PDF.
+
+```xml
+<Item1 Ref="3" ControlType="XRLabel" Name="labelSection" Text="Northern Region" Bookmark="Northern Region" ... />
+<Item2 Ref="4" ControlType="XRLabel" Name="labelCustomer" Text="Acme Ltd" Bookmark="Acme Ltd" BookmarkParent="#Ref-3" ... />
+```
+
+- **`BookmarkParent` is a `#Ref-N` pointer at another CONTROL — the fifth pointer attribute in this format.**
+- A bookmark can be an expression: an `<ExpressionBindings>` item with `PropertyName="Bookmark"`. That is the useful form inside a Detail band, where a literal repeats once per record.
+- `BookmarkDuplicateSuppress = true` wrote **nothing at all**. What that means is not established — it could be the default or it could be unserialized — so nothing was built on it and nothing is claimed about it here. Recording the observation without the inference is the point.
+
+**The prediction in `repxRefs.ts` was written after the fourth pointer and tested against the fifth, and it held.** That module says its pattern needs no change for a new pointer attribute because it matches the attribute *value* rather than the name. `BookmarkParent="#Ref-3"` was left alone and the ambiguity warning fired, with no code change — only the warning's wording gained the fifth name. That is the difference between a property and a coincidence, and it is why the comment now says a *sixth* should need no change either: keying on attribute names would have cost two changes already.
+
+Two audit checks, both flat-map failures rather than load failures: a `BookmarkParent` naming a control that carries no `Bookmark` of its own (the child cannot nest, so it lands at the top level beside the section it belongs inside), and a literal `Bookmark=` on a control in the Detail band (forty rows, forty identical entries — the map becomes useless in exactly the reports long enough to need one).
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

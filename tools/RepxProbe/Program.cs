@@ -46,6 +46,7 @@ static class Program {
             case "emit-sort":  EmitSort(args[1]);  return 0;
             case "emit-mark":  EmitWatermark(args[1]); return 0;
             case "emit-cols":  EmitColumns(args[1]); return 0;
+            case "emit-book":  EmitBookmarks(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -868,6 +869,79 @@ static class Program {
             new TopMarginBand(),
             columns,
             nested,
+            new BottomMarginBand()
+        });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes BOOKMARKS -- the document map a reader uses to jump between
+    /// sections of a long report, and which exports into a PDF's outline.
+    ///
+    /// The question worth the probe:
+    ///
+    ///   **How does BookmarkParent serialize?** A bookmark nests under another
+    ///   bookmark, and the parent is a reference to another CONTROL. If that is
+    ///   a "#Ref-N" pointer it is the FIFTH such attribute -- and repxRefs.ts
+    ///   claims in its own comment that a fifth should need no change, because
+    ///   its pattern matches the attribute value rather than the name. This is
+    ///   the first chance to find out whether that claim is true.
+    ///
+    /// Also open: whether a bookmark can be an expression (a group header
+    /// bookmarked by its own value is the useful case), and what the report-level
+    /// duplicate-suppression property looks like.
+    static void EmitBookmarks(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeBookmarks";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRLabel section = new XRLabel();
+        section.Name = "labelSection";
+        section.Text = "Northern Region";
+        section.LocationF = new PointF(0, 0);
+        section.SizeF = new SizeF(400, 30);
+        section.Bookmark = "Northern Region";
+
+        // A child bookmark, to see how the parent is named.
+        XRLabel child = new XRLabel();
+        child.Name = "labelCustomer";
+        child.Text = "Acme Ltd";
+        child.LocationF = new PointF(20, 35);
+        child.SizeF = new SizeF(400, 20);
+        child.Bookmark = "Acme Ltd";
+        child.BookmarkParent = section;
+
+        // A bookmark driven by data rather than a literal, which is the useful
+        // case for a grouped report.
+        XRLabel bound = new XRLabel();
+        bound.Name = "labelBound";
+        bound.Text = "";
+        bound.LocationF = new PointF(0, 60);
+        bound.SizeF = new SizeF(400, 20);
+        bound.ExpressionBindings.Add(new ExpressionBinding("BeforePrint", "Bookmark", "[Region]"));
+
+        // A control with no bookmark at all, so the default is visible.
+        XRLabel plain = new XRLabel();
+        plain.Name = "labelPlain";
+        plain.Text = "untouched";
+        plain.LocationF = new PointF(0, 85);
+        plain.SizeF = new SizeF(400, 20);
+
+        report.BookmarkDuplicateSuppress = true;
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 120;
+        detail.Controls.AddRange(new XRControl[] { section, child, bound, plain });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            detail,
             new BottomMarginBand()
         });
 

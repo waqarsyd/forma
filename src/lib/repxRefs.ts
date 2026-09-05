@@ -66,17 +66,20 @@ const CONTROL_TYPE = /\sControlType\s*=\s*"/;
 /**
  * A pointer to a `Ref`, written as the attribute value `#Ref-N`.
  *
- * Four places use this form, and none of them were known when this module was
+ * **Five** places use this form, and none were known when this module was
  * written: a parameter's `Type` pointing into `<ObjectStorage>`, a cross-band
- * control's `StartBand` and `EndBand` pointing at bands, and a
- * `<FormattingRuleLinks>` item's `Value` pointing at a rule in the
- * `<FormattingRuleSheet>` (`RepxProbe emit-params`, `emit-marks` and
- * `emit-rules` respectively).
+ * control's `StartBand` and `EndBand` pointing at bands, a
+ * `<FormattingRuleLinks>` item's `Value` pointing at a rule, and a control's
+ * `BookmarkParent` pointing at another control (`RepxProbe emit-params`,
+ * `emit-marks`, `emit-rules` and `emit-book`).
  *
- * The pattern matched the fourth one without being changed, because it matches
- * the attribute *value* rather than any particular attribute name. That is the
- * property worth preserving if this is ever edited: a fifth pointer attribute
- * should need no change here either.
+ * The pattern matched the fourth and the fifth without being changed, because it
+ * matches the attribute *value* rather than any particular attribute name. **That
+ * prediction was written here after the fourth and tested against the fifth**,
+ * which is the only reason it is stated as a property rather than a coincidence:
+ * a sixth pointer attribute should need no change here either. Preserve that if
+ * this is ever edited — keying on attribute names would have cost two changes
+ * already.
  *
  * **They have to move when their target is renumbered.** Renumbering a
  * duplicate definition and leaving the pointer behind aims it at whichever
@@ -245,9 +248,9 @@ export function ensureUniqueRefs(xml: string | undefined | null): RefRepair {
       (skipped ? `; left ${skipped} back-reference(s) alone` : '') +
       (ambiguous.size
         ? `; WARNING: ${ambiguous.size} renumbered Ref(s) had a #Ref- pointer to them ` +
-          `(${[...ambiguous].join(', ')}) — a parameter type, a cross-band band reference ` +
-          `or a formatting-rule link may now name the wrong element, and the file cannot ` +
-          `say which was meant`
+          `(${[...ambiguous].join(', ')}) — a parameter type, a cross-band band reference, ` +
+          `a formatting-rule link or a bookmark parent may now name the wrong element, and ` +
+          `the file cannot say which was meant`
         : ''),
     renumbered: rewrites.length,
   };

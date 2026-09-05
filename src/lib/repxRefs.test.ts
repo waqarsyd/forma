@@ -257,6 +257,21 @@ it('warns that a formatting-rule link may now be wrong', () => {
     expect(out).toContain('Value="#Ref-4"');
   });
 
+it('leaves a bookmark parent pointer alone -- the fifth pointer attribute', () => {
+    // repxRefs claims its pattern needs no change for a new pointer, because it
+    // matches the attribute VALUE. That claim was written after the fourth and
+    // this is the fifth, which is the only thing that makes it a property
+    // rather than a coincidence.
+    const xml = report(
+      '<Item1 Ref="3" ControlType="XRLabel" Name="parent" Bookmark="North" />' +
+      '<Item2 Ref="3" ControlType="XRLabel" Name="other" />' +
+      '<Item3 Ref="4" ControlType="XRLabel" Name="child" BookmarkParent="#Ref-3" />'
+    );
+    const { xml: out, reason } = ensureUniqueRefs(xml);
+    expect(out).toContain('BookmarkParent="#Ref-3"');
+    expect(reason).toContain('bookmark parent');
+  });
+
   it('leaves a parameter type pointer alone the same way', () => {
     const xml = withPointer(
       '<Item1 Ref="7" ControlType="DetailBand" Name="Detail" />' +
