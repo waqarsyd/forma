@@ -353,7 +353,11 @@ Four things in there shape the code. It is `ExpressionBindings`, not the legacy 
 
 ### What binding does, and the two bugs that only the round trip found
 
-`repxBindings.ts` derives a field name per column heading and decides whether a column earns a format; `repxBindingPlan.ts` locates the rows, proves they correspond, and splices. Off unless `VITE_FORMA_BIND=true`, mirroring `VITE_FORMA_FLAT`, because it changes what the report *says*: a bound cell shows a field name where the source showed a number, and the names are a guess at a schema taken from headings.
+`repxBindings.ts` derives a field name per column heading and decides whether a column earns a format; `repxBindingPlan.ts` locates the rows, proves they correspond, and splices.
+
+**The flag that gated this is gone (2026-09-05).** It ran the pass over every generation, off by default because binding changes what the report *says* — a bound cell shows a field name where the source showed a number — and because the names were a guess at a schema taken from headings. The Data tab replaced it: a real schema in, a mapping the user corrects, and the names come from the data instead of the document. Keeping the flag would have meant maintaining two answers to one question with the worse one selectable, and a flag nobody turns on is a code path nobody tests.
+
+One thing had to move with it. `bindFooterTotals` derived its own names independently, which was safe only while both passes derived identically. Given a real mapping they diverge — a detail row bound to `NET_AMOUNT` under a footer that derives `Amount` emits `sumSum([Amount])`, a field the source does not have, and the report opens with a total that prints nothing. It now takes the same mapping, and the Data tab passes one mapping to both.
 
 The correspondence check is the design. Headings live in `PageHeader` and the data row in `Detail` — two tables in two bands with nothing tying them together — so binding column *n* to heading *n* is an assumption that fails exactly when a header cell spans two columns. When the counts disagree it declines, because a confident wrong field name in a file the user trusts is worse than no binding.
 

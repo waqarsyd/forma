@@ -4,12 +4,13 @@
  * ## What this replaces
  *
  * `repxBindings.ts` can derive a field name from a column heading -- "Item
- * Description" becomes `[ItemDescription]` -- and that pass has run behind
- * `VITE_FORMA_BIND` since 2026-09-04. It is a good guess, and a guess is what
- * it is: the report telling us what it thinks the data is called. Bound against
- * a source whose column is really `DESCR`, the file fails at run time in the
- * one place nobody looks, and the derived name is confident enough that nobody
- * checks it.
+ * Description" becomes `[ItemDescription]` -- and a `VITE_FORMA_BIND` flag ran
+ * that over every generation between 2026-09-04 and 2026-09-05. It was a good
+ * guess, and a guess is what it was: the report telling us what it thinks the
+ * data is called. Bound against a source whose column is really `DESCR`, the
+ * file fails at run time in the one place nobody looks, and the derived name is
+ * confident enough that nobody checks it. The flag is gone; this screen is what
+ * replaced it, and binding now happens here or not at all.
  *
  * Here the user pastes what they actually have -- a JSON row, a CSV export, a
  * CREATE TABLE, or just a list of column names -- and `dataSource.ts` reads the
@@ -28,7 +29,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { parseDataSource, suggestMapping, type DataField } from '../lib/dataSource';
-import { planDetailBinding, bindDetailRow, readBoundFields } from '../lib/repxBindingPlan';
+import { planDetailBinding, bindDetailRow, bindFooterTotals, readBoundFields } from '../lib/repxBindingPlan';
 
 interface Props {
   repxContent?: string;
@@ -81,8 +82,26 @@ export default function DataBinding({ repxContent, onApply }: Props) {
       setApplied(result.reason);
       return;
     }
-    onApply(result.xml, result.reason);
-    setApplied(result.reason);
+
+    /*
+     * Totals second, with THE SAME mapping.
+     *
+     * This used to run only behind `VITE_FORMA_BIND`, where both passes derived
+     * their own names from the headings and therefore happened to agree. Given
+     * a real schema they would not: a detail row bound to `NET_AMOUNT` under a
+     * footer that derived `Amount` emits `sumSum([Amount])`, a field the source
+     * does not have, and the report opens with a total that prints nothing.
+     *
+     * It declines far more often than it applies — it wants a ReportFooter
+     * table whose cells line up with the detail row and hold figures — and that
+     * is intended, so a decline is reported rather than treated as a failure.
+     */
+    const totals = bindFooterTotals(result.xml, mapping);
+    const xml = totals.applied ? totals.xml : result.xml;
+    const summary = totals.applied ? `${result.reason}; ${totals.reason}` : result.reason;
+
+    onApply(xml, summary);
+    setApplied(totals.applied ? summary : `${result.reason}. Totals: ${totals.reason}.`);
   };
 
   const fieldOptions = (current: string | null): DataField[] => {
@@ -285,7 +304,8 @@ export default function DataBinding({ repxContent, onApply }: Props) {
               Writes an <code>ExpressionBindings</code> element onto each mapped cell, and a
               <code> TextFormatString</code> where the column is plainly money or a date. The
               cell keeps its <code>Text</code> as a fallback. Unmapped columns are left exactly
-              as they are.
+              as they are. Where the report has a footer row lining up with the detail row, the
+              money columns are totalled with <code>sumSum()</code> over the same fields.
             </p>
           </section>
         </>

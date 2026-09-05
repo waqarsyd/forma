@@ -13,7 +13,6 @@ import {
   planDetailBinding,
   bindDetailRow,
   bindFooterTotals,
-  bindingEnabled,
   readBoundFields,
   unescapeXml,
 } from './repxBindingPlan';
@@ -495,15 +494,44 @@ describe('readBoundFields', () => {
   });
 });
 
-describe('bindingEnabled', () => {
-  it('is off unless the flag is exactly "true"', () => {
-    // Off by default, and not turned on by a truthy-looking value -- the same
-    // contract flatLayoutEnabled has, so the two flags cannot behave
-    // differently for the same input.
-    for (const value of [undefined, '', 'false', 'TRUE', '1', 'yes']) {
-      expect(bindingEnabled({ VITE_FORMA_BIND: value })).toBe(false);
-    }
-    expect(bindingEnabled({ VITE_FORMA_BIND: 'true' })).toBe(true);
+/*
+ * `bindingEnabled` and its VITE_FORMA_BIND flag were removed on 2026-09-05,
+ * along with the generation-time pass they gated. Binding is now a deliberate
+ * action in the Data tab against a schema the user pasted, so there is no
+ * second, guessing answer left for a flag to select between.
+ */
+
+describe('bindFooterTotals with an explicit mapping', () => {
+  const money = () => withFooter(['Description', 'Amount'], ['Widget', '1.00'], ['Total', '1.00']);
+
+  it('totals with the supplied name, not one derived from the heading', () => {
+    // The bug this prevents: a detail row bound to NET_AMOUNT under a footer
+    // that derived "Amount" emits sumSum([Amount]) -- a field the source does
+    // not have. The report opens and the total prints nothing.
+    const bound = bindDetailRow(money(), ['DESCR', 'NET_AMOUNT']);
+    const totals = bindFooterTotals(bound.xml, ['DESCR', 'NET_AMOUNT']);
+    expect(totals.applied).toBe(true);
+    expect(totals.xml).toContain('Expression="sumSum([NET_AMOUNT])"');
+    expect(totals.xml).not.toContain('sumSum([Amount])');
+  });
+
+  it('reports the name it actually wrote', () => {
+    const bound = bindDetailRow(money(), ['DESCR', 'NET_AMOUNT']);
+    expect(bindFooterTotals(bound.xml, ['DESCR', 'NET_AMOUNT']).reason)
+      .toBe('totalled 1 column(s): NET_AMOUNT');
+  });
+
+  it('leaves a column the user declined to map untotalled', () => {
+    const bound = bindDetailRow(money(), ['DESCR', null]);
+    const totals = bindFooterTotals(bound.xml, ['DESCR', null]);
+    expect(totals.applied).toBe(false);
+    expect(totals.reason).toMatch(/no footer cell sits under a money column/);
+  });
+
+  it('still derives when no mapping is passed, so the old behaviour is intact', () => {
+    const bound = bindDetailRow(money());
+    const totals = bindFooterTotals(bound.xml);
+    expect(totals.xml).toContain('Expression="sumSum([Amount])"');
   });
 });
 

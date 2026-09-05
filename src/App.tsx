@@ -2934,9 +2934,10 @@ export default function App() {
    *
    * Read out of `repxContent` rather than carried on the response, so it is a
    * property of the artifact and not of the settings in force right now. A
-   * report saved while VITE_FORMA_BIND was on still reports its fields when
-   * reopened with the flag off, and one saved before binding existed reports
-   * none -- which is the truth in both cases. It is also what keeps this honest
+   * report bound through the Data tab still reports its fields when reopened,
+   * and one saved before it was bound reports none -- which is the truth in
+   * both cases. That was the argument when a flag decided whether binding
+   * happened at all, and it holds better now that a person does. It is also what keeps this honest
    * in the same way the units readout beside it has to be: it cannot claim a
    * binding the file does not contain.
    *
@@ -4166,10 +4167,10 @@ export default function App() {
             exported, which is the worst place to be confidently wrong. */}
         <span>units {unitsPerInch(config.unit)}/in</span>
         {result?.layout && <span>{result.layout.sections.length} bands</span>}
-        {/* Only when the report actually carries bindings, which is never
-            unless VITE_FORMA_BIND was on for the generation. Derived from
-            repxContent for the same reason as the units readout above: this
-            bar describes the file about to be exported. */}
+        {/* Only when the report actually carries bindings, which now means
+            somebody bound it in the Data tab — generation never binds anything
+            by itself. Derived from repxContent for the same reason as the units
+            readout above: this bar describes the file about to be exported. */}
         {boundFields.length > 0 && (
           <span title={`Bound to: ${boundFields.join(', ')}`}>
             {boundFields.length} bound

@@ -8,7 +8,6 @@ import { ensureUniqueRefs } from "../lib/repxRefs";
 import { normalizeItemNames } from "../lib/repxItems";
 import { instructionBlock } from "../lib/userInstructions";
 import { auditRepx } from "../lib/repxAudit";
-import { bindDetailRow, bindFooterTotals, bindingEnabled } from "../lib/repxBindingPlan";
 import { liftParameterTypes } from "../lib/repxParameters";
 import { flatLayoutEnabled, rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
@@ -1730,34 +1729,23 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.log(`Parameters left as generated: ${params.reason}.`);
     }
 
-    // Opt-in, and last, because it is the only pass here that changes what the
-    // report *says* rather than how it is structured: a bound cell shows the
-    // field name where the source document showed a number. It runs after the
-    // margin lift because that one rewrites coordinates and explicitly skips
-    // nested controls, so giving it fewer children to walk costs nothing.
-    if (bindingEnabled(viteEnv)) {
-      const bound = bindDetailRow(parsed.repxContent);
-      if (bound.applied) {
-        parsed.repxContent = bound.xml;
-        console.log(`Bindings: ${bound.reason}.`);
-      } else {
-        console.log(`Bindings left as generated: ${bound.reason}.`);
-      }
-
-      // Totals after the detail row, and only if that succeeded -- a footer
-      // summing a column the detail row never bound would reference a field
-      // nothing supplies. It declines far more often than it applies; see
-      // `bindFooterTotals` for why that is the intended behaviour.
-      if (bound.applied) {
-        const totals = bindFooterTotals(parsed.repxContent);
-        if (totals.applied) {
-          parsed.repxContent = totals.xml;
-          console.log(`Totals: ${totals.reason}.`);
-        } else {
-          console.log(`Totals left as generated: ${totals.reason}.`);
-        }
-      }
-    }
+    /*
+     * There is deliberately no binding pass here any more.
+     *
+     * Until 2026-09-05 a `VITE_FORMA_BIND` flag ran `bindDetailRow` over every
+     * generation, binding each column to a field name DERIVED from its heading
+     * -- "Item Description" becoming `[ItemDescription]`. That is the report's
+     * guess about what its own data is called, and against a source whose
+     * column is really `DESCR` it produces a file that opens cleanly and fails
+     * when it runs.
+     *
+     * The Data tab replaced it: the user pastes a real schema and chooses the
+     * mapping, so the names come from the data rather than from the document.
+     * Keeping a flag that writes the guess would mean maintaining two answers
+     * to the same question, one of which is known to be worse -- and a flag
+     * nobody turns on is a code path nobody tests. Binding is now a deliberate
+     * action with a real schema behind it, or it does not happen.
+     */
 
     // Last, on the finished artifact, and it repairs nothing: this asks what is
     // still wrong after every repair has run. An error here means a repair

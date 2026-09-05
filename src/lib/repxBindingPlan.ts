@@ -372,12 +372,33 @@ export interface BoundRepx {
  * ReportFooter table at all, let alone one column-aligned with the detail row,
  * is not something any fixture here can settle.
  */
-export function bindFooterTotals(xml: string | undefined | null): BoundRepx {
+/**
+ * Total the money columns in the ReportFooter.
+ *
+ * `names` must be the SAME mapping the detail row was bound with. Without it
+ * this derives its own field names from the column headings, and a footer
+ * deriving `Amount` under a detail row bound to `NET_AMOUNT` emits
+ * `sumSum([Amount])` — a field the data source does not have. The report opens,
+ * the total prints blank or throws at run time, and nothing in the file looks
+ * wrong. The two passes agreeing is not something to leave to both of them
+ * guessing identically.
+ */
+export function bindFooterTotals(
+  xml: string | undefined | null,
+  names?: readonly (string | null)[],
+): BoundRepx {
   const text = xml ?? '';
   // analyseColumns, not planDetailBinding: this runs *after* the detail row is
   // bound, so the already-bound check would decline every single time.
   const { plan, reason } = analyseColumns(text);
   if (!plan) return { xml: text, applied: false, reason, fields: [] };
+
+  /** The name column `i` was bound to, or null to leave its total alone. */
+  const chosen = (index: number): string | null => {
+    if (!names) return plan.fields[index].name;
+    const name = (names[index] ?? '').trim();
+    return name || null;
+  };
 
   const elements = parseElements(text);
   const footer = elements.find((e) => e.controlType === 'ReportFooterBand');
@@ -412,7 +433,9 @@ export function bindFooterTotals(xml: string | undefined | null): BoundRepx {
     }))
     .filter(({ i }) => inferTextFormat(plan.headings[i], plan.cells[i].text) === '{0:c2}')
     .filter(({ i, own }) => inferTextFormat(plan.headings[i], own) === '{0:c2}')
-    .filter(({ slice }) => !EXISTING_BINDING.test(slice));
+    .filter(({ slice }) => !EXISTING_BINDING.test(slice))
+    // A column the user declined to map has no field to sum.
+    .filter(({ i }) => chosen(i) !== null);
 
   if (!targets.length) {
     return { xml: text, applied: false, reason: 'no footer cell sits under a money column', fields: [] };
@@ -424,7 +447,7 @@ export function bindFooterTotals(xml: string | undefined | null): BoundRepx {
     const slice = out.slice(cell.start, cell.end);
     const children =
       '<ExpressionBindings>' +
-      `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="sumSum([${plan.fields[i].name}])" />` +
+      `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="sumSum([${chosen(i)}])" />` +
       '</ExpressionBindings>';
 
     const rewritten = slice.endsWith('/>')
@@ -434,7 +457,13 @@ export function bindFooterTotals(xml: string | undefined | null): BoundRepx {
     out = out.slice(0, cell.start) + rewritten + out.slice(cell.end);
   }
 
-  const totalled = targets.map(({ i }) => plan.fields[i]);
+  // Reported with the names actually written, not the derived ones, so the
+  // log line and the file agree.
+  const totalled: DerivedField[] = targets.map(({ i }) => ({
+    header: plan.headings[i] ?? '',
+    name: chosen(i) as string,
+    synthesised: names ? false : plan.fields[i].synthesised,
+  }));
   return {
     xml: out,
     applied: true,
@@ -501,9 +530,22 @@ export function readBoundFields(xml: string | undefined | null): string[] {
  * trade-off only once somebody has confirmed it opens correctly. Default off
  * until then, one variable to turn on.
  */
-export function bindingEnabled(env: Record<string, string | undefined>): boolean {
-  return env.VITE_FORMA_BIND === 'true';
-}
+/*
+ * `bindingEnabled` and its `VITE_FORMA_BIND` flag were removed on 2026-09-05.
+ *
+ * The flag existed because binding changes what the report *says* -- a bound
+ * cell shows a field name where the source showed a number -- and the names it
+ * used were derived from the column headings, which is the report guessing at
+ * its own schema. The Data tab replaced that with a mapping the user makes
+ * against a schema they pasted, so the guess has nothing left to be a fallback
+ * for. Two answers to one question, one of them known to be worse, is not a
+ * configuration.
+ *
+ * `bindDetailRow` and `bindFooterTotals` are still here and still take derived
+ * names when called without a mapping -- that path is what the tests exercise
+ * and what proves the explicit path did not change the arithmetic. Nothing in
+ * the product calls them that way.
+ */
 
 /**
  * Bind the detail row, optionally to names the user chose.
