@@ -177,8 +177,9 @@ import { pushRevision, type Revision } from './lib/revisions';
    so it stays eager while `accountData`'s path builders arrive through
    `loadFirebase()` with the SDK they import. */
 import {
-  planVersionWrites,
-  fromVersionDocuments,
+  saveRevisions,
+  loadRevisions,
+  type VersionIo,
   type VersionDocument,
 } from './lib/revisionStore';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
@@ -2423,6 +2424,35 @@ export default function App() {
   };
 
   /**
+   * The Firestore half of revision storage, and the only place it is spelled out.
+   *
+   * Everything above this — planning, budgeting, the numbering — lives in
+   * `lib/revisionStore.ts` and is exercised against the emulator through this
+   * same interface by `tests/revisionRoundTrip.test.ts`. What is left here is
+   * four SDK calls, which is the part a test cannot reach without a browser and
+   * the part least likely to be wrong.
+   *
+   * The `orderBy` is not decoration: `fromVersionDocuments` numbers downwards
+   * from the newest and trusts the caller to have ordered them, so reading this
+   * collection unordered would hand the highest id to whichever document
+   * Firestore returned first.
+   */
+  const versionIo = async (uid: string, reportId: string): Promise<VersionIo> => {
+    const { service, sdk, paths } = await loadFirebase();
+    const collectionRef = paths.versionsCollectionRef(service.db, uid, reportId);
+    const docRef = (id: string) => paths.versionDocRef(service.db, uid, reportId, id);
+    return {
+      list: async () => (await sdk.getDocs(collectionRef)).docs.map((entry) => entry.id),
+      read: async () =>
+        (await sdk.getDocs(sdk.query(collectionRef, sdk.orderBy('timestamp', 'desc')))).docs.map(
+          (entry) => entry.data() as VersionDocument,
+        ),
+      write: async (document) => { await sdk.setDoc(docRef(document.id), document); },
+      remove: async (id) => { await sdk.deleteDoc(docRef(id)); },
+    };
+  };
+
+  /**
    * Write the revision history beside a report that has just been saved.
    *
    * Separate from the report write, and allowed to fail on its own. The report
@@ -2447,23 +2477,8 @@ export default function App() {
   ): Promise<'none' | 'saved' | 'partial' | 'failed'> => {
     if (!user || revisions.length === 0) return 'none';
     try {
-      const { service, sdk, paths } = await loadFirebase();
-      const stored = await sdk.getDocs(paths.versionsCollectionRef(service.db, user.uid, reportId));
-      const plan = planVersionWrites(
-        revisions,
-        stored.docs.map((entry) => entry.id),
-        reportId,
-        user.uid,
-      );
-
-      await Promise.all([
-        ...plan.toWrite.map((document) =>
-          sdk.setDoc(paths.versionDocRef(service.db, user.uid, reportId, document.id), document)),
-        ...plan.toDelete.map((id) =>
-          sdk.deleteDoc(paths.versionDocRef(service.db, user.uid, reportId, id))),
-      ]);
-
-      return plan.tooLarge.length > 0 ? 'partial' : 'saved';
+      const outcome = await saveRevisions(await versionIo(user.uid, reportId), revisions, reportId, user.uid);
+      return outcome.tooLarge.length > 0 ? 'partial' : 'saved';
     } catch (err) {
       console.warn('The report was saved, but its version history was not:', err);
       return 'failed';
@@ -2576,17 +2591,11 @@ export default function App() {
 
     if (!user) return;
     try {
-      const { service, sdk, paths } = await loadFirebase();
-      const stored = await sdk.getDocs(
-        sdk.query(
-          paths.versionsCollectionRef(service.db, user.uid, report.id),
-          sdk.orderBy('timestamp', 'desc'),
-        ),
-      );
-      if (openReportId.current !== report.id) return;
       // Drops any version whose snapshot will not parse, and numbers the rest
       // downwards from the newest — see the note on `fromVersionDocuments`.
-      setRevisions(fromVersionDocuments(stored.docs.map((entry) => entry.data() as VersionDocument)));
+      const restored = await loadRevisions(await versionIo(user.uid, report.id));
+      if (openReportId.current !== report.id) return;
+      setRevisions(restored);
     } catch (err) {
       // Deliberately not an error banner. The project opened; the panel is
       // simply empty, which is the same thing it shows for a project saved

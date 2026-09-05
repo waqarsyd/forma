@@ -145,6 +145,72 @@ export function fromVersionDocuments(docs: readonly VersionDocument[]): Revision
   return kept.map((revision, index) => ({ ...revision, id: kept.length - index }));
 }
 
+/**
+ * The three operations persisting a history needs, supplied by the caller.
+ *
+ * **Why an interface and not the Firestore SDK.** `App.tsx` imports this module
+ * eagerly, and a value import of `firebase/firestore` here would drag the whole
+ * ~619 kB SDK back into the entry chunk — the precise regression
+ * `lib/firebaseClient.ts` exists to prevent, and one that shows up in
+ * `check:size` as the entry chunk jumping half a megabyte rather than as
+ * anything failing. A type-only import would be erased; a value import would
+ * not, and the difference is invisible until the build.
+ *
+ * It also makes the round trip testable against the emulator without a browser
+ * or a signed-in user: `tests/revisionRoundTrip.test.ts` supplies the same three
+ * operations from the real SDK, so what the test exercises is this code and not
+ * a reimplementation of it.
+ */
+export interface VersionIo {
+  /** Stored document ids, for planning. Order does not matter. */
+  list: () => Promise<string[]>;
+  /** Stored documents, newest first — the caller's query does the ordering. */
+  read: () => Promise<VersionDocument[]>;
+  write: (document: VersionDocument) => Promise<void>;
+  remove: (id: string) => Promise<void>;
+}
+
+export interface SaveOutcome {
+  written: string[];
+  deleted: string[];
+  tooLarge: string[];
+}
+
+/**
+ * Persist a history: read what is stored, plan the difference, apply it.
+ *
+ * Writes and deletes go out together rather than in sequence — they touch
+ * disjoint documents by construction, since `toDelete` is exactly the stored ids
+ * that are *not* among the kept revisions.
+ *
+ * Throws on an I/O failure. The caller decides what that means; in `App.tsx` it
+ * means the report still saved and its history did not, which is a notice rather
+ * than an error.
+ */
+export async function saveRevisions(
+  io: VersionIo,
+  revisions: readonly Revision[],
+  reportId: string,
+  userId: string,
+  max = MAX_PERSISTED_REVISIONS,
+): Promise<SaveOutcome> {
+  const plan = planVersionWrites(revisions, await io.list(), reportId, userId, max);
+  await Promise.all([
+    ...plan.toWrite.map((document) => io.write(document)),
+    ...plan.toDelete.map((id) => io.remove(id)),
+  ]);
+  return {
+    written: plan.toWrite.map((document) => document.id),
+    deleted: plan.toDelete,
+    tooLarge: plan.tooLarge,
+  };
+}
+
+/** Read a history back, numbered so `pushRevision` can extend it — see below. */
+export async function loadRevisions(io: VersionIo): Promise<Revision[]> {
+  return fromVersionDocuments(await io.read());
+}
+
 export interface VersionPlan {
   /** Documents to write: the ones not already stored, newest first. */
   toWrite: VersionDocument[];
