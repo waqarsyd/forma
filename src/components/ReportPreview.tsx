@@ -109,8 +109,11 @@ function ControlBox({
 
   const frame: React.CSSProperties = {
     position: 'absolute',
-    left: u(control.x),
-    top: u(control.y),
+    // Plus the containing panel's position, which is 0 for everything that is
+    // not inside one. A panel's children are stored panel-relative because that
+    // is what the file says and what an edit writes back -- see PreviewControl.
+    left: u(control.x + control.offsetX),
+    top: u(control.y + control.offsetY),
     width: u(control.width),
     height: u(control.height),
     display: 'flex',

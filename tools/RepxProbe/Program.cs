@@ -38,6 +38,7 @@ static class Program {
                 case "emit-chart": EmitChart(args[1]); return 0;
             case "emit-grow":  EmitGrow(args[1]);  return 0;
             case "emit-marks": EmitMarks(args[1]); return 0;
+            case "emit-container": EmitContainer(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -292,6 +293,107 @@ static class Program {
         box.WidthF = 1;
 
         report.CrossBandControls.AddRange(new XRCrossBandControl[] { line, box });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes an XRPanel and an XRSubreport -- the two remaining controls an
+    /// ordinary form or statement uses that Forma cannot represent.
+    ///
+    /// Two questions, and the second may well be a NEGATIVE result:
+    ///
+    ///   XRPanel     -- a container. Are its children nested in its own
+    ///                  <Controls>, and if so are their coordinates relative to
+    ///                  the panel or still to the band? Getting that backwards
+    ///                  puts every child in the wrong place while the file
+    ///                  still loads, which is the units-audit failure again.
+    ///
+    ///   XRSubreport -- points at ANOTHER report. Forma produces exactly one
+    ///                  .repx from one source document, so if the only way to
+    ///                  name that other report is a file path, a generated
+    ///                  subreport points at something that does not exist on
+    ///                  the user's machine and the control is unusable here.
+    ///                  Both forms are set below to find out whether the report
+    ///                  source can be embedded rather than referenced.
+    static void EmitContainer(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeContainer";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        // Two children at coordinates that are obviously band-absolute, so the
+        // written values say which system the serializer used.
+        XRLabel inner1 = new XRLabel();
+        inner1.Name = "panelLabelA";
+        inner1.Text = "inside the panel, first";
+        inner1.LocationF = new PointF(10, 10);
+        inner1.SizeF = new SizeF(200, 20);
+
+        XRLabel inner2 = new XRLabel();
+        inner2.Name = "panelLabelB";
+        inner2.Text = "inside the panel, second";
+        inner2.LocationF = new PointF(10, 40);
+        inner2.SizeF = new SizeF(200, 20);
+
+        XRPanel panel = new XRPanel();
+        panel.Name = "panelBox";
+        panel.LocationF = new PointF(100, 100);
+        panel.SizeF = new SizeF(400, 80);
+        panel.Borders = DevExpress.XtraPrinting.BorderSide.All;
+        panel.Controls.AddRange(new XRControl[] { inner1, inner2 });
+
+        // A control OUTSIDE the panel at the same nominal coordinates, so the
+        // two can be compared directly in the output.
+        XRLabel outside = new XRLabel();
+        outside.Name = "labelOutside";
+        outside.Text = "outside the panel";
+        outside.LocationF = new PointF(10, 10);
+        outside.SizeF = new SizeF(200, 20);
+
+        // Form 1: a subreport naming another report by URL.
+        XRSubreport byUrl = new XRSubreport();
+        byUrl.Name = "subByUrl";
+        byUrl.LocationF = new PointF(0, 200);
+        byUrl.SizeF = new SizeF(400, 20);
+        byUrl.ReportSourceUrl = "AnotherReport.repx";
+
+        // Form 2: a subreport holding an actual report object. If THIS
+        // serializes the inner report inline, a self-contained subreport is
+        // possible and the control is usable here. If it writes a type name or
+        // nothing, it is not.
+        XtraReport inner = new XtraReport();
+        inner.Name = "InnerReport";
+        DetailBand innerDetail = new DetailBand();
+        innerDetail.Name = "InnerDetail";
+        innerDetail.HeightF = 20;
+        XRLabel innerLabel = new XRLabel();
+        innerLabel.Name = "innerLabel";
+        innerLabel.Text = "from the inner report";
+        innerLabel.LocationF = new PointF(0, 0);
+        innerLabel.SizeF = new SizeF(300, 20);
+        innerDetail.Controls.Add(innerLabel);
+        inner.Bands.Add(innerDetail);
+
+        XRSubreport byObject = new XRSubreport();
+        byObject.Name = "subByObject";
+        byObject.LocationF = new PointF(0, 230);
+        byObject.SizeF = new SizeF(400, 20);
+        byObject.ReportSource = inner;
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 260;
+        detail.Controls.AddRange(new XRControl[] { outside, panel, byUrl, byObject });
+
+        report.Bands.AddRange(new Band[] {
+            new TopMarginBand(),
+            detail,
+            new BottomMarginBand()
+        });
 
         report.SaveLayoutToXml(outPath);
         Console.WriteLine("written: " + Path.GetFullPath(outPath));

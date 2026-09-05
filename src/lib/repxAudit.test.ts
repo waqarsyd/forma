@@ -390,3 +390,57 @@ describe('auditRepx reporting', () => {
     expect(auditRepx(noDetail).summary).toBe('0 error(s), 1 warning(s): no-detail-band');
   });
 });
+
+/**
+ * Two more controls that load happily and print nothing.
+ *
+ * Same family as the chart-without-series and cross-tab-missing-fields checks:
+ * DevExpress raises nothing, the page just has a gap where content was meant to
+ * be, and on a busy page that reads as data still loading.
+ */
+describe('empty containers', () => {
+  it('warns about a panel with no controls in it', () => {
+    const xml = report('<Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>'
+      + '<Item1 Ref="2" ControlType="XRPanel" Name="p" LocationFloat="0,0" SizeF="200,50" Borders="All" />'
+      + '</Controls></Item1>');
+    const findings = auditRepx(xml, null).findings;
+    expect(findings.some((f) => f.code === 'empty-panel')).toBe(true);
+  });
+
+  it('stays quiet about a panel that contains something', () => {
+    const xml = report('<Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>'
+      + '<Item1 Ref="2" ControlType="XRPanel" Name="p" LocationFloat="0,0" SizeF="200,50"><Controls>'
+      + '<Item1 Ref="3" ControlType="XRLabel" Name="in" Text="x" LocationFloat="5,5" SizeF="100,20" />'
+      + '</Controls></Item1></Controls></Item1>');
+    const findings = auditRepx(xml, null).findings;
+    expect(findings.some((f) => f.code === 'empty-panel')).toBe(false);
+  });
+
+  it('warns about a subreport that names no report', () => {
+    const xml = report('<Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>'
+      + '<Item1 Ref="2" ControlType="XRSubreport" Name="s" LocationFloat="0,0" SizeF="200,20" />'
+      + '</Controls></Item1>');
+    const findings = auditRepx(xml, null).findings;
+    expect(findings.some((f) => f.code === 'subreport-without-source')).toBe(true);
+  });
+
+  it('accepts a subreport named by URL', () => {
+    const xml = report('<Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>'
+      + '<Item1 Ref="2" ControlType="XRSubreport" Name="s" ReportSourceUrl="Other.repx" LocationFloat="0,0" SizeF="200,20" />'
+      + '</Controls></Item1>');
+    const findings = auditRepx(xml, null).findings;
+    expect(findings.some((f) => f.code === 'subreport-without-source')).toBe(false);
+  });
+
+  it('accepts a subreport carrying an embedded ReportSource', () => {
+    // Measured with RepxProbe emit-container: the inner report really does
+    // serialize inline, so this form is self-contained and must not be flagged.
+    const xml = report('<Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>'
+      + '<Item1 Ref="2" ControlType="XRSubreport" Name="s" LocationFloat="0,0" SizeF="200,20">'
+      + '<ReportSource Ref="3" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Inner" PageWidth="850" PageHeight="1100">'
+      + '<Bands><Item1 Ref="4" ControlType="DetailBand" Name="InnerDetail" HeightF="20" /></Bands>'
+      + '</ReportSource></Item1></Controls></Item1>');
+    const findings = auditRepx(xml, null).findings;
+    expect(findings.some((f) => f.code === 'subreport-without-source')).toBe(false);
+  });
+});

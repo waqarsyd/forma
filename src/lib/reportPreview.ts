@@ -141,6 +141,16 @@ export interface PreviewControl {
    */
   checkState: CheckState | null;
   /**
+   * The containing panel's position, or 0 for a control sitting directly in a
+   * band.
+   *
+   * `x`/`y` are always exactly what the file says, because that is what an edit
+   * has to write back. **The renderer must add these**, or a panel's children
+   * draw in the band's corner instead of inside the panel.
+   */
+  offsetX: number;
+  offsetY: number;
+  /**
    * Where this control's opening tag sits in the source REPX: `openStart` is
    * the `<`, `openEnd` the matching `>`. Absolute offsets into the document
    * that was parsed, which is what lets an edit rewrite one attribute list and
@@ -434,6 +444,20 @@ function parseCrossTab(inner: string, controlStart: number, controlEnd: number):
   return { rows: fields('RowFields'), columns: fields('ColumnFields'), data: fields('DataFields') };
 }
 
+/**
+ * Read an `XRPanel`'s children, flattened into the band's own control list.
+ *
+ * **A panel's children are positioned relative to the panel**, not to the band
+ * — measured with `RepxProbe emit-container`, where a child at `LocationFloat
+ * "10,10"` inside a panel at `"100,100"` is written verbatim and *means* 110,110
+ * on the page. Drawing those numbers as band-relative would stack every child in
+ * the top-left corner of the band, next to the panel rather than inside it.
+ *
+ * So `x`/`y` stay exactly as the file writes them — which is what an edit has to
+ * write back — and the panel's own position travels alongside in `offsetX`/
+ * `offsetY` for the renderer to add. Keeping the two apart is what lets dragging
+ * a child work without a conversion at the point of writing.
+ */
 function parseControls(bandInner: string, bandInnerStart: number): PreviewControl[] {
   const controlsIdx = bandInner.indexOf('<Controls');
   if (controlsIdx === -1) return [];
@@ -482,9 +506,34 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
        * for the default, so the empty box is the silent case.
        */
       checkState: type === 'XRCheckBox' ? parseCheckState(item.attrs) : null,
+      offsetX: 0,
+      offsetY: 0,
       openStart: innerStart + item.start,
       openEnd: innerStart + inner.indexOf('>', item.start),
     });
+
+    /*
+     * A panel's children, flattened in after the panel itself so they paint on
+     * top of its border. They carry the panel's position as their offset; see
+     * the note on this function for why that is not folded into x/y.
+     *
+     * One level only, deliberately. DevExpress allows panels inside panels and
+     * nothing here forbids it, but no source document Forma has been given
+     * nests them, and a recursive reader is a recursive set of offset bugs
+     * waiting for a document to trigger them. Nested children are simply not
+     * drawn; the outer panel still is, so the omission is visible rather than
+     * silent. Make it recursive the day a real report needs it.
+     */
+    if (type === 'XRPanel') {
+      const panelSlice = inner.slice(item.start, extent);
+      const childIdx = panelSlice.indexOf('<Controls');
+      const childSpan = childIdx === -1 ? null : innerSpan(panelSlice, 'Controls', childIdx);
+      if (childSpan) {
+        for (const child of parseControls(panelSlice, innerStart + item.start)) {
+          controls.push({ ...child, offsetX: loc.a, offsetY: loc.b });
+        }
+      }
+    }
   }
   return controls;
 }

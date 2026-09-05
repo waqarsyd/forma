@@ -575,3 +575,69 @@ describe('a band numbered the same as one of its controls', () => {
     expect(result.controls[0].rows[0].cells[0].text).toBe('A');
   });
 });
+
+/**
+ * Panels, and the coordinate system that makes them worth testing.
+ *
+ * `RepxProbe emit-container` measured it: a child's LocationFloat is written
+ * verbatim and MEANS panel-relative, so a child at "10,10" inside a panel at
+ * "100,100" prints at 110,110. The parser keeps x/y exactly as the file has
+ * them -- an edit writes that number straight back -- and carries the panel's
+ * position separately for the renderer to add.
+ */
+describe('panels', () => {
+  const withBand = (controls: string) =>
+    parseReportStructure(
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item9 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="300"><Controls>' +
+      controls +
+      '</Controls></Item9></Bands></XtraReportsLayoutSerializer>'
+    ).bands[0].controls;
+
+  const panel =
+    '<Item1 Ref="2" ControlType="XRPanel" Name="p" LocationFloat="100,100" SizeF="400,80" Borders="All"><Controls>' +
+    '<Item1 Ref="3" ControlType="XRLabel" Name="inA" Text="A" LocationFloat="10,10" SizeF="200,20" />' +
+    '<Item2 Ref="4" ControlType="XRLabel" Name="inB" Text="B" LocationFloat="10,40" SizeF="200,20" />' +
+    '</Controls></Item1>';
+
+  it('reads the panel and flattens its children in after it', () => {
+    expect(withBand(panel).map((c) => c.name)).toEqual(['p', 'inA', 'inB']);
+  });
+
+  it('keeps a child x/y exactly as the file writes them', () => {
+    // The value an edit writes back has to be the panel-relative one, so the
+    // parser must not fold the offset in.
+    const inA = withBand(panel).find((c) => c.name === 'inA')!;
+    expect(inA.x).toBe(10);
+    expect(inA.y).toBe(10);
+  });
+
+  it('carries the panel position as the child offset', () => {
+    const [p, inA, inB] = withBand(panel);
+    expect([p.offsetX, p.offsetY]).toEqual([0, 0]);
+    expect([inA.offsetX, inA.offsetY]).toEqual([100, 100]);
+    expect([inB.offsetX, inB.offsetY]).toEqual([100, 100]);
+  });
+
+  it('gives a control outside any panel a zero offset', () => {
+    const plain = '<Item1 Ref="2" ControlType="XRLabel" Name="out" Text="x" LocationFloat="10,10" SizeF="100,20" />';
+    expect(withBand(plain)[0].offsetX).toBe(0);
+  });
+
+  it('reads an empty panel without inventing children', () => {
+    const empty = '<Item1 Ref="2" ControlType="XRPanel" Name="p" LocationFloat="0,0" SizeF="100,20" />';
+    expect(withBand(empty).map((c) => c.name)).toEqual(['p']);
+  });
+
+  it('does not read a table row as a panel child', () => {
+    // The depth guard that stops a table's cells being read as band controls
+    // has to keep working now that one nesting level IS followed.
+    const table =
+      '<Item1 Ref="2" ControlType="XRTable" Name="t" LocationFloat="0,0" SizeF="700,20">' +
+      '<Rows><Item1 Ref="3" ControlType="XRTableRow" Name="r" Weight="1">' +
+      '<Cells><Item1 Ref="4" ControlType="XRTableCell" Name="c" Text="A" Weight="1" /></Cells>' +
+      '</Item1></Rows></Item1>';
+    expect(withBand(table).map((c) => c.name)).toEqual(['t']);
+  });
+});

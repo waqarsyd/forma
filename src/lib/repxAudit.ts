@@ -308,6 +308,45 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
     }
   }
 
+  /*
+   * A panel holding nothing, and a subreport naming nothing. Same class as the
+   * two above: both load, both print an empty space, neither says a word.
+   *
+   * The panel case is the likelier of the two. A panel exists to group
+   * controls, so an empty one is either a rectangle drawn the hard way — the
+   * prompt says not to — or a group whose children were written as siblings of
+   * the panel instead of inside it, which is the mistake the panel-relative
+   * coordinate rule exists to prevent and which leaves the controls sitting
+   * outside the box that was meant to contain them.
+   */
+  const panels = (text.match(/ControlType="XRPanel"/g) ?? []).length;
+  if (panels) {
+    const withChildren = (text.match(/ControlType="XRPanel"[^>]*>\s*<Controls>/g) ?? []).length;
+    if (withChildren < panels) {
+      add(
+        'warning',
+        'empty-panel',
+        `${panels - withChildren} of ${panels} panel(s) contain no controls. A panel exists to group ` +
+          'controls, so an empty one is either a rectangle drawn the hard way or a group whose ' +
+          'children were written beside the panel instead of inside it.',
+      );
+    }
+  }
+
+  const subreports = (text.match(/ControlType="XRSubreport"/g) ?? []).length;
+  if (subreports) {
+    const sourced = (text.match(/ControlType="XRSubreport"[^>]*ReportSourceUrl="/g) ?? []).length
+      + (text.match(/ControlType="XRSubreport"[^>]*>\s*<ReportSource\b/g) ?? []).length;
+    if (sourced < subreports) {
+      add(
+        'warning',
+        'subreport-without-source',
+        `${subreports - sourced} of ${subreports} subreport(s) name no report to embed — neither a ` +
+          'ReportSourceUrl nor a nested <ReportSource>. The control prints nothing at all.',
+      );
+    }
+  }
+
   const crossTabs = (text.match(/ControlType="XRCrossTab"/g) ?? []).length;
   if (crossTabs) {
     for (const collection of ['RowFields', 'ColumnFields', 'DataFields']) {
