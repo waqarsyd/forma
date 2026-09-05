@@ -83,7 +83,21 @@ const BUDGETS = [
   // 75_000 puts it at 94.2%, where the index- and firebase- caps sit. This is a
   // raise, not a retune, so per the header it names the growth: grouping and
   // parameters, in the commit that added them.
-  { prefix: 'geminiService-', ext: '.js', max: 75_000, note: 'the mega-prompt + generation service, lazy' },
+  //
+  // Raised again to 78_000 on 2026-09-05, same day, same reason, one feature
+  // later: 70,651 -> 73,565 B, +2,914 B, when `7e756f9` added the CHARTS AND
+  // CROSS-TABS section. That is 39 lines of prompt asking for a real `XRChart`
+  // and `XRCrossTab` instead of a picture of one. 78_000 puts it back at 94.3%.
+  //
+  // **The growth is not in this file's own module, and that is worth knowing
+  // before hunting it.** `geminiService.ts` imports `rootStructurePrompt` from
+  // `lib/reportBands.ts`, and every prompt section since the banded skeleton has
+  // been added there -- so the chunk this cap watches grows from a file whose
+  // name does not appear in the artifact list. Three raises in two days is not
+  // drift: the mega-prompt is where features are specified, so a cap on it fires
+  // roughly once per feature. If it ever fires without a prompt change behind
+  // it, that is the interesting case and the one this budget is really for.
+  { prefix: 'geminiService-', ext: '.js', max: 78_000, note: 'the mega-prompt + generation service, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it
