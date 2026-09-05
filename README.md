@@ -522,9 +522,15 @@ From [`docs/PRD.md`](docs/PRD.md) §6, which is kept current against the code:
 
 - Raise or remove the 8-page PDF cap, and support multi-page `.repx` datasets.
 - Expose the RTL and stored-procedure options in the settings UI. (`ExpressionBindings` generation is done — it left the settings dialog entirely and became the **Data** tab, because a schema is not a setting: it belongs beside the report it binds, not in a modal shared with the API key.)
-- Render real gauges and barcodes in the mockup, and draw charts with a real charting library rather than the current stylised approximation.
+- Render real gauges and barcodes in the mockup, and draw charts *there* with a real charting library rather than the current stylised approximation; chart titles, legends and axis labels are not yet read from the source. (The exported REPX no longer approximates — charts are real `XRChart` elements and value matrices real `XRCrossTab` elements.)
+- Editing: deleting and adding a control, editing a table cell's text, and multi-select. Move, resize, retype, keyboard nudge and per-gesture undo are done.
+- A data source for the preview. It has none today, so it repeats one record's worth of content — it proves the band structure and the pagination, not the data.
+- Batch: dropping a folder onto the panel rather than choosing files through the picker, and running more than one at a time when the key's quota allows.
+- A mobile layout. Deliberately absent rather than broken — the ported design carries no mobile arrangement, and it is a design task before it is a CSS one.
 - Finish sign-in hardening — there is still no password-strength indicator and no email-verification gate after sign-up.
 - Find real signal for the *opening* phase of generation (model detection and upload), which still runs on a simulated cadence. The output phase is already driven by real streaming.
+
+**Explicitly out of scope — connecting to a live database.** The Data tab binds against a pasted sample and never opens a connection. A live one means credentials, which means either a server holding every customer's database password or a browser reaching a production database directly; a pasted sample supplies everything binding needs and none of what that would cost.
 
 **Explicitly out of scope — moving generation server-side.** It was on the roadmap while Forma owned the key. Under bring-your-own-key it is a regression: the server would become custodian of every user's third-party credential, reintroducing exactly the exposure this design resolved.
 
