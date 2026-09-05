@@ -33,6 +33,19 @@
  * reading the percentages on a GREEN run -- a passing check says nothing about how
  * nearly it failed, and `--print` exists for exactly that.
  *
+ * And when you do sweep the percentages, sort the caps into two kinds first --
+ * learned on 2026-09-06, doing exactly that. Caps on artifacts THIS SOURCE can
+ * move (index-, geminiService-, index.css, TOTAL_MAX) earn the 93-94% band,
+ * because routine work pushes them and a tight cap is what makes them useful.
+ * Caps on VENDORED artifacts do not: pdf.worker- at 96.6%, pdf- at 95.2%,
+ * firebase- at 93.8% and the woff2 files move only when a dependency or a font is
+ * deliberately upgraded -- both pdf artifacts were byte-identical across the
+ * 111 kB build diff recorded under TOTAL_MAX. Nothing routine can trip them, so
+ * their percentages carry no warning, and when one DOES fire the firing is the
+ * whole point. Leave those where they sit. A sweep that raises them is doing the
+ * precise thing this file exists to prevent: raising a number instead of reading
+ * it.
+ *
  * Usage:  node scripts/check-bundle-size.mjs        (exit 1 on any breach)
  *         node scripts/check-bundle-size.mjs --print (report only, exit 0)
  */
@@ -189,6 +202,15 @@ const BUDGETS = [
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it
   // and sent someone hunting a Tailwind leak that was not there.
+  //
+  // Swept on 2026-09-06 at 95.3% and deliberately LEFT at 116,000, because the
+  // measurement says the percentage is misleading: across the day that added nine
+  // lazy chunks and a dozen prompt features, this file moved 110,307 -> 110,566 B.
+  // +259 B. Tailwind reuses utilities, so the stylesheet grows far slower than the
+  // code around it, and 5,434 B of headroom is a long way off at that pace.
+  // Recorded so the next percentage sweep does not re-litigate it -- and note this
+  // is the cap the whole script was written for, so loosening it on a number alone
+  // would blunt the one detector aimed at the founding defect.
   { prefix: 'index-', ext: '.css', max: 116_000, note: 'the whole stylesheet' },
   { prefix: 'pdf.worker-', ext: '.mjs', max: 2_250_000, note: 'pdfjs worker, lazy' },
   { prefix: 'pdf-', ext: '.js', max: 470_000, note: 'pdfjs entry, lazy' },
@@ -259,8 +281,38 @@ const BUDGETS = [
  * misses, and it is meant to catch a doubling. 310 kB of headroom still does
  * that, and the per-file caps -- which are the sensitive detectors -- are
  * untouched.
+ *
+ * Raised to 5,350,000 on 2026-09-06, naming the growth -- and the attribution was
+ * MEASURED, not assumed: `7822651` (the commit the 5,200,000 came from) was built
+ * in a detached checkout and its dist/ diffed against HEAD. Worth the two builds,
+ * because a 111 kB rise could equally have been a lazy import going static, which
+ * is the exact failure the index- cap watches for and which raising this number
+ * would have buried.
+ *
+ * 4,890,175 -> 5,001,385 B, +111,210, decomposing cleanly:
+ *
+ *    -87,587  the EAGER ENTRY CHUNK, down 14.7%
+ *   +164,592  nine new lazy chunks -- ContactPage, DocsPage, FeaturesPage,
+ *             LegalPage, NotFoundPage, ReportPreview, DataBinding, BatchPanel,
+ *             RevisionsPanel
+ *    +33,800  geminiService-, the day's prompt sections
+ *       +405  index.css, accountData, rounding
+ *
+ * So +76,994 of it is the price of route-level splitting -- the same "code-
+ * splitting is not free" effect the 2026-09-01 entry above measured at 148,489 B.
+ * The total went UP because every visitor now downloads 87,587 B LESS. That
+ * tension is permanent, and it is the strongest argument for treating this number
+ * as a backstop rather than something to optimise.
+ *
+ * The 93-94% band was kept anyway, and the measurement is why. Every byte of that
+ * +164,592 landed in chunks NO per-file budget matches, so this total is the only
+ * thing watching them. That also corrects the paragraph above: the per-file caps
+ * are the sensitive detectors for what they cover, and nine of the largest chunks
+ * in the build are not covered at all. A loose total would leave 164 kB guarded by
+ * nothing. If moving this number every few days becomes tiresome, the fix is
+ * per-chunk budgets for the route chunks, not more headroom here.
  */
-const TOTAL_MAX = 5_200_000;
+const TOTAL_MAX = 5_350_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);
