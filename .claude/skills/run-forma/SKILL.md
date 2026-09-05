@@ -170,5 +170,10 @@ calling `el.click()`.
 
 Keep `drive.mjs` **pure ASCII**. PowerShell 5.1 decodes a BOM-less script as ANSI,
 so any non-ASCII character in it is one round-trip from mojibake — the same trap
-CLAUDE.md documents for source files. `.claude/` is not swept by
-`npm run lint:encoding`, so nothing would catch it.
+CLAUDE.md documents for source files.
+
+`npm run lint:encoding` covers `.claude/` as of 2026-09-05, so a corrupted em dash
+in this file or in the driver now fails the check rather than sitting here. That
+catches mojibake, not plain non-ASCII: a correctly-encoded `—` typed into
+`drive.mjs` passes the sweep and still breaks the moment PowerShell reads the
+script. The ASCII rule is on you.

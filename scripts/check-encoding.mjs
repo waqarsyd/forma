@@ -19,6 +19,12 @@
  * 5.1 decodes a BOM-less .mjs as ANSI too -- so non-ASCII prose inside a
  * generator script is already corrupt before it writes anything.
  *
+ * That claim had quietly stopped being true: the `.github` comment below picked
+ * up two em dashes when it was written, and nothing noticed, because this sweep
+ * hunts mojibake and a correctly-encoded em dash is not mojibake. Use ` -- `
+ * here. If you want to know whether this file still holds, the check is
+ * `[regex]::Matches($text, '[^\x00-\x7F]').Count` and the answer must be 0.
+ *
  * Usage:  node scripts/check-encoding.mjs        (exit 1 on any hit)
  */
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -29,15 +35,28 @@ const ROOT = process.cwd();
 /**
  * Directories swept recursively.
  *
- * `.github` is here because everything in it is read by strangers — the issue
- * forms, the PR template and the CI workflow — and none of it was covered until
+ * `.github` is here because everything in it is read by strangers -- the issue
+ * forms, the PR template and the CI workflow -- and none of it was covered until
  * 2026-08-29. A mojibake em dash in an issue form is seen by every person who
  * files a bug, which is a wider audience than most of `src`.
+ *
+ * `.claude` joined on 2026-09-05 for the same reason and one more. It is
+ * tracked and public: `settings.json` is the committed permission allowlist,
+ * and `skills/run-forma/` is prose plus a driver script that a session reads
+ * and follows. The extra reason is that the skill's own instructions tell the
+ * next editor to keep the driver pure ASCII *because* nothing checked it --
+ * a rule enforced only by a sentence asking nicely. Now it is checked.
  */
-const DIRS = ['src', 'docs', 'tests', 'scripts', 'tools', '.github'];
+const DIRS = ['src', 'docs', 'tests', 'scripts', 'tools', '.github', '.claude'];
 
-/** Extensions worth reading. Binary files are skipped by omission. */
-const EXTENSIONS = new Set(['.ts', '.tsx', '.md', '.css', '.mjs', '.cs', '.html', '.yml', '.yaml']);
+/**
+ * Extensions worth reading. Binary files are skipped by omission.
+ *
+ * `.json` is here only because `.claude/settings.json` is tracked and there is
+ * no other JSON inside any swept directory -- the root ones reach the sweep
+ * through `ROOT_FILES`, which bypasses this filter entirely.
+ */
+const EXTENSIONS = new Set(['.ts', '.tsx', '.md', '.css', '.mjs', '.cs', '.html', '.yml', '.yaml', '.json']);
 
 /**
  * Individually named files at the repo root.
@@ -81,8 +100,14 @@ const ROOT_FILES = [
  * times as prose, so it scores a legitimate non-zero. Excluding it is what the
  * PowerShell original does too; the alternative -- an expected-count constant --
  * goes stale the moment anyone edits the file.
+ *
+ * `settings.local.json` is skipped for an unrelated reason: it is gitignored
+ * and personal, so it is the one file this sweep could reach that nobody else
+ * will ever read. Failing a shared gate on an untracked file belonging to
+ * whoever happens to be running it is a false positive by construction --
+ * a check nobody can fix from the repository.
  */
-const SKIP_FILES = new Set(['CLAUDE.md']);
+const SKIP_FILES = new Set(['CLAUDE.md', 'settings.local.json']);
 
 /** Build output under tools/ is not source. */
 const SKIP_DIRS = new Set(['bin', 'obj', 'node_modules', '.git']);
