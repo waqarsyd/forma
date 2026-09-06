@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rootStructurePrompt, tableRowsRule, specRule, MOCKUP_ROW_CAP, type RootStructureOptions } from './reportBands';
+import { rootStructurePrompt, tableRowsRule, MOCKUP_ROW_CAP, type RootStructureOptions } from './reportBands';
 
 const OPTS: RootStructureOptions = {
   page: { width: 850, height: 1100 },
@@ -141,40 +141,5 @@ describe('tableRowsRule', () => {
   it('is a parameter, so the cap can be tuned without rewriting the sentence', () => {
     expect(tableRowsRule(3)).toContain('first 3 data rows');
     expect(tableRowsRule(40)).toContain('first 40 data rows');
-  });
-});
-
-describe('specRule', () => {
-  /*
-   * The markdown is the one artifact nothing downstream parses: `layout` drives
-   * the mockup, the logo crop and the band cross-check, and `repxContent` is the
-   * product. That is what makes it the safe one to shorten, and it is worth
-   * stating in a test so the next person does not reach for `layout` instead.
-   */
-  it('asks for the full specification by default', () => {
-    expect(specRule(true)).toMatch(/detailed/i);
-  });
-
-  it('asks for a short summary when it is turned off', () => {
-    const brief = specRule(false);
-    expect(brief).toMatch(/short/i);
-    expect(brief).not.toMatch(/detailed/i);
-  });
-
-  it('asks for something rather than nothing, even when brief', () => {
-    // An empty Spec pane reads as a failed generation, and the response schema
-    // still requires the field. Brief means fewer words, not no artifact.
-    const brief = specRule(false);
-    expect(brief.length).toBeGreaterThan(40);
-    expect(brief).toMatch(/title|bands/i);
-  });
-
-  it('is materially shorter, which is the entire point', () => {
-    expect(specRule(false).length).toBeGreaterThan(0);
-    // The instruction itself is longer -- it has to describe the limit -- while
-    // what it ASKS FOR is smaller. Guard the intent rather than the length:
-    // brief mode must forbid the per-control breakdown that costs the tokens.
-    expect(specRule(false)).toMatch(/no per-control breakdown/i);
-    expect(specRule(true)).not.toMatch(/no per-control breakdown/i);
   });
 });

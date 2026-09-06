@@ -551,7 +551,9 @@ function formatElapsed(ms: number): string {
  * What does reduce the image bill is a tighter CROP, because it can change the
  * aspect ratio and it puts more of the document inside each 768px tile. That is
  * a win on both counts and the only one worth chasing on this side; the prompt
- * was ~90% of that request's input, which is what `leanPrompt` addresses.
+ * was ~90% of that request's input, and the five behavioural sections that no
+ * image can evidence are dropped from it automatically -- see BEHAVIOURAL in
+ * `lib/promptSections.ts`.
  */
 const MAX_IMAGE_EDGE = 2048;
 const JPEG_QUALITY = 0.92;
@@ -4546,28 +4548,6 @@ export default function App() {
                     <IconChevronDown size={13} className="wb-caret" />
                   </span>
                 </div>
-              </div>
-
-              {/* Sits with the document settings because it changes what is asked
-                  for, not how the app behaves. Off by default: promptSections.ts
-                  argues at length that the APP must not omit a section on a guess,
-                  and this is the user asserting rather than the app inferring. */}
-              <div className="wb-fset">
-                <div className="wb-eyebrow"><b>y 0000</b>Prompt<span className="wb-fade" /></div>
-                <label className="wb-checkrow">
-                  <input
-                    type="checkbox"
-                    checked={config.detailedSpec !== false}
-                    onChange={(e) => setConfig({ ...config, detailedSpec: e.target.checked })}
-                  />
-                  Write the detailed specification
-                </label>
-                <p className="wb-hint">
-                  The specification is the one artifact nothing else reads &mdash; the mockup comes
-                  from the layout and the download from the XML. Turned off, Forma asks for a short
-                  summary instead of a full write-up, which is a few hundred output tokens less per
-                  report. The Spec tab still has something in it.
-                </p>
               </div>
 
               <div className="wb-fset">

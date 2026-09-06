@@ -265,15 +265,6 @@ export function rootStructurePrompt(
 }
 
 /**
- * How many rows of a repeating region go into the REPX.
- *
- * This sentence closes the rule under "AN ALIGNED, REPEATING REGION IS A TABLE",
- * which otherwise ends by demanding every row — correct for the flat shape and
- * for the layout JSON in both, and flatly wrong for a banded Detail band. The
- * two artifacts are required to agree everywhere else in the prompt, so the one
- * place they deliberately do not has to be said out loud.
- */
-/**
  * How many data rows of a repeating region the MOCKUP carries.
  *
  * The layout JSON and the markdown used to ask for every row the model could
@@ -295,25 +286,14 @@ export function rootStructurePrompt(
 export const MOCKUP_ROW_CAP = 8;
 
 /**
- * What to ask for in the `markdown` artifact.
+ * How many rows of a repeating region go into the REPX.
  *
- * The spec is a whole artifact generated on every run whether or not anyone
- * opens the Spec pane, and it is the cheapest of the three to make optional:
- * nothing downstream parses it. `layout` drives the mockup, the logo crop and
- * the band cross-check; `repxContent` is the product. The markdown is read by
- * a person or by nobody.
- *
- * Brief mode asks for a short summary rather than nothing, deliberately. An
- * empty pane reads as a failed generation, and the schema still requires the
- * field -- dropping it would mean a second response shape to parse, for a
- * saving already had by asking for less text.
+ * This sentence closes the rule under "AN ALIGNED, REPEATING REGION IS A TABLE",
+ * which otherwise ends by demanding every row — correct for the flat shape and
+ * for the layout JSON in both, and flatly wrong for a banded Detail band. The
+ * two artifacts are required to agree everywhere else in the prompt, so the one
+ * place they deliberately do not has to be said out loud.
  */
-export function specRule(detailed: boolean): string {
-  return detailed
-    ? 'A detailed written report specification (description, components, styles).'
-    : 'A SHORT summary: the report title, the bands it uses and one line on each. Three or four sentences in total -- no per-control breakdown, no style tables. Spend the words on repxContent instead.';
-}
-
 export function tableRowsRule(rowCap: number = MOCKUP_ROW_CAP): string {
   return `Reproduce EVERY column, and up to the first ${rowCap} data rows, in the layout JSON and in the markdown specification - the mockup is a picture of the source, so rows are capped rather than summarised, and a region with ${rowCap} or fewer rows keeps all of them. If the source has more, reproduce the first ${rowCap} and stop. In repxContent the same region is SPLIT ACROSS BANDS as described under ROOT STRUCTURE above: the heading row goes in PageHeader, ONE data row goes in Detail, and any totals row goes in ReportFooter. That is the one place the two artifacts are meant to differ, and it is why the file can be bound to data at all.`;
 }

@@ -253,7 +253,6 @@ Beyond the environment variables above, two things are configurable.
 |---|---|
 | Report unit | The measurement system the generated `.repx` uses. Every conversion between coordinate systems goes through [`reportGeometry.ts`](src/lib/reportGeometry.ts). |
 | Paper size and orientation | Page geometry for the generated report. |
-| Detailed specification | On by default. Off asks the model for a short summary instead of a full written spec, saving a few hundred output tokens per report. It is the one artifact nothing downstream parses — the mockup comes from the layout and the download from the XML. |
 | `thinkingBudget` | A lever on how long the model reasons before emitting output. Unset by default. |
 
 Three further options exist in the report shape but are **not yet exposed in the UI**: RTL layout, stored-procedure name, and the data-binding schema. See [`docs/PRD.md`](docs/PRD.md) §2.4.
