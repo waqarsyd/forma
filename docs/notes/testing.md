@@ -172,10 +172,26 @@ right in memory and a rule that is right in isolation still produce nothing usef
 the read comes back in an order the numbering did not expect, and `fromVersionDocuments`
 numbers downwards from the newest on the strength of the caller's `orderBy`.
 
-This is also why `revisionStore` is the one module with a file in both places — see the
-test-placement bullet in `CLAUDE.md`'s *Structure conventions*. Neither is redundant:
-the array test cannot see an ordering the emulator returns, and the emulator test is too
-slow to enumerate edge cases in.
+## Test placement is two conventions, and the split is load-bearing
+
+Colocated `*.test.ts` beside the module for the unit suite; `tests/` at the **root**,
+outside `src/`, for anything needing the Firestore emulator. That is *why* it is outside
+— it is what stops `npm test` trying to start a JVM.
+
+**A module can have a file in both**, and `revisionStore` is the first:
+`src/lib/revisionStore.test.ts` covers the planning and numbering against arrays, while
+`tests/revisionRoundTrip.test.ts` drives the same functions against real Firestore
+through an injected `VersionIo`. Neither is redundant — the array test cannot see an
+ordering the emulator returns, and the emulator test is too slow to enumerate edge cases
+in.
+
+**The `src/server/` tests stay under `src/` for a reason that is easy to undo.**
+`vitest.config.ts` has `include: ['src/**/*.test.{ts,tsx}']`, so moving them to a
+root-level `server/` would silently drop **forty-two** cases — `6 + 26 + 10`, from the
+inventory above. If you ever do move them, widen that include in the same commit and
+check the count against the total. (Forty-two is the durable number here. `CLAUDE.md`
+used to write it as a before-and-after pair of suite totals, which was stale within days
+of every commit; the subtraction is the fact, not the endpoints.)
 
 ## A component test's job is what the user is shown, not how it looks
 

@@ -168,58 +168,41 @@ is exactly why they are here: an unwritten convention is one careless commit fro
 broken, and nothing in the toolchain enforces any of them.
 
 - **`src/lib` is browser code. `src/server` is not.** `server.ts` imports
-  `securityHeaders`, `bindHost` and `staticCache` from `src/server/`; nothing else may. Before
-  2026-08-29 the first two sat in `src/lib`, the directory whose defining property is that
-  everything in it is compiled by Vite and shipped to the browser — a component could
-  have imported `resolveBindHost` and nothing would have objected. **They stay under
-  `src/` rather than a root-level `server/` for one reason:** `vitest.config.ts` has
-  `include: ['src/**/*.test.{ts,tsx}']`, so moving those tests out silently drops **forty-two**
-  of them (967 → 925). If you ever do move them, widen that include in the same commit
-  and check the count. (This bullet said "forty (451 → 411)" until 2026-09-03; the three
-  server test files hold 42 cases, not 40, so the subtraction was wrong from the day it
-  was written. The counts on either side of the arrow move with every commit — the
-  forty-two is the durable number, and it is `6 + 26 + 10` from the inventory in
-  [`docs/notes/testing.md`](docs/notes/testing.md).)
+  `securityHeaders`, `bindHost` and `staticCache` from `src/server/`; nothing else may.
+  Before 2026-08-29 the first two sat in `src/lib`, the directory whose defining property
+  is that everything in it is compiled by Vite and shipped to the browser — a component
+  could have imported `resolveBindHost` and nothing would have objected. **They stay
+  under `src/` rather than a root-level `server/` for one reason:** `vitest.config.ts`
+  has `include: ['src/**/*.test.{ts,tsx}']`, so moving those tests out silently drops
+  **forty-two** cases. Widen that include in the same commit if you ever do move them.
+  *Test placement* in [`docs/notes/testing.md`](docs/notes/testing.md) owns the
+  arithmetic — this bullet used to state it as a before-and-after pair of suite totals,
+  which was stale within days of being written.
 - **File naming: `PascalCase.tsx` for React components, `camelCase.ts` for everything
   else.** 100% consistent today — **25** PascalCase components and **107** `.ts` files
   (that is `git ls-files src`, tests included; **repo-wide the answer is 114**, because
   `server.ts` and the four root configs are also `.ts`. State the scope whenever you
-  quote this number — an unqualified "67" is the next thing someone will "correct" to 73.)
-  (59 until 2026-09-01, when `lib/firebaseClient.ts` and `lib/firestoreOps.ts` were
-  added to get the Firebase SDK out of the eager bundle; then `lib/repxMargins.ts`,
-  `lib/reportBands.ts` and `lib/repxTruncation.ts` with their tests on 2026-09-02 and
-  2026-09-03 — this bullet still said 61 after the first of those pairs landed; then
-  `lib/reportPreview.ts`, `lib/dataSource.ts` `lib/repxEdit.ts` `lib/repxParameters.ts`, `lib/zip.ts` and `lib/batchQueue.ts` with their tests
-  on 2026-09-05, and `lib/revisions.ts` and `lib/revisionStore.ts` with theirs the same day;
-  then `lib/repxStyles.ts` and `lib/promptSections.ts` with theirs, which are the four
-  files that took it from 103 to 107 — the pair landed while the count stayed put, and a
-  2026-09-06 audit is what caught it. Both numbers here move together, so correcting one
-  and not the other is the next way this bullet goes wrong).
-  The single exception is `src/vite-env.d.ts`, which is Vite's own required name.
-  **Do not "correct" the 25 to 30 by counting `.tsx` files.** There are 30, and the
-  three that are not PascalCase are deliberate: `main.tsx` is the entry point, and
-  `icons.tsx` and `sections.tsx` export collections rather than one component, so they
-  are named like the `camelCase.ts` modules they resemble.
-  A third trap arrived on 2026-09-05: `git ls-files` now answers **30** `.tsx`,
-  and only **25** are components. Two of the five others are `DataBinding.test.tsx`
-  and `BatchPanel.test.tsx` — colocated component tests, PascalCase because they
-  are named after the component they test, exactly as `repx.test.ts` is named
-  after `repx.ts`. Do not count them as components and do not rename them.
-  A second trap sits under the
-  first: `git ls-files 'src/**/*.tsx'` answers **28**, because that pathspec does not
-  match files sitting directly in `src/` and so drops `App.tsx` and `main.tsx`. Both
-  wrong numbers have been written into this bullet at least once. Count with
-  `git ls-files | Where-Object { $_ -like '*.tsx' }` and read the names.
+  quote this number — an unqualified "67" is the next thing someone will "correct" to
+  73.) The single exception is `src/vite-env.d.ts`, which is Vite's own required name.
+  Both counts move together, and **`git log` is the record of when**: a changelog of
+  every file added lived in this bullet until 2026-09-06, and it was wrong twice in its
+  own text before anyone read it.
+  **Three traps, each of which has been written in here as fact at least once.**
+  **(1) Do not "correct" the 25 to 30 by counting `.tsx` files.** There are 30, and the
+  five that are not components are deliberate: `main.tsx` is the entry point, `icons.tsx`
+  and `sections.tsx` export collections rather than one component, and
+  `DataBinding.test.tsx` and `BatchPanel.test.tsx` are colocated component tests, named
+  after the component they test exactly as `repx.test.ts` is named after `repx.ts`. Do
+  not count them as components and do not rename them.
+  **(2)** `git ls-files 'src/**/*.tsx'` answers **28**, because that pathspec does not
+  match files sitting directly in `src/` and so drops `App.tsx` and `main.tsx`.
+  **(3)** Count with `git ls-files | Where-Object { $_ -like '*.tsx' }` and *read the
+  names*, rather than trusting whichever of the three numbers you got.
 - **Test placement is two conventions, and the split is load-bearing.** Colocated
   `*.test.ts` beside the module for the unit suite; `tests/` at the **root**, outside
-  `src/`, for anything needing the Firestore emulator. That is *why* it is outside — it
-  is what stops `npm test` trying to start a JVM. See the three-config note under
-  *Commands*. **A module can have a file in both**, and `revisionStore` is the first:
-  `src/lib/revisionStore.test.ts` covers the planning and numbering against arrays,
-  `tests/revisionRoundTrip.test.ts` drives the same functions against real Firestore
-  through an injected `VersionIo`. Neither is redundant — the array test cannot see an
-  ordering the emulator returns, and the emulator test is too slow to enumerate edge
-  cases in.
+  `src/`, for anything needing the Firestore emulator — which is what stops `npm test`
+  trying to start a JVM. A module can legitimately have a file in both; see *Test
+  placement* in [`docs/notes/testing.md`](docs/notes/testing.md).
 - **No barrel files.** There is not one `index.ts` re-export in this repository, and the
   Phase 4 dead-code pass measured the benefit: seven unused exports were tree-shaken to
   exactly zero bytes. A barrel would have retained them. Do not "tidy" imports into one.
@@ -237,31 +220,23 @@ broken, and nothing in the toolchain enforces any of them.
   on the day it was written. Hence the list: a number nothing can check is how it went
   wrong, and `git ls-tree` settles the replacement in one command.)
 - **`docs/` holds all the prose, in three kinds — plus `media/`, which is not prose.**
-  `PRD.md` and `notes/` are *current* and
-  maintained against the code. `design/DESIGN.md` is the design source of truth.
+  `PRD.md` and `notes/` are *current* and maintained against the code.
+  `design/DESIGN.md` is the design source of truth.
   **`docs/media/`** (2026-09-01) holds images the committed documentation links to, and is
   the *only* place a screenshot may be committed — `CONTRIBUTING.md` bans them everywhere
   else, and that ban was absolute until the README needed one. Nothing in the build reads
   it; `public/` is Vite's static root and this is not it. It carries its own README with
   the capture rules, including deleting the placeholder in the same commit as the real
   capture.
-  **`docs/audit/README.md`** is the 2026-08-27 findings register, reduced on 2026-08-29 to
-  a **one-line index of the 31 identifiers the codebase actually cites**. The ten narrative
-  reports it summarises were removed and are recoverable from history
-  (`git show a4ac759:docs/audit/06-roadmap.md`). **The index exists because the reports
-  could be deleted and their identifiers could not**: `ARC-001`, `PERF-002`, `REL-001` and
-  the rest appear in **77 citations across 47 source and config files** (2026-09-06; it
-  was 72 across 45 when this bullet was written, and the drift is one-way — a new
-  comment cites an existing identifier, it does not mint one, which is why the *31* has
-  held while these two have not), and **21 local
-  branches carry an identifier in their name** — none of which any edit here can update. It
-  is a **dated record, not live documentation**; read `notes/` for what is true now.
-  (Verify the citation count with
-  `git grep -o -E '\b[A-Z]{2,4}-[0-9]{3}\b' -- ':!docs/audit' ':!CLAUDE.md'`, which needs
-  both exclusions and needs `SHA-256` discarded — the pattern matches it, and counting it
-  is how you get 32 identifiers instead of 31. This bullet said "33 branches" until
-  2026-09-01: 33 is the number of `audit/*` branches, only 21 of which name a finding, and
-  `git branch --list` answers **34** because `main` is one too.)
+  **`docs/audit/README.md`** is the 2026-08-27 findings register, reduced on 2026-08-29
+  to a one-line index of the **31** identifiers the codebase actually cites. It exists
+  because the ten narrative reports could be deleted and their identifiers could not:
+  `ARC-001`, `PERF-002`, `REL-001` and the rest appear in comments across dozens of
+  source and config files, and in the names of local branches, none of which an edit here
+  can reach. **That file owns the counts and the regex that produces them** — a second,
+  differently-measured copy of the citation count lived here until 2026-09-06, and of the
+  two it was the one nobody re-ran. It is a **dated record, not live documentation**;
+  read `notes/` for what is true now.
 - **The 2026-08-28 cleanup pass lives in its commit messages, not in a document.** There
   were twelve phase reports under `docs/cleanup/`; they were **removed on 2026-08-29** at
   the owner's request and are recoverable from history (`git show 7b7de66:docs/cleanup/09-results.md`,
@@ -270,17 +245,16 @@ broken, and nothing in the toolchain enforces any of them.
   worth, and what was verified. **`git log 2ce6e56..9a8163c` is the record**, and
   `git revert -m 1 9a8163c` still undoes the whole thing in one operation. Several
   decisions elsewhere in this file cite a specific commit for exactly this reason.
-- **There is no `@` path alias, and its removal is worth knowing about.** One was declared
-  three times — `tsconfig.json`'s `paths`, `vite.config.ts` and `vitest.config.ts` — all
-  resolving to the repo root, with nothing checking they agreed, so changing one would
-  have made the build and the tests resolve `@` to different places silently. The 2026-08-28
-  cleanup treated that as a duplication problem and spent a while looking for somewhere to
-  put a shared constant. **The prior question went unasked until the very end: nothing was
-  using it.** Not one import in `src/`, `tests/`, `server.ts` or `scripts/` referenced
-  `@/anything`. All three declarations were removed on 2026-08-29 and the built output was
-  byte-identical, which is the proof. **Every import in this project is relative — keep it
-  that way, or add aliases back to all three files in one commit and actually use them.**
-  Commit `1e9b4e5`.
+- **There is no `@` path alias, and every import in this project is relative — keep it
+  that way**, or add aliases back to `tsconfig.json`, `vite.config.ts` and
+  `vitest.config.ts` in one commit and actually use them. One was declared in all three,
+  each resolving to the repo root with nothing checking they agreed, so changing one
+  would have made the build and the tests resolve `@` to different places silently. **The
+  prior question went unasked until the very end: nothing was using it** — not one import
+  in `src/`, `tests/`, `server.ts` or `scripts/`. All three declarations were removed on
+  2026-08-29 and the built output was byte-identical, which is the proof.
+  `tsconfig.json` carries the full account where the `paths` block stood; commit
+  `1e9b4e5` has the rest.
 
 ## Firebase skills
 

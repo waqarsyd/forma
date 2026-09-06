@@ -12,11 +12,23 @@ git show a4ac759:docs/audit/00-inventory.md        # 01-runbook, 02-architecture
 ```
 
 This file exists because the reports could be deleted but their **identifiers could not**.
-The findings below are cited **67 times across 42 source and config files** (2026-09-01) — in
-`index.html`, `src/index.css`, `.env.example`, `.github/workflows/checks.yml`, half a
-dozen tests — and **33 local branches are named after them** (`audit/SEC-001-security-headers`
-and the rest). Without this table, a reader hitting `// (audit ARC-001)` in
+The findings below are cited **67 times across 42 source and config files** (2026-09-01,
+re-verified unchanged 2026-09-06) — in `index.html`, `src/index.css`, `.env.example`,
+`.github/workflows/checks.yml`, half a dozen tests — and **21 local branches carry a
+finding's identifier in their name** (`audit/SEC-001-security-headers` and the rest).
+Without this table, a reader hitting `// (audit ARC-001)` in
 `src/lib/attachmentParts.ts` has no way to learn what that was.
+
+That branch figure used to read "33 local branches are named after them", which is a
+different number wearing the same sentence: there are **33 `audit/*` branches**, only 21
+of which name a finding, and `git branch --list` answers **34** because `main` is one
+too. Three plausible answers to "how many branches", so say which you mean.
+
+**This file is the only place either count belongs.** `CLAUDE.md` carried a second,
+differently-measured citation count until 2026-09-06 — a broader pattern over a wider
+set of files, which answered 77 across 47 rather than 67 across 42. Neither was wrong;
+they were two measurements of one thing, kept in two files, and only one of them was
+ever re-run. `CLAUDE.md` now routes here instead.
 
 That count moves whenever a comment is added or a file is renamed, so do not trust it
 without re-running it, and do not bother correcting it for a drift of one or two — the
