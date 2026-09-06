@@ -751,6 +751,51 @@ The last two names on the DevExpress comparison. **Reflection answered both befo
 
 **And a measurement that outgrew the question.** A control set to `SizeF="800,400"` came back `650` wide — which is 850 less the default 100-unit margins. Re-running with `Margins` zeroed returned **850**, not the 800 that was set. So `XRPdfContent` does not clamp to the printable width, it *is* the printable width: the `SizeF` width is ignored outright and the height is honoured. Worth knowing before anyone spends effort computing a number the control discards — and worth the second run, because "it clamped to the margins" was a tidy explanation that happened to be wrong.
 
+### A band of colour is not a container (2026-09-06)
+
+Two generations of the same invoice drew the same two rectangles behind the
+masthead — 850x136 at the top and 850x104 below it, full page width, no text —
+and used a different wrong control each time.
+
+| | what it emitted | did the audit see it |
+|---|---|---|
+| first run | two `XRLabel`s with no text | no |
+| second run | two `XRPanel`s with no children | yes, `empty-panel` |
+
+The second is worse and the audit was right to say so. An empty panel is a
+container holding nothing: it asserts "these controls belong together" about no
+controls, and a reader cannot tell whether the children went missing or were
+never written. The prompt already said **"do NOT use one just to draw a
+rectangle"** — but it only offered a *bordered* answer, and these are *filled*
+blocks, so the rule did not obviously cover them.
+
+**What DevExpress actually offers, asked of the installed 20.1 assembly by
+reflection rather than taken from the docs:**
+
+```
+XRShape  ->  FillColor, BackColor, BorderColor, Borders
+XRLabel  ->  BackColor, BorderColor, Borders
+XRPanel  ->  BackColor, BorderColor, Borders
+```
+
+`XRShape` is the only one with a real `FillColor`, and it is the control whose
+purpose is decoration. `XRLabel` carries `BackColor`, which is enough for a flat
+strip and is one control rather than one control plus a `<Shape>` child. Either
+is correct; **a panel is not**, and the prompt now says so in those terms and
+names the measurement.
+
+Note what this does *not* change. An `XRLabel` with `BackColor` and no `Text` is
+now the prescribed answer, so `repxAudit` must keep saying nothing about empty
+labels — flagging them would make the recommended fix trip the checker. The
+`empty-panel` rule stays exactly as it is, because a panel with no children is
+wrong however it got there.
+
+**The transferable part.** The prompt forbade the wrong control without naming
+the right one for this specific case, so the model substituted a different wrong
+control and the instruction read as satisfied. A rule that says "not X" and
+leaves the alternative to inference gets a different X. The band-list rules that
+hold are the ones that say what the failure costs *and* what to do instead.
+
 ### SerializerVersion is a label, not a gate (2026-09-06)
 
 **The claim that was wrong.** `App.tsx`'s version picker has said since it was
