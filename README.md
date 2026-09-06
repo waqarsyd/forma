@@ -253,6 +253,7 @@ Beyond the environment variables above, two things are configurable.
 |---|---|
 | Report unit | The measurement system the generated `.repx` uses. Every conversion between coordinate systems goes through [`reportGeometry.ts`](src/lib/reportGeometry.ts). |
 | Paper size and orientation | Page geometry for the generated report. |
+| Lean prompt | Ask only for the features the source shows, instead of teaching the whole DevExpress control set every request. Off by default. Cuts roughly a third of the input tokens on a plain document (measured: ~5,150 of 15,294). Anything you ask for in words is still included, so "add a chart" works either way. |
 | `thinkingBudget` | A lever on how long the model reasons before emitting output. Unset by default. |
 
 Three further options exist in the report shape but are **not yet exposed in the UI**: RTL layout, stored-procedure name, and the data-binding schema. See [`docs/PRD.md`](docs/PRD.md) §2.4.

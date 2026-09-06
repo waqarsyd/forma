@@ -20,7 +20,7 @@ import { isSupportedUnit, isSupportedPageSize } from './reportGeometry';
 export const STORAGE_KEY = 'reportConfig';
 
 /** Exactly the fields the settings UI exposes. Nothing else is stored. */
-const PERSISTED_FIELDS = ['version', 'unit', 'pageSize', 'header', 'footer'] as const;
+const PERSISTED_FIELDS = ['version', 'unit', 'pageSize', 'header', 'footer', 'leanPrompt'] as const;
 
 export interface PersistableConfig {
   version?: string;
@@ -28,6 +28,13 @@ export interface PersistableConfig {
   pageSize?: string;
   header?: { showCompanyLogo?: boolean; title?: string };
   footer?: { showPageNumbers?: boolean; customText?: string };
+  /**
+   * Persisted because it describes how this person works rather than this one
+   * report, and retyping it every session is how a setting stops being used.
+   * It is not a document property like the others here, which is the only
+   * reason it is worth pointing out.
+   */
+  leanPrompt?: boolean;
 }
 
 /**

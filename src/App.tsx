@@ -4518,6 +4518,28 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Sits with the document settings because it changes what is asked
+                  for, not how the app behaves. Off by default: promptSections.ts
+                  argues at length that the APP must not omit a section on a guess,
+                  and this is the user asserting rather than the app inferring. */}
+              <div className="wb-fset">
+                <div className="wb-eyebrow"><b>y 0000</b>Prompt<span className="wb-fade" /></div>
+                <label className="wb-checkrow">
+                  <input
+                    type="checkbox"
+                    checked={!!config.leanPrompt}
+                    onChange={(e) => setConfig({ ...config, leanPrompt: e.target.checked })}
+                  />
+                  Ask only for features this document shows
+                </label>
+                <p className="wb-hint">
+                  Sends a shorter prompt by leaving out syntax for controls the source
+                  does not use &mdash; charts, gauges, bookmarks, cross-tabs, watermarks.
+                  Roughly a fifth fewer input tokens on a plain document. Anything you ask
+                  for in words is still included, so &ldquo;add a chart&rdquo; works either way.
+                </p>
+              </div>
+
               <div className="wb-fset">
                 <div className="wb-eyebrow"><b>y 0000</b>Header<span className="wb-fade" /></div>
                 <label className="wb-checkrow">

@@ -353,3 +353,60 @@ describe('character combs share the form-control section', () => {
     }
   });
 });
+
+describe('lean: the user standing in for the proof an image cannot give', () => {
+  /*
+   * Off by default, so an image or a PDF still gets everything. That default is
+   * the subject of this module's header and is not a detail: omitting a section
+   * the document DOES need costs the feature silently, and only the person
+   * running Forma can say their documents never use one.
+   */
+  const IMAGE = ['some extracted page text, no report file here'];
+
+  it('changes nothing when it is off', () => {
+    expect(sectionsFor({ texts: IMAGE })).toEqual([...ALL_SECTIONS]);
+    expect(sectionsFor({ texts: IMAGE, lean: false })).toEqual([...ALL_SECTIONS]);
+  });
+
+  it('trims to nothing when the request shows no evidence at all', () => {
+    // A bare image with no instruction: the honest answer is that none of the
+    // optional syntax has been shown to be needed.
+    expect(sectionsFor({ texts: IMAGE, lean: true })).toEqual([]);
+  });
+
+  it('still includes whatever the instruction asks for', () => {
+    // The safety valve. Being wrong about a lean prompt costs one sentence.
+    const got = sectionsFor({ texts: IMAGE, lean: true, instruction: 'add a chart and group by region' });
+    expect(got).toContain('charts');
+    expect(got).toContain('grouping');
+    expect(got).not.toContain('watermark');
+  });
+
+  it('still reads the report being refined', () => {
+    // On a refinement the previous REPX is real evidence of what the report has
+    // now, so a report that already contains a gauge keeps the gauge syntax.
+    const previous = '<XtraReportsLayoutSerializer><Item1 ControlType="XRGauge" /></XtraReportsLayoutSerializer>';
+    const got = sectionsFor({ texts: IMAGE, lean: true, previousRepx: previous });
+    expect(got).toEqual(['gauges']);
+  });
+
+  it('does not weaken the .repx path it was built for', () => {
+    // With a real source the flag is irrelevant: the evidence rules already ran.
+    const source = ['<XtraReportsLayoutSerializer><Item1 ControlType="XRChart" /></XtraReportsLayoutSerializer>'];
+    expect(sectionsFor({ texts: source })).toEqual(sectionsFor({ texts: source, lean: true }));
+  });
+
+  it('never returns a section the evidence did not justify', () => {
+    // The property that matters: lean is a subset of the full list, always.
+    const cases = [
+      { texts: IMAGE, lean: true },
+      { texts: IMAGE, lean: true, instruction: 'sort by date, highlight overdue rows' },
+      { texts: IMAGE, lean: true, previousRepx: '<SortFields>' },
+    ];
+    for (const evidence of cases) {
+      const got = sectionsFor(evidence);
+      expect(got.every((s) => ALL_SECTIONS.includes(s))).toBe(true);
+      expect(new Set(got).size).toBe(got.length);
+    }
+  });
+});

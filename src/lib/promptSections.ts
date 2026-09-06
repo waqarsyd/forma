@@ -25,10 +25,28 @@
  * refined, nor anything the user typed shows any sign of the feature.
  *
  * That deliberately means this does nothing at all for an image or a PDF, which
- * is the common path. It is not a general optimisation and should not be made
- * into one. It fires on `.repx` intake, which is the **batch migration** path —
+ * is the common path. It is not a general optimisation and must not be made
+ * into one BY THE APP. It fires on `.repx` intake, which is the **batch migration** path —
  * forty legacy files, one request each, where the saving is multiplied and the
  * evidence is exact.
+ *
+ * ## The one thing that may stand in for proof: the user saying so
+ *
+ * Added 2026-09-06, after a real generation was measured at 15,294 input tokens
+ * for an invoice with a flat table and no chart, gauge, bookmark, cross-tab,
+ * watermark or multi-column flow anywhere in it. On the image path every one of
+ * those sections was sent, because an image proves nothing.
+ *
+ * `SectionEvidence.lean` lets the person running Forma assert what the app may
+ * not infer. It is off by default and changes nothing for anyone who does not
+ * set it; when on, the rules above run unchanged, with the instruction and the
+ * report being refined standing in for the uploaded file. The distinction that
+ * matters is not how much gets omitted -- it is WHO decided. The paragraphs
+ * above argue the app must not guess, and a setting is not a guess.
+ *
+ * The word signals are what make it safe to live with: `add a chart` restores
+ * that section on a lean prompt exactly as it does on a full one, so being
+ * wrong costs one sentence rather than a silently missing feature.
  *
  * ## Reading the signals
  *
@@ -80,6 +98,14 @@ export interface SectionEvidence {
   previousRepx?: string | null;
   /** What the user typed alongside the attachments. */
   instruction?: string | null;
+  /**
+   * The user has said their documents do not use features they have not asked
+   * for, so the same evidence rules may run without an uploaded `.repx`.
+   *
+   * A setting, never inferred. See `sectionsFor` for why the app declines to
+   * work this out for itself.
+   */
+  lean?: boolean;
 }
 
 /**
@@ -168,16 +194,35 @@ export function sectionsFor(evidence: SectionEvidence = {}): PromptSection[] {
   const texts = evidence.texts ?? [];
   const source = repxSourceIn(texts);
 
-  // No .repx in the request: nothing here can prove absence, so everything
-  // stays. This is the image and PDF path, and it is the common one.
-  if (!source) return [...ALL_SECTIONS];
+  /*
+   * `lean` is the user saying "my documents do not have these", which is the one
+   * thing that can substitute for a .repx.
+   *
+   * Measured 2026-09-06 on a real invoice: 15,294 input tokens, of which the
+   * optional blocks are roughly 7,800 characters here plus another ~19,000
+   * across `geminiService.ts` -- instructions for charts, gauges, bookmarks,
+   * cross-tabs, watermarks, multi-column flow and conditional formatting, none
+   * of which that invoice contained. An image proves nothing about absence, so
+   * by default all of it is sent, every request.
+   *
+   * The app must not guess its way out of that: `promptSections.ts` exists
+   * because omitting a section the document DOES need costs the feature
+   * entirely and silently. But the person who knows is the one running it, and
+   * a setting is not a guess. Off by default, so nothing changes for anyone who
+   * does not ask; on, the same evidence rules apply, with the instruction and
+   * the report being refined standing in for the uploaded file.
+   *
+   * Note this still keeps any section the user's own words ask for, so "add a
+   * chart" works on a lean prompt exactly as it does on a full one.
+   */
+  if (!source && !evidence.lean) return [...ALL_SECTIONS];
 
   const previous = evidence.previousRepx ?? '';
   const instruction = evidence.instruction ?? '';
 
   return ALL_SECTIONS.filter((section) => {
     const xml = XML_SIGNALS[section];
-    if (xml.test(source) || xml.test(previous)) return true;
+    if ((source && xml.test(source)) || xml.test(previous)) return true;
     return WORD_SIGNALS[section].test(instruction);
   });
 }
