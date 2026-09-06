@@ -401,7 +401,7 @@ Both files round-trip: the designer's own output and a hand-written Forma-shaped
 
 `repxAudit.ts` gained two checks from this, both for failures DevExpress accepts silently: a `GroupHeaderBand` with no `<GroupFields>` groups by nothing and prints once, which looks like a heading; and a `GroupFooterBand` with no header never breaks, so its subtotal becomes a second grand total above the real one.
 
-### Parameters, and the first measurement that was a *negative* result (2026-09-05)
+### Parameters, and the first measurement that was a negative result (2026-09-05)
 
 `RepxProbe emit-params` settled how a parameter serializes, and the shape is not guessable:
 
