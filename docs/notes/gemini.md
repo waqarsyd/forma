@@ -14,7 +14,11 @@ Because the key belongs to the user rather than to Forma, proxying generation th
 
 **`app.use("/api", …)` returns a JSON 404 for anything else, and its position matters.** It sits after every real API route and before the dev/prod branch, so it covers both. Without it the production catch-all (`app.get('*')`) answered *any* `/api/*` probe with **200 and `index.html`** — so the deleted `/api/generate-report` and `/api/debug-key` looked like live endpoints to any client checking the status code rather than the body. Register new API routes **above** this guard or they will 404.
 
-`.env` is now only `APP_URL` plus the optional `VITE_FORMA_MOCK`. A `GEMINI_API_KEY` left in that file is inert — nothing reads it, and `envPrefix` will not carry it to the browser. `API_KEY` is gone entirely.
+**`.env` does not contain a Gemini key and must not.** A `GEMINI_API_KEY` left in that file is inert — nothing reads it, and `envPrefix: ['VITE_']` will not carry it to the browser, so nothing is inlined into the client bundle either. `API_KEY` is gone entirely.
+
+`.env.example` documents **three** optional variables — `VITE_FORMA_MOCK`, `HOST` and `HTTPS` — and `server.ts` loads them via `import "dotenv/config"`. `.env*` is gitignored except `.env.example`, whose comments say the same thing this paragraph does.
+
+**`APP_URL` is not among them, and this note said it was until 2026-09-06** (as did `CLAUDE.md` until 2026-09-01, which is the more interesting half: the same wrong fact survived in two places and was corrected in one). It was removed on 2026-08-27 as read by nothing — audit INV-006 — and `.env.example` keeps a comment where it stood, explaining why a variable nobody reads is worse than no variable at all. A copy still sits in this machine's untracked `.env` and is inert. Do not restore it to the example, and do not write code that reads it.
 
 ## Where the user's key lives
 

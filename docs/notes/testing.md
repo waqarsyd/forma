@@ -207,3 +207,90 @@ initialises an app, and there is nothing in it to unit-test.
 
 The config says all of this at the point of use; read the comment there before changing
 the block.
+
+## Running one file, and what that does not buy you
+
+Run a single test file with `npx vitest run src/lib/repx.test.ts`, or a single case with
+`-t "<name>"`. **Narrowing to one file buys clarity, not time.** The numbers `CLAUDE.md`
+used to give (~30s against ~34s) were measured cold and are wrong by an order of
+magnitude: re-measured 2026-08-20, the first `npm test` of a session took 52s and the
+very next one 4.6s, while a single file is ~5s either way. Warm, one file and all
+fifty-two cost about the same.
+
+Read a slow first run as a cold cache, not as a hang — and never quote a timing anywhere
+in this repository that came from a cold run.
+
+## A cold cache can look exactly like a broken install
+
+**Until 2026-08-28 a cold cache did worse than crawl: it made the suite fail outright.**
+jsdom's entry loads synchronously, and cold it was measured at **113 seconds** in one
+process on this machine against 1.4s warm — while vitest gives a worker **60 seconds** to
+report in (`START_TIMEOUT`, hardcoded in vitest's dist with no config option feeding it).
+Every worker died before starting, and all 25 files of the day reported
+`[vitest-pool-runner]: Timeout waiting for worker to respond`, which reads as a broken
+pool or a broken install and is really a stopwatch.
+
+**If you see that error, the suite is not broken and neither is your install. But do not
+just run it again** — that was the advice until 2026-09-04 and it is wrong. Each worker
+is killed at the 60s mark *before* it finishes populating the cache, so every re-run pays
+the full cold price and dies in exactly the same place; you can repeat it all afternoon.
+The warm-up has to happen **outside** vitest, in a process nothing is timing:
+
+```powershell
+node -e "import('jsdom')"    # takes as long as it takes; then npm test
+```
+
+Measured on 2026-09-04: that import took **507 seconds**, the second one 1.69s, and
+`npm test` then ran green in 4.52s. The cold figure is 4.5x the 113s recorded in 2026-08
+— this is a shared machine and the cold cost tracks I/O contention, so **re-measure
+rather than trusting either number**. What is stable is the shape (one enormous first
+load, then ~1.5s) and the 60s ceiling it has to fit under. `README.md` carries the same
+figures, so re-measuring is a change to two files.
+
+**The environment split narrowed the cliff without removing it.** Keeping 44 of the 52
+files under `node` cut summed environment setup from ~66s to ~8s and took the cliff from
+every worker down to the eight that opt in — and it still fires: `themeTransition.test.ts`
+died on both 2026-09-02 and 2026-09-04. The eight are marked in the inventory above.
+**When only those eight fail and the other 44 pass with 935 tests, this is what you are
+looking at.**
+
+(That last sentence read "24 of the 30 files ... 366 tests" until 2026-09-06, and the
+same passage said the cliff was down to "the six that opt in" two sentences before
+listing eight. Both were left behind by a suite that grew to 52 files. The numbers are
+worth keeping because they are what you compare a failing run against — which is exactly
+why they have to be corrected when the suite grows, and why they live here now rather
+than in a file that carries no other counts.)
+
+**`--reporter=basic` no longer exists.** Vitest 4 removed it, and an unknown reporter
+name is treated as a module to import, so the failure is a `Failed to load custom
+Reporter from basic` / `Failed to load url basic (resolved id: basic)` stack trace with
+Vite frames in it — which reads like a broken config rather than a bad flag value.
+`vitest.config.ts` already sets `reporters: 'default'`; pass `--reporter=dot` for the
+terse output `basic` used to give. Verified on vitest 4.1.10.
+
+## Three configs, and the rules suite uses its own
+
+`npm run test:rules` is `firebase emulators:exec --only firestore "vitest run --config
+vitest.rules.config.ts"`. **The emulator wrapper is what supplies the Firestore
+instance**, so `vitest run --config vitest.rules.config.ts` on its own has nothing to
+talk to. `tests/firestore.rules.test.ts` sits outside `src/`, which is why the default
+config never picks it up and `npm test` cannot run it by accident.
+
+`vitest.config.ts` is deliberately separate from `vite.config.ts` — that one carries the
+"Do not modify" HMR block and is loaded by the dev server. Tests live beside what they
+test as `*.test.ts`, and the default config only picks up `src/**/*.test.ts`.
+
+## Running a single rules case: use a space-free regex
+
+**Do not try to nest quotes.** The `-t` flag has to go *inside* the quoted command the
+emulator wrapper runs, and PowerShell 5.1 re-parses that string before `firebase` ever
+sees it, so the obvious `-t \"lets a user read their own report\"` arrives mangled
+(observed: `Script "… -t " lets a user read their own report\" exited with code 1`).
+`-t` is a **regex**, so a `.` in place of each space sidesteps quoting entirely:
+
+```powershell
+npx firebase emulators:exec --only firestore "npx vitest run --config vitest.rules.config.ts -t lets.a.user.read.their.own.report"
+```
+
+Verified: `1 passed | 28 skipped`. A distinctive single word (`-t isolation`) works the
+same way and is shorter.
