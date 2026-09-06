@@ -2344,6 +2344,21 @@ export default function App() {
    * hang the first report's versions off the second report.
    */
   const openReportId = useRef<string | null>(null);
+  /**
+   * The same id again, as state, because the ref cannot drive a render.
+   *
+   * The ref exists to be read inside an async closure after an await -- state
+   * captured there would be the value from the render that started the load, so
+   * the guard would compare the wrong id. The Projects list needs the opposite:
+   * a value that re-renders the row when it changes. Both are set together and
+   * neither is derived from the other, so keep the two assignments adjacent.
+   *
+   * Before this the list marked a row open by comparing `result.title` to
+   * `report.name`. Names are not unique -- two invoices both titled "Invoice"
+   * marked each other open, which a mock whose every report is called "Mock
+   * Invoice Report" showed as EVERY row highlighted at once (2026-09-06).
+   */
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const recordRevision = useCallback((label: string, snapshot: DesignResult) => {
     setRevisions((list) => pushRevision(list, label, {
       content: snapshot.content,
@@ -2434,6 +2449,8 @@ export default function App() {
 
   const handleClearChat = () => {
     setResult(null);
+    openReportId.current = null;
+    setOpenProjectId(null);
     setPreviews([]);
     setPreviewMeta([]);
     setAttachmentTexts([]);
@@ -2548,6 +2565,10 @@ export default function App() {
     if (!result && messages.length === 0) return;
     const reportId = Date.now().toString();
     const ts = Date.now();
+    // Saving makes this the open project, so the list marks the row it just
+    // created rather than nothing.
+    openReportId.current = reportId;
+    setOpenProjectId(reportId);
 
     // One report, one shape, converted at the boundary rather than assembled
     // differently in each branch — the two used to compute the display name
@@ -2647,6 +2668,7 @@ export default function App() {
     setRevisions([]);
     setRailPanel('review');
     openReportId.current = report.id;
+    setOpenProjectId(report.id);
 
     if (!user) return;
     try {
@@ -4085,7 +4107,7 @@ export default function App() {
                   // for a session from this morning and one from last month.
                   const stamp = formatSessionStamp(report.timestamp);
                   const leaving = leavingReportIds.includes(report.id);
-                  const open = result?.title === report.name;
+                  const open = report.id === openProjectId;
                   return (
                     <div
                       key={report.id}
