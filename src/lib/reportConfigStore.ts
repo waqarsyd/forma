@@ -20,7 +20,7 @@ import { isSupportedUnit, isSupportedPageSize } from './reportGeometry';
 export const STORAGE_KEY = 'reportConfig';
 
 /** Exactly the fields the settings UI exposes. Nothing else is stored. */
-const PERSISTED_FIELDS = ['version', 'unit', 'pageSize', 'header', 'footer', 'leanPrompt'] as const;
+const PERSISTED_FIELDS = ['version', 'unit', 'pageSize', 'header', 'footer', 'leanPrompt', 'detailedSpec'] as const;
 
 export interface PersistableConfig {
   version?: string;
@@ -35,6 +35,7 @@ export interface PersistableConfig {
    * reason it is worth pointing out.
    */
   leanPrompt?: boolean;
+  detailedSpec?: boolean;
 }
 
 /**

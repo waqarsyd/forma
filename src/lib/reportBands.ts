@@ -273,6 +273,47 @@ export function rootStructurePrompt(
  * two artifacts are required to agree everywhere else in the prompt, so the one
  * place they deliberately do not has to be said out loud.
  */
-export function tableRowsRule(): string {
-  return 'Reproduce EVERY row and column you can read in the layout JSON and in the markdown specification — the mockup is a picture of the source, so nothing is dropped there. In repxContent the same region is SPLIT ACROSS BANDS as described under ROOT STRUCTURE above: the heading row goes in PageHeader, ONE data row goes in Detail, and any totals row goes in ReportFooter. That is the one place the two artifacts are meant to differ, and it is why the file can be bound to data at all.';
+/**
+ * How many data rows of a repeating region the MOCKUP carries.
+ *
+ * The layout JSON and the markdown used to ask for every row the model could
+ * read, which is why they are the expensive half of the response: a 40-line job
+ * card repeats forty rows in the layout while the Detail band carries one.
+ * Output on a real invoice was measured at 6,390 tokens on 2026-09-06, roughly
+ * half of it the two mockup artifacts.
+ *
+ * A cap rather than a cut, and the distinction is the whole point. `every row`
+ * exists to stop the preview reading as a truncation bug -- one row where the
+ * source has eight looks like the report lost the data. Eight of forty does not
+ * read that way; one of eight does. So the rule keeps its purpose at a fraction
+ * of the cost, and the number is high enough that most documents are unaffected
+ * -- a typical invoice has fewer than eight lines and is capped by nothing.
+ *
+ * Raising it is cheap and safe. LOWERING it below about five starts to look
+ * like the failure it was written to prevent.
+ */
+export const MOCKUP_ROW_CAP = 8;
+
+/**
+ * What to ask for in the `markdown` artifact.
+ *
+ * The spec is a whole artifact generated on every run whether or not anyone
+ * opens the Spec pane, and it is the cheapest of the three to make optional:
+ * nothing downstream parses it. `layout` drives the mockup, the logo crop and
+ * the band cross-check; `repxContent` is the product. The markdown is read by
+ * a person or by nobody.
+ *
+ * Brief mode asks for a short summary rather than nothing, deliberately. An
+ * empty pane reads as a failed generation, and the schema still requires the
+ * field -- dropping it would mean a second response shape to parse, for a
+ * saving already had by asking for less text.
+ */
+export function specRule(detailed: boolean): string {
+  return detailed
+    ? 'A detailed written report specification (description, components, styles).'
+    : 'A SHORT summary: the report title, the bands it uses and one line on each. Three or four sentences in total -- no per-control breakdown, no style tables. Spend the words on repxContent instead.';
+}
+
+export function tableRowsRule(rowCap: number = MOCKUP_ROW_CAP): string {
+  return `Reproduce EVERY column, and up to the first ${rowCap} data rows, in the layout JSON and in the markdown specification - the mockup is a picture of the source, so rows are capped rather than summarised, and a region with ${rowCap} or fewer rows keeps all of them. If the source has more, reproduce the first ${rowCap} and stop. In repxContent the same region is SPLIT ACROSS BANDS as described under ROOT STRUCTURE above: the heading row goes in PageHeader, ONE data row goes in Detail, and any totals row goes in ReportFooter. That is the one place the two artifacts are meant to differ, and it is why the file can be bound to data at all.`;
 }

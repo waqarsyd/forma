@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rootStructurePrompt, tableRowsRule, type RootStructureOptions } from './reportBands';
+import { rootStructurePrompt, tableRowsRule, specRule, MOCKUP_ROW_CAP, type RootStructureOptions } from './reportBands';
 
 const OPTS: RootStructureOptions = {
   page: { width: 850, height: 1100 },
@@ -112,10 +112,69 @@ describe('tableRowsRule', () => {
     expect(rule).toMatch(/totals row goes in ReportFooter/i);
   });
 
-  it('still keeps every row in the mockup', () => {
-    // The rows are not discarded by the split — they move to the artifact whose
-    // job is showing the source. A version of this rule that drops them from the
-    // layout too would look like the truncation bug.
-    expect(tableRowsRule()).toMatch(/EVERY row/);
+  it('keeps the mockup rows the split moves out of the Detail band', () => {
+    // The rows are not discarded by the split -- they move to the artifact whose
+    // job is showing the source. A version of this rule that dropped them from
+    // the layout too would look like the truncation bug.
+    const rule = tableRowsRule();
+    expect(rule).toMatch(/EVERY column/);
+    expect(rule).toMatch(/layout JSON and in the markdown specification/);
+  });
+
+  it('caps the mockup rows rather than asking for every one', () => {
+    // Added 2026-09-06. Output on a real invoice was 6,390 tokens, about half of
+    // it the two mockup artifacts, and a long job card repeats every row in the
+    // layout while the Detail band carries one. A cap keeps the rule's purpose:
+    // eight of forty does not read as truncation, one of eight does.
+    expect(tableRowsRule()).toContain(`first ${MOCKUP_ROW_CAP} data rows`);
+    expect(tableRowsRule()).not.toMatch(/EVERY row/);
+  });
+
+  it('says what to do on both sides of the cap', () => {
+    const rule = tableRowsRule();
+    // Under the cap nothing changes, which is most documents.
+    expect(rule).toMatch(/or fewer rows keeps all of them/i);
+    // Over it, take the first N rather than sampling or summarising.
+    expect(rule).toMatch(/reproduce the first \d+/i);
+  });
+
+  it('is a parameter, so the cap can be tuned without rewriting the sentence', () => {
+    expect(tableRowsRule(3)).toContain('first 3 data rows');
+    expect(tableRowsRule(40)).toContain('first 40 data rows');
+  });
+});
+
+describe('specRule', () => {
+  /*
+   * The markdown is the one artifact nothing downstream parses: `layout` drives
+   * the mockup, the logo crop and the band cross-check, and `repxContent` is the
+   * product. That is what makes it the safe one to shorten, and it is worth
+   * stating in a test so the next person does not reach for `layout` instead.
+   */
+  it('asks for the full specification by default', () => {
+    expect(specRule(true)).toMatch(/detailed/i);
+  });
+
+  it('asks for a short summary when it is turned off', () => {
+    const brief = specRule(false);
+    expect(brief).toMatch(/short/i);
+    expect(brief).not.toMatch(/detailed/i);
+  });
+
+  it('asks for something rather than nothing, even when brief', () => {
+    // An empty Spec pane reads as a failed generation, and the response schema
+    // still requires the field. Brief means fewer words, not no artifact.
+    const brief = specRule(false);
+    expect(brief.length).toBeGreaterThan(40);
+    expect(brief).toMatch(/title|bands/i);
+  });
+
+  it('is materially shorter, which is the entire point', () => {
+    expect(specRule(false).length).toBeGreaterThan(0);
+    // The instruction itself is longer -- it has to describe the limit -- while
+    // what it ASKS FOR is smaller. Guard the intent rather than the length:
+    // brief mode must forbid the per-control breakdown that costs the tokens.
+    expect(specRule(false)).toMatch(/no per-control breakdown/i);
+    expect(specRule(true)).not.toMatch(/no per-control breakdown/i);
   });
 });

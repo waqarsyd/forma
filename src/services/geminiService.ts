@@ -10,7 +10,7 @@ import { instructionBlock } from "../lib/userInstructions";
 import { auditRepx } from "../lib/repxAudit";
 import { liftParameterTypes } from "../lib/repxParameters";
 import { liftStyles } from "../lib/repxStyles";
-import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
+import { rootStructurePrompt, tableRowsRule, specRule } from "../lib/reportBands";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import {
@@ -71,6 +71,14 @@ export interface ReportConfig {
    * still included, so `add a chart` works either way.
    */
   leanPrompt?: boolean;
+  /**
+   * Ask for the full written specification, or a short summary.
+   *
+   * Defaults to the full one when undefined, so existing behaviour is
+   * unchanged. It is the only one of the three artifacts nothing downstream
+   * parses, which is what makes it safe to shorten.
+   */
+  detailedSpec?: boolean;
   modelName?: string;
   /**
    * Cap on internal "thinking" tokens, which are generated before any visible
@@ -1526,7 +1534,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
           ${previousContext}
           
           Return a JSON object with three fields:
-          1. "markdown": A detailed written report specification (description, components, styles).
+          1. "markdown": ${specRule(config?.detailedSpec !== false)}
           2. "layout": A structured representation of the visual layout for a UI preview mockup.
           3. "repxContent": A complete, valid DevExpress REPX XML string representing the full report layout. Use standard DevExpress.XtraReports.UI components (Bands, XRLabel, XRTable, XRPictureBox, etc.).
           
