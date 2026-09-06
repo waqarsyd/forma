@@ -5,6 +5,8 @@ import {
   pingDesigner,
   launchDesigner,
   waitForDesigner,
+  probeDesigner,
+  designerVersionWarning,
   DESIGNER_CLIENT_HEADER,
   DESIGNER_PROTOCOL,
 } from './designerBridge';
@@ -293,5 +295,105 @@ describe('waitForDesigner', () => {
     const pending = waitForDesigner(1000, 100);
     await vi.advanceTimersByTimeAsync(5000);
     await expect(pending).resolves.toBe(false);
+  });
+});
+
+describe('warning when the target is newer than the installed designer', () => {
+  /*
+   * The case this exists for, found on 2026-09-06. A report generated at 24.1
+   * was opened in the 20.1 designer installed on the development machine and
+   * came out mangled. The file was correct; it was newer than the assembly
+   * reading it, and nothing in the app said so -- the version picker's own
+   * comment has warned that "a newer .repx does not open in an older designer"
+   * since it was written, where only someone already reading App.tsx would see.
+   */
+  it('warns when the report targets a newer DevExpress than the designer', () => {
+    const msg = designerVersionWarning('24.1', '20.1.4.0');
+    expect(msg).toContain('24.1');
+    expect(msg).toContain('20.1');
+    expect(msg).toMatch(/mangled|does not open/i);
+  });
+
+  it('compares major and minor only, ignoring the build numbers', () => {
+    // SerializerVersion carries 24.1.3.0 and the assembly 20.1.4.0; the build
+    // components are noise and must not decide the comparison.
+    expect(designerVersionWarning('20.1', '20.1.9.9')).toBeNull();
+    expect(designerVersionWarning('23.2', '23.2.0.0')).toBeNull();
+  });
+
+  it('says nothing when the target is OLDER than the designer', () => {
+    // A 20.1 file opens in a 24.1 designer. That direction is the entire reason
+    // the picker offers older versions, so warning about it would be noise.
+    expect(designerVersionWarning('20.1', '24.1.3.0')).toBeNull();
+    expect(designerVersionWarning('22.2', '23.1.0.0')).toBeNull();
+  });
+
+  it('treats a higher minor within the same major as newer', () => {
+    expect(designerVersionWarning('23.2', '23.1.0.0')).not.toBeNull();
+    expect(designerVersionWarning('23.1', '23.2.0.0')).toBeNull();
+  });
+
+  it('says nothing when there is no designer, or it did not report a version', () => {
+    // No companion running is the normal case for almost everyone; it must not
+    // produce a warning about a comparison that cannot be made.
+    expect(designerVersionWarning('24.1', null)).toBeNull();
+    expect(designerVersionWarning('24.1', undefined)).toBeNull();
+    expect(designerVersionWarning('24.1', '')).toBeNull();
+    expect(designerVersionWarning(undefined, '20.1.4.0')).toBeNull();
+  });
+
+  it('says nothing rather than guessing at an unparseable version', () => {
+    expect(designerVersionWarning('24.1', 'not-a-version')).toBeNull();
+    expect(designerVersionWarning('latest', '20.1.4.0')).toBeNull();
+    expect(designerVersionWarning('v24.1', '20.1.4.0')).toBeNull();
+  });
+});
+
+describe('probing the designer keeps the version it reports', () => {
+  const withFetch = async (impl: unknown, run: () => Promise<void>) => {
+    const original = globalThis.fetch;
+    (globalThis as { fetch?: unknown }).fetch = impl;
+    try { await run(); } finally { (globalThis as { fetch?: unknown }).fetch = original; }
+  };
+
+  const respond = (body: unknown, ok = true) => async () => ({
+    ok,
+    json: async () => body,
+  });
+
+  it('reads designerVersion out of the health body', async () => {
+    await withFetch(respond({ app: 'RepxDesigner', designerVersion: '20.1.4.0' }), async () => {
+      expect(await probeDesigner()).toEqual({ running: true, version: '20.1.4.0' });
+    });
+  });
+
+  it('still reports running when the body has no version', async () => {
+    // A companion too old to send JSON, or one that changes its payload, should
+    // cost the warning and not the button.
+    await withFetch(respond({ app: 'RepxDesigner' }), async () => {
+      expect(await probeDesigner()).toEqual({ running: true, version: null });
+    });
+  });
+
+  it('still reports running when the body is not JSON at all', async () => {
+    await withFetch(async () => ({ ok: true, json: async () => { throw new Error('not json'); } }), async () => {
+      expect(await probeDesigner()).toEqual({ running: true, version: null });
+    });
+  });
+
+  it('reports not running when the port refuses', async () => {
+    await withFetch(async () => { throw new Error('ECONNREFUSED'); }, async () => {
+      expect(await probeDesigner()).toEqual({ running: false, version: null });
+    });
+  });
+
+  it('keeps pingDesigner answering a plain boolean', async () => {
+    // Its existing callers and tests predate the probe and must not change.
+    await withFetch(respond({ designerVersion: '20.1.4.0' }), async () => {
+      expect(await pingDesigner()).toBe(true);
+    });
+    await withFetch(async () => { throw new Error('refused'); }, async () => {
+      expect(await pingDesigner()).toBe(false);
+    });
   });
 });

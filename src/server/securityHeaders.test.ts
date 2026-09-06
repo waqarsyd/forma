@@ -243,6 +243,26 @@ describe('buildContentSecurityPolicy', () => {
     expect(prod['img-src']).toContain('data:');
   });
 
+  it('loads images from no remote origin at all', () => {
+    /*
+     * The pressure on this one is specific and has already been applied once.
+     * UserAvatar rendered the Firebase user's `photoURL`, which for a Google
+     * sign-in is lh3.googleusercontent.com -- so every page logged a CSP
+     * violation and silently fell back to initials. The obvious fix is to allow
+     * that host here, and it is the wrong one: it sends a request to Google on
+     * every page view and puts back an origin this project worked to remove.
+     * src/fonts/ exists for exactly that reason -- three families self-hosted so
+     * fonts.googleapis.com could leave style-src and font-src.
+     *
+     * The avatar was removed instead (2026-09-06). If this fails, something has
+     * asked for a remote image again: answer the privacy question before
+     * widening the policy.
+     */
+    for (const source of prod['img-src']) {
+      expect(source).not.toMatch(/^https?:/);
+    }
+  });
+
   it('does not pin the Firebase auth domain to one project', () => {
     // The README documents bringing your own Firebase project, so a literal
     // `forma-201ba.firebaseapp.com` here would break every fork that followed

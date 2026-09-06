@@ -188,7 +188,7 @@ import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
 import { auditRepx } from './lib/repxAudit';
 import { sourceRectFor } from './lib/sourceRect';
-import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner } from './lib/designerBridge';
+import { probeDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, designerVersionWarning } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
 import { formatSessionStamp } from './lib/datetime';
 import { unitsToPx, pointsToUnits, pdfTopFromBaseline, unitsPerInch } from './lib/reportGeometry';
@@ -3187,6 +3187,10 @@ export default function App() {
    * difference is that an undiscoverable capability is its own failure.
    */
   const [designerReady, setDesignerReady] = useState(false);
+  /* The DevExpress the companion is built against, so the config modal can warn
+     when the selected target is newer than it. Null when nothing is running or
+     the companion is too old to say. See designerVersionWarning. */
+  const [designerVersion, setDesignerVersion] = useState<string | null>(null);
   /** True while a `forma-repx://` launch is being waited on — a cold start is slow. */
   const [designerStarting, setDesignerStarting] = useState(false);
   useEffect(() => {
@@ -3204,8 +3208,10 @@ export default function App() {
 
     let cancelled = false;
     const check = () => {
-      pingDesigner().then((ready) => {
-        if (!cancelled) setDesignerReady(ready);
+      probeDesigner().then((probe) => {
+        if (cancelled) return;
+        setDesignerReady(probe.running);
+        setDesignerVersion(probe.version);
       });
     };
 
@@ -4459,6 +4465,17 @@ export default function App() {
                       </select>
                       <IconChevronDown size={13} className="wb-caret" />
                     </span>
+                    {/* Only ever shown when the companion is actually running and
+                        reported a version older than the selected target. A newer
+                        .repx does not open correctly in an older designer, and the
+                        failure is a mangled layout rather than a refusal -- which
+                        reads as the model having done a bad job. Silent in every
+                        other case, including no companion at all. */}
+                    {designerVersionWarning(config.version, designerVersion) && (
+                      <p className="wb-hint wb-warn mt-1.5" role="status">
+                        {designerVersionWarning(config.version, designerVersion)}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="wb-lbl" htmlFor="cfg-page">Page size</label>

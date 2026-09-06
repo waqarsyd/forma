@@ -65,7 +65,38 @@ export function designerFileName(title?: string): string {
  * button missing for as long as the tab is open.
  */
 export async function pingDesigner(timeoutMs = 1200): Promise<boolean> {
-  if (typeof fetch === 'undefined') return false;
+  return (await probeDesigner(timeoutMs)).running;
+}
+
+/** What the companion said about itself. */
+export interface DesignerProbe {
+  running: boolean;
+  /** The DevExpress assembly version it is built against, e.g. `20.1.4.0`. */
+  version: string | null;
+}
+
+/**
+ * Ask the companion whether it is running AND which DevExpress it is.
+ *
+ * `/health` has always answered `{"app":"RepxDesigner","designerVersion":"…"}`
+ * — the version is `typeof(XtraReport).Assembly.GetName().Version`, so it is the
+ * real assembly rather than a string someone typed. `pingDesigner` read the
+ * status code and dropped the body, which is why nothing could warn about the
+ * mismatch that matters:
+ *
+ * **A newer `.repx` does not open in an older designer.** The version picker in
+ * `App.tsx` says so at the point it offers 20.1, and the failure is not a clean
+ * refusal — a 24.1 file opened in a 20.1 designer produces a mangled layout,
+ * which reads as the model having done a bad job. It cost a real debugging
+ * session on 2026-09-06: a generated invoice looked "completely spoiled" in the
+ * designer and the file was correct, just newer than the installed assembly.
+ *
+ * Body parsing is deliberately forgiving. A companion too old to send JSON, or
+ * one that sends something unexpected, still reports `running: true` with a null
+ * version — the button it gates is more useful than the warning it enables.
+ */
+export async function probeDesigner(timeoutMs = 1200): Promise<DesignerProbe> {
+  if (typeof fetch === 'undefined') return { running: false, version: null };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -75,12 +106,62 @@ export async function pingDesigner(timeoutMs = 1200): Promise<boolean> {
       method: 'GET',
       signal: controller.signal,
     });
-    return response.ok;
+    if (!response.ok) return { running: false, version: null };
+
+    let version: string | null = null;
+    try {
+      const body = (await response.json()) as { designerVersion?: unknown };
+      if (typeof body?.designerVersion === 'string' && body.designerVersion.trim()) {
+        version = body.designerVersion.trim();
+      }
+    } catch {
+      // Running, but not saying which version. Still worth the button.
+    }
+    return { running: true, version };
   } catch {
-    return false;
+    return { running: false, version: null };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Is the report about to be written newer than the designer that will open it?
+ *
+ * Compares only major and minor, because that is what the `.repx` carries:
+ * `SerializerVersion="24.1.3.0"` against an assembly version of `20.1.4.0` is a
+ * 24.1-versus-20.1 question and the build numbers are noise.
+ *
+ * Returns null when there is nothing to say — no designer, no version, an
+ * unparseable pair, or a designer at or ahead of the target. **Older targets are
+ * fine and deliberately silent**: a 20.1 file opens in a 24.1 designer, which is
+ * the whole reason the picker offers older versions at all.
+ */
+export function designerVersionWarning(
+  targetVersion: string | undefined,
+  designerVersion: string | null | undefined,
+): string | null {
+  const parse = (v: string | null | undefined) => {
+    const m = /^(\d+)\.(\d+)/.exec((v ?? '').trim());
+    return m ? { major: Number(m[1]), minor: Number(m[2]) } : null;
+  };
+
+  const target = parse(targetVersion);
+  const designer = parse(designerVersion);
+  if (!target || !designer) return null;
+
+  const newer =
+    target.major > designer.major ||
+    (target.major === designer.major && target.minor > designer.minor);
+  if (!newer) return null;
+
+  const t = `${target.major}.${target.minor}`;
+  const d = `${designer.major}.${designer.minor}`;
+  return (
+    `This report targets DevExpress ${t}, but the designer on this machine is ${d}. ` +
+    `A newer .repx does not open correctly in an older designer — the layout comes out mangled ` +
+    `rather than refused. Set the version to ${d} or lower before generating.`
+  );
 }
 
 /**
