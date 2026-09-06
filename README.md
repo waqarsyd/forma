@@ -277,9 +277,12 @@ src/
                        SiteHeader, SiteFooter, MobileNav, Logo, LogoPulse,
                        AccountDialog, UserAvatar, NotFoundPage, and Markdown —
                        which is its own module so react-markdown can be
-                       lazy-loaded. Two files here are not components:
-                       useFocusTrap (a shared hook) and legalDisclosure.test.ts,
-                       the only test outside lib/, services/ and server/
+                       lazy-loaded. Four files here are not components:
+                       useFocusTrap (a shared hook) and three tests —
+                       legalDisclosure, which reads ContactPage and index.html
+                       off disk, plus DataBinding and BatchPanel, the only
+                       component render tests in the suite. They are the tests
+                       that live outside lib/, services/ and server/
     landing/           figures used by the marketing pages: HeroScanner,
                        SheetRuler, StepFigures, VaultFigure,
                        AnnouncementDock, sections, icons
@@ -487,7 +490,7 @@ The unit suite deliberately targets functions whose invariants **fail plausibly 
 
 The rules suite covers account isolation, document shape, and the encrypted key vault. It needs a JVM because the Firestore emulator is a Java process; a **runtime is enough — no JDK required.** This project was developed against a Temurin **JRE 21**, installed per-user with `JAVA_HOME` and `PATH` set at user scope, so nothing had to go in system-wide and no admin rights were needed.
 
-Neither suite covers React components or `App.tsx`'s stateful logic. **This is a floor, not a net.**
+Coverage of React components is two files deep — `DataBinding` and `BatchPanel`, added after a state bug shipped that a render test would have caught — and `App.tsx`'s own stateful logic is covered only where pieces of it have been extracted into `src/lib`. **This is a floor, not a net.** [`docs/notes/testing.md`](docs/notes/testing.md) says exactly what is and is not covered.
 
 <details>
 <summary>If a run is slow, or every file fails at once</summary>
@@ -610,7 +613,7 @@ Four documents carry the reasoning that the code cannot:
 
 - **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — the six checks and the rules for adding and removing things; the one to read before you open a PR.
 - **[`CLAUDE.md`](CLAUDE.md)** — the entry point: hard constraints, commands, and an index that routes you to the note covering whatever you are about to change.
-- **[`docs/notes/`](docs/notes/)** — four notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.
+- **[`docs/notes/`](docs/notes/)** — five notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md), [`testing.md`](docs/notes/testing.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.
 - **[`docs/PRD.md`](docs/PRD.md)** — the product specification, kept current against the code.
 
 A few rules worth knowing up front:
