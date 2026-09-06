@@ -311,7 +311,22 @@ describe('warning when the target is newer than the installed designer', () => {
     const msg = designerVersionWarning('24.1', '20.1.4.0');
     expect(msg).toContain('24.1');
     expect(msg).toContain('20.1');
-    expect(msg).toMatch(/mangled|does not open/i);
+  });
+
+  it('does not claim the file will fail to open, because it does not', () => {
+    /*
+     * This asserted /mangled|does not open/ until 2026-09-06, matching a wording
+     * taken from the version picker's comment and the DevExpress docs. Then
+     * `RepxProbe inspect` loaded a real 24.1 report through the installed 20.1
+     * assemblies with nothing lost, and the loader rewrote the tag to 20.1.3.0
+     * on save. The warning is about features the older assembly may not know,
+     * not about the number -- so it must not predict a mangled layout, or it
+     * sends someone hunting a version problem instead of the real defect.
+     */
+    const msg = designerVersionWarning('24.1', '20.1.4.0')!;
+    expect(msg).not.toMatch(/mangled/i);
+    expect(msg).toMatch(/usually harmless|may not/i);
+    expect(msg).toMatch(/dropped on load|silently/i);
   });
 
   it('compares major and minor only, ignoring the build numbers', () => {

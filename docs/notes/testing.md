@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,156 tests in 53 files** — under the `node` environment
+`npm test` runs Vitest over **1,157 tests in 53 files** — under the `node` environment
 by default, with the eight files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eight fail in a way
@@ -72,7 +72,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/contactSubmit` | 6 |  |
 | `lib/dataSource` | 29 |  |
 | `lib/datetime` | 12 |  |
-| `lib/designerBridge` | 44 | 8 from one loop |
+| `lib/designerBridge` | 45 | 8 from one loop |
 | `lib/geminiClient` | 6 |  |
 | `lib/geminiErrors` | 14 |  |
 | `lib/generationProgress` | 22 |  |
@@ -114,7 +114,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/keyVault` | 21 | jsdom |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,156 in 53 files** — and that total is the arithmetic sum of the column above
+**Total: 1,157 in 53 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -128,7 +128,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,134** against a real 1,156 and will talk you into
+A grep for `\bit(` answers **1,135** against a real 1,157 and will talk you into
 "correcting" numbers that were already right. **Five** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 22 from
 one `it(` over split points, `designerBridge` eight of its 33 over Windows reserved

@@ -751,6 +751,68 @@ The last two names on the DevExpress comparison. **Reflection answered both befo
 
 **And a measurement that outgrew the question.** A control set to `SizeF="800,400"` came back `650` wide — which is 850 less the default 100-unit margins. Re-running with `Margins` zeroed returned **850**, not the 800 that was set. So `XRPdfContent` does not clamp to the printable width, it *is* the printable width: the `SizeF` width is ignored outright and the height is honoured. Worth knowing before anyone spends effort computing a number the control discards — and worth the second run, because "it clamped to the margins" was a tidy explanation that happened to be wrong.
 
+### SerializerVersion is a label, not a gate (2026-09-06)
+
+**The claim that was wrong.** `App.tsx`'s version picker has said since it was
+written that "a newer `.repx` does not open in an older designer", and it is the
+stated reason the picker offers 20.1 at all. A generated invoice came back looking
+badly wrong in the designer, the file declared `SerializerVersion="24.1.3.0"`, the
+installed assembly is `DevExpress.XtraReports.v20.1`, and the diagnosis wrote
+itself. It was asserted twice, and a warning was built on it.
+
+**The measurement.** `RepxProbe inspect` loads a file through the DevExpress
+assemblies actually installed here, which is the whole reason that tool exists.
+Run against the real 24.1 file:
+
+```
+raw text : 4 tables, 21 cells, 65 distinct Ref values
+loaded   : 4 tables, 21 cells, 0 bindings
+           nothing lost: every declared cell survived the load.
+exit code: 0
+```
+
+Nothing was discarded. On re-save the 20.1 loader simply rewrote the tag:
+
+| attribute | in the file | after a 20.1 load and save |
+|---|---|---|
+| `SerializerVersion` | `24.1.3.0` | `20.1.3.0` |
+| `Version` | `24.1.3.0` | `20.1.3.0` |
+| bands, geometry, page size | | unchanged |
+
+**So the version number is not what breaks a file.** What would break one is a
+control or a property the older assembly has never heard of — the tag is only a
+cheap signal that such a thing *might* be present. Forma emits a conservative
+control set, so in practice the tag alone is cosmetic. `designerVersionWarning`
+in `designerBridge.ts` now says "usually harmless" and names the real hazard
+rather than predicting a mangled layout, and a test asserts it does **not** say
+"mangled" — because that wording sends the next person hunting a version problem
+instead of the defect in front of them.
+
+**What was actually wrong with that report**, measured with `parseReportStructure`
+and `auditRepx` rather than guessed:
+
+- the `ReportHeader` band is 240 units tall and its controls reach y=252, so the
+  content overflows the band it is in;
+- two `XRLabel`s of 850x136 and 850x104 carry no text at all — full-page-width
+  colour blocks drawn as labels, reaching the paper edge under `Margins="0, 0, 0, 0"`;
+- a `GroupHeaderBand` with no `<GroupFields>`, which prints once and looks like a
+  heading rather than a grouping (the audit reported this);
+- six content bands against four layout sections, so the preview was not showing
+  what the file contained (the audit reported this too).
+
+**The transferable part.** The version was a plausible explanation that fit every
+visible fact, and it was wrong. The tool that settled it in one command already
+existed and had existed for days — `tools/RepxProbe` is in this repository
+precisely because "the DevExpress documentation describes the object model, not
+the file". Reaching for it before asserting is the whole discipline, and it is
+cheap: this took one command and thirty seconds.
+
+**Still unmeasured, and it is the interesting half.** `inspect` proves the loader
+kept every control. It says nothing about how the report *looks* — band heights
+against their content, whether those full-width blocks land where the design had
+them, whether the overflow is visible. Only opening it in the real designer shows
+that, and that is a thing only someone at the machine can do.
+
 ## The API key gates the entire workspace
 
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.

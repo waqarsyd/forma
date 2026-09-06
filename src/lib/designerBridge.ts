@@ -84,12 +84,13 @@ export interface DesignerProbe {
  * status code and dropped the body, which is why nothing could warn about the
  * mismatch that matters:
  *
- * **A newer `.repx` does not open in an older designer.** The version picker in
- * `App.tsx` says so at the point it offers 20.1, and the failure is not a clean
- * refusal — a 24.1 file opened in a 20.1 designer produces a mangled layout,
- * which reads as the model having done a bad job. It cost a real debugging
- * session on 2026-09-06: a generated invoice looked "completely spoiled" in the
- * designer and the file was correct, just newer than the installed assembly.
+ * The mismatch worth knowing about is a report targeting a NEWER DevExpress
+ * than the assembly that will open it. `App.tsx`'s version picker warns that
+ * such a file "does not open in an older designer" -- see
+ * `designerVersionWarning` below for the measurement that qualifies that,
+ * because the version tag on its own turned out to be a label rather than a
+ * gate. What the version really signals is the RISK that the file uses
+ * something the older assembly never knew about.
  *
  * Body parsing is deliberately forgiving. A companion too old to send JSON, or
  * one that sends something unexpected, still reports `running: true` with a null
@@ -136,6 +137,27 @@ export async function probeDesigner(timeoutMs = 1200): Promise<DesignerProbe> {
  * unparseable pair, or a designer at or ahead of the target. **Older targets are
  * fine and deliberately silent**: a 20.1 file opens in a 24.1 designer, which is
  * the whole reason the picker offers older versions at all.
+ *
+ * ## What this does NOT claim, and the measurement that settled it
+ *
+ * The first wording here said a newer `.repx` does not open in an older designer
+ * and comes out mangled. That is what `App.tsx`'s version picker has always said
+ * and what the DevExpress documentation implies, and **it is not what happens**.
+ *
+ * Measured 2026-09-06 with `RepxProbe inspect`, which loads a file through the
+ * DevExpress assemblies actually installed here (20.1). A generated report
+ * declaring `SerializerVersion="24.1.3.0"` loaded with nothing lost -- all four
+ * tables, all twenty-one cells, exit 0 -- and on re-save the loader simply
+ * rewrote the tag to `20.1.3.0`. Bands, geometry and page size were untouched.
+ * The version is a label, not a gate.
+ *
+ * So the warning is about FEATURES, not about the number. A file that uses a
+ * control or property the older assembly has never heard of is the real hazard,
+ * and the version is the only cheap signal that one might be present. Forma
+ * emits a conservative control set, so in practice the tag alone is cosmetic --
+ * which is why this says "may not" and names the uncertainty rather than
+ * predicting a mangled layout. A report that came out wrong is far more likely
+ * to have something wrong with it; see `repxAudit`.
  */
 export function designerVersionWarning(
   targetVersion: string | undefined,
@@ -159,8 +181,9 @@ export function designerVersionWarning(
   const d = `${designer.major}.${designer.minor}`;
   return (
     `This report targets DevExpress ${t}, but the designer on this machine is ${d}. ` +
-    `A newer .repx does not open correctly in an older designer — the layout comes out mangled ` +
-    `rather than refused. Set the version to ${d} or lower before generating.`
+    `The version tag alone is usually harmless — a ${t} file has been measured loading ` +
+    `cleanly in ${d} — but anything it uses that ${d} does not know about will be dropped ` +
+    `on load, silently. Set the version to ${d} to be certain.`
   );
 }
 
