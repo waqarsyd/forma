@@ -62,6 +62,36 @@ export interface RepxAudit {
   summary: string;
 }
 
+/**
+ * The order DevExpress prints bands in, as `ControlType` strings.
+ *
+ * From its own "Print Order of Bands": ReportHeader, PageHeader, GroupHeader,
+ * Detail, GroupFooter, ReportFooter, PageFooter, with the margin bands outside
+ * them. The designer stacks them the same way.
+ *
+ * **This is a second copy.** `BAND_ORDER` in `reportPreview.ts` is the same
+ * sequence with the `Band` suffix stripped, because that module works in its own
+ * `BandKind` union while this one works on raw markup. They must agree.
+ *
+ * Deliberately not imported from `reportBands.ts`, which owns the band skeleton
+ * and would be the natural home: that module carries the structure prompt, and
+ * `App.tsx` imports this file eagerly, so the import would pull ~19 kB of prompt
+ * text onto the critical path. That is the regression the `index-` budget in
+ * `scripts/check-bundle-size.mjs` exists to catch, and it is cheaper not to
+ * cause it than to notice it later.
+ */
+const PRINT_ORDER = [
+  'TopMarginBand',
+  'ReportHeaderBand',
+  'PageHeaderBand',
+  'GroupHeaderBand',
+  'DetailBand',
+  'GroupFooterBand',
+  'ReportFooterBand',
+  'PageFooterBand',
+  'BottomMarginBand',
+];
+
 /** The eight members of DevExpress's PageInfo enum. Anything else is dropped on load. */
 const PAGE_INFO_VALUES = [
   'None', 'Number', 'NumberOfTotal', 'Total',
@@ -205,6 +235,50 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
         'band-section-mismatch',
         `The mockup has ${layout.sections.length} section(s) and the report has ${contentBands} content band(s). ` +
           'They are meant to describe the same structure, so the preview is not showing what the exported file contains.'
+      );
+    }
+  }
+
+  /*
+   * Bands listed in an order that is not the print order.
+   *
+   * DevExpress places a band by its TYPE, so the report still opens and still
+   * renders correctly -- which is why this is a warning and not an error, and
+   * why it went unchecked. The consequence is elsewhere, and it is silent.
+   *
+   * `repxMargins.ts` reads the band collection in FILE order: it takes the first
+   * body band, measures the design's top inset from that band's controls, and
+   * shifts that band's controls by it. On a file whose first body band is not
+   * the one that prints first, the lift either declines outright ("the first
+   * body band carries no controls") or measures from the wrong band -- and the
+   * design's margin stays drawn as whitespace instead of becoming real page
+   * margins. Neither says anything at export time.
+   *
+   * `reportPreview.ts` sorts by band type before drawing, and its comment there
+   * has claimed since it was written that "repxAudit reports that". Until
+   * 2026-09-06 it did not. This is that check, so the sentence is now true.
+   *
+   * Skipped entirely when a DetailReportBand is present: that band nests a whole
+   * second set of bands inside itself, so a flat scan reads the inner
+   * ReportHeader as coming after the outer Detail and would report every
+   * master-detail report as misordered. A false positive on a legitimate shape
+   * is worse than no check, per this file's own header.
+   */
+  if (!has(text, 'DetailReportBand')) {
+    const sequence = [...text.matchAll(/ControlType="(\w*Band)"/g)].map((m) => m[1]);
+    const ranked = sequence
+      .map((name) => ({ name, rank: PRINT_ORDER.indexOf(name) }))
+      .filter((b) => b.rank >= 0);
+    const firstDrop = ranked.findIndex((b, i) => i > 0 && b.rank < ranked[i - 1].rank);
+    if (firstDrop > 0) {
+      add(
+        'warning',
+        'band-order',
+        `Bands are listed out of print order — "${ranked[firstDrop].name}" comes after ` +
+          `"${ranked[firstDrop - 1].name}". DevExpress places a band by its type, so the report still ` +
+          'renders, but the margin pass reads this collection in file order: it measures the design\'s ' +
+          'top inset from the first body band and shifts that band. Out of order, it lifts from the ' +
+          'wrong band or declines, and the margin stays drawn as whitespace.',
       );
     }
   }

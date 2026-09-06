@@ -685,3 +685,95 @@ describe('table of contents', () => {
     expect(auditRepx(doc(plain), null).findings.some((f) => f.code === 'toc-without-bookmarks')).toBe(false);
   });
 });
+
+describe('bands listed out of print order', () => {
+  /*
+   * These fixtures carry only band shells, because the check reads nothing but
+   * the ControlType sequence. Item numbering still has to be right or every
+   * case picks up an `item-numbering` finding it did not ask for -- the trap
+   * the header of this file records.
+   */
+  const bandsOnly = (...types: string[]) =>
+    report(
+      types
+        .map((t, i) => `<Item${i + 1} Ref="${i + 1}" ControlType="${t}" Name="${t}" />`)
+        .join(''),
+    );
+
+  const codes = (xml: string) => auditRepx(xml, null).findings.map((f) => f.code);
+
+  it('stays quiet on the skeleton the prompt asks for', () => {
+    const xml = bandsOnly(
+      'TopMarginBand',
+      'ReportHeaderBand',
+      'PageHeaderBand',
+      'DetailBand',
+      'ReportFooterBand',
+      'PageFooterBand',
+      'BottomMarginBand',
+    );
+    expect(codes(xml)).not.toContain('band-order');
+  });
+
+  it('warns when the PageHeader is listed after the Detail band', () => {
+    const xml = bandsOnly('TopMarginBand', 'DetailBand', 'PageHeaderBand', 'BottomMarginBand');
+    const finding = auditRepx(xml, null).findings.find((f) => f.code === 'band-order');
+    expect(finding?.severity).toBe('warning');
+    expect(finding?.message).toContain('PageHeaderBand');
+    expect(finding?.message).toContain('DetailBand');
+  });
+
+  it('warns when the two headers are the wrong way round', () => {
+    // The pair that shipped wrong in the Preview pane on 2026-09-06. In the file
+    // it is a different failure: the margin pass measures the top inset from
+    // whichever body band is listed first.
+    const xml = bandsOnly(
+      'TopMarginBand',
+      'PageHeaderBand',
+      'ReportHeaderBand',
+      'DetailBand',
+      'BottomMarginBand',
+    );
+    expect(codes(xml)).toContain('band-order');
+  });
+
+  it('names the first drop, not the last', () => {
+    const xml = bandsOnly(
+      'TopMarginBand',
+      'ReportFooterBand',
+      'DetailBand',
+      'PageHeaderBand',
+      'BottomMarginBand',
+    );
+    const finding = auditRepx(xml, null).findings.find((f) => f.code === 'band-order')!;
+    // ReportFooter -> Detail is the first drop; Detail -> PageHeader is a later
+    // one. Reporting the first keeps the message pointing at where the sequence
+    // actually went wrong.
+    expect(finding.message).toContain('"DetailBand" comes after "ReportFooterBand"');
+  });
+
+  it('ignores band types it does not know, rather than guessing their rank', () => {
+    const xml = bandsOnly('TopMarginBand', 'ReportHeaderBand', 'SomeFutureBand', 'DetailBand', 'BottomMarginBand');
+    expect(codes(xml)).not.toContain('band-order');
+  });
+
+  it('says nothing about a master-detail report, whose inner bands nest', () => {
+    /*
+     * A DetailReportBand carries its own ReportHeader and Detail inside it, so a
+     * flat scan sees ReportHeader after Detail and would report every
+     * master-detail report as misordered. The check opts out entirely rather
+     * than emit a false positive on a legitimate shape.
+     */
+    const inner =
+      '<Item3 Ref="3" ControlType="DetailReportBand" Name="DetailReport"><Bands>' +
+      '<Item1 Ref="4" ControlType="ReportHeaderBand" Name="InnerHeader" />' +
+      '<Item2 Ref="5" ControlType="DetailBand" Name="InnerDetail" />' +
+      '</Bands></Item3>';
+    const xml = report(
+      '<Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" />' +
+        '<Item2 Ref="2" ControlType="DetailBand" Name="Detail" />' +
+        inner,
+    );
+    expect(codes(xml)).not.toContain('band-order');
+  });
+});

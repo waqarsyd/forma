@@ -830,9 +830,16 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
 
   if (!structure.bands.length) problems.push('No bands were found inside <Bands>.');
 
-  // Print order, not file order. A file listing PageHeader after Detail is a
-  // different report, and repxAudit reports that -- but the preview should not
-  // compound it by drawing them upside down.
+  // Print order, not file order. DevExpress places a band by its type, so a file
+  // listing PageHeader after Detail still renders the same report -- the preview
+  // sorts here so it does not draw one that DevExpress would not. `repxAudit`
+  // reports the misordering as `band-order`, and names the real consequence:
+  // `repxMargins.ts` reads this collection in FILE order, so out of order the
+  // margin lift measures from the wrong band or declines.
+  //
+  // That cross-reference was here before the check was: this comment claimed
+  // "repxAudit reports that" from the day it was written, and no such check
+  // existed until 2026-09-06. It is true now.
   //
   // Array.prototype.sort has been stable since ES2019, which is load-bearing
   // here rather than incidental: nested groups produce several GroupHeaderBands
