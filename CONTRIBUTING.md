@@ -55,10 +55,10 @@ droppings, and what looks like a real API key assignment. Bypass a single commit
 
 ## The checks
 
-All six, in the order CI runs them. (CI runs a seventh thing this table cannot:
+All seven, in the order CI runs them. (CI runs an eighth thing this table cannot:
 `npm ci`, which fails when `package.json` and `package-lock.json` disagree. Nothing
-you can run locally checks that, which is why the count here is six and the count in
-`.github/workflows/checks.yml` is seven — the *Definition of done* below says six for
+you can run locally checks that, which is why the count here is seven and the count in
+`.github/workflows/checks.yml` is eight — the *Definition of done* below says seven for
 the same reason.)
 
 | Command | What it catches |
@@ -66,6 +66,7 @@ the same reason.)
 | `npm run lint` | `tsc --noEmit` under `strict`. There is no ESLint. |
 | `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` | dead locals and parameters, stricter than `tsconfig.json` |
 | `npm run lint:encoding` | mojibake — the highest-blast-radius check here, see below |
+| `npm run lint:links` | a relative link, or a section heading quoted in the docs, that no longer resolves |
 | `npm test` | the unit suite — pure helpers, plus the two outbound calls that can hang |
 | `npm run test:rules` | the security-rule suite, against the Firestore emulator |
 | `npm run build` && `npm run check:size` | a broken import, and artifact-size regression |
@@ -184,7 +185,7 @@ enforcement mechanisms was not earning its keep.
 ## Definition of done
 
 No new unused files, exports, dependencies or assets. No commented-out code. No new
-top-level clutter. All six checks pass. If you changed something the documentation
+top-level clutter. All seven checks pass. If you changed something the documentation
 describes, the documentation changed in the same PR.
 
 ---

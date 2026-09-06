@@ -1,11 +1,17 @@
 # The checks this repository already documents, run by a machine instead of by
 # someone remembering.
 #
-# CLAUDE.md lists five: tsc, the unused-symbol sweep, the unit suite, the rules
-# suite, and the mojibake sweep. All five pass and always have. None of them was
-# enforced by anything -- there was no CI, no hook, and no remote, so every
-# invariant in the project depended on a human running the right command before
-# committing (audit INV-003).
+# CLAUDE.md lists seven: tsc, the unused-symbol sweep, the mojibake sweep, the
+# doc-pointer sweep, the unit suite, the rules suite, and the bundle-size budget
+# after a build. All seven pass and always have. None of them was enforced by
+# anything -- there was no CI, no hook, and no remote, so every invariant in the
+# project depended on a human running the right command before committing
+# (audit INV-003).
+#
+# (This comment said "five" until 2026-09-06, having been written before
+# check:size and lint:links existed. The count is stated in four places --
+# here, CLAUDE.md, README.md and CONTRIBUTING.md -- so adding a check is a
+# change to all four.)
 #
 # The whole `checks` job takes well under two minutes, which is the argument for
 # running it on every push rather than nightly.
@@ -53,6 +59,14 @@ jobs:
       # passes every test, and is visible only on the rendered page.
       - name: Encoding
         run: npm run lint:encoding
+
+      # The documentation is a router -- CLAUDE.md is short because it points at
+      # docs/notes/ and at doc comments. A pointer that has rotted is worse than
+      # a stale sentence: a reader follows it, finds nothing, and concludes
+      # nothing was written. Added 2026-09-06 after a cited heading was found
+      # broken by hand; nothing else in this file would have caught it.
+      - name: Doc pointers
+        run: npm run lint:links
 
       # --coverage rather than plain `npm test`: same suite, same pass/fail, and
       # the summary lands in the log so a drop is visible in the diff of a run

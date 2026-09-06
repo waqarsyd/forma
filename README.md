@@ -439,8 +439,9 @@ docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
                        `git config core.hooksPath .githooks`
 .claude/               settings.json — the committed permission allowlist, so
                        the documented checks run without prompting
-scripts/               four helpers: dev + build, and the encoding and
-                       bundle-size checks that two of the six commands call
+scripts/               five helpers: dev + build, and the encoding, doc-pointer
+                       and bundle-size checks that three of the seven commands
+                       call
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
 firebase.json          the rules path, databaseId, and the emulator port
@@ -466,6 +467,7 @@ firebase-applet-config.json
 | `npm run preview` | Vite preview against `dist/` |
 | `npm run lint` | `tsc --noEmit` |
 | `npm run lint:encoding` | Fails if any source file contains mojibake |
+| `npm run lint:links` | Fails if a relative link or a cited section heading in the docs does not resolve |
 | `npm run check:size` | Artifact size budgets — run `build` first |
 | `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |

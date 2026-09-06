@@ -17,6 +17,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
     "lint:encoding": "node scripts/check-encoding.mjs",
+    "lint:links": "node scripts/check-links.mjs",
     "check:size": "node scripts/check-bundle-size.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
