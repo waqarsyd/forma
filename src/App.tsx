@@ -4557,25 +4557,11 @@ export default function App() {
                 <label className="wb-checkrow">
                   <input
                     type="checkbox"
-                    checked={!!config.leanPrompt}
-                    onChange={(e) => setConfig({ ...config, leanPrompt: e.target.checked })}
-                  />
-                  Ask only for features this document shows
-                </label>
-                <label className="wb-checkrow">
-                  <input
-                    type="checkbox"
                     checked={config.detailedSpec !== false}
                     onChange={(e) => setConfig({ ...config, detailedSpec: e.target.checked })}
                   />
                   Write the detailed specification
                 </label>
-                <p className="wb-hint">
-                  Sends a shorter prompt by leaving out syntax for controls the source
-                  does not use &mdash; charts, gauges, bookmarks, cross-tabs, watermarks.
-                  Roughly a fifth fewer input tokens on a plain document. Anything you ask
-                  for in words is still included, so &ldquo;add a chart&rdquo; works either way.
-                </p>
                 <p className="wb-hint">
                   The specification is the one artifact nothing else reads &mdash; the mockup comes
                   from the layout and the download from the XML. Turned off, Forma asks for a short

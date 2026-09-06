@@ -253,7 +253,6 @@ Beyond the environment variables above, two things are configurable.
 |---|---|
 | Report unit | The measurement system the generated `.repx` uses. Every conversion between coordinate systems goes through [`reportGeometry.ts`](src/lib/reportGeometry.ts). |
 | Paper size and orientation | Page geometry for the generated report. |
-| Lean prompt | Ask only for the features the source shows, instead of teaching the whole DevExpress control set every request. Off by default. Cuts roughly a third of the input tokens on a plain document (measured: ~5,150 of 15,294). Anything you ask for in words is still included, so "add a chart" works either way. |
 | Detailed specification | On by default. Off asks the model for a short summary instead of a full written spec, saving a few hundred output tokens per report. It is the one artifact nothing downstream parses — the mockup comes from the layout and the download from the XML. |
 | `thinkingBudget` | A lever on how long the model reasons before emitting output. Unset by default. |
 

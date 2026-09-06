@@ -58,20 +58,6 @@ export interface ReportConfig {
   customApiKey?: string;
   dataSchema?: string;
   /**
-   * Ask only for the features this request shows evidence of, instead of
-   * teaching the whole control set every time.
-   *
-   * Off by default. Measured on a real invoice: 15,294 input tokens, most of it
-   * instructions for charts, gauges, bookmarks, cross-tabs, watermarks and
-   * multi-column flow that the document did not contain. An image cannot prove
-   * their absence, so `promptSections.ts` sends them all -- deliberately, and
-   * its header explains why the app must not decide otherwise on its own.
-   *
-   * This is the user deciding instead. A section the instruction asks for is
-   * still included, so `add a chart` works either way.
-   */
-  leanPrompt?: boolean;
-  /**
    * Ask for the full written specification, or a short summary.
    *
    * Defaults to the full one when undefined, so existing behaviour is
@@ -1283,7 +1269,6 @@ export async function analyzeReportDesign(
     texts: imageParts.flatMap((part) => ('text' in part ? [part.text] : [])),
     previousRepx: previousState?.repxContent,
     instruction: prompt,
-    lean: config?.leanPrompt,
   });
   if (sections.length < ALL_SECTIONS.length) console.info(describeSections(sections));
 

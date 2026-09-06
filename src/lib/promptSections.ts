@@ -98,14 +98,6 @@ export interface SectionEvidence {
   previousRepx?: string | null;
   /** What the user typed alongside the attachments. */
   instruction?: string | null;
-  /**
-   * The user has said their documents do not use features they have not asked
-   * for, so the same evidence rules may run without an uploaded `.repx`.
-   *
-   * A setting, never inferred. See `sectionsFor` for why the app declines to
-   * work this out for itself.
-   */
-  lean?: boolean;
 }
 
 /**
@@ -185,6 +177,45 @@ const WORD_SIGNALS: Record<PromptSection, RegExp> = {
 export const ALL_SECTIONS: readonly PromptSection[] = Object.keys(XML_SIGNALS) as PromptSection[];
 
 /**
+ * The sections a static source cannot possibly evidence.
+ *
+ * This is the line that lets the gating work on an image, and it is a
+ * distinction rather than a guess. Every other section describes a THING that
+ * is on the page and can be seen: a chart, a gauge, a checkbox, a panel, a
+ * watermark, columns, the repeated headings of a grouped report. Look at the
+ * document and you know.
+ *
+ * These five describe BEHAVIOUR, and a printed page cannot show behaviour:
+ *
+ *   parameters  a page cannot show that it asked a question before printing
+ *   sorting     rows are in an order; nothing says they should be sorted
+ *   calculated  a total is printed; nothing says it is recomputed per run
+ *   rules       a row is red; nothing says it is red WHEN overdue
+ *   bookmarks   a document map is navigation, and navigation does not print
+ *
+ * So on an image or a PDF the model can only produce them by inventing them,
+ * which is not a feature anybody asked for -- it is the model deciding your
+ * report should prompt for a date range. Leaving them out is the more accurate
+ * request as well as the cheaper one, which is why this needs no setting.
+ *
+ * They come straight back on evidence, by the same rules as everything else: an
+ * uploaded `.repx` that has them, a report being refined that has them, or the
+ * user asking in words -- `sort by date`, `highlight overdue rows`, `prompt for
+ * a date range`. That last is the one that matters, because it is how a person
+ * gets a behaviour they DO want, and it costs one sentence.
+ *
+ * Measured 2026-09-06: 9,613 characters, roughly 2,400 tokens of every request
+ * that had no chance of being wanted.
+ */
+const BEHAVIOURAL: readonly PromptSection[] = [
+  'parameters',
+  'sorting',
+  'calculated',
+  'rules',
+  'bookmarks',
+];
+
+/**
  * The sections to include for this request.
  *
  * Returns every section unless the evidence positively rules one out — see the
@@ -193,38 +224,30 @@ export const ALL_SECTIONS: readonly PromptSection[] = Object.keys(XML_SIGNALS) a
 export function sectionsFor(evidence: SectionEvidence = {}): PromptSection[] {
   const texts = evidence.texts ?? [];
   const source = repxSourceIn(texts);
-
-  /*
-   * `lean` is the user saying "my documents do not have these", which is the one
-   * thing that can substitute for a .repx.
-   *
-   * Measured 2026-09-06 on a real invoice: 15,294 input tokens, of which the
-   * optional blocks are roughly 7,800 characters here plus another ~19,000
-   * across `geminiService.ts` -- instructions for charts, gauges, bookmarks,
-   * cross-tabs, watermarks, multi-column flow and conditional formatting, none
-   * of which that invoice contained. An image proves nothing about absence, so
-   * by default all of it is sent, every request.
-   *
-   * The app must not guess its way out of that: `promptSections.ts` exists
-   * because omitting a section the document DOES need costs the feature
-   * entirely and silently. But the person who knows is the one running it, and
-   * a setting is not a guess. Off by default, so nothing changes for anyone who
-   * does not ask; on, the same evidence rules apply, with the instruction and
-   * the report being refined standing in for the uploaded file.
-   *
-   * Note this still keeps any section the user's own words ask for, so "add a
-   * chart" works on a lean prompt exactly as it does on a full one.
-   */
-  if (!source && !evidence.lean) return [...ALL_SECTIONS];
-
   const previous = evidence.previousRepx ?? '';
   const instruction = evidence.instruction ?? '';
 
-  return ALL_SECTIONS.filter((section) => {
+  const shown = (section: PromptSection) => {
     const xml = XML_SIGNALS[section];
-    if ((source && xml.test(source)) || xml.test(previous)) return true;
+    if (source && xml.test(source)) return true;
+    if (xml.test(previous)) return true;
     return WORD_SIGNALS[section].test(instruction);
-  });
+  };
+
+  /*
+   * With a `.repx` in the request the input states exactly what the report
+   * contains, so every section answers to the evidence. This is the batch
+   * migration path and the saving is largest here.
+   */
+  if (source) return ALL_SECTIONS.filter(shown);
+
+  /*
+   * Without one -- an image or a PDF, the common path -- absence cannot be
+   * proved, so anything the page could SHOW is included. Only the five
+   * behavioural sections are gated, because a page cannot evidence them at all
+   * and the model would be inventing rather than transcribing. See BEHAVIOURAL.
+   */
+  return ALL_SECTIONS.filter((section) => !BEHAVIOURAL.includes(section) || shown(section));
 }
 
 /**

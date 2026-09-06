@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,144 tests in 52 files** — under the `node` environment
+`npm test` runs Vitest over **1,145 tests in 52 files** — under the `node` environment
 by default, with the eight files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eight fail in a way
@@ -79,7 +79,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/modelCatalog` | 16 |  |
 | `lib/panelSize` | 13 |  |
 | `lib/pdf` | 5 |  |
-| `lib/promptSections` | 47 |  |
+| `lib/promptSections` | 48 |  |
 | `lib/reportBands` | 19 |  |
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportGeometry` | 37 |  |
@@ -113,7 +113,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/keyVault` | 21 | jsdom |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,144 in 52 files** — and that total is the arithmetic sum of the column above
+**Total: 1,145 in 52 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -127,7 +127,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,122** against a real 1,144 and will talk you into
+A grep for `\bit(` answers **1,123** against a real 1,145 and will talk you into
 "correcting" numbers that were already right. **Five** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 22 from
 one `it(` over split points, `designerBridge` eight of its 33 over Windows reserved

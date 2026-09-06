@@ -20,30 +20,43 @@ const repx = (body = '') =>
 const has = (sections: PromptSection[], s: PromptSection) => sections.includes(s);
 
 describe('with no .repx in the request', () => {
-  it('includes everything for an image-only request', () => {
-    expect(sectionsFor({ texts: [] })).toEqual([...ALL_SECTIONS]);
+  /*
+   * These asserted `toEqual([...ALL_SECTIONS])` until 2026-09-06 -- everything,
+   * always, on the image path -- and they failed when the behavioural five were
+   * gated, which is what they were for. The contract changed on purpose: what a
+   * page can SHOW is still always included, and only what it cannot evidence is
+   * now asked for on evidence. See BEHAVIOURAL in the module.
+   */
+  const VISIBLE = ALL_SECTIONS.filter(
+    (s) => !['parameters', 'sorting', 'calculated', 'rules', 'bookmarks'].includes(s),
+  );
+
+  it('includes everything the page could show, for an image-only request', () => {
+    expect(sectionsFor({ texts: [] })).toEqual(VISIBLE);
   });
 
-  it('includes everything when there is no evidence at all', () => {
-    expect(sectionsFor()).toEqual([...ALL_SECTIONS]);
-    expect(sectionsFor({})).toEqual([...ALL_SECTIONS]);
+  it('does the same when there is no evidence at all', () => {
+    expect(sectionsFor()).toEqual(VISIBLE);
+    expect(sectionsFor({})).toEqual(VISIBLE);
   });
 
   /**
-   * The common path, and the one this optimisation deliberately does not touch.
    * A PDF's text layer says what the page reads, not what controls the report
-   * needs, so it can never prove a section unnecessary.
+   * needs, so it can never prove a visible section unnecessary. It is still not
+   * matched against the word signals -- see the comment on WORD_SIGNALS, where
+   * `total` in any invoice would otherwise fire the calculated-fields section.
    */
-  it('includes everything for a PDF text layer, however much it says', () => {
+  it('includes the visible sections for a PDF text layer, however much it says', () => {
     const pageText = 'INVOICE\nItem Description  Amount\nWidget  1,250.00\nTOTAL  1,250.00';
-    expect(sectionsFor({ texts: [pageText] })).toEqual([...ALL_SECTIONS]);
+    expect(sectionsFor({ texts: [pageText] })).toEqual(VISIBLE);
   });
 
   it('is not fooled by page text that merely mentions a repx file', () => {
     // The discriminator is the root element, not the word. A scanned page whose
-    // text happens to name a file must not be treated as structural truth.
+    // text happens to name a file must not be treated as structural truth --
+    // if it were, this would drop the visible sections too.
     expect(sectionsFor({ texts: ['see attached Invoice.repx for the layout'] }))
-      .toEqual([...ALL_SECTIONS]);
+      .toEqual(VISIBLE);
   });
 });
 
@@ -354,59 +367,63 @@ describe('character combs share the form-control section', () => {
   });
 });
 
-describe('lean: the user standing in for the proof an image cannot give', () => {
+describe('what a static source cannot evidence is gated automatically', () => {
   /*
-   * Off by default, so an image or a PDF still gets everything. That default is
-   * the subject of this module's header and is not a detail: omitting a section
-   * the document DOES need costs the feature silently, and only the person
-   * running Forma can say their documents never use one.
+   * There is no setting. The split is between a section describing a THING on
+   * the page and one describing a BEHAVIOUR, because a printed page can show the
+   * first and cannot show the second -- so on an image the model could only
+   * produce a parameter or a sort order by inventing it.
+   *
+   * A toggle was tried first and removed the same day: it asked the user to know
+   * when omitting was safe, which is the judgement they came here to avoid.
    */
-  const IMAGE = ['some extracted page text, no report file here'];
+  const IMAGE = ['scanned invoice page text, totals and an address'];
+  const BEHAVIOURAL = ['parameters', 'sorting', 'calculated', 'rules', 'bookmarks'];
+  const VISIBLE = ALL_SECTIONS.filter((s) => !BEHAVIOURAL.includes(s));
 
-  it('changes nothing when it is off', () => {
-    expect(sectionsFor({ texts: IMAGE })).toEqual([...ALL_SECTIONS]);
-    expect(sectionsFor({ texts: IMAGE, lean: false })).toEqual([...ALL_SECTIONS]);
+  it('keeps every section describing something the page can show', () => {
+    const got = sectionsFor({ texts: IMAGE });
+    for (const section of VISIBLE) expect(got).toContain(section);
   });
 
-  it('trims to nothing when the request shows no evidence at all', () => {
-    // A bare image with no instruction: the honest answer is that none of the
-    // optional syntax has been shown to be needed.
-    expect(sectionsFor({ texts: IMAGE, lean: true })).toEqual([]);
+  it('drops the five a page cannot evidence', () => {
+    const got = sectionsFor({ texts: IMAGE });
+    for (const section of BEHAVIOURAL) expect(got).not.toContain(section);
   });
 
-  it('still includes whatever the instruction asks for', () => {
-    // The safety valve. Being wrong about a lean prompt costs one sentence.
-    const got = sectionsFor({ texts: IMAGE, lean: true, instruction: 'add a chart and group by region' });
-    expect(got).toContain('charts');
-    expect(got).toContain('grouping');
-    expect(got).not.toContain('watermark');
+  it('brings a behaviour back the moment the user asks for it', () => {
+    // The safety valve, and the only thing a person has to do: say it.
+    expect(sectionsFor({ texts: IMAGE, instruction: 'sort by date' })).toContain('sorting');
+    expect(sectionsFor({ texts: IMAGE, instruction: 'highlight overdue rows in red' })).toContain('rules');
+    expect(sectionsFor({ texts: IMAGE, instruction: 'prompt for a date range' })).toContain('parameters');
+    expect(sectionsFor({ texts: IMAGE, instruction: 'add a table of contents' })).toContain('bookmarks');
+    expect(sectionsFor({ texts: IMAGE, instruction: 'compute the line total' })).toContain('calculated');
   });
 
-  it('still reads the report being refined', () => {
-    // On a refinement the previous REPX is real evidence of what the report has
-    // now, so a report that already contains a gauge keeps the gauge syntax.
-    const previous = '<XtraReportsLayoutSerializer><Item1 ControlType="XRGauge" /></XtraReportsLayoutSerializer>';
-    const got = sectionsFor({ texts: IMAGE, lean: true, previousRepx: previous });
-    expect(got).toEqual(['gauges']);
+  it('brings one back when the report being refined already has it', () => {
+    const previous = '<XtraReportsLayoutSerializer><SortFields /></XtraReportsLayoutSerializer>';
+    expect(sectionsFor({ texts: IMAGE, previousRepx: previous })).toContain('sorting');
   });
 
-  it('does not weaken the .repx path it was built for', () => {
-    // With a real source the flag is irrelevant: the evidence rules already ran.
+  it('asks for one behaviour without asking for the rest', () => {
+    const got = sectionsFor({ texts: IMAGE, instruction: 'sort by date' });
+    expect(got).toContain('sorting');
+    expect(got).not.toContain('parameters');
+    expect(got).not.toContain('bookmarks');
+  });
+
+  it('leaves the .repx path exactly as it was', () => {
+    // With a real source every section answers to the evidence, behavioural or
+    // not -- the file states what the report contains, so nothing is inferred.
     const source = ['<XtraReportsLayoutSerializer><Item1 ControlType="XRChart" /></XtraReportsLayoutSerializer>'];
-    expect(sectionsFor({ texts: source })).toEqual(sectionsFor({ texts: source, lean: true }));
+    const got = sectionsFor({ texts: source });
+    expect(got).toEqual(['charts']);
   });
 
-  it('never returns a section the evidence did not justify', () => {
-    // The property that matters: lean is a subset of the full list, always.
-    const cases = [
-      { texts: IMAGE, lean: true },
-      { texts: IMAGE, lean: true, instruction: 'sort by date, highlight overdue rows' },
-      { texts: IMAGE, lean: true, previousRepx: '<SortFields>' },
-    ];
-    for (const evidence of cases) {
-      const got = sectionsFor(evidence);
-      expect(got.every((s) => ALL_SECTIONS.includes(s))).toBe(true);
-      expect(new Set(got).size).toBe(got.length);
-    }
+  it('never invents a section that has no evidence anywhere', () => {
+    const got = sectionsFor({ texts: IMAGE });
+    expect(got.every((s) => ALL_SECTIONS.includes(s))).toBe(true);
+    expect(new Set(got).size).toBe(got.length);
+    expect(got.length).toBe(VISIBLE.length);
   });
 });
