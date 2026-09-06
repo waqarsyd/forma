@@ -958,10 +958,31 @@ export function paginate(
   /** The full page width, which every band gets unless it is in a column. */
   const fullWidth = structure.page.width;
 
-  const startPage = () => {
+  /*
+   * `withReportHeader` is only true for page 1, and the ordering it produces is
+   * the whole reason this takes an argument.
+   *
+   * DevExpress prints the ReportHeader ABOVE the PageHeader on the first page --
+   * its "Print Order of Bands" lists ReportHeader, PageHeader, GroupHeader,
+   * Detail, and the designer stacks them the same way. `BAND_ORDER` in this file
+   * has always said so too.
+   *
+   * The pagination did not. `startPage` placed the PageHeader at the top of
+   * every page including the first, and the ReportHeader was pushed after it, so
+   * page 1 came out PageHeader-then-ReportHeader -- column headings above the
+   * report title. It rendered plausibly, contradicted this module's own
+   * BAND_ORDER, and no test looked: the suite asserted that the ReportHeader is
+   * on page 1 and how much height it consumes, both of which are order-blind.
+   * Found on 2026-09-06 by looking at the Preview pane rather than at the code.
+   */
+  const startPage = (withReportHeader = false) => {
     current = { number: pages.length + 1, bands: [] };
     pages.push(current);
     cursor = topMargin;
+    if (withReportHeader && reportHeader) {
+      current.bands.push({ band: reportHeader, top: cursor, left: 0, width: fullWidth, record: null });
+      cursor += reportHeader.height;
+    }
     if (pageHeader) {
       current.bands.push({ band: pageHeader, top: cursor, left: 0, width: fullWidth, record: null });
       cursor += pageHeader.height;
@@ -987,12 +1008,8 @@ export function paginate(
     cursor += band.height;
   };
 
-  startPage();
+  startPage(true);
 
-  if (reportHeader) {
-    current!.bands.push({ band: reportHeader, top: cursor, left: 0, width: fullWidth, record: null });
-    cursor += reportHeader.height;
-  }
   for (const header of groupHeaders) place(header, null);
 
   let placedRecords = 0;

@@ -163,6 +163,49 @@ describe('paginating a real report', () => {
     expect(headerPages.map((p) => p.number)).toEqual([1]);
   });
 
+  /*
+   * The order of the two headers on page 1, which shipped wrong until 2026-09-06.
+   *
+   * DevExpress prints the ReportHeader ABOVE the PageHeader -- its "Print Order
+   * of Bands" lists them that way and the designer stacks them that way -- and
+   * `BAND_ORDER` in reportPreview.ts agreed. `paginate` did not: it opened every
+   * page with the PageHeader and pushed the ReportHeader in afterwards, so the
+   * column headings printed above the report title.
+   *
+   * The two tests above could not see it. "on the first page only" is a filter
+   * over pages, and "230, then 25 per record" is a sum of both heights; both
+   * pass just as happily with the bands the wrong way round. That is why this
+   * asserts `top` and the emitted sequence rather than membership.
+   */
+  it('prints the ReportHeader above the PageHeader on page 1', () => {
+    const [page] = run(2).pages;
+    const reportHeader = page.bands.find((b) => b.band.kind === 'ReportHeader')!;
+    const pageHeader = page.bands.find((b) => b.band.kind === 'PageHeader')!;
+    expect(reportHeader.top).toBe(0);
+    expect(pageHeader.top).toBe(200);
+    expect(reportHeader.top).toBeLessThan(pageHeader.top);
+  });
+
+  it('emits page 1 in print order: ReportHeader, PageHeader, then the records', () => {
+    const [page] = run(2).pages;
+    // PageFooter is excluded because it is placed at page-open time onto the
+    // bottom margin, so it is emitted second and sorting by `top` would be the
+    // only way to include it meaningfully. Everything else is in print order.
+    const order = page.bands
+      .filter((b) => b.band.kind !== 'PageFooter')
+      .map((b) => b.band.kind);
+    expect(order).toEqual(['ReportHeader', 'PageHeader', 'Detail', 'Detail', 'ReportFooter']);
+  });
+
+  it('opens later pages with the PageHeader, with no ReportHeader above it', () => {
+    const result = run(80);
+    for (const page of result.pages.slice(1)) {
+      const first = page.bands.filter((b) => b.band.kind !== 'PageFooter')[0];
+      expect(first.band.kind).toBe('PageHeader');
+      expect(first.top).toBe(0);
+    }
+  });
+
   it('repeats the PageHeader and PageFooter on every page', () => {
     const result = run(80);
     for (const page of result.pages) {
@@ -277,8 +320,15 @@ describe('paginating a real report', () => {
   it('honours non-zero margins from the root element', () => {
     const margined = banded.replace('Margins="0, 0, 0, 0"', 'Margins="50, 50, 100, 100"');
     const result = paginate(parseReportStructure(margined), 1);
+    // The FIRST band on page 1 is what the top margin displaces, and on page 1
+    // that is the ReportHeader. This asserted the PageHeader at 100 until
+    // 2026-09-06, which was true only because the two headers were emitted in
+    // the wrong order -- so it read as a margin test and was also pinning the
+    // defect in place. The PageHeader now follows the 200-tall ReportHeader.
+    const reportHeader = result.pages[0].bands.find((b) => b.band.kind === 'ReportHeader')!;
+    expect(reportHeader.top).toBe(100);
     const header = result.pages[0].bands.find((b) => b.band.kind === 'PageHeader')!;
-    expect(header.top).toBe(100);
+    expect(header.top).toBe(300);
     const footer = result.pages[0].bands.find((b) => b.band.kind === 'PageFooter')!;
     expect(footer.top).toBe(1100 - 100 - 20);
   });
