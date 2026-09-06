@@ -777,3 +777,74 @@ describe('bands listed out of print order', () => {
     expect(codes(xml)).not.toContain('band-order');
   });
 });
+
+describe('a page number outside a page band', () => {
+  /*
+   * Taken from a real generation on 2026-09-06: the XRPageInfo landed in the
+   * ReportFooter at y=190 while the PageFooter band was emitted empty at
+   * HeightF="0". The prompt has said since the bands were introduced that page
+   * numbers belong in PageFooter; the model placed it by where the number sits
+   * on the sheet instead, which on a one-page invoice is below the totals.
+   *
+   * The file looks right and is wrong: ReportFooter prints once after the last
+   * record, so the number appears on the final sheet only.
+   */
+  const band = (kind: string, inner: string, n = 2) =>
+    `<Item${n} Ref="${n}" ControlType="${kind}" Name="${kind}" HeightF="40"><Controls>${inner}</Controls></Item${n}>`;
+
+  const pageInfo = (value: string) =>
+    `<Item1 Ref="30" ControlType="XRPageInfo" Name="pageInfo1" PageInfo="${value}" LocationFloat="750,10" SizeF="80,20" />`;
+
+  const find = (xml: string) =>
+    auditRepx(xml, null).findings.find((f) => f.code === 'pageinfo-wrong-band');
+
+  it('warns when the page number is in the ReportFooter', () => {
+    const xml = report(TOP + band('ReportFooterBand', pageInfo('NumberOfTotal')) + bottom(3, 9));
+    const finding = find(xml)!;
+    expect(finding.severity).toBe('warning');
+    expect(finding.message).toContain('ReportFooterBand');
+    expect(finding.message).toMatch(/once instead of once per page/i);
+  });
+
+  it('stays quiet when it is in the PageFooter, which is the point', () => {
+    const xml = report(TOP + band('PageFooterBand', pageInfo('NumberOfTotal')) + bottom(3, 9));
+    expect(find(xml)).toBeUndefined();
+  });
+
+  it('accepts a page number in the PageHeader too', () => {
+    // Top-of-page numbering is a real design, not a mistake.
+    const xml = report(TOP + band('PageHeaderBand', pageInfo('Number')) + bottom(3, 9));
+    expect(find(xml)).toBeUndefined();
+  });
+
+  it('warns for every page-number kind, not just the common one', () => {
+    for (const kind of ['Number', 'NumberOfTotal', 'Total', 'RomLowNumber', 'RomHiNumber']) {
+      const xml = report(TOP + band('ReportHeaderBand', pageInfo(kind)) + bottom(3, 9));
+      expect(find(xml), kind).toBeDefined();
+    }
+  });
+
+  it('says nothing about a DATE or a USER NAME outside a page band', () => {
+    /*
+     * The reason this check reads PageInfo rather than just the control type.
+     * `PageInfo="DateTime"` in a ReportHeader is "printed on 6 September" and is
+     * correct; warning about it would fire on good reports, and a check that
+     * cries wolf on a correct file is worse than no check at all.
+     */
+    for (const kind of ['DateTime', 'UserName']) {
+      const xml = report(TOP + band('ReportHeaderBand', pageInfo(kind)) + bottom(3, 9));
+      expect(find(xml), kind).toBeUndefined();
+    }
+  });
+
+  it('reports once per band rather than once per control', () => {
+    const two = pageInfo('Number') + pageInfo('NumberOfTotal').replace('Ref="30"', 'Ref="31"');
+    const xml = report(TOP + band('ReportFooterBand', two) + bottom(3, 9));
+    const all = auditRepx(xml, null).findings.filter((f) => f.code === 'pageinfo-wrong-band');
+    expect(all).toHaveLength(1);
+  });
+
+  it('leaves a report with no page number at all alone', () => {
+    expect(find(healthy)).toBeUndefined();
+  });
+});

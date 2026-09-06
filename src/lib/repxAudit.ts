@@ -489,6 +489,46 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
     );
   }
 
+  /*
+   * A page number that is not in a page band.
+   *
+   * `XRPageInfo` is placed by what it MEANS, not by where the number sits on
+   * the sheet, and the two disagree constantly: on a one-page invoice the page
+   * number is drawn below the totals, so a model working from the picture puts
+   * it in the ReportFooter and the file looks right.
+   *
+   * It is not. ReportFooter prints once, after the last record -- so the report
+   * has no page number on any page except the last, and on a one-page report
+   * that is invisible. It surfaces the first time somebody prints something
+   * long, which is exactly when page numbers matter. Observed on a real
+   * generation 2026-09-06: XRPageInfo at ReportFooter y=190 with the PageFooter
+   * band emitted empty at HeightF=0.
+   *
+   * Only the PAGE-NUMBER kinds are checked. `PageInfo="DateTime"` and
+   * `"UserName"` are legitimately printed once on a cover or in a header, so
+   * warning about those would fire on correct reports -- and a check that cries
+   * wolf on a good file is worse than no check, per this file's own header.
+   */
+  const PAGE_NUMBER_KINDS = ['Number', 'NumberOfTotal', 'Total', 'RomLowNumber', 'RomHiNumber'];
+  for (const band of text.matchAll(
+    /<Item\d+\b[^>]*ControlType="(\w+Band)"[^>]*>([\s\S]*?)(?=<Item\d+\b[^>]*ControlType="\w+Band"|<\/Bands>)/g,
+  )) {
+    const [, kind, body] = band;
+    if (kind === 'PageFooterBand' || kind === 'PageHeaderBand') continue;
+    for (const attrs of elementsOfType(body, 'XRPageInfo')) {
+      const value = attr(attrs, 'PageInfo');
+      if (!value || !PAGE_NUMBER_KINDS.includes(value)) continue;
+      add(
+        'warning',
+        'pageinfo-wrong-band',
+        `A page number (XRPageInfo PageInfo="${value}") sits in the ${kind}. ` +
+          'That band does not print on every sheet, so the number appears once instead of once per page ' +
+          '-- on a ReportFooter, only after the last record. Page numbers belong in the PageFooter.',
+      );
+      break;
+    }
+  }
+
   const sortBlocks = [...text.matchAll(/<SortFields>([\s\S]*?)<\/SortFields>/g)];
   for (const block of sortBlocks) {
     const fields = [...block[1].matchAll(/FieldName="([^"]*)"/g)].map((m) => m[1]);
