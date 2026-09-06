@@ -332,6 +332,10 @@ src/
                        size budget several times over; signed out it stays in
                        memory, because localStorage is one shared quota across
                        every project),
+                       mockupRows (which detail tables repeat a heading row an
+                       earlier band already drew, so the Mockup draws it once —
+                       a rendering rule rather than a data fix, because the
+                       row's presence is what the record count is derived from),
                        workspaceView (which pane the bench shows, held in two
                        pieces of state — extracted from App.tsx so the pair
                        can be round-trip tested, because a plate present in

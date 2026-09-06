@@ -192,6 +192,7 @@ import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitFor
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
 import { formatSessionStamp } from './lib/datetime';
 import { unitsToPx, pointsToUnits, pdfTopFromBaseline, unitsPerInch } from './lib/reportGeometry';
+import { repeatedHeadingTables } from './lib/mockupRows';
 import LogoPulse from './components/LogoPulse';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
@@ -945,8 +946,22 @@ const MockupImage = ({
 };
 
 /** Draws a real grid from `rows`/`cells`, sized by relative weights. */
-const MockupTable = ({ el, scaleFont }: { el: ReportElement; scaleFont: number }) => {
-  const rows = el.rows || [];
+const MockupTable = ({
+  el,
+  scaleFont,
+  skipFirstRow,
+}: {
+  el: ReportElement;
+  scaleFont: number;
+  /**
+   * Drop the heading row an earlier section already drew. Decided by
+   * `repeatedHeadingTables`, which explains why the row stays in the data and
+   * only the drawing changes.
+   */
+  skipFirstRow?: boolean;
+}) => {
+  const declared = el.rows || [];
+  const rows = skipFirstRow && declared.length > 1 ? declared.slice(1) : declared;
 
   // Nothing to draw — an older layout, or the model omitted the rows. Show an
   // empty ruled box rather than the invented "Data Row 1" placeholder, which
@@ -1080,6 +1095,11 @@ const ReportMockup = ({
   // byte-identical, only the presentation shrinks.
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+
+  // The detail tables whose first row the PageHeader already drew. Computed
+  // once for the whole page because the answer depends on what sits above each
+  // table, which no single element can see.
+  const repeatedHeadings = useMemo(() => repeatedHeadingTables(layout), [layout]);
 
   const pageWidth = px(layout.pageWidth || 850);
   const pageHeight = Math.max(
@@ -1222,7 +1242,13 @@ const ReportMockup = ({
                       <div className="w-full h-[1px] bg-on-paper/80"></div>
                     )}
 
-                    {isTable && <MockupTable el={el} scaleFont={unitsToPx(1, reportUnit)} />}
+                    {isTable && (
+                      <MockupTable
+                        el={el}
+                        scaleFont={unitsToPx(1, reportUnit)}
+                        skipFirstRow={repeatedHeadings.has(`${sIdx}:${eIdx}`)}
+                      />
+                    )}
 
                     {isChart && <MockupChart el={el} />}
 

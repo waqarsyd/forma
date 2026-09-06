@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,152 tests in 53 files** — under the `node` environment
+`npm test` runs Vitest over **1,164 tests in 54 files** — under the `node` environment
 by default, with the eight files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eight fail in a way
@@ -76,6 +76,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/geminiClient` | 6 |  |
 | `lib/geminiErrors` | 14 |  |
 | `lib/generationProgress` | 22 |  |
+| `lib/mockupRows` | 12 |  |
 | `lib/modelCatalog` | 16 |  |
 | `lib/panelSize` | 13 |  |
 | `lib/pdf` | 5 |  |
@@ -114,7 +115,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/keyVault` | 21 | jsdom |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,152 in 53 files** — and that total is the arithmetic sum of the column above
+**Total: 1,164 in 54 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -128,7 +129,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,130** against a real 1,152 and will talk you into
+A grep for `\bit(` answers **1,142** against a real 1,164 and will talk you into
 "correcting" numbers that were already right. **Five** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 22 from
 one `it(` over split points, `designerBridge` eight of its 33 over Windows reserved
@@ -150,7 +151,7 @@ Two ways the arithmetic goes wrong:
   call in its own header comment for this reason. This note is not swept by that grep —
   it lives in `docs/` and the pathspec is `src/**/*.test.ts` — but keep the habit.
 - **The word boundary is load-bearing.** A bare `it(` also matches `omit(`, which scores
-  `repx.test.ts` at 27 instead of 24. The other forty-five files' grep counts match this
+  `repx.test.ts` at 27 instead of 24. The other forty-six files' grep counts match this
   table exactly, but only with `\b`.
 
 ## The rules suite is three files, and the second is the non-obvious one
@@ -264,19 +265,22 @@ rather than trusting either number**. What is stable is the shape (one enormous 
 load, then ~1.5s) and the 60s ceiling it has to fit under. `README.md` carries the same
 figures, so re-measuring is a change to two files.
 
-**The environment split narrowed the cliff without removing it.** Keeping 44 of the 52
+**The environment split narrowed the cliff without removing it.** Keeping 46 of the 54
 files under `node` cut summed environment setup from ~66s to ~8s and took the cliff from
 every worker down to the eight that opt in — and it still fires: `themeTransition.test.ts`
 died on both 2026-09-02 and 2026-09-04. The eight are marked in the inventory above.
-**When only those eight fail and the other 44 pass with 935 tests, this is what you are
+**When only those eight fail and the other 46 pass with 997 tests, this is what you are
 looking at.**
 
 (That last sentence read "24 of the 30 files ... 366 tests" until 2026-09-06, and the
 same passage said the cliff was down to "the six that opt in" two sentences before
-listing eight. Both were left behind by a suite that grew to 52 files. The numbers are
-worth keeping because they are what you compare a failing run against — which is exactly
-why they have to be corrected when the suite grows, and why they live here now rather
-than in a file that carries no other counts.)
+listing eight; the correction then wrote "44 of the 52 ... 935" for a suite that was
+already 53 files and 985 node tests, so the same sentence has now been stale twice. The
+numbers are worth keeping because they are what you compare a failing run against —
+which is exactly why they have to be corrected when the suite grows, and why they live
+here now rather than in a file that carries no other counts. Derive them rather than
+adjusting them by hand: the eight jsdom files hold 167 tests between them, so the node
+figure is the table's total minus 167.)
 
 **`--reporter=basic` no longer exists.** Vitest 4 removed it, and an unknown reporter
 name is treated as a module to import, so the failure is a `Failed to load custom
