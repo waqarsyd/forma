@@ -5,8 +5,6 @@ import {
   pingDesigner,
   launchDesigner,
   waitForDesigner,
-  probeDesigner,
-  designerVersionWarning,
   DESIGNER_CLIENT_HEADER,
   DESIGNER_PROTOCOL,
 } from './designerBridge';
@@ -298,117 +296,17 @@ describe('waitForDesigner', () => {
   });
 });
 
-describe('warning when the target is newer than the installed designer', () => {
-  /*
-   * The case this exists for, found on 2026-09-06. A report generated at 24.1
-   * was opened in the 20.1 designer installed on the development machine and
-   * came out mangled. The file was correct; it was newer than the assembly
-   * reading it, and nothing in the app said so -- the version picker's own
-   * comment has warned that "a newer .repx does not open in an older designer"
-   * since it was written, where only someone already reading App.tsx would see.
-   */
-  it('warns when the report targets a newer DevExpress than the designer', () => {
-    const msg = designerVersionWarning('24.1', '20.1.4.0');
-    expect(msg).toContain('24.1');
-    expect(msg).toContain('20.1');
-  });
-
-  it('does not claim the file will fail to open, because it does not', () => {
-    /*
-     * This asserted /mangled|does not open/ until 2026-09-06, matching a wording
-     * taken from the version picker's comment and the DevExpress docs. Then
-     * `RepxProbe inspect` loaded a real 24.1 report through the installed 20.1
-     * assemblies with nothing lost, and the loader rewrote the tag to 20.1.3.0
-     * on save. The warning is about features the older assembly may not know,
-     * not about the number -- so it must not predict a mangled layout, or it
-     * sends someone hunting a version problem instead of the real defect.
-     */
-    const msg = designerVersionWarning('24.1', '20.1.4.0')!;
-    expect(msg).not.toMatch(/mangled/i);
-    expect(msg).toMatch(/usually harmless|may not/i);
-    expect(msg).toMatch(/dropped on load|silently/i);
-  });
-
-  it('compares major and minor only, ignoring the build numbers', () => {
-    // SerializerVersion carries 24.1.3.0 and the assembly 20.1.4.0; the build
-    // components are noise and must not decide the comparison.
-    expect(designerVersionWarning('20.1', '20.1.9.9')).toBeNull();
-    expect(designerVersionWarning('23.2', '23.2.0.0')).toBeNull();
-  });
-
-  it('says nothing when the target is OLDER than the designer', () => {
-    // A 20.1 file opens in a 24.1 designer. That direction is the entire reason
-    // the picker offers older versions, so warning about it would be noise.
-    expect(designerVersionWarning('20.1', '24.1.3.0')).toBeNull();
-    expect(designerVersionWarning('22.2', '23.1.0.0')).toBeNull();
-  });
-
-  it('treats a higher minor within the same major as newer', () => {
-    expect(designerVersionWarning('23.2', '23.1.0.0')).not.toBeNull();
-    expect(designerVersionWarning('23.1', '23.2.0.0')).toBeNull();
-  });
-
-  it('says nothing when there is no designer, or it did not report a version', () => {
-    // No companion running is the normal case for almost everyone; it must not
-    // produce a warning about a comparison that cannot be made.
-    expect(designerVersionWarning('24.1', null)).toBeNull();
-    expect(designerVersionWarning('24.1', undefined)).toBeNull();
-    expect(designerVersionWarning('24.1', '')).toBeNull();
-    expect(designerVersionWarning(undefined, '20.1.4.0')).toBeNull();
-  });
-
-  it('says nothing rather than guessing at an unparseable version', () => {
-    expect(designerVersionWarning('24.1', 'not-a-version')).toBeNull();
-    expect(designerVersionWarning('latest', '20.1.4.0')).toBeNull();
-    expect(designerVersionWarning('v24.1', '20.1.4.0')).toBeNull();
-  });
-});
-
-describe('probing the designer keeps the version it reports', () => {
-  const withFetch = async (impl: unknown, run: () => Promise<void>) => {
-    const original = globalThis.fetch;
-    (globalThis as { fetch?: unknown }).fetch = impl;
-    try { await run(); } finally { (globalThis as { fetch?: unknown }).fetch = original; }
-  };
-
-  const respond = (body: unknown, ok = true) => async () => ({
-    ok,
-    json: async () => body,
-  });
-
-  it('reads designerVersion out of the health body', async () => {
-    await withFetch(respond({ app: 'RepxDesigner', designerVersion: '20.1.4.0' }), async () => {
-      expect(await probeDesigner()).toEqual({ running: true, version: '20.1.4.0' });
-    });
-  });
-
-  it('still reports running when the body has no version', async () => {
-    // A companion too old to send JSON, or one that changes its payload, should
-    // cost the warning and not the button.
-    await withFetch(respond({ app: 'RepxDesigner' }), async () => {
-      expect(await probeDesigner()).toEqual({ running: true, version: null });
-    });
-  });
-
-  it('still reports running when the body is not JSON at all', async () => {
-    await withFetch(async () => ({ ok: true, json: async () => { throw new Error('not json'); } }), async () => {
-      expect(await probeDesigner()).toEqual({ running: true, version: null });
-    });
-  });
-
-  it('reports not running when the port refuses', async () => {
-    await withFetch(async () => { throw new Error('ECONNREFUSED'); }, async () => {
-      expect(await probeDesigner()).toEqual({ running: false, version: null });
-    });
-  });
-
-  it('keeps pingDesigner answering a plain boolean', async () => {
-    // Its existing callers and tests predate the probe and must not change.
-    await withFetch(respond({ designerVersion: '20.1.4.0' }), async () => {
-      expect(await pingDesigner()).toBe(true);
-    });
-    await withFetch(async () => { throw new Error('refused'); }, async () => {
-      expect(await pingDesigner()).toBe(false);
-    });
-  });
-});
+/*
+ * Two describes stood here until 2026-09-06, covering `probeDesigner` and
+ * `designerVersionWarning`. Both were removed with the feature, one day after
+ * it was added, because the hazard they warned about does not exist: a
+ * generated 24.1 report loads through the installed 20.1 assemblies with
+ * nothing lost, measured with `RepxProbe inspect`.
+ *
+ * Worth knowing before writing their replacement. One of those tests asserted
+ * the warning text matched /mangled|does not open/, and it passed for exactly
+ * as long as the belief went unchecked -- a test can pin an assumption as
+ * firmly as it pins a fact, and reads the same either way. If a version check
+ * is ever justified again, it will be about a specific control the older
+ * assembly lacks, and the test should name that control.
+ */

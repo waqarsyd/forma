@@ -189,7 +189,7 @@ import { readBoundFields } from './lib/repxBindingPlan';
 import { auditRepx } from './lib/repxAudit';
 import { sourceRectFor } from './lib/sourceRect';
 import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
-import { probeDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, designerVersionWarning } from './lib/designerBridge';
+import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
 import { formatSessionStamp } from './lib/datetime';
 import { unitsToPx, pointsToUnits, pdfTopFromBaseline, unitsPerInch } from './lib/reportGeometry';
@@ -3229,10 +3229,6 @@ export default function App() {
    * difference is that an undiscoverable capability is its own failure.
    */
   const [designerReady, setDesignerReady] = useState(false);
-  /* The DevExpress the companion is built against, so the config modal can warn
-     when the selected target is newer than it. Null when nothing is running or
-     the companion is too old to say. See designerVersionWarning. */
-  const [designerVersion, setDesignerVersion] = useState<string | null>(null);
   /** True while a `forma-repx://` launch is being waited on — a cold start is slow. */
   const [designerStarting, setDesignerStarting] = useState(false);
   useEffect(() => {
@@ -3250,10 +3246,8 @@ export default function App() {
 
     let cancelled = false;
     const check = () => {
-      probeDesigner().then((probe) => {
-        if (cancelled) return;
-        setDesignerReady(probe.running);
-        setDesignerVersion(probe.version);
+      pingDesigner().then((ready) => {
+        if (!cancelled) setDesignerReady(ready);
       });
     };
 
@@ -4511,27 +4505,21 @@ export default function App() {
                         <option value="22.2">v22.2</option>
                         {/* 20.1 is here because the ERP this was first built for is
                             built against DevExpress.XtraReports.v20.1 and its
-                            templates declare SerializerVersion 20.1.3.0. A newer
-                            .repx does not open in an older designer, so without this
-                            option Forma cannot produce a file that ERP can edit.
-                            It is also the version installed on the development
-                            machine, and therefore the only one a generated file can
-                            actually be opened in here — see tools/RepxDesigner. */}
+                            templates declare SerializerVersion 20.1.3.0, so a file
+                            matching it drops straight into that codebase.
+
+                            This comment used to say a newer .repx does not open in an
+                            older designer, and that the installed 20.1 was therefore
+                            the only version openable here. Both were wrong. Measured
+                            2026-09-06 with `RepxProbe inspect`: a 24.1 file loaded
+                            through the installed 20.1 assemblies with nothing lost,
+                            and the loader rewrote the tag to 20.1.3.0 on save. Pick
+                            whichever version suits whoever opens the file. */}
                         <option value="20.1">v20.1</option>
                       </select>
                       <IconChevronDown size={13} className="wb-caret" />
                     </span>
-                    {/* Only ever shown when the companion is actually running and
-                        reported a version older than the selected target. A newer
-                        .repx does not open correctly in an older designer, and the
-                        failure is a mangled layout rather than a refusal -- which
-                        reads as the model having done a bad job. Silent in every
-                        other case, including no companion at all. */}
-                    {designerVersionWarning(config.version, designerVersion) && (
-                      <p className="wb-hint wb-warn mt-1.5" role="status">
-                        {designerVersionWarning(config.version, designerVersion)}
-                      </p>
-                    )}
+
                   </div>
                   <div>
                     <label className="wb-lbl" htmlFor="cfg-page">Page size</label>

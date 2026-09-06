@@ -1233,9 +1233,13 @@ export async function analyzeReportDesign(
    *
    * That example used to hardcode 23.2.3.0 while CRITICAL CONFIGURATION stated
    * the chosen version *below* it — so the model copied the example and every
-   * generation came out 23.2 whatever the dropdown said. A .repx is rejected by
-   * an older designer than the one it declares, which made the setting look
-   * present and do nothing.
+   * generation came out 23.2 whatever the dropdown said -- a setting that looked
+   * present and did nothing.
+   *
+   * This used to add that a .repx is rejected by an older designer than the one
+   * it declares. It is not: measured 2026-09-06, a 24.1 file loads through the
+   * installed 20.1 assemblies with nothing lost. The bug was that the dropdown
+   * did not reach the output, which is worth fixing on its own.
    *
    * `X.Y.3.0` is the shape both observed real files use: Forma's own output
    * (23.2.3.0) and a template written by an installed 20.1 designer (20.1.3.0).

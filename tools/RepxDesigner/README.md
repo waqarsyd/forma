@@ -64,7 +64,9 @@ Forma's configuration dropdown offers 24.1 / 23.2 / 23.1 / 22.2 / **20.1**, and 
 
 **Verified on 2026-08-13:** generated with v20.1 selected, exported, opened here with every control present.
 
-A file declaring a newer release will not open in an older designer, so the tool reads `SerializerVersion` before loading and, on failure, shows it beside the designer's own version — a mismatch reads as a mismatch rather than an unexplained crash. The fix for one is on Forma's side, in the config modal and the prompt's cheat sheet together. Editing the XML by hand is not a fix.
+The tool reads `SerializerVersion` before loading and, when a load fails, shows it beside the designer's own version so a reader has both numbers to hand.
+
+**It does not refuse anything, and the version is not why a load fails.** This paragraph used to say a file declaring a newer release will not open in an older designer. Measured 2026-09-06 with `RepxProbe inspect`: a generated 24.1 report loaded through the installed 20.1 assemblies with every cell intact, and the loader rewrote the tag to `20.1.3.0` on save. What could genuinely break a load is a control or property the older assembly never had — the version is only a hint that one might be present. See *SerializerVersion is a label, not a gate* in [`docs/notes/gemini.md`](../../docs/notes/gemini.md).
 
 ## Build
 

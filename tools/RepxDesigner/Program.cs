@@ -120,9 +120,13 @@ namespace RepxDesigner
                 return;
             }
 
-            // Read the version the file claims BEFORE trying to load it. A .repx
-            // written by a newer DevExpress than the one installed here is the
-            // most likely failure and the raw exception does not always say so.
+            // Read the version the file claims BEFORE trying to load it, so a
+            // failure message can show both numbers. It is information, not a
+            // diagnosis: measured 2026-09-06 with RepxProbe inspect, a 24.1 file
+            // loads through these 20.1 assemblies with nothing lost and the loader
+            // rewrites the tag on save. Nothing here refuses a file on its version
+            // and nothing should -- what can actually break a load is a control or
+            // property this assembly never had, which the version only hints at.
             string fileVersion = ReadSerializerVersion(path);
             string runtimeVersion = typeof(XtraReport).Assembly.GetName().Version.ToString();
 
@@ -143,9 +147,11 @@ namespace RepxDesigner
                     "File:              " + Path.GetFileName(path) + Environment.NewLine +
                     "SerializerVersion: " + (fileVersion ?? "not declared") + Environment.NewLine +
                     "Designer version:  " + runtimeVersion + Environment.NewLine + Environment.NewLine +
-                    "If those two versions differ, the file was written by a newer " +
-                    "DevExpress than the one installed here. Regenerate it targeting " +
-                    "the installed version rather than editing the XML by hand." +
+                    "Both versions are shown because they are useful to know, not " +
+                    "because a difference between them is the cause -- a file targeting " +
+                    "a newer release normally loads here regardless. Look first at the " +
+                    "exception below, and at whether the report uses a control this " +
+                    "version of DevExpress does not have." +
                     Environment.NewLine + Environment.NewLine +
                     ex.GetType().Name + ": " + ex.Message,
                     "RepxDesigner",
