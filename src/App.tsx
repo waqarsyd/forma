@@ -188,6 +188,7 @@ import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
 import { auditRepx } from './lib/repxAudit';
 import { sourceRectFor } from './lib/sourceRect';
+import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
 import { probeDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, designerVersionWarning } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
 import { formatSessionStamp } from './lib/datetime';
@@ -208,6 +209,14 @@ interface DesignResult {
   title?: string;
   layout?: ReportLayout;
   repxContent?: string;
+  /**
+   * What the generation cost, for the status bar.
+   *
+   * Optional and often absent: a report restored from a save or from the
+   * revision history never had a request of its own, and the mock path makes
+   * none. The readout hides itself rather than showing a zero.
+   */
+  usage?: TokenUsage | null;
 }
 
 interface ChatMessage {
@@ -2874,7 +2883,8 @@ export default function App() {
         timestamp: new Date(),
         title: response.layout.title,
         layout: response.layout,
-        repxContent: response.repxContent
+        repxContent: response.repxContent,
+        usage: response.usage ?? null
       };
 
       setResult(newResult);
@@ -4419,6 +4429,20 @@ export default function App() {
         {boundFields.length > 0 && (
           <span title={`Bound to: ${boundFields.join(', ')}`}>
             {boundFields.length} bound
+          </span>
+        )}
+        {/* What the generation cost, when the model reported it.
+
+            Absent on the mock path and on any response with no usage metadata,
+            which is why this is conditional rather than showing a zero. The
+            numbers were logged to the console from the day streaming landed and
+            that turned out not to count as having them: checking the effect of a
+            change made to reduce them meant opening devtools and generating
+            again, so in practice nobody did. The parts are in the tooltip because
+            input and output move for different reasons. See lib/tokenUsage.ts. */}
+        {summariseUsage(result?.usage) && (
+          <span title={describeUsage(result?.usage) ?? undefined}>
+            {summariseUsage(result?.usage)}
           </span>
         )}
         {/* Structural problems in the file about to be exported. Silent when

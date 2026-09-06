@@ -388,6 +388,10 @@ src/
                        malformed), geminiErrors (what the user is told when a
                        request fails), savedReport + accountData (the two
                        storage shapes and the document layout),
+                       tokenUsage (what a generation cost, formatted for the
+                       status bar -- the numbers were logged to the console
+                       from the day streaming landed, which turned out not to
+                       count as having them),
                        contactSubmit, generationProgress (the progress bar's
                        whole state machine) and attachmentParts, themeTransition
                        (the circular wipe the theme toggle opens from, and its

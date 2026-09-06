@@ -11,6 +11,7 @@ import { auditRepx } from "../lib/repxAudit";
 import { liftParameterTypes } from "../lib/repxParameters";
 import { liftStyles } from "../lib/repxStyles";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
+import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import {
@@ -1376,7 +1377,7 @@ export async function analyzeReportDesign(
    * written. That turns the progress bar from a 2.5s timer that invented its
    * own percentages into something driven by real output.
    */
-  const requestFor = async (modelName: string): Promise<{ text: string; finishReason?: string }> => {
+  const requestFor = async (modelName: string): Promise<{ text: string; finishReason?: string; usage?: TokenUsage | null }> => {
     const stream = await ai.models.generateContentStream(buildRequest(modelName));
 
     let text = '';
@@ -1442,7 +1443,7 @@ export async function analyzeReportDesign(
       }
     }
 
-    return { text, finishReason };
+    return { text, finishReason, usage: readTokenUsage(usage) };
   };
 
   const buildRequest = (modelName: string) => ({
@@ -1954,6 +1955,9 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
 
   try {
     const parsed = parseAnalysisResponse(rawText, response.finishReason);
+    // Carried onto the result so the status bar can show it. The console line
+    // above stays: it is the only record when a run fails before this point.
+    parsed.usage = response.usage ?? null;
     console.log(`Successfully parsed Gemini response.`);
 
     /**

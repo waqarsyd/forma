@@ -139,7 +139,17 @@ export interface AnalysisResponse {
   markdown: string;
   layout: ReportLayout;
   repxContent: string;
+  /**
+   * What the request cost, when the model reported it.
+   *
+   * Absent on the mock path, which returns before any call is made, and on any
+   * response that arrived without usage metadata. The status bar shows nothing
+   * rather than a zero in that case -- see `lib/tokenUsage.ts`.
+   */
+  usage?: TokenUsage | null;
 }
+
+import type { TokenUsage } from './tokenUsage';
 
 /** One part of a request: an inline image, or text lifted out of an upload. */
 export type AttachmentPart =
