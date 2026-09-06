@@ -46,8 +46,8 @@ a widening of the coverage scope. And the first two **component** tests exist, o
 `DataBinding` and `BatchPanel`, using `@testing-library/react` (a devDependency, so no
 bundle cost) with `// @vitest-environment jsdom` on line 1 like every other DOM file.
 
-**Everything else is still unenforced**: `App.tsx` is ~4,450 lines and the two
-extractions are perhaps sixty of them, no other component has a render test, and
+**Everything else is still unenforced**: `App.tsx` is several thousand lines and the
+two extractions are perhaps sixty of them, no other component has a render test, and
 `ReportPreview` has none because its portal, `ResizeObserver` and `window.print` are
 browser behaviour rather than logic — the `run-forma` skill drives those instead.
 Where the documentation calls something an invariant and it is not in one of these
