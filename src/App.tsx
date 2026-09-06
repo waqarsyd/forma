@@ -523,6 +523,36 @@ function formatElapsed(ms: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+/**
+ * Longest edge of an uploaded image, in pixels.
+ *
+ * **This buys upload time and browser memory. It does not buy tokens, and the
+ * obvious assumption that it does is wrong.** Recorded here because it was
+ * measured on 2026-09-06 and is the kind of thing that gets re-derived, or
+ * worse, tuned in the belief that a smaller number is cheaper.
+ *
+ * Gemini bills an image by TILES, and the tile grid comes from the image's
+ * shape rather than its size: the crop unit is `floor(min(w, h) / 1.5)`, so it
+ * scales with the image and the tile count cancels out. The arithmetic on a
+ * real upload, from the token log of that day:
+ *
+ *     2400x1500  crop unit 1000  ->  3 x 2 = 6 tiles = 1,548 tokens
+ *     2048x1280  crop unit  853  ->  3 x 2 = 6 tiles = 1,548 tokens
+ *
+ * Identical. In practice the count reduces to `2 * ceil(1.5 * aspect)` tiles at
+ * 258 tokens each, which depends on aspect ratio ALONE above the small-image
+ * threshold. A portrait page is 4 tiles; a 16:9 screenshot is 6.
+ *
+ * The one resize that would save tokens is dropping BOTH dimensions to 384px or
+ * under, which Google bills as a single 258-token tile -- a 6x cut, and an
+ * invoice nobody can read. Accuracy is the product here, so that trade is not
+ * available.
+ *
+ * What does reduce the image bill is a tighter CROP, because it can change the
+ * aspect ratio and it puts more of the document inside each 768px tile. That is
+ * a win on both counts and the only one worth chasing on this side; the prompt
+ * was ~90% of that request's input, which is what `leanPrompt` addresses.
+ */
 const MAX_IMAGE_EDGE = 2048;
 const JPEG_QUALITY = 0.92;
 /** Below this, re-encoding is not worth the quality risk. */
