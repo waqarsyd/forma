@@ -149,17 +149,17 @@ Each of the checks is explained where it belongs — the two suites in [`docs/no
 
 ## Architecture
 
-Five notes, one per area, under `docs/notes/` — plus the designer companion's own README, listed last because it is the one an area-based search misses. The section headings inside them are unchanged from when they lived here, so a section name quoted in a commit message or anywhere in this file still finds its text with `grep -rn "<name>" docs/notes/`.
+Five notes under `docs/notes/`, one per area — **plus two READMEs under `tools/`, listed last because they are the two an area-based search misses.** The section headings inside the notes are unchanged from when that text lived in this file, so a heading quoted in a commit message or anywhere here still finds its text with `grep -rn "<name>" docs/notes/`.
 
 | Note | What it owns |
 |---|---|
 | [`gemini.md`](docs/notes/gemini.md) | The browser-side Gemini call and why it is not on the server; where the user's key lives and how the vault encrypts it; the mega-prompt and the `layout` schema; runtime model detection and the 404/429/503 paths; the chat-vs-generation split and the streaming reply. |
 | [`app-shell.md`](docs/notes/app-shell.md) | `src/App.tsx` and everything it still holds: the ported workspace, the marketing pages and their shared chrome, real-path routing, file intake and PDF text extraction, the REPX viewer, streaming progress and cancellation. |
 | [`persistence.md`](docs/notes/persistence.md) | Firestore versus `localStorage` and the shapes that diverge between them, the cloud save budget, `firestore.rules`, and the sign-in fallback that was removed for being an authentication bypass. |
+| [`styling.md`](docs/notes/styling.md) | Design tokens and the four-part theme resolution, the `.sheet` / `.landing` scopes, the icon set, the `Logo` component, and the division of labour between CSS helpers and Framer Motion. |
+| [`testing.md`](docs/notes/testing.md) | Both suites: the per-file inventory and its arithmetic, why a grep undercounts by 22, the three rules files and what each proves, what a component test is and is not for, the cold-cache cliff that reads as a broken install, and the deliberate scope of the coverage number. The only place the counts live. |
 | [`tools/RepxDesigner/README.md`](tools/RepxDesigner/README.md) | The Windows companion that opens a generated `.repx` in the real DevExpress designer: the loopback `--serve` listener on `127.0.0.1:7317`, its two guards, the feature-detected **Open in designer** button behind `src/lib/designerBridge.ts`, DevExpress 20.1 version matching, and the MSBuild build. Outside `docs/notes/` because it documents a C# project, not the web app. |
 | [`tools/RepxProbe/README.md`](tools/RepxProbe/README.md) | The console tool that asks DevExpress what a `.repx` really contains: `emit` prints what the serializer writes for a feature, `inspect` reports what the loader sees in a file we produced and exits non-zero when content was silently discarded. Outside `docs/notes/` for the same reason as the row above. **Read it before writing REPX syntax from the DevExpress API docs** — those describe the object model, not the file. |
-| [`testing.md`](docs/notes/testing.md) | Both suites: the per-file inventory and its arithmetic, why a grep undercounts by 22, the three rules files and what each proves, what a component test is and is not for, and the deliberate scope of the coverage number. The only place the counts live. |
-| [`styling.md`](docs/notes/styling.md) | Design tokens and the four-part theme resolution, the `.sheet` / `.landing` scopes, the icon set, the `Logo` component, and the division of labour between CSS helpers and Framer Motion. |
 
 ## Structure conventions
 
