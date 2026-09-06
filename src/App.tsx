@@ -34,7 +34,6 @@ import {
   IconEye,
   IconEyeOff,
   IconFolder,
-  IconHistory,
   IconRedo,
   IconStack,
   IconKey,
@@ -1265,7 +1264,7 @@ export interface SavedReport {
    `routes.test.ts` now checks rather than asks you to remember. */
 
 /** Which panel the rail's second column is showing. */
-type RailPanel = 'review' | 'projects' | 'history' | 'batch' | 'revisions';
+type RailPanel = 'review' | 'projects' | 'batch' | 'revisions';
 
 /**
  * The review column's own geometry, remembered between sessions.
@@ -3604,7 +3603,6 @@ export default function App() {
 
         {railBtn('review', 'Current report', <IconLayout size={19} />)}
         {railBtn('projects', 'Saved projects', <IconFolder size={19} />)}
-        {railBtn('history', 'Recent', <IconHistory size={19} />)}
         {railBtn('revisions', 'Revisions', <IconRedo size={19} />)}
         {railBtn('batch', 'Batch', <IconStack size={19} />)}
         <button data-open-config title="Configure" aria-label="Configure" onClick={() => setIsConfigOpen(true)}>
@@ -4019,42 +4017,102 @@ export default function App() {
         </div>
 
         {/* ------------------------------------------------- saved projects */}
-        <div className={`wb-panel-body${railPanel === 'projects' ? '' : ' wb-hidden'}`}>
-          <div className="wb-col-head">
-            <span className="wb-col-title">Projects</span>
-            <span className="wb-kicker">{savedReports.length} saved</span>
-          </div>
-          <div className="wb-search">
-            <IconSearch size={14} />
-            <span>{savedReports.length ? 'Search by name or content…' : 'Nothing saved yet'}</span>
-          </div>
-          <div className="wb-list">
-            {savedReports.length === 0 ? (
-              <div className="wb-empty">No saved projects yet.</div>
-            ) : (
-              savedReports.map((report) => (
-                <div
-                  key={report.id}
-                  className={`wb-card${result?.title === report.name ? ' wb-is-open' : ''}`}
-                  onClick={() => void handleLoadReport(report)}
-                >
-                  <div className="wb-nm">{report.name}</div>
-                  <div className="wb-sub">{new Date(report.timestamp).toLocaleDateString()}</div>
-                  <div className="wb-row-actions">
+          {/* Projects: every saved session, in one panel.
+
+              There were two of these until 2026-09-06 — a folder "Projects" and
+              a clock "Recent" — mapping the same `savedReports` array, calling
+              the same loader, differing only in date format and in which delete
+              handler they reached for. A comment in the second already said
+              "these two panels are one array".
+
+              Recent was meant to be time-scoped and never was: its header read
+              "this week" over a list that has always been every saved session
+              regardless of age, and that wording was corrected rather than the
+              behaviour. The distinction it existed for was never built, so the
+              panel was a second view of one list.
+
+              Merged keeping the better half of each. Recent's row, which carries
+              a day-and-time stamp and the note count where Projects showed a
+              bare date; Recent's `removeReports`, which fades a row out before
+              deleting where Projects called `handleDeleteReport` raw and the row
+              simply vanished; and Projects' `wb-is-open` marker, which Recent
+              never had. The search box went with it — it was a `<span>`, not an
+              input, so it looked like a capability and was not one. */}
+          <div className={`wb-panel-body${railPanel === 'projects' ? '' : ' wb-hidden'}`}>
+            <div className="wb-col-head">
+              <span className="wb-col-title">Projects</span>
+              {/* Two-step, in place. A native confirm() is the one thing this app
+                  does not do — see the save notice — and "clear all" wiping every
+                  saved project on a single stray click is exactly the case a
+                  confirm exists for. */}
+              {confirmingClearAll ? (
+                <span className="wb-kicker wb-confirm">
+                  <span>Delete all {savedReports.length}?</span>
+                  <button
+                    className="wb-mini wb-danger"
+                    onClick={() => {
+                      removeReports(savedReports.map((r) => r.id));
+                      setConfirmingClearAll(false);
+                    }}
+                  >
+                    Delete
+                  </button>
+                  <button className="wb-mini" onClick={() => setConfirmingClearAll(false)}>
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <span className="wb-kicker">
+                  {savedReports.length} saved
+                  {savedReports.length > 0 && (
                     <button
-                      className="wb-danger"
-                      aria-label={`Delete ${report.name}`}
-                      title="Delete"
-                      onClick={(e) => { e.stopPropagation(); handleDeleteReport(report.id); }}
+                      className="wb-mini"
+                      onClick={() => setConfirmingClearAll(true)}
+                      title="Delete every saved project"
                     >
-                      <IconTrash size={14} />
+                      Clear all
                     </button>
-                  </div>
-                </div>
-              ))
-            )}
+                  )}
+                </span>
+              )}
+            </div>
+            <div className="wb-list">
+              {savedReports.length === 0 ? (
+                <div className="wb-empty">No saved projects yet.</div>
+              ) : (
+                savedReports.map((report) => {
+                  // Day and time. A bare clock time was the same six characters
+                  // for a session from this morning and one from last month.
+                  const stamp = formatSessionStamp(report.timestamp);
+                  const leaving = leavingReportIds.includes(report.id);
+                  const open = result?.title === report.name;
+                  return (
+                    <div
+                      key={report.id}
+                      className={`wb-card${open ? ' wb-is-open' : ''}${leaving ? ' wb-leaving' : ''}`}
+                      onClick={() => void handleLoadReport(report)}
+                    >
+                      <div className="wb-nm">{report.name}</div>
+                      <div className="wb-sub">
+                        {stamp && `${stamp} · `}
+                        {report.messages.length} {report.messages.length === 1 ? 'note' : 'notes'}
+                      </div>
+                      <div className="wb-row-actions">
+                        <button
+                          className="wb-danger"
+                          aria-label={`Delete ${report.name}`}
+                          title="Delete"
+                          onClick={(e) => { e.stopPropagation(); removeReports([report.id]); }}
+                        >
+                          <IconTrash size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
-        </div>
 
         {/* -------------------------------------------------------- recent */}
         <div className={`wb-panel-body${railPanel === 'revisions' ? '' : ' wb-hidden'}`}>
@@ -4112,86 +4170,6 @@ export default function App() {
                 }}
               />
             </Suspense>
-          </div>
-        </div>
-
-        <div className={`wb-panel-body${railPanel === 'history' ? '' : ' wb-hidden'}`}>
-          <div className="wb-col-head">
-            <span className="wb-col-title">Recent</span>
-            {/* Was the words "this week", over a list that has always been every
-                saved session regardless of age. Harmless while the rows showed
-                no date; a plain contradiction now that they do. */}
-            {/* Two-step, in place. A native confirm() is the one thing this app
-                does not do — see the save notice — and "clear all" wiping every
-                saved project on a single stray click is exactly the case a
-                confirm exists for. */}
-            {confirmingClearAll ? (
-              <span className="wb-kicker wb-confirm">
-                <span>Delete all {savedReports.length}?</span>
-                <button
-                  className="wb-mini wb-danger"
-                  onClick={() => {
-                    removeReports(savedReports.map((r) => r.id));
-                    setConfirmingClearAll(false);
-                  }}
-                >
-                  Delete
-                </button>
-                <button className="wb-mini" onClick={() => setConfirmingClearAll(false)}>
-                  Cancel
-                </button>
-              </span>
-            ) : (
-              <span className="wb-kicker">
-                {savedReports.length} {savedReports.length === 1 ? 'session' : 'sessions'}
-                {savedReports.length > 0 && (
-                  <button
-                    className="wb-mini"
-                    onClick={() => setConfirmingClearAll(true)}
-                    title="Delete every saved session"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </span>
-            )}
-          </div>
-          <div className="wb-list" style={{ paddingTop: 0 }}>
-            {savedReports.length === 0 ? (
-              <div className="wb-empty">Nothing yet.</div>
-            ) : (
-              savedReports.map((report) => {
-                // Day and time. A bare clock time was the same six characters
-                // for a session from this morning and one from last month.
-                const stamp = formatSessionStamp(report.timestamp);
-                const leaving = leavingReportIds.includes(report.id);
-                return (
-                  <div
-                    key={report.id}
-                    className={`wb-card${leaving ? ' wb-leaving' : ''}`}
-                    onClick={() => void handleLoadReport(report)}
-                  >
-                    <div className="wb-nm">{report.name}</div>
-                    <div className="wb-sub">
-                      {stamp && `${stamp} · `}
-                      {report.messages.length} {report.messages.length === 1 ? 'note' : 'notes'}
-                    </div>
-                    {/* Same hover-revealed affordance as the Projects list, and
-                        the same handler — these two panels are one array. */}
-                    <div className="wb-row-actions">
-                      <button
-                        className="wb-danger"
-                        aria-label={`Delete ${report.name}`}
-                        title="Delete"
-                        onClick={(e) => { e.stopPropagation(); removeReports([report.id]); }}
-                      >
-                        <IconTrash size={14} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
           </div>
         </div>
 
