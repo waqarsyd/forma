@@ -91,7 +91,71 @@ export interface ReportConfig {
  * `fontSize` is in report units and `Font=` is not — 16 units at
  * HundredthsOfAnInch is 11.52pt, not 16pt.
  */
-const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
+/**
+ * The one `VITE_FORMA_MOCK` value that returns a deliberately broken fixture.
+ *
+ * Anything else truthy gives the correct one, which is the point: the paragraph
+ * above records that a mock breaking an audit rule cost someone real time
+ * working out whether the app or the fake data was at fault. That stays true by
+ * default and is opt-in by a value nobody types by accident.
+ */
+export const MOCK_MISORDERED = "misordered";
+
+/** Is mock mode on at all? Both the generation and the chat path ask this. */
+export function isMockMode(value: string | undefined): boolean {
+  return value === "true" || value === MOCK_MISORDERED;
+}
+
+/**
+ * Swap the ReportHeader and PageHeader bands in the mock REPX, to exercise
+ * `repxAudit`'s `band-order` warning against a running app.
+ *
+ * Added 2026-09-06. The rule had six unit tests and no way to be seen firing in
+ * the UI, because the mock -- the only offline generation path -- is correct by
+ * design and a real generation needs a key.
+ *
+ * **It swaps the `ItemN` prefixes as well as the blocks, and that is the whole
+ * subtlety.** `ItemN` is a position inside its own collection, so moving the
+ * blocks without renumbering also trips `item-numbering`, and the fixture would
+ * then light two findings where the point is to demonstrate one. See
+ * `repxItems.ts` for why that numbering is load-bearing rather than cosmetic.
+ *
+ * Deliberately a transform rather than a second fixture: `viteEnv` reads
+ * `import.meta.env` through a variable, so Vite cannot prove the mock branch
+ * dead and none of it is tree-shaken -- a duplicate fixture would put another
+ * ~2.4 kB into the shipped `geminiService-` chunk, which has ~6.7 kB of budget
+ * left. This is about 400 bytes.
+ *
+ * Written against this fixture, not as a general REPX transform. The tests
+ * assert the result rather than trusting the regexes, so if the fixture changes
+ * shape they fail here instead of producing a silently unswapped report.
+ */
+export function misorderMockHeaders(xml: string): string {
+  const report = /[ \t]*<Item2 (?=[^>]*ControlType="ReportHeaderBand")[\s\S]*?<\/Item2>\r?\n/;
+  const page = /[ \t]*<Item3 (?=[^>]*ControlType="PageHeaderBand")[\s\S]*?<\/Item3>\r?\n/;
+
+  const reportBlock = report.exec(xml)?.[0];
+  const pageBlock = page.exec(xml)?.[0];
+  if (!reportBlock || !pageBlock) return xml;
+
+  // Renumber as they move: the PageHeader becomes the second band and the
+  // ReportHeader the third, so the collection stays correctly numbered and the
+  // only thing wrong with the file is the order.
+  const renumbered = (block: string, to: string) =>
+    block.replace(/<Item\d+ /, `<Item${to} `).replace(/<\/Item\d+>(\r?\n)$/, `</Item${to}>$1`);
+
+  // Function replacers throughout: a string replacement would let $& and its
+  // friends inside the inserted markup be interpreted rather than inserted.
+  // REPX carries no dollar sign today, which is the kind of thing that stops
+  // being true quietly.
+  const SLOT = "REPORT_HEADER_SLOT";
+  return xml
+    .replace(reportBlock, () => SLOT)
+    .replace(pageBlock, () => renumbered(reportBlock, "3"))
+    .replace(SLOT, () => renumbered(pageBlock, "2"));
+}
+
+export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
   markdown: `# Mock Invoice Report\n\nThis is a canned layout returned by \`VITE_FORMA_MOCK\`, not generated output.\n\n## Bands\n- **Report Header**: the invoice title, printed once.\n- **Page Header**: the column headings, repeated on every sheet.\n- **Detail**: one line item, printed once per record.`,
   repxContent: `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100" Version="23.2">
@@ -707,7 +771,7 @@ export async function chatReply(
   // so with VITE_FORMA_MOCK set a plain text message still went to the network —
   // one request per model candidate — which is exactly what the flag exists to
   // avoid, and made the flag useless for demoing or testing chat offline.
-  if (viteEnv.VITE_FORMA_MOCK === "true") {
+  if (isMockMode(viteEnv.VITE_FORMA_MOCK)) {
     console.warn("VITE_FORMA_MOCK is set — answering from the mock chat reply without calling Gemini.");
     const lastUserTurn = [...history].reverse().find((t) => t.role === 'user')?.text ?? '';
     const mock = buildMockChatReply(lastUserTurn);
@@ -1140,10 +1204,20 @@ export async function analyzeReportDesign(
   // *or* the prompt merely contained the word "mock" — so a first-time visitor
   // with no key, or anyone asking to "mock up an invoice", silently received a
   // canned fake report and had no way to tell it was not real output.
-  if (viteEnv.VITE_FORMA_MOCK === "true") {
+  if (isMockMode(viteEnv.VITE_FORMA_MOCK)) {
     console.warn("VITE_FORMA_MOCK is set — returning the mock invoice layout without calling Gemini.");
     // Simulate a 3-second network delay to allow testing loaders and status bars
     await sleep(3000, signal);
+    if (viteEnv.VITE_FORMA_MOCK === MOCK_MISORDERED) {
+      console.warn(
+        `VITE_FORMA_MOCK="${MOCK_MISORDERED}" — the two header bands are swapped ON PURPOSE. ` +
+          'The "1 REPX warning" in the status bar is the fixture, not the app.',
+      );
+      return {
+        ...MOCK_INVOICE_RESPONSE,
+        repxContent: misorderMockHeaders(MOCK_INVOICE_RESPONSE.repxContent),
+      };
+    }
     return MOCK_INVOICE_RESPONSE;
   }
 

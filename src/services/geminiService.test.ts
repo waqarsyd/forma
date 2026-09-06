@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { extractPartialReply, asReadableError, isOverloaded, isTruncatedStream } from './geminiService';
+import {
+  extractPartialReply,
+  asReadableError,
+  isOverloaded,
+  isTruncatedStream,
+  isMockMode,
+  misorderMockHeaders,
+  MOCK_MISORDERED,
+  MOCK_INVOICE_RESPONSE,
+} from './geminiService';
+import { auditRepx } from '../lib/repxAudit';
 
 /**
  * `extractPartialReply` types the assistant's answer into the bubble as the
@@ -164,5 +174,83 @@ describe('isTruncatedStream', () => {
     expect(isTruncatedStream(new Error('Unexpected token < in JSON at position 0'))).toBe(false);
     expect(isTruncatedStream(new Error('API key not valid'))).toBe(false);
     expect(isTruncatedStream(null)).toBe(false);
+  });
+});
+
+describe('the deliberately misordered mock fixture', () => {
+  /*
+   * VITE_FORMA_MOCK="misordered" swaps the two header bands so `repxAudit`'s
+   * band-order warning can be seen firing in a running app. The rule had six
+   * unit tests and no way to be demonstrated in the UI: the mock is correct by
+   * design, and a real generation needs a key.
+   *
+   * These assert the RESULT rather than the regexes, because the transform is
+   * written against one specific fixture. If that fixture changes shape these
+   * fail here, instead of quietly returning an unswapped report and making the
+   * whole flag look broken.
+   */
+  const mock = MOCK_INVOICE_RESPONSE.repxContent;
+  const swapped = misorderMockHeaders(mock);
+
+  const bandSequence = (xml: string) =>
+    [...xml.matchAll(/ControlType="(\w*Band)"/g)].map((m) => m[1]);
+
+  it('leaves the fixture itself in print order', () => {
+    expect(bandSequence(mock)).toEqual([
+      'TopMarginBand', 'ReportHeaderBand', 'PageHeaderBand', 'DetailBand', 'BottomMarginBand',
+    ]);
+    expect(auditRepx(mock, null).findings.map((f) => f.code)).not.toContain('band-order');
+  });
+
+  it('puts the PageHeader before the ReportHeader', () => {
+    expect(bandSequence(swapped)).toEqual([
+      'TopMarginBand', 'PageHeaderBand', 'ReportHeaderBand', 'DetailBand', 'BottomMarginBand',
+    ]);
+  });
+
+  it('makes the audit report band-order, which is the entire point', () => {
+    const finding = auditRepx(swapped, null).findings.find((f) => f.code === 'band-order');
+    expect(finding?.severity).toBe('warning');
+  });
+
+  it('reports band-order and NOTHING else, so the demonstration is unambiguous', () => {
+    /*
+     * The trap this guards. `ItemN` is a position inside its own collection, so
+     * moving the blocks without renumbering also trips `item-numbering` -- and a
+     * fixture lighting two findings teaches the reader that the app is broken
+     * rather than that one rule works.
+     */
+    const before = auditRepx(mock, null).findings.map((f) => f.code);
+    const after = auditRepx(swapped, null).findings.map((f) => f.code);
+    expect(after.filter((c) => !before.includes(c))).toEqual(['band-order']);
+    expect(after).not.toContain('item-numbering');
+  });
+
+  it('renumbers the bands it moved, rather than only moving them', () => {
+    expect(swapped).toContain('<Item2 Ref="4" ControlType="PageHeaderBand"');
+    expect(swapped).toContain('<Item3 Ref="2" ControlType="ReportHeaderBand"');
+  });
+
+  it('changes nothing but the order of those two blocks', () => {
+    // Same bytes, same controls -- only the arrangement differs. A transform
+    // that also dropped a control would still satisfy every test above.
+    const sortedChars = (s: string) => s.replace(/\s+/g, ' ').split('').sort().join('');
+    expect(sortedChars(swapped)).toBe(sortedChars(mock));
+  });
+
+  it('returns the input unchanged when the bands it expects are absent', () => {
+    const other = '<XtraReportsLayoutSerializer><Bands /></XtraReportsLayoutSerializer>';
+    expect(misorderMockHeaders(other)).toBe(other);
+  });
+
+  it('treats only the documented values as mock mode', () => {
+    expect(isMockMode('true')).toBe(true);
+    expect(isMockMode(MOCK_MISORDERED)).toBe(true);
+    expect(isMockMode(undefined)).toBe(false);
+    expect(isMockMode('')).toBe(false);
+    expect(isMockMode('false')).toBe(false);
+    // Not a boolean-ish coercion: an unrecognised value leaves mock mode off,
+    // so a typo calls Gemini rather than silently returning a fake report.
+    expect(isMockMode('yes')).toBe(false);
   });
 });
