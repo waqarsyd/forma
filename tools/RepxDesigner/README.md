@@ -60,7 +60,7 @@ It uses a raw `TcpListener` rather than `HttpListener` because `HttpListener` wa
 
 The tool targets **DevExpress 20.1**, the version installed on this machine.
 
-Forma's configuration dropdown offers 24.1 / 23.2 / 23.1 / 22.2 / **20.1**, and the selected version is written into the generated XML's `SerializerVersion` and `Version`. (It did not used to be: the prompt's ROOT STRUCTURE example hardcoded 23.2.3.0, so the setting was inert. See *`geminiService.ts` is a single mega-prompt* in [`docs/notes/gemini.md`](../../docs/notes/gemini.md).)
+Forma's configuration dropdown offers 26.1 / 25.2 / 25.1 / 24.1 / 23.2 / 23.1 / 22.2 / **20.1**, and the selected version is written into the generated XML's `SerializerVersion` and `Version`. (It did not used to be: the prompt's ROOT STRUCTURE example hardcoded 23.2.3.0, so the setting was inert. See *`geminiService.ts` is a single mega-prompt* in [`docs/notes/gemini.md`](../../docs/notes/gemini.md).)
 
 **Verified on 2026-08-13:** generated with v20.1 selected, exported, opened here with every control present.
 

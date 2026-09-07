@@ -4525,6 +4525,9 @@ export default function App() {
                         value={config.version}
                         onChange={(e) => setConfig({ ...config, version: e.target.value })}
                       >
+                        <option value="26.1">v26.1</option>
+                        <option value="25.2">v25.2</option>
+                        <option value="25.1">v25.1</option>
                         <option value="24.1">v24.1</option>
                         <option value="23.2">v23.2</option>
                         <option value="23.1">v23.1</option>

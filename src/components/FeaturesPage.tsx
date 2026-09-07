@@ -72,7 +72,7 @@ const SETUP: Array<{ Icon: typeof IconText; k: string; v: string; d: string }> =
   {
     Icon: IconCode,
     k: 'DevExpress version',
-    v: '24.1 · 23.2 · 23.1 · 22.2 · 20.1',
+    v: '26.1 · 25.2 · 25.1 · 24.1 · 23.2 · 23.1 · 22.2 · 20.1',
     d: 'The generated markup is targeted at the version you pick, so it opens in the designer you actually have rather than one release ahead of it.',
   },
   {
