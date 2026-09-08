@@ -611,9 +611,31 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
     document.body.classList.add('rp-printing');
     const finish = () => setPrinting(false);
     window.addEventListener('afterprint', finish);
-    const id = window.setTimeout(() => window.print(), 80);
+    let rescue = 0;
+    const id = window.setTimeout(() => {
+      window.print();
+      /*
+       * `afterprint` was the ONLY way out of this state, and it does not fire
+       * everywhere. Anywhere `print()` is a no-op — headless Chrome, a kiosk
+       * build, printing disabled by policy — nothing ever clears `printing`,
+       * and `printing` is what holds `body.rp-printing`, which hides the whole
+       * application. Measured in headless Chrome on 2026-09-08: after Export
+       * PDF the workspace was 0x0 with zero reachable buttons and stayed that
+       * way, so the only escape was a reload — which throws away the report
+       * the user had not saved yet. A one-way door out of an unsaved document
+       * is worth a belt to go with the braces.
+       *
+       * Scheduled from *after* `print()` returns rather than alongside it: the
+       * call blocks until the dialog closes, so by this line the browser has
+       * already snapshotted the document and unmounting the portal cannot
+       * truncate the output. The five seconds are slack for any browser where
+       * that blocking is less absolute than it looks.
+       */
+      rescue = window.setTimeout(finish, 5000);
+    }, 80);
     return () => {
       window.clearTimeout(id);
+      window.clearTimeout(rescue);
       window.removeEventListener('afterprint', finish);
       document.body.classList.remove('rp-printing');
     };
