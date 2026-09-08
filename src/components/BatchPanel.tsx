@@ -234,9 +234,16 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
 
       {notice && <p className="bp-note">{notice}</p>}
 
+      {/* The empty state says "Choose", not "Drop". This panel has no onDrop
+          handler and never has, while the composer above it does — so a reader
+          who had learned that dragging works here was told to try it and got
+          nothing at all, which is the worst of the three possible behaviours.
+          Say what the button does until the panel can take a drop; the PRD
+          lists folder drag-and-drop under "not yet" and this sentence was
+          quietly promising it. */}
       {queue.length === 0 ? (
         <p className="bp-empty">
-          Drop a folder of screenshots, PDFs or existing <code>.repx</code> files here and each one
+          Choose a folder of screenshots, PDFs or existing <code>.repx</code> files and each one
           becomes its own report — one <code>.repx</code> per source document, with the structural
           audit's verdict beside it, downloadable together as a zip.
           <br /><br />
