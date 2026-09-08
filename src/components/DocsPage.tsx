@@ -50,9 +50,10 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
   { id: 'account', n: '03', title: 'Your account', keys: 'account sign in signup register google email password forgot reset sync devices optional' },
   { id: 'upload', n: '04', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan' },
   { id: 'run', n: '05', title: 'Running and refining', keys: 'run generate progress streaming pause stop cancel elapsed read result specification mockup refine change iterate conversation' },
-  // xrchart and xrgauge stay in the index on purpose: neither is written into
-  // the file, and someone searching for them should land on the section that
-  // says so rather than on nothing.
+  // xrchart and xrgauge are searchable because both are now written into the
+  // file — a real XRChart with its series, and a real XRGauge with its value
+  // and range. This comment used to say the opposite, and was left behind by
+  // the work that added them.
   { id: 'controls', n: '06', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrpageinfo pageinfo page numbers xrchart xrgauge chart gauge elements supported' },
   { id: 'repx', n: '07', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download' },
   { id: 'config', n: '08', title: 'Configuration', keys: 'config configure version paper size letter a4 legal header footer rtl model picker unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
@@ -778,13 +779,20 @@ y_top = pageHeight − (baseline + height)`}
                     drawn.
                   </em>
                 </Def>
-                <Def t="Charts and gauges">
-                  Located and sized, and a chart is drawn stylised in the mockup from its type and values —
-                  it is not a charting library and should not be read as data.{' '}
+                <Def t="Charts">
+                  A real <code className="doc-code">XRChart</code> in the file, with a series bound to the
+                  fields the axes name — bar, column, line, area, scatter and pie.{' '}
                   <em className="not-italic text-[color:var(--ink-faint)]">
-                    Forma does not ask for a chart or gauge control by name, so the{' '}
-                    <code className="doc-code">.repx</code> is not guaranteed to carry one. Treat the region
-                    as marked out for you and add the control in the designer.
+                    In the mockup it is drawn stylised from its type and values. That is not a charting
+                    library and should not be read as data; the file carries the control, the picture is an
+                    approximation of it.
+                  </em>
+                </Def>
+                <Def t="Gauges and sparklines">
+                  A dial or a trend line becomes a real <code className="doc-code">XRGauge</code> or{' '}
+                  <code className="doc-code">XRSparkline</code>, carrying its value, range and target.{' '}
+                  <em className="not-italic text-[color:var(--ink-faint)]">
+                    On screen it stays a positioned placeholder — the mockup draws no needle.
                   </em>
                 </Def>
               </dl>

@@ -73,7 +73,13 @@ const SETUP: Array<{ Icon: typeof IconText; k: string; v: string; d: string }> =
     Icon: IconCode,
     k: 'DevExpress version',
     v: '26.1 · 25.2 · 25.1 · 24.1 · 23.2 · 23.1 · 22.2 · 20.1',
-    d: 'The generated markup is targeted at the version you pick, so it opens in the designer you actually have rather than one release ahead of it.',
+    d: 'The generated markup is targeted at the version you pick, so the file matches the designer you actually have. The tag is a label rather than a gate — a report targeting a newer release still opens, and the designer rewrites the version when it saves.',
+  },
+  {
+    Icon: IconLayout,
+    k: 'Report unit',
+    v: 'hundredths of an inch · tenths of a millimetre · pixels',
+    d: 'The measurement system the generated report is written in. Every coordinate in the file, and every conversion behind the preview, goes through this one choice.',
   },
   {
     Icon: IconLayout,
@@ -167,10 +173,17 @@ const CARRIES: Array<{ Icon: typeof IconText; k: string; d: string; mock: Cell; 
   },
   {
     Icon: IconChart,
-    k: 'Charts and gauges',
-    d: 'Located and sized, and a chart is drawn stylised from its type and values — there is no charting library behind the mockup. Forma does not ask for a chart or gauge control by name, so the file is not guaranteed to carry one; the region is marked out for you to place it in the designer.',
+    k: 'Charts',
+    d: 'A real XRChart, with a series bound to the fields the axes name rather than a picture built from labels and rectangles — bar, column, line, area, scatter and pie. The mockup draws it stylised from its type and values, because there is no charting library behind the mockup; the file carries the control.',
     mock: { mark: 'partial', note: 'stylised' },
-    repx: { mark: 'standin', note: 'not requested' },
+    repx: { mark: 'full', note: 'XRChart' },
+  },
+  {
+    Icon: IconGauge,
+    k: 'Gauges and sparklines',
+    d: 'A dial or a trend line in the source becomes a real XRGauge or XRSparkline, with its value, range and target carried through. On screen it stays a positioned placeholder — the mockup draws no needle.',
+    mock: { mark: 'standin', note: 'placeholder' },
+    repx: { mark: 'full', note: 'XRGauge' },
   },
 ];
 
