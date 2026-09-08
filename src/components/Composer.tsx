@@ -22,7 +22,7 @@
  * twice in a row. Owning the ref here would silently break that.
  */
 
-import type { ChangeEventHandler, RefObject } from 'react';
+import { useRef, type ChangeEventHandler, type RefObject } from 'react';
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
 import {
@@ -64,6 +64,8 @@ export interface ComposerProps {
   /** Gates the whole composer. Forma ships no key of its own. */
   hasApiKey: boolean;
   isAnalyzing: boolean;
+  /** A chat turn is in flight. Blocks a second send — see `canSend` below. */
+  isChatting: boolean;
   isIngesting: boolean;
   onAddKey: () => void;
 }
@@ -86,9 +88,49 @@ export default function Composer({
   onFileChange,
   hasApiKey,
   isAnalyzing,
+  isChatting,
   isIngesting,
   onAddKey,
 }: ComposerProps) {
+  /*
+   * One condition, read by the button *and* the keyboard.
+   *
+   * These were two conditions until 2026-09-08, and the second one did not
+   * exist: the button carried `disabled` and the keydown handler on the input
+   * beside it carried nothing, so Enter sent regardless of what was already
+   * running. Pressing it during a generation re-entered `handleGenerate` — a
+   * second run writing to the same progress state and the same abort refs as
+   * the first — and during a chat turn it started a second turn whose history
+   * was built from a `messages` closure captured before the first reply landed.
+   * `handleGenerate` now refuses re-entry as well, but a disabled-looking button
+   * that still fires on Enter is its own defect, so the fix is in both places.
+   *
+   * `isChatting` is new here for the same reason: the button never had it, so a
+   * chat turn in flight left the control fully live.
+   */
+  const canSend = hasApiKey && !isAnalyzing && !isChatting && !isIngesting;
+
+  /*
+   * Sending puts the caret back in the field, and this is not a nicety.
+   *
+   * `.wb-box` draws its ring on `:focus-within`, so clicking the send button
+   * lights the composer because the *button* holds focus. The moment `canSend`
+   * started including `isChatting`, that button began disabling itself while
+   * the request ran — and a disabled element loses focus, which no browser
+   * gives back when it re-enables. The ring went out and the keyboard user was
+   * dropped to the top of the document mid-conversation. Caught by a pixel diff
+   * of two runs that looked identical; nothing else would have found it.
+   *
+   * Moving focus *before* React disables the button is what makes it stick: by
+   * the time the button goes disabled it is no longer the focused element, so
+   * there is nothing to steal. It is also where the next keystroke wants to be.
+   */
+  const promptRef = useRef<HTMLInputElement>(null);
+  const sendAndKeepFocus = () => {
+    onSend();
+    promptRef.current?.focus();
+  };
+
   return (
     <div className="wb-composer">
       {/* Staged intake. The artifact had no slot for these; they are absent
@@ -188,13 +230,20 @@ export default function Composer({
           className="wb-hidden"
         />
         <input
+          ref={promptRef}
           className="wb-line"
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
           /* Enter sends; Shift+Enter is left alone so a multi-line note is
              still possible. preventDefault stops the newline the send would
-             otherwise leave behind in the field. */
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+             otherwise leave behind in the field, and happens either way —
+             suppressing the key is right even when the send is refused. */
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (canSend) onSend();
+            }
+          }}
           disabled={!hasApiKey}
           placeholder={hasApiKey ? 'Describe a change…' : 'Add your API key to start'}
           aria-label="Describe a change"
@@ -205,8 +254,8 @@ export default function Composer({
           /* Wrapped rather than passed bare. `onSend` is `handleGenerate`,
              whose first parameter is an optional prompt override, so handing
              it straight to onClick passes the click event as the prompt. */
-          onClick={() => onSend()}
-          disabled={!hasApiKey || isAnalyzing || isIngesting}
+          onClick={sendAndKeepFocus}
+          disabled={!canSend}
         >
           <IconArrowUp size={15} />
         </button>

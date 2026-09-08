@@ -70,6 +70,28 @@ export interface ChatMessage<R = unknown, M = unknown> {
 }
 
 /**
+ * A transcript id that cannot collide with the one before it.
+ *
+ * The five call sites used to be `Date.now().toString()`, with
+ * `(Date.now() + 1).toString()` wherever two messages were created in the same
+ * handler — a hack whose existence is the evidence that the collision was known
+ * about. Two appends inside one millisecond produced the same id, and every
+ * consumer degrades quietly when they do: React reconciles two rows onto one
+ * key, `markMessageError` marks *both* matching messages rather than the one
+ * that failed, and `truncateFrom` cuts at whichever came first.
+ *
+ * The timestamp is kept in front so ids still sort chronologically and old
+ * saved reports — whose ids are bare timestamps — stay comparable. The counter
+ * is per session, which is all that is needed: ids are React keys and retry
+ * targets, never cross-referenced between reports.
+ */
+let messageSeq = 0;
+export function nextMessageId(): string {
+  messageSeq += 1;
+  return `${Date.now()}-${messageSeq}`;
+}
+
+/**
  * Does this turn go to report generation rather than to a chat reply?
  *
  * An attachment — a page image, or text lifted out of a PDF or `.repx` — is an

@@ -3,6 +3,7 @@ import {
   buildChatHistory,
   isGenerationTurn,
   markMessageError,
+  nextMessageId,
   noteCountLabel,
   truncateFrom,
   type ChatMessage,
@@ -13,6 +14,22 @@ const msg = (over: Partial<ChatMessage> & { id: string }): ChatMessage => ({
   role: 'user',
   text: '',
   ...over,
+});
+
+describe('nextMessageId', () => {
+  // The whole point. Date.now() twice in one tick returned one id, and the
+  // `(Date.now() + 1)` at the sites that appended two messages was the previous
+  // answer to it.
+  it('never repeats, even called in a tight loop within one millisecond', () => {
+    const ids = Array.from({ length: 500 }, () => nextMessageId());
+    expect(new Set(ids).size).toBe(500);
+  });
+
+  it('keeps the timestamp in front, so ids still sort chronologically', () => {
+    const id = nextMessageId();
+    expect(id).toMatch(/^\d{13}-\d+$/);
+    expect(Number(id.split('-')[0])).toBeGreaterThan(1_600_000_000_000);
+  });
 });
 
 describe('isGenerationTurn', () => {

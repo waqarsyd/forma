@@ -191,6 +191,7 @@ import {
   buildChatHistory,
   isGenerationTurn,
   markMessageError,
+  nextMessageId,
   noteCountLabel,
   truncateFrom,
   type ChatMessage as ChatSessionMessage,
@@ -2937,7 +2938,7 @@ export default function App() {
 
       // Add assistant message
       const newAssistantMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: nextMessageId(),
         role: 'assistant',
         text: copy.assistant(Boolean(currentPrompt)),
         result: newResult
@@ -3022,7 +3023,7 @@ export default function App() {
 
     // Add a system message that generation was stopped
     setMessages(prev => [...prev, {
-      id: Date.now().toString(),
+      id: nextMessageId(),
       role: 'assistant',
       text: 'Generation stopped by user.'
     }]);
@@ -3050,6 +3051,23 @@ export default function App() {
    * or the click event arrives as the prompt.
    */
   const handleGenerate = async (overridePrompt?: string) => {
+    /*
+     * Refuse re-entry while a request is already in flight.
+     *
+     * `handleRetryMessage` has always had this guard and this function never
+     * did, which is the asymmetry that gave it away. The composer's button was
+     * disabled during a generation, so the only way in was the keyboard — Enter
+     * fires the keydown handler on the input, which knew nothing about the
+     * button's state. A second generation overwrites `activePromptRef` and the
+     * progress state the first one is still writing to; a second chat turn is
+     * built from a `messages` closure captured before the first reply landed, so
+     * the model is sent a conversation that is missing a turn.
+     *
+     * The composer refuses it too, so the control agrees with the behaviour, but
+     * this is the guard that makes it true regardless of who calls.
+     */
+    if (isChatting || isAnalyzing) return;
+
     const promptText = overridePrompt ?? prompt;
 
     if (previews.length === 0 && attachmentTexts.length === 0 && !promptText) {
@@ -3072,7 +3090,7 @@ export default function App() {
 
     // Add user message
     const newUserMsg: ChatMessage = {
-      id: Date.now().toString(),
+      id: nextMessageId(),
       role: 'user',
       text: currentPrompt, // Only use the prompt the user actually typed
       images: currentPreviews.length > 0 ? currentPreviews : undefined,
@@ -3107,7 +3125,7 @@ export default function App() {
 
         if (!outcome.wantsReport) {
           setMessages(prev => [...prev, {
-            id: (Date.now() + 1).toString(),
+            id: nextMessageId(),
             role: 'assistant',
             text: outcome.reply,
           }]);
@@ -3117,7 +3135,7 @@ export default function App() {
         // The user does want a report built from their description — fall
         // through to generation below, after acknowledging.
         setMessages(prev => [...prev, {
-          id: (Date.now() + 1).toString(),
+          id: nextMessageId(),
           role: 'assistant',
           text: outcome.reply,
         }]);
@@ -3861,6 +3879,7 @@ export default function App() {
             onFileChange={handleFileChange}
             hasApiKey={hasApiKey}
             isAnalyzing={isAnalyzing}
+            isChatting={isChatting}
             isIngesting={isIngesting}
             onAddKey={() => setIsConfigOpen(true)}
           />

@@ -19,7 +19,7 @@
  * exactly what the tests want.
  */
 
-import type { ReactNode } from 'react';
+import { memo, useCallback, useRef, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import type { ChatMessage } from '../lib/chatSession';
 
@@ -44,6 +44,86 @@ export interface ChatThreadProps<R> {
   children?: ReactNode;
 }
 
+/**
+ * One note in the column, memoised on the message it draws.
+ *
+ * Measured 2026-09-08 before this existed: typing 22 characters into the
+ * composer with six notes on screen re-rendered every note on every keystroke —
+ * 264 note renders for one sentence, and each note holding images re-ran
+ * `groupAttachments` each time. The transcript is a child of `App.tsx`, which
+ * owns the composer's `prompt` state, so every keystroke re-rendered the lot.
+ *
+ * Messages are immutable — a new object only when something actually changes —
+ * so identity is the right comparison and no custom comparator is needed.
+ */
+const ChatNote = memo(function ChatNote<R>({
+  message,
+  retryDisabled,
+  onRetry,
+  onOpenAttachment,
+}: {
+  message: ChatMessage<R, PreviewMeta>;
+  retryDisabled: boolean;
+  onRetry: (id: string) => void;
+  onOpenAttachment: (view: AttachmentView) => void;
+}) {
+  return (
+    <article className={`wb-note${message.role === 'user' ? ' wb-note--me' : ''}`}>
+      <span className="wb-spine" />
+      <div>
+        <div className="wb-who">{message.role === 'user' ? 'You' : 'Forma'}</div>
+        {message.text && <p>{message.text}</p>}
+
+        {message.images && message.images.length > 0 && (
+          // Sent messages showed a count and nothing else, so once a
+          // message was on the transcript there was no way to check
+          // what had gone with it. Names are not kept on a message —
+          // `ChatMessage.images` is data URLs only, and a saved report
+          // reloads with just those — so the picture is the label.
+          <div className="wb-attach-strip">
+            {groupAttachments(message.imageMeta ?? [], message.images.length).map((group) => {
+              const label = groupLabel(group);
+              const srcs = group.indices.map((i) => message.images![i]);
+              return (
+                <button
+                  key={`${group.file}-${group.indices[0]}`}
+                  type="button"
+                  className="wb-attach-shot"
+                  onClick={() => onOpenAttachment({ srcs, index: 0, file: group.file })}
+                  title={`View ${label}`}
+                  aria-label={`View ${label}`}
+                >
+                  <img src={srcs[0]} alt="" />
+                  {group.pages > 1 && <span className="wb-attach-pages">{group.pages}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* The failure belongs beside the turn that failed. */}
+        {message.error && (
+          <p role="alert" style={{ color: 'var(--bad-ink)' }}>
+            {message.error}{' '}
+            <button
+              className="wb-pill wb-pill--outline"
+              onClick={() => onRetry(message.id)}
+              disabled={retryDisabled}
+            >
+              Try again
+            </button>
+          </p>
+        )}
+      </div>
+    </article>
+  );
+}) as <R>(props: {
+  message: ChatMessage<R, PreviewMeta>;
+  retryDisabled: boolean;
+  onRetry: (id: string) => void;
+  onOpenAttachment: (view: AttachmentView) => void;
+}) => React.ReactElement;
+
 export default function ChatThread<R>({
   messages,
   isChatting,
@@ -53,57 +133,36 @@ export default function ChatThread<R>({
   onOpenAttachment,
   children,
 }: ChatThreadProps<R>) {
+  /*
+   * Stable dispatchers, so memoising `ChatNote` is not defeated by the callback
+   * identities changing on every render of `App.tsx`.
+   *
+   * The tempting shortcut — a custom `memo` comparator that ignores the
+   * functions — is a bug: the note would keep the *first* `onRetry` it was
+   * given, whose closure holds the transcript as it was then, and a retry would
+   * act on stale messages. Reading through a ref keeps the callbacks stable in
+   * identity while always calling the current one.
+   */
+  const latest = useRef({ onRetry, onOpenAttachment });
+  latest.current = { onRetry, onOpenAttachment };
+  const retry = useCallback((id: string) => latest.current.onRetry(id), []);
+  const openAttachment = useCallback(
+    (view: AttachmentView) => latest.current.onOpenAttachment(view),
+    []
+  );
+
+  const retryDisabled = isChatting || isAnalyzing;
+
   return (
     <div className="wb-thread">
       {messages.map((msg) => (
-        <article key={msg.id} className={`wb-note${msg.role === 'user' ? ' wb-note--me' : ''}`}>
-          <span className="wb-spine" />
-          <div>
-            <div className="wb-who">{msg.role === 'user' ? 'You' : 'Forma'}</div>
-            {msg.text && <p>{msg.text}</p>}
-
-            {msg.images && msg.images.length > 0 && (
-              // Sent messages showed a count and nothing else, so once a
-              // message was on the transcript there was no way to check
-              // what had gone with it. Names are not kept on a message —
-              // `ChatMessage.images` is data URLs only, and a saved report
-              // reloads with just those — so the picture is the label.
-              <div className="wb-attach-strip">
-                {groupAttachments(msg.imageMeta ?? [], msg.images.length).map((group) => {
-                  const label = groupLabel(group);
-                  const srcs = group.indices.map((i) => msg.images![i]);
-                  return (
-                    <button
-                      key={`${group.file}-${group.indices[0]}`}
-                      type="button"
-                      className="wb-attach-shot"
-                      onClick={() => onOpenAttachment({ srcs, index: 0, file: group.file })}
-                      title={`View ${label}`}
-                      aria-label={`View ${label}`}
-                    >
-                      <img src={srcs[0]} alt="" />
-                      {group.pages > 1 && <span className="wb-attach-pages">{group.pages}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* The failure belongs beside the turn that failed. */}
-            {msg.error && (
-              <p role="alert" style={{ color: 'var(--bad-ink)' }}>
-                {msg.error}{' '}
-                <button
-                  className="wb-pill wb-pill--outline"
-                  onClick={() => onRetry(msg.id)}
-                  disabled={isChatting || isAnalyzing}
-                >
-                  Try again
-                </button>
-              </p>
-            )}
-          </div>
-        </article>
+        <ChatNote
+          key={msg.id}
+          message={msg}
+          retryDisabled={retryDisabled}
+          onRetry={retry}
+          onOpenAttachment={openAttachment}
+        />
       ))}
 
       {/* `!isAnalyzing` is not redundant. A message the assistant judges to be a

@@ -19,10 +19,10 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,226 tests in 57 files** — under the `node` environment
+`npm test` runs Vitest over **1,240 tests in 57 files** — under the `node` environment
 by default, with the ten files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
-tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eight fail in a way
+tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those ten fail in a way
 that looks like a broken install.
 
 They cover the pure helpers in `src/lib`, the config-persistence allowlist in
@@ -46,9 +46,21 @@ a widening of the coverage scope. And the first two **component** tests exist, o
 `DataBinding` and `BatchPanel`, using `@testing-library/react` (a devDependency, so no
 bundle cost) with `// @vitest-environment jsdom` on line 1 like every other DOM file.
 
-**Everything else is still unenforced**: `App.tsx` is several thousand lines and the
-two extractions are perhaps sixty of them, no other component has a render test, and
-`ReportPreview` has none because its portal, `ResizeObserver` and `window.print` are
+**The chat was unpicked out of `App.tsx` over 2026-09-07 and 08**, in three commits, and
+took the component count to four: `lib/chatSession` holds the transcript rules,
+`ChatThread` draws it, `Composer` is the box you type in. **The order is the part worth
+copying** — each component's render tests were written and passing *before* `App.tsx` was
+switched over to it, because an extract-then-check is unverified by construction, and
+that is the order that produced the bug `DataBinding` was added after. Each was then
+mutated to confirm the tests could actually fail, and each swap was checked against the
+running app by pixel-comparing screenshots with the run before it. Two real defects fell
+out of doing it that way rather than out of the suite: Enter bypassed the send button's
+`disabled` entirely, re-entering `handleGenerate` mid-request, and clicking send dropped
+keyboard focus because the button disables under itself.
+
+**Everything else is still unenforced**: `App.tsx` is several thousand lines and what has
+been extracted is a small fraction of them, most components still have no render test,
+and `ReportPreview` has none because its portal, `ResizeObserver` and `window.print` are
 browser behaviour rather than logic — the `run-forma` skill drives those instead.
 Where the documentation calls something an invariant and it is not in one of these
 files, you check it by hand or it ships broken.
@@ -61,8 +73,8 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | File | Tests | |
 |---|---:|---|
 | `components/BatchPanel` | 10 | jsdom |
-| `components/ChatThread` | 19 | jsdom |
-| `components/Composer` | 24 | jsdom |
+| `components/ChatThread` | 22 | jsdom |
+| `components/Composer` | 33 | jsdom, 8 from one loop |
 | `components/DataBinding` | 15 | jsdom |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
@@ -71,7 +83,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/attachmentParts` | 14 | 6 from one loop |
 | `lib/attachments` | 9 |  |
 | `lib/batchQueue` | 24 |  |
-| `lib/chatSession` | 19 |  |
+| `lib/chatSession` | 21 |  |
 | `lib/contactSubmit` | 6 |  |
 | `lib/dataSource` | 29 |  |
 | `lib/datetime` | 12 |  |
@@ -118,7 +130,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/keyVault` | 21 | jsdom |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,226 in 57 files** — and that total is the arithmetic sum of the column above
+**Total: 1,240 in 57 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -132,19 +144,26 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,204** against a real 1,226 and will talk you into
-"correcting" numbers that were already right. **Five** files generate cases from a loop,
+A grep for `\bit(` answers **1,212** against a real 1,240 and will talk you into
+"correcting" numbers that were already right. **Six** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 22 from
 one `it(` over split points, `designerBridge` eight of its 33 over Windows reserved
 device names, `attachmentParts` six of its fourteen over malformed data URLs,
-`legalDisclosure` three of its nine over the disclosure table, and `analysisResponse`
-four of its sixteen from **two** `it(` sharing one loop over stop reasons — which is the
-shape the other four do not have.
+`legalDisclosure` three of its nine over the disclosure table, `Composer` eight of its 33
+from **two** `it(` sharing one loop over the four conditions that must block a send, and
+`analysisResponse` four of its sixteen from **two** `it(` sharing one loop over stop
+reasons — the shape `Composer` now also has.
 
-**The 22-test shortfall is a constant, not a coincidence.** `reportPreview`,
-`dataSource` and `repxEdit` each add as many tests as they have `it(` calls, so both
-totals move together and the gap stays at 22. **A change in the *gap* is the signal
-worth reading** — it means a loop was added or removed.
+**The shortfall is a constant, not a coincidence** — every other file adds as many tests
+as it has `it(` calls, so both totals move together. **A change in the *gap* is the
+signal worth reading**: it means a loop was added or removed, and nothing else does it.
+
+**It was 22 from the split until 2026-09-08, and it is 28 now.** `Composer`'s loop is
+what moved it — one `for` over four blocking conditions, each asserting both that Enter
+is refused and that the button is disabled, so two `it(` calls became eight tests and the
+gap grew by six. That is the mechanism working as designed rather than a discrepancy to
+hunt: the number changed because a loop was genuinely added, which is exactly what this
+paragraph exists to let you conclude in one step.
 
 Two ways the arithmetic goes wrong:
 

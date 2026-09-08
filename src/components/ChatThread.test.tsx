@@ -188,6 +188,75 @@ describe('a turn that failed', () => {
   });
 });
 
+/*
+ * The note rows are memoised, because typing in the composer re-rendered every
+ * one of them on every keystroke — measured at 264 note renders for a 22
+ * character sentence with six notes on screen. Memoising introduces exactly one
+ * hazard, and this is it: a row that skips re-rendering must not also freeze the
+ * callback it was first handed, or a retry acts on the transcript as it was
+ * when that row was created. The component reads its callbacks through a ref to
+ * avoid that; this proves the ref works rather than trusting it.
+ */
+describe('memoised rows still call the current callbacks', () => {
+  it('retries through the newest handler, not the one it first received', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const messages = [msg({ id: '1', text: 'do it', error: 'failed' })];
+
+    const { rerender } = render(
+      <ChatThread
+        messages={messages}
+        isChatting={false}
+        isAnalyzing={false}
+        streamingReply=""
+        onRetry={first}
+        onOpenAttachment={vi.fn()}
+      />
+    );
+
+    // Same message objects, new callback — exactly what a re-render of App.tsx
+    // produces when only the composer's prompt changed.
+    rerender(
+      <ChatThread
+        messages={messages}
+        isChatting={false}
+        isAnalyzing={false}
+        streamingReply=""
+        onRetry={second}
+        onOpenAttachment={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledWith('1');
+  });
+
+  it('opens an attachment through the newest handler too', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const messages = [msg({ id: '1', images: ['data:image/png;base64,A'] })];
+    const props = { messages, isChatting: false, isAnalyzing: false, streamingReply: '', onRetry: vi.fn() };
+
+    const { rerender } = render(<ChatThread {...props} onOpenAttachment={first} />);
+    rerender(<ChatThread {...props} onOpenAttachment={second} />);
+
+    fireEvent.click(document.querySelector('.wb-attach-shot')!);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('redraws a row when its own message changes', () => {
+    const props = { isChatting: false, isAnalyzing: false, streamingReply: '', onRetry: vi.fn(), onOpenAttachment: vi.fn() };
+    const { rerender } = render(<ChatThread {...props} messages={[msg({ id: '1', text: 'before' })]} />);
+    expect(screen.getByText('before')).toBeTruthy();
+
+    rerender(<ChatThread {...props} messages={[msg({ id: '1', text: 'after' })]} />);
+    expect(screen.getByText('after')).toBeTruthy();
+    expect(screen.queryByText('before')).toBeNull();
+  });
+});
+
 describe('the reply being written', () => {
   it('says it is thinking before the first token arrives', () => {
     draw({ isChatting: true });

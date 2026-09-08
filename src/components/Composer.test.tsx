@@ -45,6 +45,7 @@ const draw = (props: Partial<React.ComponentProps<typeof Composer>> = {}) =>
       onFileChange={vi.fn()}
       hasApiKey
       isAnalyzing={false}
+      isChatting={false}
       isIngesting={false}
       onAddKey={vi.fn()}
       {...props}
@@ -76,6 +77,18 @@ describe('sending', () => {
     expect(onSend).toHaveBeenCalledWith();
   });
 
+  /*
+   * `.wb-box` rings on :focus-within, so a click leaves the *button* focused —
+   * and `canSend` disables that button while the request runs, which drops
+   * focus to the document and never returns it. Found by pixel-diffing two runs
+   * that looked identical to the eye.
+   */
+  it('puts the caret back in the field after a click, so focus is not lost when the button disables', () => {
+    draw();
+    fireEvent.click(send());
+    expect(document.activeElement).toBe(field());
+  });
+
   it('sends on Enter', () => {
     const onSend = vi.fn();
     draw({ onSend });
@@ -105,6 +118,37 @@ describe('sending', () => {
     fireEvent.change(field(), { target: { value: 'move the title' } });
     expect(onPromptChange).toHaveBeenCalledWith('move the title');
   });
+});
+
+/*
+ * The button's `disabled` stops a click and does nothing at all about the
+ * keyboard, because the keydown handler is on the input beside it. Every one of
+ * these was reachable by pressing Enter while a request was already running,
+ * which re-entered handleGenerate: a second generation writing to the same
+ * progress state and the same refs as the first, or a second chat turn built
+ * from a `messages` closure captured before the first one's reply landed.
+ */
+describe('Enter respects the same conditions as the button', () => {
+  const cases: Array<[string, Partial<React.ComponentProps<typeof Composer>>]> = [
+    ['a generation is running', { isAnalyzing: true }],
+    ['a chat turn is running', { isChatting: true }],
+    ['an upload is still being read', { isIngesting: true }],
+    ['there is no key', { hasApiKey: false }],
+  ];
+
+  for (const [what, props] of cases) {
+    it(`does not send on Enter while ${what}`, () => {
+      const onSend = vi.fn();
+      draw({ ...props, onSend });
+      fireEvent.keyDown(field(), { key: 'Enter' });
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    it(`disables the button while ${what}`, () => {
+      draw(props);
+      expect(send().disabled).toBe(true);
+    });
+  }
 });
 
 describe('when sending is not possible', () => {
