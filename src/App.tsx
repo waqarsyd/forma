@@ -3804,7 +3804,16 @@ export default function App() {
         {/* ------------------------------------------------ current session */}
         <div className={`wb-panel-body${railPanel === 'review' ? '' : ' wb-hidden'}`}>
           <div className="wb-col-head">
-            <span className="wb-col-title">Review</span>
+            {/* `h2`, not a styled span. These four panel titles are the only
+                structure the workspace has below the report's `h1`, and a
+                screen-reader user navigating by heading found exactly one
+                landmark on the whole page — measured 2026-09-08 by walking the
+                rendered DOM, not by reading the markup. `.wb-col-title` states
+                its own font, weight and size and Tailwind's preflight zeroes
+                heading margins, so the element renders identically: semantics
+                with no visual change. Only one panel is in the layout at a
+                time; the others are `wb-hidden`, so no reader meets four. */}
+            <h2 className="wb-col-title">Review</h2>
             <span className="wb-kicker">{noteCountLabel(messages.length)}</span>
           </div>
 
@@ -3938,7 +3947,7 @@ export default function App() {
               input, so it looked like a capability and was not one. */}
           <div className={`wb-panel-body${railPanel === 'projects' ? '' : ' wb-hidden'}`}>
             <div className="wb-col-head">
-              <span className="wb-col-title">Projects</span>
+              <h2 className="wb-col-title">Projects</h2>
               {/* Two-step, in place. A native confirm() is the one thing this app
                   does not do — see the save notice — and "clear all" wiping every
                   saved project on a single stray click is exactly the case a
@@ -4015,7 +4024,7 @@ export default function App() {
         {/* -------------------------------------------------------- recent */}
         <div className={`wb-panel-body${railPanel === 'revisions' ? '' : ' wb-hidden'}`}>
           <div className="wb-col-head">
-            <span className="wb-col-title">Revisions</span>
+            <h2 className="wb-col-title">Revisions</h2>
             {revisions.length > 0 && (
               <span className="wb-kicker">
                 {revisions.length === 1 ? '1 version' : `${revisions.length} versions`}
@@ -4051,7 +4060,7 @@ export default function App() {
 
         <div className={`wb-panel-body${railPanel === 'batch' ? '' : ' wb-hidden'}`}>
           <div className="wb-col-head">
-            <span className="wb-col-title">Batch</span>
+            <h2 className="wb-col-title">Batch</h2>
           </div>
           <div style={{ padding: '0 16px 16px', flex: 1, minHeight: 0, display: 'flex' }}>
             <Suspense fallback={null}>
