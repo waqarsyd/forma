@@ -3283,6 +3283,13 @@ export default function App() {
    * difference is that an undiscoverable capability is its own failure.
    */
   const [designerReady, setDesignerReady] = useState(false);
+  /**
+   * Is there anything for the designer to open yet?
+   *
+   * A boolean rather than `result?.repxContent` itself, so the probe runs when
+   * the first report arrives and not again on every edit to its XML.
+   */
+  const hasRepxToOpen = Boolean(result?.repxContent);
   /** True while a `forma-repx://` launch is being waited on — a cold start is slow. */
   const [designerStarting, setDesignerStarting] = useState(false);
   useEffect(() => {
@@ -3296,7 +3303,15 @@ export default function App() {
     //
     // The button this feeds lives in the workspace, so nothing is lost: the
     // ping now happens when there is something for it to enable.
-    if (!showWorkspace) return;
+    //
+    // Narrowed again on 2026-09-08, by the same argument one step further. The
+    // workspace opens empty, and the button is disabled until a report has XML
+    // to open — so probing before then answers a question nothing is asking,
+    // and spends the one console line a visitor without the companion gets.
+    // Nothing degrades while unprobed: `designerReady` picks the tooltip and
+    // decides whether a click sends to a running designer or launches one, and
+    // `false` takes the launch path, which is the correct fallback regardless.
+    if (!showWorkspace || !hasRepxToOpen) return;
 
     let cancelled = false;
     let lastCheckedAt: number | null = null;
@@ -3329,7 +3344,7 @@ export default function App() {
       cancelled = true;
       window.removeEventListener('focus', checkOnFocus);
     };
-  }, [showWorkspace]);
+  }, [showWorkspace, hasRepxToOpen]);
 
   /**
    * Warm the lazy marketing chunks once the page is idle.
