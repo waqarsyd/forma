@@ -72,12 +72,35 @@ const messageFor = (error: unknown) => {
   return (code && AUTH_MESSAGES[code]) || 'That did not work. Please try again.';
 };
 
-const LABEL =
-  'font-code-sm text-[10px] font-medium leading-[1.62] tracking-[0.12em] uppercase text-[color:var(--ink-faint)]';
-const FIELD =
-  'u-transition h-[42px] w-full rounded-[10px] border border-outline-variant bg-surface-container-low px-3.5 font-body-lg text-[14px] leading-[normal] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:border-secondary focus:outline-none focus:ring-4 focus:ring-[color:var(--accent-wash)] disabled:opacity-60';
-const PILL =
-  'u-transition u-press u-focus-ring inline-flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2 font-body-lg text-[13.5px] font-semibold disabled:cursor-not-allowed disabled:opacity-50';
+/*
+ * The workspace's own form classes, not a second set written in Tailwind.
+ *
+ * This dialog opens inside the workspace shell and shares its modal chrome —
+ * its header and footer already used `.wb-pill` — but its body carried a
+ * private label/field/button system borrowed from the marketing pages. Two
+ * things came of that, and the first is a bug rather than a difference in
+ * taste.
+ *
+ * **The fields drew two borders when focused.** `.wb-root :focus-visible` gives
+ * every focusable thing in the workspace a `2px solid var(--accent)` outline at
+ * `2px` offset. The Tailwind field answered with its own `focus:border-secondary`
+ * *and* a `focus:ring-4`, and its `focus:outline-none` could not remove the
+ * workspace's outline: both selectors are one class plus one pseudo-class, so
+ * they tie on specificity and source order decides. The result was three focus
+ * treatments stacked, read as a doubled border. `.wb-ctl` has no such problem —
+ * `.wb-ctl:focus` sets `outline: none` and recolours the one border it has,
+ * which is what every other field in the workspace does.
+ *
+ * **And the buttons were half again too big**: measured 47px tall at 13.5px/600
+ * against the workspace's 30px at 11px/500, inside a dialog whose own Close
+ * button was already the smaller one.
+ *
+ * `.wb-lbl` carries its own `margin-bottom`, so the `mt-1.5` spacers that used
+ * to sit on each field are gone with it rather than doubling the gap.
+ */
+const LABEL = 'wb-lbl';
+const FIELD = 'wb-ctl';
+const PILL = 'wb-pill';
 
 export default function AccountDialog({
   user,
@@ -302,7 +325,7 @@ export default function AccountDialog({
                     type="button"
                     onClick={saveName}
                     disabled={busy !== null || nameTooShort || nameUnchanged}
-                    className={`${PILL} shrink-0 border border-outline-variant text-on-surface hover:border-secondary hover:text-secondary`}
+                    className={`${PILL} wb-pill--outline shrink-0`}
                   >
                     {busy === 'name' ? 'Saving…' : 'Save'}
                   </button>
@@ -325,7 +348,7 @@ export default function AccountDialog({
                   <input
                     id="acct-current"
                     type="password"
-                    className={`${FIELD} mt-1.5`}
+                    className={FIELD}
                     value={passwordForChange}
                     onChange={(e) => setPasswordForChange(e.target.value)}
                     autoComplete="current-password"
@@ -336,7 +359,7 @@ export default function AccountDialog({
                   <input
                     id="acct-next"
                     type="password"
-                    className={`${FIELD} mt-1.5`}
+                    className={FIELD}
                     value={nextPassword}
                     onChange={(e) => setNextPassword(e.target.value)}
                     placeholder="At least 6 characters"
@@ -352,7 +375,7 @@ export default function AccountDialog({
                   <input
                     id="acct-next-confirm"
                     type="password"
-                    className={`${FIELD} mt-1.5`}
+                    className={FIELD}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Type it again"
@@ -369,7 +392,7 @@ export default function AccountDialog({
                     type="button"
                     onClick={savePassword}
                     disabled={busy !== null || !canChangePassword}
-                    className={`${PILL} border border-outline-variant text-on-surface hover:border-secondary hover:text-secondary`}
+                    className={`${PILL} wb-pill--outline`}
                   >
                     {busy === 'password' ? 'Changing…' : 'Change password'}
                   </button>
@@ -389,7 +412,7 @@ export default function AccountDialog({
                   <input
                     id="acct-email"
                     type="email"
-                    className={`${FIELD} mt-1.5`}
+                    className={FIELD}
                     value={newEmail}
                     onChange={(e) => setNewEmail(e.target.value)}
                     placeholder="name@company.com"
@@ -407,7 +430,7 @@ export default function AccountDialog({
                   <input
                     id="acct-email-pass"
                     type="password"
-                    className={`${FIELD} mt-1.5`}
+                    className={FIELD}
                     value={passwordForEmail}
                     onChange={(e) => setPasswordForEmail(e.target.value)}
                     autoComplete="current-password"
@@ -425,7 +448,7 @@ export default function AccountDialog({
                     type="button"
                     onClick={saveEmail}
                     disabled={busy !== null || !newEmail.trim() || !passwordForEmail}
-                    className={`${PILL} border border-outline-variant text-on-surface hover:border-secondary hover:text-secondary`}
+                    className={`${PILL} wb-pill--outline`}
                   >
                     {busy === 'email' ? 'Sending…' : 'Send confirmation'}
                   </button>
@@ -454,7 +477,7 @@ export default function AccountDialog({
                   <input
                     id="acct-confirm-pass"
                     type="password"
-                    className={`${FIELD} mt-1.5`}
+                    className={FIELD}
                     value={passwordForDelete}
                     onChange={(e) => setPasswordForDelete(e.target.value)}
                     autoComplete="current-password"
@@ -468,7 +491,7 @@ export default function AccountDialog({
                 </label>
                 <input
                   id="acct-confirm"
-                  className={`${FIELD} mt-1.5`}
+                  className={FIELD}
                   value={confirmText}
                   onChange={(e) => setConfirmText(e.target.value)}
                   placeholder="DELETE"
@@ -482,7 +505,12 @@ export default function AccountDialog({
                   type="button"
                   onClick={removeAccount}
                   disabled={busy !== null || confirmText !== 'DELETE' || (withPassword && !passwordForDelete)}
-                  className={`${PILL} border border-error/50 bg-error/[0.07] text-error hover:bg-error/[0.12]`}
+                  /* `.wb-pill--danger`, not `.wb-pill` plus Tailwind's error
+                     colours: the pill declares its own colour, background and
+                     border, and workspace.css loads after the utilities, so it
+                     wins and the button renders as bare text. See the rule's
+                     own comment in workspace.css. */
+                  className={`${PILL} wb-pill--danger`}
                 >
                   <IconTrash size={14} />
                   {busy === 'delete' ? 'Deleting…' : 'Delete my account'}

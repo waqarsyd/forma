@@ -46,6 +46,11 @@ So a new sheet-styled surface takes `class="sheet"`; the six marketing pages kee
 
 **`@import "./workspace.css"` sits immediately after `@import "tailwindcss"`, and the order is load-bearing.** Those rules are plain CSS rather than utilities, so they are unlayered and would otherwise lose to preflight on the properties preflight resets — which is exactly the class of collision the PREFLIGHT COMPENSATION block ([`app-shell.md`](app-shell.md)) exists to handle for the cases importing late cannot fix.
 
+**That ordering has a consequence worth stating outright: inside the workspace, a `wb-` class beats a Tailwind utility for the same property.** Both are one class, so they tie on specificity and the later sheet wins — and `workspace.css` is the later sheet. Two ways that has bitten, both silent:
+
+- **`.wb-pill` cannot be recoloured with `text-error bg-error`.** It declares `color`, `background` and `border-color` itself, so the utilities do nothing and the button renders as bare text. Give the pill a variant in `workspace.css` instead; `.wb-pill--danger` exists for exactly this reason.
+- **`focus:outline-none` cannot remove the workspace's focus ring.** `.wb-root :focus-visible` draws `2px solid var(--accent)` at `2px` offset on every focusable descendant, and a Tailwind field that adds its own focus border and `ring-4` on top ends up with three treatments stacked — which is what made the account dialog's fields look doubly bordered. Use `.wb-ctl`, whose `:focus` sets `outline: none` and recolours its single border. Recorded in [`app-shell.md`](app-shell.md).
+
 A `.landing sub` rule undoes Tailwind's preflight, which rewrites `<sub>` to `position: relative; line-height: 0` so it no longer grows the line box.
 
 **Do not use `text-body-lg` (or any `--text-*` token) as the base size on a surface being matched to a design.** Those tokens carry a *fixed pixel* line-height — `--text-body-lg--line-height: 24px` — and line-height inherits, so every descendant that does not set `leading-` explicitly gets 24px regardless of its own font size. The landing root uses `text-[16px] leading-[1.62]` instead, a unitless value that scales per element as the source does. This single line was worth ~25px of cumulative drift down the page and its absence is invisible until you measure.

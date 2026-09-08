@@ -747,6 +747,19 @@
 .wb-pill--accent:hover { background: var(--accent-deep); color: var(--on-accent); }
 .wb-pill--outline { border-color: var(--rule-strong); }
 .wb-pill--round { width: 34px; height: 34px; padding: 0; justify-content: center; }
+
+/* The one destructive button in the app: "Delete my account".
+   Added 2026-09-08 rather than composing `.wb-pill` with Tailwind's `text-error`
+   and `bg-error`, which does not work and fails silently. `.wb-pill` declares
+   `color`, `background` and `border-color` itself, and workspace.css loads after
+   the utilities — same specificity, later source, so the pill wins and the
+   button renders as bare text with no fill or border. That is what it looked
+   like for exactly one screenshot.
+   Uses the sheet's own danger tokens, which is why this belongs here and not in
+   a className: --bad-ink, --bad-line and --bad-wash already exist for the audit
+   chip and the delete confirmations in the rail. */
+.wb-pill--danger { border-color: var(--bad-line); background: var(--bad-wash); color: var(--bad-ink); }
+.wb-pill--danger:hover { background: var(--bad-line); color: var(--bad-ink); }
 .wb-hint { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--ink-faint); }
 
 /* The key's fine print. Two lines at 9.5px so both fit without wrapping in a
