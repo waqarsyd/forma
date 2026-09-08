@@ -16,8 +16,24 @@
 # The whole `checks` job takes well under two minutes, which is the argument for
 # running it on every push rather than nightly.
 #
-# NOTE: this repository has no remote as of 2026-08-27, so nothing here has ever
-# executed. It is written to be correct on the day one is added, not before.
+# It first executed on 2026-09-09, on the initial push to GitHub, and both jobs
+# passed unchanged -- which is the only real test of a workflow written eleven
+# days before there was a remote to run it on. That run was also the first time
+# this project had been installed, built and tested on Linux rather than on the
+# Windows machine it is developed on, and nothing platform-specific surfaced.
+#
+# ON THE ACTION VERSIONS BELOW
+#
+# That first run passed but emitted deprecation warnings: checkout, setup-node
+# and setup-java were all on majors targeting Node 20, which the runners now
+# force onto Node 24, and setup-java v4 is explicitly no longer maintained.
+# Bumped to the current majors the same day, each checked against its release
+# notes rather than taken on faith -- setup-node v7 drops a dummy NODE_AUTH_TOKEN
+# export, which nothing here uses because nothing publishes to a registry, and
+# setup-java v6 removes the legacy `adopt` distributions, which is why the pin
+# below is `temurin`. Neither affects this file. Majors are pinned rather than
+# floated: a moving tag means a green run today and a red one tomorrow for a
+# reason found in no commit here.
 
 name: checks
 
@@ -32,12 +48,12 @@ jobs:
     name: lint, types, encoding, tests, build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Node 20, 22 and >=24 only: vitest declares ^20 || ^22 || >=24, so the
       # odd lines 21 and 23 are outside the supported range despite being newer
       # than 20. Pinned to the version the project is developed against.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -91,16 +107,16 @@ jobs:
     name: firestore rules
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
 
       # The Firestore emulator is a JVM process. A runtime is enough -- no JDK
       # is required, which is also how it is installed on the dev machine.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'

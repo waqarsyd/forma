@@ -10,8 +10,6 @@ Turn a screenshot, a PDF, or an existing report into a real DevExpress `.repx` f
 
 [![checks](https://img.shields.io/github/actions/workflow/status/waqarsyd/forma/checks.yml?branch=main&label=checks)](https://github.com/waqarsyd/forma/actions)
 
-<sup>The checks badge reads "no status" until CI runs for the first time, which is the first push — [`.github/workflows/checks.yml`](.github/workflows/checks.yml) exists and has never executed, because until now there was no remote to execute it on.</sup>
-
 Upload a design — a mockup, a scanned invoice, a photo of a printout, or a `.repx` you already have — and Forma returns three things in one pass:
 
 - a **markdown specification** of the layout,
@@ -569,7 +567,7 @@ Two differences from `npm start` worth knowing. Firebase terminates TLS itself, 
 
 If you would rather run the Express bundle than a static host, it needs a platform with a card on file (Cloud Run, Railway, Fly) or one that sleeps (Render's free tier, ~30–60 s cold start). The advantage is that `securityHeaders.ts` stays the only copy of the policy.
 
-**CI** is defined in [`.github/workflows/checks.yml`](.github/workflows/checks.yml): one job running typecheck, dead-code sweep, encoding sweep, unit tests with coverage, build and bundle-size budget, plus a second job for the rules suite (which needs a JVM). It has never executed — there is no remote yet. It is written to be correct on the day one is added.
+**CI** is defined in [`.github/workflows/checks.yml`](.github/workflows/checks.yml): one job running typecheck, dead-code sweep, encoding sweep, unit tests with coverage, build and bundle-size budget, plus a second job for the rules suite (which needs a JVM). Both jobs run on every push and pull request, and the badge at the top of this file reports the result on `main`.
 
 ---
 
