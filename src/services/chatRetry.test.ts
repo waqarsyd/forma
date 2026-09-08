@@ -168,6 +168,44 @@ describe('a chat turn on a model that stays overloaded', () => {
     await expect(runTurn()).rejects.toThrow(/high demand/i);
   });
 
+  /*
+   * The half the first fix left behind, and the one the user actually felt.
+   *
+   * Falling back is per-request, and deliberately not cached as the session's
+   * model. So during a sustained outage every new message opened by spending
+   * both retries and ~6s of backoff rediscovering the same 503 before falling
+   * back again — the console carried one "stayed overloaded ... falling back"
+   * line per message. The cooldown in `modelCache.ts` is what stops the second
+   * turn repeating the first turn's homework.
+   */
+  it('does not re-discover the same outage on the next turn', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+
+    const urls: string[] = [];
+    const mock = vi.fn(async (url: unknown) => {
+      urls.push(String(url));
+      return String(url).includes('model-a')
+        ? failure(503, 'This model is currently experiencing high demand.')
+        : reply('Answered by the fallback.');
+    });
+    vi.stubGlobal('fetch', mock);
+
+    await expect(runTurn()).resolves.toMatchObject({ reply: 'Answered by the fallback.' });
+    const afterFirstTurn = urls.length;
+    expect(urls.some((u) => u.includes('model-a'))).toBe(true);
+
+    // Second turn, same session: model-a is still cooling down.
+    const second = chatReply(history, config);
+    second.catch(() => undefined);
+    for (let i = 0; i < 3; i++) await vi.advanceTimersByTimeAsync(10_000);
+    await expect(second).resolves.toMatchObject({ reply: 'Answered by the fallback.' });
+
+    const secondTurnUrls = urls.slice(afterFirstTurn);
+    expect(secondTurnUrls.length).toBeGreaterThan(0);
+    expect(secondTurnUrls[0]).toContain('model-b');
+    expect(secondTurnUrls.some((u) => u.includes('model-a'))).toBe(false);
+  });
+
   // A model the user pinned in config is a choice, not a suggestion; silently
   // answering on a different one would make the setting a lie.
   it('does not wander off a model the user pinned', async () => {

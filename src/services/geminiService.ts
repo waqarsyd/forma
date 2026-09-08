@@ -2,7 +2,14 @@ import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
-import { cacheModel, readCachedModel, readCachedModelSet, clearCachedModel } from "../lib/modelCache";
+import {
+  cacheModel,
+  readCachedModel,
+  readCachedModelSet,
+  clearCachedModel,
+  noteModelOverloaded,
+  startingModel,
+} from "../lib/modelCache";
 import { liftReportMargins } from "../lib/repxMargins";
 import { ensureUniqueRefs } from "../lib/repxRefs";
 import { normalizeItemNames } from "../lib/repxItems";
@@ -803,6 +810,10 @@ export async function chatReply(
    */
   const pinnedModel = Boolean(config?.modelName?.trim());
   let activeModel = config?.modelName?.trim() || (await resolveModel(currentApiKey, signal));
+  // Skip a model that was refused for capacity moments ago. Without this every
+  // turn during an outage re-discovers the same 503 at the cost of two retries
+  // and ~6s of backoff before falling back — which is what the console showed.
+  if (!pinnedModel) activeModel = startingModel(activeModel, readCachedModelSet());
   const overloadedModels: string[] = [];
 
   const transcript = history
@@ -981,6 +992,9 @@ ${transcript}`,
        */
       if (isOverloaded(err) && !pinnedModel) {
         overloadedModels.push(activeModel);
+        // Remembered across turns, briefly, so the next message does not start
+        // by rediscovering this. See the cooldown note in `modelCache.ts`.
+        noteModelOverloaded(activeModel);
         // The probed set when there is one. A turn that resolved its model
         // before the set was cached falls back to the raw preference list,
         // exactly as the generation path does.
@@ -1409,6 +1423,9 @@ export async function analyzeReportDesign(
 
   const pinnedModel = config?.modelName?.trim();
   let selectedModel = pinnedModel || (await resolveModel(currentApiKey, signal));
+  // Skip a model refused for capacity in the last minute, the same as the chat
+  // path. The per-request fallback below still runs from wherever this starts.
+  if (!pinnedModel) selectedModel = startingModel(selectedModel, readCachedModelSet());
   const tResolved = Date.now();
 
   // Loaded here, not imported at the top: the SDK is only reachable from this
@@ -1810,6 +1827,9 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
        */
       if (isOverloaded(error)) {
         overloadedModels.push(selectedModel);
+        // Also remembered briefly across requests, so the next generation does
+        // not open by spending its retries on a model already known to be full.
+        noteModelOverloaded(selectedModel);
         // The probed set when we have it. A tab that resolved its model before
         // this set was cached falls back to the raw preference list; if that
         // picks something the key cannot call, the 404 branch below re-detects

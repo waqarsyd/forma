@@ -88,10 +88,73 @@ export function readCachedModelSet(): string[] | null {
 export function clearCachedModel(): void {
   resolvedModel = null;
   resolvedModelSet = null;
+  overloadedAt.clear();
   try {
     sessionStorage.removeItem(MODEL_CACHE_KEY);
     sessionStorage.removeItem(MODEL_SET_CACHE_KEY);
   } catch {
     /* nothing to clear */
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Overload cooldown
+ *
+ * A model that has just returned 503 is out of capacity, and both request
+ * paths already handle that *within* one request: retry twice, then move to
+ * the next model the key can call. Neither caches the fallback, deliberately —
+ * `analyzeReportDesign` says why, and it is right: the preferred model should
+ * be tried again once capacity returns, not abandoned for the session because
+ * it was busy for ten seconds.
+ *
+ * The gap was between requests. During a sustained outage every new turn
+ * started again on the model Google had just refused, spent both retries and
+ * roughly six seconds of backoff rediscovering that, and only then fell back.
+ * Reported from a real session on 2026-09-08 whose console carried the same
+ * "stayed overloaded ... falling back" line once per message.
+ *
+ * A short cooldown is the middle of those two positions and keeps the stated
+ * intent: the model is skipped while it is known to be busy, and tried first
+ * again as soon as the window passes. It is memory-only and per-tab — this is
+ * a fact about the last minute, not about the key, and writing it to
+ * `sessionStorage` would carry a stale outage into a reload.
+ * ------------------------------------------------------------------ */
+
+/** Long enough to outlast a burst, short enough that recovery is not waited on. */
+export const OVERLOAD_COOLDOWN_MS = 60_000;
+
+const overloadedAt = new Map<string, number>();
+
+/** Record that a model exhausted its retries with an overload. */
+export function noteModelOverloaded(model: string, now: number = Date.now()): void {
+  overloadedAt.set(model, now);
+}
+
+/** Was this model refused for capacity recently enough to skip it for now? */
+export function isModelInCooldown(model: string, now: number = Date.now()): boolean {
+  const at = overloadedAt.get(model);
+  if (at === undefined) return false;
+  if (now - at < OVERLOAD_COOLDOWN_MS) return true;
+  // Expired: forget it, so the map cannot grow without bound across a long
+  // session and the model competes on equal terms again.
+  overloadedAt.delete(model);
+  return false;
+}
+
+/**
+ * Which model a new request should start on.
+ *
+ * `preferred` unless it is cooling down and something else is available. Falls
+ * back to `preferred` when every candidate is cooling down — better to retry a
+ * busy model than to refuse to send anything, and the per-request fallback
+ * still runs from there.
+ */
+export function startingModel(
+  preferred: string,
+  candidates: string[] | null,
+  now: number = Date.now()
+): string {
+  if (!isModelInCooldown(preferred, now)) return preferred;
+  const free = (candidates ?? []).find((m) => m !== preferred && !isModelInCooldown(m, now));
+  return free ?? preferred;
 }
