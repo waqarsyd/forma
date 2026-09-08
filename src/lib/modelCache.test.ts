@@ -63,6 +63,38 @@ describe('isModelInCooldown', () => {
   });
 });
 
+describe('a cooldown of a stated length', () => {
+  /*
+   * A 503 says nothing about when capacity returns, so it takes the default
+   * minute. A 429 states the reset exactly, and honouring that number is the
+   * difference between waiting the right amount and spending another request
+   * to be told again — 20% of a free-tier minute, at five per minute.
+   */
+  it('honours a shorter window than the default', () => {
+    noteModelOverloaded('limited', T0, 2_049);
+    expect(isModelInCooldown('limited', T0 + 2_000)).toBe(true);
+    expect(isModelInCooldown('limited', T0 + 2_049)).toBe(false);
+  });
+
+  it('honours a longer window than the default', () => {
+    noteModelOverloaded('limited', T0, 55_000);
+    // Past the default minute would have expired; this one has not.
+    expect(isModelInCooldown('limited', T0 + 54_000)).toBe(true);
+  });
+
+  it('still defaults when no window is given', () => {
+    noteModelOverloaded('busy', T0);
+    expect(isModelInCooldown('busy', T0 + OVERLOAD_COOLDOWN_MS - 1)).toBe(true);
+    expect(isModelInCooldown('busy', T0 + OVERLOAD_COOLDOWN_MS)).toBe(false);
+  });
+
+  it('lets a later note extend an earlier one', () => {
+    noteModelOverloaded('busy', T0, 1_000);
+    noteModelOverloaded('busy', T0, 30_000);
+    expect(isModelInCooldown('busy', T0 + 5_000)).toBe(true);
+  });
+});
+
 describe('startingModel', () => {
   const set = ['first', 'second', 'third'];
 

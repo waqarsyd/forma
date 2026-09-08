@@ -18,11 +18,73 @@
  * a working key with another working key, and hits the same wall.
  */
 import { describe, it, expect } from 'vitest';
-import { classifyGeminiError } from './geminiErrors';
+import { classifyGeminiError, isQuotaExhausted, parseRetryDelayMs } from './geminiErrors';
 
 /** Shaped like what @google/genai throws. */
 const sdkError = (status: number | string | undefined, message: string) =>
   Object.assign(new Error(message), { status });
+
+describe('isQuotaExhausted', () => {
+  it('recognises the status and the code', () => {
+    expect(isQuotaExhausted({ status: 429 })).toBe(true);
+    expect(isQuotaExhausted({ status: 'RESOURCE_EXHAUSTED' })).toBe(true);
+    expect(isQuotaExhausted({ message: 'got 429 back' })).toBe(true);
+    expect(isQuotaExhausted({ message: 'RESOURCE_EXHAUSTED' })).toBe(true);
+  });
+
+  // A rate limit and a capacity outage need opposite handling: one waits a
+  // stated time, the other moves to a different model.
+  it('is not confused by an overload', () => {
+    expect(isQuotaExhausted({ status: 503, message: 'model is overloaded' })).toBe(false);
+    expect(isQuotaExhausted({ message: 'This model is currently experiencing high demand.' })).toBe(false);
+  });
+
+  it('says no to an empty error', () => {
+    expect(isQuotaExhausted({})).toBe(false);
+    expect(isQuotaExhausted(undefined)).toBe(false);
+  });
+});
+
+/*
+ * A 429 carries the answer to "how long should I wait" and the app was throwing
+ * it away. Both spellings appear: the prose form Google puts in the message, and
+ * a `retryDelay` field on the structured error. Observed 2026-09-08 on a
+ * free-tier key limited to five requests per minute per model.
+ */
+describe('parseRetryDelayMs', () => {
+  it('reads the prose form Google puts in the message', () => {
+    expect(parseRetryDelayMs({ message: 'Quota exceeded. Please retry in 2.049434999s.' })).toBe(2049);
+    expect(parseRetryDelayMs({ message: 'Please retry in 54.915754206s.' })).toBe(54916);
+  });
+
+  // Seconds, not milliseconds: rounding 2.049s to 2000 would send the retry
+  // fractionally early, which is exactly when it gets refused again.
+  it('keeps fractional seconds', () => {
+    expect(parseRetryDelayMs({ message: 'Please retry in 1.5s' })).toBe(1500);
+  });
+
+  it('reads a structured retryDelay field', () => {
+    expect(parseRetryDelayMs({ retryDelay: '54s' })).toBe(54000);
+    expect(parseRetryDelayMs({ details: { retryDelay: '7s' } })).toBe(7000);
+  });
+
+  it('reads the field when it is embedded in the message JSON', () => {
+    expect(parseRetryDelayMs({ message: '{"error":{"retryDelay":"30s"}}' })).toBe(30000);
+  });
+
+  it('returns null when nothing says', () => {
+    expect(parseRetryDelayMs({ message: 'You have exceeded your quota.' })).toBeNull();
+    expect(parseRetryDelayMs({})).toBeNull();
+    expect(parseRetryDelayMs(undefined)).toBeNull();
+  });
+
+  // A nonsense value would park a model for the rest of the session and read as
+  // the fallback having stopped working. Rejected rather than clamped.
+  it('refuses an implausible delay rather than trusting it', () => {
+    expect(parseRetryDelayMs({ retryDelay: '99999s' })).toBeNull();
+    expect(parseRetryDelayMs({ message: 'Please retry in 0s' })).toBeNull();
+  });
+});
 
 describe('classifyGeminiError', () => {
   describe('400 — only a key problem when it says so', () => {
@@ -74,6 +136,18 @@ describe('classifyGeminiError', () => {
   describe('the branches that were already right', () => {
     it('429 is a quota problem', () => {
       expect(classifyGeminiError(sdkError(429, 'RESOURCE_EXHAUSTED')).message).toMatch(/quota/i);
+    });
+
+    // The number that makes the message actionable was in the error all along.
+    it('429 says when to try again, when Google says', () => {
+      const msg = classifyGeminiError(sdkError(429, 'Quota exceeded. Please retry in 54.9s.')).message;
+      expect(msg).toMatch(/try again in about 55s/i);
+    });
+
+    it('429 without a stated delay still reads as a rate limit, not a billing failure', () => {
+      const msg = classifyGeminiError(sdkError(429, 'RESOURCE_EXHAUSTED')).message;
+      expect(msg).not.toMatch(/try again in about/i);
+      expect(msg).toMatch(/per minute per model/i);
     });
 
     it('403 is a rejected key', () => {

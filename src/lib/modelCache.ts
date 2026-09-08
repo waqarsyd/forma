@@ -88,7 +88,7 @@ export function readCachedModelSet(): string[] | null {
 export function clearCachedModel(): void {
   resolvedModel = null;
   resolvedModelSet = null;
-  overloadedAt.clear();
+  coolingUntil.clear();
   try {
     sessionStorage.removeItem(MODEL_CACHE_KEY);
     sessionStorage.removeItem(MODEL_SET_CACHE_KEY);
@@ -123,21 +123,35 @@ export function clearCachedModel(): void {
 /** Long enough to outlast a burst, short enough that recovery is not waited on. */
 export const OVERLOAD_COOLDOWN_MS = 60_000;
 
-const overloadedAt = new Map<string, number>();
+/** Model → the instant it becomes worth trying again. */
+const coolingUntil = new Map<string, number>();
 
-/** Record that a model exhausted its retries with an overload. */
-export function noteModelOverloaded(model: string, now: number = Date.now()): void {
-  overloadedAt.set(model, now);
+/**
+ * Park a model for a while.
+ *
+ * `forMs` exists because the two reasons carry different information. A 503 is
+ * capacity and says nothing about when it returns, so it gets the default
+ * minute. A 429 is the rate limit and Google states the wait exactly — "Please
+ * retry in 2.049s", or 54s — and honouring that number is the difference
+ * between waiting the right amount and burning another request to be told
+ * again. On the free tier's five-per-minute that request is 20% of the budget.
+ */
+export function noteModelOverloaded(
+  model: string,
+  now: number = Date.now(),
+  forMs: number = OVERLOAD_COOLDOWN_MS
+): void {
+  coolingUntil.set(model, now + forMs);
 }
 
-/** Was this model refused for capacity recently enough to skip it for now? */
+/** Is this model parked right now? */
 export function isModelInCooldown(model: string, now: number = Date.now()): boolean {
-  const at = overloadedAt.get(model);
-  if (at === undefined) return false;
-  if (now - at < OVERLOAD_COOLDOWN_MS) return true;
+  const until = coolingUntil.get(model);
+  if (until === undefined) return false;
+  if (now < until) return true;
   // Expired: forget it, so the map cannot grow without bound across a long
   // session and the model competes on equal terms again.
-  overloadedAt.delete(model);
+  coolingUntil.delete(model);
   return false;
 }
 

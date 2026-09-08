@@ -1,6 +1,6 @@
 import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
-import { classifyGeminiError } from "../lib/geminiErrors";
+import { classifyGeminiError, isQuotaExhausted, parseRetryDelayMs } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
 import {
   cacheModel,
@@ -977,6 +977,18 @@ ${transcript}`,
       }
 
       /*
+       * A rate limit is not a retry candidate, and it is not this model's
+       * capacity either — it is the key's allowance for this model, which
+       * Google states the reset for. Park it for exactly that long so the next
+       * turn starts somewhere else instead of spending a request to be told the
+       * same thing. Observed on a free-tier key at five requests per minute,
+       * where three "Try again" clicks bought three more 429s.
+       */
+      if (isQuotaExhausted(err) && !pinnedModel) {
+        noteModelOverloaded(activeModel, Date.now(), parseRetryDelayMs(err) ?? undefined);
+      }
+
+      /*
        * The retries are spent. If the model is simply busy, try another one the
        * key was already shown to be able to call.
        *
@@ -1016,7 +1028,10 @@ ${transcript}`,
         }
       }
 
-      throw asReadableError(err);
+      // A rate limit gets the purpose-written message rather than the
+      // provider's multi-paragraph one, because it is the failure most likely
+      // to be read by someone who has done nothing wrong.
+      throw isQuotaExhausted(err) ? classifyGeminiError(err) : asReadableError(err);
     }
   }
 
@@ -1825,6 +1840,14 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
        * `pinnedModel` opts out, for the same reason the 404 re-detect does — a
        * pinned id is an explicit instruction, not a default.
        */
+      // A rate limit, unlike an overload, states its own reset. Park the model
+      // for exactly that long so the next request starts elsewhere rather than
+      // spending one to be told again — see the chat path for the free-tier
+      // arithmetic that makes a wasted request expensive.
+      if (isQuotaExhausted(error) && !pinnedModel) {
+        noteModelOverloaded(selectedModel, Date.now(), parseRetryDelayMs(error) ?? undefined);
+      }
+
       if (isOverloaded(error)) {
         overloadedModels.push(selectedModel);
         // Also remembered briefly across requests, so the next generation does

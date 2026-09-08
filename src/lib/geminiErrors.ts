@@ -57,6 +57,49 @@ function isOverloadedMessage(status: unknown, message: string): boolean {
   );
 }
 
+/** Is this the per-model rate limit rather than anything wrong with the key? */
+export function isQuotaExhausted(error: any): boolean {
+  const message: string = error?.message || '';
+  const status = error?.status;
+  return (
+    status === 429 ||
+    status === 'RESOURCE_EXHAUSTED' ||
+    message.includes('429') ||
+    message.includes('RESOURCE_EXHAUSTED')
+  );
+}
+
+/**
+ * How long Google says to wait, in milliseconds, or `null` if it did not say.
+ *
+ * A 429 carries the answer and the app was throwing it away. The free tier is
+ * **five requests per minute per model** — observed 2026-09-08, where one chat
+ * turn could spend four of them — so re-sending a moment later is not merely
+ * unhelpful, it deepens the hole. Both spellings appear in the wild: the prose
+ * "Please retry in 2.049434999s." in the message, and a `retryDelay: "54s"`
+ * field on the structured error.
+ *
+ * Fractional seconds are kept: `2.049s` is 2049ms, not 2000. Anything absurd is
+ * rejected rather than clamped, because a nonsense value here would park a model
+ * for the rest of the session and look like the fallback had stopped working.
+ */
+const MAX_SANE_RETRY_MS = 10 * 60 * 1000;
+
+export function parseRetryDelayMs(error: any): number | null {
+  const message = `${error?.message || ''}`;
+  const structured = error?.retryDelay ?? error?.details?.retryDelay;
+  const source = typeof structured === 'string' ? structured : message;
+
+  const match =
+    /retry\s+in\s+(\d+(?:\.\d+)?)\s*s/i.exec(source) ??
+    /^\s*(\d+(?:\.\d+)?)\s*s\s*$/i.exec(source) ??
+    /"?retryDelay"?\s*[:=]\s*"?(\d+(?:\.\d+)?)s"?/i.exec(source);
+  if (!match) return null;
+
+  const ms = Math.round(Number(match[1]) * 1000);
+  return Number.isFinite(ms) && ms > 0 && ms <= MAX_SANE_RETRY_MS ? ms : null;
+}
+
 /**
  * Map an SDK error onto a user-facing one.
  *
@@ -68,9 +111,23 @@ export function classifyGeminiError(error: any): Error {
   const message: string = error?.message || '';
   const status = error?.status;
 
-  if (status === 429 || message.includes('429') || status === 'RESOURCE_EXHAUSTED' || message.includes('RESOURCE_EXHAUSTED')) {
+  if (isQuotaExhausted(error)) {
+    /*
+     * Say when, if Google said when.
+     *
+     * This used to be "check your plan and billing details, or try again
+     * later", over the provider's own multi-paragraph text — accurate and
+     * unusable. The number that makes it actionable was in the error the whole
+     * time. The rate limit is *per model per minute*, so it is worth
+     * distinguishing from a spent billing allowance: the free tier is five
+     * requests a minute, which one chat turn with retries can reach on its own.
+     */
+    const waitMs = parseRetryDelayMs(error);
+    const when = waitMs ? ` Try again in about ${Math.max(1, Math.ceil(waitMs / 1000))}s.` : '';
     return new Error(
-      'You have exceeded your Gemini API quota. Please check your plan and billing details, or try again later.'
+      `You have reached the request quota for this Gemini model.${when} ` +
+      'This is a limit on how often the key may call that model, not a problem with your design or your report — ' +
+      'the free tier allows only a few requests per minute per model.'
     );
   }
 
