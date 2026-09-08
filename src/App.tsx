@@ -2585,6 +2585,23 @@ export default function App() {
     }
   };
 
+  /**
+   * Put the panel that shows notices back on screen.
+   *
+   * `saveNotice` and `error` both render in the Composer, which lives in the
+   * Review panel — so a save attempted from the **Projects** panel reported
+   * into a `wb-hidden` subtree. Measured 2026-09-08: on failure the message was
+   * in the DOM at 0x0 with `onScreen=false`, and since a failed save also adds
+   * no card, the user got no card and no message. Silence, from the panel you
+   * are most likely to be on while managing saved projects.
+   *
+   * Only the failure paths call this. A *successful* save from the Projects
+   * panel already announces itself the best way it can — the new row appears
+   * in the list the user is looking at — and yanking the panel away from them
+   * to show a confirmation they do not need would be worse than the bug.
+   */
+  const revealSaveFailure = () => setRailPanel('review');
+
   const handleSaveReport = async () => {
     if (!result && messages.length === 0) return;
     const reportId = Date.now().toString();
@@ -2658,6 +2675,7 @@ export default function App() {
       } catch (err) {
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${reportId}`,
           'That project could not be saved to your account. It is still open here — try again in a moment.');
+        revealSaveFailure();
       }
     } else {
       // The write happens before the state update, not inside it: a failing
@@ -2669,6 +2687,7 @@ export default function App() {
 
       if (!outcome.ok) {
         setError(outcome.message);
+        revealSaveFailure();
         return;
       }
 
