@@ -553,17 +553,25 @@ npm start          # node dist/server.cjs, from the repo root
 
 Set `HTTPS="true"` **only where TLS actually terminates**, so HSTS is sent. Set `HOST` if you need to bind something other than the default.
 
-Security rules deploy separately and are the only `firebase deploy` this project performs:
+### Firebase Hosting
+
+**The target is Firebase Hosting, on the free Spark plan**, chosen on 2026-09-08. The app has no server state — Firestore and Gemini are both called from the browser with the user's own key — so everything `server.ts` does in production is static-host territory, and running a Node process to serve five megabytes of files buys nothing. Two things decided it over Cloudflare Pages: the deployment domains are **already** in the API key's referrer allowlist and Firebase Auth's authorised domains, so sign-in works with no reconfiguration; and it is one vendor rather than two. Measured, a cold visit transfers about 490 kB, so the free tier's 360 MB/day is roughly 730 visits a day.
 
 ```bash
-npx firebase deploy --only firestore:rules
+npm run build
+npx firebase deploy --only hosting          # serves dist/ at <project>.web.app
+npx firebase deploy --only firestore:rules  # the rules, deployed separately
 ```
 
-**CI** is defined in [`.github/workflows/checks.yml`](.github/workflows/checks.yml): one job running typecheck, dead-code sweep, encoding sweep, unit tests with coverage, build and bundle-size budget, plus a second job for the rules suite (which needs a JVM). It has never executed — there is no remote yet. It is written to be correct on the day one is added.
+**The headers in `firebase.json` are derived, not written by hand.** A static host cannot run `server.ts`, so the whole security header set has to be restated there — including `connect-src`, which is what makes a stolen Gemini key worthless to injected script. That copy is pinned by [`src/server/hostingConfig.test.ts`](src/server/hostingConfig.test.ts), which builds the headers from `securityHeaders.ts` and `staticCache.ts` and fails if `firebase.json` disagrees, printing the JSON to paste back. **Change the policy in `securityHeaders.ts` and let the test tell you what `firebase.json` should say** — never the other way round.
 
-<!-- TODO: no hosting target is configured. firebase.json has no `hosting` block and
-     there is no apphosting.yaml, so where this actually gets deployed is undecided.
-     Document the real target here once one is chosen. -->
+Two differences from `npm start` worth knowing. Firebase terminates TLS itself, so HSTS is set unconditionally in `firebase.json` rather than gated on `HTTPS`. And a stale `/assets/*` hash returns `index.html` with a 200 instead of the 404 the Express server gives, because Firebase rewrites cannot answer 404 on the free plan; the risk is small because `index.html` is `no-cache`, so a returning visitor revalidates the document before it can request a deleted chunk.
+
+**"Open in designer" cannot work on any HTTPS deployment.** The companion listens on plain `http://127.0.0.1:7317`, which a secure page may not call — mixed content. It is a localhost-development convenience; Export `.repx` is the path that always works.
+
+If you would rather run the Express bundle than a static host, it needs a platform with a card on file (Cloud Run, Railway, Fly) or one that sleeps (Render's free tier, ~30–60 s cold start). The advantage is that `securityHeaders.ts` stays the only copy of the policy.
+
+**CI** is defined in [`.github/workflows/checks.yml`](.github/workflows/checks.yml): one job running typecheck, dead-code sweep, encoding sweep, unit tests with coverage, build and bundle-size budget, plus a second job for the rules suite (which needs a JVM). It has never executed — there is no remote yet. It is written to be correct on the day one is added.
 
 ---
 

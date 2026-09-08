@@ -91,6 +91,13 @@ const ROOT_FILES = [
   '.gitignore',
   '.env.example',
   'package.json',
+  // Added 2026-09-08, the same day it stopped being three lines of emulator
+  // config and became the deployment target's header set -- including the
+  // Content-Security-Policy, where a mojibaked character would not throw, it
+  // would just quietly produce a directive the browser cannot parse. Third
+  // file to fall through this list, after CONTRIBUTING.md and package.json.
+  'firebase.json',
+  '.firebaserc',
 ];
 
 /**
