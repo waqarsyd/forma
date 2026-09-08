@@ -196,6 +196,12 @@ On screen the two are indistinguishable, which is exactly why this survived a ma
 
 **So the fix is arithmetic in `src/lib/repxMargins.ts`, not an instruction.** `liftReportMargins()` runs on every successful generation, at the single choke point in `analyzeReportDesign` where the parsed response is returned. It measures the content box, moves that whitespace into `Margins` and the two margin bands, and subtracts it back off the coordinates. A pure translation — same ink, same places — verified on the real file: 31 `LocationFloat` values rebased, **zero moved on paper**.
 
+**An empty report gets the DevExpress default instead of nothing (2026-09-08).** The lift used to decline with *"no positioned controls to measure"* and leave `Margins="0, 0, 0, 0"` with both bands at zero — a file asserting the whole sheet is printable, which is the same structural complaint this section opens with. Checked against a real one: an empty report saved by the 20.1 designer reads `Margins="20, 20, 20, 20"` with `TopMargin` and `BottomMargin` both at `HeightF="20"`, and Forma now writes exactly that, taking the top margin out of the first body band so the page still fits.
+
+**Twenty is safe on that path and nowhere else, and that is the whole reason it is a separate branch rather than a floor on the measurement.** Everywhere else a margin has to be *taken* from whitespace the design already has: declaring one the content cannot afford does not add a margin, it moves the ink, or clips it. With nothing placed there is nothing to move. The branch still declines when the body band cannot give up the space or the body already fills the sheet — a report with no room for a margin does not get one invented.
+
+A request to make 20 the default *everywhere* comes up naturally from looking at a DevExpress file, and it is the thing not to do: the prompt's zeros are what let the model write paper-absolute coordinates with no subtraction, and a fixed margin under content that starts at the paper edge is the silent-misplacement failure this whole module exists to avoid.
+
 Three details are load-bearing:
 
 - **Only top-level controls move.** An `XRTableCell` is positioned against its `XRTableRow`, not the band, so shifting it would move it twice. The parser is a tag stack rather than a regex over `<Band>…</Band>`, because `TopMarginBand` is self-closing and a non-greedy pair match swallows the next band's contents — the mistake that produced 22 phantom overflow reports when the banded and flat outputs were first compared on 2026-09-01.

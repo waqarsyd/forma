@@ -49,6 +49,65 @@ const attr = (xml: string, name: string) => new RegExp(`${name}="([^"]*)"`).exec
 const bandHeight = (xml: string, band: string) =>
   Number(new RegExp(`ControlType="${band}"[^>]*HeightF="([\\d.]+)"`).exec(xml)?.[1]);
 
+/*
+ * A report with nothing placed in it used to decline, and ship
+ * `Margins="0, 0, 0, 0"` with both margin bands at zero — a file asserting that
+ * the whole sheet is printable.
+ *
+ * DevExpress does not do that. An empty report saved by the 20.1 designer reads
+ * `Margins="20, 20, 20, 20"` with `TopMargin` and `BottomMargin` both at
+ * `HeightF="20"` (checked against a real one on 2026-09-08). Twenty is free
+ * here in a way it is nowhere else: there are no controls, so nothing can be
+ * moved or clipped by declaring it.
+ */
+describe('the default margin, where nothing has to move for it', () => {
+  const empty = (opts: { detail?: number; height?: number; unit?: string } = {}) => {
+    const { detail = 600, height = 1100, unit = 'HundredthsOfAnInch' } = opts;
+    return `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="${unit}" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="${height}" Version="23.2">
+  <Bands>
+    <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
+    <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${detail}" />
+    <Item3 Ref="9" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+  };
+
+  it('declares the DevExpress default rather than no margin at all', () => {
+    const r = liftReportMargins(empty());
+    expect(r.applied).toBe(true);
+    expect(attr(r.xml, 'Margins')).toBe('20, 20, 20, 20');
+    expect(bandHeight(r.xml, 'TopMarginBand')).toBe(20);
+    expect(bandHeight(r.xml, 'BottomMarginBand')).toBe(20);
+  });
+
+  it('takes the top margin out of the body band, so the page still fits', () => {
+    const r = liftReportMargins(empty({ detail: 600 }));
+    expect(bandHeight(r.xml, 'DetailBand')).toBe(580);
+  });
+
+  // 20 units is 0.2in, and the point is the physical margin, not the number.
+  it('is 0.2in in whatever unit the report declares', () => {
+    const r = liftReportMargins(empty({ unit: 'TenthsOfAMillimeter' }));
+    expect(r.applied).toBe(true);
+    // 0.2in at 254 units/in = 50.8, formatted.
+    expect(r.margins?.top).toBeCloseTo(50.8, 1);
+  });
+
+  // The band has to give up the space; if it cannot, do not invent a page.
+  it('declines when the body already fills the sheet', () => {
+    const r = liftReportMargins(empty({ detail: 1100 }));
+    expect(r.applied).toBe(false);
+  });
+
+  it('still leaves a report that already declares margins alone', () => {
+    const withMargins = empty().replace('Margins="0, 0, 0, 0"', 'Margins="50, 50, 50, 50"');
+    const r = liftReportMargins(withMargins);
+    expect(r.applied).toBe(false);
+    expect(r.reason).toMatch(/already declares/i);
+  });
+});
+
 describe('liftReportMargins', () => {
   it('lifts a symmetric drawn margin into the report structure', () => {
     const result = liftReportMargins(flat([label('a', 48, 48), label('b', 48, 300)].join('\n')));
@@ -208,10 +267,19 @@ ${label('d', 50, 10)}
       expect(result.reason).toContain('margin bands are missing');
     });
 
-    it('there is nothing positioned to measure', () => {
+    /*
+     * This case used to decline with "no positioned controls to measure", and
+     * that was the right answer while the only margin on offer was a measured
+     * one. It is not a decline any more: with nothing placed there is nothing a
+     * margin can move or clip, so the report gets the DevExpress default rather
+     * than a file claiming the whole sheet is printable. The assertion is kept
+     * here, inverted, rather than deleted — a reader who remembers the old
+     * behaviour should find out where it went.
+     */
+    it('nothing positioned to measure is no longer a decline — see the default margin', () => {
       const result = liftReportMargins(flat(''));
-      expect(result.applied).toBe(false);
-      expect(result.reason).toContain('no positioned controls');
+      expect(result.applied).toBe(true);
+      expect(result.reason).toContain('default margin');
     });
 
     it('the input is not a report at all', () => {

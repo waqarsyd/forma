@@ -86,6 +86,25 @@ const MIN_LIFT_INCHES = 0.1;
 /** No real page margin is wider than this; past it, clamp and keep the rest as inset. */
 const MAX_LIFT_INCHES = 1.5;
 
+/**
+ * What an empty report gets, when there is no drawn margin to measure.
+ *
+ * Checked against a real one: an empty report saved by the DevExpress 20.1
+ * designer reads `Margins="20, 20, 20, 20"` with both margin bands at
+ * `HeightF="20"` — 0.2in, in the `HundredthsOfAnInch` a new report defaults to.
+ * Forma used to decline here and ship `0, 0, 0, 0` with both bands at zero,
+ * which is a file asserting that the whole sheet is printable.
+ *
+ * Twenty is safe *here* and nowhere else in this module, and the distinction is
+ * the whole reason this is a separate path rather than a floor applied to the
+ * measurement. Everywhere else a margin has to be *taken* from whitespace the
+ * design already has: declaring one the content cannot afford moves the ink, or
+ * clips it. With nothing placed on the page there is nothing to move, so the
+ * margin costs a design nothing and gives the file the structure a printer and
+ * a designer both expect.
+ */
+const DEFAULT_MARGIN_INCHES = 0.2;
+
 export interface LiftedMargins {
   left: number;
   right: number;
@@ -238,7 +257,40 @@ export function liftReportMargins(xml: string | undefined | null): MarginLift {
 
   const bodyBands = bands.filter((b) => !MARGIN_BANDS.has(b.type));
   const placed = bodyBands.flatMap((b) => b.controls);
-  if (!placed.length) return decline('no positioned controls to measure');
+
+  if (!placed.length) {
+    /*
+     * Nothing is placed, so there is nothing to measure — and nothing to move.
+     * Declare the DevExpress default instead of declining to zero. See
+     * DEFAULT_MARGIN_INCHES for why 20 is safe on this path alone.
+     */
+    const perInch = unitsPerInch(root.get('ReportUnit')?.value);
+    const size = DEFAULT_MARGIN_INCHES * perInch;
+    const first = bodyBands[0];
+    const bodyHeight = bodyBands.reduce((n, b) => n + b.height, 0);
+
+    // The top margin comes out of the first body band, and the bottom needs
+    // room under what is left. A body already filling the sheet has neither.
+    if (!first?.heightAttr || first.height < size) return decline('no body band to take the margin from');
+    if (pageHeight < bodyHeight + size) return decline('the body already fills the sheet');
+
+    const edits: Edit[] = [
+      { start: marginsAttr.start, end: marginsAttr.end, text: `${fmt(size)}, ${fmt(size)}, ${fmt(size)}, ${fmt(size)}` },
+      { start: topBand.heightAttr.start, end: topBand.heightAttr.end, text: fmt(size) },
+      { start: bottomBand.heightAttr.start, end: bottomBand.heightAttr.end, text: fmt(size) },
+      { start: first.heightAttr.start, end: first.heightAttr.end, text: fmt(first.height - size) },
+    ];
+    edits.sort((a, b) => b.start - a.start);
+    let out = xml;
+    for (const e of edits) out = out.slice(0, e.start) + e.text + out.slice(e.end);
+
+    return {
+      xml: out,
+      applied: true,
+      reason: `empty report; declared the ${fmt(size)} default margin`,
+      margins: { left: size, right: size, top: size, bottom: size },
+    };
+  }
 
   const firstBand = bodyBands.find((b) => b.controls.length > 0);
   if (!firstBand || firstBand !== bodyBands[0]) {
