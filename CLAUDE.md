@@ -191,8 +191,8 @@ broken, and nothing in the toolchain enforces any of them.
   arithmetic — this bullet used to state it as a before-and-after pair of suite totals,
   which was stale within days of being written.
 - **File naming: `PascalCase.tsx` for React components, `camelCase.ts` for everything
-  else.** 100% consistent today — **27** PascalCase components and **114** `.ts` files
-  (that is `git ls-files src`, tests included; **repo-wide the answer is 121**, because
+  else.** 100% consistent today — **27** PascalCase components and **115** `.ts` files
+  (that is `git ls-files src`, tests included; **repo-wide the answer is 122**, because
   `server.ts` and the four root configs are also `.ts`. State the scope whenever you
   quote this number — an unqualified "67" is the next thing someone will "correct" to
   73.) The single exception is `src/vite-env.d.ts`, which is Vite's own required name.
@@ -200,7 +200,11 @@ broken, and nothing in the toolchain enforces any of them.
   every file added lived in this bullet until 2026-09-06, and it was wrong twice in its
   own text before anyone read it.
   **Every number in this bullet was stale by 2026-09-08** — 25/111/118/30/28 against a
-  real 27/114/121/35/33 — which is the bullet about drifting numbers drifting. They are
+  real 27/114/121/35/33 — which is the bullet about drifting numbers drifting. It then
+  drifted again inside twenty-four hours: one new test file (`hostingConfig.test.ts`)
+  moved the two `.ts` figures to 115/122 on 2026-09-09, while the three `.tsx` ones did
+  not move at all. That is the pattern to expect — the counts move independently, a
+  single commit moves one of them, and the gap is never visible by reading. They are
   cheap to re-measure and the commands are given; re-measure rather than trust them.
   **Three traps, each of which has been written in here as fact at least once.**
   **(1) Do not "correct" the 27 to 35 by counting `.tsx` files.** There are 35, and the
