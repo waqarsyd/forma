@@ -259,9 +259,17 @@ describe('the legal copy and its date change together', () => {
      sentence were corrected — the first real use of this guard, and it caught
      the edit before the date was stale rather than after. Bumped again the same
      day for the loopback designer probe, which is why the date does not move a
-     second time: same day, same version of the document. */
-  const EXPECTED_COPY_HASH = 'dca540a90ef8';
-  const EXPECTED_UPDATED = '1 September 2026';
+     second time: same day, same version of the document.
+
+     Moved again on 2026-09-08, and this guard earned its keep a second time by
+     failing the moment the copy changed. The terms told visitors the "Open in
+     designer" button stays hidden when the companion is not installed; it is
+     always drawn, and has been since the `forma-repx://` launch path was added
+     — the probe decides what a click does, not whether the button exists. The
+     deletion note also knew only about removing projects one at a time, not
+     about Clear all. Both substantive, so the date moved with them. */
+  const EXPECTED_COPY_HASH = 'ae2ee9277bf5';
+  const EXPECTED_UPDATED = '8 September 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);

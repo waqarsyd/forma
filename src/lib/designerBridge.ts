@@ -2,15 +2,27 @@
  * Talks to RepxDesigner, the local companion that opens a generated report in
  * the DevExpress designer.
  *
- * A browser cannot start a program, and it should not be able to — so the
- * "Open in designer" button works by asking something already running on the
- * machine. `tools/RepxDesigner` listens on loopback; if nothing answers, Forma
- * shows no button and Export is the whole story. That degradation is the point:
- * this is a Windows-and-DevExpress-only convenience bolted onto a browser app
- * that must keep working without it.
+ * A browser cannot start a program unaided, so the "Open in designer" button
+ * first asks whether something is already running on the machine.
+ * `tools/RepxDesigner` listens on loopback.
+ *
+ * **The probe decides what a click does, not whether the button is drawn.**
+ * This comment said "if nothing answers, Forma shows no button and Export is
+ * the whole story", and that stopped being true when `launchDesigner()` was
+ * added: `App.tsx` keeps the button in the bar always and says so at
+ * `designerReady`, because requiring someone to remember a tray app before a
+ * one-click action works is most of the reason the button went unused. A
+ * running companion is handed the report; a silent port gets a
+ * `forma-repx://` launch and a wait. Worth correcting rather than tidying —
+ * the stale sentence had been copied into the public Terms, where it told
+ * visitors the button would stay hidden (fixed 2026-09-08).
+ *
+ * Export .repx remains the path that needs none of this, which is the actual
+ * degradation guarantee: a Windows-and-DevExpress-only convenience bolted onto
+ * a browser app that must keep working without it.
  *
  * Mirrors the shape of `isVaultAvailable()` in `keyVault.ts` — detect the
- * capability, gate the UI on it, never assume it.
+ * capability, let the UI read it, never assume it.
  */
 
 /** Loopback only. `--port` on the companion moves both sides; keep them equal. */

@@ -19,7 +19,19 @@ import { Eyebrow } from './landing/sections';
  * that had to end.
  */
 
-const UPDATED = '1 September 2026';
+/*
+ * Bumped whenever the text below changes, which the header comment requires:
+ * a policy that has drifted from the software is a promise nobody is keeping,
+ * and a date that has not moved says the drift never happened.
+ *
+ * 2026-09-08: the terms described the "Open in designer" button as hidden when
+ * the companion is not installed. It is always drawn — the probe decides what
+ * a click does, not whether the button exists — so the paragraph described
+ * software that has not behaved that way since the launch path was added.
+ * Corrected, along with the deletion note, which knew about deleting projects
+ * one at a time and not about Clear all.
+ */
+const UPDATED = '8 September 2026';
 
 type Section = { heading: string; paragraphs: string[] };
 
@@ -29,7 +41,8 @@ const TERMS: Section[] = [
     paragraphs: [
       'Forma turns a design you already have — a screenshot, a PDF, or an existing .repx file — into three things: a written specification, an in-browser mockup, and DevExpress XtraReports XML you can open in the DevExpress designer.',
       'It is a personal project, offered free of charge and without a support contract. There is no uptime guarantee, and it may change or stop being available at any time.',
-      'One thing the workspace does that is worth stating plainly: it checks whether the optional RepxDesigner companion is running on your own computer, by asking 127.0.0.1 — your machine, not the internet — whether anything answers on that port. That is how the “Open in designer” button knows whether to appear. The check sends nothing about you or your work, and if you have not installed the companion it simply fails and the button stays hidden. Nothing leaves your machine either way.',
+      'One thing the workspace does that is worth stating plainly: it checks whether the optional RepxDesigner companion is running on your own computer, by asking 127.0.0.1 — your machine, not the internet — whether anything answers on that port. The check sends nothing about you or your work, and if you have not installed the companion it simply fails. Nothing leaves your machine either way.',
+      'What that check decides is what the “Open in designer” button does, not whether you can see it. The button is always there. If the companion is already running, clicking it hands the report straight over. If nothing answered, clicking it asks Windows to start the companion — which your browser will ask you to allow the first time — and reports plainly if it cannot. Exporting the .repx works regardless, and never involves any of this.',
     ],
   },
   {
@@ -113,7 +126,7 @@ const PRIVACY: Section[] = [
     heading: 'Deleting your data',
     paragraphs: [
       'Account settings in the workspace has a Delete account action. It removes your saved projects and the encrypted copy of your key along with the account itself. It cannot be undone.',
-      'Individual projects can be deleted one at a time from the Projects panel.',
+      'Individual projects can be deleted from the Projects panel, one at a time or all at once with Clear all, which asks you to confirm first.',
     ],
   },
   {
