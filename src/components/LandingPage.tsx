@@ -375,7 +375,15 @@ const LandingPage = ({
             <SectionHead
               eyebrow="Scope"
               title="Built for the documents you already have."
-              lede="Most reporting work starts from something that already exists — a printed form, a PDF a client sent, a report someone built years ago. Forma starts there too."
+              /* The last sentence is the migration case, and until 2026-09-08
+                 this page did not make it anywhere: no mention of Batch, of a
+                 queue, or of doing more than one report at a time. It is the
+                 claim the PRD calls the one a prompt-driven competitor
+                 structurally cannot match, and the front page was the place it
+                 was most worth making. Stated in the lede rather than as a
+                 seventh card, because six is exactly two rows of three and a
+                 seventh would leave a ragged one. */
+              lede="Most reporting work starts from something that already exists — a printed form, a PDF a client sent, a report someone built years ago. Forma starts there too. And when it is not one document but a folder of them, the Batch panel takes the whole set and gives back one .repx per file."
             />
             <RevealGroup className="grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant sm:grid-cols-2 lg:grid-cols-3">
               {USE_CASES.map((c) => (
