@@ -73,11 +73,17 @@ the same reason.)
 
 **Every baseline is clean**, so anything any of them prints is yours.
 
-This table deliberately does not say how many tests there are. `CLAUDE.md` is the
-only place that number is written down, and it stays that way because copies of it
-drift: this file carried "409 unit tests in 25 files" for a while after the suite
-had moved on, which is worse than no number at all — a contributor trusts it and
-concludes their run is broken. Run the suite if you want the count.
+This table deliberately does not say how many tests there are.
+[`docs/notes/testing.md`](docs/notes/testing.md) is the only place that number is
+written down, and it stays that way because copies of it drift: this file carried
+"409 unit tests in 25 files" for a while after the suite had moved on, which is worse
+than no number at all — a contributor trusts it and concludes their run is broken. Run
+the suite if you want the count.
+
+(This paragraph said `CLAUDE.md` until 2026-09-08. That was true until the test
+inventory was carved out into `testing.md` on 2026-09-06, and `CLAUDE.md` now carries
+no count at all — so the pointer sent you to a file that would not answer, which is the
+one failure mode worse than a stale number. Same lesson as the paragraph itself.)
 
 ### The encoding check is not bureaucracy
 
