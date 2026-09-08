@@ -121,7 +121,16 @@ export default function SiteHeader({
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
             className="u-transition u-press u-focus-ring w-[37px] h-[37px] grid place-items-center rounded-full border border-outline-variant bg-surface-container-lowest/60 hover:border-secondary text-on-surface-variant hover:text-secondary cursor-pointer select-none"
-            title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            /* Sentence case, like every other label in the app. These two were
+               the only Title Case strings in any user-visible control — the
+               sign-in dialog's identical toggle already read "Switch to light
+               mode", and a screen reader announcing the same button two ways on
+               two surfaces is the drift this component exists to end.
+               Note the comment style, which is why the one below matches: a
+               brace-wrapped JSX comment between attributes is parsed as a
+               spread attribute and fails with TS1005. Plain block comments
+               only, in here. */
+            title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             /* `title` alone was the accessible name here until 2026-09-01, and it
                was the only icon-only button in the app relying on one: the
                announcements bell beside it, the mobile menu button, the sign-in
@@ -130,7 +139,7 @@ export default function SiteHeader({
                the last thing the accessible-name algorithm reaches for. This
                button sits in the header of all five marketing pages, so it was
                the most-seen instance of the one inconsistency. */
-            aria-label={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {/* The mark shows the theme you are in, not the one you would
                 switch to — the source design's reading. */}

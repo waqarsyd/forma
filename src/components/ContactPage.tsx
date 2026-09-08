@@ -442,8 +442,16 @@ export default function ContactPage({
               </div>
             </div>
 
-            {/* --------------------------------------------------- form */}
-            <div>
+            {/* --------------------------------------------------- form
+
+                `id="form"` sits on this wrapper rather than on the `<form>`
+                element inside it, because that element is unmounted in the
+                `sent` and `error` states — an anchor target that disappears
+                once someone has written to you is worse than no anchor. This
+                div is rendered in all three states, so the two links that
+                point here always land. `scroll-mt-24` clears the sticky
+                68px header, matching DocsPage's section cards. */}
+            <div id="form" className="scroll-mt-24">
               <div className="rounded-2xl border border-outline-variant bg-surface-container-lowest dark:bg-card p-7 shadow-[var(--shadow-lg),var(--inset-hi)] sm:px-9 sm:py-8">
                 <h2 className="font-display-lg text-[24px] font-extrabold leading-[1.2] tracking-[-0.028em] text-on-surface">
                   Send a message
@@ -751,9 +759,15 @@ export default function ContactPage({
                 })}
 
                 {/* Points at the form rather than carrying a mailto: one
-                    plaintext address in the markup is all a harvester needs. */}
+                    plaintext address in the markup is all a harvester needs.
+
+                    The href was `#top`, which no element on this page has —
+                    so the click worked (the handler below focuses the message
+                    field) and everything else did not: opened in a new tab it
+                    landed at the top of the page, and with scripting off it
+                    did nothing at all. `#form` is a real target. */}
                 <a
-                  href="#top"
+                  href="#form"
                   onClick={(e) => {
                     e.preventDefault();
                     document.getElementById('message')?.focus();
