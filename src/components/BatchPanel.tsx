@@ -240,12 +240,21 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
           nothing at all, which is the worst of the three possible behaviours.
           Say what the button does until the panel can take a drop; the PRD
           lists folder drag-and-drop under "not yet" and this sentence was
-          quietly promising it. */}
+          quietly promising it.
+
+          It said "Choose a folder" until 2026-09-08, which was the same
+          promise one word further in: the input below carries `multiple` and
+          NOT `webkitdirectory`, so the picker it opens selects files and
+          cannot select a folder at all. Half-fixing "Drop a folder" to
+          "Choose a folder" moved the verb and left the noun lying. The button
+          says "Choose files"; so does this. When the panel grows a real folder
+          intake — PRD §6 — both change together. */}
       {queue.length === 0 ? (
         <p className="bp-empty">
-          Choose a folder of screenshots, PDFs or existing <code>.repx</code> files and each one
-          becomes its own report — one <code>.repx</code> per source document, with the structural
-          audit's verdict beside it, downloadable together as a zip.
+          Choose the screenshots, PDFs or existing <code>.repx</code> files you want converted —
+          as many at once as you like — and each one becomes its own report: one <code>.repx</code>{' '}
+          per source document, with the structural audit's verdict beside it, downloadable
+          together as a zip.
           <br /><br />
           This is different from attaching several files to the composer, which builds
           <em> one</em> report out of several pages.

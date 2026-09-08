@@ -44,6 +44,23 @@ describe('queueing', () => {
     expect(document.body.textContent).toMatch(/different from attaching several files to the composer/i);
   });
 
+  /*
+   * The empty state has promised something the control cannot do twice now:
+   * first "Drop a folder" on a panel with no onDrop handler, then "Choose a
+   * folder" on an input that has `multiple` and not `webkitdirectory`. Both
+   * read fine and neither throws. This pins the copy to the input's actual
+   * capability, so the next person to write "folder" here has to add the
+   * attribute in the same commit.
+   */
+  it('does not offer a folder the picker cannot select', () => {
+    render(<BatchPanel ready runOne={vi.fn()} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    const input = document.querySelector('input[type=file]') as HTMLInputElement;
+    const claimsFolders = /folder/i.test(document.body.textContent ?? '');
+    // `webkitdirectory` is the only thing that makes a folder selectable.
+    expect(claimsFolders).toBe(input.hasAttribute('webkitdirectory'));
+    expect(input.multiple).toBe(true);
+  });
+
   it('makes one row per file', () => {
     render(<BatchPanel ready runOne={vi.fn()} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
     choose(['a.png', 'b.png', 'c.png']);
