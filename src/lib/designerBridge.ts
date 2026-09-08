@@ -64,6 +64,34 @@ export function designerFileName(title?: string): string {
  * that drops rather than refuses would otherwise leave this pending and the
  * button missing for as long as the tab is open.
  */
+/**
+ * Smallest gap between two probes triggered by the tab regaining focus.
+ *
+ * Re-checking on focus is deliberate — starting the companion is something the
+ * user does outside the browser, so a mount-only ping leaves the button missing
+ * when they switch back. But a refused connection is logged by the browser
+ * itself and cannot be caught, so someone alt-tabbing while they work produces
+ * one `ERR_CONNECTION_REFUSED` per switch. Four consecutive bug reports arrived
+ * with those lines outnumbering everything else in the console, which is
+ * exactly the failure the comment above `pingDesigner`'s call site warns about:
+ * a predictable error hiding the unpredictable ones.
+ *
+ * Thirty seconds keeps the behaviour that matters — nobody launches a Windows
+ * desktop app and returns to the tab in under half a minute — while collapsing
+ * a flurry of tab switches into a single probe.
+ */
+export const DESIGNER_RECHECK_GAP_MS = 30_000;
+
+/** Has enough time passed since the last probe to be worth another? */
+export function shouldRecheckDesigner(
+  lastCheckedAt: number | null,
+  now: number,
+  gapMs: number = DESIGNER_RECHECK_GAP_MS
+): boolean {
+  if (lastCheckedAt === null) return true;
+  return now - lastCheckedAt >= gapMs;
+}
+
 export async function pingDesigner(timeoutMs = 1200): Promise<boolean> {
   if (typeof fetch === 'undefined') return false;
 

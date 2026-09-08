@@ -185,7 +185,7 @@ import { readBoundFields } from './lib/repxBindingPlan';
 import { auditRepx } from './lib/repxAudit';
 import { sourceRectFor } from './lib/sourceRect';
 import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
-import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner } from './lib/designerBridge';
+import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import {
   buildChatHistory,
@@ -3299,7 +3299,9 @@ export default function App() {
     if (!showWorkspace) return;
 
     let cancelled = false;
+    let lastCheckedAt: number | null = null;
     const check = () => {
+      lastCheckedAt = Date.now();
       pingDesigner().then((ready) => {
         if (!cancelled) setDesignerReady(ready);
       });
@@ -3312,10 +3314,20 @@ export default function App() {
     // is still missing when they switch back — which reads as the feature having
     // been removed rather than as "nothing is listening yet". Coming back to the
     // tab is exactly the moment to look again.
-    window.addEventListener('focus', check);
+    //
+    // Throttled, because a refused connection is logged by the browser itself
+    // and cannot be caught: without this, someone alt-tabbing while they work
+    // fills the console with `ERR_CONNECTION_REFUSED`, which is precisely the
+    // noise the comment above this effect exists to prevent. The gap is short
+    // enough that it never delays noticing a designer the user has just
+    // started — see `shouldRecheckDesigner`.
+    const checkOnFocus = () => {
+      if (shouldRecheckDesigner(lastCheckedAt, Date.now())) check();
+    };
+    window.addEventListener('focus', checkOnFocus);
     return () => {
       cancelled = true;
-      window.removeEventListener('focus', check);
+      window.removeEventListener('focus', checkOnFocus);
     };
   }, [showWorkspace]);
 

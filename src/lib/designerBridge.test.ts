@@ -7,6 +7,8 @@ import {
   waitForDesigner,
   DESIGNER_CLIENT_HEADER,
   DESIGNER_PROTOCOL,
+  DESIGNER_RECHECK_GAP_MS,
+  shouldRecheckDesigner,
 } from './designerBridge';
 
 /**
@@ -199,6 +201,43 @@ describe('designerFileName and Windows', () => {
  * which a web page may cause a local program to run. None of them was reachable
  * by a test.
  */
+/*
+ * Four consecutive bug reports arrived with `ERR_CONNECTION_REFUSED` from this
+ * probe outnumbering everything else in the console — one line per tab switch,
+ * because the browser logs a refused connection itself and no `catch` can stop
+ * it. That is the exact failure the call site's own comment warns about: a
+ * predictable error hiding the unpredictable ones.
+ */
+describe('shouldRecheckDesigner', () => {
+  const T = 1_800_000_000_000;
+
+  it('always probes when nothing has been probed yet', () => {
+    expect(shouldRecheckDesigner(null, T)).toBe(true);
+  });
+
+  it('refuses a second probe moments after the first', () => {
+    expect(shouldRecheckDesigner(T, T + 1_000)).toBe(false);
+  });
+
+  it('collapses a flurry of tab switches into nothing', () => {
+    for (const gap of [0, 200, 1_000, 5_000, 29_999]) {
+      expect(shouldRecheckDesigner(T, T + gap)).toBe(false);
+    }
+  });
+
+  // The behaviour that must survive: nobody launches a Windows desktop app and
+  // returns to the tab inside half a minute, so a real launch is still noticed.
+  it('probes again once the gap has passed', () => {
+    expect(shouldRecheckDesigner(T, T + DESIGNER_RECHECK_GAP_MS)).toBe(true);
+    expect(shouldRecheckDesigner(T, T + 120_000)).toBe(true);
+  });
+
+  it('takes an explicit gap for callers that want a different one', () => {
+    expect(shouldRecheckDesigner(T, T + 5_000, 1_000)).toBe(true);
+    expect(shouldRecheckDesigner(T, T + 500, 1_000)).toBe(false);
+  });
+});
+
 describe('pingDesigner', () => {
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
