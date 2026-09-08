@@ -8,10 +8,9 @@ Turn a screenshot, a PDF, or an existing report into a real DevExpress `.repx` f
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](package.json)
 [![Version](https://img.shields.io/badge/version-0.1.0-orange.svg)](package.json)
 
-<!-- TODO: add a build-status badge once this repository has a remote. The workflow
-     exists at .github/workflows/checks.yml but has never run, because there is no
-     remote to run it on. The badge URL needs the real owner/name:
-     [![checks](https://img.shields.io/github/actions/workflow/status/OWNER/REPO/checks.yml?branch=main)](../../actions) -->
+[![checks](https://img.shields.io/github/actions/workflow/status/waqarsyd/forma/checks.yml?branch=main&label=checks)](https://github.com/waqarsyd/forma/actions)
+
+<sup>The checks badge reads "no status" until CI runs for the first time, which is the first push — [`.github/workflows/checks.yml`](.github/workflows/checks.yml) exists and has never executed, because until now there was no remote to execute it on.</sup>
 
 Upload a design — a mockup, a scanned invoice, a photo of a printout, or a `.repx` you already have — and Forma returns three things in one pass:
 
@@ -92,6 +91,7 @@ Each of these is a shipped code path, not a plan.
 
 - **Image, PDF and `.repx` intake.** Drop a mockup, a scan, a photo, or an existing report. PDFs are rasterised *and* have their text layer extracted, so exact strings survive rather than being read back out of pixels ([`src/App.tsx`](src/App.tsx), [`src/lib/pdf.ts`](src/lib/pdf.ts)).
 - **Three artifacts in one structured response** — spec, `layout`, and `repxContent` — guaranteed parseable by a Gemini `responseSchema` rather than by hoping the model returns valid JSON ([`src/services/geminiService.ts`](src/services/geminiService.ts)).
+- **Targets your DevExpress version** — eight of them, 26.1 back to 20.1, written into the file's `SerializerVersion` so it drops into the codebase you already have. Worth knowing that the tag is a *label rather than a gate*: a newer `.repx` still opens in an older designer, which was measured with `RepxProbe inspect` and then confirmed through the product — a 23.2 file opened correctly in a real 20.1 designer, and the designer rewrote the tag on save. So pick the version you build against; nothing is lost if you pick wrong.
 - **In-browser mockup** drawn from the `layout` JSON, so you can see what the model understood before downloading anything.
 - **Print preview and PDF export**, and it is the one pane drawn from `repxContent` rather than from the `layout`. The exported REPX is read back, the band rules applied — Detail once per record, PageHeader and PageFooter on every sheet, ReportHeader once, ReportFooter after the last record — and laid out across real pages at true size, so `window.print()` gives a correctly-scaled PDF. **This is what closes the loop:** before it, nothing showed the report paginated and nothing checked the artifact you actually download. A Detail band the height of the page looks fine in the mockup and is obvious here on sight, one record per sheet ([`src/lib/reportPreview.ts`](src/lib/reportPreview.ts), [`src/components/ReportPreview.tsx`](src/components/ReportPreview.tsx)).
 - **Direct manipulation.** Select, drag, resize; double-click a label to retype it; arrow keys nudge one report unit and Shift+arrow ten, because a drag gets close and one unit at a time gets exact. Undo is one entry per gesture, not per mouse move. Every edit splices the control's opening tag in place, so attributes Forma does not model — `Padding`, `StylePriority`, anything a later DevExpress version adds — survive untouched ([`src/lib/repxEdit.ts`](src/lib/repxEdit.ts)).
@@ -145,10 +145,8 @@ There is no ESLint config, no state-management library, no date library, no HTTP
 ### Installation
 
 ```bash
-# TODO: replace with the real clone URL once a remote exists — this repository
-# currently has none, so `git remote -v` returns nothing.
-git clone <repository-url>
-cd Dev_Forma
+git clone https://github.com/waqarsyd/forma.git
+cd forma
 
 npm install
 ```
@@ -605,7 +603,7 @@ Forma is usable but young, and some things are worth knowing before you rely on 
 - **Gauges and barcodes in the mockup are decorative placeholders**; charts follow the supplied values but are stylised rather than a real charting library. The exported `.repx` still carries the correct DevExpress control types.
 - **Models are detected at runtime, never hardcoded.** Google retires models "for new users", so a pinned id works for existing projects and 404s for every new key. Forma probes a preference list on first use and caches the winner for the session.
 - **Reports with large images may not sync to the cloud.** A single detailed 2048px upload can exceed Firestore's 1 MiB document limit on its own; Forma saves the spec and REPX without the images in that case, and says so.
-- **PDFs are read to 8 pages.** Beyond that, later pages are ignored.
+- **PDFs are read to 8 pages.** Beyond that, later pages are ignored. A single upload is capped at **20 MB** and a request at **12 attachments**; anything over either is reported on screen rather than dropped silently.
 - **Component coverage is five components deep.** `DataBinding`, `BatchPanel`, `ChatThread`, `Composer` and `AccountDialog` have render tests; nothing else does, and `App.tsx` is still several thousand lines of which only the pieces extracted into `src/lib` are tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`. (No line count here on purpose: it was written down as "4,500" and was wrong within a week. Measure it if you need it.)
 
 ---
