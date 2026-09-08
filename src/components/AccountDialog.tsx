@@ -313,6 +313,12 @@ export default function AccountDialog({
               <div>
                 <label className={LABEL} htmlFor="acct-name">Display name</label>
                 <div className="mt-1.5 flex gap-2">
+                  {/* Paired with the hint below, the way ContactPage's Field and
+                      LoginPage's fields already do it. The message was visible
+                      text with no programmatic relationship to the box it
+                      belonged to, so a screen reader announced neither that the
+                      value was rejected nor why — see the comment in
+                      ContactPage's Field for the full reasoning. */}
                   <input
                     id="acct-name"
                     className={FIELD}
@@ -320,6 +326,8 @@ export default function AccountDialog({
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Your name"
                     autoComplete="name"
+                    aria-invalid={nameTooShort}
+                    aria-describedby={nameTooShort ? 'acct-name-error' : undefined}
                   />
                   <button
                     type="button"
@@ -331,7 +339,10 @@ export default function AccountDialog({
                   </button>
                 </div>
                 {nameTooShort && (
-                  <p className="mt-1.5 font-body-lg text-[12.5px] leading-[1.5] text-error">
+                  <p
+                    id="acct-name-error"
+                    className="mt-1.5 font-body-lg text-[12.5px] leading-[1.5] text-error"
+                  >
                     Use at least 2 characters.
                   </p>
                 )}
@@ -380,9 +391,14 @@ export default function AccountDialog({
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Type it again"
                     autoComplete="new-password"
+                    aria-invalid={passwordsDiffer}
+                    aria-describedby={passwordsDiffer ? 'acct-confirm-error' : undefined}
                   />
                   {passwordsDiffer && (
-                    <p className="mt-1.5 font-body-lg text-[12.5px] leading-[1.5] text-error">
+                    <p
+                      id="acct-confirm-error"
+                      className="mt-1.5 font-body-lg text-[12.5px] leading-[1.5] text-error"
+                    >
                       Those two do not match.
                     </p>
                   )}

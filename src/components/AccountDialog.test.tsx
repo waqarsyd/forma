@@ -118,6 +118,27 @@ describe('the display name', () => {
     expect(button(/^save$/i).disabled).toBe(true);
     expect(screen.getByText(/at least 2 characters/i)).toBeTruthy();
   });
+
+  /*
+   * The hint was visible text with no programmatic relationship to the box it
+   * belonged to: no `aria-invalid`, no `aria-describedby`. A sighted user saw
+   * red text under the field and a greyed-out Save; a screen-reader user got
+   * neither the rejection nor the reason, only a button that had silently
+   * stopped working. ContactPage's Field and every LoginPage field already
+   * pair the two attributes, so this was the one form in the app that did not.
+   */
+  it('points the name field at its hint, and marks it invalid', () => {
+    draw();
+    const input = field(/display name/i);
+    expect(input.getAttribute('aria-invalid')).toBe('false');
+    expect(input.getAttribute('aria-describedby')).toBe(null);
+
+    fireEvent.change(input, { target: { value: 'A' } });
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    const describedBy = input.getAttribute('aria-describedby');
+    expect(describedBy).toBe('acct-name-error');
+    expect(document.getElementById(describedBy!)?.textContent).toMatch(/at least 2 characters/i);
+  });
 });
 
 describe('changing the password', () => {
@@ -143,6 +164,21 @@ describe('changing the password', () => {
 
     expect(button(/change password/i).disabled).toBe(true);
     expect(screen.getByText(/do not match/i)).toBeTruthy();
+  });
+
+  /** The same association as the display name, for the same reason. */
+  it('points the confirm field at its mismatch hint', () => {
+    draw();
+    const confirm = field(/confirm new password/i);
+    expect(confirm.getAttribute('aria-invalid')).toBe('false');
+
+    fireEvent.change(field(/^new password$/i), { target: { value: 'new-secret' } });
+    fireEvent.change(confirm, { target: { value: 'new-secrat' } });
+
+    expect(confirm.getAttribute('aria-invalid')).toBe('true');
+    const describedBy = confirm.getAttribute('aria-describedby');
+    expect(describedBy).toBe('acct-confirm-error');
+    expect(document.getElementById(describedBy!)?.textContent).toMatch(/do not match/i);
   });
 
   it('changes it once both copies agree', async () => {
