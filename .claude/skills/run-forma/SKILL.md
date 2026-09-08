@@ -91,7 +91,7 @@ node .claude/skills/run-forma/drive.mjs --out $sp `
 | `--attach <file>` | attach before generating; repeatable — workspace only |
 | `--prompt <text>` | text sent with the generation — workspace only |
 | `--say <text>` | a chat turn after the report; repeatable — workspace only |
-| `--pane <name>` | open `Mockup`, `Spec` or `REPX` at the end — workspace only |
+| `--pane <name>` | open a pane at the end: `Mockup`, `Preview`, `Data`, `Spec` or `REPX` — workspace only |
 | `--no-key` | remove the key, to see the locked state |
 | `--wait <s>` | generation timeout, default 60 |
 
@@ -220,8 +220,16 @@ They live in one block at the top of `drive.mjs`; these are the ones that surpri
 - **One composer does both jobs.** `[aria-label="Send note"]` calls
   `handleGenerate()`, which decides between a generation and a chat turn from
   whether anything is attached. There is no separate chat box.
-- The panes are plain buttons reading exactly `Mockup`, `Spec` and `REPX`.
-  Matching on `REPX` alone can also hit a `Specs & REPX` tab in older shells.
+- **The result pane is five plain buttons** — `Mockup`, `Preview`, `Data`, `Spec`
+  and `REPX` — and `--pane` takes any of them. It said three until 2026-09-08,
+  which was the flag's documentation being narrower than its behaviour rather
+  than a limit: there is no list in `drive.mjs`, it finds the button whose
+  trimmed `textContent` **equals** the name and clicks it, so it would open any
+  button in the app spelled exactly that way, and throws `no pane button named X`
+  when nothing matches.
+  That exact-equality is also why a `Specs & REPX` tab in an older shell cannot
+  be hit by asking for `REPX`. This bullet used to warn that it could; a
+  substring match would, and the driver has never used one.
 - The status bar is `.wb-status`; the audit chip is `.wb-warn` / `.wb-bad`
   inside it; the note count is `.wb-kicker`.
 

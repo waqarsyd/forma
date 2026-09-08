@@ -19,7 +19,8 @@
  *   --attach <file>    attach a file before generating; repeatable
  *   --prompt <text>    text to send with the generation
  *   --say <text>       a chat turn after the report arrives; repeatable
- *   --pane <name>      open a pane at the end: Mockup | Spec | REPX
+ *   --pane <name>      open a pane at the end, by exact button text:
+ *                      Mockup | Preview | Data | Spec | REPX
  *   --no-key           do not seed a placeholder API key
  *   --wait <seconds>   how long to wait for a generation      (default 60)
  *
