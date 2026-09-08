@@ -202,6 +202,7 @@ import { formatSessionStamp } from './lib/datetime';
 import { unitsToPx, pointsToUnits, pdfTopFromBaseline, unitsPerInch } from './lib/reportGeometry';
 import { repeatedHeadingTables } from './lib/mockupRows';
 import LogoPulse from './components/LogoPulse';
+import ChatThread from './components/ChatThread';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
   clampReviewWidth,
@@ -3785,68 +3786,14 @@ export default function App() {
             </div>
           )}
 
-          <div className="wb-thread">
-            {messages.map((msg) => (
-              <article key={msg.id} className={`wb-note${msg.role === 'user' ? ' wb-note--me' : ''}`}>
-                <span className="wb-spine" />
-                <div>
-                  <div className="wb-who">{msg.role === 'user' ? 'You' : 'Forma'}</div>
-                  {msg.text && <p>{msg.text}</p>}
-
-                  {msg.images && msg.images.length > 0 && (
-                    // Sent messages showed a count and nothing else, so once a
-                    // message was on the transcript there was no way to check
-                    // what had gone with it. Names are not kept on a message —
-                    // `ChatMessage.images` is data URLs only, and a saved report
-                    // reloads with just those — so the picture is the label.
-                    <div className="wb-attach-strip">
-                      {groupAttachments(msg.imageMeta ?? [], msg.images.length).map((group) => {
-                        const label = groupLabel(group);
-                        const srcs = group.indices.map((i) => msg.images![i]);
-                        return (
-                          <button
-                            key={`${group.file}-${group.indices[0]}`}
-                            type="button"
-                            className="wb-attach-shot"
-                            onClick={() => setFullScreenImage({ srcs, index: 0, file: group.file })}
-                            title={`View ${label}`}
-                            aria-label={`View ${label}`}
-                          >
-                            <img src={srcs[0]} alt="" />
-                            {group.pages > 1 && <span className="wb-attach-pages">{group.pages}</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* The failure belongs beside the turn that failed. */}
-                  {msg.error && (
-                    <p role="alert" style={{ color: 'var(--bad-ink)' }}>
-                      {msg.error}{' '}
-                      <button
-                        className="wb-pill wb-pill--outline"
-                        onClick={() => handleRetryMessage(msg.id)}
-                        disabled={isChatting || isAnalyzing}
-                      >
-                        Try again
-                      </button>
-                    </p>
-                  )}
-                </div>
-              </article>
-            ))}
-
-            {isChatting && !isAnalyzing && (
-              <article className="wb-note" aria-live="polite">
-                <span className="wb-spine" />
-                <div>
-                  <div className="wb-who">Forma</div>
-                  <p>{streamingReply || 'Thinking…'}</p>
-                </div>
-              </article>
-            )}
-
+          <ChatThread
+            messages={messages}
+            isChatting={isChatting}
+            isAnalyzing={isAnalyzing}
+            streamingReply={streamingReply}
+            onRetry={handleRetryMessage}
+            onOpenAttachment={setFullScreenImage}
+          >
             {/* Generation. The ring around the mark *is* the progress bar — same
                 `analyzingProgress`, same guarantee that it only ever reports
                 what has actually arrived. The spinner, the clock and the three
@@ -3896,7 +3843,7 @@ export default function App() {
                 )}
               </div>
             )}
-          </div>
+          </ChatThread>
 
           <div className="wb-composer">
             {/* Staged intake. The artifact had no slot for these; they are absent

@@ -275,12 +275,16 @@ src/
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
                        LoginPage, LegalPage (/terms and /privacy),
                        SiteHeader, SiteFooter, MobileNav, Logo, LogoPulse,
-                       AccountDialog, UserAvatar, NotFoundPage, and Markdown —
-                       which is its own module so react-markdown can be
-                       lazy-loaded. Four files here are not components:
-                       useFocusTrap (a shared hook) and three tests —
-                       legalDisclosure, which reads ContactPage and index.html
-                       off disk, plus DataBinding and BatchPanel, the only
+                       AccountDialog, UserAvatar, NotFoundPage, ChatThread
+                       (the review column's transcript, lifted out of App.tsx
+                       once chatSession.ts held its rules — the progress card
+                       passes through as children, because that is generation
+                       state and not conversation), and Markdown — which is
+                       its own module so react-markdown can be lazy-loaded.
+                       Five files here are not components: useFocusTrap (a
+                       shared hook) and four tests — legalDisclosure, which
+                       reads ContactPage and index.html off disk, plus
+                       DataBinding, BatchPanel and ChatThread, the only
                        component render tests in the suite. They are the tests
                        that live outside lib/, services/ and server/
     landing/           figures used by the marketing pages: HeroScanner,
