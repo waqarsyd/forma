@@ -58,8 +58,16 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
   { id: 'repx', n: '07', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download' },
   { id: 'config', n: '08', title: 'Configuration', keys: 'config configure version paper size letter a4 legal header footer rtl model picker unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
   { id: 'saving', n: '09', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
-  { id: 'trouble', n: '10', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem' },
-  { id: 'faq', n: '11', title: 'FAQ', keys: 'faq questions common help cost price free visual studio photo' },
+  /* Batch and Revisions are two of the five rail panels and both shipped on
+     2026-09-05, and neither appeared anywhere on this page or on Features
+     until 2026-09-08 — on a page whose sibling is titled "Everything it does".
+     Batch in particular is the migration story: it is the thing a
+     prompt-driven competitor structurally cannot offer, and it was the one
+     feature a visitor could not discover without opening the app. */
+  { id: 'batch', n: '10', title: 'Batch generation', keys: 'batch bulk many folder queue multiple files zip archive migration legacy convert retry stop download all at once' },
+  { id: 'revisions', n: '11', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
+  { id: 'trouble', n: '12', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem' },
+  { id: 'faq', n: '13', title: 'FAQ', keys: 'faq questions common help cost price free visual studio photo' },
 ];
 
 const FAQS: Array<{ q: string; a: ReactNode }> = [
@@ -884,6 +892,70 @@ y_top = pageHeight − (baseline + height)`}
               </Note>
             </Article>
 
+            <Article id="batch" kicker="Guide" title="Batch generation" hidden={!matches('batch')}>
+              <p className={PROSE}>
+                The <b className="font-bold text-on-surface">Batch</b> panel turns a set of legacy
+                reports into a set of <code>.repx</code> files — each source document becoming its own
+                report. That is the opposite of attaching several files to the composer, where several
+                pages build <em>one</em> report, and the two are indistinguishable from the files
+                themselves, so the distinction is made by where you put them.
+              </p>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="One at a time">
+                  Files are generated in sequence, not in parallel. Your key carries the quota, and forty
+                  simultaneous requests turn a slow success into a fast 429.
+                </Def>
+                <Def t="A verdict per row">
+                  Each finished row carries the structural audit's answer in the same words the status bar
+                  uses — clean, N warnings, or N errors and content will be lost — because the point of
+                  running forty files is knowing which of the forty are worth opening.
+                </Def>
+                <Def t="Stop and retry">
+                  Stop cancels what has not started and leaves the request already in flight alone, since it
+                  is billed to your key either way. Retry requeues the failed and cancelled files and keeps
+                  what succeeded. A quota, key or permission failure stops the whole run rather than
+                  producing forty identical errors.
+                </Def>
+                <Def t="Taking them away">
+                  A finished row opens in the workspace or downloads on its own, and Download as .zip takes
+                  them all at once.
+                </Def>
+              </dl>
+              <Note label="Files, not a folder">
+                The picker selects files — as many at once as you like. Dropping a folder onto the panel is
+                not supported yet, and neither is running more than one at a time.
+              </Note>
+            </Article>
+
+            <Article id="revisions" kicker="Guide" title="Revision history" hidden={!matches('revisions')}>
+              <p className={PROSE}>
+                Every generation, refinement and data-binding pass is kept in the{' '}
+                <b className="font-bold text-on-surface">Revisions</b> panel, newest first, with what it
+                changed — so a refinement that made the report worse is one click from being undone.
+              </p>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="What changed, not just when">
+                  The difference is worked out structurally, by control name: added, removed, moved, resized,
+                  retyped, plus any change in the band count. A line-by-line comparison of two XML files
+                  would be almost entirely noise, because the model rewrites whitespace and attribute order
+                  freely between runs.
+                </Def>
+                <Def t="Restoring is itself recorded">
+                  Going back to an earlier version does not lose the newer one. Otherwise Restore would be
+                  the very trap the panel exists to remove.
+                </Def>
+                <Def t="Nudging is not a revision">
+                  Dragging or retyping a control on the Preview pane has its own undo, one step per gesture.
+                  Recording those here would bury the three or four versions you actually want under forty
+                  small adjustments.
+                </Def>
+                <Def t="How long they last">
+                  Signed in, the newest ten are saved with the project and come back when you reopen it.
+                  Signed out, they live for the session. The panel says which of the two you are getting.
+                </Def>
+              </dl>
+            </Article>
+
             <Article id="trouble" kicker="Support" title="Troubleshooting" hidden={!matches('trouble')}>
               <dl className="border-t border-outline-variant">
                 <Def t={'"No longer available"'}>
@@ -1048,6 +1120,7 @@ y_top = pageHeight − (baseline + height)`}
           ['Running and refining', '#run'],
           ['What you can upload', '#upload'],
           ['The .repx file', '#repx'],
+          ['Batch generation', '#batch'],
           ['FAQ', '#faq'],
         ]}
       />

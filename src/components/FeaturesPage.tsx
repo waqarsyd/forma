@@ -309,8 +309,9 @@ function PipelineCard() {
     ['02', 'Setup', 'What you set first', '#setup'],
     ['03', 'Fidelity', 'What survives the trip', '#fidelity'],
     ['04', 'Control', 'The run itself', '#control'],
-    ['05', 'Output', 'Checked before download', '#output'],
-    ['06', 'Custody', 'Your key, your work', '#custody'],
+    ['05', 'Scale', 'A folder at a time', '#scale'],
+    ['06', 'Output', 'Checked before download', '#output'],
+    ['07', 'Custody', 'Your key, your work', '#custody'],
   ];
   return (
     <div className="reg-marks rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card p-[22px] shadow-[var(--shadow-lg),var(--inset-hi)]">
@@ -318,8 +319,10 @@ function PipelineCard() {
         <span className="font-code-sm text-[9.5px] leading-[1.62] font-medium tracking-[0.14em] uppercase text-[color:var(--ink-faint)]">
           the path a file takes
         </span>
+        {/* Counted from `stops` rather than typed, because it was typed and
+            went stale the moment a seventh was added. */}
         <span className="font-code-sm text-[9.5px] leading-[1.62] font-medium tracking-[0.14em] uppercase text-secondary">
-          6 stops
+          {stops.length} stops
         </span>
       </div>
       {stops.map(([n, name, note, href]) => (
@@ -715,8 +718,68 @@ export default function FeaturesPage({
           </div>
         </section>
 
+        {/* --------------------------------------------------------- SCALE
+
+            Batch and Revisions are two of the five rail panels, both shipped
+            2026-09-05, and neither was named anywhere on this page or on Docs
+            until 2026-09-08 — on a page titled "Everything it does, and where
+            it stops". Batch is also the one claim a prompt-driven competitor
+            structurally cannot match, so its absence was the most expensive
+            omission on the site. */}
+        <section id="scale" className="py-[108px]">
+          <div className="max-w-container-max mx-auto px-margin-desktop">
+            <SectionHead
+              eyebrow="Scale"
+              title="Forty reports you have never read."
+              /* Both panels are named outright. The first draft of this section
+                 described what they do without ever using the words "Batch" and
+                 "Revisions", so a reader who had heard of either could not find
+                 it here and neither could the browser's own find-in-page. */
+              lede="You can describe one report to an assistant. You cannot describe the forty in a folder nobody has opened since the person who wrote them left — which is the whole of the migration problem. Two panels answer it: Batch turns a queue of files into a queue of reports, and Revisions keeps every version of each one."
+            />
+            <RevealGroup className="grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant sm:grid-cols-2" stagger={0.09}>
+              {[
+                {
+                  k: 'A queue, not a batch button',
+                  d: 'Choose as many files as you like and each one becomes its own report — the opposite of attaching several pages to build one. They run in sequence, because your key carries the quota and forty simultaneous requests turn a slow success into a fast 429.',
+                },
+                {
+                  k: 'A verdict on every row',
+                  d: 'Each finished file carries the structural audit’s answer in the words the status bar uses: clean, N warnings, or N errors and content will be lost. The point of running forty is knowing which of the forty are worth opening.',
+                },
+                {
+                  k: 'Stop and retry mean what they say',
+                  d: 'Stop cancels what has not started and leaves the request in flight alone, since it is billed either way. Retry requeues only what failed. A quota or key failure halts the run rather than producing forty identical errors.',
+                },
+                {
+                  k: 'Out in one archive',
+                  d: 'Any finished row opens in the workspace or downloads on its own, and Download as .zip takes the lot. Dropping a folder onto the panel is not supported yet; the picker takes the files.',
+                },
+                {
+                  k: 'Every revision, and what it changed',
+                  d: 'Generations, refinements and binding passes are all kept, newest first, with a structural difference by control name — added, removed, moved, resized, retyped. Not a line diff of the XML, which would be almost entirely noise.',
+                },
+                {
+                  k: 'Going back does not lose going forward',
+                  d: 'Restoring an earlier version is itself recorded, so the newer one is still there. Signed in, the newest ten are saved with the project; signed out they last the session, and the panel says which you are getting.',
+                },
+              ].map((c) => (
+                <RevealItem
+                  key={c.k}
+                  className="u-transition bg-surface-container-lowest dark:bg-card px-[22px] py-6 hover:bg-surface-container-low"
+                >
+                  <h3 className="font-display-lg text-[17px] font-bold leading-[1.28] tracking-[-0.018em] text-on-surface">
+                    {c.k}
+                  </h3>
+                  <p className="mt-[7px] font-body-lg text-[14px] leading-[1.6] text-on-surface-variant">{c.d}</p>
+                </RevealItem>
+              ))}
+            </RevealGroup>
+          </div>
+        </section>
+
         {/* -------------------------------------------------------- OUTPUT */}
-        <section id="output" className="py-[108px]">
+        <section id="output" className="border-t border-outline-variant py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
               eyebrow="Output"
@@ -1048,6 +1111,7 @@ export default function FeaturesPage({
           ['Setup', '#setup'],
           ['Fidelity', '#fidelity'],
           ['Control', '#control'],
+          ['Scale', '#scale'],
           ['Output', '#output'],
           ['Custody', '#custody'],
           ['Cost', '#cost'],
