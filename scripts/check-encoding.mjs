@@ -91,11 +91,17 @@ const ROOT_FILES = [
   '.gitignore',
   '.env.example',
   'package.json',
-  // Added 2026-09-08, the same day it stopped being three lines of emulator
-  // config and became the deployment target's header set -- including the
-  // Content-Security-Policy, where a mojibaked character would not throw, it
-  // would just quietly produce a directive the browser cannot parse. Third
-  // file to fall through this list, after CONTRIBUTING.md and package.json.
+  // Added 2026-09-08, the same day firebase.json stopped being three lines of
+  // emulator config and became the deployment target's header set -- including
+  // the Content-Security-Policy, where a mojibaked character would not throw,
+  // it would just quietly produce a directive the browser cannot parse.
+  // .firebaserc names the deploy target, so a corrupted id there deploys
+  // somewhere unexpected rather than failing. The THIRD and FOURTH files to
+  // fall through this list, after CONTRIBUTING.md and package.json.
+  //
+  // Both verified by planting a mojibake sequence and watching the sweep exit
+  // 1 naming the file, then restoring -- because "I added it to the list" is
+  // the kind of claim this list exists to stop anyone taking on trust.
   'firebase.json',
   '.firebaserc',
 ];
