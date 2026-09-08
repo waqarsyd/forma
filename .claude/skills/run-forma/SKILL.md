@@ -94,6 +94,7 @@ node .claude/skills/run-forma/drive.mjs --out $sp `
 | `--pane <name>` | open a pane at the end: `Mockup`, `Preview`, `Data`, `Spec` or `REPX` — workspace only |
 | `--no-key` | remove the key, to see the locked state |
 | `--wait <s>` | generation timeout, default 60 |
+| `--port <n>` | the CDP port to attach to, default 9222 — only needed if Edge was started on another one |
 
 **`--url` works on any route**, and the driver adapts to it: it waits for the
 composer on `/workspace` and for an `<h1>` anywhere else, since the workspace has
