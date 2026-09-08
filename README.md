@@ -284,12 +284,17 @@ src/
                        one composer does both jobs, and which one is App.tsx's
                        decision, not this component's), and Markdown — which
                        is its own module so react-markdown can be lazy-loaded.
-                       Six files here are not components: useFocusTrap (a
-                       shared hook) and five tests — legalDisclosure, which
+                       Seven files here are not components: useFocusTrap (a
+                       shared hook) and six tests — legalDisclosure, which
                        reads ContactPage and index.html off disk, plus
-                       DataBinding, BatchPanel, ChatThread and Composer, the
-                       only component render tests in the suite. They are the
-                       tests that live outside lib/, services/ and server/
+                       DataBinding, BatchPanel, ChatThread, Composer and
+                       AccountDialog, the only component render tests in the
+                       suite. AccountDialog's mocks Firebase and covers the
+                       surface — which control is enabled when, and what it
+                       says when it fails; what a deletion actually removes is
+                       proved separately in tests/accountDeletion.test.ts,
+                       against the emulator. They are the tests that live
+                       outside lib/, services/ and server/
     landing/           figures used by the marketing pages: HeroScanner,
                        SheetRuler, StepFigures, VaultFigure,
                        AnnouncementDock, sections, icons

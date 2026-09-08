@@ -33,6 +33,17 @@ import { useFocusTrap } from './useFocusTrap';
  * 3. **Deletion says what it deletes, and is typed out in full.** It removes
  *    the saved reports and the encrypted key with the account; a button that
  *    quietly discards someone's work on one click is not a confirmation.
+ * 4. **Each section asks for its own password, in its own section.** One shared
+ *    `currentPassword` behind all three was wrong in three separate ways — see
+ *    the state declarations — and the one that mattered was that filling the
+ *    field in one section armed the guard on another. A password box belongs
+ *    beside the button it unlocks.
+ *
+ * `AccountDialog.test.tsx` covers the surface: which control is enabled when,
+ * what each one sends, and what it says when it fails. What the deletion
+ * actually removes is proved in `tests/accountDeletion.test.ts`, against the
+ * emulator with production rules — the two are deliberately separate, because
+ * a mocked Firebase can prove neither.
  */
 
 type Feedback = { tone: 'ok' | 'error'; text: string } | null;
@@ -50,6 +61,10 @@ const AUTH_MESSAGES: Record<string, string> = {
   'auth/popup-closed-by-user': 'Confirmation was cancelled.',
   'auth/network-request-failed': 'Could not reach the account service. Check your connection and try again.',
   'auth/operation-not-allowed': 'Email and password sign-in is not enabled for this project.',
+  // Ours, not Firebase's. The Save button is disabled for this, so it should be
+  // unreachable — but an unmapped code renders as "That did not work. Please
+  // try again.", which is how the empty-name case used to report itself.
+  'forma/name-too-short': 'Use at least 2 characters.',
 };
 
 const messageFor = (error: unknown) => {
@@ -85,8 +100,24 @@ export default function AccountDialog({
   const withPassword = hasPasswordProvider(user);
 
   const [name, setName] = useState(user.displayName ?? '');
-  const [currentPassword, setCurrentPassword] = useState('');
+
+  /*
+   * A password per section, not one shared between them.
+   *
+   * There was a single `currentPassword` behind all three, with inputs in only
+   * two of them, and every consequence of that was wrong. The email change
+   * required a password typed into a field in the *other column*, with nothing
+   * on screen saying so — its button simply stayed disabled. Typing a password
+   * to change it also filled the delete confirmation, because both inputs were
+   * the same state. And satisfying one section silently satisfied half the
+   * guard on another, on the screen where that matters most.
+   */
+  const [passwordForChange, setPasswordForChange] = useState('');
+  const [passwordForEmail, setPasswordForEmail] = useState('');
+  const [passwordForDelete, setPasswordForDelete] = useState('');
+
   const [nextPassword, setNextPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [confirmText, setConfirmText] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -130,7 +161,7 @@ export default function AccountDialog({
       'name',
       async () => {
         const trimmed = name.trim();
-        if (trimmed.length < 2) throw { code: 'custom', message: 'short' };
+        if (trimmed.length < 2) throw { code: 'forma/name-too-short' };
         await setDisplayName(user, trimmed);
         onProfileUpdated?.();
       },
@@ -141,9 +172,10 @@ export default function AccountDialog({
     run(
       'password',
       async () => {
-        await changePassword(user, currentPassword, nextPassword);
-        setCurrentPassword('');
+        await changePassword(user, passwordForChange, nextPassword);
+        setPasswordForChange('');
         setNextPassword('');
+        setConfirmPassword('');
       },
       'Password changed.',
     );
@@ -152,9 +184,9 @@ export default function AccountDialog({
     run(
       'email',
       async () => {
-        await requestEmailChange(user, newEmail.trim(), currentPassword);
+        await requestEmailChange(user, newEmail.trim(), passwordForEmail);
         setNewEmail('');
-        setCurrentPassword('');
+        setPasswordForEmail('');
       },
       'Check the new address — the change takes effect once you confirm it there.',
     );
@@ -163,7 +195,7 @@ export default function AccountDialog({
     run(
       'delete',
       async () => {
-        await deleteAccountAndData(user, currentPassword);
+        await deleteAccountAndData(user, passwordForDelete);
         // Firebase signs the user out as the account goes; the app's auth
         // listener does the rest.
         closeRef.current();
@@ -181,7 +213,21 @@ export default function AccountDialog({
       'Verification email sent.',
     );
 
-  const nameTooShort = name.trim().length > 0 && name.trim().length < 2;
+  /*
+   * An empty box is too short too.
+   *
+   * This required at least one character, so clearing the field left Save
+   * enabled and the click failed with a generic "That did not work" about a
+   * rule that had never been stated. The hint now appears for anything under
+   * two characters, blank included, and the button is disabled to match.
+   */
+  const nameTooShort = name.trim().length < 2;
+  const nameUnchanged = name.trim() === (user.displayName ?? '');
+
+  /** Both copies of the new password must agree before it can be set. */
+  const passwordsDiffer = confirmPassword.length > 0 && nextPassword !== confirmPassword;
+  const canChangePassword =
+    passwordForChange.length > 0 && nextPassword.length >= 6 && nextPassword === confirmPassword;
 
   return (
     <div
@@ -255,7 +301,7 @@ export default function AccountDialog({
                   <button
                     type="button"
                     onClick={saveName}
-                    disabled={busy !== null || nameTooShort || name.trim() === (user.displayName ?? '')}
+                    disabled={busy !== null || nameTooShort || nameUnchanged}
                     className={`${PILL} shrink-0 border border-outline-variant text-on-surface hover:border-secondary hover:text-secondary`}
                   >
                     {busy === 'name' ? 'Saving…' : 'Save'}
@@ -280,8 +326,8 @@ export default function AccountDialog({
                     id="acct-current"
                     type="password"
                     className={`${FIELD} mt-1.5`}
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    value={passwordForChange}
+                    onChange={(e) => setPasswordForChange(e.target.value)}
                     autoComplete="current-password"
                   />
                 </div>
@@ -297,11 +343,32 @@ export default function AccountDialog({
                     autoComplete="new-password"
                   />
                 </div>
+                {/* Typed twice, as sign-up asks for it. Without this a typo
+                    sets a password the owner does not know, and they find out
+                    at the next sign-in on another device — long after they
+                    could connect it to this screen. */}
+                <div>
+                  <label className={LABEL} htmlFor="acct-next-confirm">Confirm new password</label>
+                  <input
+                    id="acct-next-confirm"
+                    type="password"
+                    className={`${FIELD} mt-1.5`}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Type it again"
+                    autoComplete="new-password"
+                  />
+                  {passwordsDiffer && (
+                    <p className="mt-1.5 font-body-lg text-[12.5px] leading-[1.5] text-error">
+                      Those two do not match.
+                    </p>
+                  )}
+                </div>
                 <div>
                   <button
                     type="button"
                     onClick={savePassword}
-                    disabled={busy !== null || !currentPassword || nextPassword.length < 6}
+                    disabled={busy !== null || !canChangePassword}
                     className={`${PILL} border border-outline-variant text-on-surface hover:border-secondary hover:text-secondary`}
                   >
                     {busy === 'password' ? 'Changing…' : 'Change password'}
@@ -329,18 +396,35 @@ export default function AccountDialog({
                     autoComplete="email"
                   />
                 </div>
+                {/* Its own field. This section required a password and had no
+                    input, so the one it read lived in the Password fieldset in
+                    the other column — the button stayed disabled and nothing on
+                    screen said which box would enable it. */}
+                <div>
+                  <label className={LABEL} htmlFor="acct-email-pass">
+                    Password, to confirm the email change
+                  </label>
+                  <input
+                    id="acct-email-pass"
+                    type="password"
+                    className={`${FIELD} mt-1.5`}
+                    value={passwordForEmail}
+                    onChange={(e) => setPasswordForEmail(e.target.value)}
+                    autoComplete="current-password"
+                  />
+                </div>
                 <div className="wb-note-line">
                   <span className="wb-ic"><IconCheck size={13} /></span>
                   <span>
                     We send a link to the new address first. The account moves only when you open it, so a typo
-                    cannot lock you out. Your current password confirms the change.
+                    cannot lock you out.
                   </span>
                 </div>
                 <div>
                   <button
                     type="button"
                     onClick={saveEmail}
-                    disabled={busy !== null || !newEmail.trim() || !currentPassword}
+                    disabled={busy !== null || !newEmail.trim() || !passwordForEmail}
                     className={`${PILL} border border-outline-variant text-on-surface hover:border-secondary hover:text-secondary`}
                   >
                     {busy === 'email' ? 'Sending…' : 'Send confirmation'}
@@ -364,13 +448,15 @@ export default function AccountDialog({
 
               {withPassword && (
                 <div>
-                  <label className={LABEL} htmlFor="acct-confirm-pass">Current password</label>
+                  <label className={LABEL} htmlFor="acct-confirm-pass">
+                    Password, to confirm deletion
+                  </label>
                   <input
                     id="acct-confirm-pass"
                     type="password"
                     className={`${FIELD} mt-1.5`}
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    value={passwordForDelete}
+                    onChange={(e) => setPasswordForDelete(e.target.value)}
                     autoComplete="current-password"
                   />
                 </div>
@@ -395,7 +481,7 @@ export default function AccountDialog({
                 <button
                   type="button"
                   onClick={removeAccount}
-                  disabled={busy !== null || confirmText !== 'DELETE' || (withPassword && !currentPassword)}
+                  disabled={busy !== null || confirmText !== 'DELETE' || (withPassword && !passwordForDelete)}
                   className={`${PILL} border border-error/50 bg-error/[0.07] text-error hover:bg-error/[0.12]`}
                 >
                   <IconTrash size={14} />
@@ -412,7 +498,11 @@ export default function AccountDialog({
               className={`mr-auto font-body-lg text-[13px] leading-[1.5] ${
                 feedback.tone === 'ok' ? 'text-on-surface-variant' : 'text-error'
               }`}
-              role="status"
+              /* A failure on this screen is not a polite status update: a
+                 wrong password, an address already in use, a deletion that
+                 did not happen. `status` is announced when the reader gets
+                 round to it, which for these is too late to be useful. */
+              role={feedback.tone === 'ok' ? 'status' : 'alert'}
             >
               {feedback.text}
             </span>
