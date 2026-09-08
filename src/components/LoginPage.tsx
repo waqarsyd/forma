@@ -380,7 +380,11 @@ export default function LoginPage({
             <span className="font-display-lg text-[20px] font-extrabold leading-[1.05] tracking-[-0.03em] text-on-surface">
               Forma
             </span>
-            <span className="mt-px font-code-sm text-[8.5px] font-medium leading-[1.62] tracking-[0.2em] uppercase text-[color:var(--ink-faint)]">
+            {/* `hidden lg:block` for the same reason SiteHeader hides it: at
+                phone widths the tagline wrapped to a second line under the
+                wordmark (measured at 390px), and this bar is the one copy of
+                that header the shared component does not draw. */}
+            <span className="mt-px hidden font-code-sm text-[8.5px] font-medium leading-[1.62] tracking-[0.2em] uppercase text-[color:var(--ink-faint)] lg:block">
               Show it · Build it · Ship it
             </span>
           </span>
