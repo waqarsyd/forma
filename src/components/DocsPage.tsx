@@ -574,18 +574,26 @@ export default function DocsPage({
                 <strong className="font-semibold text-on-surface">Account settings</strong>.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
-                <Def t="Display name">Rename the account at any time.</Def>
+                <Def t="Display name">Rename the account at any time. Two characters or more.</Def>
                 <Def t="Password">
-                  Changing it asks for the current one first. Accounts created with Google have no password to
-                  change — Google keeps that.
+                  Changing it asks for the current one first, and for the new one twice — a typo would otherwise set
+                  a password you do not know, and you would find out at the next sign-in somewhere else. Accounts
+                  created with Google have no password to change — Google keeps that.
                 </Def>
                 <Def t="Email address">
                   A confirmation link goes to the <em className="not-italic text-secondary">new</em> address and the
-                  account moves only when you open it, so a typo cannot lock you out.
+                  account moves only when you open it, so a typo cannot lock you out. Your current password confirms
+                  the change, typed in that section.
                 </Def>
                 <Def t="Deleting the account">
-                  Removes your saved projects and the encrypted copy of your key along with it. Reports kept only in
-                  this browser are not touched. It cannot be undone.
+                  Type <strong className="font-semibold text-on-surface">DELETE</strong> and, on a password account,
+                  your password. Removes your saved projects and the encrypted copy of your key along with it.
+                  Reports kept only in this browser are not touched. It cannot be undone.
+                </Def>
+                <Def t="Each box belongs to its own action">
+                  The three password fields are separate. Filling the one under{' '}
+                  <em className="not-italic text-secondary">Password</em> does not arm the delete button, and the
+                  email change reads the box beside it rather than one in another column.
                 </Def>
               </dl>
 
