@@ -341,6 +341,11 @@ src/
                        can be round-trip tested, because a plate present in
                        the derivation and not the setter highlights its
                        button and never opens its pane),
+                       chatSession (the review column's transcript as data:
+                       whether a turn is conversation or work, the history
+                       the model is actually sent, and the two rewrites a
+                       retry performs — generic over the report and metadata
+                       types so nothing here imports upward),
                        attachmentBudget (how many files are staged and how
                        many more fit — counted as FILES, which is what an
                        eight-page PDF spending sixteen of twelve slots was

@@ -190,6 +190,14 @@ import { sourceRectFor } from './lib/sourceRect';
 import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner } from './lib/designerBridge';
 import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
+import {
+  buildChatHistory,
+  isGenerationTurn,
+  markMessageError,
+  noteCountLabel,
+  truncateFrom,
+  type ChatMessage as ChatSessionMessage,
+} from './lib/chatSession';
 import { formatSessionStamp } from './lib/datetime';
 import { unitsToPx, pointsToUnits, pdfTopFromBaseline, unitsPerInch } from './lib/reportGeometry';
 import { repeatedHeadingTables } from './lib/mockupRows';
@@ -219,27 +227,15 @@ interface DesignResult {
   usage?: TokenUsage | null;
 }
 
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  images?: string[];
-  /**
-   * Provenance for `images`, so a sent message groups its attachments the same
-   * way the composer did. Optional on purpose: reports saved before this existed
-   * reload with images and no meta, and `groupAttachments` renders those one per
-   * image rather than dropping them.
-   */
-  imageMeta?: PreviewMeta[];
-  result?: DesignResult;
-  /**
-   * Set when the turn this message asked for failed. A failed chat turn used to
-   * leave the user's message sitting in the transcript with no reply and no
-   * marker, while the explanation appeared in a small note pinned under the
-   * composer — two things that were never visually connected.
-   */
-  error?: string;
-}
+/**
+ * The transcript entry, bound to this app's two payload types.
+ *
+ * The shape and the rules that rewrite it live in `lib/chatSession.ts`, which is
+ * generic over both so it never has to import upward from `src/lib` into the
+ * component layer — the same arrangement `savedReport.ts` uses. This alias is
+ * what keeps every use site below reading as plain `ChatMessage`.
+ */
+type ChatMessage = ChatSessionMessage<DesignResult, PreviewMeta>;
 
 
 /* ------------------------------------------------------------------ *
@@ -3043,10 +3039,7 @@ export default function App() {
     const failed = messages.find((m) => m.id === id);
     if (!failed) return;
 
-    setMessages((prev) => {
-      const idx = prev.findIndex((m) => m.id === id);
-      return idx === -1 ? prev : prev.slice(0, idx);
-    });
+    setMessages((prev) => truncateFrom(prev, id));
     setError(null);
     void handleGenerate(failed.text);
   };
@@ -3105,14 +3098,11 @@ export default function App() {
      * ---------------------------------------------------------------- */
     // Any attachment — a page image or text lifted out of a PDF/.repx — is an
     // unambiguous request to build something, so it skips the chat turn.
-    if (currentPreviews.length === 0 && currentTexts.length === 0) {
+    if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
       setIsChatting(true);
       setStreamingReply('');
       try {
-        const history: ChatTurn[] = [
-          ...messages.map((m) => ({ role: m.role, text: m.text })),
-          { role: 'user', text: currentPrompt },
-        ];
+        const history: ChatTurn[] = buildChatHistory(messages, currentPrompt);
         const { chatReply } = await loadGemini();
         const outcome = await chatReply(history, config, undefined, setStreamingReply);
 
@@ -3140,9 +3130,7 @@ export default function App() {
         setError(message);
         // Mark the message that failed, so the transcript shows which turn went
         // wrong instead of leaving it looking merely unanswered.
-        setMessages(prev => prev.map(m =>
-          m.id === newUserMsg.id ? { ...m, error: message } : m
-        ));
+        setMessages(prev => markMessageError(prev, newUserMsg.id, message));
         if (isMissingApiKey(err)) setIsConfigOpen(true);
         return;
       } finally {
@@ -3771,7 +3759,7 @@ export default function App() {
         <div className={`wb-panel-body${railPanel === 'review' ? '' : ' wb-hidden'}`}>
           <div className="wb-col-head">
             <span className="wb-col-title">Review</span>
-            <span className="wb-kicker">{messages.length === 1 ? '1 note' : `${messages.length} notes`}</span>
+            <span className="wb-kicker">{noteCountLabel(messages.length)}</span>
           </div>
 
           {/* Unverified means an address nobody has proved they can read. It is
@@ -4143,7 +4131,7 @@ export default function App() {
                       <div className="wb-nm">{report.name}</div>
                       <div className="wb-sub">
                         {stamp && `${stamp} · `}
-                        {report.messages.length} {report.messages.length === 1 ? 'note' : 'notes'}
+                        {noteCountLabel(report.messages.length)}
                       </div>
                       <div className="wb-row-actions">
                         <button
