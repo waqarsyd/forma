@@ -293,22 +293,27 @@ rather than trusting either number**. What is stable is the shape (one enormous 
 load, then ~1.5s) and the 60s ceiling it has to fit under. `README.md` carries the same
 figures, so re-measuring is a change to two files.
 
-**The environment split narrowed the cliff without removing it.** Keeping 46 of the 54
+**The environment split narrowed the cliff without removing it.** Keeping the majority of
 files under `node` cut summed environment setup from ~66s to ~8s and took the cliff from
-every worker down to the eight that opt in — and it still fires: `themeTransition.test.ts`
-died on both 2026-09-02 and 2026-09-04. The eight are marked in the inventory above.
-**When only those eight fail and the other 46 pass with 997 tests, this is what you are
+every worker down to the ones that opt in — and it still fires: `themeTransition.test.ts`
+died on both 2026-09-02 and 2026-09-04. The jsdom files are marked in the inventory above.
+**When only the jsdom files fail and every other file passes, this is what you are
 looking at.**
 
-(That last sentence read "24 of the 30 files ... 366 tests" until 2026-09-06, and the
-same passage said the cliff was down to "the six that opt in" two sentences before
-listing eight; the correction then wrote "44 of the 52 ... 935" for a suite that was
-already 53 files and 985 node tests, so the same sentence has now been stale twice. The
-numbers are worth keeping because they are what you compare a failing run against —
-which is exactly why they have to be corrected when the suite grows, and why they live
-here now rather than in a file that carries no other counts. Derive them rather than
-adjusting them by hand: the eight jsdom files hold 167 tests between them, so the node
-figure is the table's total minus 167.)
+*Measured 2026-09-08:* **11 jsdom files holding 251 tests, 48 node files holding 1,063.**
+
+(Read that as a dated measurement, not a maintained figure. The sentence above used to
+carry the numbers inline and has been wrong three times: "24 of the 30 files … 366 tests"
+until 2026-09-06, then "44 of the 52 … 935" for a suite that was already 53 files and 985
+node tests, then "the eight jsdom files hold 167" for eleven files holding 251. Three
+corrections is enough evidence that a hand-maintained split does not survive, so the
+prose no longer depends on one — the shape of the failure is the part worth recognising,
+and the arithmetic is one command away.
+
+**Derive it, do not adjust it.** The jsdom files are the ones with
+`// @vitest-environment jsdom` on line 1; sum their rows in the table above for the jsdom
+figure, and the node figure is the table's total minus that. Both fall out of the
+inventory, which is the only thing here anyone actually keeps current.)
 
 **`--reporter=basic` no longer exists.** Vitest 4 removed it, and an unknown reporter
 name is treated as a module to import, so the failure is a `Failed to load custom

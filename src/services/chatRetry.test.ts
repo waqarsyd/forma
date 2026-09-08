@@ -76,29 +76,31 @@ function stubSequence(...responses: Array<() => Response | Promise<never>>) {
  */
 async function runTurn() {
   const turn = chatReply(history, config);
+  turn.catch(() => undefined);
   /*
-   * Settled-tracking rather than a fixed number of advances.
+   * Each advance releases one backoff; three is more than the two retries need.
    *
-   * This was `for (let i = 0; i < 3; i++)` on the reasoning that three
-   * advances is more than two retries need — true of the *delays*, and not of
-   * the microtask turns between them. The retry schedules its next timer only
-   * after the previous response has been read, so under load the last advance
-   * can land before that timer exists; the turn then never settles and the
-   * test times out. It failed exactly once in a full-suite run on 2026-09-08
-   * and passed three runs in isolation and three full runs either side of it,
-   * which is the signature of a race rather than a broken assertion.
+   * **This is known to be rarely flaky and two attempts to fix it made things
+   * worse (2026-09-08).** Recorded so the third person does not start where
+   * the first two did:
    *
-   * Draining until the promise settles is deterministic regardless of how the
-   * microtasks interleave. The bound is what stops a genuine hang becoming an
-   * infinite loop; it is twenty rather than three because iterations after the
-   * promise settles cost nothing.
+   *  - Raising the count to 20 with settled-tracking failed *more* often. The
+   *    failure is `Test timed out in 5000ms`, which is vitest's REAL-time
+   *    budget, not the simulated clock — each `advanceTimersByTimeAsync` costs
+   *    real milliseconds, so more iterations means less headroom, not more.
+   *  - `await vi.runAllTimersAsync()` fails deterministically, here and in
+   *    isolation. Draining every timer at once is not equivalent to releasing
+   *    them one backoff at a time for this chain.
+   *
+   * Observed rate is roughly one full-suite run in ten, always this first
+   * case, always a timeout rather than a wrong value; it has never failed
+   * running this file alone. So the next attempt should start by finding out
+   * what is still pending when the budget expires, rather than by adjusting
+   * how the clock is advanced. `turn.catch` above is load-bearing — removing
+   * it turns a later test's rejection into this test's failure, which is
+   * exactly what happened while trying the two ideas above.
    */
-  let settled = false;
-  turn.then(
-    () => { settled = true; },
-    () => { settled = true; },
-  );
-  for (let i = 0; i < 20 && !settled; i++) await vi.advanceTimersByTimeAsync(10_000);
+  for (let i = 0; i < 3; i++) await vi.advanceTimersByTimeAsync(10_000);
   return turn;
 }
 
