@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,240 tests in 57 files** — under the `node` environment
+`npm test` runs Vitest over **1,248 tests in 57 files** — under the `node` environment
 by default, with the ten files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those ten fail in a way
@@ -73,7 +73,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | File | Tests | |
 |---|---:|---|
 | `components/BatchPanel` | 10 | jsdom |
-| `components/ChatThread` | 22 | jsdom |
+| `components/ChatThread` | 27 | jsdom |
 | `components/Composer` | 33 | jsdom, 8 from one loop |
 | `components/DataBinding` | 15 | jsdom |
 | `components/legalDisclosure` | 9 | 3 from one loop |
@@ -125,12 +125,12 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `server/bindHost` | 6 |  |
 | `server/securityHeaders` | 27 |  |
 | `server/staticCache` | 10 |  |
-| `services/chatRetry` | 6 |  |
+| `services/chatRetry` | 9 |  |
 | `services/geminiService` | 30 | 7 of these come from one loop |
 | `services/keyVault` | 21 | jsdom |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,240 in 57 files** — and that total is the arithmetic sum of the column above
+**Total: 1,248 in 57 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -144,7 +144,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,212** against a real 1,240 and will talk you into
+A grep for `\bit(` answers **1,220** against a real 1,248 and will talk you into
 "correcting" numbers that were already right. **Six** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 22 from
 one `it(` over split points, `designerBridge` eight of its 33 over Windows reserved

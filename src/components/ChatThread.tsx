@@ -19,9 +19,18 @@
  * exactly what the tests want.
  */
 
-import { memo, useCallback, useRef, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import type { ChatMessage } from '../lib/chatSession';
+
+/**
+ * How far off the bottom still counts as "at the bottom".
+ *
+ * Zero would be correct and would break: `scrollTop` is fractional on a
+ * trackpad or a zoomed page, so an exact comparison reads as scrolled-up
+ * forever and the thread quietly stops following.
+ */
+const PIN_SLACK_PX = 40;
 
 /** What a click on an attachment thumbnail asks the app to open. */
 export interface AttachmentView {
@@ -153,8 +162,46 @@ export default function ChatThread<R>({
 
   const retryDisabled = isChatting || isAnalyzing;
 
+  /*
+   * Follow the conversation, unless the reader has gone looking for something.
+   *
+   * `.wb-thread` is the scrolling element, so once the transcript outgrows the
+   * column every reply lands below the fold and has to be scrolled to by hand.
+   * That is how it behaved from the 2026-08-12 port until 2026-09-08: `App.tsx`
+   * had kept a `messagesEndRef` and a `scrollIntoView` effect from the build
+   * before it, but the port replaced the markup with the artifact's, which has
+   * no sentinel div — so the ref attached to nothing and the effect ran against
+   * `null` on every message for weeks. Reported from real use. Neither the type
+   * checker nor the unused sweep can see it: the ref and the effect reference
+   * each other, so both look live.
+   *
+   * `pinned` is what stops the fix becoming its own annoyance. Scrolling up to
+   * re-read an earlier answer must not be undone by the next reply arriving, so
+   * the position is recorded on every scroll and the follow only happens when
+   * the reader was already at the bottom. The slack is because a fractional
+   * `scrollTop` — a trackpad, a zoomed page — otherwise reads as "not quite at
+   * the bottom" forever, and the thread silently stops following.
+   */
+  const threadRef = useRef<HTMLDivElement>(null);
+  const pinned = useRef(true);
+
+  const notePinned = useCallback(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight <= PIN_SLACK_PX;
+  }, []);
+
+  useEffect(() => {
+    const el = threadRef.current;
+    if (!el || !pinned.current) return;
+    // Assigned rather than `scrollTo({ behavior: 'smooth' })`: a streamed reply
+    // updates many times a second, and successive smooth scrolls queue up and
+    // lag behind the text they are meant to be following.
+    el.scrollTop = el.scrollHeight;
+  }, [messages, streamingReply, isChatting, isAnalyzing]);
+
   return (
-    <div className="wb-thread">
+    <div className="wb-thread" ref={threadRef} onScroll={notePinned}>
       {messages.map((msg) => (
         <ChatNote
           key={msg.id}

@@ -293,6 +293,97 @@ describe('the reply being written', () => {
   });
 });
 
+/*
+ * Following the conversation.
+ *
+ * `.wb-thread` is the scrolling element (`flex: 1; overflow-y: auto`), so once a
+ * transcript is taller than the column the newest note is below the fold and the
+ * reader has to scroll down to every reply. `App.tsx` has carried a
+ * `messagesEndRef` and a `scrollIntoView` effect since before the 2026-08-12
+ * port, but the port replaced the markup with the artifact's, which has no
+ * sentinel div — so the ref attached to nothing and the effect has been a no-op
+ * ever since. Reported from real use, not found by a test.
+ *
+ * jsdom does no layout, so `scrollHeight` and `clientHeight` are 0 and have to
+ * be defined per test. That is the price of testing scroll behaviour here, and
+ * it is worth paying: the interesting half of this feature is when it must
+ * *not* fire.
+ */
+describe('following the newest note', () => {
+  const thread = () => document.querySelector('.wb-thread') as HTMLDivElement;
+
+  /** Give the element the geometry jsdom will not compute. */
+  const layout = (el: HTMLElement, scrollHeight: number, clientHeight: number, scrollTop: number) => {
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, value: scrollHeight });
+    Object.defineProperty(el, 'clientHeight', { configurable: true, value: clientHeight });
+    el.scrollTop = scrollTop;
+  };
+
+  const base = { isChatting: false, isAnalyzing: false, streamingReply: '', onRetry: vi.fn(), onOpenAttachment: vi.fn() };
+
+  it('scrolls to the bottom when a note arrives and the reader is already there', () => {
+    const { rerender } = render(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' })]} />);
+    layout(thread(), 1000, 300, 700); // 700 + 300 === 1000, exactly at the bottom
+    fireEvent.scroll(thread());
+
+    layout(thread(), 1400, 300, 700); // a note was added; the content grew
+    rerender(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' }), msg({ id: '2', text: 'two' })]} />);
+
+    expect(thread().scrollTop).toBe(1400);
+  });
+
+  // The half that matters. Someone reading back through the conversation must
+  // not be yanked to the bottom every time a reply lands.
+  it('leaves a reader who has scrolled up where they are', () => {
+    const { rerender } = render(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' })]} />);
+    layout(thread(), 1000, 300, 120); // far from the bottom
+    fireEvent.scroll(thread());
+
+    layout(thread(), 1400, 300, 120);
+    rerender(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' }), msg({ id: '2', text: 'two' })]} />);
+
+    expect(thread().scrollTop).toBe(120);
+  });
+
+  it('starts following again once the reader returns to the bottom', () => {
+    const { rerender } = render(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' })]} />);
+    layout(thread(), 1000, 300, 120);
+    fireEvent.scroll(thread());
+
+    layout(thread(), 1000, 300, 700); // scrolled back down
+    fireEvent.scroll(thread());
+
+    layout(thread(), 1400, 300, 700);
+    rerender(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' }), msg({ id: '2', text: 'two' })]} />);
+
+    expect(thread().scrollTop).toBe(1400);
+  });
+
+  // The reply arrives a token at a time, so following it is what keeps the text
+  // being written visible rather than just its first line.
+  it('follows the streaming reply as it grows', () => {
+    const { rerender } = render(<ChatThread {...base} isChatting messages={[]} streamingReply="Forma" />);
+    layout(thread(), 800, 300, 500);
+    fireEvent.scroll(thread());
+
+    layout(thread(), 900, 300, 500);
+    rerender(<ChatThread {...base} isChatting messages={[]} streamingReply="Forma supports PNG, JPG" />);
+
+    expect(thread().scrollTop).toBe(900);
+  });
+
+  it('is tolerant of being a few pixels off the bottom', () => {
+    const { rerender } = render(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' })]} />);
+    layout(thread(), 1000, 300, 680); // 20px short, still "at the bottom"
+    fireEvent.scroll(thread());
+
+    layout(thread(), 1400, 300, 680);
+    rerender(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' }), msg({ id: '2', text: 'two' })]} />);
+
+    expect(thread().scrollTop).toBe(1400);
+  });
+});
+
 describe('the progress card passed through', () => {
   it('renders children last, inside the thread', () => {
     draw({

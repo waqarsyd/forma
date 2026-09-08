@@ -2193,7 +2193,6 @@ export default function App() {
 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -2290,9 +2289,12 @@ export default function App() {
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isAnalyzing]);
+  /* The transcript follows itself now, inside `ChatThread`, which owns the
+     scrolling element. A `messagesEndRef` and a `scrollIntoView` effect stood
+     here from before the 2026-08-12 port until 2026-09-08 — the port took the
+     sentinel div the ref pointed at, so the effect ran against `null` on every
+     message and the thread never scrolled. Removed rather than reattached:
+     the element that scrolls is not in this file any more. */
 
   /**
    * The one intake path, shared by the picker and drag-and-drop. Runs files

@@ -871,6 +871,19 @@ Typing "hello" used to produce a full mockup report, because `handleGenerate` se
 
 `chatReply` shares the key and `resolveModel()` with the main path, so it costs nothing extra to keep in sync. `isChatting` drives a light indicator, deliberately distinct from the full generation card — a chat turn is seconds, a generation is not.
 
+**Both paths now change model when one stays overloaded, and until 2026-09-08 only one did.** The chat path was given a retry loop on 2026-09-05 — the whole turn, request and stream together — but not the model fallback `analyzeReportDesign` had always had. So a 503 on the auto-selected model was retried twice against *that same model* and the turn was then lost, with every probed alternative sitting unused in the session cache. It took a real session to show it, and the console said so out loud three lines apart:
+
+```
+Auto-selected Gemini model: gemini-flash-latest (6 more available as fallbacks: gemini-2.5-flash, ...)
+... streamGenerateContent 503 (Service Unavailable)
+Chat turn failed (overloaded). Retrying in 2083ms - attempt 1 of 2.
+Chat turn failed (stream ended early). Retrying in 3430ms - attempt 2 of 2.
+```
+
+`chatReply` now mirrors the generation path exactly: once the retries on a model are spent and the error is an overload, the model is recorded, the next entry from `readCachedModelSet() ?? MODEL_PREFERENCE` that has not already failed is selected, and the retry budget resets for it. Bounded by construction — each exhausted model is remembered, so the turn throws once nothing is left. **A model the user pinned in config is exempt**, because answering on a different one would make that setting a lie. `chatRetry.test.ts` covers all three, and note what it had to fix to do so: those tests had been sharing a module-level model cache, so whichever model the first test settled on silently decided what the rest of them called. It now pins a single-model set in `beforeEach`, and the fallback tests seed their own.
+
+**This is the second time the two paths have drifted in the same place.** `chatRetry.test.ts`'s own header noted that "a generation hitting the same outage retried twice and changed model" while documenting the chat retry it was adding — the sentence describes the gap and nobody read it as one. When you change recovery behaviour on either path, check the other.
+
 **`chatReply` asks for `thinkingBudget: 0`, and that is the whole reason it is fast.** These models otherwise reason silently before emitting a character, which for "hello" *was* the entire wait — and it is timed and billed exactly like output. Chat is two or three sentences plus a yes/no classification, so it needs none of it. **Do not copy this to `analyzeReportDesign`**: spatial layout reading is a genuinely hard task and keeps the model's default. That path exposes `ReportConfig.thinkingBudget` instead, unset by default, to be tuned only against measured `thoughtsTokenCount`.
 
 **`thinkingBudget: 0` is requested, never assumed.** Support varies by model — some reject the field outright, the pro tiers refuse to let it reach zero, and both fail with a bare `400 INVALID_ARGUMENT` that says nothing about which argument. Sending it unconditionally broke chat entirely on one key. `chatReply` now retries once without it and records the model in `thinkingUnsupportedForModel`, so the wasted request costs one per model per session rather than one per message. Never reinstate an unconditional `thinkingConfig`.

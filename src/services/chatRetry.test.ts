@@ -18,6 +18,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { chatReply } from './geminiService';
 import { resetGenAIForTests } from '../lib/genai';
+import { cacheModel, clearCachedModel } from '../lib/modelCache';
 
 const KEY = 'test-key-not-a-real-credential';
 const config = { customApiKey: KEY } as any;
@@ -52,7 +53,10 @@ const failure = (status: number, message: string) =>
 /** Queue one outcome per call, so a test states exactly what the network does. */
 function stubSequence(...responses: Array<() => Response | Promise<never>>) {
   let call = 0;
-  const mock = vi.fn(async () => {
+  // The parameters are declared, unused, so `mock.calls` is typed as the
+  // arguments `fetch` actually received. Without them the call tuple is `[]`
+  // and reading `calls[n][0]` to see which model was requested does not compile.
+  const mock = vi.fn(async (_url: unknown, _init?: unknown) => {
     const next = responses[Math.min(call, responses.length - 1)];
     call++;
     return next();
@@ -81,12 +85,29 @@ async function runTurn() {
 beforeEach(() => {
   vi.useFakeTimers();
   resetGenAIForTests();
+  /*
+   * Fix the model, so `resolveModel` never runs.
+   *
+   * Two reasons, and the second is why this appeared with the fallback tests.
+   * Probing spends a catalogue request and one per candidate, which lands in
+   * the same `fetch` mock the call-count assertions below read — so without a
+   * cached model, "does not spend a second request on a bad key" counts the
+   * probes too. And the cache is a module-level variable shared by every test
+   * in this file, so before this existed, whichever model the first test
+   * happened to settle on silently decided what the rest of them called.
+   *
+   * One model, so there is nothing to fall back to: the tests that are about
+   * falling back seed their own set.
+   */
+  clearCachedModel();
+  cacheModel('model-a', ['model-a']);
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   resetGenAIForTests();
+  clearCachedModel();
 });
 
 describe('a chat turn that hits a 503', () => {
@@ -105,6 +126,61 @@ describe('a chat turn that hits a 503', () => {
     // wall of JSON, and not an infinite wait.
     stubSequence(() => failure(503, 'This model is currently experiencing high demand.'));
     await expect(runTurn()).rejects.toThrow(/high demand/i);
+  });
+});
+
+/*
+ * Reported from a real session on 2026-09-08. The console read:
+ *
+ *   Auto-selected Gemini model: gemini-flash-latest (6 more available as
+ *   fallbacks: gemini-2.5-flash, gemini-flash-lite-latest, ...)
+ *   ... streamGenerateContent 503 (Service Unavailable)
+ *   Chat turn failed (overloaded). Retrying in 2083ms - attempt 1 of 2.
+ *   Chat turn failed (stream ended early). Retrying in 3430ms - attempt 2 of 2.
+ *
+ * Two retries against the same overloaded model, then the turn was lost, with
+ * six probed alternatives sitting unused in the session cache. `analyzeReport-
+ * Design` has always moved to the next model here; the chat path was given the
+ * retry loop on 2026-09-05 and not the fallback, and this file's own header
+ * said so ("a generation hitting the same outage retried twice and changed
+ * model") without anyone noticing chat still did not.
+ */
+describe('a chat turn on a model that stays overloaded', () => {
+  it('moves to the next model the key can call, rather than losing the turn', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+    const fetchMock = stubSequence(
+      () => failure(503, 'This model is currently experiencing high demand.'),
+      () => failure(503, 'This model is currently experiencing high demand.'),
+      () => failure(503, 'This model is currently experiencing high demand.'),
+      () => reply('Answered by the fallback.')
+    );
+
+    await expect(runTurn()).resolves.toMatchObject({ reply: 'Answered by the fallback.' });
+
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('model-a'))).toBe(true);
+    expect(urls.some((u) => u.includes('model-b'))).toBe(true);
+  });
+
+  it('stops once every alternative has been tried', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+    stubSequence(() => failure(503, 'This model is currently experiencing high demand.'));
+    await expect(runTurn()).rejects.toThrow(/high demand/i);
+  });
+
+  // A model the user pinned in config is a choice, not a suggestion; silently
+  // answering on a different one would make the setting a lie.
+  it('does not wander off a model the user pinned', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+    const fetchMock = stubSequence(() => failure(503, 'This model is currently experiencing high demand.'));
+
+    const turn = chatReply(history, { customApiKey: KEY, modelName: 'model-pinned' } as any);
+    turn.catch(() => undefined);
+    for (let i = 0; i < 4; i++) await vi.advanceTimersByTimeAsync(10_000);
+    await expect(turn).rejects.toThrow(/high demand/i);
+
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.every((u) => u.includes('model-pinned'))).toBe(true);
   });
 });
 

@@ -795,7 +795,15 @@ export async function chatReply(
   // src/lib/genai.ts.
   const { GoogleGenAI, Type } = await loadGenAI();
   const ai = new GoogleGenAI({ apiKey: currentApiKey });
-  const model = config?.modelName?.trim() || (await resolveModel(currentApiKey, signal));
+  /*
+   * Reassignable, because a model that stays overloaded is swapped out below.
+   * `pinnedModel` is the user having chosen one in config: answering on a
+   * different model than the one they named would make that setting a lie, so
+   * the fallback is skipped entirely in that case.
+   */
+  const pinnedModel = Boolean(config?.modelName?.trim());
+  let activeModel = config?.modelName?.trim() || (await resolveModel(currentApiKey, signal));
+  const overloadedModels: string[] = [];
 
   const transcript = history
     .slice(-10) // recent context is enough, and keeps the call small
@@ -805,7 +813,7 @@ export async function chatReply(
   const startedAt = Date.now();
 
   const buildChatRequest = (disableThinking: boolean) => ({
-    model,
+    model: activeModel,
     contents: [
       {
         parts: [
@@ -883,7 +891,7 @@ ${transcript}`,
       let stream;
       // Re-read each attempt: a previous attempt may have just learned that
       // this model rejects thinkingBudget:0.
-      const attemptWithoutThinking = !thinkingUnsupportedForModel.has(model);
+      const attemptWithoutThinking = !thinkingUnsupportedForModel.has(activeModel);
 
       try {
         stream = await ai.models.generateContentStream(buildChatRequest(attemptWithoutThinking));
@@ -908,9 +916,9 @@ ${transcript}`,
         if (attemptWithoutThinking && invalidArgument && !authFailure && !signal?.aborted) {
           // Remember for the rest of the session so this costs one failed request
           // per model, not one per message.
-          thinkingUnsupportedForModel.add(model);
+          thinkingUnsupportedForModel.add(activeModel);
           console.warn(
-            `Model "${model}" rejected thinkingBudget:0 — retrying without it. ` +
+            `Model "${activeModel}" rejected thinkingBudget:0 — retrying without it. ` +
             `Chat replies will be slower on this model.`
           );
           stream = await ai.models.generateContentStream(buildChatRequest(false));
@@ -955,6 +963,43 @@ ${transcript}`,
         onPartialReply?.('');
         await sleep(backoffMs, signal);
         continue;
+      }
+
+      /*
+       * The retries are spent. If the model is simply busy, try another one the
+       * key was already shown to be able to call.
+       *
+       * `analyzeReportDesign` has always done this; the chat path was given the
+       * retry loop on 2026-09-05 and not the fallback, so a 503 on the
+       * auto-selected model ended the turn with every probed alternative
+       * sitting unused in the session cache. Reported from a real session on
+       * 2026-09-08 whose console said "6 more available as fallbacks" three
+       * lines above the failure.
+       *
+       * Bounded by construction: each exhausted model is recorded, `find`
+       * skips them, and the turn throws once nothing is left.
+       */
+      if (isOverloaded(err) && !pinnedModel) {
+        overloadedModels.push(activeModel);
+        // The probed set when there is one. A turn that resolved its model
+        // before the set was cached falls back to the raw preference list,
+        // exactly as the generation path does.
+        const alternatives = readCachedModelSet() ?? MODEL_PREFERENCE;
+        const next = alternatives.find((m) => !overloadedModels.includes(m));
+
+        if (next) {
+          console.warn(
+            `Model "${activeModel}" stayed overloaded after ${MAX_CHAT_RETRIES} retries. ` +
+            `Falling back to "${next}" for this reply.`
+          );
+          activeModel = next;
+          onPartialReply?.('');
+          // -1 because the loop's own increment runs before the next attempt:
+          // the new model gets a full retry budget rather than inheriting the
+          // exhausted one.
+          attempt = -1;
+          continue;
+        }
       }
 
       throw asReadableError(err);
