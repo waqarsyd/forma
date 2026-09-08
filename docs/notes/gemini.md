@@ -36,6 +36,8 @@ The Firestore copy is **zero-knowledge**. `encryptApiKey()` derives an AES-GCM k
 
 `crypto.subtle` exists only in a secure context (HTTPS or localhost). Over plain HTTP to a LAN IP it is `undefined`, so `isVaultAvailable()` gates the sync UI rather than letting it crash. Sign-out clears the session key and all vault state; the ciphertext in Firestore survives.
 
+**`canUseVault` gates a block of UI, and one message escaped into it (2026-09-08).** `vaultNotice` renders inside `{canUseVault && …}` — that is `!!user && isVaultAvailable()` — but the **Clear** button beside the key field appears whenever `hasApiKey`, signed in or not. So `handleClearKeyFromSession` set a confirmation with nowhere to render: measured signed out, the key really was cleared and no element on the page contained the word "cleared". It now reports through `keyCheck`, which is gated on nothing and sits directly under the key row. The general trap is worth carrying: **anything reachable signed out must not report through a signed-in-only region**, and the two notice slots in that dialog have different reach — `keyCheck` always renders, `vaultNotice` does not.
+
 `scripts/build-server.mjs` defines `'import.meta.env': 'undefined'`. `server.ts` no longer imports `geminiService.ts`, so that define is now belt-and-braces rather than load-bearing.
 
 ### Containment, measured rather than asserted (2026-08-29)

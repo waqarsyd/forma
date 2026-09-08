@@ -2140,12 +2140,26 @@ export default function App() {
     }
   };
 
-  /** Wipe the key from this session without touching the encrypted copy. */
+  /**
+   * Wipe the key from this session without touching the encrypted copy.
+   *
+   * The confirmation goes through `keyCheck`, not `vaultNotice`, and that is
+   * the whole point: `vaultNotice` renders inside the `canUseVault` block,
+   * which is `!!user && isVaultAvailable()`. The **Clear** button beside the
+   * key field appears whenever `hasApiKey`, signed in or not — so signed out
+   * this told the user nothing at all. Measured 2026-09-08: the key really was
+   * cleared and no element on the page said the word "cleared".
+   *
+   * `keyCheck` is the right home anyway, gated on nothing and rendered
+   * directly under the key row, which is where the thing just happened.
+   * `vaultNotice` is cleared alongside so a stale sync message cannot sit
+   * under a key that is no longer here.
+   */
   const handleClearKeyFromSession = () => {
     setConfig((prev) => ({ ...prev, customApiKey: '' }));
     clearSessionKey();
-    setKeyCheck(null);
-    setVaultNotice({ tone: 'ok', text: 'Key cleared from this browser session.' });
+    setVaultNotice(null);
+    setKeyCheck({ tone: 'ok', text: 'Key cleared from this browser session.' });
   };
   const [activeTab, setActiveTab] = useState<ActiveTab>('ui');
   // Sub-view inside the "Specs & REPX" tab. The tab has always been named for
