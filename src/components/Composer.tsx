@@ -234,10 +234,20 @@ export default function Composer({
           className="wb-line"
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
-          /* Enter sends; Shift+Enter is left alone so a multi-line note is
-             still possible. preventDefault stops the newline the send would
-             otherwise leave behind in the field, and happens either way —
-             suppressing the key is right even when the send is refused. */
+          /* Enter sends; Shift+Enter is deliberately left alone.
+             `preventDefault` happens either way — suppressing the key is right
+             even when the send is refused.
+
+             This said Shift+Enter kept "a multi-line note still possible", and
+             that was never true of the element it sits on. This is an `<input>`,
+             not a `<textarea>`, so it cannot hold a newline at all: measured
+             2026-09-08, Shift+Enter leaves the value exactly as it was. What
+             the combination actually does is nothing, which is the right
+             behaviour and worth stating as the intent rather than dressing up
+             as a feature. `preventDefault` is likewise belt-and-braces here —
+             an `<input>` outside a form has no default action on Enter — and
+             is kept because it would start mattering the moment this becomes a
+             textarea or gains a form ancestor. */
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
