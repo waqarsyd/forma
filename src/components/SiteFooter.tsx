@@ -11,8 +11,13 @@ import Logo from './Logo';
  * three columns rather than showing an empty heading.
  *
  * The sign-off is deliberately inside the container's measure, under a rule
- * that spans it — not a full-bleed bar. Same line on all five surfaces
- * (LoginPage carries its own copy); keep them in step.
+ * that spans it — not a full-bleed bar.
+ *
+ * Every surface that has a footer now renders *this* component, LoginPage
+ * included as of 2026-09-08 — it was the last hand-maintained copy, a compact
+ * 107px bar that disagreed with this one on height, link count, headings and
+ * type size. There is no second copy of the sign-off or the year left to keep
+ * in step.
  */
 
 type Link = [label: string, href: string];
@@ -46,8 +51,8 @@ const NOTE = 'font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-fa
  * visitor's clock, which is the right source here — a copyright line is for
  * whoever is reading it.
  *
- * LoginPage carries its own copy of this sign-off and does the same thing;
- * change them together.
+ * This is now the only copy in the app; LoginPage had a second one until it
+ * started rendering this component.
  */
 const YEAR = new Date().getFullYear();
 
@@ -93,7 +98,21 @@ function Column({ heading, links }: { heading: string; links: Link[] }) {
  * designs for those two pages. A page that passes neither optional column
  * still gets exactly the three-column footer it had before.
  */
-export default function SiteFooter({ onThisPage, maker }: { onThisPage?: Link[]; maker?: Link[] }) {
+export default function SiteFooter({
+  onThisPage,
+  maker,
+  className = '',
+}: {
+  onThisPage?: Link[];
+  maker?: Link[];
+  /**
+   * Appended, never substituted — the five marketing pages pass nothing and
+   * must keep the exact footer they have. It exists for the login overlay,
+   * which needs `shrink-0` because it is the one caller whose parent is a
+   * scrolling flex column rather than a page.
+   */
+  className?: string;
+}) {
   const columns = maker
     ? 'lg:grid-cols-[1.6fr_1fr_1fr_1fr]'
     : onThisPage
@@ -101,7 +120,9 @@ export default function SiteFooter({ onThisPage, maker }: { onThisPage?: Link[];
       : 'lg:grid-cols-[1.7fr_1fr_1fr]';
 
   return (
-    <footer className="w-full bg-surface-container-lowest dark:bg-card border-t border-outline-variant pt-12 mt-auto">
+    <footer
+      className={`w-full bg-surface-container-lowest dark:bg-card border-t border-outline-variant pt-12 mt-auto ${className}`}
+    >
       <div className="max-w-container-max mx-auto px-margin-desktop">
         <div className={`grid grid-cols-2 gap-10 pb-[42px] ${columns}`}>
           <div>

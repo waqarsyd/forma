@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { transition, modalVariants } from '../lib/motion';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, sendPasswordReset } from '../services/firebase';
 import Logo from './Logo';
+import SiteFooter from './SiteFooter';
 import { currentPath, navigate, onRouteChange } from '../lib/router';
 import { IconEye, IconEyeOff, IconClose, IconWarn, IconInfo, IconSun, IconMoon } from './landing/icons';
 
@@ -113,13 +114,6 @@ const AUTH_MESSAGES: Record<string, string> = {
 
 const LABEL =
   'font-code-sm text-[10px] font-medium leading-[1.62] tracking-[0.12em] uppercase text-[color:var(--ink-faint)]';
-
-/**
- * Read once at load rather than hardcoded, so the sign-off rolls over on its
- * own. SiteFooter carries the other copy of this line and does the same;
- * change them together.
- */
-const YEAR = new Date().getFullYear();
 
 const fieldClass = (bad: boolean) =>
   `u-transition h-[46px] w-full rounded-[10px] border px-3.5 font-body-lg text-[14.5px] leading-[normal] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:outline-none focus:ring-4 disabled:opacity-60 ${
@@ -767,27 +761,23 @@ export default function LoginPage({
         </motion.div>
       </div>
 
-      {/* -------------------------------------------------------- footer */}
-      <footer className="mt-auto w-full shrink-0 border-t border-outline-variant bg-surface-container-lowest dark:bg-card">
-        <div className="mx-auto flex max-w-container-max flex-wrap items-center justify-between gap-x-5 gap-y-3 px-margin-desktop py-[18px]">
-          <p className="font-body-lg text-[12.5px] text-[color:var(--ink-faint)]">
-            © {YEAR} Forma. Designed &amp; built by <b className="font-bold text-secondary">Waqar Sayyed</b>.
-          </p>
-          <div className="flex items-center gap-[18px]">
-            <a href="/privacy" className="u-transition-fast font-body-lg text-[12.5px] text-[color:var(--ink-faint)] hover:text-secondary">
-              Privacy
-            </a>
-            <a href="/terms" className="u-transition-fast font-body-lg text-[12.5px] text-[color:var(--ink-faint)] hover:text-secondary">
-              Terms
-            </a>
-          </div>
-        </div>
-        <div className="flex justify-center border-t border-outline-variant py-4">
-          <span className="font-code-sm text-[10.5px] font-medium tracking-[0.14em] uppercase text-[color:var(--ink-faint)]">
-            Crafting the future of report generation.
-          </span>
-        </div>
-      </footer>
+      {/* ---------------------------------------------------------- footer
+
+          The shared one, not a copy. This surface carried its own compact bar
+          — a single 107px strip with the copyright, Privacy and Terms, and the
+          sign-off — against the 342px three-column block every other page
+          draws. Measured side by side it disagreed on more than height: two
+          links against fourteen, no column headings, and a copyright line at
+          12.5px where the shared footer sets 13.5. It read as a different
+          site at the moment a visitor is being asked to trust it with a
+          password.
+
+          `onThisPage` is omitted because there is nothing on this page to
+          anchor to, which drops the grid to three columns exactly as it does
+          on Terms, Privacy and the 404. `shrink-0` because the overlay is a
+          scrolling flex column: without it a short viewport compresses the
+          footer instead of scrolling to it. */}
+      <SiteFooter className="shrink-0" />
     </motion.div>
   );
 }
