@@ -45,10 +45,14 @@ route `CLAUDE.md` has always prescribed ("raise the number by shrinking `App.tsx
 a widening of the coverage scope. And the first two **component** tests exist, on
 `DataBinding` and `BatchPanel`, using `@testing-library/react` (a devDependency, so no
 bundle cost) with `// @vitest-environment jsdom` on line 1 like every other DOM file.
+Three more have joined them since; the table above is where the current set lives.
 
 **The chat was unpicked out of `App.tsx` over 2026-09-07 and 08**, in three commits, and
 took the component count to four: `lib/chatSession` holds the transcript rules,
-`ChatThread` draws it, `Composer` is the box you type in. **The order is the part worth
+`ChatThread` draws it, `Composer` is the box you type in. `AccountDialog` followed on
+2026-09-08 and made it **five**, which is the number the table above is the authority for
+— that sentence describes the day the chat was extracted, not the count today, and the
+distinction is the only reason it still reads "four". **The order is the part worth
 copying** — each component's render tests were written and passing *before* `App.tsx` was
 switched over to it, because an extract-then-check is unverified by construction, and
 that is the order that produced the bug `DataBinding` was added after. Each was then

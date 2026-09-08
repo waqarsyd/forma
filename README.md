@@ -109,7 +109,7 @@ Each of these is a shipped code path, not a plan.
 - **Account deletion that actually deletes**, removing saved reports, their version history and the encrypted key — proven by a test running against the emulator with production rules enforced. The middle one is the part that is easy to miss: Firestore does not delete a subcollection with its parent document, so a report deleted the obvious way leaves its history behind and looks like it worked ([`tests/accountDeletion.test.ts`](tests/accountDeletion.test.ts)).
 - **A shared style sheet, derived rather than asked for.** An appearance used by three or more controls is hoisted onto a `<StyleSheet>` after generation, so restyling a migrated report is one edit instead of forty that have to agree. Grouping is on exact equality, which is what makes it provably equivalent — a style supplies defaults and an explicit attribute still overrides it ([`src/lib/repxStyles.ts`](src/lib/repxStyles.ts)).
 - **A single place for unit conversion.** Four coordinate systems meet in this pipeline and every conversion between them lives in one module, because a mismatch renders a plausible layout in the wrong place and never throws ([`src/lib/reportGeometry.ts`](src/lib/reportGeometry.ts)).
-- **Optional Windows companion** that opens a generated `.repx` in the real DevExpress designer over a loopback listener, feature-detected so the button only appears when it is running ([`tools/RepxDesigner/`](tools/RepxDesigner/), [`src/lib/designerBridge.ts`](src/lib/designerBridge.ts)).
+- **Optional Windows companion** that opens a generated `.repx` in the real DevExpress designer over a loopback listener. The button is always in the bar: a probe of `127.0.0.1` decides whether a click hands the report to a companion already running or asks Windows to start one, not whether the button is drawn. Export `.repx` needs none of it ([`tools/RepxDesigner/`](tools/RepxDesigner/), [`src/lib/designerBridge.ts`](src/lib/designerBridge.ts)).
 - **Mock mode** — `VITE_FORMA_MOCK=true` returns a canned invoice after a 3s delay, for exercising loaders and progress bars without spending a request.
 
 ---
@@ -517,7 +517,7 @@ The unit suite deliberately targets functions whose invariants **fail plausibly 
 
 The rules suite covers account isolation, document shape, and the encrypted key vault. It needs a JVM because the Firestore emulator is a Java process; a **runtime is enough — no JDK required.** This project was developed against a Temurin **JRE 21**, installed per-user with `JAVA_HOME` and `PATH` set at user scope, so nothing had to go in system-wide and no admin rights were needed.
 
-Coverage of React components is two files deep — `DataBinding` and `BatchPanel`, added after a state bug shipped that a render test would have caught — and `App.tsx`'s own stateful logic is covered only where pieces of it have been extracted into `src/lib`. **This is a floor, not a net.** [`docs/notes/testing.md`](docs/notes/testing.md) says exactly what is and is not covered.
+Coverage of React components is five files deep — `DataBinding` and `BatchPanel`, added after a state bug shipped that a render test would have caught, then `ChatThread`, `Composer` and `AccountDialog` — and `App.tsx`'s own stateful logic is covered only where pieces of it have been extracted into `src/lib`. **This is a floor, not a net.** [`docs/notes/testing.md`](docs/notes/testing.md) says exactly what is and is not covered.
 
 <details>
 <summary>If a run is slow, or every file fails at once</summary>
@@ -598,7 +598,7 @@ Forma is usable but young, and some things are worth knowing before you rely on 
 - **Models are detected at runtime, never hardcoded.** Google retires models "for new users", so a pinned id works for existing projects and 404s for every new key. Forma probes a preference list on first use and caches the winner for the session.
 - **Reports with large images may not sync to the cloud.** A single detailed 2048px upload can exceed Firestore's 1 MiB document limit on its own; Forma saves the spec and REPX without the images in that case, and says so.
 - **PDFs are read to 8 pages.** Beyond that, later pages are ignored.
-- **Component coverage is two components deep.** `DataBinding` and `BatchPanel` have render tests; nothing else does, and `App.tsx` is 4,500 lines of which only its pane state machine and attachment budget have been extracted and tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`.
+- **Component coverage is five components deep.** `DataBinding`, `BatchPanel`, `ChatThread`, `Composer` and `AccountDialog` have render tests; nothing else does, and `App.tsx` is still several thousand lines of which only the pieces extracted into `src/lib` are tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`. (No line count here on purpose: it was written down as "4,500" and was wrong within a week. Measure it if you need it.)
 
 ---
 

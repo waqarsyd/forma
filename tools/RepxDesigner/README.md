@@ -123,5 +123,9 @@ Removing it is deleting the `.lnk` from `shell:startup`; nothing else is registe
 
 ## Caveats
 
-- **Windows and DevExpress only.** Forma is a browser app that must keep working without any of this, which is why the button is feature-detected rather than assumed. On a Mac or a Linux box it is permanently disabled, and its tooltip names a `.exe` that will never run there — accepted, because the alternative is a browser app sniffing the platform to decide what to admit exists.
+- **Windows and DevExpress only.** Forma is a browser app that must keep working without any of this, which is why the capability is detected rather than assumed. On a Mac or a Linux box the loopback probe simply never answers.
+
+  This said the button "is permanently disabled" there. It is not, and has not been since `launchDesigner()` was added: the button is disabled only while there is no report to open, and with one on the bench it is enabled everywhere. A click on a machine with no companion asks the OS to open a `forma-repx://` URL, waits out `waitForDesigner`, and then reports that it could not start — naming a `.exe` that will never run there. So on those platforms the cost is a wasted twelve seconds and a Windows-flavoured message, not a greyed-out control.
+
+  Accepted for now, on the same reasoning as before: the alternative is a browser app sniffing the platform to decide what to admit exists. Worth revisiting if anyone actually runs Forma off Windows, because twelve seconds of nothing is a worse answer than a disabled button with an honest tooltip.
 - **Loopback over plain HTTP.** If Forma is ever served over HTTPS the browser will block the request to `http://127.0.0.1` as mixed content, and the button will fail even with the companion running. Note the ping fails the same way, so the button reports itself as "start the companion" when the companion may well be running — the tooltip will be wrong about the reason, and this is the case to suspect first if it is ever deployed behind TLS.
