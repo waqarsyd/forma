@@ -202,6 +202,8 @@ On screen the two are indistinguishable, which is exactly why this survived a ma
 
 A request to make 20 the default *everywhere* comes up naturally from looking at a DevExpress file, and it is the thing not to do: the prompt's zeros are what let the model write paper-absolute coordinates with no subtraction, and a fixed margin under content that starts at the paper edge is the silent-misplacement failure this whole module exists to avoid.
 
+**The mock fixture was the one place this was visible and it was lying.** Mock mode returns `MOCK_INVOICE_RESPONSE` and returns *early* — before `normalizeItemNames`, `ensureUniqueRefs`, `liftReportMargins` and `liftParameterTypes`, all of which run on a real generation. So the fixture *is* what the workspace shows offline, and it declared `Margins="0, 0, 0, 0"` with both bands at zero while the lift would have made it `20, 20, 20, 20`. Every offline screenshot in this repo, including the ones taken while writing this section, showed a report the app does not actually produce. The fixture now carries the lifted form, and `geminiService.test.ts` asserts it is a **fixed point of the repairs** — run them over it and nothing changes — so the divergence cannot come back quietly. Items and Refs were already correct; margins were the only drift.
+
 Three details are load-bearing:
 
 - **Only top-level controls move.** An `XRTableCell` is positioned against its `XRTableRow`, not the band, so shifting it would move it twice. The parser is a tag stack rather than a regex over `<Band>…</Band>`, because `TopMarginBand` is self-closing and a non-greedy pair match swallows the next band's contents — the mistake that produced 22 phantom overflow reports when the banded and flat outputs were first compared on 2026-09-01.

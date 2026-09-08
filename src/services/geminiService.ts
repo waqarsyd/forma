@@ -166,18 +166,18 @@ export function misorderMockHeaders(xml: string): string {
 export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
   markdown: `# Mock Invoice Report\n\nThis is a canned layout returned by \`VITE_FORMA_MOCK\`, not generated output.\n\n## Bands\n- **Report Header**: the invoice title, printed once.\n- **Page Header**: the column headings, repeated on every sheet.\n- **Detail**: one line item, printed once per record.`,
   repxContent: `<?xml version="1.0" encoding="utf-8"?>
-<XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100" Version="23.2">
+<XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="20, 20, 20, 20" PageWidth="850" PageHeight="1100" Version="23.2">
   <Bands>
-    <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
-    <Item2 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="100">
+    <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="20" />
+    <Item2 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="80">
       <Controls>
-        <Item1 Ref="3" ControlType="XRLabel" Name="labelTitle" Text="INVOICE - FORMA MOCK ENGINE" LocationFloat="20,20" SizeF="500,40" Font="Arial, 11.52pt" Padding="2,2,0,0,100" />
-        <Item2 Ref="15" ControlType="XRCheckBox" Name="checkPaid" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="20,65" SizeF="200,20" Font="Arial, 7.2pt" />
+        <Item1 Ref="3" ControlType="XRLabel" Name="labelTitle" Text="INVOICE - FORMA MOCK ENGINE" LocationFloat="0,0" SizeF="500,40" Font="Arial, 11.52pt" Padding="2,2,0,0,100" />
+        <Item2 Ref="15" ControlType="XRCheckBox" Name="checkPaid" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="0,45" SizeF="200,20" Font="Arial, 7.2pt" />
       </Controls>
     </Item2>
     <Item3 Ref="4" ControlType="PageHeaderBand" Name="PageHeader" HeightF="30">
       <Controls>
-        <Item1 Ref="5" ControlType="XRTable" Name="tableHead" LocationFloat="20,5" SizeF="810,20">
+        <Item1 Ref="5" ControlType="XRTable" Name="tableHead" LocationFloat="0,5" SizeF="810,20">
           <Rows>
             <Item1 Ref="6" ControlType="XRTableRow" Name="rowHead" Weight="1">
               <Cells>
@@ -191,7 +191,7 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
     </Item3>
     <Item4 Ref="9" ControlType="DetailBand" Name="Detail" HeightF="40">
       <Controls>
-        <Item1 Ref="10" ControlType="XRTable" Name="tableDetail" LocationFloat="20,5" SizeF="810,25">
+        <Item1 Ref="10" ControlType="XRTable" Name="tableDetail" LocationFloat="0,5" SizeF="810,25">
           <Rows>
             <Item1 Ref="11" ControlType="XRTableRow" Name="rowDetail" Weight="1">
               <Cells>
@@ -203,7 +203,7 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
         </Item1>
       </Controls>
     </Item4>
-    <Item5 Ref="14" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />
+    <Item5 Ref="14" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="20" />
   </Bands>
 </XtraReportsLayoutSerializer>`,
   layout: {

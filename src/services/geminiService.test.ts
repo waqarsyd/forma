@@ -10,6 +10,9 @@ import {
   MOCK_INVOICE_RESPONSE,
 } from './geminiService';
 import { auditRepx } from '../lib/repxAudit';
+import { liftReportMargins } from '../lib/repxMargins';
+import { ensureUniqueRefs } from '../lib/repxRefs';
+import { normalizeItemNames } from '../lib/repxItems';
 
 /**
  * `extractPartialReply` types the assistant's answer into the bubble as the
@@ -174,6 +177,44 @@ describe('isTruncatedStream', () => {
     expect(isTruncatedStream(new Error('Unexpected token < in JSON at position 0'))).toBe(false);
     expect(isTruncatedStream(new Error('API key not valid'))).toBe(false);
     expect(isTruncatedStream(null)).toBe(false);
+  });
+});
+
+/*
+ * Mock mode returns this fixture and returns early — before `normalizeItemNames`,
+ * `ensureUniqueRefs`, `liftReportMargins` and `liftParameterTypes`, all of which
+ * run on a real generation. So whatever the fixture says *is* what the workspace
+ * shows offline, and if it differs from what the pipeline would produce, every
+ * screenshot and every offline check quietly describes a report the app does not
+ * actually make.
+ *
+ * It did differ, in exactly one way, and it took someone reading a real
+ * DevExpress file to notice: the fixture declared `Margins="0, 0, 0, 0"` with
+ * both margin bands at zero, while the lift would have turned it into
+ * `20, 20, 20, 20` — the same values DevExpress's own empty report carries.
+ *
+ * These assert the fixture is a fixed point of the repairs: run them over it and
+ * nothing changes. A future edit that reintroduces the divergence fails here
+ * rather than in a screenshot nobody compares.
+ */
+describe('the mock fixture is what the repair pipeline would produce', () => {
+  const xml = MOCK_INVOICE_RESPONSE.repxContent;
+
+  it('declares the margins it draws', () => {
+    expect(xml).toContain('Margins="20, 20, 20, 20"');
+    expect(xml).toMatch(/ControlType="TopMarginBand"[^>]*HeightF="20"/);
+    expect(xml).toMatch(/ControlType="BottomMarginBand"[^>]*HeightF="20"/);
+  });
+
+  it('has nothing left for the margin lift to do', () => {
+    const r = liftReportMargins(xml);
+    expect(r.applied).toBe(false);
+    expect(r.reason).toMatch(/already declares margins/i);
+  });
+
+  it('has unique Refs and correctly numbered Items already', () => {
+    expect(ensureUniqueRefs(xml).applied).toBe(false);
+    expect(normalizeItemNames(xml).applied).toBe(false);
   });
 });
 
