@@ -279,14 +279,17 @@ src/
                        (the review column's transcript, lifted out of App.tsx
                        once chatSession.ts held its rules — the progress card
                        passes through as children, because that is generation
-                       state and not conversation), and Markdown — which is
-                       its own module so react-markdown can be lazy-loaded.
-                       Five files here are not components: useFocusTrap (a
-                       shared hook) and four tests — legalDisclosure, which
+                       state and not conversation), Composer (staged
+                       attachments, the notice lines and the box you type in;
+                       one composer does both jobs, and which one is App.tsx's
+                       decision, not this component's), and Markdown — which
+                       is its own module so react-markdown can be lazy-loaded.
+                       Six files here are not components: useFocusTrap (a
+                       shared hook) and five tests — legalDisclosure, which
                        reads ContactPage and index.html off disk, plus
-                       DataBinding, BatchPanel and ChatThread, the only
-                       component render tests in the suite. They are the tests
-                       that live outside lib/, services/ and server/
+                       DataBinding, BatchPanel, ChatThread and Composer, the
+                       only component render tests in the suite. They are the
+                       tests that live outside lib/, services/ and server/
     landing/           figures used by the marketing pages: HeroScanner,
                        SheetRuler, StepFigures, VaultFigure,
                        AnnouncementDock, sections, icons

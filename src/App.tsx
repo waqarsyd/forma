@@ -20,7 +20,6 @@ import { flushSync } from 'react-dom';
  */
 import {
   IconAlert,
-  IconArrowUp,
   IconCheck,
   IconCheckCircle,
   IconChevronDown,
@@ -28,7 +27,6 @@ import {
   IconChevronsRight,
   IconClose,
   IconCopy,
-  IconDoc,
   IconDownload,
   IconExternal,
   IconEye,
@@ -46,7 +44,6 @@ import {
   IconLogin,
   IconLogout,
   IconPanelLeft,
-  IconPaperclip,
   IconPause,
   IconPlay,
   IconPlus,
@@ -189,7 +186,7 @@ import { auditRepx } from './lib/repxAudit';
 import { sourceRectFor } from './lib/sourceRect';
 import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner } from './lib/designerBridge';
-import { groupAttachments, groupLabel, type PreviewMeta } from './lib/attachments';
+import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import {
   buildChatHistory,
   isGenerationTurn,
@@ -203,6 +200,7 @@ import { unitsToPx, pointsToUnits, pdfTopFromBaseline, unitsPerInch } from './li
 import { repeatedHeadingTables } from './lib/mockupRows';
 import LogoPulse from './components/LogoPulse';
 import ChatThread from './components/ChatThread';
+import Composer from './components/Composer';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
   clampReviewWidth,
@@ -3845,158 +3843,27 @@ export default function App() {
             )}
           </ChatThread>
 
-          <div className="wb-composer">
-            {/* Staged intake. The artifact had no slot for these; they are absent
-                at rest, so the default view is unchanged. */}
-            {previews.length > 0 && (
-              <div className="wb-chip-row">
-                {/* One chip per file the user dropped. A 5-page PDF is five
-                    images underneath — the model needs a page each — but showing
-                    five thumbnails for one upload reads as the product having
-                    mangled the file. Pages are reachable inside the viewer. */}
-                {previewGroups.map((group) => {
-                  const label = groupLabel(group);
-                  const first = group.indices[0];
-                  const uploadId = previewMeta[first]?.uploadId;
-                  return (
-                    <span key={`${group.file}-${first}`} className="wb-attach wb-attach--file">
-                      <button
-                        type="button"
-                        className="wb-attach-open"
-                        onClick={() => openAttachment(group.indices, 0, group.file)}
-                        title={`View ${label}`}
-                        aria-label={`View ${label}`}
-                      >
-                        <img className="wb-attach-thumb" src={previews[first]} alt="" />
-                        <span className="wb-attach-name">{group.file}</span>
-                        {group.pages > 1 && <span className="wb-attach-count">{group.pages} pages</span>}
-                      </button>
-                      <button
-                        onClick={() => removeFile(group.indices, uploadId)}
-                        title={`Remove ${label}`}
-                        aria-label={`Remove ${label}`}
-                      >
-                        <IconClose size={11} />
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-            {textGroups.length > 0 && (
-              <div className="wb-chip-row">
-                {/* Only uploads with no thumbnail of their own reach this row —
-                    see `textGroups`. A PDF's text layer belongs to the chip
-                    above, not to a row of its own. */}
-                {textGroups.map((group) => {
-                  const label = groupLabel(group);
-                  return (
-                    <span key={group.uploadId} className="wb-attach">
-                      <IconDoc size={13} />
-                      {label}
-                      <button
-                        onClick={() => removeTextAttachment(group.uploadId)}
-                        title={`Remove ${label}`}
-                        aria-label={`Remove ${label}`}
-                      >
-                        <IconClose size={11} />
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-            {uploadNotices.length > 0 && (
-              <div className="wb-note-line wb-warn">
-                <span className="wb-ic"><IconWarn size={13} /></span>
-                <span>{uploadNotices.join(' · ')}</span>
-              </div>
-            )}
-            {error && (
-              <div className="wb-note-line wb-warn" role="alert">
-                <span className="wb-ic"><IconAlert size={13} /></span>
-                <span>{error}</span>
-              </div>
-            )}
-            {saveNotice && (
-              <div className="wb-note-line wb-ok" role="status">
-                <span className="wb-ic"><IconCheck size={13} /></span>
-                <span>{saveNotice}</span>
-              </div>
-            )}
-
-            <div className={`wb-box${hasApiKey ? '' : ' wb-is-locked'}`}>
-              <button
-                className="wb-tool"
-                aria-label="Attach a file"
-                title="Attach an image, a PDF or a .repx"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <IconPaperclip size={16} />
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*,application/pdf,.repx"
-                onChange={handleFileChange}
-                className="wb-hidden"
-              />
-              <input
-                className="wb-line"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGenerate(); } }}
-                disabled={!hasApiKey}
-                placeholder={hasApiKey ? 'Describe a change…' : 'Add your API key to start'}
-                aria-label="Describe a change"
-              />
-              <button
-                className="wb-send"
-                aria-label="Send note"
-                /* Wrapped: handleGenerate's first parameter is an optional prompt
-                   override, and passing it bare hands it the click event. */
-                onClick={() => handleGenerate()}
-                disabled={!hasApiKey || isAnalyzing || isIngesting}
-              >
-                <IconArrowUp size={15} />
-              </button>
-            </div>
-
-            {!hasApiKey && (
-              <button className="wb-gate" onClick={() => setIsConfigOpen(true)}>
-                <span className="wb-badge-ic"><IconAlert size={12} /></span>
-                <span className="wb-txt">
-                  <b>Add your Gemini API key</b>
-                  <span>Forma ships no key of its own</span>
-                </span>
-                {/* Inline rather than an icon component: the artifact drew a
-                    right-chevron here, and icons.tsx has only the down one.
-                    Rotating it would need a rule in workspace.css, which is meant
-                    to stay byte-identical to the artifact. */}
-                <svg
-                  className="wb-chev"
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M9 6l6 6-6 6" />
-                </svg>
-              </button>
-            )}
-
-            {/* Shown in both states: whoever is about to paste a key is exactly
-                who needs to know it is not being stored. */}
-            <span className="wb-fineprint">
-              <span>Your key clears when this tab closes</span>
-            </span>
-          </div>
+          <Composer
+            previews={previews}
+            previewGroups={previewGroups}
+            previewMeta={previewMeta}
+            textGroups={textGroups}
+            onOpenAttachment={openAttachment}
+            onRemoveFile={removeFile}
+            onRemoveText={removeTextAttachment}
+            uploadNotices={uploadNotices}
+            error={error}
+            saveNotice={saveNotice}
+            prompt={prompt}
+            onPromptChange={setPrompt}
+            onSend={handleGenerate}
+            fileInputRef={fileInputRef}
+            onFileChange={handleFileChange}
+            hasApiKey={hasApiKey}
+            isAnalyzing={isAnalyzing}
+            isIngesting={isIngesting}
+            onAddKey={() => setIsConfigOpen(true)}
+          />
         </div>
 
         {/* ------------------------------------------------- saved projects */}

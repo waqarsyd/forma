@@ -19,8 +19,8 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,202 tests in 56 files** — under the `node` environment
-by default, with the nine files that genuinely need a DOM opting into jsdom on their
+`npm test` runs Vitest over **1,226 tests in 57 files** — under the `node` environment
+by default, with the ten files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eight fail in a way
 that looks like a broken install.
@@ -62,6 +62,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 |---|---:|---|
 | `components/BatchPanel` | 10 | jsdom |
 | `components/ChatThread` | 19 | jsdom |
+| `components/Composer` | 24 | jsdom |
 | `components/DataBinding` | 15 | jsdom |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
@@ -117,7 +118,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/keyVault` | 21 | jsdom |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,202 in 56 files** — and that total is the arithmetic sum of the column above
+**Total: 1,226 in 57 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -131,7 +132,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,180** against a real 1,202 and will talk you into
+A grep for `\bit(` answers **1,204** against a real 1,226 and will talk you into
 "correcting" numbers that were already right. **Five** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 22 from
 one `it(` over split points, `designerBridge` eight of its 33 over Windows reserved
