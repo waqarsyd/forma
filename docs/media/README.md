@@ -15,13 +15,23 @@ Both were captured from `localhost:3000` over CDP against a headless Edge, at a 
 scale factor of 1.5 and 2 respectively. A placeholder SVG stood here until they were
 taken; it was deleted in the same commit, per step 7 below.
 
-`screenshot.png` is from 2026-09-01 and is still current — the home page has not
-changed since. **`workspace.png` was recaptured on 2026-09-05**, because the rail had
-grown two buttons it did not show: Revisions and Batch. That is the failure mode worth
-naming here. A screenshot goes stale by *omission*, not by breaking — the old image was
-a correct picture of a workspace that no longer exists, and nothing in the build, the
-tests or the encoding sweep can tell. **When a rail button, a pane or a status field is
-added, this file is a second place to change.**
+**`workspace.png` was recaptured on 2026-09-05**, because the rail had grown two buttons
+it did not show: Revisions and Batch. **`screenshot.png` was recaptured on 2026-09-08**,
+for the same class of reason one step subtler: the home page's stat row read *"5 versions
+— DevExpress 24.1 back to 20.1"* against an app that had offered eight, up to 26.1, since
+25.1/25.2/26.1 were added. The picture was not broken. It was a correct picture of an
+older product.
+
+That is the failure mode worth naming here. **A screenshot goes stale by *omission*, not
+by breaking** — nothing in the build, the tests or the encoding sweep can tell, and the
+lead image on the README is the first claim a visitor reads. **When a rail button, a
+pane, a status field or a number on the home page changes, this file is a second place
+to change.** The version list in particular is already a change to seven files; this
+makes eight.
+
+*Found by looking at the image during the pre-push leak audit, not by any check.* Both
+files were opened and read frame by frame for anything personal — an account email, a
+key, a saved report title — and both are clean. The stat was noticed on the way past.
 
 **Neither shows generated output, and that is deliberate.** Generating a report needs a
 Gemini key, which is the user's and does not belong in a capture. `VITE_FORMA_MOCK=true`
