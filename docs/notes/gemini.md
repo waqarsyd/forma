@@ -826,6 +826,19 @@ loaded   : 4 tables, 21 cells, 0 bindings
 exit code: 0
 ```
 
+**Confirmed a second way on 2026-09-08, through the product rather than the probe.**
+`RepxProbe inspect` loads a file through the assemblies; it does not prove the designer
+*opens* one. So the whole path was run with the real companion started from the owner's
+own desktop: `RepxDesigner.exe --serve` reporting `designerVersion 20.1.3.0` on
+`/health`, a report generated at the **23.2** default, then **Open in designer**. The
+companion answered `202`, wrote `%TEMP%\Forma\Mock_Invoice_Report.repx`, and the
+designer opened it — layout correct, confirmed by the person looking at the screen.
+Two details worth keeping. The file the companion received is **SHA-256 identical** to
+what `Export .repx` downloads, so the two delivery paths are one artifact rather than
+two similar ones. And the real companion returns **202**, not the 200 a stub might
+assume — `sendToDesigner` checks `response.ok`, which covers the 2xx range, so this is
+only a trap for anyone writing a fake companion to test against.
+
 Nothing was discarded. On re-save the 20.1 loader simply rewrote the tag:
 
 | attribute | in the file | after a 20.1 load and save |
