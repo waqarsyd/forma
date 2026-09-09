@@ -38,6 +38,10 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
+  "comment:overrides": "qs: two Dependabot advisories (array-limit bypass, DoS via attacker-controlled isBuffer) are fixed in 6.16.0, but no direct dependency asks for it -- the vulnerable copy arrives via @google/genai -> @modelcontextprotocol/sdk -> express@5. `npm audit fix` cannot reach it without a breaking change, so it is pinned here instead. Every qs in the tree was already 6.x, so this is a patch-level lift, not a major. Remove this entry once the chain ships 6.16.0 on its own; `npm ls qs --all` shows whether it still bites.",
+  "overrides": {
+    "qs": "^6.16.0"
+  },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",
     "@tailwindcss/vite": "^4.1.14",
