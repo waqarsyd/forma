@@ -39,7 +39,31 @@ import {
   type EncryptedKeyRecord,
 } from './keyVault';
 
-const API_KEY = 'AIzaSyExampleNotARealKey_0123456789abcd';
+/*
+ * Deliberately NOT shaped like a Google API key, and it must stay that way.
+ *
+ * Until 2026-09-09 this was a fabricated string that nonetheless had the real
+ * key format exactly: the `AIzaSy` prefix followed by 33 more characters, 39 in
+ * total. GitHub's secret scanner cannot tell a fake from a live key without
+ * validating it, so it raised an alert on this line the day the repository went
+ * public, and it would do so again for every fork.
+ *
+ * Note this comment deliberately *describes* that format rather than quoting the
+ * old value: pasting it here would match the scanner from inside the very
+ * comment explaining the fix. The first draft did exactly that and was caught
+ * by re-running the sweep instead of trusting the edit.
+ *
+ * The vault encrypts whatever bytes it is handed, so the plaintext's shape is
+ * irrelevant to everything asserted below. Making it *look* realistic bought
+ * nothing and cost a false positive that takes a human to dismiss. The only
+ * constraint is length: one test asserts the serialised record does not contain
+ * `API_KEY.slice(0, 12)`, so keep it comfortably over twelve characters.
+ *
+ * The three other fake keys in this repo (`VaultFigure.tsx`,
+ * `reportConfigStore.test.ts`, `firestore.rules.test.ts`) are all too short to
+ * match the pattern and were left alone.
+ */
+const API_KEY = 'gemini-api-key-placeholder-not-a-real-credential';
 const PASSPHRASE = 'correct horse battery staple';
 
 /** One shared record — deriving a key costs ~310k PBKDF2 rounds each time. */
