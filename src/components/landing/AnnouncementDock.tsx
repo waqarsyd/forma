@@ -122,11 +122,24 @@ export default function AnnouncementDock() {
                   key={note.id}
                   className={`px-[18px] py-[15px] ${i > 0 ? 'border-t border-outline-variant' : ''}`}
                 >
-                  {/* No date line. `date` stays on the entry — it is the sort
-                      key the newest-first order and its test depend on — it is
-                      just not shown. */}
+                  {/* The date sits on the title line but is styled as body
+                      text, not as heading text: body size, body colour, and
+                      `font-normal` to override the `font-semibold` it would
+                      otherwise inherit from the h3. That override is the whole
+                      point — matching the heading's weight made the date read
+                      as part of the title rather than as metadata attached to
+                      it. The middle dot separates them for the same reason: a
+                      hyphen reads as a sentence continuing.
+
+                      `date` is also the sort key the newest-first order and its
+                      test depend on, which is why it stays a plain ISO string —
+                      it is shown exactly as stored, so a prettier format here
+                      would mean formatting at render or breaking the sort. */}
                   <h3 className="font-body-lg text-[14px] font-semibold leading-[1.35] text-on-surface">
                     {note.title}
+                    <span className="ml-1.5 text-[13px] font-normal leading-[1.55] text-on-surface-variant">
+                      · {note.date}
+                    </span>
                   </h3>
                   <p className="mt-1.5 font-body-lg text-[13px] leading-[1.55] text-on-surface-variant">
                     {note.body}

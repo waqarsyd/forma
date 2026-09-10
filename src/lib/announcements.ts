@@ -23,6 +23,12 @@ export type Announcement = {
 
 export const ANNOUNCEMENTS: Announcement[] = [
   {
+    id: '2026-09-09-open-source-live',
+    date: '2026-09-09',
+    title: 'Forma is open source',
+    body: 'It’s done — the repository is public at github.com/waqarsyd/forma under Apache-2.0: the app itself, the prompt behind it, and the notes on why it works the way it does. 🚀',
+  },
+  {
     id: '2026-08-14-open-source',
     date: '2026-08-14',
     title: 'Going open source',
