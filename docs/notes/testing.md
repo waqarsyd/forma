@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,322 tests in 60 files** — under the `node` environment
+`npm test` runs Vitest over **1,323 tests in 60 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -129,7 +129,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/workspaceView` | 11 |  |
 | `lib/zip` | 24 |  |
 | `server/bindHost` | 6 |  |
-| `server/hostingConfig` | 8 | reads `firebase.json` off disk |
+| `server/hostingConfig` | 9 | reads `firebase.json` off disk |
 | `server/securityHeaders` | 27 |  |
 | `server/staticCache` | 10 |  |
 | `services/chatRetry` | 10 |  |
@@ -137,7 +137,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/keyVault` | 21 | jsdom |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,322 in 60 files** — and that total is the arithmetic sum of the column above
+**Total: 1,323 in 60 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.

@@ -63,16 +63,52 @@ import { IMMUTABLE, REVALIDATE } from './staticCache';
 const config = JSON.parse(readFileSync('firebase.json', 'utf8'));
 
 type HeaderRule = { source: string; headers: Array<{ key: string; value: string }> };
+type HostingEntry = { site?: string; public?: string; rewrites?: unknown; ignore?: string[]; headers?: HeaderRule[] };
 
-const rules: HeaderRule[] = config.hosting?.headers ?? [];
+/*
+ * `hosting` became an ARRAY on 2026-09-10, one entry per site, when
+ * openforma.web.app was added beside the original forma-201ba.web.app. Firebase
+ * has no way to share one block between sites, so the entries are duplicates --
+ * which is precisely the hand-mirrored copy this file exists to distrust. The
+ * duplication is therefore generated rather than typed, and asserted below.
+ */
+const sites: HostingEntry[] = Array.isArray(config.hosting) ? config.hosting : [config.hosting];
+const primary: HostingEntry = sites[0] ?? {};
+
+const rules: HeaderRule[] = primary.headers ?? [];
 const ruleFor = (source: string) => rules.find((r) => r.source === source);
 const asMap = (rule: HeaderRule | undefined) =>
   Object.fromEntries((rule?.headers ?? []).map((h) => [h.key, h.value]));
 
+/** Everything except the site name, which is the only field allowed to differ. */
+const body = (h: HostingEntry) => {
+  const copy: HostingEntry = JSON.parse(JSON.stringify(h));
+  delete copy.site;
+  return JSON.stringify(copy);
+};
+
 describe('firebase.json hosting', () => {
   it('exists at all, with dist as the public directory', () => {
     expect(config.hosting, 'no hosting block in firebase.json').toBeTruthy();
-    expect(config.hosting.public).toBe('dist');
+    for (const s of sites) expect(s.public, `site ${s.site}`).toBe('dist');
+  });
+
+  /*
+   * Every site must serve the same app with the same headers. A second site
+   * that quietly loses an origin from connect-src, or the immutable rule, is a
+   * defect nobody would see -- both URLs keep working and one of them is worse.
+   */
+  it('serves every site from one identical configuration', () => {
+    expect(sites.length, 'expected at least one hosting entry').toBeGreaterThan(0);
+    const names = sites.map((s) => s.site ?? '(default)');
+    expect(new Set(names).size, `duplicate site names: ${names.join(', ')}`).toBe(names.length);
+    for (const s of sites.slice(1)) {
+      if (body(s) === body(primary)) continue;
+      expect.fail(
+        `hosting entry "${s.site}" differs from "${primary.site}" by more than its site name.\n` +
+          'Regenerate rather than hand-editing: every site must serve identical headers.'
+      );
+    }
   });
 
   /*
@@ -80,7 +116,9 @@ describe('firebase.json hosting', () => {
    * so a deep link to /docs must serve index.html rather than 404.
    */
   it('serves index.html for any path, so deep links work', () => {
-    expect(config.hosting.rewrites).toEqual([{ source: '**', destination: '/index.html' }]);
+    for (const s of sites) {
+      expect(s.rewrites, `site ${s.site}`).toEqual([{ source: '**', destination: '/index.html' }]);
+    }
   });
 
   it('sends exactly the security headers this codebase builds, with HSTS', () => {
@@ -146,7 +184,7 @@ describe('firebase.json hosting', () => {
    * by name.
    */
   it('does not deploy the server bundle', () => {
-    expect(config.hosting.ignore).toContain('server.cjs');
+    for (const s of sites) expect(s.ignore, `site ${s.site}`).toContain('server.cjs');
   });
 
   it('keeps the emulator and rules config the other suites depend on', () => {
