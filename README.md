@@ -28,6 +28,8 @@ It is built around one constraint that shaped everything else: **the application
 
 ## Demo
 
+**Live at [openforma.web.app](https://openforma.web.app)** — the deployed build of `main`. It runs signed out with no account, and generating a report needs a Gemini API key of your own, which you paste into Settings and which never leaves your browser.
+
 ![Forma's home page: upload a report design and get a specification, a live mockup and valid DevExpress XML](docs/media/screenshot.png)
 
 The workspace itself — the uploaded design and the conversation on the left, the rendered mockup on the right, and the `Mockup` / `Spec` / `REPX` tabs over the three artifacts:
@@ -551,13 +553,22 @@ Set `HTTPS="true"` **only where TLS actually terminates**, so HSTS is sent. Set 
 
 ### Firebase Hosting
 
-**The target is Firebase Hosting, on the free Spark plan**, chosen on 2026-09-08. The app has no server state — Firestore and Gemini are both called from the browser with the user's own key — so everything `server.ts` does in production is static-host territory, and running a Node process to serve five megabytes of files buys nothing. Two things decided it over Cloudflare Pages: the deployment domains are **already** in the API key's referrer allowlist and Firebase Auth's authorised domains, so sign-in works with no reconfiguration; and it is one vendor rather than two. Measured, a cold visit transfers about 490 kB, so the free tier's 360 MB/day is roughly 730 visits a day.
+**The target is Firebase Hosting, on the free Spark plan**, chosen on 2026-09-08. The app has no server state — Firestore and Gemini are both called from the browser with the user's own key — so everything `server.ts` does in production is static-host territory, and running a Node process to serve five megabytes of files buys nothing. Two things decided it over Cloudflare Pages: the *default* domain is already in the API key's referrer allowlist and Firebase Auth's authorised domains, so sign-in works there with no reconfiguration; and it is one vendor rather than two. Measured, a cold visit transfers about 490 kB, so the free tier's 360 MB/day is roughly 730 visits a day.
 
 ```bash
 npm run build
-npx firebase deploy --only hosting          # serves dist/ at <project>.web.app
+npx firebase deploy --only hosting          # every site in firebase.json
 npx firebase deploy --only firestore:rules  # the rules, deployed separately
 ```
+
+**`hosting` is an array — one entry per site**, because Firebase cannot share a block between sites. The entries are identical apart from `site`, and the test below asserts that: a second site quietly missing an origin from `connect-src` would keep serving while defending less, and both URLs would look fine. Generate the duplicate rather than typing it.
+
+**Adding a site needs two console changes that nothing in this repo can make, and the page gives no hint when they are missing.** A new hosting domain is *not* automatically trusted:
+
+1. **API key → Application restrictions → HTTP referrers** — add `https://<site>.web.app/*`. The API **replaces** the list rather than appending, so keep the existing entries.
+2. **Authentication → Settings → Authorized domains** — add `<site>.web.app`.
+
+Skip either and the site renders perfectly with an empty console, because Firebase is not called until someone signs in — so a smoke test passes and the first real user finds sign-in dead. Verify by sending a request with the new origin as `Referer` and an unrelated domain as a control; a pass only means something if the control is refused.
 
 **The headers in `firebase.json` are derived, not written by hand.** A static host cannot run `server.ts`, so the whole security header set has to be restated there — including `connect-src`, which is what makes a stolen Gemini key worthless to injected script. That copy is pinned by [`src/server/hostingConfig.test.ts`](src/server/hostingConfig.test.ts), which builds the headers from `securityHeaders.ts` and `staticCache.ts` and fails if `firebase.json` disagrees, printing the JSON to paste back. **Change the policy in `securityHeaders.ts` and let the test tell you what `firebase.json` should say** — never the other way round.
 
