@@ -368,6 +368,11 @@ src/
                        zip (a store-only ZIP writer, ~150 lines against a
                        ~30 kB dependency, so a batch comes back as one archive
                        instead of forty download prompts),
+                       fidelity (the arithmetic of the fidelity benchmark:
+                       reads bands, controls, surviving phrases, font sizes,
+                       margins and the audit out of a generation and compares
+                       them with a case's expectations; the runner that spends
+                       quota is scripts/fidelity/run.ts),
                        repxParameters (the parameters a report asks for before
                        it prints, and the lift that makes a typed one work —
                        DevExpress silently ignores an inline Type and loads a
@@ -522,6 +527,7 @@ firebase-applet-config.json
 | `npm run test:watch` | The same suite in watch mode |
 | `npm run test:coverage` | Coverage over `lib/` and `services/` — see the note in `vitest.config.ts` about what is deliberately excluded |
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
+| `npm run bench:fidelity` | The fidelity benchmark: generates every case under `scripts/fidelity/cases` through the real pipeline with your own key (`FORMA_BENCH_KEY`) and scores the result. A benchmark, not a check — it spends quota, so it is not in CI |
 | `npm run clean` | Remove `dist/` |
 
 <sup>Two other files list these: [`CONTRIBUTING.md`](CONTRIBUTING.md)'s table of checks and [`CLAUDE.md`](CLAUDE.md)'s *Commands* block. Adding or renaming a script is a change to all three — this table is the one users read, so it lists every script rather than only the checks.</sup>

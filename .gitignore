@@ -143,3 +143,14 @@ tools/**/obj/
 
 # RepxProbe writes <input>.resaved beside whatever it inspects.
 *.repx.resaved
+
+# The fidelity benchmark (scripts/fidelity/run.ts). Results hold generated
+# reports and token counts from the owner's own key and are measurements of a
+# moment, not source; the scorecard worth keeping is quoted in the commit that
+# changed the prompt. A case's rendered .png is a screenshot of its .html recipe
+# and is regenerated on demand, so only the recipe is tracked -- the same split
+# as assets/source/og-card.html. `local-*` case directories are for real reports
+# from real customers, which never belong in a public repository.
+fidelity-results/
+scripts/fidelity/cases/**/*.png
+scripts/fidelity/cases/local-*/

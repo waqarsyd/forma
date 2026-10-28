@@ -23,6 +23,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:rules": "firebase emulators:exec --only firestore \"vitest run --config vitest.rules.config.ts\"",
+    "bench:fidelity": "tsx scripts/fidelity/run.ts",
     "start": "node dist/server.cjs"
   },
   "dependencies": {

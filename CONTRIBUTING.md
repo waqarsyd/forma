@@ -73,6 +73,14 @@ the same reason.)
 
 **Every baseline is clean**, so anything any of them prints is yours.
 
+One script is deliberately not in that table. `npm run bench:fidelity` generates the
+cases under `scripts/fidelity/cases` through the real pipeline with your own Gemini key
+and scores what comes back; it spends quota and takes minutes, so it is a benchmark
+rather than a check and runs by hand. **A change to the prompt, the model order, a
+repair pass or `thinkingBudget` should quote its scorecard before and after in the
+commit message.** *The fidelity benchmark* in `docs/notes/gemini.md` says what it
+measures and why.
+
 This table deliberately does not say how many tests there are.
 [`docs/notes/testing.md`](docs/notes/testing.md) is the only place that number is
 written down, and it stays that way because copies of it drift: this file carried

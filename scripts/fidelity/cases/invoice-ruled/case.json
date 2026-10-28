@@ -1,0 +1,21 @@
+{
+  "source": "source.html",
+  "prompt": "",
+  "config": { "version": "20.1", "unit": "HundredthsOfAnInch", "pageSize": "Letter" },
+  "render": { "width": 1275, "height": 1650 },
+  "notes": "A one-page invoice whose line items are an aligned grid with a single rule under the headings and no cell borders. This is the shape that came back as 23 flat labels on 2026-09-03 whenever the request did not say the word table (gemini.md, A cheat sheet is not an instruction); the prompt here is deliberately empty so the recognition rule is what is being measured. Margins are drawn at 0.75in so the margin lift has something to declare.",
+  "expect": {
+    "bands": ["ReportHeader", "PageHeader", "Detail", "ReportFooter", "PageFooter"],
+    "tables": { "min": 1 },
+    "controls": { "XRLabel": { "min": 6, "max": 80 }, "XRTable": { "min": 1 } },
+    "texts": {
+      "all": ["INVOICE", "Northwind Traders", "Bill To", "Invoice No", "Description", "Qty", "Unit Price", "Amount", "Subtotal", "Tax", "Total Due", "Thank you for your business"],
+      "minRatio": 0.85
+    },
+    "fontSize": { "median": { "min": 8, "max": 12 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 3 },
+    "sectionsMatchBands": true,
+    "serializerVersion": "20.1.3.0"
+  }
+}

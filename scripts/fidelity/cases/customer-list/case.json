@@ -1,0 +1,21 @@
+{
+  "source": "source.html",
+  "prompt": "",
+  "config": { "version": "23.2", "unit": "HundredthsOfAnInch", "pageSize": "Letter" },
+  "render": { "width": 1275, "height": 1650 },
+  "notes": "A plain tabular listing: a title, a run date, a six-column table with a ruled heading row and twenty records, and a footer carrying the page number. This is the most common report shape a DevExpress shop migrates, and the case that exercises the per-record Detail band rather than a one-off document. The footer's Page 1 of 1 is there so the page-number rule (XRPageInfo in the PageFooter, see repxAudit.ts) is measured and not assumed.",
+  "expect": {
+    "bands": ["PageHeader", "Detail", "PageFooter"],
+    "tables": { "min": 1 },
+    "controls": { "XRTable": { "min": 1 }, "XRPageInfo": { "min": 1 } },
+    "texts": {
+      "all": ["Customer List", "Customer ID", "Company", "Contact", "City", "Country", "Balance", "Alfreds Futterkiste", "Berlin", "Page"],
+      "minRatio": 0.8
+    },
+    "fontSize": { "median": { "min": 7, "max": 11 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 3 },
+    "sectionsMatchBands": true,
+    "serializerVersion": "23.2.3.0"
+  }
+}

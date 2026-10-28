@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invoice 2026-0417</title>
+<style>
+  /* US Letter at 150 dpi: 1275 x 1650. Margins 0.75in = 112px. */
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { width: 1275px; height: 1650px; font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 14px; }
+  .page { position: relative; box-sizing: border-box; width: 1275px; height: 1650px; padding: 112px; }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .company { font-size: 14px; line-height: 1.45; }
+  .company .name { font-size: 22px; font-weight: bold; margin-bottom: 4px; }
+  .title { font-size: 40px; font-weight: bold; letter-spacing: 2px; text-align: right; }
+  .meta { margin-top: 10px; text-align: right; font-size: 14px; line-height: 1.6; }
+  .meta b { display: inline-block; width: 110px; text-align: left; }
+  .billto { margin-top: 48px; font-size: 14px; line-height: 1.5; }
+  .billto .label { font-weight: bold; font-size: 12px; letter-spacing: 1px; color: #444; margin-bottom: 4px; }
+  table.items { width: 100%; border-collapse: collapse; margin-top: 44px; font-size: 14px; }
+  table.items th { text-align: left; font-weight: bold; padding: 8px 6px; border-bottom: 2px solid #111; }
+  table.items td { padding: 9px 6px; }
+  table.items .num { text-align: right; }
+  table.items th.num { text-align: right; }
+  .totals { margin-top: 24px; margin-left: auto; width: 360px; font-size: 14px; }
+  .totals div { display: flex; justify-content: space-between; padding: 5px 6px; }
+  .totals .due { font-weight: bold; font-size: 16px; border-top: 2px solid #111; margin-top: 4px; padding-top: 9px; }
+  .notes { margin-top: 56px; font-size: 13px; line-height: 1.5; color: #333; }
+  .footer { position: absolute; left: 112px; right: 112px; bottom: 112px; display: flex; justify-content: space-between; font-size: 12px; color: #555; border-top: 1px solid #999; padding-top: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <div class="company">
+      <div class="name">Northwind Traders</div>
+      <div>2721 Harbor Avenue, Suite 400</div>
+      <div>Seattle, WA 98126</div>
+      <div>billing@northwind.example</div>
+    </div>
+    <div>
+      <div class="title">INVOICE</div>
+      <div class="meta">
+        <div><b>Invoice No</b> 2026-0417</div>
+        <div><b>Invoice Date</b> 14 Oct 2026</div>
+        <div><b>Due Date</b> 13 Nov 2026</div>
+        <div><b>Terms</b> Net 30</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="billto">
+    <div class="label">BILL TO</div>
+    <div>Around the Horn Ltd.</div>
+    <div>Brook Farm, Stratford St. Mary</div>
+    <div>Colchester CO7 6JX, United Kingdom</div>
+    <div>Attn: Thomas Hardy</div>
+  </div>
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th style="width:12%">Item</th>
+        <th>Description</th>
+        <th class="num" style="width:10%">Qty</th>
+        <th class="num" style="width:16%">Unit Price</th>
+        <th class="num" style="width:16%">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>CH-0001</td><td>Chai, 10 boxes x 20 bags</td><td class="num">12</td><td class="num">18.00</td><td class="num">216.00</td></tr>
+      <tr><td>CH-0002</td><td>Chang, 24 x 12 oz bottles</td><td class="num">8</td><td class="num">19.00</td><td class="num">152.00</td></tr>
+      <tr><td>AN-0003</td><td>Aniseed Syrup, 12 x 550 ml</td><td class="num">15</td><td class="num">10.00</td><td class="num">150.00</td></tr>
+      <tr><td>CS-0004</td><td>Chef Anton's Cajun Seasoning, 48 x 6 oz jars</td><td class="num">6</td><td class="num">22.00</td><td class="num">132.00</td></tr>
+      <tr><td>GB-0005</td><td>Grandma's Boysenberry Spread, 12 x 8 oz jars</td><td class="num">20</td><td class="num">25.00</td><td class="num">500.00</td></tr>
+      <tr><td>UB-0006</td><td>Uncle Bob's Organic Dried Pears, 12 x 1 lb</td><td class="num">4</td><td class="num">30.00</td><td class="num">120.00</td></tr>
+      <tr><td>NW-0007</td><td>Northwoods Cranberry Sauce, 12 x 12 oz jars</td><td class="num">10</td><td class="num">40.00</td><td class="num">400.00</td></tr>
+      <tr><td>IK-0008</td><td>Ikura, 12 x 200 ml jars</td><td class="num">3</td><td class="num">31.00</td><td class="num">93.00</td></tr>
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div><span>Subtotal</span><span>1,763.00</span></div>
+    <div><span>Tax (8.5%)</span><span>149.86</span></div>
+    <div><span>Shipping</span><span>45.00</span></div>
+    <div class="due"><span>Total Due</span><span>USD 1,957.86</span></div>
+  </div>
+
+  <div class="notes">
+    <div><b>Payment</b>: bank transfer to account 00-1234-5678, reference the invoice number.</div>
+    <div>Thank you for your business.</div>
+  </div>
+
+  <div class="footer">
+    <span>Northwind Traders &middot; Registered in Washington No. 601-234-567</span>
+    <span>Page 1 of 1</span>
+  </div>
+</div>
+</body>
+</html>

@@ -416,6 +416,15 @@ twice — once as today, once with retrieval — and compare both against the re
 for font, heading treatment, margins and footer content. If the retrieval run is not
 visibly closer on a majority, the feature is not earning its tokens.
 
+*The harness for this exists as of 2026-10-28:* `npm run bench:fidelity` scores a
+generation against a case file's expectations for exactly those things (font median,
+bands, surviving phrases, declared margins, the audit), and a held-back real report goes
+in a `local-*` case directory that git ignores. What it does not yet do is run the
+retrieval variant: `analyzeReportDesign` takes `houseStyle` through `previousState`, so
+the "with retrieval" run needs a runner option that retrieves against a seeded library
+first. That option is the remaining piece of this evaluation. See *The fidelity
+benchmark* in `docs/notes/gemini.md`.
+
 ## Open questions
 
 1. How large is the real library? Everything above assumes hundreds. Thousands changes

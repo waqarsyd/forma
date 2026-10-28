@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,469 tests in 68 files** — under the `node` environment
+`npm test` runs Vitest over **1,487 tests in 69 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -95,6 +95,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/datetime` | 12 |  |
 | `lib/designerBridge` | 38 | 8 from one loop |
 | `lib/embedStore` | 20 |  |
+| `lib/fidelity` | 18 | the benchmark's scorer; the runner under `scripts/fidelity/` is not in the suite |
 | `lib/geminiClient` | 6 |  |
 | `lib/geminiErrors` | 25 |  |
 | `lib/generationProgress` | 22 |  |
@@ -145,7 +146,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/library` | 15 | storage and embedding injected |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,469 in 68 files** — and that total is the arithmetic sum of the column above
+**Total: 1,487 in 69 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
