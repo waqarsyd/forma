@@ -15,6 +15,7 @@ import {
   bindFooterTotals,
   readBoundFields,
   unescapeXml,
+  isExpressionEntry,
 } from './repxBindingPlan';
 import { checkRepxComplete } from './repxTruncation';
 
@@ -556,5 +557,26 @@ describe('unescapeXml', () => {
 
   it('leaves text with no entities alone', () => {
     expect(unescapeXml('Unit Price')).toBe('Unit Price');
+  });
+});
+
+describe('an expression as a mapping entry', () => {
+  it('recognises the = prefix and nothing else', () => {
+    expect(isExpressionEntry('=[Qty] * [Price]')).toBe(true);
+    expect(isExpressionEntry('=')).toBe(false);
+    expect(isExpressionEntry('Qty')).toBe(false);
+    expect(isExpressionEntry(null)).toBe(false);
+  });
+
+  it('writes the expression verbatim, escaped, with no inferred format', () => {
+    const bound = bindDetailRow(banded(['Amount', 'Qty'], ['1.00', '2']), ["=FormatString('{0:c2}', [Qty] * [Price])", 'Qty']);
+    expect(bound.applied).toBe(true);
+    expect(bound.xml).toContain('Expression="FormatString(&apos;{0:c2}&apos;, [Qty] * [Price])"');
+    expect(bound.xml).toContain('Expression="[Qty]"');
+    // The expression formats itself: no inferred format on its cell.
+    const detail = bound.xml.slice(bound.xml.indexOf('Name="DetailBand"'));
+    const first = detail.slice(detail.indexOf('Name="cell1"'), detail.indexOf('Name="cell2"'));
+    expect(first).not.toContain('TextFormatString');
+    expect(readBoundFields(bound.xml)).toEqual(['Qty', 'Price']);
   });
 });

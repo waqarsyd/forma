@@ -187,3 +187,51 @@ describe('reading a source it cannot use', () => {
     expect(screen.getByText(/Read in the browser, never sent anywhere/)).toBeTruthy();
   });
 });
+
+describe('prompt-to-expression', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('is not drawn without a handler', () => {
+    render(<DataBinding repxContent={bindable} onApply={() => {}} />);
+    expect(screen.queryByLabelText('Describe an expression')).toBeNull();
+  });
+
+  it('asks with the pasted fields, shows the answer, and binds a column to it', async () => {
+    const onPromptToExpression = vi.fn(async () => ({
+      expression: "FormatString('{0:c2}', [Qty] * [Price])",
+      explanation: 'Quantity times price.',
+      problems: [],
+    }));
+    const onApply = vi.fn();
+    render(<DataBinding repxContent={bindable} onApply={onApply} onPromptToExpression={onPromptToExpression} />);
+    paste('Qty, Price');
+    fireEvent.change(screen.getByLabelText('Describe an expression'), { target: { value: 'line total as currency' } });
+    fireEvent.click(screen.getByText('Generate'));
+    await flush();
+    expect(onPromptToExpression).toHaveBeenCalledWith('line total as currency', ['Qty', 'Price']);
+    expect(screen.getByLabelText('Generated expression').textContent).toBe("FormatString('{0:c2}', [Qty] * [Price])");
+
+    // Use it for the second column (Amount), then apply.
+    fireEvent.change(screen.getByLabelText('Use for column'), { target: { value: '1' } });
+    fireEvent.click(screen.getByText('Use expression'));
+    expect((screen.getAllByRole('combobox')[1] as HTMLSelectElement).value).toBe("=FormatString('{0:c2}', [Qty] * [Price])");
+    fireEvent.click(screen.getByText('Apply to the .repx'));
+    const [xml] = onApply.mock.calls[0];
+    expect(xml).toContain('Expression="FormatString(&apos;{0:c2}&apos;, [Qty] * [Price])"');
+  });
+
+  it('refuses to use an expression that names a field the data lacks', async () => {
+    const onPromptToExpression = vi.fn(async () => ({
+      expression: '[Qty] * [UnitCost]',
+      explanation: '',
+      problems: ['[UnitCost] is not a field in the data; a cell bound to it prints blank.'],
+    }));
+    render(<DataBinding repxContent={bindable} onApply={() => {}} onPromptToExpression={onPromptToExpression} />);
+    paste('Qty, Price');
+    fireEvent.change(screen.getByLabelText('Describe an expression'), { target: { value: 'line total' } });
+    fireEvent.click(screen.getByText('Generate'));
+    await flush();
+    expect(screen.getByText(/\[UnitCost\] is not a field/)).toBeTruthy();
+    expect((screen.getByText('Use expression') as HTMLButtonElement).disabled).toBe(true);
+  });
+});

@@ -24,6 +24,7 @@ import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runawayOutput";
 import { buildDescriptionBrief, type ReportDescriptionRequest, type ClarificationQuestion } from "../lib/promptToReport";
 import { resolveOverlaps } from "../lib/repxOverlaps";
+import { EXPRESSION_REFERENCE, checkExpression } from "../lib/expressions";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -1362,6 +1363,90 @@ ${buildDescriptionBrief(request)}`,
     console.warn("Clarification skipped; generating from the description as given.", error?.message ?? error);
     return ready;
   }
+}
+
+export interface ExpressionOutcome {
+  /** The expression, as it would go into an `Expression=` attribute. */
+  expression: string;
+  /** One sentence on what it computes, for the user to check against what they asked. */
+  explanation: string;
+  /** From `checkExpression`: empty when the expression passed. */
+  problems: string[];
+}
+
+/**
+ * A DevExpress expression from a sentence.
+ *
+ * DevExpress's *Prompt-to-Expression* converter, as the Filter and Expression
+ * editors have it: a natural-language prompt in, a criteria-language
+ * expression out. The reference the model is shown and the check its answer
+ * is held to are `lib/expressions.ts`; the fields are the ones the user pasted
+ * on the Data tab, and an expression naming any other field is reported as a
+ * problem rather than written, because a cell bound to a missing field prints
+ * blank with no error anywhere.
+ */
+export async function promptToExpression(
+  prompt: string,
+  fields: readonly string[],
+  config?: ReportConfig,
+  signal?: AbortSignal,
+): Promise<ExpressionOutcome> {
+  if (signal?.aborted) throw abortError();
+  const ask = prompt.trim();
+  if (!ask) throw new Error("Describe the expression first.");
+
+  if (isMockMode(viteEnv.VITE_FORMA_MOCK)) {
+    const expression = fields.length ? `[${fields[0]}]` : "'mock'";
+    return { expression, explanation: "Mock mode: the first field.", problems: checkExpression(expression, fields).problems };
+  }
+
+  const currentApiKey = config?.customApiKey?.trim();
+  if (!currentApiKey) throw new MissingApiKeyError();
+
+  const model = config?.modelName?.trim() || startingModel(await resolveModel(currentApiKey, signal), readCachedModelSet());
+  const { GoogleGenAI, Type } = await loadGenAI();
+  const ai = new GoogleGenAI({ apiKey: currentApiKey });
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: [
+      {
+        parts: [
+          {
+            text: `Write ONE DevExpress report expression for this request, using only the fields listed.
+
+${EXPRESSION_REFERENCE}
+
+${fields.length ? `Available fields: ${fields.map((f) => `[${f}]`).join(', ')}. Use no other field name.` : "No field list was given; use [FieldName] placeholders that match the request's own words."}
+
+Request: "${ask.slice(0, 800)}"
+
+Answer with the expression and one sentence saying what it computes.`,
+          },
+        ],
+      },
+    ],
+    config: {
+      abortSignal: signal,
+      temperature: 0,
+      maxOutputTokens: 512,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: { expression: { type: Type.STRING }, explanation: { type: Type.STRING } },
+        required: ["expression", "explanation"],
+      },
+    },
+  });
+
+  const parsed = JSON.parse(response.text ?? "{}") as Partial<ExpressionOutcome>;
+  const expression = (parsed.expression ?? "").trim();
+  if (!expression) throw new Error("The model returned no expression. Try describing it differently.");
+  return {
+    expression,
+    explanation: (parsed.explanation ?? "").trim(),
+    problems: checkExpression(expression, fields).problems,
+  };
 }
 
 /** One generated record: a value per bound field, as text, the way a cell prints it. */

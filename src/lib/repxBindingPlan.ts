@@ -74,6 +74,7 @@
  * are not deliberately changing survives untouched.
  */
 import { deriveFieldNames, inferTextFormat, type DerivedField } from './repxBindings';
+import { escapeXmlAttribute } from './repxEdit';
 
 /** One complete `<Tag …>`, `</Tag>` or `<Tag … />`, as repxTruncation reads them. */
 const TAG = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/g;
@@ -313,10 +314,26 @@ export function planDetailBinding(xml: string | undefined | null): BindingPlanRe
  * over headings built to break it. That invariant is what lets this be a
  * string concatenation.
  */
-function bindingElement(field: string): string {
+/**
+ * A mapping entry that is a whole expression rather than a field name.
+ *
+ * `=` cannot start a field name (`deriveFieldNames` emits `[A-Za-z0-9_]+`,
+ * and `cleanFieldName` strips it), so the prefix is unambiguous. Added
+ * 2026-10-28 for Prompt-to-Expression: a column bound to `[Qty] * [Price]`
+ * rather than to one field. The expression is escaped on the way into the
+ * attribute, since unlike a derived name it may carry quotes and ampersands.
+ */
+export const EXPRESSION_PREFIX = '=';
+
+export function isExpressionEntry(entry: string | null | undefined): entry is string {
+  return typeof entry === 'string' && entry.startsWith(EXPRESSION_PREFIX) && entry.length > 1;
+}
+
+function bindingElement(entry: string): string {
+  const expression = isExpressionEntry(entry) ? escapeXmlAttribute(entry.slice(1).trim()) : `[${entry}]`;
   return (
     '<ExpressionBindings>' +
-    `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="[${field}]" />` +
+    `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="${expression}" />` +
     '</ExpressionBindings>'
   );
 }
@@ -602,7 +619,9 @@ export function bindDetailRow(
     // the model already chose -- it saw the document and this only sees one
     // sample value, so on the rare occasion both have an opinion, its is better
     // informed.
-    const format = inferTextFormat(plan.headings[i], cell.text);
+    // An expression formats itself (or FormatString does); only a plain field
+    // gets a format inferred from the column.
+    const format = isExpressionEntry(name) ? null : inferTextFormat(plan.headings[i], cell.text);
     if (format && !/\sTextFormatString\s*=/.test(slice)) {
       const openEnd = slice.indexOf('>');
       const insertAt = slice[openEnd - 1] === '/' ? openEnd - 1 : openEnd;

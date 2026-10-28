@@ -29,12 +29,25 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { parseDataSource, suggestMapping, type DataField } from '../lib/dataSource';
-import { planDetailBinding, bindDetailRow, bindFooterTotals, readBoundFields } from '../lib/repxBindingPlan';
+import { planDetailBinding, bindDetailRow, bindFooterTotals, readBoundFields, isExpressionEntry, EXPRESSION_PREFIX } from '../lib/repxBindingPlan';
+
+/** What the Prompt-to-Expression call returns; see `promptToExpression` in geminiService.ts. */
+export interface ExpressionResult {
+  expression: string;
+  explanation: string;
+  problems: string[];
+}
 
 interface Props {
   repxContent?: string;
   /** Called with the rewritten REPX when the user applies a mapping. */
   onApply: (xml: string, summary: string) => void;
+  /**
+   * Prompt-to-Expression: a sentence and the pasted field names in, a
+   * DevExpress expression out. Optional so the pane renders without a key;
+   * absent, the section is not drawn. The call is App's, like every other.
+   */
+  onPromptToExpression?: (prompt: string, fields: string[]) => Promise<ExpressionResult>;
 }
 
 const SAMPLE_PLACEHOLDER = `Paste one of:
@@ -56,10 +69,17 @@ const KIND_LABEL: Record<string, string> = {
   none: '',
 };
 
-export default function DataBinding({ repxContent, onApply }: Props) {
+export default function DataBinding({ repxContent, onApply, onPromptToExpression }: Props) {
   const [pasted, setPasted] = useState('');
   const [mapping, setMapping] = useState<(string | null)[]>([]);
   const [applied, setApplied] = useState<string | null>(null);
+
+  // Prompt-to-Expression: the sentence, the answer, and which column it is for.
+  const [exprPrompt, setExprPrompt] = useState('');
+  const [exprResult, setExprResult] = useState<ExpressionResult | null>(null);
+  const [exprError, setExprError] = useState<string | null>(null);
+  const [exprBusy, setExprBusy] = useState(false);
+  const [exprColumn, setExprColumn] = useState(0);
 
   const source = useMemo(() => parseDataSource(pasted), [pasted]);
   const { plan, reason } = useMemo(() => planDetailBinding(repxContent), [repxContent]);
@@ -105,8 +125,31 @@ export default function DataBinding({ repxContent, onApply }: Props) {
   };
 
   const fieldOptions = (current: string | null): DataField[] => {
-    const taken = new Set(mapping.filter((m): m is string => !!m && m !== current));
+    const taken = new Set(mapping.filter((m): m is string => !!m && m !== current && !isExpressionEntry(m)));
     return source.fields.filter((f) => !taken.has(f.name));
+  };
+
+  const generateExpression = async () => {
+    if (!onPromptToExpression) return;
+    setExprBusy(true);
+    setExprError(null);
+    try {
+      setExprResult(await onPromptToExpression(exprPrompt, source.fields.map((f) => f.name)));
+    } catch (err: any) {
+      setExprResult(null);
+      setExprError(err?.message || 'Could not generate an expression.');
+    } finally {
+      setExprBusy(false);
+    }
+  };
+
+  const useExpression = () => {
+    if (!exprResult) return;
+    const next = [...mapping];
+    while (next.length < headings.length) next.push(null);
+    next[exprColumn] = `${EXPRESSION_PREFIX}${exprResult.expression}`;
+    setMapping(next);
+    setApplied(null);
   };
 
   return (
@@ -267,9 +310,12 @@ export default function DataBinding({ repxContent, onApply }: Props) {
                         ))}
                         {/* Keep the current choice selectable even after the
                             source changed underneath it, so the select never
-                            silently shows a value it has no option for. */}
+                            silently shows a value it has no option for. An
+                            expression entry shows as what it computes. */}
                         {mapping[i] && !source.fields.some((f) => f.name === mapping[i]) && (
-                          <option value={mapping[i]!}>{mapping[i]}</option>
+                          <option value={mapping[i]!}>
+                            {isExpressionEntry(mapping[i]) ? `expression: ${mapping[i]!.slice(1)}` : mapping[i]}
+                          </option>
                         )}
                       </select>
                     </td>
@@ -281,6 +327,69 @@ export default function DataBinding({ repxContent, onApply }: Props) {
               <p className="db-note">Paste a sample above and the columns become mappable.</p>
             )}
           </section>
+
+          {onPromptToExpression && (
+            /* DevExpress's Prompt-to-Expression converter, as its Filter and
+               Expression editors have it: a sentence in, a criteria-language
+               expression out. Here it binds a column to the expression instead
+               of to one field, for a line total or a formatted date that no
+               single field carries. The expression is checked against the
+               pasted fields before it can be used (lib/expressions.ts). */
+            <section>
+              <h3 className="db-h">2b · Prompt-to-Expression</h3>
+              <textarea
+                className="db-paste"
+                style={{ minHeight: 64 }}
+                value={exprPrompt}
+                onChange={(e) => setExprPrompt(e.target.value)}
+                placeholder="Describe the expression: the line total as currency; the order date as 12 Mar 2026; Overdue when the due date is before today"
+                aria-label="Describe an expression"
+                spellCheck={false}
+              />
+              <div className="db-actions" style={{ marginTop: 8 }}>
+                <button
+                  className="wb-pill wb-pill--outline"
+                  onClick={generateExpression}
+                  disabled={exprBusy || !exprPrompt.trim()}
+                >
+                  {exprBusy ? 'Generating…' : 'Generate'}
+                </button>
+                {!source.fields.length && (
+                  <span className="db-count">Paste a sample first, so the expression can name real fields.</span>
+                )}
+              </div>
+              {exprError && <p className="db-note" role="alert" style={{ color: 'var(--warn, #b45309)' }}>{exprError}</p>}
+              {exprResult && (
+                <div className={exprResult.problems.length ? 'db-warn' : 'db-ok'} style={{ marginTop: 10 }} role="status">
+                  <code style={{ fontFamily: 'var(--font-code, monospace)', fontSize: 12 }} aria-label="Generated expression">{exprResult.expression}</code>
+                  {exprResult.explanation && <p className="db-note" style={{ marginTop: 6 }}>{exprResult.explanation}</p>}
+                  {exprResult.problems.map((p, i) => (
+                    <p className="db-note" key={i} style={{ color: 'var(--warn, #b45309)' }}>{p}</p>
+                  ))}
+                  <div className="db-actions" style={{ marginTop: 8 }}>
+                    <label className="db-count" htmlFor="db-expr-col">Use for column</label>
+                    <select
+                      id="db-expr-col"
+                      value={exprColumn}
+                      onChange={(e) => setExprColumn(Number(e.target.value))}
+                    >
+                      {headings.map((heading, i) => (
+                        <option key={i} value={i}>{heading || `column ${i + 1}`}</option>
+                      ))}
+                    </select>
+                    <button
+                      className="wb-pill wb-pill--outline"
+                      onClick={useExpression}
+                      disabled={exprResult.problems.length > 0}
+                      title={exprResult.problems.length ? 'Fix the problems above first' : undefined}
+                    >
+                      Use expression
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
 
           <section>
             <h3 className="db-h">3 · Write the bindings</h3>

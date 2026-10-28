@@ -4630,6 +4630,16 @@ export default function App() {
                   <Suspense fallback={null}>
                     <DataBinding
                       repxContent={result.repxContent}
+                      /* Prompt-to-Expression. The call is here, not in the
+                         pane, so the pane renders and is tested with no key. */
+                      onPromptToExpression={async (prompt, fields) => {
+                        if (!hasApiKey) {
+                          setIsConfigOpen(true);
+                          throw new Error('Add your Gemini API key to use the workspace.');
+                        }
+                        const { promptToExpression } = await loadGemini();
+                        return promptToExpression(prompt, fields, config);
+                      }}
                       /* Rewrites only the REPX. The layout and the spec still
                          describe the same report — a binding changes where a
                          cell's text comes from at print time, not what the
