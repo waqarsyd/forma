@@ -324,6 +324,21 @@ and the arithmetic is one command away.
 figure, and the node figure is the table's total minus that. Both fall out of the
 inventory, which is the only thing here anyone actually keeps current.)
 
+**One red file after a cold run is the same stopwatch wearing a different error.**
+`src/services/chatRetry.test.ts` fails its first case — *retries and returns the reply
+instead of failing* — with `Test timed out in 5000ms` in roughly one full-suite run in
+ten, and has never failed when run alone. The test advances a fake clock through two
+backoffs, but each `advanceTimersByTimeAsync` costs real milliseconds, and under a cold
+cache those come out of vitest's 5s real-time budget; a full run that starts cold is the
+worst case. It is not a wrong value and it is not the retry logic: the comment inside
+that file's `runTurn` helper records two fixes tried on 2026-09-08 that made it fail more
+often, and where the next attempt should begin. Observed again on 2026-10-28, on the
+first full run of the day. Re-run the file by itself before reading anything into it:
+
+```powershell
+npx vitest run src/services/chatRetry.test.ts
+```
+
 **`--reporter=basic` no longer exists.** Vitest 4 removed it, and an unknown reporter
 name is treated as a module to import, so the failure is a `Failed to load custom
 Reporter from basic` / `Failed to load url basic (resolved id: basic)` stack trace with
