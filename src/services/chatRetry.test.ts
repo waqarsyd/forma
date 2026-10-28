@@ -15,7 +15,7 @@
  * Fake timers throughout, because the backoff is ~1.5s and ~3s. Without them
  * this file alone would take longer than the rest of the suite.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { chatReply } from './geminiService';
 import { resetGenAIForTests } from '../lib/genai';
 import { cacheModel, clearCachedModel } from '../lib/modelCache';
@@ -80,29 +80,50 @@ async function runTurn() {
   /*
    * Each advance releases one backoff; three is more than the two retries need.
    *
-   * **This is known to be rarely flaky and two attempts to fix it made things
-   * worse (2026-09-08).** Recorded so the third person does not start where
-   * the first two did:
+   * This loop was blamed for a flake it did not cause, and two attempts to fix
+   * it here made things worse (2026-09-08) — kept as a record so nobody starts
+   * there again:
    *
    *  - Raising the count to 20 with settled-tracking failed *more* often. The
-   *    failure is `Test timed out in 5000ms`, which is vitest's REAL-time
+   *    failure was `Test timed out in 5000ms`, which is vitest's REAL-time
    *    budget, not the simulated clock — each `advanceTimersByTimeAsync` costs
-   *    real milliseconds, so more iterations means less headroom, not more.
+   *    real milliseconds, so more iterations meant less headroom, not more.
    *  - `await vi.runAllTimersAsync()` fails deterministically, here and in
    *    isolation. Draining every timer at once is not equivalent to releasing
    *    them one backoff at a time for this chain.
    *
-   * Observed rate is roughly one full-suite run in ten, always this first
-   * case, always a timeout rather than a wrong value; it has never failed
-   * running this file alone. So the next attempt should start by finding out
-   * what is still pending when the budget expires, rather than by adjusting
-   * how the clock is advanced. `turn.catch` above is load-bearing — removing
+   * The thing actually pending when the budget expired was the SDK import —
+   * see the `beforeAll` below. `turn.catch` above is load-bearing — removing
    * it turns a later test's rejection into this test's failure, which is
    * exactly what happened while trying the two ideas above.
    */
   for (let i = 0; i < 3; i++) await vi.advanceTimersByTimeAsync(10_000);
   return turn;
 }
+
+/*
+ * Pay for the SDK import before any test starts its clock.
+ *
+ * `chatReply` reaches `@google/genai` through `loadGenAI()`, which imports it
+ * on first use so the landing page does not carry it (src/lib/genai.ts). In
+ * this file that first use happened inside the first test, so the first test
+ * paid for loading the SDK against its own 5s real-time budget while every
+ * later test found the module already cached. Measured with the file alone
+ * and warm on 2026-10-28: the first case took 250ms and the other nine took 2
+ * to 9ms, and a fresh Node process imports the package in ~150ms. Under a full
+ * suite — many workers, a cold disk cache, or a CI runner, which is cold every
+ * time — that one import stretched past 5s roughly one run in ten, always the
+ * first case, never when the file ran alone. It was never the timers.
+ *
+ * `resetGenAIForTests()` clears the memoised promise, not Node's module cache,
+ * so warming the module here is enough: each test's `loadGenAI()` still runs
+ * and still returns the SDK, it just no longer waits for the disk. The hook
+ * gets its own generous budget because the point is that this wait must not
+ * count against a test.
+ */
+beforeAll(async () => {
+  await import('@google/genai');
+}, 60_000);
 
 beforeEach(() => {
   vi.useFakeTimers();

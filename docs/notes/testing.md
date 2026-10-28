@@ -324,20 +324,30 @@ and the arithmetic is one command away.
 figure, and the node figure is the table's total minus that. Both fall out of the
 inventory, which is the only thing here anyone actually keeps current.)
 
-**One red file after a cold run is the same stopwatch wearing a different error.**
-`src/services/chatRetry.test.ts` fails its first case — *retries and returns the reply
+**One red file after a cold run was the same stopwatch wearing a different error, and
+the fix was not where two attempts looked for it.** From 2026-09-05 to 2026-10-28,
+`src/services/chatRetry.test.ts` failed its first case — *retries and returns the reply
 instead of failing* — with `Test timed out in 5000ms` in roughly one full-suite run in
-ten, and has never failed when run alone. The test advances a fake clock through two
-backoffs, but each `advanceTimersByTimeAsync` costs real milliseconds, and under a cold
-cache those come out of vitest's 5s real-time budget; a full run that starts cold is the
-worst case. It is not a wrong value and it is not the retry logic: the comment inside
-that file's `runTurn` helper records two fixes tried on 2026-09-08 that made it fail more
-often, and where the next attempt should begin. Observed again on 2026-10-28, on the
-first full run of the day. Re-run the file by itself before reading anything into it:
-
-```powershell
-npx vitest run src/services/chatRetry.test.ts
-```
+ten, never when run alone, and on 2026-10-28 for the first time on the CI runner. The
+test advances a fake clock through two backoffs, so both fixes tried on 2026-09-08
+adjusted the clock, and both made it fail more often; the file's `runTurn` comment kept
+that record and said the next attempt should start by finding what was still pending
+when the budget expired. The answer was the SDK. `chatReply` reaches `@google/genai`
+through `loadGenAI()`, which imports it on first use so the landing page does not carry
+it, and in this file the first use was inside the first test — so the first test paid
+for loading the SDK from disk against its own 5s budget while every later test found the
+module cached. Measured with the file alone and warm: the first case took 250ms and the
+other nine took 2 to 9ms, and a fresh Node process imports the package in ~150ms. Under a
+full suite, with a cold cache or on CI (which is cold every time), that one import
+occasionally exceeded 5s. The fix is a `beforeAll` in that file that imports the SDK
+with a 60s budget of its own, before any test's clock starts; the first case then
+measures 49ms. `resetGenAIForTests()` clears only the memoised promise, not Node's
+module cache, so warming the module once is enough and every test still exercises
+`loadGenAI()`. **The general lesson is the one above with a different lazy loader**: a
+dependency that is loaded on first use lands its cold cost inside whichever test uses it
+first, and that test's duration will be an order of magnitude above its neighbours' even
+when it passes. `src/lib/pdf.ts` and `src/lib/firebaseClient.ts` are the other two
+loaders, so a first-case-only timeout in a file that reaches either should start here.
 
 **`--reporter=basic` no longer exists.** Vitest 4 removed it, and an unknown reporter
 name is treated as a module to import, so the failure is a `Failed to load custom
