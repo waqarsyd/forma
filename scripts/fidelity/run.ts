@@ -105,6 +105,31 @@ interface RunRecord {
   error: string | null;
   measurements: FidelityMeasurements | null;
   checks: FidelityCheck[];
+  /**
+   * Everything the service wrote to the console during this run. The pipeline
+   * explains itself there and nowhere else -- which model it chose, why a
+   * margin lift declined, the finishReason and the last 120 characters of a
+   * response it could not parse -- and the first baseline lost all of it: two
+   * runs failed on output limits and the only record was the one-line error.
+   */
+  log: string[];
+}
+
+/** Run `fn` with the console captured into `lines`, still echoed to the real one. */
+async function capturingConsole<T>(lines: string[], fn: () => Promise<T>): Promise<T> {
+  const methods = ['log', 'warn', 'error', 'debug', 'info'] as const;
+  const original = Object.fromEntries(methods.map((m) => [m, console[m]])) as Record<(typeof methods)[number], (...args: unknown[]) => void>;
+  for (const m of methods) {
+    console[m] = (...args: unknown[]) => {
+      lines.push(`[${m}] ${args.map((a) => (typeof a === 'string' ? a : a instanceof Error ? a.message : JSON.stringify(a))).join(' ')}`);
+      original[m](...args);
+    };
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const m of methods) console[m] = original[m];
+  }
 }
 
 function parseArgs(argv: string[]) {
@@ -309,11 +334,11 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
     error: null,
     measurements: null,
     checks: [],
+    log: [],
   };
   try {
     const parts = attachmentFor(c, opts.rerender && run === 1);
-    const response = await analyzeReportDesign(prompt, parts, config);
-    record.response = response;
+    record.response = await capturingConsole(record.log, () => analyzeReportDesign(prompt, parts, config));
   } catch (error: any) {
     record.error = error?.message ?? String(error);
   }
@@ -379,7 +404,14 @@ function summaryMarkdown(records: RunRecord[], opts: ReturnType<typeof parseArgs
   for (const r of records) {
     lines.push(`## ${r.case} run ${r.run}`);
     lines.push('');
-    if (r.error) lines.push(`Error: ${r.error}`);
+    if (r.error) {
+      lines.push(`Error: ${r.error}`);
+      lines.push('');
+      lines.push('Last lines the service logged:');
+      lines.push('```');
+      for (const line of (r.log ?? []).slice(-12)) lines.push(line);
+      lines.push('```');
+    }
     if (r.measurements) {
       const m = r.measurements;
       lines.push(`- bands: ${m.bandOrder.join(', ') || 'none'}`);

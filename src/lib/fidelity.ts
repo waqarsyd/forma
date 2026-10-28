@@ -153,8 +153,14 @@ export function measureReport(repxContent: string | null | undefined, layout?: R
     }
   }
 
+  /*
+   * `Text` and `TextFormatString` both. A page number is an `XRPageInfo` whose
+   * visible words live in `TextFormatString="Page {0} of {1}"` and whose `Text`
+   * is empty, so a case asking for the phrase "Page" was failing against a
+   * report that printed it -- found on the first baseline run, 2026-10-28.
+   */
   const texts: string[] = [];
-  for (const m of xml.matchAll(/\bText="([^"]*)"/g)) texts.push(decodeXmlText(m[1]));
+  for (const m of xml.matchAll(/\b(?:Text|TextFormatString)="([^"]*)"/g)) texts.push(decodeXmlText(m[1]));
 
   const fontSizesPt: number[] = [];
   for (const m of xml.matchAll(/\bFont="[^"]*?,\s*(\d+(?:\.\d+)?)pt/g)) fontSizesPt.push(Number(m[1]));

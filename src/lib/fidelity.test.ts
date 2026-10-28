@@ -98,6 +98,8 @@ describe('measureReport', () => {
   it('collects every Text, decoded, and every font size in points', () => {
     expect(m.texts).toContain('Northwind & Sons');
     expect(m.texts).toContain('216.00');
+    // A page number's words live in TextFormatString, not Text.
+    expect(m.texts).toContain('Page {0} of {1}');
     expect(m.fontSizesPt).toEqual([24, 10, 9, 9, 9, 9, 9, 9, 11, 8]);
     expect(m.fontMedianPt).toBe(9);
   });
