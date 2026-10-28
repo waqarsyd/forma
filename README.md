@@ -386,6 +386,9 @@ src/
                        opens the prompt with, the follow-up answers and the
                        repair decision; the wizard is DescribeReportDialog
                        and the clarification call is in geminiService),
+                       repxLayout (controls past the page or their band and
+                       bands taller than the page, the other half of the
+                       analyzer's layout group, appended to the audit),
                        repxOverlaps (overlapping sibling controls found for
                        the audit and moved apart after a description run --
                        DevExpress's FixLayoutErrors -- through repxEdit so
@@ -474,7 +477,8 @@ src/
                        firebase/* import so referencing it cannot drag the SDK
                        back into the entry chunk
   services/            geminiService (+ tests, and modelResolution.test.ts,
-                       chatRetry.test.ts and generationRetry.test.ts beside
+                       chatRetry.test.ts, generationRetry.test.ts,
+                       promptToReport.test.ts and testData.test.ts beside
                        it), firebase, keyVault
                        (+ tests; the vault's storage rules are covered by
                        tests/ as well), and the report library's two:

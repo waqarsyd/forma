@@ -1846,6 +1846,14 @@ export default function App() {
   const [describe, setDescribe] = useState<DescribePhase | null>(null);
   /** The description a run was started from, so Resume re-issues the same request. */
   const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
+  /**
+   * AI-generated sample rows for the Preview, keyed by bound field. Null is
+   * the one-placeholder-record preview. Cleared whenever the set of bound
+   * fields changes, since rows keyed by yesterday's fields would print as
+   * blanks; a nudge or a retype leaves them alone.
+   */
+  const [testRows, setTestRows] = useState<Record<string, string>[] | null>(null);
+  const [testDataBusy, setTestDataBusy] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   /**
    * The attachment being viewed full size. Carries every image of that upload so
@@ -3548,6 +3556,48 @@ export default function App() {
     [result?.repxContent]
   );
 
+  const boundKey = boundFields.join('\u0000');
+  useEffect(() => {
+    setTestRows(null);
+  }, [boundKey]);
+
+  /**
+   * DevExpress's "Show Report Preview with AI-generated Test Data", for a
+   * report the Data tab has bound. One call, up to twenty rows, keyed by the
+   * bound fields; the Preview prints them into the Detail band. A failure is
+   * an error line, not a dead preview -- the placeholder record stays.
+   */
+  const handleTestData = async () => {
+    if (!result?.repxContent || boundFields.length === 0) return;
+    if (!hasApiKey) {
+      setError('Add your Gemini API key to use the workspace.');
+      setIsConfigOpen(true);
+      return;
+    }
+    setTestDataBusy(true);
+    setError(null);
+    try {
+      const { generateTestData } = await loadGemini();
+      const rows = await generateTestData(
+        boundFields,
+        { title: result.title, description: activeDescribeRef.current?.description ?? result.content?.slice(0, 600) },
+        20,
+        config,
+      );
+      setTestRows(rows);
+      setSaveNotice(`${rows.length} sample rows generated for the preview.`);
+    } catch (err: any) {
+      if (isMissingApiKey(err)) {
+        setError('Add your Gemini API key to use the workspace.');
+        setIsConfigOpen(true);
+      } else {
+        setError(err?.message || 'Could not generate test data.');
+      }
+    } finally {
+      setTestDataBusy(false);
+    }
+  };
+
   /**
    * What is structurally wrong with the report about to be exported.
    *
@@ -4558,6 +4608,10 @@ export default function App() {
                       repxContent={result.repxContent}
                       layout={result.layout}
                       title={result.title}
+                      records={testRows}
+                      onTestData={handleTestData}
+                      onClearTestData={() => setTestRows(null)}
+                      testDataBusy={testDataBusy}
                       /* Editing writes the REPX only. The layout and the spec
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not

@@ -197,7 +197,18 @@ const BUDGETS = [
   //
   // 104_000 puts it at 93.5%, where the 81_000 entry sat, inside the 93-94% band
   // every other cap in this file uses.
-  { prefix: 'geminiService-', ext: '.js', max: 104_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
+  //
+  // Raised to 112_000 on 2026-10-28, a RAISE, naming the growth: 104,681 B
+  // against 104,000, and all of it is new code in the service rather than
+  // prompt text -- the runaway-stream detector and its retries, the
+  // description-mode framing for Prompt-to-Report, `clarifyReportRequest`,
+  // `generateTestData`, and the `repxOverlaps` import for the FixLayoutErrors
+  // pass. Four features in one day, which is the cadence the entries above
+  // predict for a chunk that is where features are specified. The first three
+  // fitted under the old cap in silence, which is the "growth under a cap is
+  // invisible" gap the 2026-09-06 entry describes; the fourth tripped it by
+  // 681 B. 112_000 puts it at 93.5%.
+  { prefix: 'geminiService-', ext: '.js', max: 112_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it

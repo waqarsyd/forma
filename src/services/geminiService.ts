@@ -1364,6 +1364,102 @@ ${buildDescriptionBrief(request)}`,
   }
 }
 
+/** One generated record: a value per bound field, as text, the way a cell prints it. */
+export type TestRow = Record<string, string>;
+
+/**
+ * Plausible rows for the Preview, so a bound report can be seen with data.
+ *
+ * DevExpress's designers have this as *Show Report Preview with AI-generated
+ * Test Data*: with no connection at hand, the model invents rows that fit the
+ * fields, and the report is previewed over them. Forma's Preview repeats one
+ * record's placeholder text, which proves the band structure and nothing
+ * about the data; this is what lets grouping, totals and column widths be seen
+ * before the file is exported.
+ *
+ * The rows are keyed by the fields the report is actually bound to, read out
+ * of the REPX by `readBoundFields`, so a report with no bindings has nothing
+ * to ask for -- the Data tab comes first, as the data source does in
+ * DevExpress's own wizard. Values are strings: the Preview prints text, and a
+ * number formatted by the model ("1,240.50") is closer to what a cell shows
+ * than a number the Preview would have to format itself.
+ *
+ * The schema is an array of rows each holding an array of values in field
+ * order, rather than objects keyed by field name, because a response schema
+ * cannot declare dynamic keys. Short rows are padded and long ones trimmed.
+ */
+export async function generateTestData(
+  fields: readonly string[],
+  context: { title?: string; description?: string },
+  count: number,
+  config?: ReportConfig,
+  signal?: AbortSignal,
+): Promise<TestRow[]> {
+  if (signal?.aborted) throw abortError();
+  const names = fields.filter((f) => f && f.trim());
+  if (names.length === 0) return [];
+  const wanted = Math.max(1, Math.min(50, Math.round(count)));
+
+  if (isMockMode(viteEnv.VITE_FORMA_MOCK)) {
+    return Array.from({ length: wanted }, (_, i) =>
+      Object.fromEntries(names.map((f) => [f, `${f} ${i + 1}`])),
+    );
+  }
+
+  const currentApiKey = config?.customApiKey?.trim();
+  if (!currentApiKey) throw new MissingApiKeyError();
+
+  const model = config?.modelName?.trim() || startingModel(await resolveModel(currentApiKey, signal), readCachedModelSet());
+  const { GoogleGenAI, Type } = await loadGenAI();
+  const ai = new GoogleGenAI({ apiKey: currentApiKey });
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: [
+      {
+        parts: [
+          {
+            text: `Invent ${wanted} realistic sample records for a business report, for previewing it before real data is connected.
+
+The report${context.title ? ` is titled "${context.title}"` : ''}${context.description ? ` and is described as: "${context.description.slice(0, 600)}"` : ''}.
+Its fields, in order: ${names.join(', ')}.
+
+Return exactly ${wanted} rows. Each row is an array of ${names.length} values IN THAT FIELD ORDER, every value a string formatted as it would print: money with two decimals and thousands separators, dates as readable dates, quantities as whole numbers, names and places plausible and varied, identifiers consistent in shape. Keep values of one field consistent with each other across rows (one currency, one date style). No markdown.`,
+          },
+        ],
+      },
+    ],
+    config: {
+      abortSignal: signal,
+      temperature: 0.7,
+      maxOutputTokens: 4096,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          rows: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: { values: { type: Type.ARRAY, items: { type: Type.STRING } } },
+              required: ["values"],
+            },
+          },
+        },
+        required: ["rows"],
+      },
+    },
+  });
+
+  const parsed = JSON.parse(response.text ?? "{}") as { rows?: { values?: unknown[] }[] };
+  const rows = (parsed.rows ?? []).slice(0, wanted).map((row) => {
+    const values = Array.isArray(row?.values) ? row.values : [];
+    return Object.fromEntries(names.map((f, i) => [f, values[i] === undefined || values[i] === null ? "" : String(values[i])]));
+  });
+  if (rows.length === 0) throw new Error("The model returned no sample rows. Try again.");
+  return rows;
+}
+
 /**
  * What a generation may carry besides its attachments.
  *

@@ -91,8 +91,8 @@ describe('reading the report out of the REPX', () => {
     expect(header.controls[0].type).toBe('XRTable');
     expect(header.controls[0].rows).toHaveLength(1);
     expect(header.controls[0].rows[0].cells).toEqual([
-      { text: 'Item', weight: 3, bold: true, align: 'left' },
-      { text: 'Amount', weight: 1, bold: false, align: 'right' },
+      { text: 'Item', weight: 3, bold: true, align: 'left', field: null },
+      { text: 'Amount', weight: 1, bold: false, align: 'right', field: null },
     ]);
   });
 
@@ -1009,5 +1009,49 @@ describe('gauges and sparklines', () => {
 
   it('leaves meter null on every other control type', () => {
     expect(control('<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="10,10" LocationFloat="0,0" />').meter).toBeNull();
+  });
+});
+
+describe('bound fields, for the test-data preview', () => {
+  const control = (xml: string) =>
+    parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="300"><Controls>' + xml +
+      '</Controls></Item1></Bands></XtraReportsLayoutSerializer>'
+    ).bands[0].controls[0];
+
+  it('reads the field a label\'s Text is bound to, in either attribute order', () => {
+    const forward = control(
+      '<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="10,10" LocationFloat="0,0">' +
+        '<ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="Text" Expression="[Company]" /></ExpressionBindings></Item1>',
+    );
+    expect(forward.field).toBe('Company');
+    const reversed = control(
+      '<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="10,10" LocationFloat="0,0">' +
+        '<ExpressionBindings><Item1 Ref="4" Expression="sumSum([Amount])" PropertyName="Text" EventName="BeforePrint" /></ExpressionBindings></Item1>',
+    );
+    expect(reversed.field).toBe('Amount');
+  });
+
+  it('is null for a literal, and for a binding of some other property', () => {
+    expect(control('<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="10,10" LocationFloat="0,0" />').field).toBeNull();
+    const other = control(
+      '<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="10,10" LocationFloat="0,0">' +
+        '<ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="ForeColor" Expression="[Overdue]" /></ExpressionBindings></Item1>',
+    );
+    expect(other.field).toBeNull();
+  });
+
+  it('reads each cell\'s own binding and not its neighbour\'s', () => {
+    const table = control(
+      '<Item1 Ref="3" ControlType="XRTable" Name="t" SizeF="400,20" LocationFloat="0,0"><Rows>' +
+        '<Item1 Ref="4" ControlType="XRTableRow" Name="r" Weight="1"><Cells>' +
+        '<Item1 Ref="5" ControlType="XRTableCell" Name="c1" Text="a" Weight="1"><ExpressionBindings><Item1 Ref="6" EventName="BeforePrint" PropertyName="Text" Expression="[Sku]" /></ExpressionBindings></Item1>' +
+        '<Item2 Ref="7" ControlType="XRTableCell" Name="c2" Text="b" Weight="1" />' +
+        '<Item3 Ref="8" ControlType="XRTableCell" Name="c3" Text="c" Weight="1"><ExpressionBindings><Item1 Ref="9" EventName="BeforePrint" PropertyName="Text" Expression="[Qty]" /></ExpressionBindings></Item3>' +
+        '</Cells></Item1></Rows></Item1>',
+    );
+    expect(table.field).toBeNull();
+    expect(table.rows[0].cells.map((c: { field: string | null }) => c.field)).toEqual(['Sku', null, 'Qty']);
   });
 });

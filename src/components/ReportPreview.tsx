@@ -38,6 +38,7 @@ import {
   type PaginatedReport,
 } from '../lib/reportPreview';
 import { parseParameters } from '../lib/repxParameters';
+import { readBoundFields } from '../lib/repxBindingPlan';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
 import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
 import type { ReportLayout } from '../lib/reportTypes';
@@ -53,6 +54,27 @@ interface Props {
    * anything is selected.
    */
   onEdit?: (xml: string, reason: string) => void;
+  /**
+   * AI-generated sample rows, keyed by bound field name. When present the
+   * Detail band prints once per row with each bound cell showing that row's
+   * value, instead of once per layout record with placeholder text. The rows
+   * are App's: this pane only draws them. Modelled on DevExpress's *Show
+   * Report Preview with AI-generated Test Data*.
+   */
+  records?: TestRow[] | null;
+  /** Asks App to generate rows; absent, no Test data button is drawn. */
+  onTestData?: () => void;
+  onClearTestData?: () => void;
+  testDataBusy?: boolean;
+}
+
+export type TestRow = Record<string, string>;
+
+/** The row's value for a bound field, or the control's own text when there is none. */
+function printed(text: string, field: string | null, record: TestRow | null | undefined): string {
+  if (!record || !field) return text;
+  const value = record[field];
+  return value === undefined ? text : value;
 }
 
 /**
@@ -95,11 +117,14 @@ function ControlBox({
   unit,
   pageNumber,
   pageCount,
+  record,
 }: {
   control: PreviewControl;
   unit: string;
   pageNumber: number;
   pageCount: number;
+  /** The sample row this band placement prints, when test data is shown. */
+  record?: TestRow | null;
 }) {
   const u = (n: number) => unitsToPx(n, unit);
   const justify =
@@ -334,7 +359,7 @@ function ControlBox({
           {control.checkState === 'checked' ? '✓' : control.checkState === 'indeterminate' ? '–' : ''}
         </span>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {control.text}
+          {printed(control.text, control.field, record)}
         </span>
       </div>
     );
@@ -429,7 +454,7 @@ function ControlBox({
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  {cell.text}
+                  {printed(cell.text, cell.field, record)}
                 </div>
               ))}
             </div>
@@ -440,10 +465,10 @@ function ControlBox({
   }
 
   // XRLabel and anything else with text in it.
-  return <div style={frame}>{control.text}</div>;
+  return <div style={frame}>{printed(control.text, control.field, record)}</div>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [showBands, setShowBands] = useState(true);
@@ -483,8 +508,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
      same band objects — so a placed band's identity finds its index. */
   const { structure, report } = useMemo(() => {
     const parsed = parseReportStructure(repxContent);
-    return { structure: parsed, report: paginate(parsed, recordCountFromLayout(layout)) as PaginatedReport };
-  }, [repxContent, layout]);
+    // With sample rows the record count is theirs; otherwise it is the number
+    // of rows the model read out of the source document.
+    const count = records?.length ? records.length : recordCountFromLayout(layout);
+    return { structure: parsed, report: paginate(parsed, count) as PaginatedReport };
+  }, [repxContent, layout, records?.length]);
+
+  const boundFields = useMemo(() => readBoundFields(repxContent), [repxContent]);
   const structureBands = structure.bands;
   const watermark = structure.watermark;
   // Any band declaring columns; in practice only Detail ever does.
@@ -741,6 +771,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
                           unit={report.unit}
                           pageNumber={page.number}
                           pageCount={report.pages.length}
+                          record={placed.record !== null && records?.length ? records[(placed.record - 1) % records.length] : null}
                         />
                         {editing && (
                           /* A transparent hit target over the control rather
@@ -973,6 +1004,31 @@ export default function ReportPreview({ repxContent, layout, title, onEdit }: Pr
           >
             Undo
           </button>
+        )}
+        {onTestData && (
+          /* DevExpress's "Show Report Preview with AI-generated Test Data".
+             Needs bound fields, because the rows are keyed by them: a report
+             with none has nothing to fill, and the Data tab is where that is
+             fixed -- the same order as the data source coming first in the
+             DevExpress wizard. */
+          records?.length ? (
+            <button
+              className="wb-pill wb-pill--outline"
+              onClick={onClearTestData}
+              title="Back to the one placeholder record"
+            >
+              Test data: {records.length} rows · Clear
+            </button>
+          ) : (
+            <button
+              className="wb-pill wb-pill--outline"
+              onClick={onTestData}
+              disabled={testDataBusy || boundFields.length === 0}
+              title={boundFields.length === 0 ? 'Bind the report to fields on the Data tab first' : `Generate sample rows for ${boundFields.join(', ')}`}
+            >
+              {testDataBusy ? 'Generating test data…' : 'Test data'}
+            </button>
+          )
         )}
         <button
           className="wb-pill wb-pill--outline"

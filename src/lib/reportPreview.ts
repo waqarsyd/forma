@@ -76,6 +76,16 @@ export interface PreviewCell {
   weight: number;
   bold: boolean;
   align: 'left' | 'center' | 'right';
+  /**
+   * The data field this cell's text is bound to, or null when it is a literal.
+   *
+   * Read from an `ExpressionBindings` item with `PropertyName="Text"`: the
+   * first `[Field]` in its expression. A summary (`sumSum([Amount])`) still
+   * names its field and is reported as that field, which is what a test-data
+   * preview wants to show in the cell. Added 2026-10-28 for the AI test-data
+   * preview, so a record can be printed into the bound cells.
+   */
+  field: string | null;
 }
 
 export interface PreviewRow {
@@ -148,6 +158,8 @@ export interface PreviewControl {
   width: number;
   height: number;
   text: string;
+  /** The field `Text` is bound to, or null. See `PreviewCell.field`. */
+  field: string | null;
   /** Points, as written in the file — font size is not in report units. */
   fontSize: number | null;
   fontFamily: string | null;
@@ -570,6 +582,25 @@ function collectionItems(inner: string): { tag: string; attrs: string; start: nu
   return out;
 }
 
+/**
+ * The field a control's `Text` is bound to, from the slice of XML that is that
+ * control's own extent (so a table's slice is never read for a label and a
+ * cell's never for its neighbour).
+ *
+ * DevExpress writes the binding item's attributes as EventName, PropertyName,
+ * Expression (measured on the 26.1 designer's own output, 2026-10-28); this
+ * project's `bindDetailRow` writes the same order. Both orders are accepted
+ * because an attribute order is not a contract.
+ */
+function parseTextBinding(slice: string): string | null {
+  const item =
+    /<Item\d+\b[^>]*\sPropertyName="Text"[^>]*\sExpression="([^"]*)"/.exec(slice) ??
+    /<Item\d+\b[^>]*\sExpression="([^"]*)"[^>]*\sPropertyName="Text"/.exec(slice);
+  if (!item) return null;
+  const field = /\[([A-Za-z_][\w.]*)\]/.exec(decodeXmlText(item[1]));
+  return field ? field[1] : null;
+}
+
 function parseTableRows(xml: string, controlStart: number): PreviewRow[] {
   const rowsIdx = xml.indexOf('<Rows', controlStart);
   if (rowsIdx === -1) return [];
@@ -581,14 +612,18 @@ function parseTableRows(xml: string, controlStart: number): PreviewRow[] {
     const cellsIdx = rowsInner.indexOf('<Cells', item.start);
     const cellsInner = cellsIdx === -1 ? null : innerXml(rowsInner, 'Cells', cellsIdx);
     const cells: PreviewCell[] = [];
-    for (const cell of cellsInner ? collectionItems(cellsInner) : []) {
+    const items = cellsInner ? collectionItems(cellsInner) : [];
+    for (const [index, cell] of items.entries()) {
       if (attrOf(cell.attrs, 'ControlType') !== 'XRTableCell') continue;
       const font = parseFont(attrOf(cell.attrs, 'Font'));
+      // This cell's own extent: up to the next cell, or the end of the collection.
+      const extent = items[index + 1]?.start ?? cellsInner!.length;
       cells.push({
         text: decodeXmlText(attrOf(cell.attrs, 'Text') || ''),
         weight: numAttr(cell.attrs, 'Weight', 1) || 1,
         bold: font.bold,
         align: parseAlignment(attrOf(cell.attrs, 'TextAlignment')).align,
+        field: parseTextBinding(cellsInner!.slice(cell.start, extent)),
       });
     }
     rows.push({ cells });
@@ -684,6 +719,8 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
       width: size.a,
       height: size.b,
       text: decodeXmlText(attrOf(item.attrs, 'Text') || ''),
+      // A table's bindings belong to its cells, read in parseTableRows.
+      field: type === 'XRTable' ? null : parseTextBinding(inner.slice(item.start, extent)),
       fontSize: font.size,
       fontFamily: font.family,
       bold: font.bold,

@@ -42,6 +42,7 @@ import { auditRefs } from './repxRefs';
 import { parseParameters, parameterReferences } from './repxParameters';
 import { auditAccessibility } from './repxAccessibility';
 import { findOverlaps } from './repxOverlaps';
+import { auditLayoutBounds } from './repxLayout';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -765,6 +766,10 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
    * finding per check so a dense table does not drown the structural ones.
    */
   findings.push(...auditAccessibility(text));
+
+  // The other half of the analyzer's layout group: controls past the page or
+  // their band, and bands taller than the page. See `repxLayout.ts`.
+  findings.push(...auditLayoutBounds(text));
 
   const errors = findings.filter((f) => f.severity === 'error').length;
   const warnings = findings.length - errors;
