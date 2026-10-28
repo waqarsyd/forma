@@ -14,7 +14,7 @@
     },
     "fontSize": { "median": { "min": 8, "max": 12 } },
     "margins": { "declared": true },
-    "audit": { "errors": 0, "maxWarnings": 3 },
+    "audit": { "errors": 0, "maxWarnings": 5 },
     "sectionsMatchBands": true,
     "serializerVersion": "20.1.3.0"
   }

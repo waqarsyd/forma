@@ -98,7 +98,9 @@ export interface ReportConfig {
  * the same band-relative coordinates; `Margins="0, 0, 0, 0"` with both margin
  * bands at `HeightF="0"`; and font sizes converted to points, since a layout
  * `fontSize` is in report units and `Font=` is not — 16 units at
- * HundredthsOfAnInch is 11.52pt, not 16pt.
+ * HundredthsOfAnInch is 12.24pt, not 17pt. (It was 16 units and 11.52pt until
+ * 2026-10-28, when the audit gained DevExpress's 12pt minimum-text-size check
+ * and the fixture, by its own rule above, had to pass it.)
  */
 /**
  * The one `VITE_FORMA_MOCK` value that returns a deliberately broken fixture.
@@ -172,8 +174,8 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
     <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="20" />
     <Item2 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="80">
       <Controls>
-        <Item1 Ref="3" ControlType="XRLabel" Name="labelTitle" Text="INVOICE - FORMA MOCK ENGINE" LocationFloat="0,0" SizeF="500,40" Font="Arial, 11.52pt" Padding="2,2,0,0,100" />
-        <Item2 Ref="15" ControlType="XRCheckBox" Name="checkPaid" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="0,45" SizeF="200,20" Font="Arial, 7.2pt" />
+        <Item1 Ref="3" ControlType="XRLabel" Name="labelTitle" Text="INVOICE - FORMA MOCK ENGINE" LocationFloat="0,0" SizeF="500,40" Font="Arial, 12.24pt" Padding="2,2,0,0,100" />
+        <Item2 Ref="15" ControlType="XRCheckBox" Name="checkPaid" Checked="true" CheckBoxState="Checked" Text="Paid in full" LocationFloat="0,45" SizeF="200,20" Font="Arial, 12.24pt" />
       </Controls>
     </Item2>
     <Item3 Ref="4" ControlType="PageHeaderBand" Name="PageHeader" HeightF="30">
@@ -182,8 +184,8 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
           <Rows>
             <Item1 Ref="6" ControlType="XRTableRow" Name="rowHead" Weight="1">
               <Cells>
-                <Item1 Ref="7" ControlType="XRTableCell" Name="headDescription" Text="Item Description" Weight="3" Font="Arial, 7.2pt, style=Bold" />
-                <Item2 Ref="8" ControlType="XRTableCell" Name="headAmount" Text="Amount" Weight="1" Font="Arial, 7.2pt, style=Bold" TextAlignment="MiddleRight" />
+                <Item1 Ref="7" ControlType="XRTableCell" Name="headDescription" Text="Item Description" Weight="3" Font="Arial, 12.24pt, style=Bold" />
+                <Item2 Ref="8" ControlType="XRTableCell" Name="headAmount" Text="Amount" Weight="1" Font="Arial, 12.24pt, style=Bold" TextAlignment="MiddleRight" />
               </Cells>
             </Item1>
           </Rows>
@@ -196,8 +198,8 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
           <Rows>
             <Item1 Ref="11" ControlType="XRTableRow" Name="rowDetail" Weight="1">
               <Cells>
-                <Item1 Ref="12" ControlType="XRTableCell" Name="cellDescription" Text="Mock Layout Development Service" Weight="3" Font="Arial, 7.2pt" />
-                <Item2 Ref="13" ControlType="XRTableCell" Name="cellAmount" Text="1,250.00" Weight="1" Font="Arial, 7.2pt" TextAlignment="MiddleRight" />
+                <Item1 Ref="12" ControlType="XRTableCell" Name="cellDescription" Text="Mock Layout Development Service" Weight="3" Font="Arial, 12.24pt" />
+                <Item2 Ref="13" ControlType="XRTableCell" Name="cellAmount" Text="1,250.00" Weight="1" Font="Arial, 12.24pt" TextAlignment="MiddleRight" />
               </Cells>
             </Item1>
           </Rows>
@@ -217,8 +219,8 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
         type: "header",
         height: 100,
         elements: [
-          { id: "lbl-title", type: "label", content: "INVOICE - FORMA MOCK ENGINE", x: 20, y: 20, width: 500, height: 40, fontSize: 16 },
-          { id: "chk-paid", type: "checkbox", content: "Paid in full", checked: true, x: 20, y: 65, width: 200, height: 20, fontSize: 10 }
+          { id: "lbl-title", type: "label", content: "INVOICE - FORMA MOCK ENGINE", x: 20, y: 20, width: 500, height: 40, fontSize: 17 },
+          { id: "chk-paid", type: "checkbox", content: "Paid in full", checked: true, x: 20, y: 65, width: 200, height: 20, fontSize: 17 }
         ]
       },
       {
@@ -228,7 +230,7 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
         height: 30,
         elements: [
           {
-            id: "tbl-head", type: "table", content: "", x: 20, y: 5, width: 810, height: 20, fontSize: 10,
+            id: "tbl-head", type: "table", content: "", x: 20, y: 5, width: 810, height: 20, fontSize: 17,
             rows: [{ cells: [{ content: "Item Description", bold: true }, { content: "Amount", bold: true, textAlign: "right" }] }]
           }
         ]
@@ -256,7 +258,7 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
                the text into an illegible band -- which reads as rows drawn on
                top of each other, and was reported that way. Nothing warns: the
                REPX was correct throughout, and only the Mockup looked wrong. */
-            id: "tbl-detail", type: "table", content: "", x: 20, y: 5, width: 810, height: 100, fontSize: 10,
+            id: "tbl-detail", type: "table", content: "", x: 20, y: 5, width: 810, height: 100, fontSize: 17,
             rows: [
               { cells: [{ content: "Item Description" }, { content: "Amount", textAlign: "right" }] },
               { cells: [{ content: "Mock Layout Development Service" }, { content: "1,250.00", textAlign: "right" }] },

@@ -40,6 +40,7 @@ import { checkRepxComplete } from './repxTruncation';
 import { normalizeItemNames } from './repxItems';
 import { auditRefs } from './repxRefs';
 import { parseParameters, parameterReferences } from './repxParameters';
+import { auditAccessibility } from './repxAccessibility';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -735,6 +736,16 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
   if (has(text, 'XRTable') && !has(text, 'XRTableCell')) {
     add('warning', 'empty-table', 'A table was emitted with no cells in it.');
   }
+
+  /*
+   * The accessibility checks DevExpress's own designer runs on every edit --
+   * contrast, text size, alternative text -- measured from its analyzer's
+   * output on 2026-10-28 and implemented in `repxAccessibility.ts`, which says
+   * why line spacing is the one of its four that is not here. Last, because
+   * they are recommendations about a report that is otherwise sound, and one
+   * finding per check so a dense table does not drown the structural ones.
+   */
+  findings.push(...auditAccessibility(text));
 
   const errors = findings.filter((f) => f.severity === 'error').length;
   const warnings = findings.length - errors;

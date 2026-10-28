@@ -327,6 +327,10 @@ src/
                        report after every repair has run — errors mean content
                        will be lost, warnings mean it opens and is a worse
                        report than it should be),
+                       repxAccessibility (the contrast, text-size and
+                       alternative-text checks DevExpress's own designer runs on
+                       every edit, measured from its analyzer's output and
+                       appended to the audit as one warning per check),
                        reportPreview (reads the exported REPX back and lays it
                        out across real pages — Detail once per record,
                        PageHeader on every sheet — which is what the Preview

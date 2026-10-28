@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,504 tests in 71 files** — under the `node` environment
+`npm test` runs Vitest over **1,525 tests in 72 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -112,6 +112,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/reportGeometry` | 37 |  |
 | `lib/reportPreview` | 90 |  |
 | `lib/repx` | 24 | jsdom |
+| `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
 | `lib/repxAudit` | 81 |  |
 | `lib/repxBindingPlan` | 63 |  |
 | `lib/repxBindings` | 33 |  |
@@ -148,7 +149,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/library` | 15 | storage and embedding injected |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,504 in 71 files** — and that total is the arithmetic sum of the column above
+**Total: 1,525 in 72 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
