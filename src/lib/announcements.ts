@@ -23,6 +23,12 @@ export type Announcement = {
 
 export const ANNOUNCEMENTS: Announcement[] = [
   {
+    id: '2026-10-28-version-1-0-0',
+    date: '2026-10-28',
+    title: 'Forma 1.0.0',
+    body: 'The first numbered release. Nothing in the app changed today — the number caught up with what has been live since September: banded reports with data binding, grouping, parameters, charts and gauges; a Preview drawn from the file you actually download; and revisions and batch on the rail. The full notes are on the v1.0.0 release at github.com/waqarsyd/forma. 🎉',
+  },
+  {
     id: '2026-09-09-open-source-live',
     date: '2026-09-09',
     title: 'Forma is open source',
