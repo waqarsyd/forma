@@ -6,7 +6,7 @@ Turn a screenshot, a PDF, or an existing report into a real DevExpress `.repx` f
 [![Node](https://img.shields.io/badge/node-20%20%7C%2022%20%7C%2024%2B-brightgreen.svg)](#prerequisites)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](package.json)
-[![Version](https://img.shields.io/badge/version-0.1.0-orange.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](package.json)
 
 [![checks](https://img.shields.io/github/actions/workflow/status/waqarsyd/forma/checks.yml?branch=main&label=checks)](https://github.com/waqarsyd/forma/actions)
 
