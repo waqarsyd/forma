@@ -373,6 +373,11 @@ src/
                        margins and the audit out of a generation and compares
                        them with a case's expectations; the runner that spends
                        quota is scripts/fidelity/run.ts),
+                       runawayOutput (is the stream's tail a short fragment
+                       repeated to fill 512 characters -- a model stuck on a
+                       number, which the benchmark found running four minutes
+                       to the output ceiling before anything noticed; the
+                       stream reader cuts it off and the request is retried),
                        repxParameters (the parameters a report asks for before
                        it prints, and the lift that makes a typed one work —
                        DevExpress silently ignores an inline Type and loads a
@@ -451,8 +456,9 @@ src/
                        the OperationType enum, deliberately free of any
                        firebase/* import so referencing it cannot drag the SDK
                        back into the entry chunk
-  services/            geminiService (+ tests, and modelResolution.test.ts
-                       and chatRetry.test.ts beside it), firebase, keyVault
+  services/            geminiService (+ tests, and modelResolution.test.ts,
+                       chatRetry.test.ts and generationRetry.test.ts beside
+                       it), firebase, keyVault
                        (+ tests; the vault's storage rules are covered by
                        tests/ as well), and the report library's two:
                        embeddings (the embedding call, on the user's own key)

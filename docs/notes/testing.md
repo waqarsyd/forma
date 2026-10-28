@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,487 tests in 69 files** — under the `node` environment
+`npm test` runs Vitest over **1,504 tests in 71 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -127,6 +127,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/revisionStore` | 26 |  |
 | `lib/router` | 17 | jsdom |
 | `lib/routes` | 16 |  |
+| `lib/runawayOutput` | 10 |  |
 | `lib/savedReport` | 33 | jsdom |
 | `lib/sourceRect` | 14 |  |
 | `lib/themeTransition` | 15 | jsdom |
@@ -141,12 +142,13 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `server/staticCache` | 10 |  |
 | `services/chatRetry` | 10 |  |
 | `services/embeddings` | 20 | SDK mocked, as `geminiService` is |
+| `services/generationRetry` | 7 | the generation path's runaway and truncated-stream retries, against a stubbed stream |
 | `services/geminiService` | 33 | 7 of these come from one loop |
 | `services/keyVault` | 21 | jsdom |
 | `services/library` | 15 | storage and embedding injected |
 | `services/modelResolution` | 32 | jsdom |
 
-**Total: 1,487 in 69 files** — and that total is the arithmetic sum of the column above
+**Total: 1,504 in 71 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.

@@ -260,5 +260,8 @@ export function sectionsFor(evidence: SectionEvidence = {}): PromptSection[] {
 export function describeSections(sections: readonly PromptSection[]): string {
   const omitted = ALL_SECTIONS.filter((s) => !sections.includes(s));
   if (omitted.length === 0) return 'prompt: all optional sections included';
-  return `prompt: omitted ${omitted.join(', ')} — the uploaded .repx shows no sign of them`;
+  // Both kinds of evidence, because the line used to blame "the uploaded
+  // .repx" and was read, from a benchmark log of an image upload, as the
+  // service having mistaken a PNG for a .repx.
+  return `prompt: omitted ${omitted.join(', ')} — no uploaded .repx shows them and the request does not mention them`;
 }

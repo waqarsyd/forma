@@ -318,7 +318,7 @@ function withoutKey(config: ReportConfig): Omit<ReportConfig, 'customApiKey'> {
   return rest;
 }
 
-async function generate(c: LoadedCase, run: number, key: string, opts: ReturnType<typeof parseArgs>): Promise<RunRecord> {
+async function generate(c: LoadedCase, run: number, key: string, opts: ReturnType<typeof parseArgs>, outDir: string): Promise<RunRecord> {
   const config = configFor(c, key, opts);
   const prompt = c.file.prompt ?? '';
   const startedAt = new Date();
@@ -341,6 +341,14 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
     record.response = await capturingConsole(record.log, () => analyzeReportDesign(prompt, parts, config));
   } catch (error: any) {
     record.error = error?.message ?? String(error);
+    // The service attaches what it could not parse. Kept as its own file so
+    // the next person can see where a 51,813-character response went wrong,
+    // rather than the 120 characters the console shows.
+    if (typeof error?.rawResponse === 'string') {
+      const rawPath = join(outDir, `${c.name}-${run}.raw.txt`);
+      writeFileSync(rawPath, error.rawResponse);
+      record.log.push(`[runner] raw response saved to ${rawPath}`);
+    }
   }
   record.elapsedMs = Date.now() - startedAt.getTime();
   record.model = readCachedModel();
@@ -479,7 +487,7 @@ async function main(): Promise<number> {
     for (const c of cases) {
       for (let run = 1; run <= opts.runs; run++) {
         console.log(`\n=== ${c.name} run ${run}/${opts.runs} ===`);
-        const record = await generate(c, run, key, opts);
+        const record = await generate(c, run, key, opts, outDir);
         records.push(record);
         writeFileSync(join(outDir, `run-${c.name}-${run}.json`), JSON.stringify(record, null, 2));
         if (record.response?.repxContent) {

@@ -21,6 +21,7 @@ import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
+import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runawayOutput";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -1478,7 +1479,15 @@ ${houseStyleContext}
    * own percentages into something driven by real output.
    */
   const requestFor = async (modelName: string): Promise<{ text: string; finishReason?: string; usage?: TokenUsage | null }> => {
-    const stream = await ai.models.generateContentStream(buildRequest(modelName));
+    // Our own controller, chained to the caller's signal, so a looping model
+    // can be cut off below without the user having pressed anything -- and so
+    // that cutting it off closes the connection rather than leaving the model
+    // writing (and billing) up to the ceiling on a stream nobody is reading.
+    const controller = new AbortController();
+    if (signal?.aborted) controller.abort();
+    else signal?.addEventListener("abort", () => controller.abort(), { once: true });
+
+    const stream = await ai.models.generateContentStream(buildRequest(modelName, controller.signal));
 
     let text = '';
     let finishReason: string | undefined;
@@ -1501,6 +1510,20 @@ ${houseStyleContext}
       if (chunk.text) {
         if (!firstChunkAt) firstChunkAt = Date.now();
         text += chunk.text;
+
+        // A model that has started repeating itself will not stop until the
+        // output ceiling does, minutes and tens of thousands of tokens later.
+        // Found by the benchmark on 2026-10-28; see lib/runawayOutput.ts. Cut
+        // it off here and let the retry loop below make the request again.
+        const verdict = detectRunaway(text);
+        if (verdict.runaway) {
+          controller.abort();
+          console.warn(
+            `Model "${modelName}" began repeating ${JSON.stringify(verdict.fragment)} after ` +
+            `${text.length} characters, ${Date.now() - streamStarted}ms in. Cutting the stream off.`
+          );
+          throw new RunawayOutputError(text.length, verdict.fragment, verdict.repeats);
+        }
       }
 
       // Usage arrives on the final chunks; keep the newest non-empty one.
@@ -1546,7 +1569,7 @@ ${houseStyleContext}
     return { text, finishReason, usage: readTokenUsage(usage) };
   };
 
-  const buildRequest = (modelName: string) => ({
+  const buildRequest = (modelName: string, abortSignal: AbortSignal | undefined = signal) => ({
     model: modelName,
     contents: [
       {
@@ -1698,9 +1721,10 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       },
     ],
     config: {
-      // Cancels the in-flight fetch when the user pauses or stops. Client-side
-      // only: the service may still finish the generation and bill for it.
-      abortSignal: signal,
+      // Cancels the in-flight fetch when the user pauses or stops, or when the
+      // stream reader cuts off a looping model. Client-side only: the service
+      // may still finish the generation and bill for it.
+      abortSignal,
       temperature: 0,
       maxOutputTokens: 65536,
       // Omitted entirely unless explicitly set, so the model keeps its own
@@ -1813,11 +1837,22 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
   });
 
   const MAX_OVERLOAD_RETRIES = 2;
+  /**
+   * Retries for a failure in the model's OUTPUT rather than at the server: a
+   * stream that ended mid-object, or a model that began repeating itself and
+   * was cut off (lib/runawayOutput.ts). Same count as the chat path's
+   * MAX_CHAT_RETRIES. Until 2026-10-28 this path retried neither -- the chat
+   * path had retried a truncated stream since 2026-09-05, which is the third
+   * time the two have drifted in the same place -- and a looping model simply
+   * ran to the ceiling, four minutes and 48,000 tokens later.
+   */
+  const MAX_OUTPUT_RETRIES = 2;
 
   let response;
   let overloadAttempts = 0;
+  let outputAttempts = 0;
   let alreadyRedetected = false;
-  /** Models that returned 503 until their retries ran out, in the order tried. */
+  /** Models given up on for this request -- 503 until the retries ran out, or looping twice -- in the order tried. */
   const overloadedModels: string[] = [];
 
   while (true) {
@@ -1827,6 +1862,20 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
     } catch (error: any) {
       // Cancellation is never worth retrying.
       if (signal?.aborted || error?.name === "AbortError") throw toFriendlyError(error);
+
+      // The output went wrong, not the server. Nothing about the request was
+      // wrong either, so the same request is the thing to make again -- the
+      // benchmark that found the loop saw the identical page succeed on the
+      // next attempt. No backoff: the server was not busy.
+      const runaway = isRunawayOutput(error);
+      if ((runaway || isTruncatedStream(error)) && outputAttempts < MAX_OUTPUT_RETRIES) {
+        outputAttempts++;
+        console.warn(
+          `${runaway ? "The model began repeating itself" : "The stream ended early"} on "${selectedModel}". ` +
+          `Retrying the same request — attempt ${outputAttempts} of ${MAX_OUTPUT_RETRIES}.`
+        );
+        continue;
+      }
 
       // Transient capacity problem — back off and try the same model again.
       // sleep() rejects on abort, so pausing during the wait still tears down.
@@ -1866,11 +1915,15 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
         noteModelOverloaded(selectedModel, Date.now(), parseRetryDelayMs(error) ?? undefined);
       }
 
-      if (isOverloaded(error)) {
+      // A model that loops on this page after its retries is treated like one
+      // that stays overloaded: the next model this key can call is a different
+      // model, and the loop is a property of this one on this input.
+      if (isOverloaded(error) || runaway) {
         overloadedModels.push(selectedModel);
         // Also remembered briefly across requests, so the next generation does
         // not open by spending its retries on a model already known to be full.
-        noteModelOverloaded(selectedModel);
+        // A loop is not capacity, so it is not remembered.
+        if (!runaway) noteModelOverloaded(selectedModel);
         // The probed set when we have it. A tab that resolved its model before
         // this set was cached falls back to the raw preference list; if that
         // picks something the key cannot call, the 404 branch below re-detects
@@ -1880,12 +1933,25 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
 
         if (next) {
           console.warn(
-            `Model "${selectedModel}" stayed overloaded after ${MAX_OVERLOAD_RETRIES} retries. ` +
-            `Falling back to "${next}" for this request.`
+            runaway
+              ? `Model "${selectedModel}" kept repeating itself after ${MAX_OUTPUT_RETRIES} retries. ` +
+                `Falling back to "${next}" for this request.`
+              : `Model "${selectedModel}" stayed overloaded after ${MAX_OVERLOAD_RETRIES} retries. ` +
+                `Falling back to "${next}" for this request.`
           );
           selectedModel = next;
           overloadAttempts = 0;
+          outputAttempts = 0;
           continue;
+        }
+
+        if (runaway) {
+          throw new Error(
+            `The model kept getting stuck repeating itself while writing this report` +
+            `${overloadedModels.length > 1 ? ` — ${overloadedModels.join(", ")} all did` : ", even after retrying"}. ` +
+            `Nothing is wrong with your API key. Try generating again; if it happens again, add a sentence ` +
+            `describing the report, or try a simpler source image.`
+          );
         }
 
         // Every model this key can use is busy. Say so, and name them — "try
@@ -1991,6 +2057,11 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
     if (signal?.aborted) return null;
 
     const startedAt = Date.now();
+    // Same arrangement as requestFor: a controller of our own so a looping
+    // rewrite can be cut off, chained to the caller's signal.
+    const rewriteController = new AbortController();
+    if (signal?.aborted) rewriteController.abort();
+    else signal?.addEventListener("abort", () => rewriteController.abort(), { once: true });
     try {
       const stream = await ai.models.generateContentStream({
         model: selectedModel,
@@ -2019,7 +2090,7 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
           },
         ],
         config: {
-          abortSignal: signal,
+          abortSignal: rewriteController.signal,
           temperature: 0,
           maxOutputTokens: 65536,
           // Matched to the main request rather than forced to 0. Disabling
@@ -2035,7 +2106,16 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       let text = "";
       for await (const chunk of stream) {
         if (signal?.aborted) throw abortError();
-        if (chunk.text) text += chunk.text;
+        if (chunk.text) {
+          text += chunk.text;
+          // The rewrite is not retried -- the catch below keeps the original
+          // -- but a loop here would still cost minutes and tokens for nothing.
+          const verdict = detectRunaway(text);
+          if (verdict.runaway) {
+            rewriteController.abort();
+            throw new RunawayOutputError(text.length, verdict.fragment, verdict.repeats);
+          }
+        }
         // The bar is already near the end of its travel; nudge it past where
         // the stream left it (95) and let the character count show that
         // something is still happening. The count is cumulative on purpose —
@@ -2212,6 +2292,10 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
         `Raw response was ${rawText.length} characters, finishReason: ${response.finishReason ?? "none reported"}. ` +
         `Last 120 characters received: ${JSON.stringify(rawText.slice(-120))}`
       );
+      // Carried on the error for whoever can keep it. The UI does not; the
+      // benchmark runner writes it beside the run, and 120 characters of a
+      // 51,813-character failure was not enough to see where it went wrong.
+      if (e instanceof Error) (e as Error & { rawResponse?: string }).rawResponse = rawText;
     }
     throw e;
   }
