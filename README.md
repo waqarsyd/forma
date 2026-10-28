@@ -273,7 +273,11 @@ src/
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
                        LoginPage, LegalPage (/terms and /privacy),
                        SiteHeader, SiteFooter, MobileNav, Logo, LogoPulse,
-                       AccountDialog, UserAvatar, NotFoundPage, ChatThread
+                       AccountDialog, UserAvatar, NotFoundPage,
+                       DescribeReportDialog (the Prompt-to-Report wizard:
+                       predefined prompts, a description, an optional pasted
+                       data source, and the model's follow-up questions),
+                       ChatThread
                        (the review column's transcript, lifted out of App.tsx
                        once chatSession.ts held its rules — the progress card
                        passes through as children, because that is generation
@@ -377,6 +381,15 @@ src/
                        margins and the audit out of a generation and compares
                        them with a case's expectations; the runner that spends
                        quota is scripts/fidelity/run.ts),
+                       promptToReport (the pure half of Prompt-to-Report:
+                       the predefined prompts, the brief a description run
+                       opens the prompt with, the follow-up answers and the
+                       repair decision; the wizard is DescribeReportDialog
+                       and the clarification call is in geminiService),
+                       repxOverlaps (overlapping sibling controls found for
+                       the audit and moved apart after a description run --
+                       DevExpress's FixLayoutErrors -- through repxEdit so
+                       every other byte survives),
                        runawayOutput (is the stream's tail a short fragment
                        repeated to fill 512 characters -- a model stuck on a
                        number, which the benchmark found running four minutes

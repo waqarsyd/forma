@@ -32,6 +32,7 @@ import {
   IconClose,
   IconDoc,
   IconPaperclip,
+  IconText,
   IconWarn,
 } from './landing/icons';
 
@@ -68,6 +69,11 @@ export interface ComposerProps {
   isChatting: boolean;
   isIngesting: boolean;
   onAddKey: () => void;
+  /**
+   * Opens the Describe-a-report dialog (Prompt-to-Report). Optional so the
+   * component can be rendered without it; absent, no button is drawn.
+   */
+  onDescribe?: () => void;
 }
 
 export default function Composer({
@@ -91,6 +97,7 @@ export default function Composer({
   isChatting,
   isIngesting,
   onAddKey,
+  onDescribe,
 }: ComposerProps) {
   /*
    * One condition, read by the button *and* the keyboard.
@@ -221,6 +228,17 @@ export default function Composer({
         >
           <IconPaperclip size={16} />
         </button>
+        {onDescribe && (
+          <button
+            className="wb-tool"
+            aria-label="Describe a report"
+            title="Describe the report you want, with no source document (Prompt-to-Report)"
+            onClick={onDescribe}
+            disabled={isAnalyzing || isChatting}
+          >
+            <IconText size={16} />
+          </button>
+        )}
         <input
           ref={fileInputRef}
           type="file"

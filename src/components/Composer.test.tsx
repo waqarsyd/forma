@@ -292,3 +292,25 @@ describe('notices', () => {
     expect(document.querySelector('.wb-note-line')).toBeNull();
   });
 });
+
+describe('describe a report', () => {
+  const describeButton = () => screen.queryByLabelText('Describe a report') as HTMLButtonElement | null;
+
+  it('draws the button only when a handler is given, and calls it', () => {
+    draw();
+    expect(describeButton()).toBeNull();
+    cleanup();
+    const onDescribe = vi.fn();
+    draw({ onDescribe });
+    fireEvent.click(describeButton()!);
+    expect(onDescribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('is disabled while a generation or a chat turn is running', () => {
+    draw({ onDescribe: vi.fn(), isAnalyzing: true });
+    expect(describeButton()!.disabled).toBe(true);
+    cleanup();
+    draw({ onDescribe: vi.fn(), isChatting: true });
+    expect(describeButton()!.disabled).toBe(true);
+  });
+});

@@ -41,6 +41,7 @@ import { normalizeItemNames } from './repxItems';
 import { auditRefs } from './repxRefs';
 import { parseParameters, parameterReferences } from './repxParameters';
 import { auditAccessibility } from './repxAccessibility';
+import { findOverlaps } from './repxOverlaps';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -735,6 +736,24 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
 
   if (has(text, 'XRTable') && !has(text, 'XRTableCell')) {
     add('warning', 'empty-table', 'A table was emitted with no cells in it.');
+  }
+
+  /*
+   * Controls that overlap. DevExpress's Report Design Analyzer counts this as
+   * a layout error; here it is a warning, because the file opens and prints
+   * and the overlap is visible. Lines and shapes are excluded in
+   * `repxOverlaps.ts`, which also carries the repair a description-mode
+   * generation applies automatically (DevExpress's FixLayoutErrors).
+   */
+  const overlaps = findOverlaps(text);
+  if (overlaps.length) {
+    const first = overlaps.slice(0, 3).map((o) => `${o.a.name || o.a.type} over ${o.b.name || o.b.type} in ${o.band}`).join('; ');
+    add(
+      'warning',
+      'layout-overlap',
+      `${overlaps.length} pair(s) of controls overlap — ${first}${overlaps.length > 3 ? '; …' : ''}. ` +
+        'They print on top of each other. DevExpress\'s design analyzer reports the same; drag one clear on the Preview, or let a description-mode generation resolve it.',
+    );
   }
 
   /*

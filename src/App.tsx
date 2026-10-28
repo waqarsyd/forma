@@ -198,6 +198,13 @@ import {
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
 import { auditRepx } from './lib/repxAudit';
+import {
+  fixInstruction,
+  shouldRetryForErrors,
+  withAnswers,
+  type ClarificationAnswer,
+  type ReportDescriptionRequest,
+} from './lib/promptToReport';
 import { sourceRectFor } from './lib/sourceRect';
 import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner } from './lib/designerBridge';
@@ -217,6 +224,7 @@ import { repeatedHeadingTables } from './lib/mockupRows';
 import LogoPulse from './components/LogoPulse';
 import ChatThread from './components/ChatThread';
 import Composer from './components/Composer';
+import DescribeReportDialog, { type DescribePhase } from './components/DescribeReportDialog';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
   clampReviewWidth,
@@ -1407,6 +1415,15 @@ const INITIAL_RUN: RunCopy = {
       : "I've generated the report layout based on your provided images. You can view the UI preview and specifications on the right.",
 };
 
+/** Prompt-to-Report: a description and no attachment. See lib/promptToReport.ts. */
+const DESCRIBE_RUN: RunCopy = {
+  start: 'Starting report generation from a description.',
+  request: 'Sending the description to Gemini API...',
+  done: 'Report designed from the description.',
+  assistant: () =>
+    "I've designed the report from your description. You can view the UI preview and specifications on the right, and the status bar says what the audit still found.",
+};
+
 const RESUMED_RUN: RunCopy = {
   start: 'Resuming report generation process.',
   request: 'Requesting Gemini API on resume...',
@@ -1825,6 +1842,10 @@ export default function App() {
 
   const [error, setError] = useState<string | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  /** The Describe-a-report dialog: closed, collecting, or asking the model's follow-up questions. */
+  const [describe, setDescribe] = useState<DescribePhase | null>(null);
+  /** The description a run was started from, so Resume re-issues the same request. */
+  const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
   const [showApiKey, setShowApiKey] = useState(false);
   /**
    * The attachment being viewed full size. Carries every image of that upload so
@@ -3041,6 +3062,8 @@ export default function App() {
     currentPreviews: readonly string[],
     currentTexts: readonly TextAttachment[],
     copy: RunCopy,
+    /** Set for a Prompt-to-Report run: no attachments, the description is the source. */
+    describeRequest?: ReportDescriptionRequest,
   ) => {
     loadingIntervalRef.current = setInterval(() => setProgress(tickSimulated), STEP_INTERVAL_MS);
 
@@ -3090,7 +3113,7 @@ export default function App() {
         }
       }
 
-      const response = await analyzeReportDesign(
+      let response = await analyzeReportDesign(
         // Passed through empty when the user typed nothing. It used to become
         // "Generate a professional DevExpress report layout based on these
         // visuals." here, which handed the model an instruction nobody gave and
@@ -3100,12 +3123,57 @@ export default function App() {
         config,
         result ? { layout: result.layout, repxContent: result.repxContent, houseStyle } : undefined,
         signal,
-        handleStreamProgress
+        handleStreamProgress,
+        describeRequest ? { description: describeRequest } : undefined,
       );
 
       if (signal.aborted) {
         console.debug('Generation aborted/paused by user.');
         return;
+      }
+
+      /*
+       * The repair loop, for a report designed from words.
+       *
+       * DevExpress's Prompt-to-Report retries a layout the model got wrong up
+       * to RetryAttemptCount times. Here the audit decides: only ERRORS -- a
+       * file a designer refuses or silently loses content over -- send the
+       * report back, and the model is told exactly which, with the previous
+       * report as the thing to fix rather than a blank page. Warnings never
+       * do; a second generation over a warning trades a usable report for a
+       * different one. Bounded by MAX_FIX_ATTEMPTS in lib/promptToReport.ts.
+       * Image runs are not retried this way: an error there is more often a
+       * repair that declined than a layout the model can be talked out of.
+       */
+      if (describeRequest) {
+        let attempt = 1;
+        let audit = auditRepx(response.repxContent, response.layout);
+        while (shouldRetryForErrors(audit, attempt)) {
+          attempt += 1;
+          console.warn(`Report has ${audit.errors} structural error(s) after repairs; asking for a fix (attempt ${attempt}).`);
+          const fixed = await analyzeReportDesign(
+            fixInstruction(audit),
+            [],
+            config,
+            { layout: response.layout, repxContent: response.repxContent },
+            signal,
+            handleStreamProgress,
+            { description: describeRequest },
+          );
+          if (signal.aborted) {
+            console.debug('Generation aborted/paused by user during repair.');
+            return;
+          }
+          const next = auditRepx(fixed.repxContent, fixed.layout);
+          // Keep the better of the two; a repair that made things worse is not applied.
+          if (next.errors <= audit.errors) {
+            response = fixed;
+            audit = next;
+          } else {
+            console.warn(`The repair attempt had ${next.errors} error(s) against ${audit.errors}; keeping the earlier report.`);
+            break;
+          }
+        }
       }
 
       console.log('Successfully received response from Gemini API.');
@@ -3196,6 +3264,7 @@ export default function App() {
       activePreviewsRef.current,
       activeTextsRef.current,
       RESUMED_RUN,
+      activeDescribeRef.current,
     );
   };
 
@@ -3358,7 +3427,86 @@ export default function App() {
     setProgress(startProgress());
     setError(null);
 
+    activeDescribeRef.current = undefined;
     await runGeneration(currentPrompt, currentPreviews, currentTexts, INITIAL_RUN);
+  };
+
+  /* ---------------------------------------------------------------- *
+   * Prompt-to-Report.
+   *
+   * The dialog collects a description (lib/promptToReport.ts); this is the
+   * sequence DevExpress's wizard runs after its Finish button, read off its
+   * own strings: "Analyzing the request..." (the clarification call, which
+   * may come back with questions and a Submit), then "Building your
+   * report...". The description becomes the user's message in the transcript
+   * so the conversation shows what was asked, exactly as an upload does.
+   * ---------------------------------------------------------------- */
+  const startDescribedGeneration = async (request: ReportDescriptionRequest) => {
+    setIsAnalyzing(true);
+    setIsPaused(false);
+    activePromptRef.current = '';
+    activePreviewsRef.current = [];
+    activeTextsRef.current = [];
+    activeDescribeRef.current = request;
+    setProgress(startProgress());
+    setError(null);
+    await runGeneration('', [], [], DESCRIBE_RUN, request);
+  };
+
+  const handleDescribeSubmit = async (request: ReportDescriptionRequest) => {
+    setDescribe(null);
+    if (!hasApiKey) {
+      setError('Add your Gemini API key to use the workspace.');
+      setIsConfigOpen(true);
+      return;
+    }
+
+    setMessages((prev) => [...prev, {
+      id: nextMessageId(),
+      role: 'user',
+      text: request.title ? `${request.title}: ${request.description}` : request.description,
+    }]);
+
+    // The clarification stage. A failure inside it already answers "ready",
+    // so the only way out of here without a generation is a key problem.
+    setIsChatting(true);
+    try {
+      const { clarifyReportRequest } = await loadGemini();
+      const outcome = await clarifyReportRequest(request, config);
+      if (!outcome.ready) {
+        setMessages((prev) => [...prev, {
+          id: nextMessageId(),
+          role: 'assistant',
+          text: `Before I design it, ${outcome.questions.length === 1 ? 'one question' : `${outcome.questions.length} questions`}.`,
+        }]);
+        setDescribe({ kind: 'questions', request, questions: outcome.questions });
+        return;
+      }
+    } catch (err: any) {
+      const message = isMissingApiKey(err) ? 'Add your Gemini API key to use the workspace.' : err?.message || 'Could not reach the assistant.';
+      setError(message);
+      if (isMissingApiKey(err)) setIsConfigOpen(true);
+      return;
+    } finally {
+      setIsChatting(false);
+    }
+
+    await startDescribedGeneration(request);
+  };
+
+  const handleDescribeAnswers = async (answers: ClarificationAnswer[]) => {
+    if (describe?.kind !== 'questions') return;
+    const request = withAnswers(describe.request, answers);
+    setDescribe(null);
+    const answered = answers.filter((a) => a.answer.trim());
+    if (answered.length) {
+      setMessages((prev) => [...prev, {
+        id: nextMessageId(),
+        role: 'user',
+        text: answered.map((a) => `${a.question} ${a.answer.trim()}`).join('\n'),
+      }]);
+    }
+    await startDescribedGeneration(request);
   };
 
   /**
@@ -4110,6 +4258,7 @@ export default function App() {
             isChatting={isChatting}
             isIngesting={isIngesting}
             onAddKey={() => setIsConfigOpen(true)}
+            onDescribe={() => setDescribe({ kind: 'describe' })}
           />
         </div>
 
@@ -4555,6 +4704,15 @@ export default function App() {
       </div>
 
       {/* =========================================================== modals */}
+      {describe && (
+        <DescribeReportDialog
+          phase={describe}
+          pageSize={config.pageSize}
+          onSubmit={handleDescribeSubmit}
+          onAnswer={handleDescribeAnswers}
+          onClose={() => setDescribe(null)}
+        />
+      )}
       {isConfigOpen && (
         <div className="wb-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) dismissConfigWithoutSaving(); }}>
           <div

@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,525 tests in 72 files** — under the `node` environment
+`npm test` runs Vitest over **1,558 tests in 76 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -79,8 +79,9 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/AccountDialog` | 23 | jsdom |
 | `components/BatchPanel` | 11 | jsdom |
 | `components/ChatThread` | 27 | jsdom |
-| `components/Composer` | 33 | jsdom, 8 from one loop |
+| `components/Composer` | 35 | jsdom, 8 from one loop |
 | `components/DataBinding` | 15 | jsdom |
+| `components/DescribeReportDialog` | 6 | jsdom; the Prompt-to-Report wizard, no key and no network |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
@@ -107,6 +108,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/panelSize` | 13 |  |
 | `lib/pdf` | 5 |  |
 | `lib/promptSections` | 48 |  |
+| `lib/promptToReport` | 9 | the pure half of Prompt-to-Report |
 | `lib/reportBands` | 15 |  |
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportGeometry` | 37 |  |
@@ -120,6 +122,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxEdit` | 24 |  |
 | `lib/repxItems` | 12 |  |
 | `lib/repxMargins` | 24 |  |
+| `lib/repxOverlaps` | 9 | FixLayoutErrors: overlapping siblings found and moved apart |
 | `lib/repxParameters` | 24 |  |
 | `lib/repxRefs` | 26 |  |
 | `lib/repxStyles` | 17 |  |
@@ -148,8 +151,9 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/keyVault` | 21 | jsdom |
 | `services/library` | 15 | storage and embedding injected |
 | `services/modelResolution` | 32 | jsdom |
+| `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 
-**Total: 1,525 in 72 files** — and that total is the arithmetic sum of the column above
+**Total: 1,558 in 76 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.

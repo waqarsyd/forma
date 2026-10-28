@@ -1343,6 +1343,10 @@ select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
   color: var(--ink-faint);
 }
 .wb-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+/* The Describe-a-report dialog: a row of predefined-prompt pills that wraps,
+   and a multi-line field that keeps the control's chrome. */
+.wb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-family: var(--body); }
 .wb-checkrow { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink); cursor: pointer; }
 .wb-checkrow input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .wb-keyrow { display: flex; gap: 8px; align-items: flex-start; }

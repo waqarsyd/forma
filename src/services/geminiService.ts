@@ -22,6 +22,8 @@ import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
 import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
 import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runawayOutput";
+import { buildDescriptionBrief, type ReportDescriptionRequest, type ClarificationQuestion } from "../lib/promptToReport";
+import { resolveOverlaps } from "../lib/repxOverlaps";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -1265,16 +1267,132 @@ const SHAPES_BLOCK = `          - Shapes — a drawn rectangle, ellipse, line, a
           - **Rich text: do not create one.** XRRichText stores its content as SerializableRtfString, a base64-encoded UTF-16 RTF document — measured, not assumed. It cannot be authored as readable XML, and an approximation loads as an empty box with no error. A paragraph of terms and conditions is an XRLabel with WordWrap="true"; formatting that varies WITHIN a paragraph is the one thing this cannot express, and losing it is better than emitting a control that prints nothing. If the uploaded .repx already contains an XRRichText, copy its SerializableRtfString across byte for byte and change nothing about it.
 `;
 
+/** What `clarifyReportRequest` returns: nothing to ask, or up to three questions. */
+export interface ClarificationOutcome {
+  ready: boolean;
+  questions: ClarificationQuestion[];
+}
+
+const MAX_CLARIFICATION_QUESTIONS = 3;
+
+/**
+ * Ask whether a description is enough to design from, before spending a
+ * generation on it.
+ *
+ * This is the "intent clarification" stage DevExpress describes for its own
+ * Prompt-to-Report, whose documented examples are "What should the report
+ * title be?" and "Please specify the page size and orientation". Here the page
+ * size is already in the configuration and the title can be read off the
+ * description, so the questions worth asking are about CONTENT the description
+ * leaves open — which columns, what to group by, what a total is of — and only
+ * when the answer would change the report. The model is told so, and told that
+ * the common shape of a named report type is not a gap.
+ *
+ * Cheap and deliberately fallible: one small schema-constrained call, no
+ * thinking, no retries. If it fails for any reason the answer is "ready", so a
+ * flaky clarification can never cost the user the generation they asked for.
+ */
+export async function clarifyReportRequest(
+  request: ReportDescriptionRequest,
+  config?: ReportConfig,
+  signal?: AbortSignal,
+): Promise<ClarificationOutcome> {
+  const ready: ClarificationOutcome = { ready: true, questions: [] };
+  if (signal?.aborted) throw abortError();
+  if (isMockMode(viteEnv.VITE_FORMA_MOCK)) return ready;
+
+  const currentApiKey = config?.customApiKey?.trim();
+  if (!currentApiKey) throw new MissingApiKeyError();
+
+  try {
+    const model = config?.modelName?.trim() || startingModel(await resolveModel(currentApiKey, signal), readCachedModelSet());
+    const { GoogleGenAI, Type } = await loadGenAI();
+    const ai = new GoogleGenAI({ apiKey: currentApiKey });
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: [
+        {
+          parts: [
+            {
+              text: `A user has described a DevExpress report they want designed. Decide whether the description is enough to design a sensible report from, or whether up to ${MAX_CLARIFICATION_QUESTIONS} short questions would change what gets built.
+
+Ask ONLY about content the description leaves genuinely open and that would change the report: which columns, what to group or sort by, what a total is of, which fields a chart plots. Do NOT ask about things with a common-practice default for that kind of report (an invoice has line items and a total; a customer list has one row per customer), do NOT ask about page size, orientation, fonts or colours, and do NOT ask for a title when one can be read from the description. A detailed description gets no questions at all. Each question should offer a reasonable suggested answer.
+
+${buildDescriptionBrief(request)}`,
+            },
+          ],
+        },
+      ],
+      config: {
+        abortSignal: signal,
+        temperature: 0,
+        maxOutputTokens: 512,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            ready: { type: Type.BOOLEAN },
+            questions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  question: { type: Type.STRING },
+                  suggestion: { type: Type.STRING },
+                },
+                required: ["id", "question"],
+              },
+            },
+          },
+          required: ["ready", "questions"],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text ?? "{}") as Partial<ClarificationOutcome>;
+    const questions = (parsed.questions ?? [])
+      .filter((q) => q && typeof q.question === "string" && q.question.trim())
+      .slice(0, MAX_CLARIFICATION_QUESTIONS)
+      .map((q, i) => ({ id: (q.id || `q${i + 1}`).trim(), question: q.question.trim(), suggestion: q.suggestion?.trim() || undefined }));
+    return questions.length ? { ready: false, questions } : ready;
+  } catch (error: any) {
+    if (signal?.aborted || error?.name === "AbortError") throw error;
+    console.warn("Clarification skipped; generating from the description as given.", error?.message ?? error);
+    return ready;
+  }
+}
+
+/**
+ * What a generation may carry besides its attachments.
+ *
+ * `description` is Prompt-to-Report: the request is a written description with
+ * no source document (lib/promptToReport.ts). It changes three things in the
+ * request below — the prompt opens with the description instead of "analyze the
+ * provided image(s)", the optional prompt sections are chosen from the
+ * description's words, and overlapping controls are resolved after the repairs
+ * (DevExpress's FixLayoutErrors) because a model designing from words, with
+ * nothing to measure from, overlaps controls far more readily than one copying
+ * a picture.
+ */
+export interface GenerationOptions {
+  description?: ReportDescriptionRequest;
+}
+
 export async function analyzeReportDesign(
   prompt: string,
   imageParts: AttachmentPart[],
   config?: ReportConfig,
   previousState?: { layout?: ReportLayout; repxContent?: string; houseStyle?: string },
   signal?: AbortSignal,
-  onProgress?: (progress: StreamProgress) => void
+  onProgress?: (progress: StreamProgress) => void,
+  options?: GenerationOptions,
 ): Promise<AnalysisResponse> {
   // Cancelled before we even started — don't spend a request on it.
   if (signal?.aborted) throw abortError();
+
+  const description = options?.description;
 
   const currentApiKey = config?.customApiKey?.trim();
 
@@ -1343,7 +1461,10 @@ export async function analyzeReportDesign(
   const sections = sectionsFor({
     texts: imageParts.flatMap((part) => ('text' in part ? [part.text] : [])),
     previousRepx: previousState?.repxContent,
-    instruction: prompt,
+    // A description is the instruction: "grouped by region with a bar chart"
+    // has to switch the grouping and chart sections on exactly as the same
+    // words typed into the composer would.
+    instruction: description ? `${description.description} ${prompt}` : prompt,
   });
   if (sections.length < ALL_SECTIONS.length) console.info(describeSections(sections));
 
@@ -1576,10 +1697,14 @@ ${houseStyleContext}
     contents: [
       {
         parts: [
-          { text: `You are an expert DevExpress Report Designer. 
-          
-          YOUR PRIMARY GOAL: EXACT PIXEL-PERFECT UI MATCH.
-          You must meticulously analyze the provided image(s) and recreate the EXACT layout, including every single table, column, row, label, border, and image placeholder. Do not skip any details. The generated REPX XML and layout JSON must be a 1:1 representation of the visual structure in the image.
+          { text: `You are an expert DevExpress Report Designer.
+
+          ${description
+            ? `YOUR PRIMARY GOAL: A COMPLETE, WELL-LAID-OUT REPORT FROM A WRITTEN DESCRIPTION.
+          ${buildDescriptionBrief(description)}
+          The generated REPX XML and layout JSON must describe the same report. Every rule below about units, bands, tables, fonts and syntax applies exactly as it would to a report reproduced from an image; only the source differs.`
+            : `YOUR PRIMARY GOAL: EXACT PIXEL-PERFECT UI MATCH.
+          You must meticulously analyze the provided image(s) and recreate the EXACT layout, including every single table, column, row, label, border, and image placeholder. Do not skip any details. The generated REPX XML and layout JSON must be a 1:1 representation of the visual structure in the image.`}
 
           SOURCE PRECEDENCE — READ THIS FIRST.
           Some attachments are text extracted directly from the uploaded file rather than read from an image: a PDF's own text layer, or the contents of an existing .repx. Where such text is provided it is EXACT and comes from the file itself.
@@ -1717,7 +1842,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
           - LOCATIONS AND SIZES: Make **absolute sure** that components do not overlap incorrectly. Calculate the X and Y bounds correctly. LocationFloat expects X,Y and SizeF expects Width,Height. Do NOT add spaces after the comma.
           - PREVIEW MOCKUP ACCURACY: In the JSON \`layout\`, represent every grid as ONE \`"table"\` element with a populated \`rows\`/\`cells\` array, as described under "TABLES / GRIDS IN THE LAYOUT" above. (Earlier revisions asked for grids to be decomposed into one \`"label"\` per cell because the preview could not draw real tables. It can now, so emit the real structure — it is both more accurate and far less error-prone than hand-computing every cell coordinate.)
 
-          ${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent) })}` },
+          ${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent), fromDescription: Boolean(description) })}` },
           ...imageParts,
         ],
       },
@@ -2212,6 +2337,27 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.log(`Margins: ${lift.reason}.`);
     } else {
       console.log(`Margins left as generated: ${lift.reason}.`);
+    }
+
+    /*
+     * Overlapping controls, resolved only for a report designed from words.
+     *
+     * DevExpress's Prompt-to-Report has this as FixLayoutErrors, and the reason
+     * it is an option there is the reason it is conditional here: with a
+     * source image, an overlap may be faithful to the source and moving a
+     * control is a fidelity loss; with a description there is no source to be
+     * faithful to, and two controls printed on top of each other is simply a
+     * mistake the model made. The audit reports overlaps on every report
+     * either way; see `repxOverlaps.ts`.
+     */
+    if (description) {
+      const overlaps = resolveOverlaps(parsed.repxContent);
+      if (overlaps.applied) {
+        parsed.repxContent = overlaps.xml;
+        console.log(`Overlaps: ${overlaps.reason}.`);
+      } else {
+        console.debug(`Overlaps: ${overlaps.reason}.`);
+      }
     }
 
     // A parameter's type is the one thing in this file the model CANNOT write

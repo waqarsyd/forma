@@ -40,6 +40,13 @@
 export interface InstructionBlockOptions {
   /** True when the request carries a previous report to modify. */
   hasPreviousState?: boolean;
+  /**
+   * True when the request is a written description rather than an upload
+   * (Prompt-to-Report). With no instruction, the description above this block
+   * IS the specification, so the wording about "the attachment(s)" would be a
+   * lie about what the model was given.
+   */
+  fromDescription?: boolean;
 }
 
 /**
@@ -50,7 +57,16 @@ export interface InstructionBlockOptions {
  */
 export function instructionBlock(prompt: string | undefined | null, options: InstructionBlockOptions = {}): string {
   const text = (prompt ?? '').trim();
-  const source = options.hasPreviousState ? 'the PREVIOUS REPORT STATE' : 'the attachment(s)';
+  const source = options.hasPreviousState
+    ? 'the PREVIOUS REPORT STATE'
+    : options.fromDescription
+      ? 'THE REPORT TO DESIGN above'
+      : 'the attachment(s)';
+
+  if (!text && options.fromDescription && !options.hasPreviousState) {
+    return `USER INSTRUCTIONS: the description under THE REPORT TO DESIGN is the whole specification.
+          There is no attachment and nothing to reproduce. Design the report it describes, and do NOT invent content the description neither states nor implies for that kind of report.`;
+  }
 
   if (!text) {
     return `USER INSTRUCTIONS: NONE. The user attached the source and asked for nothing else.
