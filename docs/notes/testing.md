@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,572 tests in 78 files** — under the `node` environment
+`npm test` runs Vitest over **1,587 tests in 80 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -80,7 +80,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/BatchPanel` | 11 | jsdom |
 | `components/ChatThread` | 27 | jsdom |
 | `components/Composer` | 35 | jsdom, 8 from one loop |
-| `components/DataBinding` | 15 | jsdom |
+| `components/DataBinding` | 18 | jsdom |
 | `components/DescribeReportDialog` | 6 | jsdom; the Prompt-to-Report wizard, no key and no network |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/legalDisclosure` | 9 | 3 from one loop |
@@ -96,6 +96,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/datetime` | 12 |  |
 | `lib/designerBridge` | 38 | 8 from one loop |
 | `lib/embedStore` | 20 |  |
+| `lib/expressions` | 6 | the expression reference and the check a generated one is held to |
 | `lib/fidelity` | 18 | the benchmark's scorer; the runner under `scripts/fidelity/` is not in the suite |
 | `lib/geminiClient` | 6 |  |
 | `lib/geminiErrors` | 25 |  |
@@ -116,7 +117,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
 | `lib/repxAudit` | 81 |  |
-| `lib/repxBindingPlan` | 63 |  |
+| `lib/repxBindingPlan` | 65 |  |
 | `lib/repxBindings` | 33 |  |
 | `lib/repxChunks` | 22 |  |
 | `lib/repxEdit` | 24 |  |
@@ -152,10 +153,11 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/keyVault` | 21 | jsdom |
 | `services/library` | 15 | storage and embedding injected |
 | `services/modelResolution` | 32 | jsdom |
+| `services/promptToExpression` | 4 | a sentence to an expression, checked against the fields, against a stubbed reply |
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 1,572 in 78 files** — and that total is the arithmetic sum of the column above
+**Total: 1,587 in 80 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.

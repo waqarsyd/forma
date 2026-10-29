@@ -381,6 +381,10 @@ src/
                        margins and the audit out of a generation and compares
                        them with a case's expectations; the runner that spends
                        quota is scripts/fidelity/run.ts),
+                       expressions (the DevExpress expression reference the
+                       model is shown for Prompt-to-Expression, and the check
+                       a generated expression is held to -- balance, not SQL,
+                       and no field the data lacks),
                        promptToReport (the pure half of Prompt-to-Report:
                        the predefined prompts, the brief a description run
                        opens the prompt with, the follow-up answers and the
@@ -478,8 +482,8 @@ src/
                        back into the entry chunk
   services/            geminiService (+ tests, and modelResolution.test.ts,
                        chatRetry.test.ts, generationRetry.test.ts,
-                       promptToReport.test.ts and testData.test.ts beside
-                       it), firebase, keyVault
+                       promptToReport.test.ts, promptToExpression.test.ts
+                       and testData.test.ts beside it), firebase, keyVault
                        (+ tests; the vault's storage rules are covered by
                        tests/ as well), and the report library's two:
                        embeddings (the embedding call, on the user's own key)
