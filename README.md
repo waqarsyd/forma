@@ -342,8 +342,16 @@ src/
                        out across real pages — Detail once per record,
                        PageHeader on every sheet — which is what the Preview
                        pane and the PDF export are drawn from),
-                       netFormat (.NET composite and date formatting, so a
-                       page number or a value previews as DevExpress prints it),
+                       netFormat (.NET composite, date and number formatting,
+                       so a page number or a value previews as DevExpress
+                       prints it),
+                       netDecimal (.NET's decimal, so 8 x 0.5 previews as 4.0
+                       and a sum of prices is exact, as DevExpress prints them),
+                       criteria (DevExpress's expression language, evaluated
+                       with .NET's types over the Preview's test data),
+                       reportData (test rows typed by column, calculated
+                       fields, parameter defaults, and which records each
+                       printed band's totals and fields read),
                        textMeasure (how many lines a text breaks into and how
                        tall that prints, so the Preview grows controls and
                        breaks pages where DevExpress does),

@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,701 tests in 84 files** — under the `node` environment
+`npm test` runs Vitest over **1,739 tests in 87 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -93,6 +93,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/batchQueue` | 24 |  |
 | `lib/chatSession` | 21 |  |
 | `lib/contactSubmit` | 6 |  |
+| `lib/criteria` | 10 | DevExpress's expression language; the 44 expressions and 11 totals of parity case s16, each a string DevExpress printed |
 | `lib/dataSource` | 29 |  |
 | `lib/datetime` | 12 |  |
 | `lib/designerBridge` | 38 | 8 from one loop |
@@ -107,15 +108,17 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/mockupRows` | 12 |  |
 | `lib/modelCache` | 17 |  |
 | `lib/modelCatalog` | 24 |  |
-| `lib/netFormat` | 11 | .NET composite and date formatting in en-US, each printed case a string DevExpress drew |
+| `lib/netDecimal` | 8 | .NET's decimal: scale, exact sums, 28-place division, both roundings |
+| `lib/netFormat` | 15 | .NET composite, date and number formatting in en-US; every cell of parity case s15's format table is a string DevExpress drew |
 | `lib/panelSize` | 13 |  |
 | `lib/pdf` | 5 |  |
 | `lib/promptSections` | 48 |  |
 | `lib/promptToReport` | 9 | the pure half of Prompt-to-Report |
 | `lib/reportBands` | 15 |  |
 | `lib/reportConfigStore` | 15 |  |
+| `lib/reportData` | 14 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups |
 | `lib/reportGeometry` | 37 |  |
-| `lib/reportPreview` | 147 |  |
+| `lib/reportPreview` | 149 |  |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
 | `lib/repxAudit` | 85 |  |
@@ -161,7 +164,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 1,701 in 84 files** — and that total is the arithmetic sum of the column above
+**Total: 1,739 in 87 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -175,15 +178,16 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,292** against a real 1,320 and will talk you into
-"correcting" numbers that were already right. **Six** files generate cases from a loop,
-and they are marked in the table above: `geminiService` produces seven of its 22 from
-one `it(` over split points, `designerBridge` eight of its 33 over Windows reserved
+A grep for `\bit(` answers **1,705** against a real 1,739 and will talk you into
+"correcting" numbers that were already right. **Seven** files generate cases from a loop,
+and they are marked in the table above: `geminiService` produces seven of its 33 from
+one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
 device names, `attachmentParts` six of its fourteen over malformed data URLs,
-`legalDisclosure` three of its nine over the disclosure table, `Composer` eight of its 33
-from **two** `it(` sharing one loop over the four conditions that must block a send, and
+`legalDisclosure` three of its nine over the disclosure table, `Composer` eight of its 35
+from **two** `it(` sharing one loop over the four conditions that must block a send,
 `analysisResponse` four of its sixteen from **two** `it(` sharing one loop over stop
-reasons — the shape `Composer` now also has.
+reasons — the shape `Composer` now also has — and `reportData` seven of its fourteen from
+one `it(` over the bands of parity case s17.
 
 **The shortfall is a constant, not a coincidence** — every other file adds as many tests
 as it has `it(` calls, so both totals move together. **A change in the *gap* is the
@@ -196,6 +200,11 @@ gap grew by six. That is the mechanism working as designed rather than a discrep
 hunt: the number changed because a loop was genuinely added, which is exactly what this
 paragraph exists to let you conclude in one step.
 
+**It is 34 as of 2026-10-30**, and the same reading applies: `reportData` added one
+`for` over seven bands, so one `it(` became seven tests and the gap grew by six. The
+seven loop files account for all 34, so every other file's grep count still matches the
+table.
+
 Two ways the arithmetic goes wrong:
 
 - **The gap can close from the wrong end.** Prose mentioning the vitest call counts as a
@@ -204,8 +213,8 @@ Two ways the arithmetic goes wrong:
   call in its own header comment for this reason. This note is not swept by that grep —
   it lives in `docs/` and the pathspec is `src/**/*.test.ts` — but keep the habit.
 - **The word boundary is load-bearing.** A bare `it(` also matches `omit(`, which scores
-  `repx.test.ts` at 27 instead of 24. The other forty-six files' grep counts match this
-  table exactly, but only with `\b`.
+  `repx.test.ts` at 27 instead of 24. Every file outside the seven loop files has a grep
+  count matching this table exactly, but only with `\b`.
 
 ## The rules suite is three files, and the second is the non-obvious one
 

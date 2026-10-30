@@ -39,6 +39,8 @@
 import { formatComposite, formatDate, toRoman } from './netFormat';
 import { unitsPerInch } from './reportGeometry';
 import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, type FontSpec, type MeasureText } from './textMeasure';
+import { ReportData, type CalculatedField, type TextData, type TextScope } from './reportData';
+import { parseParameters, type ReportParameter } from './repxParameters';
 
 /** The bands that carry content, in the order XtraReports prints them. */
 export type BandKind =
@@ -97,6 +99,8 @@ export type AppearanceProperty =
 /** Resolved raw attribute values, as the file writes them. Absent means unset all the way up. */
 export type Appearance = Partial<Record<AppearanceProperty, string>>;
 
+export type { TextData };
+
 export interface PreviewCell {
   text: string;
   /** Relative width within the row. DevExpress distributes by weight, not px. */
@@ -119,6 +123,7 @@ export interface PreviewCell {
   /** As on a control: a cell grows and wraps unless the file says otherwise. */
   canGrow: boolean;
   wordWrap: boolean;
+  data: TextData;
   /**
    * The data field this cell's text is bound to, or null when it is a literal.
    *
@@ -237,6 +242,8 @@ export interface PreviewControl {
   canGrow: boolean;
   canShrink: boolean;
   wordWrap: boolean;
+  /** What the control prints from data: its whole `Text` binding, its summary scope and its format. */
+  data: TextData;
   /** Populated for XRPageInfo only: what it prints and how. See `pageInfoText`. */
   pageInfo: PreviewPageInfo | null;
   /** Populated for XRTable only. */
@@ -417,6 +424,10 @@ export interface ReportStructure {
    * page rather than living in the band list.
    */
   watermark: PreviewWatermark | null;
+  /** `<CalculatedFields>`: each a name and an expression, evaluated per record. */
+  calculatedFields: CalculatedField[];
+  /** `<Parameters>`, whose values an expression reads as `?Name`. */
+  parameters: ReportParameter[];
   /** Non-fatal parse complaints, for the UI to surface rather than swallow. */
   problems: string[];
 }
@@ -897,6 +908,20 @@ function collectionItems(inner: string): { tag: string; attrs: string; start: nu
  * project's `bindDetailRow` writes the same order. Both orders are accepted
  * because an attribute order is not a contract.
  */
+function parseTextData(attrs: string, slice: string): TextData {
+  const own = ownPart(slice);
+  const item =
+    /<Item\d+\b[^>]*\sPropertyName="Text"[^>]*\sExpression="([^"]*)"/.exec(own) ??
+    /<Item\d+\b[^>]*\sExpression="([^"]*)"[^>]*\sPropertyName="Text"/.exec(own);
+  const summary = /<Summary\b([^>]*?)\/?>/.exec(own);
+  const format = attrOf(attrs, 'TextFormatString');
+  return {
+    expression: item ? decodeXmlText(item[1]) : null,
+    running: summary ? attrOf(summary[1], 'Running') ?? 'None' : null,
+    format: format === null ? null : decodeXmlText(format),
+  };
+}
+
 function parseTextBinding(slice: string): string | null {
   const item =
     /<Item\d+\b[^>]*\sPropertyName="Text"[^>]*\sExpression="([^"]*)"/.exec(slice) ??
@@ -952,6 +977,7 @@ function parseTableRows(
         appearance: look,
         canGrow: (attrOf(cell.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
         wordWrap: (attrOf(cell.attrs, 'WordWrap') ?? '').toLowerCase() !== 'false',
+        data: parseTextData(cell.attrs, slice),
         field: parseTextBinding(slice),
       });
     }
@@ -1149,6 +1175,7 @@ function parseControls(
       canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
       canShrink: (attrOf(item.attrs, 'CanShrink') ?? '').toLowerCase() === 'true',
       wordWrap: (attrOf(item.attrs, 'WordWrap') ?? '').toLowerCase() !== 'false',
+      data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
       pageInfo: type === 'XRPageInfo'
         ? {
             kind: attrOf(item.attrs, 'PageInfo') || 'NumberOfTotal',
@@ -1217,6 +1244,19 @@ function bandKind(controlType: string): BandKind {
   return (BAND_ORDER as string[]).includes(name) ? (name as BandKind) : 'Unknown';
 }
 
+/** `<CalculatedFields>`, in declaration order, which is the order they are added to a record. */
+function parseCalculatedFields(text: string): CalculatedField[] {
+  const block = /<CalculatedFields>([\s\S]*?)<\/CalculatedFields>/.exec(text);
+  if (!block) return [];
+  const out: CalculatedField[] = [];
+  for (const m of block[1].matchAll(/<Item\d+\b([^>]*?)\/?>/g)) {
+    const name = attrOf(m[1], 'Name');
+    const expression = attrOf(m[1], 'Expression');
+    if (name && expression !== null) out.push({ name, expression: decodeXmlText(expression) });
+  }
+  return out;
+}
+
 /**
  * Read the page, the margins and every band out of a `.repx`.
  *
@@ -1232,6 +1272,8 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     unit: 'HundredthsOfAnInch',
     bands: [],
     watermark: null,
+    calculatedFields: [],
+    parameters: [],
     problems,
   };
 
@@ -1264,6 +1306,8 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     unit: attrOf(rootAttrs, 'ReportUnit') || 'HundredthsOfAnInch',
     bands: [],
     watermark: parseWatermark(text),
+    calculatedFields: parseCalculatedFields(text),
+    parameters: parseParameters(text),
     problems,
   };
 
@@ -1361,6 +1405,13 @@ export interface PlacedControl {
   /** For an XRTable: the first row this part prints, and each printed row's height. */
   rowStart: number;
   rowHeights: number[] | null;
+  /**
+   * What it prints: its binding evaluated over the test data and formatted, or
+   * its own text. Null for a control that prints no text of its own (a table,
+   * a page number). For a table, `cellTexts` holds every row's cells.
+   */
+  text: string | null;
+  cellTexts: string[][] | null;
 }
 
 /** One printed occurrence of a band: a record's Detail, a page's header, a split part. */
@@ -1374,6 +1425,37 @@ export interface BandInstance {
 interface LayoutContext {
   measure: MeasureText | null;
   unit: string;
+  /** The test data, typed; null when there is none and controls print their own text. */
+  data?: ReportData | null;
+}
+
+/**
+ * What a control prints in one instance: its binding evaluated in `scope` when
+ * there is test data, otherwise the row's raw value or its own text, as before
+ * parity row 12.
+ */
+function textFor(
+  literal: string,
+  field: string | null,
+  data: TextData,
+  values: RecordValues | null,
+  ctx: LayoutContext,
+  scope: TextScope | null,
+): string {
+  const evaluated = ctx.data && scope ? ctx.data.text(data, scope) : null;
+  return evaluated ?? printedText(literal, field, values);
+}
+
+/** Every text a control prints in one instance; see `PlacedControl.text`. */
+function textsOf(control: PreviewControl, values: RecordValues | null, ctx: LayoutContext, scope: TextScope | null) {
+  if (control.type === 'XRTable') {
+    return {
+      text: null,
+      cellTexts: control.rows.map((row) => row.cells.map((cell) => textFor(cell.text, cell.field, cell.data, values, ctx, scope))),
+    };
+  }
+  if (control.pageInfo) return { text: null, cellTexts: null };
+  return { text: textFor(control.text, control.field, control.data, values, ctx, scope), cellTexts: null };
 }
 
 const EPS = 1e-6;
@@ -1450,6 +1532,7 @@ export function layoutBand(
   record: number | null,
   values: RecordValues | null,
   ctx: LayoutContext,
+  scope: TextScope | null = null,
 ): BandInstance {
   const items = band.controls
     .map((control, index) => ({ control, index }))
@@ -1459,8 +1542,9 @@ export function layoutBand(
       let height = control.height;
       let lines: string[] | null = null;
       let rowHeights: number[] | null = null;
+      const texts = textsOf(control, values, ctx, scope);
       if (ctx.measure && MEASURED_TYPES.has(control.type)) {
-        const text = printedText(control.text, control.field, values);
+        const text = texts.text ?? '';
         const m = textHeight(text, { family: control.fontFamily, size: control.fontSize, bold: control.bold, italic: control.italic },
           control.width, control.appearance, control.borders, control.wordWrap, ctx);
         lines = m.lines;
@@ -1468,12 +1552,12 @@ export function layoutBand(
         else if (control.canShrink && m.shrinkUnits < height) height = m.shrinkUnits;
       } else if (ctx.measure && control.type === 'XRTable' && control.rows.length) {
         const designRow = control.height / control.rows.length;
-        rowHeights = control.rows.map((row) => {
+        rowHeights = control.rows.map((row, r) => {
           const total = row.cells.reduce((sum, c) => sum + c.weight, 0) || 1;
           let tallest = designRow;
-          for (const cell of row.cells) {
+          for (const [c, cell] of row.cells.entries()) {
             if (!cell.canGrow) continue;
-            const text = printedText(cell.text, cell.field, values);
+            const text = texts.cellTexts?.[r]?.[c] ?? '';
             const m = textHeight(text, { family: cell.fontFamily, size: cell.fontSize, bold: cell.bold, italic: cell.italic },
               (control.width * cell.weight) / total, cell.appearance, cell.borders, cell.wordWrap, ctx);
             tallest = Math.max(tallest, m.needUnits);
@@ -1482,7 +1566,7 @@ export function layoutBand(
         });
         height = rowHeights.reduce((sum, h) => sum + h, 0);
       }
-      return { control, index, top, designHeight: control.height, height, lines, rowHeights, shift: 0 };
+      return { control, index, top, designHeight: control.height, height, lines, rowHeights, shift: 0, ...texts };
     })
     .sort((a, b) => a.top - b.top);
 
@@ -1511,8 +1595,22 @@ export function layoutBand(
       lines: it.lines,
       rowStart: 0,
       rowHeights: it.rowHeights,
+      text: it.text,
+      cellTexts: it.cellTexts,
     })),
   };
+}
+
+/** A placed control reprinted in a new scope, its lines re-broken if its text changed. */
+function retext(pc: PlacedControl, values: RecordValues | null, ctx: LayoutContext, scope: TextScope): PlacedControl {
+  const texts = textsOf(pc.control, values, ctx, scope);
+  let lines = pc.lines;
+  if (lines && ctx.measure && texts.text !== pc.text) {
+    const c = pc.control;
+    lines = textHeight(texts.text ?? '', { family: c.fontFamily, size: c.fontSize, bold: c.bold, italic: c.italic },
+      c.width, c.appearance, c.borders, c.wordWrap, ctx).lines;
+  }
+  return { ...pc, ...texts, lines };
 }
 
 /**
@@ -1695,10 +1793,49 @@ export function paginate(
   const maxPages = options.maxPages ?? 50;
   const problems = [...structure.problems];
   const bands = structure.bands;
-  const ctx: LayoutContext = { measure: options.measure ?? null, unit: structure.unit };
+  // The test data, typed, with calculated fields and parameter defaults: what
+  // a binding, a summary and a format string are evaluated against.
+  const data = options.rows?.length
+    ? ReportData.from(options.rows, records, structure.calculatedFields, structure.parameters)
+    : null;
+  const ctx: LayoutContext = { measure: options.measure ?? null, unit: structure.unit, data };
   const rowFor = (i: number) => (options.rows?.length ? options.rows[i % options.rows.length] : null);
+
+  /*
+   * The records each printed band reads; see `TextScope` for what DevExpress
+   * printed. Record indices are 0-based, in print order. Until parity row 10
+   * draws groups from data the Preview draws one group around every record, so
+   * a group's records are all of them. With no group bands at all, `Group`
+   * prints "?" in Detail too: measured in case s17b.
+   */
+  const all: number[] = Array.from({ length: data ? records : 0 }, (_, i) => i);
+  const firstRecord = all.length ? 0 : null;
+  const lastRecord = all.length ? all.length - 1 : null;
+  const grouped = bands.some((b) => b.kind === 'GroupHeader' || b.kind === 'GroupFooter');
+  const scopeFor = (
+    kind: BandKind,
+    record: number | null,
+    page: readonly number[] | null,
+    before: number | null,
+  ): TextScope => {
+    const base = { report: all, group: null as readonly number[] | null, page };
+    const pageFirst = page ? page[0] ?? before : firstRecord;
+    const pageLast = page ? page[page.length - 1] ?? before : lastRecord;
+    switch (kind) {
+      case 'Detail': {
+        const i = record === null ? null : record - 1;
+        return { ...base, group: grouped ? all : null, row: i, anchor: i };
+      }
+      case 'GroupHeader': return { ...base, group: all, row: firstRecord, anchor: lastRecord };
+      case 'GroupFooter': return { ...base, group: all, row: lastRecord, anchor: lastRecord };
+      case 'ReportHeader': return { ...base, row: firstRecord, anchor: lastRecord };
+      case 'ReportFooter': return { ...base, row: lastRecord, anchor: lastRecord };
+      case 'PageHeader': case 'TopMargin': return { ...base, row: pageFirst, anchor: pageLast };
+      default: return { ...base, row: pageLast, anchor: pageLast };
+    }
+  };
   const instance = (band: PreviewBand, record: number | null = null, values: RecordValues | null = null) =>
-    layoutBand(band, record, values, ctx);
+    layoutBand(band, record, values, ctx, scopeFor(band.kind, record, null, null));
 
   const topMargin = Math.max(structure.margins.top, findBand(bands, 'TopMargin')?.height ?? 0);
   const bottomMargin = Math.max(structure.margins.bottom, findBand(bands, 'BottomMargin')?.height ?? 0);
@@ -1928,7 +2065,7 @@ export function paginate(
 
         // Columns keep the designed height: a grid of slots cannot hold records
         // of different heights, and growth inside columns is not measured yet.
-        const slot = layoutBand(detail, i + 1, rowFor(i), { measure: null, unit: ctx.unit });
+        const slot = layoutBand(detail, i + 1, rowFor(i), { measure: null, unit: ctx.unit, data }, scopeFor('Detail', i + 1, null, null));
         current!.bands.push({
           band: detail,
           height: detail.height,
@@ -1980,6 +2117,46 @@ export function paginate(
     problems.push(
       `Preview stopped at ${maxPages} pages; ${records - placedRecords} of ${records} records are not shown.`,
     );
+  }
+
+  /*
+   * What reads the page is printed once the pages are known. A page summary
+   * prints the whole page's total wherever it sits, the page header included,
+   * and a page header or footer reads the page's first or last record; until
+   * pagination ends neither is known, so those bands were laid out against the
+   * whole report and are reprinted here. Their heights stay as laid out.
+   *
+   * A record split across a break counts on both pages, and every part of it
+   * reads the page it FINISHES on: printed, the part of record 21 left on page
+   * 1 showed page 2's total, and its part on page 2 numbered itself 1 there.
+   */
+  if (data) {
+    const readsPage = (c: PreviewControl) =>
+      c.data.running === 'Page' || c.rows.some((row) => row.cells.some((cell) => cell.data.running === 'Page'));
+    const sensitive = new Set(
+      bands.filter((b) => b.kind === 'PageHeader' || b.kind === 'PageFooter' || b.controls.some(readsPage)),
+    );
+    const detailRecords = (page: PreviewPage) =>
+      page.bands.filter((b) => b.band.kind === 'Detail' && b.record !== null).map((b) => b.record! - 1);
+    // Every record with any part on the page, a split one on both of its pages.
+    const onPage = pages.map((page) => [...new Set(detailRecords(page))].sort((a, b) => a - b));
+    const finishesOn = new Map<number, number>();
+    pages.forEach((page, k) => detailRecords(page).forEach((r) => finishesOn.set(r, k)));
+    // The last record printed before each page, for a page that has none of its own.
+    const before: (number | null)[] = [];
+    pages.forEach((_, k) => {
+      const prior = k ? onPage[k - 1] : [];
+      before.push(prior.length ? prior[prior.length - 1] : k ? before[k - 1] : null);
+    });
+    pages.forEach((page, k) => {
+      page.bands = page.bands.map((pb) => {
+        if (!sensitive.has(pb.band)) return pb;
+        const own = pb.band.kind === 'Detail' && pb.record !== null ? finishesOn.get(pb.record - 1) ?? k : k;
+        const scope = scopeFor(pb.band.kind, pb.record, onPage[own], before[own]);
+        const values = pb.record !== null ? rowFor(pb.record - 1) : null;
+        return { ...pb, controls: pb.controls.map((pc) => retext(pc, values, ctx, scope)) };
+      });
+    });
   }
 
   // Reported for the UI's "N records per page" readout. Derived from the first

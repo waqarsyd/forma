@@ -34,6 +34,11 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 | c08-links | `NavigateUrl`, literal and bound, through PDF, Excel, Word and HTML. |
 | c09-large | 10,000 rows: layout time, page count, export time and size. |
 | c10-summary | Aggregate cells with no `Summary` element, with `Running="Group"` and with `Running="Report"`, in a group footer and a report footer. |
+| s15-formats | Twenty number formats over twelve decimal and double values chosen for sign, zero and midpoint rounding, and six over twelve integers. |
+| s16-exprs | Forty-four expressions over six typed records, a calculated field, and eleven report totals. |
+| s17-scopes | Every summary scope, a running sum, a record number and a bound field in every band, over 50 records in three groups on three pages. |
+| s17b-nogroup | s17 without the group bands. |
+| s18-invoice | An invoice as Forma writes one: a bound table, a calculated line total, money formats, a page total and a grand total, over 40 records with wrapping text. |
 
 ## How DevExpress 20.1 behaves
 
@@ -97,6 +102,19 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 - Subtotals, counts, a running sum, a calculated field and the grand total all matched the data to the cent.
 - **An aggregate needs a `Summary` element.** `sumSum([Amount])` with no `<Summary>` printed blank, in a group footer and in the report footer alike. `Running="Group"` printed each group's total. `Running="Report"` printed the whole report's total, in a group footer too. `Running="Group"` in the report footer printed "?".
 - `sumRunningSum` with `Running="Report"` accumulated across group boundaries.
+- **A total is the whole scope's wherever it prints** (s17). `sumSum` with `Running="Group"` printed the group's total on every Detail record and in the group header, before the group's records. `Running="Page"` printed the whole page's total in the page header.
+- **A page is every record with any part on it.** A record split across a break counted on both pages, and every part of it read the page it finished on: the part of record 21 left on page 1 printed page 2's total, and its part on page 2 numbered itself 1 there.
+- **A running summary runs to the end of its band's extent.** In Detail it runs through the current record. In a group header or footer it runs through the group's last record, in a page header or footer through the page's, and in the report header or footer through the report's. So `sumRunningSum` in a group header printed the group's full total.
+- **A bound field reads the extent's first record in a header and its last in a footer.** `[Qty]` printed 1, 16 and 36 in the three group headers and 15, 35 and 50 in the footers.
+- `Running="Group"` prints "?" in the report and page bands, with or without a format string. With no group bands it prints "?" in Detail too (s17b). A summary with no `Running` printed nothing everywhere.
+- A null value printed nothing, even inside a format string such as `Total: {0:c2}`.
+
+### Expressions and formats
+
+- **Arithmetic follows .NET types.** Integers divide by truncating: `[Qty] / 4` printed 0, 1 and 2. Decimals keep their scale: 8 times 0.5 printed `4.0`, and six prices summed to `163.323` exactly. A decimal division that does not end runs to 28 places, or fewer when the digits would not fit: 12.5 / 3 printed `4.1666666666666666666666666667`. A literal with a decimal point is a double, so `[Qty] / 4.0` printed 0.25.
+- `Round` rounds half to even: `Round(2.5)` printed 2 and `Round(-2.5)` printed -2. `Substring` counts from 0. Booleans print `True` and `False`, and `+` with a string on either side concatenates. A field the data does not have prints nothing.
+- **Format strings round half away from zero.** 2.345 with `{0:c}` printed `$2.35` and 2.5 with `{0:c0}` printed `$3`. Decimal and double values printed identically.
+- Currency negatives are bracketed: `($1,234.50)`. `p` multiplies by 100 and groups thousands. `e2` writes a three-digit exponent, `1.23e+003`. `x` writes a negative integer in 32-bit two's complement. A custom format's sections apply to positive, negative and zero values.
 
 ### Master-detail
 
@@ -172,7 +190,7 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 9 | `PrintOn` and `PrintAtBottom` | No | Yes | **Done 2026-10-30** | DevExpress | Done: page headers and footers skip the report header's or footer's page as flagged, the freed room is used, and `PrintAtBottom` puts the report footer at the foot of its page. The c04b case reproduces exactly. A page header marked `NotWithReportFooter` still prints, unmeasured |
 | 10 | Groups from data, repeated headers, `GroupUnion`, `PageBreak` | Partial | Yes | One group drawn | DevExpress | Adopt over test data |
 | 11 | Sorting, filtering, entering a parameter value | Written to file only | Yes | Not previewed | DevExpress | Adopt over test data, with a value field per parameter |
-| 12 | Totals, running sums, calculated fields, format strings in Preview | Written to file only | Yes | Literal text shown | DevExpress | Adopt: evaluate the aggregate and arithmetic subset Forma writes, and apply `TextFormatString` |
+| 12 | Totals, running sums, calculated fields, format strings in Preview | Written to file only | Yes | **Done 2026-10-30** | DevExpress | Done: `criteria.ts` evaluates DevExpress's expression language with .NET types, `netDecimal.ts` carries decimals, `netFormat.ts` formats numbers, and `reportData.ts` gives each band its scope as s17 measured. Every expression in s16, every format in s15 and every scope in s17 matches what DevExpress printed. In Edge, all 175 texts of s18 matched on the same pages. Groups are still drawn as one until row 10 |
 | 13 | Empty data source | Yes | Yes | Differs | DevExpress: printing the Detail band once shows the report's shape | Adopt |
 | 14 | Master-detail | Written by hand only | Yes | Broken in Preview | DevExpress | Adopt |
 | 15 | Page numbers | Partial | Yes | **Done 2026-10-30** | DevExpress: Forma drew "n / N" for every kind | Done: all eight kinds, their formats, the absent-kind default and `StartPageNumber`, through a new `netFormat.ts` that row 12 extends to values |
@@ -197,4 +215,4 @@ Rows 1 to 5 and 15 are fixes to behaviour Forma already claims. Rows 6 to 14 and
 tools\RepxProbe\bin\Release\RepxProbe.exe render <case-dir> <out-dir>
 ```
 
-The case generator and the analyser that produced these numbers were written for this session and are not yet in the repository. Step 5 of the programme, the automated comparison, is where they belong: the DevExpress output becomes committed expected values that the unit suite checks Forma's Preview against, since CI cannot run DevExpress.
+The case generator and the analyser that produced these numbers were written for this session and are not yet in the repository. Step 5 of the programme, the automated comparison, is where they belong: the DevExpress output becomes committed expected values that the unit suite checks Forma's Preview against, since CI cannot run DevExpress. Row 12 began that: the printed values of s15, s16, s17 and s17b are written into `netFormat.test.ts`, `criteria.test.ts`, `reportData.test.ts` and `reportPreview.test.ts` as literals.

@@ -104,12 +104,14 @@ describe('reading the report out of the REPX', () => {
         text: 'Item', weight: 3, fontSize: 9, fontFamily: 'Arial', bold: true, italic: false,
         align: 'left', vAlign: 'top', borders: { top: false, right: false, bottom: false, left: false },
         appearance: { Font: 'Arial, 9pt, style=Bold' }, canGrow: true, wordWrap: true, field: null,
+        data: { expression: null, running: null, format: null },
       },
       {
         // No font anywhere above it, so DevExpress 20.1's own default.
         text: 'Amount', weight: 1, fontSize: 9.75, fontFamily: 'Times New Roman', bold: false, italic: false,
         align: 'right', vAlign: 'middle', borders: { top: false, right: false, bottom: false, left: false },
         appearance: { Font: 'Times New Roman, 9.75pt', TextAlignment: 'MiddleRight' }, canGrow: true, wordWrap: true, field: null,
+        data: { expression: null, running: null, format: null },
       },
     ]);
   });
@@ -1810,5 +1812,152 @@ describe('PrintOn and PrintAtBottom, as DevExpress prints them', () => {
     expect(kinds(both.pages[0])).not.toContain('PageFooter');
     expect(kinds(both.pages.at(-1)!)).not.toContain('PageFooter');
     expect(kinds(both.pages[1])).toContain('PageFooter');
+  });
+});
+
+
+/*
+ * Case s17b of docs/proposals/devexpress-parity.md, end to end: a summary of every
+ * scope in the report and page bands and Detail, over 50 records on three pages,
+ * printed through DevExpress 20.1 (`RepxProbe render`, 2026-10-30). Record 24 was
+ * split across pages 1 and 2, so it counts on both, and with no group bands
+ * `Group` printed "?" even in Detail. Every expectation is a string DevExpress drew,
+ * prefixed by the page it drew it on. The grouped case waits for parity row 10.
+ */
+describe('summaries over test data, as DevExpress printed them (case s17b)', () => {
+  type Spec = [name: string, expression: string, x: number, y: number, running?: string, format?: string];
+  const SPEC: Record<string, Spec[]> = {
+    ReportHeader: [
+      ["rh_report","sumSum([Qty])",0,0,"Report"],
+      ["rh_page","sumSum([Qty])",125,0,"Page"],
+      ["rh_group","sumSum([Qty])",250,0,"Group"],
+      ["rh_none","sumSum([Qty])",375,0,""],
+      ["rh_count","sumCount()",500,0,"Report"],
+      ["rh_rrep","sumRunningSum([Qty])",625,0,"Report"],
+      ["rh_qty","[Qty]",0,18],
+    ],
+    PageHeader: [
+      ["ph_page","sumSum([Qty])",0,0,"Page"],
+      ["ph_report","sumSum([Qty])",125,0,"Report"],
+      ["ph_group","sumSum([Qty])",250,0,"Group"],
+      ["ph_pcount","sumCount()",375,0,"Page"],
+      ["ph_rrep","sumRunningSum([Qty])",500,0,"Report"],
+      ["ph_rpage","sumRunningSum([Qty])",625,0,"Page"],
+      ["ph_qty","[Qty]",0,18],
+    ],
+    Detail: [
+      ["d_qty","[Qty]",0,0],
+      ["d_group","sumSum([Qty])",60,0,"Group"],
+      ["d_report","sumSum([Qty])",185,0,"Report"],
+      ["d_page","sumSum([Qty])",310,0,"Page"],
+      ["d_none","sumSum([Qty])",435,0,""],
+      ["d_rgroup","sumRunningSum([Qty])",560,0,"Group"],
+      ["d_recgroup","sumRecordNumber()",0,18,"Group"],
+      ["d_recpage","sumRecordNumber()",125,18,"Page"],
+      ["d_recreport","sumRecordNumber()",250,18,"Report"],
+      ["d_rpage","sumRunningSum([Qty])",375,18,"Page"],
+      ["d_avg","sumAvg([Qty])",500,18,"Group"],
+      ["d_nullfmt","[Missing]",625,18,undefined,"Total: {0:c2}"],
+    ],
+    PageFooter: [
+      ["pf_page","sumSum([Qty])",0,0,"Page"],
+      ["pf_report","sumSum([Qty])",125,0,"Report"],
+      ["pf_group","sumSum([Qty])",250,0,"Group"],
+      ["pf_none","sumSum([Qty])",375,0,""],
+      ["pf_rrep","sumRunningSum([Qty])",500,0,"Report"],
+      ["pf_qty","[Qty]",0,18],
+      ["pf_groupfmt","sumSum([Qty])",125,18,"Group","{0:c2}"],
+    ],
+    ReportFooter: [
+      ["rf_report","sumSum([Qty])",0,0,"Report"],
+      ["rf_page","sumSum([Qty])",125,0,"Page"],
+      ["rf_rrep","sumRunningSum([Qty])",250,0,"Report"],
+      ["rf_qty","[Qty]",0,18],
+    ],
+  };
+  const ROWS = [{"Region":"North","Qty":"1"},{"Region":"North","Qty":"2"},{"Region":"North","Qty":"3"},{"Region":"North","Qty":"4"},{"Region":"North","Qty":"5"},{"Region":"North","Qty":"6"},{"Region":"North","Qty":"7"},{"Region":"North","Qty":"8"},{"Region":"North","Qty":"9"},{"Region":"North","Qty":"10"},{"Region":"North","Qty":"11"},{"Region":"North","Qty":"12"},{"Region":"North","Qty":"13"},{"Region":"North","Qty":"14"},{"Region":"North","Qty":"15"},{"Region":"South","Qty":"16"},{"Region":"South","Qty":"17"},{"Region":"South","Qty":"18"},{"Region":"South","Qty":"19"},{"Region":"South","Qty":"20"},{"Region":"South","Qty":"21"},{"Region":"South","Qty":"22"},{"Region":"South","Qty":"23"},{"Region":"South","Qty":"24"},{"Region":"South","Qty":"25"},{"Region":"South","Qty":"26"},{"Region":"South","Qty":"27"},{"Region":"South","Qty":"28"},{"Region":"South","Qty":"29"},{"Region":"South","Qty":"30"},{"Region":"South","Qty":"31"},{"Region":"South","Qty":"32"},{"Region":"South","Qty":"33"},{"Region":"South","Qty":"34"},{"Region":"South","Qty":"35"},{"Region":"West","Qty":"36"},{"Region":"West","Qty":"37"},{"Region":"West","Qty":"38"},{"Region":"West","Qty":"39"},{"Region":"West","Qty":"40"},{"Region":"West","Qty":"41"},{"Region":"West","Qty":"42"},{"Region":"West","Qty":"43"},{"Region":"West","Qty":"44"},{"Region":"West","Qty":"45"},{"Region":"West","Qty":"46"},{"Region":"West","Qty":"47"},{"Region":"West","Qty":"48"},{"Region":"West","Qty":"49"},{"Region":"West","Qty":"50"}];
+  const PRINTED: Record<string, string[]> = {
+    d_avg: ["p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p3:?","p3:?"],
+    d_group: ["p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p3:?","p3:?"],
+    d_none: ["p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p3:(blank)","p3:(blank)"],
+    d_nullfmt: ["p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p3:(blank)","p3:(blank)"],
+    d_page: ["p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:300","p1:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p2:900","p3:99","p3:99"],
+    d_qty: ["p1:1","p1:2","p1:3","p1:4","p1:5","p1:6","p1:7","p1:8","p1:9","p1:10","p1:11","p1:12","p1:13","p1:14","p1:15","p1:16","p1:17","p1:18","p1:19","p1:20","p1:21","p1:22","p1:23","p1:24","p2:25","p2:26","p2:27","p2:28","p2:29","p2:30","p2:31","p2:32","p2:33","p2:34","p2:35","p2:36","p2:37","p2:38","p2:39","p2:40","p2:41","p2:42","p2:43","p2:44","p2:45","p2:46","p2:47","p2:48","p3:49","p3:50"],
+    d_recgroup: ["p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p3:?","p3:?"],
+    d_recpage: ["p1:1","p1:2","p1:3","p1:4","p1:5","p1:6","p1:7","p1:8","p1:9","p1:10","p1:11","p1:12","p1:13","p1:14","p1:15","p1:16","p1:17","p1:18","p1:19","p1:20","p1:21","p1:22","p1:23","p2:1","p2:2","p2:3","p2:4","p2:5","p2:6","p2:7","p2:8","p2:9","p2:10","p2:11","p2:12","p2:13","p2:14","p2:15","p2:16","p2:17","p2:18","p2:19","p2:20","p2:21","p2:22","p2:23","p2:24","p2:25","p3:1","p3:2"],
+    d_recreport: ["p1:1","p1:2","p1:3","p1:4","p1:5","p1:6","p1:7","p1:8","p1:9","p1:10","p1:11","p1:12","p1:13","p1:14","p1:15","p1:16","p1:17","p1:18","p1:19","p1:20","p1:21","p1:22","p1:23","p2:24","p2:25","p2:26","p2:27","p2:28","p2:29","p2:30","p2:31","p2:32","p2:33","p2:34","p2:35","p2:36","p2:37","p2:38","p2:39","p2:40","p2:41","p2:42","p2:43","p2:44","p2:45","p2:46","p2:47","p2:48","p3:49","p3:50"],
+    d_report: ["p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p3:1275","p3:1275"],
+    d_rgroup: ["p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p1:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p2:?","p3:?","p3:?"],
+    d_rpage: ["p1:1","p1:3","p1:6","p1:10","p1:15","p1:21","p1:28","p1:36","p1:45","p1:55","p1:66","p1:78","p1:91","p1:105","p1:120","p1:136","p1:153","p1:171","p1:190","p1:210","p1:231","p1:253","p1:276","p2:24","p2:49","p2:75","p2:102","p2:130","p2:159","p2:189","p2:220","p2:252","p2:285","p2:319","p2:354","p2:390","p2:427","p2:465","p2:504","p2:544","p2:585","p2:627","p2:670","p2:714","p2:759","p2:805","p2:852","p2:900","p3:49","p3:99"],
+    pf_group: ["p1:?","p2:?","p3:?"],
+    pf_groupfmt: ["p1:?","p2:?","p3:?"],
+    pf_none: ["p1:(blank)","p2:(blank)","p3:(blank)"],
+    pf_page: ["p1:300","p2:900","p3:99"],
+    pf_qty: ["p1:24","p2:48","p3:50"],
+    pf_report: ["p1:1275","p2:1275","p3:1275"],
+    pf_rrep: ["p1:300","p2:1176","p3:1275"],
+    ph_group: ["p1:?","p2:?","p3:?"],
+    ph_page: ["p1:300","p2:900","p3:99"],
+    ph_pcount: ["p1:24","p2:25","p3:2"],
+    ph_qty: ["p1:1","p2:24","p3:49"],
+    ph_report: ["p1:1275","p2:1275","p3:1275"],
+    ph_rpage: ["p1:300","p2:900","p3:99"],
+    ph_rrep: ["p1:300","p2:1176","p3:1275"],
+    rf_page: ["p3:99"],
+    rf_qty: ["p3:50"],
+    rf_report: ["p3:1275"],
+    rf_rrep: ["p3:1275"],
+    rh_count: ["p1:50"],
+    rh_group: ["p1:?"],
+    rh_none: ["p1:(blank)"],
+    rh_page: ["p1:300"],
+    rh_qty: ["p1:1"],
+    rh_report: ["p1:1275"],
+    rh_rrep: ["p1:1275"],
+  };
+
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  /** The same report RepxProbe rendered: Arial 7pt, 40-unit bands, 20-unit margins. */
+  function scopesReport(): string {
+    let ref = 100;
+    const R = () => ++ref;
+    const label = (n: number, [name, expression, x, y, running, format]: Spec) => {
+      const summary = running === undefined ? '' : running === '' ? `<Summary Ref="${R()}" />` : `<Summary Ref="${R()}" Running="${running}" />`;
+      return `<Item${n} Ref="${R()}" ControlType="XRLabel" Name="${name}"${format ? ` TextFormatString="${esc(format)}"` : ''} WordWrap="false" LocationFloat="${x},${y}" SizeF="120,16">${summary}` +
+        `<ExpressionBindings><Item1 Ref="${R()}" EventName="BeforePrint" PropertyName="Text" Expression="${esc(expression)}" /></ExpressionBindings></Item${n}>`;
+    };
+    let item = 1;
+    const bands = [`<Item${item++} Ref="${R()}" ControlType="TopMarginBand" Name="TopMargin" HeightF="20" />`];
+    for (const [kind, controls] of Object.entries(SPEC)) {
+      const inner = '<Controls>' + controls.map((c, i) => label(i + 1, c)).join('') + '</Controls>';
+      bands.push(`<Item${item} Ref="${R()}" ControlType="${kind}Band" Name="${kind}" HeightF="40">${inner}</Item${item}>`);
+      item++;
+    }
+    bands.push(`<Item${item} Ref="${R()}" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="20" />`);
+    return '<?xml version="1.0" encoding="utf-8"?>' +
+      '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="Scopes" ReportUnit="HundredthsOfAnInch" Margins="20, 20, 20, 20" PageWidth="850" PageHeight="1100" Version="20.1" DataMember="Items" Font="Arial, 7pt">' +
+      `<Bands>${bands.join('')}</Bands></XtraReportsLayoutSerializer>`;
+  }
+
+  it('prints every summary, field and format on the page DevExpress printed it on', () => {
+    const report = paginate(parseReportStructure(scopesReport()), ROWS.length, { rows: ROWS });
+    expect(report.pages).toHaveLength(3);
+    const printed: Record<string, string[]> = {};
+    report.pages.forEach((page, p) => {
+      for (const band of page.bands) {
+        for (const pc of band.controls) {
+          if (pc.text === null) continue;
+          (printed[pc.control.name] ??= []).push(`p${p + 1}:${pc.text === '' ? '(blank)' : pc.text}`);
+        }
+      }
+    });
+    for (const name of Object.keys(PRINTED)) expect([name, printed[name]]).toEqual([name, PRINTED[name]]);
+    expect(Object.keys(printed).sort()).toEqual(Object.keys(PRINTED).sort());
+  });
+
+  it('prints a control\'s own text, as before, when there is no test data', () => {
+    const report = paginate(parseReportStructure(scopesReport()), 3);
+    const detail = report.pages[0].bands.find((b) => b.band.kind === 'Detail')!;
+    expect(detail.controls.find((pc) => pc.control.name === 'd_report')!.text).toBe('');
   });
 });

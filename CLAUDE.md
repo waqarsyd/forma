@@ -41,7 +41,7 @@ Most of the reasoning behind this codebase is **not in this file**. It lives in 
 | a repeated `Font`/`ForeColor`, a `<StyleSheet>`, `src/lib/repxStyles.ts` | [`gemini.md`](docs/notes/gemini.md) — *The style sheet, and one attribute that changes its name*. Every control the model writes carries its own appearance, so one heading treatment used forty times is forty edits that have to agree; note a control's `Borders` is a style's `Sides`, which is the kind of thing only a measurement finds |
 | file upload, PDF handling, `.repx` intake | [`app-shell.md`](docs/notes/app-shell.md) — File intake |
 | which pane the bench shows, adding a sixth plate, `src/lib/workspaceView.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *The result views are derived, not stored*. Two functions derive in opposite directions and must agree; a plate in one and not the other highlights its button and never opens its pane |
-| the Preview pane, pagination, PDF export, `src/lib/reportPreview.ts`, a page number or a `TextFormatString` as previewed, `src/lib/netFormat.ts`, text growth, line breaks or a split record, `src/lib/textMeasure.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *Preview is the only pane drawn from `repxContent`*. It is the only thing in the product that shows the artifact actually downloaded, which is why a page-height Detail band was invisible before it existed |
+| the Preview pane, pagination, PDF export, `src/lib/reportPreview.ts`, a page number or a `TextFormatString` as previewed, `src/lib/netFormat.ts`, text growth, line breaks or a split record, `src/lib/textMeasure.ts`, an expression, a total or a calculated field as previewed, `src/lib/criteria.ts`, `netDecimal.ts`, `reportData.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *Preview is the only pane drawn from `repxContent`*. It is the only thing in the product that shows the artifact actually downloaded, which is why a page-height Detail band was invisible before it existed |
 | the Mockup pane, `ReportMockup`, a table row it draws, `src/lib/mockupRows.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *The Mockup draws a repeated heading row once*. The layout deliberately holds the heading twice and the record count is derived from that, so the duplicate is fixed in the renderer and must not be fixed in the data |
 | dragging or retyping a control, `src/lib/repxEdit.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *Editing lives on Preview, not on Mockup*, and the two render defects that no check here would catch |
 | the Data tab, a pasted schema, `src/lib/dataSource.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *The Data tab's three states* (the pane), then [`gemini.md`](docs/notes/gemini.md) — *What binding does* (the REPX it writes). Both, in that order: the ordering bug was in the pane and the syntax is measured in the note |
@@ -211,8 +211,8 @@ broken, and nothing in the toolchain enforces any of them.
   arithmetic — this bullet used to state it as a before-and-after pair of suite totals,
   which was stale within days of being written.
 - **File naming: `PascalCase.tsx` for React components, `camelCase.ts` for everything
-  else.** 100% consistent today — **29** PascalCase components and **151** `.ts` files
-  (that is `git ls-files src`, tests included; **repo-wide the answer is 159**, because
+  else.** 100% consistent today — **29** PascalCase components and **159** `.ts` files
+  (that is `git ls-files src`, tests included; **repo-wide the answer is 167**, because
   `server.ts` and the four root configs are also `.ts`. State the scope whenever you
   quote this number — an unqualified "67" is the next thing someone will "correct" to
   73.) The single exception is `src/vite-env.d.ts`, which is Vite's own required name.
@@ -228,7 +228,9 @@ broken, and nothing in the toolchain enforces any of them.
   cheap to re-measure and the commands are given; re-measure rather than trust them.
   (Re-measured 2026-10-30, when the last figures written here were 28/129/136/37/35
   against a real 29/151/159/40/38: `DescribeReportDialog` and its test had arrived
-  unrecorded on 2026-10-28, and the parity work added `ReportPreview.test.tsx`.)
+  unrecorded on 2026-10-28, and the parity work added `ReportPreview.test.tsx`. Measured
+  again the same day after parity row 12: 153 and 161 before its six new `.ts` files,
+  so the 151 written above had already been two short.)
   **Three traps, each of which has been written in here as fact at least once.**
   **(1) Do not "correct" the 29 to 40 by counting `.tsx` files.** There are 40, and the
   eleven that are not components are deliberate: `main.tsx` is the entry point, `icons.tsx`

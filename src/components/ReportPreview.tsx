@@ -89,7 +89,10 @@ function borderLine(look: Appearance): string {
   return `${Number.isFinite(width) && width > 0 ? width : 1}px solid ${cssColor(look.BorderColor) ?? '#000'}`;
 }
 
-/** The row's value for a bound field, or the control's own text. The engine's rule, so the two agree. */
+/**
+ * The row's value for a bound field, or the control's own text: the engine's
+ * fallback, for a placement the layout did not give a text of its own.
+ */
 const printed = printedText;
 
 /**
@@ -394,7 +397,7 @@ function ControlBox({
           {control.checkState === 'checked' ? '✓' : control.checkState === 'indeterminate' ? '–' : ''}
         </span>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {printed(control.text, control.field, record)}
+          {placed.text ?? printed(control.text, control.field, record)}
         </span>
       </div>
     );
@@ -515,7 +518,7 @@ function ControlBox({
                     lineHeight: `${lineSpacingPt(cell.fontFamily, cell.fontSize ?? 9.75)}pt`,
                   }}
                 >
-                  {printed(cell.text, cell.field, record)}
+                  {placed.cellTexts?.[placed.rowStart + r]?.[c] ?? printed(cell.text, cell.field, record)}
                 </div>
               ))}
             </div>
@@ -537,8 +540,11 @@ function ControlBox({
     );
   }
 
-  // XRLabel and anything else with text in it.
-  return <div style={frame}>{printed(control.text, control.field, record)}</div>;
+  // XRLabel and anything else with text in it: what the layout evaluated and
+  // formatted for this placement -- `$1,240.00` where the binding is
+  // `[Amount]` with `{0:c2}`, a group's total where it is `sumSum` -- which
+  // was the raw value or the literal text until parity row 12.
+  return <div style={frame}>{placed.text ?? printed(control.text, control.field, record)}</div>;
 }
 
 export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy }: Props) {
