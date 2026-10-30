@@ -37,6 +37,8 @@
  */
 
 import { formatComposite, formatDate, toRoman } from './netFormat';
+import { unitsPerInch } from './reportGeometry';
+import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, type FontSpec, type MeasureText } from './textMeasure';
 
 /** The bands that carry content, in the order XtraReports prints them. */
 export type BandKind =
@@ -114,6 +116,9 @@ export interface PreviewCell {
   borders: { top: boolean; right: boolean; bottom: boolean; left: boolean };
   /** Everything the cell resolved to: colours, padding, border width and colour. */
   appearance: Appearance;
+  /** As on a control: a cell grows and wraps unless the file says otherwise. */
+  canGrow: boolean;
+  wordWrap: boolean;
   /**
    * The data field this cell's text is bound to, or null when it is a literal.
    *
@@ -224,6 +229,14 @@ export interface PreviewControl {
    * expression is data, not a literal, and is treated as shown.
    */
   visible: boolean;
+  /**
+   * Auto-sizing, with DevExpress's defaults: `CanGrow` and `WordWrap` are true
+   * unless the file says "false", `CanShrink` is false unless it says "true"
+   * (`RepxProbe emit-grow`). Read by `layoutBand` when a text measurer is given.
+   */
+  canGrow: boolean;
+  canShrink: boolean;
+  wordWrap: boolean;
   /** Populated for XRPageInfo only: what it prints and how. See `pageInfoText`. */
   pageInfo: PreviewPageInfo | null;
   /** Populated for XRTable only. */
@@ -365,6 +378,14 @@ export interface PreviewBand {
    * what DevExpress does.
    */
   columns: PreviewColumns | null;
+  /**
+   * `KeepTogether="true"`: move the whole band to the next page rather than
+   * split it. Printed: a growing record that would have been split across a
+   * page break moved whole instead. False, the default, splits it.
+   */
+  keepTogether: boolean;
+  /** `CanGrow="false"` holds the band at its designed height; it grows by default. */
+  canGrow: boolean;
 }
 
 export interface ReportStructure {
@@ -920,6 +941,8 @@ function parseTableRows(
         vAlign: alignment.vAlign,
         borders: parseBorders(look.Borders ?? null),
         appearance: look,
+        canGrow: (attrOf(cell.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
+        wordWrap: (attrOf(cell.attrs, 'WordWrap') ?? '').toLowerCase() !== 'false',
         field: parseTextBinding(slice),
       });
     }
@@ -1114,6 +1137,9 @@ function parseControls(
       borders: parseBorders(look.Borders ?? null),
       appearance: look,
       visible: parentVisible && (attrOf(item.attrs, 'Visible') ?? '').toLowerCase() !== 'false',
+      canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
+      canShrink: (attrOf(item.attrs, 'CanShrink') ?? '').toLowerCase() === 'true',
+      wordWrap: (attrOf(item.attrs, 'WordWrap') ?? '').toLowerCase() !== 'false',
       pageInfo: type === 'XRPageInfo'
         ? {
             kind: attrOf(item.attrs, 'PageInfo') || 'NumberOfTotal',
@@ -1263,6 +1289,8 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
         ? parseControls(bandSpan.text, bandsSpan.start + bandSpan.start, styles, bandLook)
         : [],
       columns: bandSpan ? parseColumns(bandSpan.text) : null,
+      keepTogether: (attrOf(item.attrs, 'KeepTogether') ?? '').toLowerCase() === 'true',
+      canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
     });
   }
 
@@ -1291,10 +1319,284 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
   return structure;
 }
 
+// -------------------------------------------------------------- band layout
+
+/** One record's values, keyed by bound field name -- the Preview's test data. */
+export type RecordValues = Record<string, string>;
+
+/** The row's value for a bound field, or the control's own text when there is none. */
+export function printedText(text: string, field: string | null, record: RecordValues | null | undefined): string {
+  if (!record || !field) return text;
+  const value = record[field];
+  return value === undefined ? text : value;
+}
+
+/**
+ * A control as it prints in one instance of its band.
+ *
+ * `y` and `height` are relative to the instance, in report units, AFTER the
+ * control has grown to fit its text, been pushed down by growing controls
+ * above it, and been cut at a page break. `y` already includes a panel's
+ * offset, so the renderer draws at `y` and not at the file's `LocationFloat`.
+ */
+export interface PlacedControl {
+  control: PreviewControl;
+  /** Its index in the band's `controls`, which edits address it by. */
+  index: number;
+  y: number;
+  height: number;
+  /** The lines this part prints when the text was measured; null when it was not. */
+  lines: string[] | null;
+  /** For an XRTable: the first row this part prints, and each printed row's height. */
+  rowStart: number;
+  rowHeights: number[] | null;
+}
+
+/** One printed occurrence of a band: a record's Detail, a page's header, a split part. */
+export interface BandInstance {
+  band: PreviewBand;
+  record: number | null;
+  height: number;
+  controls: PlacedControl[];
+}
+
+interface LayoutContext {
+  measure: MeasureText | null;
+  unit: string;
+}
+
+const EPS = 1e-6;
+const MEASURED_TYPES = new Set(['XRLabel']);
+
+/** Points inside a control's edge, from its padding and drawn borders. */
+function insetsPt(look: Appearance, borders: PreviewControl['borders']) {
+  const pad = (look.Padding ?? '').split(',').map((p) => Number(p.trim()));
+  const dpi = pad[4] && pad[4] > 0 ? pad[4] : 100;
+  const padPt = (i: number) => (Number.isFinite(pad[i]) ? (pad[i] / dpi) * 72 : 0);
+  const width = Number.parseFloat(look.BorderWidth ?? '');
+  const borderPt = (Number.isFinite(width) && width > 0 ? width : 1) * 0.75;
+  return {
+    left: padPt(0) + (borders.left ? borderPt : 0),
+    right: padPt(1) + (borders.right ? borderPt : 0),
+    top: padPt(2) + (borders.top ? borderPt : 0),
+    bottom: padPt(3) + (borders.bottom ? borderPt : 0),
+  };
+}
+
+/**
+ * The height a piece of text needs, in report units, with the lines it breaks
+ * into. The formula is the one DevExpress printed: lines times the font's line
+ * spacing, plus 1.5pt, plus the vertical padding and borders. See textMeasure.ts.
+ */
+function textHeight(
+  text: string,
+  font: { family: string | null; size: number | null; bold: boolean; italic: boolean },
+  widthUnits: number,
+  look: Appearance,
+  borders: PreviewControl['borders'],
+  wordWrap: boolean,
+  ctx: LayoutContext,
+): { lines: string[]; needUnits: number; shrinkUnits: number } {
+  const perInch = unitsPerInch(ctx.unit);
+  const toPt = (units: number) => (units / perInch) * 72;
+  const toUnits = (pt: number) => (pt / 72) * perInch;
+  const inset = insetsPt(look, borders);
+  const spec: FontSpec = {
+    family: font.family ?? 'Times New Roman',
+    sizePt: font.size ?? 9.75,
+    bold: font.bold,
+    italic: font.italic,
+  };
+  const area = toPt(widthUnits) - inset.left - inset.right;
+  const lines = wordWrap ? ctx.measure!(text, spec, area) : text ? [text.replace(/\r?\n/g, ' ')] : [];
+  const spacing = lineSpacingPt(spec.family, spec.sizePt);
+  const body = lines.length * spacing + inset.top + inset.bottom;
+  return {
+    lines,
+    needUnits: lines.length ? toUnits(body + GROW_EXTRA_PT) : 0,
+    shrinkUnits: lines.length ? toUnits(body + SHRINK_EXTRA_PT) : 0,
+  };
+}
+
+/**
+ * Lay out one printed instance of a band, the way DevExpress grows it.
+ *
+ * With no measurer every control keeps its designed size, which is what the
+ * Preview did before parity rows 7 and 8 and what the Node-side checks want.
+ * With one, measured by printing through DevExpress 20.1:
+ *
+ * - a label grows to fit its text when `CanGrow` (the default), and shrinks to
+ *   it when `CanShrink`; `WordWrap="false"` keeps it to one line;
+ * - a table row grows to its tallest cell, and every cell takes that height;
+ * - a control whose top is at or below a growing control's bottom moves down by
+ *   that growth -- whether or not the two overlap across the band, which the
+ *   printed report showed for a label beside, not under, the growing one;
+ * - the band grows by however far its lowest content moved, keeping the space
+ *   that was below it, unless the band says `CanGrow="false"`.
+ */
+export function layoutBand(
+  band: PreviewBand,
+  record: number | null,
+  values: RecordValues | null,
+  ctx: LayoutContext,
+): BandInstance {
+  const items = band.controls
+    .map((control, index) => ({ control, index }))
+    .filter(({ control }) => control.visible)
+    .map(({ control, index }) => {
+      const top = control.y + control.offsetY;
+      let height = control.height;
+      let lines: string[] | null = null;
+      let rowHeights: number[] | null = null;
+      if (ctx.measure && MEASURED_TYPES.has(control.type)) {
+        const text = printedText(control.text, control.field, values);
+        const m = textHeight(text, { family: control.fontFamily, size: control.fontSize, bold: control.bold, italic: control.italic },
+          control.width, control.appearance, control.borders, control.wordWrap, ctx);
+        lines = m.lines;
+        if (control.canGrow && m.needUnits > height) height = m.needUnits;
+        else if (control.canShrink && m.shrinkUnits < height) height = m.shrinkUnits;
+      } else if (ctx.measure && control.type === 'XRTable' && control.rows.length) {
+        const designRow = control.height / control.rows.length;
+        rowHeights = control.rows.map((row) => {
+          const total = row.cells.reduce((sum, c) => sum + c.weight, 0) || 1;
+          let tallest = designRow;
+          for (const cell of row.cells) {
+            if (!cell.canGrow) continue;
+            const text = printedText(cell.text, cell.field, values);
+            const m = textHeight(text, { family: cell.fontFamily, size: cell.fontSize, bold: cell.bold, italic: cell.italic },
+              (control.width * cell.weight) / total, cell.appearance, cell.borders, cell.wordWrap, ctx);
+            tallest = Math.max(tallest, m.needUnits);
+          }
+          return tallest;
+        });
+        height = rowHeights.reduce((sum, h) => sum + h, 0);
+      }
+      return { control, index, top, designHeight: control.height, height, lines, rowHeights, shift: 0 };
+    })
+    .sort((a, b) => a.top - b.top);
+
+  // Push-down, cascading: each control moves by the largest growth of anything
+  // that ended at or above its top, plus however far that thing itself moved.
+  for (let i = 0; i < items.length; i++) {
+    for (let j = 0; j < i; j++) {
+      const above = items[j];
+      if (above.top + above.designHeight <= items[i].top + EPS) {
+        items[i].shift = Math.max(items[i].shift, above.shift + Math.max(0, above.height - above.designHeight));
+      }
+    }
+  }
+
+  const designBottom = Math.max(0, ...items.map((it) => it.top + it.designHeight));
+  const placedBottom = Math.max(0, ...items.map((it) => it.top + it.shift + it.height));
+  return {
+    band,
+    record,
+    height: band.canGrow ? band.height + Math.max(0, placedBottom - designBottom) : band.height,
+    controls: items.map((it) => ({
+      control: it.control,
+      index: it.index,
+      y: it.top + it.shift,
+      height: it.height,
+      lines: it.lines,
+      rowStart: 0,
+      rowHeights: it.rowHeights,
+    })),
+  };
+}
+
+/**
+ * Cut a band instance at `avail` units down, for a page break.
+ *
+ * Returns the part that stays and the part that continues, or a null first
+ * part when nothing at all fits above the cut. Measured on a record DevExpress
+ * split across pages 2 and 3: the lines of a growing label that fit stayed,
+ * the rest continued at the top of the next page, and every control below it
+ * followed at its original distance from where that continuation ENDED -- so
+ * the label below landed at 71.5 and the record's remainder was 46.5 tall,
+ * both of which this reproduces exactly.
+ *
+ * Text splits between lines, a table between rows; anything else that crosses
+ * the cut moves whole.
+ */
+export function splitInstance(inst: BandInstance, avail: number, unit: string): [BandInstance | null, BandInstance | null] {
+  const perInch = unitsPerInch(unit);
+  const toUnits = (pt: number) => (pt / 72) * perInch;
+  const first: PlacedControl[] = [];
+  const crossing: { origBottom: number; origY: number; part: PlacedControl }[] = [];
+  const below: PlacedControl[] = [];
+
+  for (const pc of inst.controls) {
+    const bottom = pc.y + pc.height;
+    if (bottom <= avail + EPS) { first.push(pc); continue; }
+    if (pc.y >= avail - EPS) { below.push(pc); continue; }
+
+    const c = pc.control;
+    if (pc.lines && pc.lines.length > 1) {
+      const inset = insetsPt(c.appearance, c.borders);
+      const spacing = toUnits(lineSpacingPt(c.fontFamily ?? 'Times New Roman', c.fontSize ?? 9.75));
+      const fit = Math.floor((avail - pc.y - toUnits(inset.top)) / spacing + EPS);
+      if (fit >= 1 && fit < pc.lines.length) {
+        const rest = pc.lines.slice(fit);
+        first.push({ ...pc, height: avail - pc.y, lines: pc.lines.slice(0, fit) });
+        crossing.push({
+          origBottom: bottom,
+          origY: pc.y,
+          part: { ...pc, y: 0, lines: rest, height: rest.length * spacing + toUnits(GROW_EXTRA_PT + inset.top + inset.bottom) },
+        });
+        continue;
+      }
+    }
+    if (pc.rowHeights && pc.rowHeights.length > 1) {
+      let used = 0;
+      let k = 0;
+      while (k < pc.rowHeights.length && pc.y + used + pc.rowHeights[k] <= avail + EPS) used += pc.rowHeights[k++];
+      if (k >= 1) {
+        const rest = pc.rowHeights.slice(k);
+        first.push({ ...pc, height: used, rowHeights: pc.rowHeights.slice(0, k) });
+        crossing.push({
+          origBottom: bottom,
+          origY: pc.y,
+          part: { ...pc, y: 0, rowStart: pc.rowStart + k, rowHeights: rest, height: rest.reduce((s, h) => s + h, 0) },
+        });
+        continue;
+      }
+    }
+    // Cannot split: the whole control continues at the top of the next part.
+    crossing.push({ origBottom: bottom, origY: pc.y, part: { ...pc, y: 0 } });
+  }
+
+  if (!first.length) return [null, inst];
+
+  // Everything below the cut follows the continuation that was above it.
+  const rest: PlacedControl[] = crossing.map((x) => x.part);
+  for (const pc of below) {
+    let delta = 0;
+    for (const x of crossing) {
+      if (x.origBottom <= pc.y + EPS) delta = Math.max(delta, x.part.height - (x.origBottom - avail));
+    }
+    rest.push({ ...pc, y: pc.y - avail + delta });
+  }
+
+  const contentBottom = Math.max(0, ...inst.controls.map((pc) => pc.y + pc.height));
+  const gap = Math.max(0, inst.height - contentBottom);
+  const restHeight = rest.length ? Math.max(...rest.map((pc) => pc.y + pc.height)) + gap : 0;
+  return [
+    { band: inst.band, record: inst.record, height: avail, controls: first },
+    rest.length ? { band: inst.band, record: inst.record, height: restHeight, controls: rest } : null,
+  ];
+}
+
 // --------------------------------------------------------------- pagination
 
 export interface PlacedBand {
   band: PreviewBand;
+  /**
+   * How tall this placement prints: the band's designed height, or more when
+   * its text grew, or a part of it when a page break split it.
+   */
+  height: number;
+  /** The controls as they print in this placement. See `PlacedControl`. */
+  controls: PlacedControl[];
   /** Page-relative top edge, in report units. */
   top: number;
   /**
@@ -1371,11 +1673,21 @@ const findBand = (bands: PreviewBand[], kind: BandKind) => bands.find((b) => b.k
 export function paginate(
   structure: ReportStructure,
   records: number,
-  options: { maxPages?: number } = {},
+  options: {
+    maxPages?: number;
+    /** Measures text so controls grow and bands split as DevExpress prints them. */
+    measure?: MeasureText | null;
+    /** Test data: record n prints row (n - 1) modulo the count. */
+    rows?: RecordValues[] | null;
+  } = {},
 ): PaginatedReport {
   const maxPages = options.maxPages ?? 50;
   const problems = [...structure.problems];
   const bands = structure.bands;
+  const ctx: LayoutContext = { measure: options.measure ?? null, unit: structure.unit };
+  const rowFor = (i: number) => (options.rows?.length ? options.rows[i % options.rows.length] : null);
+  const instance = (band: PreviewBand, record: number | null = null, values: RecordValues | null = null) =>
+    layoutBand(band, record, values, ctx);
 
   const topMargin = Math.max(structure.margins.top, findBand(bands, 'TopMargin')?.height ?? 0);
   const bottomMargin = Math.max(structure.margins.bottom, findBand(bands, 'BottomMargin')?.height ?? 0);
@@ -1400,11 +1712,18 @@ export function paginate(
   const groupHeaders = bands.filter((b) => b.kind === 'GroupHeader');
   const groupFooters = [...bands.filter((b) => b.kind === 'GroupFooter')].reverse();
 
-  const pageBottom = structure.page.height - bottomMargin - (pageFooter?.height ?? 0);
+  // The page furniture prints the same on every page, so it is laid out once.
+  const reportHeaderInst = reportHeader ? instance(reportHeader) : null;
+  const pageHeaderInst = pageHeader ? instance(pageHeader) : null;
+  const pageFooterInst = pageFooter ? instance(pageFooter) : null;
+
+  const pageBottom = structure.page.height - bottomMargin - (pageFooterInst?.height ?? 0);
 
   const pages: PreviewPage[] = [];
   let current: PreviewPage | null = null;
   let cursor = 0;
+  /** Where content starts on the current page, below its headers. */
+  let pageContentTop = 0;
 
   /*
    * Where band content goes across the page: from the left margin, as wide as
@@ -1449,42 +1768,71 @@ export function paginate(
    * on page 1 and how much height it consumes, both of which are order-blind.
    * Found on 2026-09-06 by looking at the Preview pane rather than at the code.
    */
+  /** A placement at the full printable width, from an instance. */
+  const at = (inst: BandInstance, top: number): PlacedBand => ({
+    band: inst.band, height: inst.height, controls: inst.controls, top, left: contentLeft, width: fullWidth, record: inst.record,
+  });
+
   const startPage = (withReportHeader = false) => {
     current = { number: pages.length + 1, bands: [] };
     pages.push(current);
     cursor = topMargin;
-    if (withReportHeader && reportHeader) {
-      current.bands.push({ band: reportHeader, top: cursor, left: contentLeft, width: fullWidth, record: null });
-      cursor += reportHeader.height;
+    if (withReportHeader && reportHeaderInst) {
+      current.bands.push(at(reportHeaderInst, cursor));
+      cursor += reportHeaderInst.height;
     }
-    if (pageHeader) {
-      current.bands.push({ band: pageHeader, top: cursor, left: contentLeft, width: fullWidth, record: null });
-      cursor += pageHeader.height;
+    if (pageHeaderInst) {
+      current.bands.push(at(pageHeaderInst, cursor));
+      cursor += pageHeaderInst.height;
     }
-    if (pageFooter) {
-      current.bands.push({
-        band: pageFooter,
-        top: structure.page.height - bottomMargin - pageFooter.height,
-        left: contentLeft,
-        width: fullWidth,
-        record: null,
-      });
+    if (pageFooterInst) {
+      current.bands.push(at(pageFooterInst, structure.page.height - bottomMargin - pageFooterInst.height));
     }
+    pageContentTop = cursor;
   };
 
-  /** Place a band, opening a new page first if it will not fit on this one. */
-  const place = (band: PreviewBand, record: number | null) => {
+  /**
+   * Place one band instance, splitting it across a page break when it does not
+   * fit -- DevExpress's default, measured -- or moving it whole to the next page
+   * when the band says `KeepTogether="true"` and it fits on a page at all.
+   * Without a measurer every height is the designed one, so a band that does
+   * not fit still moves to the next page whole unless its controls are
+   * separately placeable, which is DevExpress's behaviour too.
+   */
+  const place = (inst: BandInstance) => {
     if (!current) startPage();
-    if (cursor + band.height > pageBottom && pages.length < maxPages) {
+    let part: BandInstance | null = inst;
+    for (let guard = 0; part && guard < 10_000; guard++) {
+      const avail = pageBottom - cursor;
+      const atTop = cursor <= pageContentTop + EPS;
+      // Put the part here as it is: it fits, or nothing better is possible.
+      const put = () => {
+        current!.bands.push(at(part!, cursor));
+        cursor += part!.height;
+      };
+      if (part.height <= avail + EPS) return put();
+      if (pages.length >= maxPages && !atTop) return put();
+      if (part.band.keepTogether && part.height <= pageBottom - pageContentTop + EPS && !atTop) {
+        startPage();
+        continue;
+      }
+      const [first, rest]: [BandInstance | null, BandInstance | null] = splitInstance(part, avail, ctx.unit);
+      if (!first) {
+        if (atTop) return put();
+        startPage();
+        continue;
+      }
+      current!.bands.push(at(first, cursor));
+      cursor += first.height;
+      if (!rest || pages.length >= maxPages) return;
       startPage();
+      part = rest;
     }
-    current!.bands.push({ band, top: cursor, left: contentLeft, width: fullWidth, record });
-    cursor += band.height;
   };
 
   startPage(true);
 
-  for (const header of groupHeaders) place(header, null);
+  for (const header of groupHeaders) place(instance(header));
 
   let placedRecords = 0;
   if (detail && records > 0) {
@@ -1501,8 +1849,9 @@ export function paginate(
 
     if (!columns) {
       for (let i = 0; i < records; i++) {
-        if (pages.length >= maxPages && cursor + detail.height > pageBottom) break;
-        place(detail, i + 1);
+        const record = instance(detail, i + 1, rowFor(i));
+        if (pages.length >= maxPages && cursor + record.height > pageBottom) break;
+        place(record);
         placedRecords++;
       }
     } else {
@@ -1555,8 +1904,13 @@ export function paginate(
         const row = downThenAcross ? onPage % rowsPerPage : Math.floor(onPage / columns.count);
         const column = downThenAcross ? Math.floor(onPage / rowsPerPage) : onPage % columns.count;
 
+        // Columns keep the designed height: a grid of slots cannot hold records
+        // of different heights, and growth inside columns is not measured yet.
+        const slot = layoutBand(detail, i + 1, rowFor(i), { measure: null, unit: ctx.unit });
         current!.bands.push({
           band: detail,
+          height: detail.height,
+          controls: slot.controls,
           top: pageTop + row * detail.height,
           left: contentLeft + column * (columnWidth + columns.spacing),
           width: columnWidth,
@@ -1574,8 +1928,8 @@ export function paginate(
     }
   }
 
-  for (const footer of groupFooters) place(footer, null);
-  if (reportFooter) place(reportFooter, null);
+  for (const footer of groupFooters) place(instance(footer));
+  if (reportFooter) place(instance(reportFooter));
 
   if (placedRecords < records) {
     problems.push(

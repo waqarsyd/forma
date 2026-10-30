@@ -21,8 +21,12 @@ import {
   pageInfoText,
   cssColor,
   cssPadding,
+  layoutBand,
+  splitInstance,
   recordCountFromLayout,
   decodeXmlText,
+  type PlacedBand,
+  type PlacedControl,
 } from './reportPreview';
 import { liftStyles } from './repxStyles';
 
@@ -99,13 +103,13 @@ describe('reading the report out of the REPX', () => {
       {
         text: 'Item', weight: 3, fontSize: 9, fontFamily: 'Arial', bold: true, italic: false,
         align: 'left', vAlign: 'top', borders: { top: false, right: false, bottom: false, left: false },
-        appearance: { Font: 'Arial, 9pt, style=Bold' }, field: null,
+        appearance: { Font: 'Arial, 9pt, style=Bold' }, canGrow: true, wordWrap: true, field: null,
       },
       {
         // No font anywhere above it, so DevExpress 20.1's own default.
         text: 'Amount', weight: 1, fontSize: 9.75, fontFamily: 'Times New Roman', bold: false, italic: false,
         align: 'right', vAlign: 'middle', borders: { top: false, right: false, bottom: false, left: false },
-        appearance: { Font: 'Times New Roman, 9.75pt', TextAlignment: 'MiddleRight' }, field: null,
+        appearance: { Font: 'Times New Roman, 9.75pt', TextAlignment: 'MiddleRight' }, canGrow: true, wordWrap: true, field: null,
       },
     ]);
   });
@@ -969,7 +973,7 @@ describe('paginating into columns', () => {
   it('puts the report footer below the columns, not inside them', () => {
     const footer = '';
     const structure = build(2, 'AcrossThenDown', 100, footer);
-    structure.bands.push({ kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null });
+    structure.bands.push({ kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null, keepTogether: false, canGrow: true });
     const result = paginate(structure, 4);
     const rf = result.pages[0].bands.find((b) => b.band.kind === 'ReportFooter')!;
     // Two rows of 100 used, so the footer starts at 200 rather than overlapping.
@@ -1491,5 +1495,262 @@ describe('colour, fill, padding and borders, as DevExpress prints them', () => {
     expect(cssPadding('8,8,4,4,96')).toBe('4px 8px 4px 8px');
     expect(cssPadding('2,2,0,0')).toBe('0px 1.92px 0px 1.92px');
     expect(cssPadding('nonsense')).toBeUndefined();
+  });
+});
+
+/*
+ * Growing text and split records, against what DevExpress PRINTED.
+ *
+ * The fixture is case c02 of docs/proposals/devexpress-parity.md: a 50-unit
+ * Detail band of 9pt Arial labels over 30 records, rendered through DevExpress
+ * 20.1 with `RepxProbe render` on 2026-10-30. The measurer returns the lines
+ * DevExpress itself printed for each note -- which the browser's canvas was
+ * shown to reproduce exactly -- so every expectation below is a position,
+ * height or page DevExpress drew, and the test asks whether the layout engine
+ * arrives at the same place from the same lines.
+ */
+describe('growing text and split records, as DevExpress prints them', () => {
+  const LONG = 'The delivery was split across two vehicles because the second pallet missed the cut-off, and the customer asked for the balance to be invoiced separately once it arrives. ';
+  const note = (i: number) => ['', 'Short note.', LONG.slice(0, 120), LONG + LONG, 'Paid on account.', (LONG + LONG + LONG + LONG).slice(0, 380)][i % 6];
+  // The lines DevExpress printed for each long note, at 216pt in Arial 9pt.
+  const DX_LINES: Record<string, string[]> = {
+    [note(2)]: ['The delivery was split across two vehicles because', 'the second pallet missed the cut-off, and the customer', 'asked for the'],
+    [note(3)]: [
+      'The delivery was split across two vehicles because', 'the second pallet missed the cut-off, and the customer',
+      'asked for the balance to be invoiced separately once', 'it arrives. The delivery was split across two vehicles',
+      'because the second pallet missed the cut-off, and the', 'customer asked for the balance to be invoiced', 'separately once it arrives.',
+    ],
+    [note(5)]: [
+      'The delivery was split across two vehicles because', 'the second pallet missed the cut-off, and the customer',
+      'asked for the balance to be invoiced separately once', 'it arrives. The delivery was split across two vehicles',
+      'because the second pallet missed the cut-off, and the', 'customer asked for the balance to be invoiced',
+      'separately once it arrives. The delivery was split', 'across two vehi',
+    ],
+  };
+  const dxMeasure = (text: string) => DX_LINES[text] ?? (text ? [text] : []);
+  const rows = Array.from({ length: 30 }, (_, k) => {
+    const i = k + 1;
+    return { Customer: `C${String(i).padStart(4, '0')}`, Notes: note(i), Extra: i % 4 === 0 ? `Extra line for record ${i}` : '' };
+  });
+
+  const bound = (n: number, name: string, field: string, x: number, y: number, w: number, extra = '') =>
+    `<Item${n} Ref="${20 + n}" ControlType="XRLabel" Name="${name}" Font="Arial, 9pt"${extra} LocationFloat="${x},${y}" SizeF="${w},20">` +
+    `<ExpressionBindings><Item1 Ref="${40 + n}" EventName="BeforePrint" PropertyName="Text" Expression="[${field}]" /></ExpressionBindings></Item${n}>`;
+  const c02 = (detailAttrs = '') =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">' +
+    '<Bands><Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />' +
+    `<Item2 Ref="3" ControlType="DetailBand" Name="Detail" HeightF="50"${detailAttrs}><Controls>` +
+    bound(1, 'lblName', 'Customer', 0, 0, 150) +
+    bound(2, 'lblGrow', 'Notes', 160, 0, 300) +
+    bound(3, 'lblNoWrap', 'Notes', 470, 0, 120, ' WordWrap="false"') +
+    bound(4, 'lblNoGrow', 'Notes', 600, 0, 150, ' CanGrow="false"') +
+    '<Item5 Ref="25" ControlType="XRLabel" Name="lblBelow" Text="BELOW-GROW" Font="Arial, 9pt" LocationFloat="160,25" SizeF="300,20" />' +
+    bound(6, 'lblShrink', 'Extra', 0, 25, 150, ' CanShrink="true"') +
+    '</Controls></Item2>' +
+    '<Item3 Ref="4" ControlType="PageFooterBand" Name="PageFooter" HeightF="30"><Controls>' +
+    '<Item1 Ref="30" ControlType="XRPageInfo" Name="pageOfTotal" PageInfo="NumberOfTotal" TextFormatString="Page {0} of {1}" LocationFloat="0,5" SizeF="300,20" />' +
+    '</Controls></Item3>' +
+    '<Item4 Ref="5" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" /></Bands></XtraReportsLayoutSerializer>';
+
+  const run = (detailAttrs = '') => paginate(parseReportStructure(c02(detailAttrs)), 30, { measure: dxMeasure, rows });
+  const details = (page: { bands: PlacedBand[] }) => page.bands.filter((b) => b.band.kind === 'Detail');
+  const control = (placed: PlacedBand, name: string) => placed.controls.find((pc) => pc.control.name === name)!;
+
+  it('puts every record on the page DevExpress printed it on', () => {
+    const report = run();
+    expect(report.pages).toHaveLength(3); // DevExpress: 3 pages
+    expect(details(report.pages[0]).map((b) => b.record)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(details(report.pages[1]).map((b) => b.record)).toEqual([12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]);
+    expect(details(report.pages[2]).map((b) => b.record)).toEqual([23, 24, 25, 26, 27, 28, 29, 30]);
+  });
+
+  it('grows each record by its text and stacks them where DevExpress did', () => {
+    const tops = details(run().pages[0]).map((b) => b.top);
+    // DevExpress's record tops on page 1.
+    [50, 100, 175.2, 307.9, 357.9, 505, 555, 605, 680.2, 812.9, 862.9].forEach((y, i) => expect(tops[i]).toBeCloseTo(y, 1));
+  });
+
+  it('grows the label by lines x 1.15em + 1.5pt, and holds WordWrap=false and CanGrow=false to one line', () => {
+    const page = run().pages[0];
+    const record = (n: number) => details(page).find((b) => b.record === n)!;
+    expect(control(record(2), 'lblGrow').height).toBeCloseTo(45.2, 1); // 3 lines
+    expect(control(record(3), 'lblGrow').height).toBeCloseTo(102.7, 1); // 7 lines
+    expect(control(record(5), 'lblGrow').height).toBeCloseTo(117.07, 1); // 8 lines
+    expect(control(record(5), 'lblNoWrap').height).toBe(20);
+    expect(control(record(5), 'lblNoGrow').height).toBe(20);
+    expect(control(record(5), 'lblGrow').lines).toEqual(DX_LINES[note(5)]);
+  });
+
+  it('pushes everything that starts below a growing label down by its growth, beside it or under it', () => {
+    const record5 = details(run().pages[0]).find((b) => b.record === 5)!;
+    // DevExpress: BELOW-GROW at 25 + 97.07, and the shrink label beside it too.
+    expect(control(record5, 'lblBelow').y).toBeCloseTo(122.07, 1);
+    expect(control(record5, 'lblShrink').y).toBeCloseTo(122.07, 1);
+    expect(record5.height).toBeCloseTo(147.07, 1);
+  });
+
+  it('shrinks an empty CanShrink label to nothing and a one-line one to its line', () => {
+    const page = run().pages[0];
+    expect(control(details(page).find((b) => b.record === 1)!, 'lblShrink').height).toBe(0);
+    // DevExpress: 16.0 for "Extra line for record 4" -- 10.35pt plus 1.17pt.
+    expect(control(details(page).find((b) => b.record === 4)!, 'lblShrink').height).toBeCloseTo(16.0, 1);
+  });
+
+  it('splits a record across the page break at a line, as DevExpress did with C0023', () => {
+    const report = run();
+    const first = details(report.pages[1]).find((b) => b.record === 23)!;
+    const rest = details(report.pages[2]).find((b) => b.record === 23)!;
+    // Page 2: from 912.9 to the page footer at 1020, with seven of the eight lines.
+    expect(first.top).toBeCloseTo(912.9, 1);
+    expect(first.height).toBeCloseTo(107.1, 1);
+    expect(control(first, 'lblGrow').lines).toEqual(DX_LINES[note(5)].slice(0, 7));
+    expect(control(first, 'lblName').y).toBe(0);
+    // Page 3: the last line at the top, BELOW-GROW at 71.5 and the next record at 96.5.
+    expect(rest.top).toBeCloseTo(50, 6);
+    expect(control(rest, 'lblGrow').lines).toEqual(['across two vehi']);
+    expect(rest.top + control(rest, 'lblBelow').y).toBeCloseTo(71.5, 1);
+    expect(rest.height).toBeCloseTo(46.5, 1);
+    expect(details(report.pages[2])[1].top).toBeCloseTo(96.5, 1);
+  });
+
+  it('moves the record whole to the next page with KeepTogether="true", as DevExpress did', () => {
+    const report = run(' KeepTogether="true"');
+    expect(details(report.pages[1]).map((b) => b.record).at(-1)).toBe(22);
+    const moved = details(report.pages[2])[0];
+    expect(moved.record).toBe(23);
+    expect(moved.top).toBe(50);
+    expect(moved.height).toBeCloseTo(147.07, 1);
+    expect(details(report.pages[2])[1].top).toBeCloseTo(197.1, 1); // DevExpress: C0024 at 197.1
+  });
+
+  it('lays every control out at its designed size when there is no measurer', () => {
+    const report = paginate(parseReportStructure(c02()), 30, { rows });
+    for (const placed of report.pages.flatMap(details)) {
+      for (const pc of placed.controls) {
+        expect(pc.lines).toBeNull();
+        expect(pc.height).toBe(pc.control.height);
+      }
+    }
+  });
+
+  it('splits a fixed-height record between its controls, as DevExpress did', () => {
+    // Case s14, printed: a 50-unit record with labels at 0 and 25, after a
+    // 30-unit report header. Record 20 had 20 units left on page 1, so its top
+    // label printed there and its second continued 5 units into page 2 -- its
+    // own gap below the cut -- with record 21 after it at 30.
+    const xml =
+      '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
+      '<Bands><Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />' +
+      '<Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="30"><Controls><Item1 Ref="10" ControlType="XRLabel" Name="title" Text="TITLE" LocationFloat="0,0" SizeF="300,20" /></Controls></Item2>' +
+      '<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="50"><Controls>' +
+      '<Item1 Ref="11" ControlType="XRLabel" Name="top" Text="row" LocationFloat="0,0" SizeF="300,20" />' +
+      '<Item2 Ref="13" ControlType="XRLabel" Name="bottom" Text="SECOND LINE" LocationFloat="0,25" SizeF="300,20" />' +
+      '</Controls></Item3><Item4 Ref="5" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" /></Bands></XtraReportsLayoutSerializer>';
+    const report = paginate(parseReportStructure(xml), 25);
+    const page1 = details(report.pages[0]);
+    const page2 = details(report.pages[1]);
+    expect(page1.map((b) => b.record)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+    expect(page1[19].controls.map((pc) => pc.control.name)).toEqual(['top']);
+    expect(page2[0]).toMatchObject({ record: 20, top: 50 });
+    expect(page2[0].controls.map((pc) => [pc.control.name, pc.y])).toEqual([['bottom', 5]]);
+    expect(page2[1]).toMatchObject({ record: 21, top: 80 }); // DevExpress: 30 into the page's content
+  });
+});
+
+describe('layoutBand and splitInstance, the rules on their own', () => {
+  const band = (controls: string, attrs = '', height = 100) =>
+    parseReportStructure(
+      '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" PageWidth="850" PageHeight="1100">' +
+      `<Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${height}"${attrs}><Controls>${controls}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`,
+    ).bands[0];
+  const label = (n: number, name: string, text: string, y: number, h = 20, extra = '') =>
+    `<Item${n} Ref="${10 + n}" ControlType="XRLabel" Name="${name}" Text="${text}" Font="Arial, 10pt"${extra} LocationFloat="0,${y}" SizeF="300,${h}" />`;
+  // Each "L" in a text is one line; 10pt Arial spacing is 11.5pt, 15.97 units.
+  const byL = (text: string) => (text ? Array.from({ length: Math.max(1, (text.match(/L/g) ?? []).length) }, (_, i) => `line ${i + 1}`) : []);
+  const ctx = { measure: byL, unit: 'HundredthsOfAnInch' };
+  const line = (11.5 / 72) * 100;
+  const grown = (lines: number) => ((lines * 11.5 + 1.5) / 72) * 100;
+  const by = (inst: { controls: { control: { name: string } }[] }, name: string) => inst.controls.find((pc) => pc.control.name === name) as PlacedControl;
+
+  it('cascades push-down through a chain of growing controls', () => {
+    const inst = layoutBand(band(label(1, 'a', 'LLL', 0) + label(2, 'b', 'LL', 25) + label(3, 'c', 'x', 50)), 1, null, ctx);
+    const growthA = grown(3) - 20;
+    const growthB = grown(2) - 20;
+    expect(by(inst, 'b').y).toBeCloseTo(25 + growthA, 6);
+    expect(by(inst, 'c').y).toBeCloseTo(50 + growthA + growthB, 6);
+    expect(inst.height).toBeCloseTo(100 + growthA + growthB, 6);
+  });
+
+  it('holds a band at its designed height when it says CanGrow="false"', () => {
+    const inst = layoutBand(band(label(1, 'a', 'LLLLL', 0), ' CanGrow="false"'), 1, null, ctx);
+    expect(by(inst, 'a').height).toBeCloseTo(grown(5), 6);
+    expect(inst.height).toBe(100);
+  });
+
+  it('splits a text taller than several pages into consecutive parts, every line exactly once', () => {
+    const lines = 'L'.repeat(200);
+    const xml = '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100">' +
+      `<Bands><Item1 Ref="2" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="20"><Controls>${label(1, 'terms', lines, 0)}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`;
+    const report = paginate(parseReportStructure(xml), 0, { measure: byL });
+    const parts = report.pages.flatMap((p) => p.bands.filter((b) => b.band.kind === 'ReportFooter'));
+    expect(parts.length).toBe(Math.ceil(200 / Math.floor(1100 / line + 1e-6)));
+    expect(parts.flatMap((b) => by(b, 'terms').lines)).toEqual(byL(lines));
+  });
+
+  it('splits a table between rows and moves a control that cannot split whole', () => {
+    const table = '<Item1 Ref="11" ControlType="XRTable" Name="t" LocationFloat="0,0" SizeF="300,60" Font="Arial, 10pt"><Rows>' +
+      [1, 2, 3].map((r) => `<Item${r} Ref="${20 + r}" ControlType="XRTableRow" Name="r${r}" Weight="1"><Cells><Item1 Ref="${30 + r}" ControlType="XRTableCell" Name="c${r}" Text="x" Weight="1" /></Cells></Item${r}>`).join('') +
+      '</Rows></Item1>' +
+      '<Item2 Ref="12" ControlType="XRPictureBox" Name="pic" LocationFloat="400,0" SizeF="100,60" />';
+    const inst = layoutBand(band(table, '', 60), 1, null, ctx);
+    const [first, rest] = splitInstance(inst, 45, 'HundredthsOfAnInch');
+    expect(by(first!, 't').rowHeights).toEqual([20, 20]);
+    expect(by(rest!, 't')).toMatchObject({ rowStart: 2, rowHeights: [20], y: 0 });
+    // The picture crossed the cut and cannot be divided, so it continues whole.
+    expect(first!.controls.some((pc) => pc.control.name === 'pic')).toBe(false);
+    expect(by(rest!, 'pic')).toMatchObject({ y: 0, height: 60 });
+  });
+
+  it('reports nothing to place when nothing fits above the cut', () => {
+    const inst = layoutBand(band(label(1, 'a', 'x', 10)), 1, null, ctx);
+    expect(splitInstance(inst, 5, 'HundredthsOfAnInch')).toEqual([null, inst]);
+  });
+});
+
+/*
+ * A growing table row, against case c03: the row takes its tallest cell's
+ * height and every cell draws at it. DevExpress printed a 2-line note as a
+ * 31.9-unit row and a 5-line one as 75, with each cell's 1px bottom border
+ * counted, and fitted 22 rows on page 1 and 8 on page 2.
+ */
+describe('a growing table row, as DevExpress prints it', () => {
+  const LONG = 'The delivery was split across two vehicles because the second pallet missed the cut-off, and the customer asked for the balance to be invoiced separately once it arrives. ';
+  const note = (i: number) => ['', 'Short note.', LONG.slice(0, 120), LONG + LONG, 'Paid on account.', (LONG + LONG + LONG + LONG).slice(0, 380)][i % 6];
+  // Line counts DevExpress printed in the 324pt Notes cell.
+  const LINES: Record<string, number> = { [note(2)]: 2, [note(3)]: 5, [note(5)]: 5 };
+  const measure = (text: string) => (text ? Array.from({ length: LINES[text] ?? 1 }, () => 'x') : []);
+  const rows = Array.from({ length: 30 }, (_, k) => ({ Customer: `C${String(k + 1).padStart(4, '0')}`, Notes: note(k + 1), Amount: '1.00' }));
+  const cell = (n: number, name: string, field: string, weight: number) =>
+    `<Item${n} Ref="${60 + n}" ControlType="XRTableCell" Name="${name}" Weight="${weight}"><ExpressionBindings><Item1 Ref="${70 + n}" EventName="BeforePrint" PropertyName="Text" Expression="[${field}]" /></ExpressionBindings></Item${n}>`;
+  const xml = '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">' +
+    '<Bands><Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />' +
+    '<Item2 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="25"><Controls><Item1 Ref="10" ControlType="XRLabel" Name="head" Text="Customer" Font="Arial, 9pt, style=Bold" LocationFloat="0,0" SizeF="750,25" /></Controls></Item2>' +
+    '<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="25"><Controls>' +
+    '<Item1 Ref="11" ControlType="XRTable" Name="tblRow" LocationFloat="0,0" SizeF="750,25" Borders="Left, Right, Bottom" Font="Arial, 9pt"><Rows>' +
+    `<Item1 Ref="12" ControlType="XRTableRow" Name="row" Weight="1"><Cells>${cell(1, 'cCust', 'Customer', 1)}${cell(2, 'cNotes', 'Notes', 3)}${cell(3, 'cAmt', 'Amount', 1)}</Cells></Item1>` +
+    '</Rows></Item1></Controls></Item3>' +
+    '<Item4 Ref="5" ControlType="PageFooterBand" Name="PageFooter" HeightF="30" />' +
+    '<Item5 Ref="6" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" /></Bands></XtraReportsLayoutSerializer>';
+
+  it('grows the row to its tallest cell, bottom border included, and fits the rows DevExpress fitted', () => {
+    const report = paginate(parseReportStructure(xml), 30, { measure, rows });
+    const details = report.pages.map((p) => p.bands.filter((b) => b.band.kind === 'Detail'));
+    const heightOf = (n: number) => details.flat().find((b) => b.record === n)!.height;
+    expect(heightOf(1)).toBe(25);
+    expect(heightOf(2)).toBeCloseTo(31.9, 1); // 2 lines
+    expect(heightOf(3)).toBeCloseTo(75, 1); // 5 lines
+    expect(details.map((d) => d.length)).toEqual([22, 8]);
   });
 });

@@ -344,6 +344,9 @@ src/
                        pane and the PDF export are drawn from),
                        netFormat (.NET composite and date formatting, so a
                        page number or a value previews as DevExpress prints it),
+                       textMeasure (how many lines a text breaks into and how
+                       tall that prints, so the Preview grows controls and
+                       breaks pages where DevExpress does),
                        revisions (the report's history, and a
                        structural diff by control name — added, removed,
                        moved, resized, retyped — because the model rewrites

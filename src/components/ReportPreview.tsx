@@ -35,16 +35,20 @@ import {
   paginate,
   activeColumns,
   pageInfoText,
+  printedText,
   cssColor,
   cssPadding,
   recordCountFromLayout,
   type Appearance,
+  type PlacedControl,
+  type RecordValues,
   type PreviewControl,
   type PaginatedReport,
 } from '../lib/reportPreview';
 import { parseParameters } from '../lib/repxParameters';
 import { readBoundFields } from '../lib/repxBindingPlan';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
+import { canvasMeasurer, lineSpacingPt } from '../lib/textMeasure';
 import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
 import type { ReportLayout } from '../lib/reportTypes';
 
@@ -73,7 +77,7 @@ interface Props {
   testDataBusy?: boolean;
 }
 
-export type TestRow = Record<string, string>;
+export type TestRow = RecordValues;
 
 /**
  * A border as CSS, in the control's own width and colour. `BorderWidth` is in
@@ -85,12 +89,8 @@ function borderLine(look: Appearance): string {
   return `${Number.isFinite(width) && width > 0 ? width : 1}px solid ${cssColor(look.BorderColor) ?? '#000'}`;
 }
 
-/** The row's value for a bound field, or the control's own text when there is none. */
-function printed(text: string, field: string | null, record: TestRow | null | undefined): string {
-  if (!record || !field) return text;
-  const value = record[field];
-  return value === undefined ? text : value;
-}
+/** The row's value for a bound field, or the control's own text. The engine's rule, so the two agree. */
+const printed = printedText;
 
 /**
  * A drag in progress. Null between gestures.
@@ -129,12 +129,19 @@ const BAND_TINT: Record<string, string> = {
 
 function ControlBox({
   control,
+  placed,
   unit,
   pageNumber,
   pageCount,
   record,
 }: {
   control: PreviewControl;
+  /**
+   * Where and how tall it prints in this placement, after growing, being
+   * pushed down and being cut at a page break; and the lines and table rows
+   * that part prints. See `layoutBand` in lib/reportPreview.
+   */
+  placed: PlacedControl;
   unit: string;
   pageNumber: number;
   pageCount: number;
@@ -156,9 +163,10 @@ function ControlBox({
     // not inside one. A panel's children are stored panel-relative because that
     // is what the file says and what an edit writes back -- see PreviewControl.
     left: u(control.x + control.offsetX),
-    top: u(control.y + control.offsetY),
+    // The laid-out position, which already includes any panel offset.
+    top: u(placed.y),
     width: u(control.width),
-    height: u(control.height),
+    height: u(placed.height),
     display: 'flex',
     alignItems,
     justifyContent: justify,
@@ -454,10 +462,16 @@ function ControlBox({
   }
 
   if (control.type === 'XRTable') {
-    const rowHeight = control.rows.length ? u(control.height) / control.rows.length : u(control.height);
+    // The rows this part prints, each at its laid-out height; or, unmeasured,
+    // every row at an equal share of the designed height.
+    const shown = placed.rowHeights
+      ? control.rows.slice(placed.rowStart, placed.rowStart + placed.rowHeights.length)
+      : control.rows;
+    const equal = shown.length ? u(control.height) / shown.length : u(control.height);
     return (
       <div style={{ ...frame, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}>
-        {control.rows.map((row, r) => {
+        {shown.map((row, r) => {
+          const rowHeight = placed.rowHeights ? u(placed.rowHeights[r]) : equal;
           // No weight total to compute: `flex: <weight> 1 0` distributes the
           // row's width in the same proportion DevExpress does, and lets the
           // browser do the division.
@@ -493,8 +507,12 @@ function ControlBox({
                     borderBottom: cell.borders.bottom ? borderLine(cell.appearance) : undefined,
                     borderLeft: cell.borders.left ? borderLine(cell.appearance) : undefined,
                     overflow: 'hidden',
-                    whiteSpace: 'nowrap',
-                    textOverflow: 'ellipsis',
+                    // A cell wraps unless it says WordWrap="false", as DevExpress
+                    // prints it, at its line spacing -- the row has already grown
+                    // to fit. It clipped with an ellipsis until 2026-10-30.
+                    whiteSpace: cell.wordWrap ? 'normal' : 'nowrap',
+                    overflowWrap: 'anywhere',
+                    lineHeight: `${lineSpacingPt(cell.fontFamily, cell.fontSize ?? 9.75)}pt`,
                   }}
                 >
                   {printed(cell.text, cell.field, record)}
@@ -503,6 +521,18 @@ function ControlBox({
             </div>
           );
         })}
+      </div>
+    );
+  }
+
+  // Measured text prints exactly the lines the paginator counted, at
+  // DevExpress's line spacing for the font, so the page shows the same breaks
+  // and the same height the layout used. 18 of 18 texts in 9 fonts broke where
+  // DevExpress broke them; see lib/textMeasure.
+  if (placed.lines) {
+    return (
+      <div style={{ ...frame, whiteSpace: 'pre', lineHeight: `${lineSpacingPt(control.fontFamily, control.fontSize ?? 9.75)}pt` }}>
+        {placed.lines.join('\n')}
       </div>
     );
   }
@@ -549,13 +579,18 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   /* The structure is kept alongside the pagination because editing addresses a
      control by its index in `structure.bands`, and `paginate` reuses the very
      same band objects — so a placed band's identity finds its index. */
+  // Text measured in the browser's own copy of each font, so controls grow and
+  // pages break where DevExpress puts them. Null under jsdom, where the layout
+  // falls back to the designed heights.
+  const measure = useMemo(() => canvasMeasurer(), []);
   const { structure, report } = useMemo(() => {
     const parsed = parseReportStructure(repxContent);
     // With sample rows the record count is theirs; otherwise it is the number
     // of rows the model read out of the source document.
     const count = records?.length ? records.length : recordCountFromLayout(layout);
-    return { structure: parsed, report: paginate(parsed, count) as PaginatedReport };
-  }, [repxContent, layout, records?.length]);
+    // The rows themselves too, now: a record's values decide how tall it grows.
+    return { structure: parsed, report: paginate(parsed, count, { measure, rows: records ?? null }) as PaginatedReport };
+  }, [repxContent, layout, records, measure]);
 
   const boundFields = useMemo(() => readBoundFields(repxContent), [repxContent]);
   const structureBands = structure.bands;
@@ -787,7 +822,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                     // so both have to be written here to override it.
                     left: unitsToPx(placed.left, report.unit),
                     width: unitsToPx(placed.width, report.unit),
-                    height: unitsToPx(placed.band.height, report.unit),
+                    // This placement's height: grown, or one part of a split.
+                    height: unitsToPx(placed.height, report.unit),
                     // Clip at the right margin and nowhere else, as DevExpress
                     // does: not at a column's edge (an over-wide control in a
                     // column prints over the next one, measured by render-cols),
@@ -809,10 +845,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                       </span>
                     </>
                   )}
-                  {placed.band.controls.map((control, c) => {
-                    // DevExpress prints nothing for a hidden control, so neither
-                    // does this. It keeps its index `c`, which edits address by.
-                    if (!control.visible) return null;
+                  {placed.controls.map((pc) => {
+                    // The controls as laid out for this placement: hidden ones
+                    // are already left out, and `pc.index` is the control's
+                    // index in its band, which edits address it by.
+                    const control = pc.control;
+                    const c = pc.index;
                     const bandIndex = structureBands.indexOf(placed.band);
                     const isSelected =
                       editing && selected?.band === bandIndex && selected.control === c;
@@ -826,6 +864,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                       <React.Fragment key={c}>
                         <ControlBox
                           control={control}
+                          placed={pc}
                           unit={report.unit}
                           pageNumber={page.number}
                           pageCount={report.pages.length}
@@ -841,10 +880,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                           <div
                             className={`rp-hit${isSelected ? ' is-selected' : ''}`}
                             style={{
-                              left: unitsToPx(control.x, report.unit),
-                              top: unitsToPx(control.y, report.unit),
+                              // Over the control where it is drawn, which after
+                              // growth and push-down need not be where the file
+                              // puts it; a drag still edits from the file's origin.
+                              left: unitsToPx(control.x + control.offsetX, report.unit),
+                              top: unitsToPx(pc.y, report.unit),
                               width: unitsToPx(control.width, report.unit),
-                              height: unitsToPx(control.height, report.unit),
+                              height: unitsToPx(pc.height, report.unit),
                             }}
                             onPointerDown={(e) => beginGesture(e, { band: bandIndex, control: c }, 'move')}
                             onDoubleClick={(e) => {

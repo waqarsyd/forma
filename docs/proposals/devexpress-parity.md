@@ -66,6 +66,9 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 - `WordWrap="false"` kept the label one line high and clipped the text. `CanGrow="false"` kept the label 20 high and clipped.
 - `CanShrink="true"` with empty text shrank the control to 0. With one line of text it shrank to 16, which is that line's height.
 - A table row takes its tallest cell's height, and every cell in the row is drawn at that height, so the borders stay aligned. The same 330-character note made a row 75 tall in a 450-wide cell.
+- **The height formula, measured over nine fonts:** the lines, times a line spacing that is a fixed ratio of the font size, plus 1.5pt, plus vertical padding and top and bottom borders. The ratios: Arial and Times New Roman 1.15, Verdana 1.2153, Tahoma 1.207, Segoe UI 1.33, Calibri 1.221, Georgia 1.1363, Courier New 1.1328; bold does not change it. A shrinking control uses 1.17pt instead of 1.5pt.
+- Lines break greedily at spaces and also after a hyphen ("cut-" then "off,"), and a line exactly as wide as the area does not fit. A browser canvas following those rules broke all 18 printed texts identically.
+- A fixed-height record that only partly fits is split between its controls: the top label stayed, and the label below continued at the top of the next page at its own gap below the cut.
 
 ### Pagination
 
@@ -164,8 +167,8 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 4 | Margins and printable width in Preview | Yes | Yes | **Done 2026-10-30** | DevExpress: Forma drew everything left by the left margin | Done: bands start at the left margin across the printable width and clip at the right margin; columns follow `Mode`, including the measured one-column default and `UseColumnWidth`; overflow past the margin is reported as DevExpress's extra page, in the Preview and the audit |
 | 5 | Hidden controls | Yes | Yes | **Done 2026-10-30** | DevExpress: Forma drew them | Done: hidden controls and the contents of a hidden panel are kept for editing but not drawn, and the overlap and layout checks skip them |
 | 6 | Colour, fill, padding, border width and colour, shared table borders | No | Yes | **Done 2026-10-30** | DevExpress: Forma's PDF lost visible formatting | Done: every resolved colour, fill, padding and border is drawn; table cells share edges by DevExpress's measured rule; a render test checks the pane against what DevExpress printed. Dashed borders are not drawn, since nothing measured them |
-| 7 | Text growth, push-down, band growth, row growth, shrink | No | Yes | Missing | DevExpress: page breaks fall in the wrong place for any report with long text | Adopt, measuring text in the browser; expect small line-break differences from DevExpress's own font metrics |
-| 8 | Splitting a record across pages, and keep-together | No | Yes | Missing | DevExpress | Adopt with 7 |
+| 7 | Text growth, push-down, band growth, row growth, shrink | No | Yes | **Done 2026-10-30** | DevExpress: page breaks fell in the wrong place for any report with long text | Done: `layoutBand` and `textMeasure.ts`. The browser canvas broke 18 of 18 printed texts identically, and the app's engine in Edge placed 190 records of four printed reports on DevExpress's pages to a tenth of a unit. Multi-column records and panels do not grow yet |
+| 8 | Splitting a record across pages, and keep-together | No | Yes | **Done 2026-10-30** | DevExpress | Done with 7: `splitInstance` splits at lines, rows and controls, reproducing DevExpress's split positions exactly; `KeepTogether` moves the record whole |
 | 9 | `PrintOn` and `PrintAtBottom` | No | Yes | Missing | DevExpress | Adopt |
 | 10 | Groups from data, repeated headers, `GroupUnion`, `PageBreak` | Partial | Yes | One group drawn | DevExpress | Adopt over test data |
 | 11 | Sorting, filtering, entering a parameter value | Written to file only | Yes | Not previewed | DevExpress | Adopt over test data, with a value field per parameter |
