@@ -144,7 +144,8 @@ const CHARTS_BLOCK = `          - A CHART IN THE SOURCE IS AN XRChart, NOT A PIC
 
             - The row field is what the LEFT-hand column lists, the column field what the HEADING ROW lists, and the data field what sits at each intersection. Get those three from the grid's own labels.
             - The items carry \`FieldName\` and no \`ControlType\`; \`<LayoutOptions />\` and \`<PrintOptions />\` are written empty.
-            - All three collections are required. A cross-tab missing one prints nothing where the grid was.
+            - Write the three field collections and STOP there. Do NOT write \`<ColumnDefinitions>\`, \`<RowDefinitions>\` or \`<Cells>\`. DevExpress needs those, but they follow mechanically from the fields and are added after you finish. Write \`SizeF\` for the space the grid takes in the design; it is recomputed from the cells.
+            - Always write a \`<DataFields>\` item. Without one DevExpress prints the grid with every cell empty. A missing row or column field is fine: it prints one column, or one row, of totals.
             - When the columns are FIXED headings rather than values from the data — "Item, Qty, Amount" — it is an ordinary XRTable, and the DETAIL BAND rules above apply instead.
 
 `;

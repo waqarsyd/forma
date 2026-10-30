@@ -83,7 +83,19 @@ const BUDGETS = [
   // the number instead of reading it. 588,368 against 625_000 is 94.1%, which is
   // where the 2026-09-01 cap and the firebase- cap both sit. Tight enough to
   // trip on a regression, loose enough that only a regression trips it.
-  { prefix: 'index-', ext: '.js', max: 625_000, note: 'eager entry chunk + the genai chunk' },
+  //
+  // Raised to 655_000 on 2026-10-30. It did not trip, and both of the header's
+  // categories apply. The growth this commit names is +6,152 B, 607,333 ->
+  // 613,485, for parity row 30. `lib/repxCrossTabs.ts` is on the eager path
+  // because `repxAudit` imports it to find cross-tabs DevExpress cannot print,
+  // and `App.tsx` imports `repxAudit` statically for the status bar. The
+  // percentage is 98.2%, the state the header says to retune out of, reached
+  // by growth that fitted in silence: 588,368 -> 607,333 B since the cap was
+  // set on 2026-09-04, across eight weeks of features not attributed here.
+  // 655_000 puts it at 93.7%. Every landing-page visitor pays for this chunk,
+  // so the next real cut belongs here: the audit, or the Preview engine
+  // behind it, deferred the way geminiService was.
+  { prefix: 'index-', ext: '.js', max: 655_000, note: 'eager entry chunk + the genai chunk' },
   /*
    * The generation service, lazy as of 2026-09-04.
    *

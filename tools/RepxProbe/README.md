@@ -62,7 +62,10 @@ export. Added for parity row 28. The second thing `render` measured was that
 a cross-tab written as fields alone **cannot be printed**: `CreateDocument()`
 throws, with data or without, until the file carries the column definitions,
 row definitions and cells that DevExpress generates from those fields. That
-is case s23 in the parity proposal.
+is case s23 in the parity proposal, and `src/lib/repxCrossTabs.ts` now writes
+that layout. The third was that **every band and control is read at its own
+`Dpi`**, 100 when absent, whatever `ReportUnit` says (case s24), so a
+millimetre report written without `Dpi` prints 2.54 times too large.
 
 ## Why this exists
 

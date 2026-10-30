@@ -9,6 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { auditRepx } from './repxAudit';
+import { repairCrossTabs } from './repxCrossTabs';
 
 const report = (bands: string) =>
   '<?xml version="1.0" encoding="utf-8"?>' +
@@ -254,27 +255,43 @@ describe('auditRepx on charts and cross-tabs', () => {
       .toMatch(/1 of 2 chart\(s\)/);
   });
 
-  it('says nothing about a complete cross-tab', () => {
-    const full =
-      '<Item1 Ref="3" ControlType="XRCrossTab" Name="x">' +
-      '<RowFields><Item1 Ref="4" FieldName="R" /></RowFields>' +
-      '<ColumnFields><Item1 Ref="5" FieldName="Q" /></ColumnFields>' +
-      '<DataFields><Item1 Ref="6" FieldName="A" /></DataFields></Item1>';
-    expect(codes(inDetail(full))).not.toContain('crosstab-missing-fields');
+  const fieldsOnly =
+    '<Item1 Ref="3" ControlType="XRCrossTab" Name="x">' +
+    '<RowFields><Item1 Ref="4" FieldName="R" /></RowFields>' +
+    '<ColumnFields><Item1 Ref="5" FieldName="Q" /></ColumnFields>' +
+    '<DataFields><Item1 Ref="6" FieldName="A" /></DataFields></Item1>';
+
+  it('says nothing about a cross-tab with its fields and the layout DevExpress generates', () => {
+    const full = repairCrossTabs(inDetail(fieldsOnly)).xml;
+    expect(codes(full)).not.toContain('crosstab-missing-fields');
+    expect(codes(full)).not.toContain('crosstab-no-layout');
   });
 
-  it('names the collection a cross-tab is missing', () => {
-    const noData =
-      '<Item1 Ref="3" ControlType="XRCrossTab" Name="x">' +
-      '<RowFields><Item1 Ref="4" FieldName="R" /></RowFields>' +
-      '<ColumnFields><Item1 Ref="5" FieldName="Q" /></ColumnFields></Item1>';
-    const finding = auditRepx(inDetail(noData)).findings.find((f) => f.code === 'crosstab-missing-fields');
+  it('reports a cross-tab written as its fields alone as an error, since DevExpress throws printing it', () => {
+    // Case s23: CreateDocument() threw for this form, with data or without.
+    const finding = auditRepx(inDetail(fieldsOnly)).findings.find((f) => f.code === 'crosstab-no-layout');
+    expect(finding?.severity).toBe('error');
+    expect(finding?.message).toMatch(/1 cross-tab\(s\) \(x\)/);
+  });
+
+  it('warns about a cross-tab with no data field, which prints a grid of empty cells', () => {
+    const noData = fieldsOnly.replace(/<DataFields>.*<\/DataFields>/, '');
+    const finding = auditRepx(repairCrossTabs(inDetail(noData)).xml).findings.find((f) => f.code === 'crosstab-missing-fields');
     expect(finding?.message).toContain('<DataFields>');
+  });
+
+  it('says nothing about a cross-tab with no row or no column field, which DevExpress printed as totals', () => {
+    for (const missing of ['RowFields', 'ColumnFields']) {
+      const xml = repairCrossTabs(inDetail(fieldsOnly.replace(new RegExp(`<${missing}>.*?</${missing}>`), ''))).xml;
+      expect(codes(xml)).not.toContain('crosstab-missing-fields');
+      expect(codes(xml)).not.toContain('crosstab-no-layout');
+    }
   });
 
   it('says nothing at all about a report with neither', () => {
     expect(codes(healthy)).not.toContain('chart-without-series');
     expect(codes(healthy)).not.toContain('crosstab-missing-fields');
+    expect(codes(healthy)).not.toContain('crosstab-no-layout');
   });
 });
 

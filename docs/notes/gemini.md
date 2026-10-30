@@ -160,6 +160,8 @@ The value also travels further than the geometry: `geminiService` writes it verb
 DevExpress refuses the file. `config.unit || 'HundredthsOfAnInch'` passed anything non-empty
 straight through, `"../../etc"` included.
 
+(Correction, 2026-10-30: DevExpress 20.1's `ReportUnit` enum has three members, `HundredthsOfAnInch`, `TenthsOfAMillimeter` and `Pixels`, read by reflection from the installed assembly. `Document` is not one of them in 20.1, so a file declaring it is one 20.1 refuses rather than mis-scales. The table entry does no harm, and the dialog offers only the three.)
+
 Fixed in three places at once: the tables now carry all four `ReportUnit` members and Tabloid;
 `mergeStoredConfig` validates the **domain**, dropping an unsupported value for the default rather
 than throwing; and `geminiService` resolves both before use. Validation is **case-sensitive on
@@ -185,6 +187,20 @@ The honest test is unchanged and still owed: generate from a PDF whose artwork s
 The truncation bug did not reproduce either — but a three-section report from a marketing card is at the small end of what the product handles, and that bug is reported on larger ones. The parse-or-explain branch that decides how truncation is *reported* is now covered by fixtures in `src/lib/analysisResponse.test.ts`, including a payload cut off at 62%.
 
 **Mock mode is opt-in:** set `VITE_FORMA_MOCK=true` and the service sleeps 3s and returns `MOCK_INVOICE_RESPONSE` without calling Gemini. It previously triggered whenever the key was missing *or the prompt merely contained the word "mock"* — under bring-your-own-key that was actively harmful, since a first-time visitor with no key, or anyone asking to "mock up an invoice", silently received a canned fake report with no way to tell it was not real output. A missing key now throws `MissingApiKeyError` instead. This env flag is the **only** remaining source of canned output; the `TEST_REPORT_LAYOUT` / `TEST_REPORT_MARKDOWN` / `TEST_REPORT_REPX` constants and their "Load Test Mockup" action are gone (the action had already been removed, leaving ~190 lines of orphaned fake-report data behind).
+
+### A control is read at its own Dpi (2026-10-30)
+
+The units audit made every number the prompt asks for follow `ReportUnit`. Printing showed that DevExpress does not read them that way. **Every band and control is read at its own `Dpi` attribute, which is 100 when absent, whatever the report's `ReportUnit` says.** DevExpress's serializer writes `Dpi="254"` on the root, every band, every control and every cross-tab cell of a millimetre report, and `Dpi="96"` in a pixel one. Forma writes `Dpi` nowhere.
+
+Measured in case s24 of [`devexpress-parity.md`](../proposals/devexpress-parity.md). A label meant to sit one inch down and two inches wide was printed through DevExpress three ways in each unit:
+
+| Dpi written | Tenths of a millimetre | Pixels |
+|---|---|---|
+| nowhere, as Forma writes it | 2.54 inches down, 5.08 wide | 0.96 down, 1.92 wide |
+| on the root only | the same | the same |
+| on the bands and controls too | one inch, two wide | one inch, two wide |
+
+With no `Dpi` anywhere, the margins were read the same way: 254 tenths of a millimetre printed as 2.54 inches, on paper of the right size. So in every report Forma has generated in tenths of a millimetre, the margins, bands and controls print 2.54 times too large in DevExpress, and in every pixel report 4% too small. Both look right in Forma's own Mockup and Preview, which read the numbers in the report's unit. Hundredths of an inch, the default, is unaffected, because 100 is its own `Dpi`. The fix is proposal row 33, which waits for approval. Until it is in, the cross-tab repair writes its cells in the control's own `Dpi`, so a cross-tab prints the size DevExpress itself would give it, whichever way row 33 is decided.
 
 ## The margin is drawn, not declared (2026-09-02)
 
@@ -581,7 +597,11 @@ Both a designer-written file and a hand-written Forma-shaped one load with the s
 
 `repxAudit.ts` gained two checks, both for controls that load happily and print an empty frame: a chart with no series, and a cross-tab missing one of its three collections.
 
-**Loading is not printing, and the cross-tab above cannot be printed (2026-10-30).** Everything in this section was measured by loading, and `RepxProbe render` later printed it. The cross-tab shown above loads with its fields. `CreateDocument()` then throws, with data or without, because DevExpress expects the file to also carry the column definitions, row definitions and cells it generates from those fields. A file missing any of the three throws. Printing also showed that a cross-tab missing one collection is not empty, which contradicts the audit check just described. Both are case s23 in [`devexpress-parity.md`](../proposals/devexpress-parity.md). The fix is that proposal's row 30, and until it is approved and built, every cross-tab Forma writes opens in the designer but will not print.
+**Loading is not printing, and the cross-tab above cannot be printed (2026-10-30).** Everything in this section was measured by loading, and `RepxProbe render` later printed it. The cross-tab shown above loads with its fields. `CreateDocument()` then throws, with data or without, because DevExpress expects the file to also carry the column definitions, row definitions and cells it generates from those fields. A file missing any of the three throws. Printing also showed that a cross-tab missing one collection is not empty, which contradicts the audit check just described. Both are case s23 in [`devexpress-parity.md`](../proposals/devexpress-parity.md).
+
+**Fixed by parity row 30, and in code rather than in the prompt.** The layout DevExpress generates is a fixed function of how many row, column and data fields there are. It covers subtotal rows and columns, spans, a row of data-field names when there are two or more, and `Total {0}` on subtotal headers. `crossTabLayout` in `repxCrossTabs.ts` reproduces it. The rule was written from fourteen shapes `GenerateLayout()` produced and then checked against ten more it had not seen, and it matched every cell of all 24. `repairCrossTabs` runs after the group repair and writes that layout after the field collections, where the serializer puts it. It resizes the control to one inch by a quarter inch per cell, as DevExpress does, in the control's own `Dpi` (see *A control is read at its own Dpi* below). New `Ref` values start above the document's highest. A layout that does not match the fields is replaced, and one that matches is left byte for byte. The prompt now asks for the three field collections and nothing more, and for a data field always.
+
+**Verified by printing.** Ten cross-tabs written the way the prompt teaches were printed through DevExpress over 24 records, in all three units. They covered one and two fields of each kind and a missing collection of each kind. Unrepaired, every one threw. Repaired, every one printed box for box what DevExpress's own generated layout printed, with the same pages and an identical CSV. The audit's `crosstab-no-layout` error reports a cross-tab that reaches it without the layout. The old `crosstab-missing-fields` warning now fires only for a missing data field, the one shape that printed badly.
 
 **`{0:n0}` is deliberately never emitted.** It renders 12345 as "12,345", which is right for a quantity and wrong for an invoice number, order id, product code or year — all columns of bare integers that one sample value cannot distinguish from a count. A format that mangles an identifier is worse than none, because the unformatted column was already correct. Currency and dates only, where the meaning is not in doubt.
 

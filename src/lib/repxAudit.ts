@@ -44,6 +44,7 @@ import { auditAccessibility } from './repxAccessibility';
 import { findOverlaps } from './repxOverlaps';
 import { auditLayoutBounds } from './repxLayout';
 import { findSummaryProblems } from './repxSummaries';
+import { crossTabsWithoutData, findCrossTabProblems } from './repxCrossTabs';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -365,13 +366,19 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
   }
 
   /*
-   * A chart with no series, and a cross-tab missing one of its three field
-   * collections. Both load without complaint and print an empty frame, which
-   * on a page full of real content reads as "the data has not arrived yet"
-   * rather than as a defect in the file.
+   * A chart with no series, and a cross-tab with no data field. Both load
+   * without complaint and print an empty frame or an empty grid, which on a
+   * page full of real content reads as "the data has not arrived yet" rather
+   * than as a defect in the file.
    *
    * Counted per control, since a report can carry several charts and one of
    * them being empty is exactly the case worth naming.
+   *
+   * The cross-tab half used to fire for a missing row or column field too,
+   * saying the control printed nothing. That was read from loading, never
+   * printed, and printing said otherwise (case s23, 2026-10-30): with no
+   * column field DevExpress printed each row's total, with no row field each
+   * column's, and only with no data field did it print a grid of empty cells.
    */
   const charts = (text.match(/ControlType="XRChart"/g) ?? []).length;
   if (charts) {
@@ -716,19 +723,33 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
     }
   }
 
-  const crossTabs = (text.match(/ControlType="XRCrossTab"/g) ?? []).length;
-  if (crossTabs) {
-    for (const collection of ['RowFields', 'ColumnFields', 'DataFields']) {
-      const present = (text.match(new RegExp(`<${collection}>`, 'g')) ?? []).length;
-      if (present < crossTabs) {
-        add(
-          'warning',
-          'crosstab-missing-fields',
-          `A cross-tab has no <${collection}>. All three field collections are required — ` +
-            'without one the control prints nothing where the grid should be.',
-        );
-      }
-    }
+  const withoutData = crossTabsWithoutData(text);
+  if (withoutData.length) {
+    add(
+      'warning',
+      'crosstab-missing-fields',
+      `${withoutData.length} cross-tab(s) (${withoutData.slice(0, 3).join(', ')}) have no <DataFields>. ` +
+        'DevExpress prints the grid of row and column values with every cell empty, since there is nothing to total.',
+    );
+  }
+
+  /*
+   * A cross-tab DevExpress refuses to print. It generates a layout from the
+   * cross-tab's fields and throws when the file's column definitions, row
+   * definitions and cells do not match it, and a cross-tab written as its
+   * fields alone has none (case s23, 2026-10-30). `repairCrossTabs` writes the
+   * layout into every generated report, so what reaches here came from
+   * somewhere the repair does not run. An error: the report cannot be printed.
+   */
+  const unprintable = findCrossTabProblems(text);
+  if (unprintable.length) {
+    add(
+      'error',
+      'crosstab-no-layout',
+      `${unprintable.length} cross-tab(s) (${unprintable.slice(0, 3).map((p) => p.name).join(', ')}) ` +
+        'lack the column definitions, row definitions and cells DevExpress generates from their fields, ' +
+        'so it throws when the report is printed. Generating the report in Forma writes that layout.',
+    );
   }
 
   if (!has(text, 'TopMarginBand') || !has(text, 'BottomMarginBand')) {

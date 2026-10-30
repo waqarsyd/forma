@@ -19,6 +19,7 @@ import { liftParameterTypes } from "../lib/repxParameters";
 import { liftStyles } from "../lib/repxStyles";
 import { repairSummaries } from "../lib/repxSummaries";
 import { repairGroupLevels } from "../lib/repxGroups";
+import { repairCrossTabs } from "../lib/repxCrossTabs";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
@@ -2594,6 +2595,24 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.warn(`Groups: ${groups.reason}.`);
     } else {
       console.debug(`Groups: ${groups.reason}.`);
+    }
+
+    /*
+     * A cross-tab needs the layout DevExpress generates from its fields.
+     *
+     * Written as its three field collections alone, it loads and then throws
+     * when DevExpress prints it, with data or without -- measured in case s23
+     * on 2026-10-30. The layout is a fixed function of how many row, column and
+     * data fields there are, checked against 24 shapes DevExpress generated, so
+     * it is written here rather than asked of the model. After the Ref repair,
+     * so its new Refs start above the document's highest. See `repxCrossTabs.ts`.
+     */
+    const crossTabs = repairCrossTabs(parsed.repxContent);
+    if (crossTabs.applied) {
+      parsed.repxContent = crossTabs.xml;
+      console.warn(`Cross-tabs: ${crossTabs.reason}.`);
+    } else {
+      console.debug(`Cross-tabs: ${crossTabs.reason}.`);
     }
 
     /*
