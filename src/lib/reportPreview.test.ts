@@ -2253,3 +2253,54 @@ describe('nested groups, as DevExpress nests them (case s19)', () => {
     });
   }
 });
+
+/*
+ * Case s21: what every kind of text prints over an empty data source, as
+ * DevExpress 20.1 printed it (`RepxProbe render`, 2026-10-30, a filter that
+ * matched nothing). One page; every band once, Detail included; counts and
+ * record numbers 0, a page sum 0, every other total blank.
+ */
+describe('an empty data source, as DevExpress printed it (case s21)', () => {
+  const REPX = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Empty\" ReportUnit=\"HundredthsOfAnInch\" Margins=\"20, 20, 20, 20\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\" FilterString=\"[Qty] &gt; 1000\" Font=\"Arial, 8pt\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"20\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"25\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"rhLiteral\" LocationFloat=\"0,0\" SizeF=\"180,18\" Text=\"REPORT\" /><Item2 Ref=\"5\" ControlType=\"XRLabel\" Name=\"rhField\" LocationFloat=\"190,0\" SizeF=\"180,18\"><ExpressionBindings><Item1 Ref=\"6\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"'first ' + [Name]\" /></ExpressionBindings></Item2><Item3 Ref=\"7\" ControlType=\"XRLabel\" Name=\"rhCount\" LocationFloat=\"380,0\" SizeF=\"180,18\" TextFormatString=\"{0} rows\"><Summary Ref=\"8\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"9\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumCount()\" /></ExpressionBindings></Item3></Controls></Item2><Item3 Ref=\"10\" ControlType=\"PageHeaderBand\" Name=\"PageHeader\" HeightF=\"25\"><Controls><Item1 Ref=\"11\" ControlType=\"XRLabel\" Name=\"phLiteral\" LocationFloat=\"0,0\" SizeF=\"180,18\" Text=\"HEADINGS\" /><Item2 Ref=\"12\" ControlType=\"XRLabel\" Name=\"phPage\" LocationFloat=\"190,0\" SizeF=\"180,18\"><Summary Ref=\"13\" Running=\"Page\" /><ExpressionBindings><Item1 Ref=\"14\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumSum([Qty])\" /></ExpressionBindings></Item2></Controls></Item3><Item4 Ref=\"15\" ControlType=\"GroupHeaderBand\" Name=\"GroupHeader\" HeightF=\"25\"><GroupFields><Item1 Ref=\"16\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"17\" ControlType=\"XRLabel\" Name=\"ghLiteral\" LocationFloat=\"0,0\" SizeF=\"180,18\" Text=\"GROUP\" /><Item2 Ref=\"18\" ControlType=\"XRLabel\" Name=\"ghRegion\" LocationFloat=\"190,0\" SizeF=\"180,18\" TextFormatString=\"Region: {0}\"><ExpressionBindings><Item1 Ref=\"19\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /></ExpressionBindings></Item2></Controls></Item4><Item5 Ref=\"20\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"25\"><Controls><Item1 Ref=\"21\" ControlType=\"XRLabel\" Name=\"dLiteral\" LocationFloat=\"0,0\" SizeF=\"180,18\" Text=\"LINE\" /><Item2 Ref=\"22\" ControlType=\"XRLabel\" Name=\"dName\" LocationFloat=\"190,0\" SizeF=\"180,18\"><ExpressionBindings><Item1 Ref=\"23\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Name]\" /></ExpressionBindings></Item2><Item3 Ref=\"24\" ControlType=\"XRLabel\" Name=\"dQty\" LocationFloat=\"380,0\" SizeF=\"180,18\" TextFormatString=\"{0:n2}\"><ExpressionBindings><Item1 Ref=\"25\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Qty]\" /></ExpressionBindings></Item3><Item4 Ref=\"26\" ControlType=\"XRLabel\" Name=\"dCalc\" LocationFloat=\"570,0\" SizeF=\"180,18\"><ExpressionBindings><Item1 Ref=\"27\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"'x' + [Qty]\" /></ExpressionBindings></Item4></Controls></Item5><Item6 Ref=\"28\" ControlType=\"GroupFooterBand\" Name=\"GroupFooter\" HeightF=\"25\"><Controls><Item1 Ref=\"29\" ControlType=\"XRLabel\" Name=\"gfLiteral\" LocationFloat=\"0,0\" SizeF=\"180,18\" Text=\"SUBTOTAL\" /><Item2 Ref=\"30\" ControlType=\"XRLabel\" Name=\"gfSum\" LocationFloat=\"190,0\" SizeF=\"180,18\" TextFormatString=\"{0:c2}\"><Summary Ref=\"31\" Running=\"Group\" /><ExpressionBindings><Item1 Ref=\"32\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumSum([Qty])\" /></ExpressionBindings></Item2></Controls></Item6><Item7 Ref=\"33\" ControlType=\"ReportFooterBand\" Name=\"ReportFooter\" HeightF=\"60\"><Controls><Item1 Ref=\"34\" ControlType=\"XRLabel\" Name=\"rfLiteral\" LocationFloat=\"0,0\" SizeF=\"180,18\" Text=\"TOTALS\" /><Item2 Ref=\"35\" ControlType=\"XRLabel\" Name=\"rfSum\" LocationFloat=\"190,0\" SizeF=\"180,18\"><Summary Ref=\"36\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"37\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumSum([Qty])\" /></ExpressionBindings></Item2><Item3 Ref=\"38\" ControlType=\"XRLabel\" Name=\"rfCount\" LocationFloat=\"380,0\" SizeF=\"180,18\"><Summary Ref=\"39\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"40\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumCount()\" /></ExpressionBindings></Item3><Item4 Ref=\"41\" ControlType=\"XRLabel\" Name=\"rfAvg\" LocationFloat=\"570,0\" SizeF=\"180,18\"><Summary Ref=\"42\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"43\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumAvg([Qty])\" /></ExpressionBindings></Item4><Item5 Ref=\"44\" ControlType=\"XRLabel\" Name=\"rfMax\" LocationFloat=\"0,20\" SizeF=\"180,18\"><Summary Ref=\"45\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"46\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumMax([Qty])\" /></ExpressionBindings></Item5><Item6 Ref=\"47\" ControlType=\"XRLabel\" Name=\"rfSumFmt\" LocationFloat=\"190,20\" SizeF=\"180,18\" TextFormatString=\"Total {0:c2}\"><Summary Ref=\"48\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"49\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumSum([Qty])\" /></ExpressionBindings></Item6><Item7 Ref=\"50\" ControlType=\"XRLabel\" Name=\"rfCountFmt\" LocationFloat=\"380,20\" SizeF=\"180,18\" TextFormatString=\"{0} orders\"><Summary Ref=\"51\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"52\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumCount([Name])\" /></ExpressionBindings></Item7><Item8 Ref=\"53\" ControlType=\"XRLabel\" Name=\"rfDCount\" LocationFloat=\"570,20\" SizeF=\"180,18\"><Summary Ref=\"54\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"55\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumDCount([Name])\" /></ExpressionBindings></Item8><Item9 Ref=\"56\" ControlType=\"XRLabel\" Name=\"rfRun\" LocationFloat=\"0,40\" SizeF=\"180,18\"><Summary Ref=\"57\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"58\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumRunningSum([Qty])\" /></ExpressionBindings></Item9><Item10 Ref=\"59\" ControlType=\"XRLabel\" Name=\"rfRec\" LocationFloat=\"190,40\" SizeF=\"180,18\"><Summary Ref=\"60\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"61\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumRecordNumber()\" /></ExpressionBindings></Item10></Controls></Item7><Item8 Ref=\"62\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"20\" /></Bands></XtraReportsLayoutSerializer>";
+  const PRINTED: Record<string, string> = {
+    "rhCount": "0 rows",
+    "rhField": "first ",
+    "rhLiteral": "REPORT",
+    "phPage": "0",
+    "phLiteral": "HEADINGS",
+    "ghRegion": "",
+    "ghLiteral": "GROUP",
+    "dCalc": "x",
+    "dQty": "",
+    "dName": "",
+    "dLiteral": "LINE",
+    "gfSum": "",
+    "gfLiteral": "SUBTOTAL",
+    "rfRec": "0",
+    "rfRun": "",
+    "rfDCount": "0",
+    "rfCountFmt": "0 orders",
+    "rfSumFmt": "",
+    "rfMax": "",
+    "rfAvg": "",
+    "rfCount": "0",
+    "rfSum": "",
+    "rfLiteral": "TOTALS"
+  };
+
+  it('prints every band once, with what DevExpress printed in each control', () => {
+    const report = paginate(parseReportStructure(REPX), 0, { rows: [] });
+    expect(report.pages).toHaveLength(1);
+    expect(report.records).toBe(0);
+    const kinds = report.pages[0].bands.map((b) => b.band.kind);
+    expect(kinds.filter((k) => k === 'Detail')).toHaveLength(1);
+    const actual: Record<string, string> = {};
+    for (const band of report.pages[0].bands) for (const pc of band.controls) if (pc.text !== null) actual[pc.control.name] = pc.text;
+    expect(actual).toEqual(PRINTED);
+  });
+
+  it('prints no Detail at all when there is no data source, only the layout', () => {
+    const report = paginate(parseReportStructure(REPX), 3);
+    expect(report.pages[0].bands.filter((b) => b.band.kind === 'Detail')).toHaveLength(3);
+  });
+});

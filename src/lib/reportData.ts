@@ -254,6 +254,11 @@ export interface TextData {
  *   in the footers;
  * - **`Group` outside the group bands and Detail prints `?`**, format or not,
  *   and so does `Group` in Detail when the report has no group bands (s17b).
+ *
+ * Over an empty data source (s21, a filter that matched nothing): counts and
+ * record numbers printed 0, sums, averages, maxima and running sums printed
+ * nothing -- except a page sum, which printed 0 -- and a missing field joined
+ * to text printed the text.
  */
 export interface TextScope {
   /** The record a bound field reads; null when there is none. */
@@ -347,7 +352,11 @@ export class ReportData {
     const extent =
       data.running === 'Group' ? scope.group! : data.running === 'Page' ? scope.page ?? scope.report : scope.report;
     const row = scope.row === null ? null : this.records[scope.row] ?? null;
-    const env = rowEnv(row, this.param, (name, args) => this.aggregate(name, args, extent, scope.anchor));
+    // Printed over an empty data source (s21): a sum is blank in every scope
+    // but the page's, where it is 0. Only sumSum was measured that way.
+    const pageSumOfNothing = (name: string) => data.running === 'Page' && extent.length === 0 && name === 'sumsum';
+    const env = rowEnv(row, this.param, (name, args) =>
+      pageSumOfNothing(name) ? 0n : this.aggregate(name, args, extent, scope.anchor));
     const value = evaluateText(data.expression, env);
     // Printed: a null prints nothing, even inside "Total: {0:c2}".
     if (value === null) return '';
@@ -365,7 +374,8 @@ export class ReportData {
 
   private aggregate(name: string, args: Node[], indices: readonly number[], anchor: number | null): Value {
     const position = positionOf(indices, anchor);
-    if (name === 'sumrecordnumber') return position < 0 ? null : BigInt(position + 1);
+    // Printed over an empty data source (s21): a record number is 0, as counts are.
+    if (name === 'sumrecordnumber') return BigInt(Math.max(0, position + 1));
     let byName = this.cache.get(indices);
     if (!byName) this.cache.set(indices, (byName = new Map()));
     let byArgs = byName.get(name);

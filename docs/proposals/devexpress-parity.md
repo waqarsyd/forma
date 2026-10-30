@@ -41,6 +41,7 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 | s18-invoice | An invoice as Forma writes one: a bound table, a calculated line total, money formats, a page total and a grand total, over 40 records with wrapping text. |
 | s19a to s19g | Two nested group headers and their footers over twelve records, with `Level` in either order, with none, with only the outer one, and with a single footer. |
 | s20-pfgap | A page footer whose only label sits 40 units down or at its top, to see whether content may use the empty part of the band. |
+| s21-empty | Every kind of text in every band over a data source filtered to nothing: literals, fields, expressions, and each aggregate in each scope. |
 
 ## How DevExpress 20.1 behaves
 
@@ -132,6 +133,7 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 ### Empty data
 
 - With an empty data source the Detail band printed once, blank. Totals printed blank, not zero. Every header and footer still printed on the single page.
+- In more detail (s21, a filter that matched nothing): a literal label printed its text, and a missing field joined to text printed the text. `sumCount`, `sumDCount` and `sumRecordNumber` printed 0. `sumSum`, `sumAvg`, `sumMax` and `sumRunningSum` printed nothing, except a sum with `Running="Page"`, which printed 0. The group header and footer printed once.
 
 ### Export fidelity
 
@@ -195,7 +197,7 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 10 | Groups from data, repeated headers, `GroupUnion`, `PageBreak` | Partial | Yes | **Done 2026-10-30** | DevExpress | Done: records are sorted by the group fields and Detail's `SortFields`, each level breaks into runs, and headers and footers print per group with `RepeatEveryPage`, both `GroupUnion` modes and every `PageBreak` mode. Nesting follows `Level` as s19 measured, and a label whose line fits stays at the foot of its page. c05 to c05e, s17 and s19 match DevExpress's PDF page for page, in Node and in Edge. Without test data the Preview still draws one group, now repeated where `RepeatEveryPage` says |
 | 11 | Sorting, filtering, entering a parameter value | Written to file only | Yes | Not previewed | DevExpress | Adopt over test data, with a value field per parameter |
 | 12 | Totals, running sums, calculated fields, format strings in Preview | Written to file only | Yes | **Done 2026-10-30** | DevExpress | Done: `criteria.ts` evaluates DevExpress's expression language with .NET types, `netDecimal.ts` carries decimals, `netFormat.ts` formats numbers, and `reportData.ts` gives each band its scope as s17 measured. Every expression in s16, every format in s15 and every scope in s17 matches what DevExpress printed. In Edge, all 175 texts of s18 matched on the same pages. Group scopes became real groups with row 10 |
-| 13 | Empty data source | Yes | Yes | Differs | DevExpress: printing the Detail band once shows the report's shape | Adopt |
+| 13 | Empty data source | Yes | Yes | **Done 2026-10-30** | DevExpress: printing the Detail band once shows the report's shape | Done: an empty row set is an empty data source. The Detail band prints once with every group band around it, and counts, record numbers and a page sum print 0 while other totals print nothing, as s21 measured. c04e and all 23 controls of s21 match DevExpress. No test data still means the layout's own record count |
 | 14 | Master-detail | Written by hand only | Yes | Broken in Preview | DevExpress | Adopt |
 | 15 | Page numbers | Partial | Yes | **Done 2026-10-30** | DevExpress: Forma drew "n / N" for every kind | Done: all eight kinds, their formats, the absent-kind default and `StartPageNumber`, through a new `netFormat.ts` that row 12 extends to values |
 | 16 | Long reports | 50-page cap | 213 pages in 2.3 s | Partial | DevExpress for length; Forma's pagination itself is fast, at 2,703 pages in 9.5 ms | Adopt: render pages on demand and lift the cap |

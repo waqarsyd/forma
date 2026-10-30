@@ -1852,12 +1852,15 @@ const findBand = (bands: PreviewBand[], kind: BandKind) => bands.find((b) => b.k
  */
 export function paginate(
   structure: ReportStructure,
-  records: number,
+  recordCount: number,
   options: {
     maxPages?: number;
     /** Measures text so controls grow and bands split as DevExpress prints them. */
     measure?: MeasureText | null;
-    /** Test data: record n prints row (n - 1) modulo the count. */
+    /**
+     * Test data: record n prints row (n - 1) modulo the count. An empty array is
+     * an empty data source, which prints differently from no data at all.
+     */
     rows?: RecordValues[] | null;
   } = {},
 ): PaginatedReport {
@@ -1897,8 +1900,8 @@ export function paginate(
   // in print order: sorted by every group's fields, outermost first, then by
   // Detail's SortFields -- printed, groups came out in ascending order whatever
   // order the rows arrived in, and a descending sort within them held.
-  let data = options.rows?.length
-    ? ReportData.from(options.rows, records, structure.calculatedFields, structure.parameters)
+  let data = options.rows
+    ? ReportData.from(options.rows, recordCount, structure.calculatedFields, structure.parameters)
     : null;
   let order: number[] | null = null;
   if (data) {
@@ -1908,6 +1911,8 @@ export function paginate(
     ]);
     data = data.reordered(order);
   }
+  /** Records to lay out: the data's own count when there is test data, none included. */
+  const records = data ? data.records.length : recordCount;
   const ctx: LayoutContext = { measure: options.measure ?? null, unit: structure.unit, data };
   const rowFor = (i: number) =>
     options.rows?.length ? options.rows[(order ? order[i] : i) % options.rows.length] : null;
@@ -2190,8 +2195,15 @@ export function paginate(
         }
       }
     } else {
-      // No records: every group band once, around nothing.
+      /*
+       * No records: every group band once, and the Detail band once, around
+       * nothing (parity row 13). Printed over an empty data source (c04e,
+       * s21): one page, every header and footer, the Detail band once with
+       * its literal text and blank fields -- which shows the report's shape
+       * where printing nothing would not.
+       */
       for (let k = 0; k < groupHeaders.length; k++) openStep(k);
+      if (detail) steps.push({ inst: instance(detail), role: 'detail', level: groupHeaders.length, first: true, last: true });
       for (let k = groupHeaders.length - 1; k >= 0; k--) closeStep(k);
     }
     unpairedSteps();
@@ -2230,7 +2242,7 @@ export function paginate(
         if (need > pageBottom - cursor + EPS && need <= freshRoom() + EPS && !atContentTop()) startPage();
       }
       place(inst);
-      if (step.role === 'detail') placedRecords++;
+      if (step.role === 'detail' && inst.record !== null) placedRecords++;
       if (step.role === 'header') openGroups.push(inst);
       if (step.role === 'footer' && step.level >= 0) openGroups.length = Math.min(openGroups.length, step.level);
       if (band.pageBreak === 'AfterBand' || (band.pageBreak === 'AfterBandExceptLastEntry' && !step.last)) breakPending = true;
