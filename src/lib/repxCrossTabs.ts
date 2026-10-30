@@ -264,6 +264,39 @@ export function findCrossTabProblems(xml: string | undefined | null): CrossTabPr
   return out;
 }
 
+/** The attributes a generated cell carries; anything else on a cell was not measured. */
+const GENERATED_CELL_ATTRS = new Set(['Ref', 'ControlType', 'TextFormatString', 'ColumnIndex', 'RowIndex', 'ColumnSpan', 'RowSpan', 'Text', 'Dpi']);
+const attrNames = (attrs: string) => [...attrs.matchAll(/\s([\w.:-]+)\s*=/g)].map((m) => m[1]);
+
+/**
+ * What the Preview needs to know about one cross-tab, given its element.
+ *
+ * `printable`: DevExpress will print it as written, its layout being the one
+ * it generates. `measured`: everything it carries is something parity case
+ * s25 printed -- fields with no settings beyond their name, columns of one
+ * width and rows of one height, and cells with no appearance of their own.
+ * The cross-tab's own Font, colours, borders, padding and alignment are
+ * allowed, because s25 printed that none of them reaches a cell.
+ */
+export function crossTabFacts(controlXml: string): { printable: boolean; measured: boolean; columns: number; rows: number } {
+  const tab = findCrossTabs(controlXml)[0];
+  if (!tab) return { printable: false, measured: false, columns: 0, rows: 0 };
+  const expected = crossTabLayout(fieldsOf(tab));
+  const items = (name: string) => tab.children.find((c) => c.name === name)?.items ?? [];
+  const plainFields = ['RowFields', 'ColumnFields', 'DataFields'].every((n) =>
+    items(n).every((i) => attrNames(i.attrs).every((a) => a === 'Ref' || a === 'FieldName')));
+  const uniform = (name: string, attr: string) => new Set(items(name).map((i) => attrOf(i.attrs, attr))).size <= 1;
+  const plainCells = items('Cells').every((i) => attrNames(i.attrs).every((a) => GENERATED_CELL_ATTRS.has(a)));
+  const styled = /\s(?:GeneralStyleName|HeaderAreaStyleName|DataAreaStyleName|TotalAreaStyleName|EvenStyleName|OddStyleName)=/.test(tab.attrs) ||
+    tab.children.some((c) => c.name === 'CrossTabStyles');
+  return {
+    printable: layoutMatches(tab, expected),
+    measured: plainFields && uniform('ColumnDefinitions', 'Width') && uniform('RowDefinitions', 'Height') && plainCells && !styled,
+    columns: expected.columns,
+    rows: expected.rows,
+  };
+}
+
 /** Whether any cross-tab has no data field, which prints a grid of empty cells. */
 export function crossTabsWithoutData(xml: string | undefined | null): string[] {
   return findCrossTabs(xml ?? '').filter((t) => fieldsOf(t).data.length === 0).map((t) => t.name);

@@ -39,9 +39,11 @@
 import { formatComposite, formatDate, toRoman } from './netFormat';
 import { unitsPerInch } from './reportGeometry';
 import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, type FontSpec, type MeasureText } from './textMeasure';
-import { ReportData, groupRuns, sortedOrder, type CalculatedField, type TextData, type TextScope } from './reportData';
+import { ReportData, aggregate, groupRuns, sortCompare, sortedOrder, valueText, type CalculatedField, type TextData, type TextScope, type TypedRow } from './reportData';
 import { parseParameters, type ReportParameter } from './repxParameters';
-import { isTrue, type Value } from './criteria';
+import { isTrue, parseCriteria, type Value } from './criteria';
+import { crossTabFacts } from './repxCrossTabs';
+import { NetDecimal } from './netDecimal';
 
 /** The bands that carry content, in the order XtraReports prints them. */
 export type BandKind =
@@ -187,6 +189,31 @@ export interface PreviewCrossTab {
   rows: string[];
   columns: string[];
   data: string[];
+  /** DevExpress prints it as written: it carries the layout DevExpress generates. */
+  printable: boolean;
+  /** Everything it carries was printed in parity case s25; see `crossTabFacts`. */
+  measured: boolean;
+  /** The generated layout's columns and rows, which share out the control's size. */
+  layoutColumns: number;
+  layoutRows: number;
+}
+
+/** One printed cell of a cross-tab, relative to the control's top left. */
+export interface CrossTabGridCell {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  /** The typed value, for a workbook cell; undefined for a caption. */
+  value?: Value;
+}
+
+/** A cross-tab as DevExpress prints it over the test data. */
+export interface CrossTabGrid {
+  width: number;
+  height: number;
+  cells: CrossTabGridCell[];
 }
 
 /**
@@ -1296,7 +1323,16 @@ function parseCrossTab(inner: string, controlStart: number, controlEnd: number):
       .map((item) => attrOf(item.attrs, 'FieldName') ?? '')
       .filter(Boolean);
   };
-  return { rows: fields('RowFields'), columns: fields('ColumnFields'), data: fields('DataFields') };
+  const facts = crossTabFacts(slice);
+  return {
+    rows: fields('RowFields'),
+    columns: fields('ColumnFields'),
+    data: fields('DataFields'),
+    printable: facts.printable,
+    measured: facts.measured,
+    layoutColumns: facts.columns,
+    layoutRows: facts.rows,
+  };
 }
 
 /**
@@ -1669,6 +1705,8 @@ export interface PlacedControl {
   cellValues?: (Value | null | undefined)[][] | null;
   /** For an embedded subreport: its report's bands as laid out, relative to the control. */
   inner?: PlacedBand[] | null;
+  /** For a cross-tab over test data: the grid it prints; null where its structure is drawn. */
+  crossTab?: CrossTabGrid | null;
 }
 
 /** One printed occurrence of a band: a record's Detail, a page's header, a split part. */
@@ -1688,6 +1726,13 @@ interface LayoutContext {
   data?: ReportData | null;
   /** The report's formatting rules, by `Ref`. */
   rules?: Record<string, FormattingRule>;
+  /**
+   * The test rows once each, typed, before the report's filter: what a
+   * cross-tab reads, since it has a data source of its own.
+   */
+  source?: readonly TypedRow[] | null;
+  /** The band's printable width, which a cross-tab's grid must fit inside. */
+  contentWidth?: number;
 }
 
 /** What the rules linked by `refs` set for this record: later links win, property by property. */
@@ -1904,8 +1949,12 @@ export function layoutBand(
       let lines: string[] | null = null;
       let rowHeights: number[] | null = null;
       let inner: PlacedBand[] | null = null;
+      let crossTab: CrossTabGrid | null = null;
       const texts = textsOf(control, values, ctx, scope);
-      if (control.subreport?.structure) {
+      if (control.crossTab && (crossTab = crossTabGrid(control, ctx))) {
+        // A cross-tab grows by whole cells to hold its grid, as s23 printed.
+        if (crossTab.height > height) height = crossTab.height;
+      } else if (control.subreport?.structure) {
         // An embedded subreport grows to its report's height, as s22b printed.
         const laid = subreportLayout(control.subreport.structure, ctx);
         inner = laid.bands;
@@ -1933,7 +1982,7 @@ export function layoutBand(
         });
         height = rowHeights.reduce((sum, h) => sum + h, 0);
       }
-      return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, shift: 0, ...texts };
+      return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, crossTab, shift: 0, ...texts };
     })
     .sort((a, b) => a.top - b.top);
 
@@ -1969,8 +2018,106 @@ export function layoutBand(
       value: it.value,
       cellValues: it.cellValues ?? null,
       inner: it.inner,
+      crossTab: it.crossTab,
     })),
   };
+}
+
+const crossTabCache = new WeakMap<PreviewCrossTab, WeakMap<readonly TypedRow[], CrossTabGrid | null>>();
+
+/** One value of a field: strings by exact text, as "b" and "B" printed apart in s25. */
+const sameKey = (a: Value, b: Value) =>
+  a === null || b === null ? a === b : typeof a === 'string' || typeof b === 'string' ? a === b : sortCompare(a, b) === 0;
+
+/**
+ * A cross-tab as DevExpress prints it over the test rows (parity row 31), or
+ * null where the Preview keeps drawing its structure.
+ *
+ * Printed in cases s23 and s25 for up to one field of each kind. The header
+ * row holds the row field's name, each column value and `Grand Total`. Then
+ * comes one row per row value and a `Grand Total` row. Values sort with a
+ * missing one first and then by en-US collation, numbers by value, which is
+ * `sortCompare`. Each intersection is the sum of its records' data values,
+ * unformatted and in the data's own type. It is blank where no record falls,
+ * and 0 where records fall but none has a value. Every cell takes an equal
+ * share of the control's size per the generated layout, and the grid grows
+ * from there by whole cells.
+ *
+ * Null keeps the structure drawing for what was not printed, or what would
+ * not print: no test data, a layout DevExpress refuses, two fields of a kind,
+ * a setting on a field or a style on a cell, data that is not numeric, and a
+ * grid wider than the page, which DevExpress continues onto another page.
+ */
+function crossTabGrid(control: PreviewControl, ctx: LayoutContext): CrossTabGrid | null {
+  const tab = control.crossTab;
+  const rows = ctx.source;
+  if (!tab || !rows?.length || !tab.printable || !tab.measured) return null;
+  if (tab.rows.length > 1 || tab.columns.length > 1 || tab.data.length > 1) return null;
+  let byRows = crossTabCache.get(tab);
+  if (!byRows) crossTabCache.set(tab, (byRows = new WeakMap()));
+  let grid = byRows.get(rows);
+  if (grid === undefined) {
+    grid = buildCrossTabGrid(tab, rows, control.width / tab.layoutColumns, control.height / tab.layoutRows);
+    byRows.set(rows, grid);
+  }
+  if (!grid || (ctx.contentWidth !== undefined && control.x + control.offsetX + grid.width > ctx.contentWidth + 0.5)) return null;
+  return grid;
+}
+
+function buildCrossTabGrid(tab: PreviewCrossTab, rows: readonly TypedRow[], cellWidth: number, cellHeight: number): CrossTabGrid | null {
+  const [rowField] = tab.rows;
+  const [columnField] = tab.columns;
+  const [dataField] = tab.data;
+  const amount = dataField === undefined ? null : parseCriteria(`[${dataField.replace(/]/g, ']]')}]`);
+  if (dataField !== undefined) {
+    const numeric = rows.every((r) => {
+      const v = r[dataField] ?? null;
+      return v === null || typeof v === 'bigint' || typeof v === 'number' || v instanceof NetDecimal;
+    });
+    if (!numeric) return null;
+  }
+
+  const keys = (field: string | undefined) => {
+    if (field === undefined) return [null];
+    const out: Value[] = [];
+    for (const r of rows) {
+      const v = r[field] ?? null;
+      if (!out.some((o) => sameKey(o, v))) out.push(v);
+    }
+    return out.sort(sortCompare);
+  };
+  const rowKeys = keys(rowField);
+  const columnKeys = keys(columnField);
+  const matches = (field: string | undefined, key: Value) => (r: TypedRow) => field === undefined || sameKey(r[field] ?? null, key);
+
+  /** The sum over these records: blank with none, 0 when none has a value. */
+  const total = (records: readonly TypedRow[]): { text: string; value?: Value } => {
+    if (!amount || !records.length) return { text: '' };
+    const sum = aggregate('sumsum', [amount], records, 0, () => null) ?? 0n;
+    return { text: valueText(sum), value: sum };
+  };
+
+  const columnCount = 1 + columnKeys.length + (columnField !== undefined ? 1 : 0);
+  const rowCount = 1 + rowKeys.length + (rowField !== undefined ? 1 : 0);
+  const cells: CrossTabGridCell[] = [];
+  const put = (column: number, row: number, cell: { text: string; value?: Value }) =>
+    cells.push({ x: column * cellWidth, y: row * cellHeight, width: cellWidth, height: cellHeight, ...cell });
+  const key = (v: Value) => (v === null ? { text: '' } : { text: valueText(v), value: v });
+
+  put(0, 0, { text: rowField ?? '' });
+  columnKeys.forEach((k, c) => put(1 + c, 0, columnField === undefined ? { text: '' } : key(k)));
+  if (columnField !== undefined) put(columnCount - 1, 0, { text: 'Grand Total' });
+
+  const bodyRows = [...rowKeys.map((k) => ({ head: rowField === undefined ? { text: '' } : key(k), keep: matches(rowField, k) }))];
+  if (rowField !== undefined) bodyRows.push({ head: { text: 'Grand Total' }, keep: () => true });
+  bodyRows.forEach(({ head, keep }, r) => {
+    const inRow = rows.filter(keep);
+    put(0, 1 + r, head);
+    columnKeys.forEach((k, c) => put(1 + c, 1 + r, total(inRow.filter(matches(columnField, k)))));
+    if (columnField !== undefined) put(columnCount - 1, 1 + r, total(inRow));
+  });
+
+  return { width: columnCount * cellWidth, height: rowCount * cellHeight, cells };
 }
 
 const subreportCache = new WeakMap<ReportStructure, Map<MeasureText | null, { height: number; bands: PlacedBand[] }>>();
@@ -2300,7 +2447,16 @@ export function paginate(
   }
   /** Records to lay out: the data's own count when there is test data, none included. */
   const records = data ? data.records.length : recordCount;
-  const ctx: LayoutContext = { measure: options.measure ?? null, unit: structure.unit, data, rules: structure.rules };
+  const ctx: LayoutContext = {
+    measure: options.measure ?? null,
+    unit: structure.unit,
+    data,
+    rules: structure.rules,
+    source: options.rows
+      ? ReportData.from(options.rows, options.rows.length, structure.calculatedFields, structure.parameters, options.parameters).records
+      : null,
+    contentWidth: structure.page.width - structure.margins.left - structure.margins.right,
+  };
   const rowFor = (i: number) =>
     options.rows?.length ? options.rows[(order ? order[i] : i) % options.rows.length] : null;
 

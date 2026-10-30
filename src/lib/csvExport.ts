@@ -62,9 +62,14 @@ function cellsOf(report: PaginatedReport): { x: number; y: number; text: string 
   const out: { x: number; y: number; text: string }[] = [];
   for (const { page, bandLeft, bandTop, pc } of placedControls(report)) {
     const c = pc.control;
-    if (TEXTLESS.has(c.type)) continue;
     const left = bandLeft + c.x + c.offsetX;
     const top = bandTop + pc.y;
+    // A cross-tab drawn over test data exports its grid, as DevExpress's did.
+    if (pc.crossTab) {
+      for (const cell of pc.crossTab.cells) out.push({ x: left + cell.x, y: top + cell.y, text: cell.text });
+      continue;
+    }
+    if (TEXTLESS.has(c.type)) continue;
     if (c.type === 'XRTable') {
       const rowHeights = pc.rowHeights ?? c.rows.map(() => c.height / Math.max(1, c.rows.length));
       let y = top;

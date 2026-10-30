@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,853 tests in 91 files** — under the `node` environment
+`npm test` runs Vitest over **1,863 tests in 91 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -119,7 +119,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
 | `lib/reportGeometry` | 37 |  |
-| `lib/reportPreview` | 184 | 12 from two loops: parity cases c05 to c05e page for page, and the seven s19 nesting variants |
+| `lib/reportPreview` | 192 | 16 from three loops: parity cases c05 to c05e page for page, the seven s19 nesting variants, and the four one-field-per-kind cross-tabs' CSVs |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
 | `lib/repxAudit` | 87 |  |
@@ -151,7 +151,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/userInstructions` | 9 |  |
 | `lib/vectorSearch` | 14 |  |
 | `lib/workspaceView` | 11 |  |
-| `lib/xlsxExport` | 6 | Excel export; the expectations are DevExpress's own workbooks read into grids, one by fingerprint |
+| `lib/xlsxExport` | 8 | Excel export; the expectations are DevExpress's own workbooks read into grids, one by fingerprint |
 | `lib/zip` | 25 |  |
 | `server/bindHost` | 6 |  |
 | `server/hostingConfig` | 9 | reads `firebase.json` off disk |
@@ -168,7 +168,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 1,853 in 91 files** — and that total is the arithmetic sum of the column above
+**Total: 1,863 in 91 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -182,7 +182,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,786** against a real 1,853 and will talk you into
+A grep for `\bit(` answers **1,793** against a real 1,863 and will talk you into
 "correcting" numbers that were already right. **Nine** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
@@ -191,8 +191,8 @@ device names, `attachmentParts` six of its fourteen over malformed data URLs,
 from **two** `it(` sharing one loop over the four conditions that must block a send,
 `analysisResponse` four of its sixteen from **two** `it(` sharing one loop over stop
 reasons — the shape `Composer` now also has — `reportData` seven of its 23 from one
-`it(` over the bands of parity case s17, and `reportPreview` twelve of its 184 from two
-`it(`, one over the five c05 cases and one over the seven s19 nesting variants, and
+`it(` over the bands of parity case s17, and `reportPreview` sixteen of its 192 from three
+`it(`, one over the five c05 cases, one over the seven s19 nesting variants and one over four cross-tabs, and
 `repxCrossTabs` twenty-four of its 37 from one `it(` over the field shapes DevExpress generated.
 
 **The shortfall is a constant, not a coincidence** — every other file adds as many tests
@@ -210,8 +210,9 @@ paragraph exists to let you conclude in one step.
 one `for` over seven bands, so one `it(` became seven tests and the gap grew by six.
 `reportPreview` then added two: five c05 cases from one `it(` and seven s19 variants from
 another, ten more. It is **67** after parity row 30: `repxCrossTabs` added one `for` over
-24 shapes, so one `it(` became 24 tests and the gap grew by 23. The nine loop files
-account for all 67, so every other file's grep count still matches the table.
+24 shapes, so one `it(` became 24 tests and the gap grew by 23. It is **70** after row 31,
+whose loop over four cross-tabs added three more. The nine loop files account for all 70,
+so every other file's grep count still matches the table.
 
 Two ways the arithmetic goes wrong:
 

@@ -1,6 +1,6 @@
 # DevExpress parity: measured behaviour and comparison
 
-Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day; row 30 is built. Row 33, found while building it, waits for approval.
+Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day: rows 30 and 31 are built, and row 32 was approved as "do not adopt". Row 33, found while building row 30, waits for approval.
 
 ## Method
 
@@ -49,6 +49,8 @@ Not measured at first: DevExpress versions above 20.1; subreports; charts and cr
 | s23 shapes | `GenerateLayout()` for 24 field shapes from 0-0-0 to 3-3-1, and for two shapes in each report unit. |
 | s23 ct cases | Ten cross-tabs written as the prompt teaches, over 24 records, in all three units: each printed unrepaired, after Forma's repair, and with DevExpress's own generated layout. |
 | s24-dpi | One label one inch down and two wide, in a millimetre and a pixel report, with `Dpi` written nowhere, on the root only, or on every band and control. |
+| s25-crosstab | Two cross-tabs of Amount by Region and Quarter over nine records: regions differing only in case, a missing region, integer quarters, decimal amounts, an empty intersection and one whose only record has no amount. The second carries its own font, colours, borders, padding and alignment. |
+| s26-origin | One label at 50,20, exported to Excel, to see where the sheet starts. |
 
 ## How DevExpress 20.1 behaves
 
@@ -187,6 +189,14 @@ Not measured at first: DevExpress versions above 20.1; subreports; charts and cr
 - **A missing collection still prints.** With no column field DevExpress printed each region's total. With no data field it printed the grid of regions and quarters with empty cells. So the audit's `crosstab-missing-fields` warning and the prompt's sentence that such a cross-tab "prints nothing" are wrong.
 - **A chart prints as one picture at the control's size, with no text and nothing in the CSV.** Its points are one per record, in record order, as the data holds them, not aggregated: the bar series over Region had twelve points for three regions.
 
+### A cross-tab's values (measured for row 31)
+
+- **Order.** A missing value comes first, then text by en-US collation, then numbers by value: the regions printed blank, a, apple, Apple, b, B, Z, and the quarters 1, 2, 10. Text groups by exact value, so b and B are two rows.
+- **Intersections.** Each holds the sum of its records' values in the data's own type, unformatted, keeping a decimal's scale: 109.1, 2.25, 118.60. It is blank where no record falls, and 0 where records fall but none has a value.
+- **Appearance.** Every cell printed in DevExpress's default Times New Roman 9.75pt, black, top left, with no padding, fill or border. That held in a report whose font was Arial 8pt, and in a cross-tab that set its own font, colours, borders, padding and alignment: none of them reached a cell.
+- **Missing fields.** With no row field, one row of column totals under an empty header. With no column field, one column of row totals under an empty header. With no data field, the full grid with every value cell empty.
+- **The workbook.** Values are typed: quarters are numbers, regions text with Excel's text format, captions General. Empty cells are absent. **The sheet starts at the content's top-left corner, not at the first control.** In s26 a label at 50,20 sat in B2, after a half-inch column and a 20-unit row, and s23's cross-tab at y=10 came after a 10-unit row. Every earlier case had a control at both edges, which is why row 19 never saw it.
+
 ### Report units and Dpi (measured while building row 30)
 
 - **Every band and control is read at its own `Dpi`, 100 when absent, whatever `ReportUnit` says.** In s24 a label meant to sit one inch down and two inches wide printed 2.54 inches down and 5.08 wide in a millimetre report with no `Dpi` written, and 0.96 down and 1.92 wide in a pixel one. `Dpi` on the root alone changed nothing for the label. Written on the bands and controls too, as DevExpress's serializer writes it, the label printed at one inch.
@@ -266,8 +276,8 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
 |---|---|---|---|---|---|---|
 | 30 | A cross-tab DevExpress can print | Fields only | Generates definitions and cells | **Done 2026-10-30** | DevExpress, and the defect was Forma's: every cross-tab Forma wrote threw when DevExpress printed it | Done: `repairCrossTabs` writes the layout `crossTabLayout` generates, which matched every cell of all 24 shapes DevExpress generated, ten of them unseen when the rule was written. Cells are one inch by a quarter inch in the control's own `Dpi`, measured in all three units. Ten prompt-shaped cross-tabs that threw now print box for box what DevExpress's own layout prints, with an identical CSV. The audit's `crosstab-no-layout` error reports one without the layout, `crosstab-missing-fields` now fires only for a missing data field, and the prompt asks for fields only and always a data field |
-| 31 | A cross-tab's values over test data | Field names only | Prints the grid of sums | Structure only | DevExpress | Adopt for one row, one column and one data field, as s23 printed: values ascending, `Grand Total` row and column, unformatted sums. The control grows by whole cells and pushes what is below it, and both exports carry the grid. Nested fields, two data fields and a grid wider than the page wait for their own measurement and keep today's drawing |
-| 32 | A chart's values over test data | Frame, and the binding in words | A picture of one point per record | Structure only | Neither: no export can be compared with a picture, and drawing it means a charting engine in the Preview | Do not adopt: keep the frame and the binding in words. The measured points are recorded above for when this is reconsidered |
+| 31 | A cross-tab's values over test data | Field names only | Prints the grid of sums | **Done 2026-10-30** | DevExpress | Done for up to one field of each kind. The Preview draws the grid from the test rows before the report's filter, with order, blanks, zeros, sums and appearance as s25 printed. The control grows by whole cells and pushes what is below, and the CSV and workbook carry the grid. s25 and the four one-field-per-kind cases match DevExpress cell for cell in the pane and the CSV, and in the workbook in Edge. Doing so found and fixed the workbook's origin, an omission from row 19. Nested fields, two data fields, a grid wider than the page, a summary setting and styled cells keep the structure drawing |
+| 32 | A chart's values over test data | Frame, and the binding in words | A picture of one point per record | Structure only | Neither: no export can be compared with a picture, and drawing it means a charting engine in the Preview | **Not adopted, as approved 2026-10-30**: the frame and the binding in words stay. The measured points are recorded above for when this is reconsidered |
 
 **Proposed while building row 30, waiting for the owner's approval.**
 

@@ -81,9 +81,22 @@ function itemsOf(structure: ReportStructure, recordCount: number, options: Pagin
   const out: Item[] = [];
   for (const { page, bandLeft, bandTop, pc } of placedControls(report)) {
     const c: PreviewControl = pc.control;
-    if (TEXTLESS.has(c.type)) continue;
     const left = bandLeft + c.x + c.offsetX;
     const top = bandTop + pc.y;
+    // A cross-tab's grid, in DevExpress's default appearance: s25 printed none
+    // of the cross-tab's own reaching its cells, and wrote values typed.
+    if (pc.crossTab) {
+      for (const cell of pc.crossTab.cells) {
+        out.push({
+          left: left + cell.x, top: top + cell.y, right: left + cell.x + cell.width, bottom: top + cell.y + cell.height,
+          text: cell.text, value: cell.value, format: null,
+          font: fontOf({ fontFamily: null, fontSize: null, bold: false, italic: false }, {}),
+          fill: null, h: 'left', v: 'top', url: null,
+        });
+      }
+      continue;
+    }
+    if (TEXTLESS.has(c.type)) continue;
     if (c.type === 'XRTable') {
       const heights = pc.rowHeights ?? c.rows.map(() => c.height / Math.max(1, c.rows.length));
       let y = top;
@@ -207,8 +220,13 @@ export function reportToXlsx(structure: ReportStructure, recordCount: number, op
   const perInch = unitsPerInch(structure.unit);
   const px = (u: number) => Math.round((u / perInch) * 96);
   const key = (n: number) => Math.round(n * 100) / 100;
-  const xs = [...new Set(items.flatMap((i) => [key(i.left), key(i.right)]))].sort((a, b) => a - b);
-  const ys = [...new Set(items.flatMap((i) => [key(i.top), key(i.bottom)]))].sort((a, b) => a - b);
+  // The sheet starts at the content's top-left corner, not at the first
+  // control: DevExpress's workbook of s26, one label at 50,20, opened with a
+  // half-inch column and a 20-unit row before it, and s23's cross-tab at y=10
+  // with a 10-unit row. Every earlier case had a control at both edges.
+  const origin = { x: key(structure.margins.left), y: key(structure.margins.top) };
+  const xs = [...new Set([origin.x, ...items.flatMap((i) => [key(i.left), key(i.right)])])].sort((a, b) => a - b);
+  const ys = [...new Set([origin.y, ...items.flatMap((i) => [key(i.top), key(i.bottom)])])].sort((a, b) => a - b);
 
   // Styles, deduplicated.
   const numFmts: string[] = [];

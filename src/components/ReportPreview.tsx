@@ -439,13 +439,17 @@ function ControlBox({
   }
 
   /*
-   * A chart and a cross-tab are drawn as their STRUCTURE, not as invented data.
+   * A chart is drawn as its STRUCTURE, not as invented data, and so is a
+   * cross-tab that the Preview cannot draw from the test data (row 31 draws
+   * the rest, above).
    *
-   * The preview has no data source, so plotting bars would mean making numbers
-   * up and showing them on a page the user is checking for accuracy. What is
-   * actually knowable from the file is the shape and the binding -- a bar chart
-   * of Amount by Region -- and that is the thing worth confirming, because a
-   * chart bound to the wrong field looks identical to a correct one either way.
+   * Without test data, plotting bars would mean making numbers up and showing
+   * them on a page the user is checking for accuracy. What is actually
+   * knowable from the file is the shape and the binding -- a bar chart of
+   * Amount by Region -- and that is the thing worth confirming, because a chart
+   * bound to the wrong field looks identical to a correct one either way. A
+   * chart stays this way with test data too: DevExpress prints it as one
+   * picture, which no export can be checked against (parity row 32).
    */
   if (control.type === 'XRChart') {
     const pie = control.series.some((s) => s.view === 'PieSeriesView');
@@ -474,6 +478,40 @@ function ControlBox({
             ? 'chart with no series'
             : control.series.map((s) => `${s.value || '?'} by ${s.argument || '?'}`).join(' · ')}
         </div>
+      </div>
+    );
+  }
+
+  /*
+   * A cross-tab over test data draws the grid DevExpress prints (parity row
+   * 31). Every cell is in DevExpress's own default appearance -- Times New
+   * Roman 9.75pt, black, top left, no padding, fill or border -- because s25
+   * printed none of the cross-tab's own Font, colours, borders or alignment
+   * reaching a cell, nor the report's.
+   */
+  if (control.type === 'XRCrossTab' && placed.crossTab) {
+    return (
+      <div style={{ position: 'absolute', left: frame.left, top: frame.top, width: u(placed.crossTab.width), height: u(placed.crossTab.height) }}>
+        {placed.crossTab.cells.map((cell, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              left: u(cell.x),
+              top: u(cell.y),
+              width: u(cell.width),
+              height: u(cell.height),
+              overflow: 'hidden',
+              fontFamily: '"Times New Roman", serif',
+              fontSize: '9.75pt',
+              color: '#000',
+              whiteSpace: 'pre-wrap',
+              lineHeight: `${lineSpacingPt('Times New Roman', 9.75)}pt`,
+            }}
+          >
+            {cell.text}
+          </div>
+        ))}
       </div>
     );
   }
