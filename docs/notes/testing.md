@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,626 tests in 81 files** — under the `node` environment
+`npm test` runs Vitest over **1,636 tests in 81 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -113,7 +113,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/reportBands` | 15 |  |
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportGeometry` | 37 |  |
-| `lib/reportPreview` | 104 |  |
+| `lib/reportPreview` | 113 |  |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
 | `lib/repxAudit` | 85 |  |
@@ -122,7 +122,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxChunks` | 22 |  |
 | `lib/repxEdit` | 24 |  |
 | `lib/repxItems` | 12 |  |
-| `lib/repxLayout` | 7 | controls past the page or their band, bands taller than the page |
+| `lib/repxLayout` | 8 | controls past the printable width or their band, bands taller than the page |
 | `lib/repxMargins` | 24 |  |
 | `lib/repxOverlaps` | 9 | FixLayoutErrors: overlapping siblings found and moved apart |
 | `lib/repxParameters` | 24 |  |
@@ -158,7 +158,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 1,626 in 81 files** — and that total is the arithmetic sum of the column above
+**Total: 1,636 in 81 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.

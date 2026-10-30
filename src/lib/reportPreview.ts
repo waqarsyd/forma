@@ -264,10 +264,12 @@ export interface PreviewControl {
  */
 export interface PreviewColumns {
   count: number;
+  /** `ColumnWidth`, read only in `UseColumnWidth` mode; 0 when absent. */
+  width: number;
   spacing: number;
   /** `AcrossThenDown` or `DownThenAcross`. */
   layout: string;
-  /** `UseColumnCount` or `UseColumnWidth`. */
+  /** `UseColumnCount`, `UseColumnWidth`, or `None` -- the default, one column. */
   mode: string;
 }
 
@@ -289,7 +291,15 @@ export interface PreviewBand {
 
 export interface ReportStructure {
   page: { width: number; height: number };
-  margins: { top: number; bottom: number };
+  /**
+   * From `Margins="left, right, top, bottom"`. Band content starts at the left
+   * margin, and the printable width is the page less BOTH side margins:
+   * measured by printing, where a control at band position 0,0 under
+   * `Margins="60, 40, 50, 50"` printed at page position 60,50. This held only
+   * top and bottom until 2026-10-30, so every control previewed shifted left
+   * by the left margin.
+   */
+  margins: { top: number; bottom: number; left: number; right: number };
   unit: string;
   bands: PreviewBand[];
   /**
@@ -364,8 +374,46 @@ function parseColumns(bandInner: string): PreviewColumns | null {
      * column top to bottom before any reached the second.
      */
     layout: attrOf(attrs, 'Layout') || 'DownThenAcross',
-    mode: attrOf(attrs, 'Mode') || 'UseColumnCount',
+    /*
+     * `None` is the default, and it means ONE column whatever ColumnCount says.
+     * Measured by printing on 2026-10-30: `ColumnCount="2"` with no `Mode`
+     * printed every record in a single column. This line defaulted to
+     * `UseColumnCount` until then, so such a file previewed in columns that
+     * DevExpress never prints. The generation prompt always said to write the
+     * mode; this pane is now as strict as DevExpress about it.
+     */
+    mode: attrOf(attrs, 'Mode') || 'None',
+    width: numAttr(attrs, 'ColumnWidth', 0),
   };
+}
+
+/**
+ * The columns a band actually prints in, or null for one column.
+ *
+ * `printableWidth` is the page less both side margins. Measured with
+ * `RepxProbe render`:
+ *
+ * - `UseColumnCount` divides the printable width: two columns with 20 spacing
+ *   over 750 put the second at 385, each 365 wide.
+ * - `UseColumnWidth` keeps the declared width and fits as many as the
+ *   printable width holds: 200 wide with 20 spacing over 750 gave three, at 0,
+ *   220 and 440.
+ * - Any other mode, or none, is one column.
+ */
+export function activeColumns(
+  columns: PreviewColumns | null,
+  printableWidth: number,
+): { count: number; width: number; spacing: number; layout: string } | null {
+  if (!columns) return null;
+  const { spacing, layout } = columns;
+  if (columns.mode === 'UseColumnCount' && columns.count > 1) {
+    return { count: columns.count, width: (printableWidth - spacing * (columns.count - 1)) / columns.count, spacing, layout };
+  }
+  if (columns.mode === 'UseColumnWidth' && columns.width > 0) {
+    const count = Math.max(1, Math.floor((printableWidth + spacing) / (columns.width + spacing)));
+    return count > 1 ? { count, width: columns.width, spacing, layout } : null;
+  }
+  return null;
 }
 
 /**
@@ -978,7 +1026,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
   const problems: string[] = [];
   const empty: ReportStructure = {
     page: { width: 850, height: 1100 },
-    margins: { top: 0, bottom: 0 },
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
     unit: 'HundredthsOfAnInch',
     bands: [],
     watermark: null,
@@ -1010,7 +1058,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
       width: numAttr(rootAttrs, 'PageWidth', 850),
       height: numAttr(rootAttrs, 'PageHeight', 1100),
     },
-    margins: { top: marginRaw[2] ?? 0, bottom: marginRaw[3] ?? 0 },
+    margins: { top: marginRaw[2] ?? 0, bottom: marginRaw[3] ?? 0, left: marginRaw[0] ?? 0, right: marginRaw[1] ?? 0 },
     unit: attrOf(rootAttrs, 'ReportUnit') || 'HundredthsOfAnInch',
     bands: [],
     watermark: parseWatermark(text),
@@ -1085,17 +1133,17 @@ export interface PlacedBand {
   /**
    * Page-relative left edge, in report units.
    *
-   * 0 for everything except a record in the second or later column of a
-   * multi-column Detail band. Headers and footers always span the full width —
-   * DevExpress divides only the detail flow, not the page.
+   * The left margin for everything except a record in the second or later
+   * column of a multi-column Detail band. Headers and footers always span the
+   * printable width — DevExpress divides only the detail flow, not the page.
    */
   left: number;
   /**
    * How wide this band prints, in report units.
    *
-   * The full page width except inside a multi-column Detail band, where it is
-   * one column. The renderer needs it because a column's controls are laid out
-   * against the column's width, not the page's.
+   * The printable width -- the page less both side margins -- except inside a
+   * multi-column Detail band, where it is one column. The renderer needs it
+   * because a column's controls are laid out against the column's width.
    */
   width: number;
   /** 1-based record number for a repeated Detail band; null for everything else. */
@@ -1111,6 +1159,12 @@ export interface PreviewPage {
 export interface PaginatedReport {
   pages: PreviewPage[];
   page: { width: number; height: number };
+  /**
+   * The printable area across the page: from the left margin, the page less
+   * both side margins. The renderer clips each band at its right edge, because
+   * DevExpress clips a control there (and prints the rest on an extra page).
+   */
+  content: { left: number; width: number };
   unit: string;
   /** Records actually laid out. */
   records: number;
@@ -1185,8 +1239,31 @@ export function paginate(
   let current: PreviewPage | null = null;
   let cursor = 0;
 
-  /** The full page width, which every band gets unless it is in a column. */
-  const fullWidth = structure.page.width;
+  /*
+   * Where band content goes across the page: from the left margin, as wide as
+   * the page less both side margins. Every band gets that unless it is in a
+   * column. Until 2026-10-30 this was 0 and the full page width, which drew
+   * every control left of where DevExpress prints it by the left margin.
+   */
+  const contentLeft = structure.margins.left;
+  const fullWidth = Math.max(0, structure.page.width - structure.margins.left - structure.margins.right);
+
+  /*
+   * A control past the printable width. DevExpress clips it at the right margin
+   * and prints what was clipped on an EXTRA page -- measured both for a control
+   * that only reached into the margin and for one past the page edge; each
+   * turned a one-page report into two. This pane clips at the margin too (see
+   * `content` below) but does not draw the extra page, so it says so.
+   */
+  const overhanging = bands
+    .flatMap((b) => b.controls)
+    .filter((c) => c.width > 0 && c.x + c.offsetX + c.width > fullWidth + 1);
+  if (overhanging.length) {
+    problems.push(
+      `${overhanging.length} control(s) run past the right margin (${overhanging.slice(0, 3).map((c) => c.name || c.type).join(', ')}). ` +
+        'DevExpress clips them at the margin and prints the clipped part on an extra page, which this preview does not draw.',
+    );
+  }
 
   /*
    * `withReportHeader` is only true for page 1, and the ordering it produces is
@@ -1210,18 +1287,18 @@ export function paginate(
     pages.push(current);
     cursor = topMargin;
     if (withReportHeader && reportHeader) {
-      current.bands.push({ band: reportHeader, top: cursor, left: 0, width: fullWidth, record: null });
+      current.bands.push({ band: reportHeader, top: cursor, left: contentLeft, width: fullWidth, record: null });
       cursor += reportHeader.height;
     }
     if (pageHeader) {
-      current.bands.push({ band: pageHeader, top: cursor, left: 0, width: fullWidth, record: null });
+      current.bands.push({ band: pageHeader, top: cursor, left: contentLeft, width: fullWidth, record: null });
       cursor += pageHeader.height;
     }
     if (pageFooter) {
       current.bands.push({
         band: pageFooter,
         top: structure.page.height - bottomMargin - pageFooter.height,
-        left: 0,
+        left: contentLeft,
         width: fullWidth,
         record: null,
       });
@@ -1234,7 +1311,7 @@ export function paginate(
     if (cursor + band.height > pageBottom && pages.length < maxPages) {
       startPage();
     }
-    current!.bands.push({ band, top: cursor, left: 0, width: fullWidth, record });
+    current!.bands.push({ band, top: cursor, left: contentLeft, width: fullWidth, record });
     cursor += band.height;
   };
 
@@ -1252,7 +1329,8 @@ export function paginate(
           'design went into one band instead of being split across ReportHeader, PageHeader and Detail.',
       );
     }
-    const columns = detail.columns && detail.columns.count > 1 ? detail.columns : null;
+    // Only the columns DevExpress prints: a declared count with no Mode is one.
+    const columns = activeColumns(detail.columns, fullWidth);
 
     if (!columns) {
       for (let i = 0; i < records; i++) {
@@ -1279,7 +1357,7 @@ export function paginate(
        * footers, the report footer — lands below all of the columns rather than
        * inside them.
        */
-      const columnWidth = (fullWidth - columns.spacing * (columns.count - 1)) / columns.count;
+      const columnWidth = columns.width;
       const downThenAcross = columns.layout === 'DownThenAcross';
 
       /*
@@ -1313,7 +1391,7 @@ export function paginate(
         current!.bands.push({
           band: detail,
           top: pageTop + row * detail.height,
-          left: column * (columnWidth + columns.spacing),
+          left: contentLeft + column * (columnWidth + columns.spacing),
           width: columnWidth,
           record: i + 1,
         });
@@ -1348,6 +1426,7 @@ export function paginate(
   return {
     pages,
     page: structure.page,
+    content: { left: contentLeft, width: fullWidth },
     unit: structure.unit,
     records: placedRecords,
     recordsPerPage,

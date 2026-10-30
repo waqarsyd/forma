@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseReportStructure,
   paginate,
+  activeColumns,
   recordCountFromLayout,
   decodeXmlText,
 } from './reportPreview';
@@ -839,7 +840,7 @@ describe('multi-column bands', () => {
 
   it('reads the declaration', () => {
     const b = band('<MultiColumn Ref="3" ColumnCount="3" ColumnSpacing="20" Layout="AcrossThenDown" Mode="UseColumnCount" />');
-    expect(b.columns).toEqual({ count: 3, spacing: 20, layout: 'AcrossThenDown', mode: 'UseColumnCount' });
+    expect(b.columns).toEqual({ count: 3, width: 0, spacing: 20, layout: 'AcrossThenDown', mode: 'UseColumnCount' });
   });
 
   it('reports null for a band that declares none', () => {
@@ -1209,5 +1210,100 @@ describe('styles and inheritance, as DevExpress prints them', () => {
     const look = (xml: string) => parseReportStructure(xml).bands.flatMap((b) => b.controls)
       .map(({ name, fontSize, fontFamily, bold, italic, align, vAlign, borders }) => ({ name, fontSize, fontFamily, bold, italic, align, vAlign, borders }));
     expect(look(lifted.xml)).toEqual(look(before));
+  });
+});
+
+/*
+ * Side margins and the printable width, as DevExpress PRINTS them.
+ *
+ * Every expectation here is a position DevExpress 20.1 drew for the same
+ * report through `RepxProbe render` on 2026-10-30 (row 4 of
+ * docs/proposals/devexpress-parity.md). Before this, every band was placed at
+ * the page's left edge across its full width, so with a 60-unit left margin
+ * every control previewed 60 units left of where it prints.
+ */
+describe('side margins and the printable width, as DevExpress prints them', () => {
+  const withMargins = (margins: string, detailInner: string, header = '') =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    `<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" ReportUnit="HundredthsOfAnInch" Margins="${margins}" PageWidth="850" PageHeight="1100" Version="20.1">` +
+    '<Bands><Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />' +
+    `<Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="100"><Controls>${header || '<Item1 Ref="10" ControlType="XRLabel" Name="atOrigin" Text="ORIGIN" LocationFloat="0,0" SizeF="100,20" />'}</Controls></Item2>` +
+    `<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="25">${detailInner}<Controls><Item1 Ref="13" ControlType="XRLabel" Name="cell" Text="cell" LocationFloat="0,0" SizeF="100,20" /></Controls></Item3>` +
+    '<Item4 Ref="6" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" /></Bands></XtraReportsLayoutSerializer>';
+
+  const detailSlots = (xml: string, records = 6) =>
+    paginate(parseReportStructure(xml), records).pages[0].bands
+      .filter((b) => b.record !== null)
+      .map((b) => ({ record: b.record, left: b.left, width: b.width }));
+
+  it('reads all four margins, in the order DevExpress writes them', () => {
+    expect(parseReportStructure(withMargins('60, 40, 50, 30', '')).margins).toEqual({ left: 60, right: 40, top: 50, bottom: 30 });
+  });
+
+  it('starts every band at the left margin, as wide as the page less both margins', () => {
+    // DevExpress printed the label at band 0,0 at page 60,50, and the printable width was 750.
+    const report = paginate(parseReportStructure(withMargins('60, 40, 50, 50', '')), 3);
+    expect(report.content).toEqual({ left: 60, width: 750 });
+    for (const placed of report.pages[0].bands) {
+      expect(placed.left).toBe(60);
+      expect(placed.width).toBe(750);
+    }
+    expect(report.pages[0].bands[0]).toMatchObject({ top: 50 });
+  });
+
+  it('leaves a report with no side margins exactly where it was', () => {
+    const report = paginate(parseReportStructure(withMargins('0, 0, 0, 0', '')), 2);
+    expect(report.content).toEqual({ left: 0, width: 850 });
+    expect(report.pages[0].bands.every((b) => b.left === 0 && b.width === 850)).toBe(true);
+  });
+
+  it('never makes the printable width negative', () => {
+    expect(paginate(parseReportStructure(withMargins('500, 500, 0, 0', '')), 1).content.width).toBe(0);
+  });
+
+  it('prints one column for a ColumnCount with no Mode, as DevExpress did', () => {
+    const slots = detailSlots(withMargins('60, 40, 50, 50', '<MultiColumn Ref="5" ColumnCount="2" ColumnSpacing="20" Layout="AcrossThenDown" />'));
+    expect(slots.every((s) => s.left === 60 && s.width === 750)).toBe(true);
+    expect(parseReportStructure(withMargins('0, 0, 0, 0', '<MultiColumn Ref="5" ColumnCount="2" />')).bands
+      .find((b) => b.kind === 'Detail')!.columns!.mode).toBe('None');
+  });
+
+  it('divides the printable width for UseColumnCount: the second column at 385, each 365 wide', () => {
+    const slots = detailSlots(withMargins('60, 40, 50, 50', '<MultiColumn Ref="5" ColumnCount="2" ColumnSpacing="20" Layout="AcrossThenDown" Mode="UseColumnCount" />'));
+    expect(slots.slice(0, 2)).toEqual([
+      { record: 1, left: 60, width: 365 },
+      { record: 2, left: 60 + 385, width: 365 },
+    ]);
+  });
+
+  it('fits as many declared-width columns as the printable width holds for UseColumnWidth', () => {
+    // 200 wide with 20 spacing over 750: DevExpress printed three, at 0, 220 and 440.
+    const slots = detailSlots(withMargins('60, 40, 50, 50', '<MultiColumn Ref="5" ColumnWidth="200" ColumnSpacing="20" Layout="AcrossThenDown" Mode="UseColumnWidth" />'));
+    expect(slots.slice(0, 4)).toEqual([
+      { record: 1, left: 60, width: 200 },
+      { record: 2, left: 60 + 220, width: 200 },
+      { record: 3, left: 60 + 440, width: 200 },
+      { record: 4, left: 60, width: 200 },
+    ]);
+  });
+
+  it('decides the columns DevExpress prints from the declaration and the printable width', () => {
+    const decl = (mode: string, count = 2, width = 0) => ({ count, width, spacing: 20, layout: 'AcrossThenDown', mode });
+    expect(activeColumns(null, 750)).toBeNull();
+    expect(activeColumns(decl('None', 3), 750)).toBeNull();
+    expect(activeColumns(decl('UseColumnCount', 1), 750)).toBeNull();
+    expect(activeColumns(decl('UseColumnWidth', 2, 0), 750)).toBeNull();
+    // Wider than half the area: only one fits, which is one column.
+    expect(activeColumns(decl('UseColumnWidth', 2, 400), 750)).toBeNull();
+    expect(activeColumns(decl('UseColumnCount', 3), 750)).toEqual({ count: 3, width: (750 - 40) / 3, spacing: 20, layout: 'AcrossThenDown' });
+  });
+
+  it('says when a control runs past the right margin, which DevExpress prints on an extra page', () => {
+    const past = withMargins('60, 40, 50, 50', '', '<Item1 Ref="10" ControlType="XRLabel" Name="intoMargin" Text="x" LocationFloat="700,30" SizeF="80,20" />');
+    const problems = paginate(parseReportStructure(past), 1).problems;
+    expect(problems.some((p) => p.includes('intoMargin') && p.includes('extra page'))).toBe(true);
+    // To the edge and no further printed on one page.
+    const toEdge = withMargins('60, 40, 50, 50', '', '<Item1 Ref="10" ControlType="XRLabel" Name="toEdge" Text="x" LocationFloat="550,60" SizeF="200,20" />');
+    expect(paginate(parseReportStructure(toEdge), 1).problems.some((p) => p.includes('right margin'))).toBe(false);
   });
 });

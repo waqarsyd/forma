@@ -33,6 +33,7 @@ import { createPortal } from 'react-dom';
 import {
   parseReportStructure,
   paginate,
+  activeColumns,
   recordCountFromLayout,
   type PreviewControl,
   type PaginatedReport,
@@ -527,8 +528,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   const boundFields = useMemo(() => readBoundFields(repxContent), [repxContent]);
   const structureBands = structure.bands;
   const watermark = structure.watermark;
-  // Any band declaring columns; in practice only Detail ever does.
-  const multiColumn = structureBands.find((b) => b.columns && b.columns.count > 1)?.columns ?? null;
+  // The columns DevExpress actually prints, which a declared count with no Mode
+  // is not; in practice only Detail ever declares any.
+  const multiColumn = structureBands
+    .map((b) => activeColumns(b.columns, report.content.width))
+    .find((c) => c !== null) ?? null;
   const parameters = useMemo(() => parseParameters(repxContent), [repxContent]);
 
   const pageW = unitsToPx(report.page.width, report.unit);
@@ -752,6 +756,15 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                     left: unitsToPx(placed.left, report.unit),
                     width: unitsToPx(placed.width, report.unit),
                     height: unitsToPx(placed.band.height, report.unit),
+                    // Clip at the right margin and nowhere else, as DevExpress
+                    // does: not at a column's edge (an over-wide control in a
+                    // column prints over the next one, measured by render-cols),
+                    // and not vertically. The inset is negative for a column,
+                    // reaching out to the printable area's right edge.
+                    clipPath: `inset(-100000px ${unitsToPx(
+                      placed.left + placed.width - (report.content.left + report.content.width),
+                      report.unit,
+                    )}px -100000px -100000px)`,
                     background: showBands ? BAND_TINT[placed.band.kind] ?? 'transparent' : 'transparent',
                   }}
                 >

@@ -26,7 +26,21 @@ describe('auditLayoutBounds', () => {
     const findings = auditLayoutBounds(report(detail(label(1, 700, 0, 200, 30))));
     expect(findings.map((f) => f.code)).toEqual(['control-outside-page']);
     expect(findings[0].message).toContain('l1');
-    expect(findings[0].message).toContain('850-unit width');
+    expect(findings[0].message).toContain('850-unit printable width');
+  });
+
+  it('measures against the printable width, so a control in the right margin is caught', () => {
+    // Printed through DevExpress on 2026-10-30 (parity row 4): with
+    // Margins="60, 40, 50, 50", a control at band x 700 and 80 wide stays on the
+    // page but crosses the right margin -- and DevExpress clipped it there and
+    // printed the rest on a second page. The page-width check missed it.
+    const intoMargin = report(detail(label(1, 700, 0, 80, 30)), '60, 40, 50, 50');
+    const findings = auditLayoutBounds(intoMargin);
+    expect(findings.map((f) => f.code)).toEqual(['control-outside-page']);
+    expect(findings[0].message).toContain('750-unit printable width');
+    expect(findings[0].message).toContain('extra page');
+    // Exactly to the printable edge is fine: DevExpress printed that on one page.
+    expect(codes(report(detail(label(1, 550, 0, 200, 30)), '60, 40, 50, 50'))).toEqual([]);
   });
 
   it('flags a control past the bottom of its band', () => {

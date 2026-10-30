@@ -7,8 +7,13 @@
  * this is the other half. Three facts, each computable from the file and each
  * with a consequence the designer applies silently:
  *
- * - a control past the right edge of the page is clipped when printed, and the
- *   designer draws it as if it were fine;
+ * - a control past the printable width -- the page less BOTH side margins,
+ *   since band coordinates start at the left margin -- is clipped at the right
+ *   margin when printed, and the clipped part is printed on an EXTRA page.
+ *   Measured with `RepxProbe render` on 2026-10-30: a control reaching only
+ *   into the right margin turned a one-page report into two, exactly as one
+ *   past the page edge did. This compared against the whole page width until
+ *   then, so it missed every control in the margin;
  * - a control past the bottom of its band makes the designer push the band
  *   taller on load, or drop the control onto a second page -- which is what
  *   the Preview's selection readout says when a drag causes it, and nothing
@@ -36,7 +41,7 @@ export function auditLayoutBounds(xml: string | null | undefined): RepxFinding[]
   const structure = parseReportStructure(text);
   const findings: RepxFinding[] = [];
 
-  const pageWidth = structure.page.width;
+  const printableWidth = structure.page.width - structure.margins.left - structure.margins.right;
   const usableHeight = structure.page.height - structure.margins.top - structure.margins.bottom;
 
   const offPage: PreviewControl[] = [];
@@ -52,7 +57,7 @@ export function auditLayoutBounds(xml: string | null | undefined): RepxFinding[]
       const left = c.x + c.offsetX;
       const right = left + c.width;
       const bottom = c.y + c.offsetY + c.height;
-      if (left < -TOLERANCE || right > pageWidth + TOLERANCE) offPage.push(c);
+      if (left < -TOLERANCE || right > printableWidth + TOLERANCE) offPage.push(c);
       if (bottom > band.height + TOLERANCE) belowBand.push(c);
     }
   }
@@ -62,8 +67,8 @@ export function auditLayoutBounds(xml: string | null | undefined): RepxFinding[]
       severity: 'warning',
       code: 'control-outside-page',
       message:
-        `${offPage.length} control(s) extend past the page's ${Math.round(pageWidth)}-unit width — ${names(offPage)}. ` +
-        'The printed page clips them; DevExpress\'s design analyzer reports the same.',
+        `${offPage.length} control(s) extend past the ${Math.round(printableWidth)}-unit printable width, the page less its side margins — ${names(offPage)}. ` +
+        'DevExpress clips them at the right margin and prints the clipped part on an extra page; its design analyzer reports the same.',
     });
   }
 
