@@ -470,6 +470,8 @@ export interface ReportStructure {
   calculatedFields: CalculatedField[];
   /** `<Parameters>`, whose values an expression reads as `?Name`. */
   parameters: ReportParameter[];
+  /** The report's `FilterString`, decoded; null when it has none. */
+  filterString: string | null;
   /** Non-fatal parse complaints, for the UI to surface rather than swallow. */
   problems: string[];
 }
@@ -1316,6 +1318,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     watermark: null,
     calculatedFields: [],
     parameters: [],
+    filterString: null,
     problems,
   };
 
@@ -1350,6 +1353,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     watermark: parseWatermark(text),
     calculatedFields: parseCalculatedFields(text),
     parameters: parseParameters(text),
+    filterString: attrOf(rootAttrs, 'FilterString') ? decodeXmlText(attrOf(rootAttrs, 'FilterString')!) : null,
     problems,
   };
 
@@ -1862,6 +1866,8 @@ export function paginate(
      * an empty data source, which prints differently from no data at all.
      */
     rows?: RecordValues[] | null;
+    /** Parameter values the reader entered, by name; each wins over the file's default. */
+    parameters?: Readonly<Record<string, string>>;
   } = {},
 ): PaginatedReport {
   const maxPages = options.maxPages ?? 50;
@@ -1901,8 +1907,20 @@ export function paginate(
   // Detail's SortFields -- printed, groups came out in ascending order whatever
   // order the rows arrived in, and a descending sort within them held.
   let data = options.rows
-    ? ReportData.from(options.rows, recordCount, structure.calculatedFields, structure.parameters)
+    ? ReportData.from(options.rows, recordCount, structure.calculatedFields, structure.parameters, options.parameters)
     : null;
+  /*
+   * The report's FilterString keeps only the records it is true for, with the
+   * parameter values the reader entered (parity row 11). Printed in c07:
+   * `[Region] = ?Region` with South supplied over a North default printed the
+   * 37 South records of 90, and the header bound to the parameter said South.
+   * Without test data there is nothing to filter, so the layout's count stands.
+   */
+  if (data && structure.filterString) {
+    const kept = data.filtered(structure.filterString);
+    if (kept) data = kept;
+    else problems.push(`The report's filter "${structure.filterString}" could not be read, so the preview shows every record.`);
+  }
   let order: number[] | null = null;
   if (data) {
     order = sortedOrder(data.records, [

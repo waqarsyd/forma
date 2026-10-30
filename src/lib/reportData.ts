@@ -19,7 +19,7 @@
  * 1, 2, 3 ... down the records.
  */
 import { NetDecimal } from './netDecimal';
-import { compareValues, evaluate, evaluateText, parseDate, toNumber, valueText, type Env, type Node, type Value } from './criteria';
+import { compareValues, evaluate, evaluateText, isTrue, parseCriteria, parseDate, toNumber, valueText, type Env, type Node, type Value } from './criteria';
 import { formatComposite } from './netFormat';
 
 export type TypedRow = Record<string, Value>;
@@ -326,8 +326,10 @@ export class ReportData {
     count: number,
     calculated: readonly CalculatedField[],
     parameters: readonly { name: string; type: string; value: string }[],
+    /** Values the reader entered, by parameter name; each wins over its default, as printed in c07. */
+    supplied: Readonly<Record<string, string>> = {},
   ): ReportData {
-    const params = new Map(parameters.map((p) => [p.name, parameterValue(p.type, p.value)] as const));
+    const params = new Map(parameters.map((p) => [p.name, parameterValue(p.type, supplied[p.name] ?? p.value)] as const));
     const lookup = (name: string) => params.get(name) ?? null;
     const typedRows = withCalculatedFields(typeRows(rows), calculated, lookup);
     const records = typedRows.length ? Array.from({ length: count }, (_, i) => typedRows[i % typedRows.length]) : [];
@@ -335,6 +337,29 @@ export class ReportData {
   }
 
   readonly param = (name: string): Value => this.params.get(name) ?? null;
+
+  /**
+   * Only the records a `FilterString` keeps: those for which it is true, a
+   * null counting as false. Printed in c07: `[Region] = ?Region` with South
+   * supplied kept the 37 South records of 90. Null when the filter will not
+   * parse, so the caller can say so rather than print nothing.
+   */
+  filtered(filter: string): ReportData | null {
+    let node: Node;
+    try {
+      node = parseCriteria(filter);
+    } catch {
+      return null;
+    }
+    const keep = this.records.filter((row) => {
+      try {
+        return isTrue(evaluate(node, rowEnv(row, this.param)));
+      } catch {
+        return false;
+      }
+    });
+    return new ReportData(keep, this.params);
+  }
 
   /** The same data with its records in `order`, which is print order from then on. */
   reordered(order: readonly number[]): ReportData {

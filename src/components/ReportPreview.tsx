@@ -589,14 +589,25 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   // pages break where DevExpress puts them. Null under jsdom, where the layout
   // falls back to the designed heights.
   const measure = useMemo(() => canvasMeasurer(), []);
+  /*
+   * Values typed into the parameter fields above the paper, by name. They only
+   * mean something over test data: the report's FilterString and any `?Name`
+   * in an expression read them, and each wins over the file's default, as
+   * DevExpress printed in c07 (parity row 11). Kept across regenerations, so a
+   * value typed once survives a refinement that keeps the parameter.
+   */
+  const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const { structure, report } = useMemo(() => {
     const parsed = parseReportStructure(repxContent);
     // With sample rows the record count is theirs; otherwise it is the number
     // of rows the model read out of the source document.
     const count = records?.length ? records.length : recordCountFromLayout(layout);
     // The rows themselves too, now: a record's values decide how tall it grows.
-    return { structure: parsed, report: paginate(parsed, count, { measure, rows: records ?? null }) as PaginatedReport };
-  }, [repxContent, layout, records, measure]);
+    return {
+      structure: parsed,
+      report: paginate(parsed, count, { measure, rows: records ?? null, parameters: paramValues }) as PaginatedReport,
+    };
+  }, [repxContent, layout, records, measure, paramValues]);
 
   const boundFields = useMemo(() => readBoundFields(repxContent), [repxContent]);
   const structureBands = structure.bands;
@@ -1025,6 +1036,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         }
         .rp-param small { font-family: var(--font-code, monospace); font-size: 10px; opacity: .55; }
         .rp-param em { font-style: normal; font-family: var(--font-code, monospace); font-size: 11px; opacity: .8; }
+        .rp-param input {
+          font-family: var(--font-code, monospace); font-size: 11px; width: 11ch;
+          padding: 0 2px; border: 0; border-bottom: 1px solid var(--paper-rule, #d7dee7);
+          background: transparent; color: inherit;
+        }
+        .rp-param input:focus { outline: none; border-bottom-color: currentColor; }
         @media print { .rp-params { display: none !important; } }
 
         /* Printing renders the pages a SECOND time, into a portal attached to
@@ -1153,13 +1170,28 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       {parameters.length > 0 && (
         <div className="rp-params">
           <span className="rp-params-label">Asked before printing</span>
-          {parameters.map((p) => (
-            <span className="rp-param" key={p.name}>
-              {p.description || p.name}
-              <small>{p.lifted ? 'typed' : p.type.replace('System.', '')}{p.multiValue ? ' · many' : ''}</small>
-              {p.value && <em>{p.value}</em>}
-            </span>
-          ))}
+          {parameters.map((p) =>
+            // With test data each parameter takes a value, as DevExpress asks
+            // for one before printing; without it there is nothing to apply it to.
+            records ? (
+              <label className="rp-param" key={p.name}>
+                {p.description || p.name}
+                <small>{p.lifted ? 'typed' : p.type.replace('System.', '')}{p.multiValue ? ' · many' : ''}</small>
+                <input
+                  value={paramValues[p.name] ?? p.value}
+                  onChange={(e) => setParamValues((v) => ({ ...v, [p.name]: e.target.value }))}
+                  aria-label={`Value for ${p.description || p.name}`}
+                  spellCheck={false}
+                />
+              </label>
+            ) : (
+              <span className="rp-param" key={p.name}>
+                {p.description || p.name}
+                <small>{p.lifted ? 'typed' : p.type.replace('System.', '')}{p.multiValue ? ' · many' : ''}</small>
+                {p.value && <em>{p.value}</em>}
+              </span>
+            ),
+          )}
         </div>
       )}
 

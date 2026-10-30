@@ -338,6 +338,9 @@ export function compareValues(a: Value, b: Value): number | null {
 
 const truthy = (v: Value): boolean => v === true || (isNum(v) && toNumber(v) !== 0);
 
+/** Whether a condition holds: true, or a non-zero number. Null does not. */
+export const isTrue = truthy;
+
 // ---------------------------------------------------------------- printing
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

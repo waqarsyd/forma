@@ -17,7 +17,7 @@
  * pane still have drawn every border 1px black.
  */
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import ReportPreview from './ReportPreview';
 
 afterEach(cleanup);
@@ -125,5 +125,50 @@ describe('ReportPreview draws what DevExpress printed', () => {
   it('prints the page number in its own format', () => {
     draw();
     expect(screen.getByText('Page 1 of 1')).toBeTruthy();
+  });
+});
+
+/*
+ * Over test data, a parameter takes a value above the paper and the report's
+ * FilterString reads it -- c07's behaviour, where the supplied value won over
+ * the default. Without test data the parameter is shown, not asked.
+ */
+describe('parameters over test data', () => {
+  const filtered = `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Filtered" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1" FilterString="[Region] = ?Region">
+  <Parameters><Item1 Ref="2" Description="Region" ValueInfo="North" Name="Region" /></Parameters>
+  <Bands>
+    <Item1 Ref="3" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />
+    <Item2 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="25">
+      <Controls>
+        <Item1 Ref="5" ControlType="XRLabel" Name="lblCust" LocationFloat="0,0" SizeF="200,20">
+          <ExpressionBindings><Item1 Ref="6" EventName="BeforePrint" PropertyName="Text" Expression="[Customer]" /></ExpressionBindings>
+        </Item1>
+      </Controls>
+    </Item2>
+    <Item3 Ref="7" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+  const rows = [
+    { Region: 'North', Customer: 'NORTH-ONE' },
+    { Region: 'South', Customer: 'SOUTH-ONE' },
+    { Region: 'North', Customer: 'NORTH-TWO' },
+  ];
+
+  it('prints the records the filter keeps with the default, then with the value typed in', () => {
+    render(<ReportPreview repxContent={filtered} layout={null} title="Filtered" records={rows} />);
+    expect(screen.getByText('NORTH-ONE')).toBeTruthy();
+    expect(screen.queryByText('SOUTH-ONE')).toBeNull();
+    const field = screen.getByLabelText('Value for Region') as HTMLInputElement;
+    expect(field.value).toBe('North');
+    fireEvent.change(field, { target: { value: 'South' } });
+    expect(screen.getByText('SOUTH-ONE')).toBeTruthy();
+    expect(screen.queryByText('NORTH-ONE')).toBeNull();
+  });
+
+  it('shows the parameter without a field when there is no test data', () => {
+    render(<ReportPreview repxContent={filtered} layout={null} title="Filtered" />);
+    expect(screen.queryByLabelText('Value for Region')).toBeNull();
+    expect(screen.getByText('North')).toBeTruthy();
   });
 });

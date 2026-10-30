@@ -291,3 +291,26 @@ describe('order and groups', () => {
     expect(sorted.text({ expression: 'sumRunningSum([Qty])', running: 'Report', format: null }, { row: 1, anchor: 1, report: [0, 1, 2], group: null, page: null })).toBe('3');
   });
 });
+
+describe('filtering', () => {
+  const rows = [{ Region: 'North', Qty: '3' }, { Region: 'South', Qty: '8' }, { Region: '', Qty: '5' }];
+  const params = [{ name: 'Region', type: 'System.String', value: 'North' }, { name: 'Min', type: 'System.Int32', value: '4' }];
+
+  it('keeps the records a filter is true for, a null counting as false', () => {
+    const data = ReportData.from(rows, 3, [], params);
+    expect(data.filtered('[Region] = ?Region')!.records.map((r) => r.Region)).toEqual(['North']);
+    expect(data.filtered('[Qty] >= ?Min')!.records.map((r) => String(r.Qty))).toEqual(['8', '5']);
+    // A filter whose result is null keeps nothing.
+    expect(data.filtered('[Missing] + 1')!.records).toHaveLength(0);
+  });
+
+  it('reads a supplied value over the default, typed as the parameter declares', () => {
+    const data = ReportData.from(rows, 3, [], params, { Region: 'South', Min: '6' });
+    expect(data.filtered('[Region] = ?Region')!.records).toHaveLength(1);
+    expect(data.filtered('[Qty] > ?Min')!.records.map((r) => String(r.Qty))).toEqual(['8']);
+  });
+
+  it('returns null for a filter that will not parse, rather than an empty report', () => {
+    expect(ReportData.from(rows, 3, [], params).filtered('[Region] = (')).toBeNull();
+  });
+});

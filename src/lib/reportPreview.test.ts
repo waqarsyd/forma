@@ -2304,3 +2304,40 @@ describe('an empty data source, as DevExpress printed it (case s21)', () => {
     expect(report.pages[0].bands.filter((b) => b.band.kind === 'Detail')).toHaveLength(3);
   });
 });
+
+/*
+ * Case c07 of docs/proposals/devexpress-parity.md: FilterString="[Region] =
+ * ?Region" with a North default, printed through DevExpress 20.1 with South
+ * supplied (`RepxProbe render`, 2026-10-30). The supplied value won: the 37
+ * South records of 90, on one page, in data order, and the header bound to the
+ * parameter printed South.
+ */
+describe('a report filter with a supplied parameter, as DevExpress printed it (case c07)', () => {
+  const REPX = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"ParityCase\" ReportUnit=\"HundredthsOfAnInch\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Sales\" FilterString=\"[Region] = ?Region\"><Parameters><Item1 Ref=\"2\" Description=\"Region\" ValueInfo=\"North\" Name=\"Region\" /></Parameters><Bands><Item1 Ref=\"3\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"50\"></Item1><Item2 Ref=\"6\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"40\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"lblParam\" Font=\"Arial, 11pt\" LocationFloat=\"0,0\" SizeF=\"400,25\"><ExpressionBindings><Item1 Ref=\"5\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"'Region: ' + ?Region\" /></ExpressionBindings></Item1></Controls></Item2><Item3 Ref=\"11\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"22\"><Controls><Item1 Ref=\"7\" ControlType=\"XRLabel\" Name=\"lblCust\" Font=\"Arial, 9pt\" LocationFloat=\"0,0\" SizeF=\"200,20\"><ExpressionBindings><Item1 Ref=\"8\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1><Item2 Ref=\"9\" ControlType=\"XRLabel\" Name=\"lblRegion\" Font=\"Arial, 9pt\" LocationFloat=\"210,0\" SizeF=\"200,20\"><ExpressionBindings><Item1 Ref=\"10\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /></ExpressionBindings></Item2></Controls></Item3><Item4 Ref=\"12\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"50\"></Item4></Bands></XtraReportsLayoutSerializer>\n";
+  const REGIONS: Record<string, string> = { N: 'North', S: 'South', W: 'West' };
+  const ROWS = "W0001,W0002,S0003,S0004,S0005,S0006,W0007,N0008,N0009,W0010,S0011,N0012,W0013,S0014,S0015,S0016,S0017,S0018,N0019,N0020,N0021,W0022,S0023,W0024,S0025,S0026,W0027,W0028,N0029,S0030,W0031,W0032,W0033,W0034,S0035,W0036,S0037,S0038,W0039,W0040,S0041,W0042,N0043,N0044,W0045,N0046,S0047,S0048,S0049,S0050,S0051,S0052,N0053,S0054,N0055,S0056,N0057,W0058,W0059,S0060,W0061,S0062,W0063,W0064,W0065,N0066,N0067,N0068,N0069,S0070,N0071,S0072,W0073,S0074,N0075,N0076,S0077,S0078,S0079,S0080,W0081,N0082,N0083,S0084,N0085,N0086,N0087,S0088,W0089,W0090".split(',').map((c) => ({ Region: REGIONS[c[0]], Customer: 'C' + c.slice(1) }));
+  const PRINTED = {"header":"Region: South","regions":["South"],"customers":["C0003","C0004","C0005","C0006","C0011","C0014","C0015","C0016","C0017","C0018","C0023","C0025","C0026","C0030","C0035","C0037","C0038","C0041","C0047","C0048","C0049","C0050","C0051","C0052","C0054","C0056","C0060","C0062","C0070","C0072","C0074","C0077","C0078","C0079","C0080","C0084","C0088"]};
+  const texts = (report: PaginatedReport) => report.pages.flatMap((p) => p.bands.flatMap((b) => b.controls.map((pc) => pc.text ?? '')));
+
+  it('keeps the records the filter is true for, with the supplied value over the default', () => {
+    const report = paginate(parseReportStructure(REPX), ROWS.length, { rows: ROWS, parameters: { Region: 'South' } });
+    expect(report.pages).toHaveLength(1);
+    const all = texts(report);
+    expect(all.filter((t) => /^C\d{4}$/.test(t))).toEqual(PRINTED.customers);
+    expect(all).toContain(PRINTED.header);
+    expect([...new Set(all.filter((t) => /^(North|South|West)$/.test(t)))]).toEqual(PRINTED.regions);
+  });
+
+  it('uses the default when nothing is supplied', () => {
+    const report = paginate(parseReportStructure(REPX), ROWS.length, { rows: ROWS });
+    expect(texts(report)).toContain('Region: North');
+    expect(report.records).toBe(ROWS.filter((r) => r.Region === 'North').length);
+  });
+
+  it('says so, and filters nothing, when the filter cannot be read', () => {
+    const broken = REPX.replace('FilterString="[Region] = ?Region"', 'FilterString="[Region] = ("');
+    const report = paginate(parseReportStructure(broken), ROWS.length, { rows: ROWS });
+    expect(report.records).toBe(ROWS.length);
+    expect(report.problems.join(' ')).toMatch(/filter .* could not be read/);
+  });
+});
