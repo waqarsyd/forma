@@ -120,6 +120,9 @@ type Gesture = {
 } | null;
 
 /** Bands the reader should be able to tell apart on screen. */
+/** A report this short draws every page; a longer one only those near the viewport. */
+const DRAW_EVERY_PAGE_UP_TO = 12;
+
 const BAND_TINT: Record<string, string> = {
   ReportHeader: 'rgba(226, 89, 12, .05)',
   PageHeader: 'rgba(59, 90, 140, .05)',
@@ -771,16 +774,58 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
 
   const exportPdf = useCallback(() => setPrinting(true), []);
 
+  /*
+   * Only the pages near the viewport are filled in (parity row 16). Every page
+   * keeps its frame at full size, so the scroll height and each page's place
+   * are exact, but a page's bands are drawn only within a few pages of what is
+   * on screen. That is what lets the 50-page cap go: c09's 213 pages lay out
+   * in a quarter of a second, and drawing every control of every page is what
+   * would not scale. A short report, and the printed copy, draw every page.
+   */
+  const pagesRef = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState<[number, number]>([0, 3]);
+  useEffect(() => {
+    const total = report.pages.length;
+    if (total <= DRAW_EVERY_PAGE_UP_TO) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const wraps = pagesRef.current?.querySelectorAll<HTMLElement>('.rp-page-wrap');
+      if (!wraps || wraps.length < 2) return;
+      const first = wraps[0].getBoundingClientRect();
+      const pitch = wraps[1].getBoundingClientRect().top - first.top;
+      if (!(pitch > 0)) return;
+      const from = Math.max(0, Math.floor(-first.top / pitch) - 2);
+      const to = Math.min(total - 1, Math.ceil((window.innerHeight - first.top) / pitch) + 2);
+      setNear((prev) => (prev[0] === from && prev[1] === to ? prev : [from, to]));
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    // Capture, so a scroll in whichever ancestor scrolls the pane is heard.
+    document.addEventListener('scroll', schedule, true);
+    window.addEventListener('resize', schedule);
+    return () => {
+      document.removeEventListener('scroll', schedule, true);
+      window.removeEventListener('resize', schedule);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [report, scale]);
+  const isDrawn = (index: number) =>
+    report.pages.length <= DRAW_EVERY_PAGE_UP_TO || (index >= near[0] && index <= near[1]);
+
   /**
    * The pages themselves, drawn at `zoom`.
    *
    * `editing` is a parameter rather than the `editable` prop because this is
    * called twice: once for the pane, and once into the print portal, where hit
-   * targets and selection outlines have no business existing.
+   * targets and selection outlines have no business existing. `windowed` is
+   * true for the pane only: the printed copy needs every page.
    */
-  const renderPages = (zoom: number, editing: boolean) => (
-    <div className="rp-pages">
-      {report.pages.map((page) => (
+  const renderPages = (zoom: number, editing: boolean, windowed: boolean) => (
+    <div className="rp-pages" ref={windowed ? pagesRef : undefined}>
+      {report.pages.map((page, pageIndex) => (
         <div className="rp-page-wrap" key={page.number}>
           <div className="rp-caption">
             {title ? `${title} — ` : ''}page {page.number} of {report.pages.length}
@@ -827,7 +872,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                   </span>
                 </div>
               )}
-              {page.bands.map((placed, i) => (
+              {(!windowed || isDrawn(pageIndex)) && page.bands.map((placed, i) => (
                 <div
                   key={i}
                   className="rp-band"
@@ -1206,11 +1251,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       )}
 
       <div ref={viewportRef} style={{ width: '100%' }} onPointerDown={() => setSelected(null)}>
-        {renderPages(scale, editable)}
+        {renderPages(scale, editable, true)}
       </div>
 
       {/* True size, outside the workspace tree, only while printing. */}
-      {printing && createPortal(<div className="rp-print-host">{renderPages(1, false)}</div>, document.body)}
+      {printing && createPortal(<div className="rp-print-host">{renderPages(1, false, false)}</div>, document.body)}
     </div>
   );
 }

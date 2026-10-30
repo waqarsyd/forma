@@ -333,7 +333,17 @@ describe('paginating a real report', () => {
     expect(result.records).toBe(3);
   });
 
-  it('stops at the page cap and says how many records it dropped', () => {
+  it('lays out every page with no cap unless one is asked for', () => {
+    // Parity row 16: the default was 50 pages until 2026-10-30, so c09's 10,000
+    // records showed 50 of DevExpress's 213. Its comparison, all 213 pages
+    // identical, runs outside the suite on the 10,000 rows.
+    const result = paginate(structure, 5000);
+    expect(result.pages.length).toBeGreaterThan(50);
+    expect(result.records).toBe(5000);
+    expect(result.problems.join(' ')).not.toMatch(/records are not shown/);
+  });
+
+  it('stops at the page cap a caller asks for and says how many records it dropped', () => {
     const result = paginate(structure, 5000, { maxPages: 3 });
     expect(result.pages).toHaveLength(3);
     expect(result.records).toBeLessThan(5000);

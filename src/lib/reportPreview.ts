@@ -1919,7 +1919,13 @@ export function paginate(
     related?: (dataMember: string, master: RecordValues) => RecordValues[] | null;
   } = {},
 ): PaginatedReport {
-  const maxPages = options.maxPages ?? 50;
+  /*
+   * No cap unless a caller asks for one (parity row 16). The Preview stopped at
+   * 50 pages until 2026-10-30, so c09's 10,000 records showed 50 of DevExpress's
+   * 213 pages. Laying all 213 out takes about a quarter of a second with the
+   * test data evaluated, and the pane draws only the pages near the viewport.
+   */
+  const maxPages = options.maxPages ?? Number.POSITIVE_INFINITY;
   const problems = [...structure.problems];
   const bands = structure.bands;
 
