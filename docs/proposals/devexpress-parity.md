@@ -1,6 +1,6 @@
 # DevExpress parity: measured behaviour and comparison
 
-Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done.
+Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, wait for approval.
 
 ## Method
 
@@ -42,6 +42,8 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 | s19a to s19g | Two nested group headers and their footers over twelve records, with `Level` in either order, with none, with only the outer one, and with a single footer. |
 | s20-pfgap | A page footer whose only label sits 40 units down or at its top, to see whether content may use the empty part of the band. |
 | s21-empty | Every kind of text in every band over a data source filtered to nothing: literals, fields, expressions, and each aggregate in each scope. |
+| s22a-rules | Five formatting rules over six records: a colour and bold, a fill, a hide, a band-level fill, and two rules setting the same property on one label. |
+| s22b-subreport | An embedded subreport taller than its control in the master's Detail band, a label beside it, and a second subreport in the report footer. |
 
 ## How DevExpress 20.1 behaves
 
@@ -153,6 +155,16 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 | CSV | 0.3 s, 329 kB |
 | DOCX | 1.3 s, 388 kB, 213 sections |
 
+### Conditional formatting and subreports (measured for row 22)
+
+- **A formatting rule applies per record.** In s22a a label linked to "High" (`[Amount] > 500`, red and bold) printed red and bold on exactly the records over 500.
+- **Two rules setting one property: the later link wins, and properties merge.** "High" then "Blue" both held for 600, and the label printed blue *and* bold.
+- **A rule with `Visible="False"` removes the control for that record.** The record with 0 printed no amount brick, and its band kept its height.
+- **A rule linked to the band reaches its controls through inheritance.** "Shade" on the Detail band gave every label on the shaded records its fill, with the label's own rules still applying on top.
+- **An embedded subreport prints its whole report at the control's place, once per master record.** In s22b each of three records printed the inner report's header and its Detail band once, since that report has no data. The report footer's subreport printed once.
+- **The control grows to the inner report's height, and the band with it**, by the same rule as growing text: the 50-unit Detail band printed 87 tall, which is 50 + 85 − 48. A label beside the subreport stayed where it was.
+- Not measured: a subreport with its own data source or parameter bindings, and charts and cross-tabs over data. `RepxProbe render` binds data to the master report only, and a chart prints as one image.
+
 ### Documented by DevExpress, not measured here
 
 Subreports that embed another report; charts and cross-tabs drawn from data; conditional formatting rules; a table of contents; drill-down and interactive sorting in the viewer; report merging; PDF/A, password and signature options; per-page or per-file Excel export modes; right-to-left layout. These are listed so the comparison does not imply they were checked.
@@ -206,12 +218,19 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 19 | Excel export | No | Yes | **Done 2026-10-30** | DevExpress | Done: Export XLSX. `xlsxExport.ts` writes one sheet from the continuous layout. Column and row boundaries sit at control edges, sized from pixel-rounded positions, and a merge spans each wide control. Values are numbers and date serials with the format string converted, every cell has its font, colour and alignment, and links are kept, all through the existing zip writer. All thirteen workbooks DevExpress exported, c09's 40,007 cells and 20,005 merges included, come out cell for cell the same. The growing cases need the browser's measurer, which the pane passes. The files open in DevExpress's own spreadsheet engine and display what DevExpress printed. Borders are not written |
 | 20 | CSV export | No | Yes | **Done 2026-10-30** | DevExpress | Done: Export CSV beside Export PDF. `csvExport.ts` lays the report out on one continuous page, with page settings neutral as DevExpress's export showed. It writes a line per distinct top and a column per distinct left edge, holding the printed text. All thirteen cases DevExpress exported come out byte for byte the same, c09's 10,003 lines included |
 | 21 | Word, RTF, image and HTML export | No | Yes | Missing | DevExpress, but Forma's users open the file in DevExpress, which exports it there | Do not adopt now |
-| 22 | Subreports, charts and cross-tabs from data, conditional formatting | Partial | Yes | Not measured | Unknown until measured | Measure first with `render`, then decide |
+| 22 | Subreports, charts and cross-tabs from data, conditional formatting | Partial | Yes | **Measured 2026-10-30** | DevExpress | Measured: conditional formatting and embedded subreports, in s22a and s22b. Charts and cross-tabs over data need probe support first. The decisions are rows 26 to 29 below, waiting for approval |
 | 23 | AI generation, Prompt-to-Report, Prompt-to-Expression, test data | Yes | Newer versions have AI features | Works | Forma for 20.1 users, who have none of these | Keep |
 | 24 | Audit, accessibility checks, layout checks, overlap repair | Yes | The designer's analyzer | Works | Comparable; Forma's runs on every generation | Keep, and add the check in row 1 |
 | 25 | Revisions, batch, designer companion, version targeting | Yes | No | Works | Forma only | Keep |
 
-**Found while building row 10, not yet a row:** Forma's prompt never mentions `Level`, so a nested grouping the model writes outer-first without it prints inside out in DevExpress (s19c). The Preview now shows that. Writing `Level` in the prompt, or adding a repair that numbers group bands in file order, would fix the exported file. That is the owner's decision.
+**Proposed after row 22's measurements and row 10's finding. Not approved; nothing below is built.**
+
+| # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
+|---|---|---|---|---|---|---|
+| 26 | Conditional formatting in the Preview | Written to file only | Yes | Rules ignored | DevExpress: Forma's prompt writes formatting rules, and the Preview draws every record as if none fired | Adopt over test data: evaluate each linked rule per record with `criteria.ts`, apply later links over earlier ones property by property, hide on `Visible="False"`, and let a band's rule reach its controls by inheritance, as s22a printed |
+| 27 | Embedded subreports in the Preview | Kept from uploads only | Yes | Drawn as a box | DevExpress: the inner report prints in full and grows its control and band | Adopt for an embedded `ReportSource`: lay the inner report out inside the control and grow it, as s22b printed. A `ReportSourceUrl` cannot be read from the browser, so keep the box and say so. A subreport with its own data waits for that to be measured |
+| 28 | Charts and cross-tabs over test data | Structure only | Yes | Not measured | Unknown until measured | Measure first: teach `RepxProbe render` to give a cross-tab its data, and read a chart's printed image only if a chart's values matter to the Preview |
+| 29 | Nested groups without `Level` | Written outer-first | Nests later-outer | Prints inside out | DevExpress decides, and a generated nested grouping comes out inverted (s19c) | Fix the file, not the Preview: state `Level` in the prompt's grouping section, and add a repair that numbers group headers and footers outermost-highest in file order when none has a `Level` |
 
 Rows 1 to 5 and 15 are fixes to behaviour Forma already claims. Rows 6 to 14 and 16 to 17 make the Preview a faithful picture of what DevExpress prints. Rows 18 to 22 are separate decisions.
 
