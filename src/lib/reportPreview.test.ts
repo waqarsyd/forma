@@ -1307,3 +1307,52 @@ describe('side margins and the printable width, as DevExpress prints them', () =
     expect(paginate(parseReportStructure(toEdge), 1).problems.some((p) => p.includes('right margin'))).toBe(false);
   });
 });
+
+/*
+ * Hidden controls. DevExpress 20.1 printed no brick and no text at all for a
+ * label carrying Visible="false" (case c01 of
+ * docs/proposals/devexpress-parity.md, row 5); the Preview drew it.
+ */
+describe('hidden controls, which DevExpress does not print', () => {
+  const header = (controls: string) =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100">' +
+    `<Bands><Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="300"><Controls>${controls}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`;
+  const visibleOf = (xml: string) =>
+    Object.fromEntries(parseReportStructure(xml).bands[0].controls.map((c) => [c.name, c.visible]));
+
+  it('marks a control hidden only when the file says Visible="false", in any case', () => {
+    const xml = header(
+      '<Item1 Ref="3" ControlType="XRLabel" Name="shown" Text="a" LocationFloat="0,0" SizeF="100,20" />' +
+      '<Item2 Ref="4" ControlType="XRLabel" Name="hidden" Text="b" LocationFloat="0,30" SizeF="100,20" Visible="false" />' +
+      '<Item3 Ref="5" ControlType="XRLabel" Name="hiddenCaps" Text="c" LocationFloat="0,60" SizeF="100,20" Visible="False" />' +
+      '<Item4 Ref="6" ControlType="XRLabel" Name="explicitTrue" Text="d" LocationFloat="0,90" SizeF="100,20" Visible="true" />' +
+      // Bound to data: whether it shows depends on the record, so it is drawn.
+      '<Item5 Ref="7" ControlType="XRLabel" Name="bound" Text="e" LocationFloat="0,120" SizeF="100,20">' +
+      '<ExpressionBindings><Item1 Ref="8" EventName="BeforePrint" PropertyName="Visible" Expression="[Paid]" /></ExpressionBindings></Item5>',
+    );
+    expect(visibleOf(xml)).toEqual({ shown: true, hidden: false, hiddenCaps: false, explicitTrue: true, bound: true });
+  });
+
+  it('keeps a hidden control in the list, so edits still address the controls after it', () => {
+    const xml = header(
+      '<Item1 Ref="3" ControlType="XRLabel" Name="hidden" Text="b" LocationFloat="0,0" SizeF="100,20" Visible="false" />' +
+      '<Item2 Ref="4" ControlType="XRLabel" Name="after" Text="a" LocationFloat="0,30" SizeF="100,20" />',
+    );
+    expect(parseReportStructure(xml).bands[0].controls.map((c) => c.name)).toEqual(['hidden', 'after']);
+  });
+
+  it('hides everything inside a hidden panel', () => {
+    const xml = header(
+      '<Item1 Ref="3" ControlType="XRPanel" Name="panel" LocationFloat="0,0" SizeF="300,100" Visible="false"><Controls>' +
+      '<Item1 Ref="4" ControlType="XRLabel" Name="child" Text="x" LocationFloat="10,10" SizeF="100,20" />' +
+      '</Controls></Item1>',
+    );
+    expect(visibleOf(xml)).toEqual({ panel: false, child: false });
+  });
+
+  it('does not report a hidden control as running past the margin', () => {
+    const xml = header('<Item1 Ref="3" ControlType="XRLabel" Name="ghost" Text="x" LocationFloat="800,0" SizeF="200,20" Visible="false" />');
+    expect(paginate(parseReportStructure(xml), 1).problems.some((p) => p.includes('right margin'))).toBe(false);
+  });
+});

@@ -52,8 +52,10 @@ export function auditLayoutBounds(xml: string | null | undefined): RepxFinding[]
     if (band.kind === 'TopMargin' || band.kind === 'BottomMargin') continue;
     if (band.height > usableHeight + TOLERANCE) tallBands.push(band.name || band.kind);
     for (const c of band.controls) {
-      // Cells have no rectangle; everything else does.
+      // Cells have no rectangle; everything else does. A hidden control prints
+      // nothing, so it cannot run off the page or out of its band.
       if (c.width <= 0 && c.height <= 0) continue;
+      if (!c.visible) continue;
       const left = c.x + c.offsetX;
       const right = left + c.width;
       const bottom = c.y + c.offsetY + c.height;

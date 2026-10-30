@@ -39,6 +39,9 @@ describe('auditLayoutBounds', () => {
     expect(findings.map((f) => f.code)).toEqual(['control-outside-page']);
     expect(findings[0].message).toContain('750-unit printable width');
     expect(findings[0].message).toContain('extra page');
+    // A hidden control prints nothing, so it cannot run into the margin.
+    const hidden = label(1, 700, 0, 80, 30).replace(' />', ' Visible="false" />');
+    expect(codes(report(detail(hidden), '60, 40, 50, 50'))).toEqual([]);
     // Exactly to the printable edge is fine: DevExpress printed that on one page.
     expect(codes(report(detail(label(1, 550, 0, 200, 30)), '60, 40, 50, 50'))).toEqual([]);
   });

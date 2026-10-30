@@ -778,6 +778,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                     </>
                   )}
                   {placed.band.controls.map((control, c) => {
+                    // DevExpress prints nothing for a hidden control, so neither
+                    // does this. It keeps its index `c`, which edits address by.
+                    if (!control.visible) return null;
                     const bandIndex = structureBands.indexOf(placed.band);
                     const isSelected =
                       editing && selected?.band === bandIndex && selected.control === c;

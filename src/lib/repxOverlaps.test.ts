@@ -32,6 +32,11 @@ describe('findOverlaps', () => {
     expect(findOverlaps(xml)).toEqual([]);
   });
 
+  it('ignores a hidden control, which DevExpress prints nothing for', () => {
+    const hidden = label(2, 50, 20, 200, 30).replace(' />', ' Visible="false" />');
+    expect(findOverlaps(report(label(1, 0, 0, 200, 30) + hidden))).toEqual([]);
+  });
+
   it('never throws on an empty or malformed document', () => {
     expect(findOverlaps('')).toEqual([]);
     expect(findOverlaps('<not xml')).toEqual([]);

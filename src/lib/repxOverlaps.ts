@@ -64,7 +64,8 @@ function overlapOf(a: PreviewControl, b: PreviewControl): number {
   return dx > TOLERANCE && dy > TOLERANCE ? dy : 0;
 }
 
-const counts = (c: PreviewControl) => !DECORATIVE.has(c.type) && c.width > 0 && c.height > 0;
+// A hidden control prints nothing, so it can overlap nothing on the page.
+const counts = (c: PreviewControl) => c.visible && !DECORATIVE.has(c.type) && c.width > 0 && c.height > 0;
 
 /** Same container: both directly in the band, or both children of the same panel. */
 const siblings = (a: PreviewControl, b: PreviewControl) => a.offsetX === b.offsetX && a.offsetY === b.offsetY;

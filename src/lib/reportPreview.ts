@@ -206,6 +206,16 @@ export interface PreviewControl {
    * attributes say. See `resolveAppearance`.
    */
   appearance: Appearance;
+  /**
+   * False for `Visible="false"`, or for anything inside a hidden panel.
+   *
+   * DevExpress prints nothing at all for such a control -- no brick, no text --
+   * measured with `RepxProbe render` on 2026-10-30. It stays in this list, so
+   * an edit's band and control indices still line up with the file, and the
+   * renderer and the layout checks skip it. A `Visible` driven by an
+   * expression is data, not a literal, and is treated as shown.
+   */
+  visible: boolean;
   /** Populated for XRTable only. */
   rows: PreviewRow[];
   /** Populated for XRChart only. */
@@ -913,6 +923,7 @@ function parseControls(
   bandInnerStart: number,
   styles: ReadonlyMap<string, Appearance> = new Map(),
   parentLook: Appearance = DEFAULT_APPEARANCE,
+  parentVisible = true,
 ): PreviewControl[] {
   const controlsIdx = bandInner.indexOf('<Controls');
   if (controlsIdx === -1) return [];
@@ -955,6 +966,7 @@ function parseControls(
       vAlign: alignment.vAlign,
       borders: parseBorders(look.Borders ?? null),
       appearance: look,
+      visible: parentVisible && (attrOf(item.attrs, 'Visible') ?? '').toLowerCase() !== 'false',
       rows: type === 'XRTable' ? parseTableRows(inner, item.start, styles, look) : [],
       series: type === 'XRChart' ? parseSeries(inner, item.start, extent) : [],
       crossTab: type === 'XRCrossTab' ? parseCrossTab(inner, item.start, extent) : null,
@@ -1001,7 +1013,8 @@ function parseControls(
       const childIdx = panelSlice.indexOf('<Controls');
       const childSpan = childIdx === -1 ? null : innerSpan(panelSlice, 'Controls', childIdx);
       if (childSpan) {
-        for (const child of parseControls(panelSlice, innerStart + item.start, styles, look)) {
+        const panelVisible = controls[controls.length - 1].visible;
+        for (const child of parseControls(panelSlice, innerStart + item.start, styles, look, panelVisible)) {
           controls.push({ ...child, offsetX: loc.a, offsetY: loc.b });
         }
       }
@@ -1257,7 +1270,7 @@ export function paginate(
    */
   const overhanging = bands
     .flatMap((b) => b.controls)
-    .filter((c) => c.width > 0 && c.x + c.offsetX + c.width > fullWidth + 1);
+    .filter((c) => c.visible && c.width > 0 && c.x + c.offsetX + c.width > fullWidth + 1);
   if (overhanging.length) {
     problems.push(
       `${overhanging.length} control(s) run past the right margin (${overhanging.slice(0, 3).map((c) => c.name || c.type).join(', ')}). ` +
