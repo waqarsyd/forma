@@ -24,8 +24,28 @@ RepxProbe emit-toc <out.repx>    # the same, for a TABLE OF CONTENTS
 RepxProbe emit-comb <out.repx>   # the same, for a CHARACTER COMB
 RepxProbe emit-pdf <out.repx>    # the same, for XRPdfContent
 RepxProbe render-cols            # what does DevExpress DRAW? bricks from CreateDocument()
+RepxProbe render <case-dir> [out-dir] # what does it PRINT over real data, and what do the exports hold?
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
+
+## `render` is the rendering question, asked with data
+
+Added 2026-10-30 for the DevExpress parity work, and written up in
+[`docs/proposals/devexpress-parity.md`](../../docs/proposals/devexpress-parity.md).
+A case directory holds `report.repx` and an optional `data.json`, whose shape is
+the doc comment at the top of `Render.cs`: tables, relations, column types,
+parameter values and which exports to run. The command binds the data as a
+`DataSet`, calls `CreateDocument()`, writes `render.json` with every brick, its
+owning control and its resolved style, then exports PDF, XLSX, DOCX, RTF, CSV,
+PNG and HTML. A failed export is recorded in `render.json` rather than thrown,
+because a format this install cannot produce is itself a finding. The culture is
+pinned to en-US; this machine's own culture would print rupees.
+
+The first thing it measured overturned a line in this file's own history: an
+aggregate such as `sumSum([Amount])` with **no `<Summary>` element prints
+blank**, in a group footer and in the report footer. The `emit-group` note
+below says leaving `Running` off totals the whole report at every break; that
+was read from the serializer, never printed, and printing says otherwise.
 
 ## Why this exists
 

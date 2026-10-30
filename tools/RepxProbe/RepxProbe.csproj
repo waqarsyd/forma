@@ -41,6 +41,9 @@
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Xml" />
+    <!-- render: data.json becomes a DataSet, read with the framework's own JSON reader. -->
+    <Reference Include="System.Data" />
+    <Reference Include="System.Web.Extensions" />
     <!--
       Same full-path references as RepxDesigner, and for the same reason: the
       installed DevExpress 20.1 is the version the target ERP is built against,
@@ -91,6 +94,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="Render.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

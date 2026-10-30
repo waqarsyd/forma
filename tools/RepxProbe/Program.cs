@@ -59,6 +59,9 @@ static class Program {
             Console.WriteLine("    emit-rich      XRRichText");
             Console.WriteLine("    emit-pdf       render to PDF bricks");
             Console.WriteLine("    render-cols    column render check (no file argument)");
+            Console.WriteLine();
+            Console.WriteLine("  what DevExpress PRINTS, with data:");
+            Console.WriteLine("    render <case-dir> [out-dir]  lay out report.repx over data.json, dump bricks, export every format");
             return 2;
         }
         try {
@@ -82,6 +85,7 @@ static class Program {
             case "emit-toc":   EmitToc(args[1]);   return 0;
             case "emit-comb":  EmitComb(args[1]);  return 0;
             case "render-cols": return RenderColumns();
+            case "render":     return Render.Run(args[1], args.Length > 2 ? args[2] : Path.Combine(args[1], "out"));
             case "emit-pdf":   EmitPdfContent(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:
