@@ -208,7 +208,18 @@ const BUDGETS = [
   // fitted under the old cap in silence, which is the "growth under a cap is
   // invisible" gap the 2026-09-06 entry describes; the fourth tripped it by
   // 681 B. 112_000 puts it at 93.5%.
-  { prefix: 'geminiService-', ext: '.js', max: 112_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
+  //
+  // Raised to 120_000 on 2026-10-30, a RAISE that also carries the gap the
+  // 2026-09-06 entry describes, so both halves are named. This commit grew it
+  // 108,735 -> 112,233 B, +3,498 B, for parity row 29: `lib/repxGroups.ts`,
+  // an output pass that numbers nested groups, and the NESTED GROUPS
+  // instruction in the prompt's grouping section. That tripped the cap by
+  // 233 B. The 104,681 -> 108,735 B before it, +4,054 B, had fitted in
+  // silence. It came from Prompt-to-Expression (`d985720`) and parity rows 1,
+  // 2 and 5 (`20a8e27`, `dd80fcc`, `20441fb`), the totals repair and its
+  // prompt sentence among them. Measured by building HEAD before this change,
+  // not inferred. 120_000 puts it at 93.5%.
+  { prefix: 'geminiService-', ext: '.js', max: 120_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it

@@ -18,6 +18,7 @@ import { auditRepx } from "../lib/repxAudit";
 import { liftParameterTypes } from "../lib/repxParameters";
 import { liftStyles } from "../lib/repxStyles";
 import { repairSummaries } from "../lib/repxSummaries";
+import { repairGroupLevels } from "../lib/repxGroups";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
@@ -2575,6 +2576,24 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.warn(`Totals: ${summaries.reason}.`);
     } else {
       console.debug(`Totals: ${summaries.reason}.`);
+    }
+
+    /*
+     * Nested groups nest by `Level`, not by file order.
+     *
+     * Two group headers with no `Level` are both level 0, and DevExpress makes
+     * the one written LATER the outer group, so a grouping written outer-first,
+     * the way the page reads, prints inside out. Measured by printing in case
+     * s19 on 2026-10-30. The grouping prompt asks for `Level`; this numbers the
+     * groups from the top when the model leaves it off, and touches nothing
+     * once any group band declares one. See `repxGroups.ts`.
+     */
+    const groups = repairGroupLevels(parsed.repxContent);
+    if (groups.applied) {
+      parsed.repxContent = groups.xml;
+      console.warn(`Groups: ${groups.reason}.`);
+    } else {
+      console.debug(`Groups: ${groups.reason}.`);
     }
 
     /*

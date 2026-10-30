@@ -46,7 +46,7 @@ Most of the reasoning behind this codebase is **not in this file**. It lives in 
 | dragging or retyping a control, `src/lib/repxEdit.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *Editing lives on Preview, not on Mockup*, and the two render defects that no check here would catch |
 | the Data tab, a pasted schema, `src/lib/dataSource.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *The Data tab's three states* (the pane), then [`gemini.md`](docs/notes/gemini.md) — *What binding does* (the REPX it writes). Both, in that order: the ordering bug was in the pane and the syntax is measured in the note |
 | a parameter, `FilterString`, `ObjectStorage`, `src/lib/repxParameters.ts` | [`gemini.md`](docs/notes/gemini.md) — *Parameters, and the first measurement that was a negative result*. Inline `Type=` is accepted and silently ignored, so the conversion has to be code rather than a prompt instruction |
-| a group band, `GroupFields`, a subtotal, `src/lib/reportBands.ts` | [`gemini.md`](docs/notes/gemini.md) — *Grouping, measured the same way* + *The report is banded now* |
+| a group band, `GroupFields`, a subtotal, `src/lib/reportBands.ts`, nested groups, `Level`, `src/lib/repxGroups.ts` | [`gemini.md`](docs/notes/gemini.md) — *Grouping, measured the same way* + *The report is banded now*. Nesting follows `Level`, not file order, so a grouping written outer-first without it prints inside out; the prompt asks for it and `repairGroupLevels` supplies it when the model forgets |
 | a total, a `<Summary>`, `Running`, `sumSum`, a footer total the Data tab writes, `src/lib/repxSummaries.ts` | [`gemini.md`](docs/notes/gemini.md) — *A total with no running scope prints blank*. Measured by printing, and the opposite of what this project believed before 2026-10-30: an aggregate whose cell has no `Running` scope is an empty cell in every band. Only the group and report footers are repaired, because elsewhere the scope is intent |
 | a chart, a cross-tab, `XRChart`, `XRCrossTab` | [`gemini.md`](docs/notes/gemini.md) — *Charts and cross-tabs, and the pattern that finally became a rule*. That pattern — an item inside a collection carries no `ControlType` — is now four measurements deep and applies well beyond charts |
 | the REPX audit, a finding `code`, the status-bar error/warning count, `src/lib/repxAudit.ts` | **That file's own doc comment for why a check exists**, [`gemini.md`](docs/notes/gemini.md) for how each was measured against DevExpress, and [`app-shell.md`](docs/notes/app-shell.md) — *The REPX audit is a count in the status bar* — for where it runs and what the user sees. It asks what is still wrong *after* the repairs, so an error means a repair declined; it gates nothing, and that is deliberate |
@@ -211,8 +211,8 @@ broken, and nothing in the toolchain enforces any of them.
   arithmetic — this bullet used to state it as a before-and-after pair of suite totals,
   which was stale within days of being written.
 - **File naming: `PascalCase.tsx` for React components, `camelCase.ts` for everything
-  else.** 100% consistent today — **29** PascalCase components and **163** `.ts` files
-  (that is `git ls-files src`, tests included; **repo-wide the answer is 171**, because
+  else.** 100% consistent today — **29** PascalCase components and **165** `.ts` files
+  (that is `git ls-files src`, tests included; **repo-wide the answer is 173**, because
   `server.ts` and the four root configs are also `.ts`. State the scope whenever you
   quote this number — an unqualified "67" is the next thing someone will "correct" to
   73.) The single exception is `src/vite-env.d.ts`, which is Vite's own required name.
@@ -230,7 +230,8 @@ broken, and nothing in the toolchain enforces any of them.
   against a real 29/151/159/40/38: `DescribeReportDialog` and its test had arrived
   unrecorded on 2026-10-28, and the parity work added `ReportPreview.test.tsx`. Measured
   again the same day after parity row 12: 153 and 161 before its six new `.ts` files,
-  so the 151 written above had already been two short; rows 20 and 19 added two each.)
+  so the 151 written above had already been two short; rows 20 and 19 added two each,
+  and row 29 two more.)
   **Three traps, each of which has been written in here as fact at least once.**
   **(1) Do not "correct" the 29 to 40 by counting `.tsx` files.** There are 40, and the
   eleven that are not components are deliberate: `main.tsx` is the entry point, `icons.tsx`

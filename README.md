@@ -330,6 +330,9 @@ src/
                        repxSummaries (a total with no running scope prints
                        blank in DevExpress; scopes the ones whose band
                        decides it, and finds the rest for the audit),
+                       repxGroups (nested groups nest by Level, not by file
+                       order; numbers the ones written without it from the
+                       top, so they do not print inside out),
                        repxAudit (asks what is still wrong with the finished
                        report after every repair has run — errors mean content
                        will be lost, warnings mean it opens and is a worse

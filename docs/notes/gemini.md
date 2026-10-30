@@ -486,7 +486,11 @@ Both files round-trip: the designer's own output and a hand-written Forma-shaped
 - A designer-saved file writes `Level="1"` on the outer band and omits the inner band's default 0. That nests correctly in either file order.
 - A group footer closes the group whose header declares its level, with ties paired in file order. A lone footer with `Level="1"` closed the outer group; one with no `Level` closed the inner one.
 
-Nothing in the prompt mentions `Level`, so a nested grouping the model writes outer-first without it would print inside out. `reportPreview.ts` now draws what DevExpress prints, so the Preview shows that. Whether the generator should write `Level` or a repair should add it is a separate decision, recorded in the parity proposal rather than made here.
+Until parity row 29, nothing in the prompt mentioned `Level`, so every nested grouping the model wrote outer-first printed inside out. `reportPreview.ts` draws what DevExpress prints, so the Preview showed it inverted too. Both halves of the fix are now in:
+
+- **The prompt asks for it.** The grouping section in `reportBands.ts` says nested groups are written outermost first and given a `Level`, highest outside, the innermost writing none, and that a footer carries its header's level. It also gives the reason: a report written without `Level` prints inside out.
+- **A repair supplies it when the model forgets.** `repairGroupLevels` in `repxGroups.ts` runs after the totals repair. It touches a band list only when it holds two or more group headers and no `Level` anywhere on its group bands, and it numbers the headers from the top. It writes `Level` only above 0, as the designer does. Run over s19c, the inside-out file, it produced the nesting DevExpress printed for the correctly levelled one, record for record.
+- **Footers are paired by what they name, then by print order.** Nothing measured says which order a model writes footers in, and on the page they print innermost first, the reverse of the headers. So a footer that names a group's field in its text or a binding ("Region total", `[Region]`) closes that group, the inner one if it names two. A footer that names none is taken innermost first, the order the page shows. More footers than headers is declined rather than guessed. A lone footer that names nothing still closes the inner group, which is what DevExpress already did with it.
 
 ### A total with no running scope prints blank (2026-10-30)
 
