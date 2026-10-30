@@ -48,8 +48,10 @@ export function auditLayoutBounds(xml: string | null | undefined): RepxFinding[]
   const belowBand: PreviewControl[] = [];
   const tallBands: string[] = [];
 
-  for (const band of structure.bands) {
-    if (band.kind === 'TopMargin' || band.kind === 'BottomMargin') continue;
+  // A detail report's own bands print on the same page, so they are checked too.
+  const allBands = structure.bands.flatMap((b) => (b.sub ? [b, ...b.sub.bands] : [b]));
+  for (const band of allBands) {
+    if (band.kind === 'TopMargin' || band.kind === 'BottomMargin' || band.kind === 'DetailReport') continue;
     if (band.height > usableHeight + TOLERANCE) tallBands.push(band.name || band.kind);
     for (const c of band.controls) {
       // Cells have no rectangle; everything else does. A hidden control prints

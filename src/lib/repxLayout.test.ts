@@ -75,3 +75,21 @@ describe('auditLayoutBounds', () => {
     expect(audit.findings.map((f) => f.code)).toContain('control-outside-page');
   });
 });
+
+describe('auditLayoutBounds inside a detail report', () => {
+  it('checks the bands of a DetailReportBand, which print on the same page', () => {
+    // Parity row 14: a detail report's bands are read into its own report now,
+    // so they are checked as the master's are.
+    const nested = report(
+      '<Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />' +
+      `<Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="30"><Controls>${label(1, 0, 0, 100, 20)}</Controls></Item2>` +
+      '<Item3 Ref="3" ControlType="DetailReportBand" Name="Lines" DataMember="Orders.Lines"><Bands>' +
+      `<Item1 Ref="4" ControlType="DetailBand" Name="LinesDetail" HeightF="20"><Controls>${label(2, 800, 0, 100, 20)}</Controls></Item1>` +
+      '</Bands></Item3>' +
+      '<Item4 Ref="9" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="0" />',
+    );
+    const findings = auditLayoutBounds(nested);
+    expect(findings.map((f) => f.code)).toEqual(['control-outside-page']);
+    expect(findings[0].message).toContain('l2');
+  });
+});

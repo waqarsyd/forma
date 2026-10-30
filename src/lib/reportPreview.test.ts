@@ -996,6 +996,7 @@ describe('paginating into columns', () => {
     structure.bands.push({
       kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null, keepTogether: false, canGrow: true,
       printOn: 'AllPages', printAtBottom: false, fields: [], level: 0, repeatEveryPage: false, groupUnion: 'None', pageBreak: 'None',
+      sub: null,
     });
     const result = paginate(structure, 4);
     const rf = result.pages[0].bands.find((b) => b.band.kind === 'ReportFooter')!;
@@ -2339,5 +2340,58 @@ describe('a report filter with a supplied parameter, as DevExpress printed it (c
     const report = paginate(parseReportStructure(broken), ROWS.length, { rows: ROWS });
     expect(report.records).toBe(ROWS.length);
     expect(report.problems.join(' ')).toMatch(/filter .* could not be read/);
+  });
+});
+
+/*
+ * Case c06 of docs/proposals/devexpress-parity.md: a DetailReportBand over the
+ * relation Orders.OrderLines, printed through DevExpress 20.1 (`RepxProbe
+ * render`, 2026-10-30). Every order printed its lines header, one Detail per
+ * line and a footer whose Running="Report" total was that order's own; orders
+ * 5 and 10 have no lines and printed the header, one blank Detail and a blank
+ * total. Each page below is DevExpress's, control=text in print order.
+ */
+describe('a detail report under each master record, as DevExpress printed it (case c06)', () => {
+  const REPX = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"ParityCase\" ReportUnit=\"HundredthsOfAnInch\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Orders\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"50\"></Item1><Item2 Ref=\"5\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"30\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"lblOrder\" Font=\"Arial, 10pt, style=Bold\" LocationFloat=\"0,0\" SizeF=\"400,25\"><ExpressionBindings><Item1 Ref=\"4\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"'Order ' + [OrderID] + ' for ' + [Customer]\" /></ExpressionBindings></Item1></Controls></Item2><Item3 Ref=\"19\" ControlType=\"DetailReportBand\" Name=\"DetailReport\" Level=\"0\" DataMember=\"Orders.OrderLines\"><Bands><Item1 Ref=\"7\" ControlType=\"GroupHeaderBand\" Name=\"LinesHeader\" HeightF=\"22\"><Controls><Item1 Ref=\"6\" ControlType=\"XRLabel\" Name=\"lblLineHead\" Text=\"ITEM / QTY / PRICE\" Font=\"Arial, 8pt, style=Bold\" LocationFloat=\"40,0\" SizeF=\"500,20\" /></Controls></Item1><Item2 Ref=\"14\" ControlType=\"DetailBand\" Name=\"LinesDetail\" HeightF=\"20\"><Controls><Item1 Ref=\"8\" ControlType=\"XRLabel\" Name=\"lblItem\" Font=\"Arial, 9pt\" LocationFloat=\"40,0\" SizeF=\"200,18\"><ExpressionBindings><Item1 Ref=\"9\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Item]\" /></ExpressionBindings></Item1><Item2 Ref=\"10\" ControlType=\"XRLabel\" Name=\"lblQty\" Font=\"Arial, 9pt\" LocationFloat=\"250,0\" SizeF=\"100,18\"><ExpressionBindings><Item1 Ref=\"11\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Qty]\" /></ExpressionBindings></Item2><Item3 Ref=\"12\" ControlType=\"XRLabel\" Name=\"lblPrice\" TextFormatString=\"{0:c2}\" Font=\"Arial, 9pt\" LocationFloat=\"360,0\" SizeF=\"100,18\"><ExpressionBindings><Item1 Ref=\"13\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Price]\" /></ExpressionBindings></Item3></Controls></Item2><Item3 Ref=\"18\" ControlType=\"ReportFooterBand\" Name=\"LinesFooter\" HeightF=\"22\"><Controls><Item1 Ref=\"15\" ControlType=\"XRLabel\" Name=\"lblOrderTotal\" TextFormatString=\"Order total {0:c2}\" Font=\"Arial, 9pt, style=Bold\" LocationFloat=\"360,0\" SizeF=\"200,20\"><Summary Ref=\"16\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"17\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumSum([Price])\" /></ExpressionBindings></Item1></Controls></Item3></Bands></Item3><Item4 Ref=\"22\" ControlType=\"PageFooterBand\" Name=\"PageFooter\" HeightF=\"30\"><Controls><Item1 Ref=\"20\" ControlType=\"XRPageInfo\" Name=\"pageOfTotal\" TextFormatString=\"Page {0} of {1}\" PageInfo=\"NumberOfTotal\" LocationFloat=\"0,5\" SizeF=\"300,20\" /><Item2 Ref=\"21\" ControlType=\"XRPageInfo\" Name=\"pageRoman\" PageInfo=\"RomLowNumber\" TextAlignment=\"TopRight\" LocationFloat=\"550,5\" SizeF=\"200,20\" /></Controls></Item4><Item5 Ref=\"23\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"50\"></Item5></Bands></XtraReportsLayoutSerializer>\n";
+  const ORDERS = [{"OrderID":"1","Customer":"C0001","OrderDate":"2026-03-01"},{"OrderID":"2","Customer":"C0002","OrderDate":"2026-03-02"},{"OrderID":"3","Customer":"C0003","OrderDate":"2026-03-03"},{"OrderID":"4","Customer":"C0004","OrderDate":"2026-03-04"},{"OrderID":"5","Customer":"C0005","OrderDate":"2026-03-05"},{"OrderID":"6","Customer":"C0006","OrderDate":"2026-03-06"},{"OrderID":"7","Customer":"C0007","OrderDate":"2026-03-07"},{"OrderID":"8","Customer":"C0008","OrderDate":"2026-03-08"},{"OrderID":"9","Customer":"C0009","OrderDate":"2026-03-09"},{"OrderID":"10","Customer":"C0010","OrderDate":"2026-03-10"},{"OrderID":"11","Customer":"C0011","OrderDate":"2026-03-11"},{"OrderID":"12","Customer":"C0012","OrderDate":"2026-03-12"}];
+  const LINES = [{"OrderID":"1","Item":"Item 1-1","Qty":"1","Price":"11"},{"OrderID":"2","Item":"Item 2-1","Qty":"1","Price":"12"},{"OrderID":"2","Item":"Item 2-2","Qty":"2","Price":"22"},{"OrderID":"3","Item":"Item 3-1","Qty":"1","Price":"13"},{"OrderID":"3","Item":"Item 3-2","Qty":"2","Price":"23"},{"OrderID":"3","Item":"Item 3-3","Qty":"3","Price":"33"},{"OrderID":"4","Item":"Item 4-1","Qty":"1","Price":"14"},{"OrderID":"4","Item":"Item 4-2","Qty":"2","Price":"24"},{"OrderID":"4","Item":"Item 4-3","Qty":"3","Price":"34"},{"OrderID":"4","Item":"Item 4-4","Qty":"4","Price":"44"},{"OrderID":"6","Item":"Item 6-1","Qty":"1","Price":"16"},{"OrderID":"7","Item":"Item 7-1","Qty":"1","Price":"17"},{"OrderID":"7","Item":"Item 7-2","Qty":"2","Price":"27"},{"OrderID":"8","Item":"Item 8-1","Qty":"1","Price":"18"},{"OrderID":"8","Item":"Item 8-2","Qty":"2","Price":"28"},{"OrderID":"8","Item":"Item 8-3","Qty":"3","Price":"38"},{"OrderID":"9","Item":"Item 9-1","Qty":"1","Price":"19"},{"OrderID":"9","Item":"Item 9-2","Qty":"2","Price":"29"},{"OrderID":"9","Item":"Item 9-3","Qty":"3","Price":"39"},{"OrderID":"9","Item":"Item 9-4","Qty":"4","Price":"49"},{"OrderID":"11","Item":"Item 11-1","Qty":"1","Price":"21"},{"OrderID":"12","Item":"Item 12-1","Qty":"1","Price":"22"},{"OrderID":"12","Item":"Item 12-2","Qty":"2","Price":"32"}];
+  const PRINTED: string[][] = [["lblOrder=Order 1 for C0001","lblLineHead=ITEM / QTY / PRICE","lblPrice=$11.00","lblQty=1","lblItem=Item 1-1","lblOrderTotal=Order total $11.00","lblOrder=Order 2 for C0002","lblLineHead=ITEM / QTY / PRICE","lblPrice=$12.00","lblQty=1","lblItem=Item 2-1","lblPrice=$22.00","lblQty=2","lblItem=Item 2-2","lblOrderTotal=Order total $34.00","lblOrder=Order 3 for C0003","lblLineHead=ITEM / QTY / PRICE","lblPrice=$13.00","lblQty=1","lblItem=Item 3-1","lblPrice=$23.00","lblQty=2","lblItem=Item 3-2","lblPrice=$33.00","lblQty=3","lblItem=Item 3-3","lblOrderTotal=Order total $69.00","lblOrder=Order 4 for C0004","lblLineHead=ITEM / QTY / PRICE","lblPrice=$14.00","lblQty=1","lblItem=Item 4-1","lblPrice=$24.00","lblQty=2","lblItem=Item 4-2","lblPrice=$34.00","lblQty=3","lblItem=Item 4-3","lblPrice=$44.00","lblQty=4","lblItem=Item 4-4","lblOrderTotal=Order total $116.00","lblOrder=Order 5 for C0005","lblLineHead=ITEM / QTY / PRICE","lblPrice=","lblQty=","lblItem=","lblOrderTotal=","lblOrder=Order 6 for C0006","lblLineHead=ITEM / QTY / PRICE","lblPrice=$16.00","lblQty=1","lblItem=Item 6-1","lblOrderTotal=Order total $16.00","lblOrder=Order 7 for C0007","lblLineHead=ITEM / QTY / PRICE","lblPrice=$17.00","lblQty=1","lblItem=Item 7-1","lblPrice=$27.00","lblQty=2","lblItem=Item 7-2","lblOrderTotal=Order total $44.00","lblOrder=Order 8 for C0008","lblLineHead=ITEM / QTY / PRICE","lblPrice=$18.00","lblQty=1","lblItem=Item 8-1","lblPrice=$28.00","lblQty=2","lblItem=Item 8-2","lblPrice=$38.00","lblQty=3","lblItem=Item 8-3","lblOrderTotal=Order total $84.00","lblOrder=Order 9 for C0009"],["lblLineHead=ITEM / QTY / PRICE","lblPrice=$19.00","lblQty=1","lblItem=Item 9-1","lblPrice=$29.00","lblQty=2","lblItem=Item 9-2","lblPrice=$39.00","lblQty=3","lblItem=Item 9-3","lblPrice=$49.00","lblQty=4","lblItem=Item 9-4","lblOrderTotal=Order total $136.00","lblOrder=Order 10 for C0010","lblLineHead=ITEM / QTY / PRICE","lblPrice=","lblQty=","lblItem=","lblOrderTotal=","lblOrder=Order 11 for C0011","lblLineHead=ITEM / QTY / PRICE","lblPrice=$21.00","lblQty=1","lblItem=Item 11-1","lblOrderTotal=Order total $21.00","lblOrder=Order 12 for C0012","lblLineHead=ITEM / QTY / PRICE","lblPrice=$22.00","lblQty=1","lblItem=Item 12-1","lblPrice=$32.00","lblQty=2","lblItem=Item 12-2","lblOrderTotal=Order total $54.00"]];
+  const related = (member: string, master: Record<string, string>) =>
+    member === 'Orders.OrderLines' ? LINES.filter((l) => l.OrderID === master.OrderID) : [];
+  const pagesOf = (report: PaginatedReport) => report.pages.map((page) =>
+    [...page.bands].sort((a, b) => a.top - b.top).flatMap((band) => band.controls
+      .filter((pc) => pc.text !== null && !pc.control.pageInfo)
+      .sort((a, b) => a.y - b.y || (b.control.x - a.control.x))
+      .map((pc) => `${pc.control.name}=${pc.text}`)));
+
+  it('reads a DetailReportBand as a band holding its own report, not as an unknown band', () => {
+    const s = parseReportStructure(REPX);
+    const dr = s.bands.find((b) => b.kind === 'DetailReport')!;
+    expect(dr.controls).toEqual([]);
+    expect(dr.sub!.dataMember).toBe('Orders.OrderLines');
+    expect(dr.sub!.bands.map((b) => b.kind)).toEqual(['GroupHeader', 'Detail', 'ReportFooter']);
+    expect(s.problems.join(' ')).not.toMatch(/Unrecognised/);
+  });
+
+  it('prints every order\'s lines and own total on the page DevExpress printed them on', () => {
+    const report = paginate(parseReportStructure(REPX), ORDERS.length, { rows: ORDERS, related });
+    expect(pagesOf(report)).toEqual(PRINTED);
+    expect(report.records).toBe(ORDERS.length);
+  });
+
+  it('prints each master as one with no lines, and says why, when the test data has no relation', () => {
+    const report = paginate(parseReportStructure(REPX), ORDERS.length, { rows: ORDERS });
+    const texts = report.pages.flatMap((p) => p.bands.flatMap((b) => b.controls.map((pc) => `${pc.control.name}=${pc.text}`)));
+    expect(texts.filter((t) => t.startsWith('lblLineHead='))).toHaveLength(ORDERS.length);
+    expect(texts.filter((t) => t.startsWith('lblItem='))).toEqual(ORDERS.map(() => 'lblItem='));
+    expect(texts.filter((t) => t.startsWith('lblOrderTotal='))).toEqual(ORDERS.map(() => 'lblOrderTotal='));
+    expect(report.problems.join(' ')).toMatch(/detail report "DetailReport" reads Orders\.OrderLines/);
+  });
+
+  it('draws the detail report once per master, with its literal text, when there is no test data', () => {
+    const report = paginate(parseReportStructure(REPX), 2);
+    const heads = report.pages.flatMap((p) => p.bands.filter((b) => b.band.name === 'LinesHeader'));
+    expect(heads).toHaveLength(2);
+    expect(heads[0].controls[0].text).toBe('ITEM / QTY / PRICE');
   });
 });

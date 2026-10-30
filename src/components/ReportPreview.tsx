@@ -887,7 +887,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                           pageCount={report.pages.length}
                           record={placed.record !== null && records?.length ? records[(placed.record - 1) % records.length] : null}
                         />
-                        {editing && (
+                        {/* A detail report's bands are not in the top-level list
+                            edits address, so they are drawn but not editable. */}
+                        {editing && bandIndex >= 0 && (
                           /* A transparent hit target over the control rather
                              than handlers on the control itself: the control's
                              own markup varies by type (a table is a grid of

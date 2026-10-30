@@ -49,6 +49,7 @@ export type BandKind =
   | 'PageHeader'
   | 'GroupHeader'
   | 'Detail'
+  | 'DetailReport'
   | 'GroupFooter'
   | 'ReportFooter'
   | 'PageFooter'
@@ -62,6 +63,8 @@ const BAND_ORDER: BandKind[] = [
   'PageHeader',
   'GroupHeader',
   'Detail',
+  // A detail report prints after each record of the Detail band it follows.
+  'DetailReport',
   'GroupFooter',
   'ReportFooter',
   'PageFooter',
@@ -423,6 +426,22 @@ export interface PreviewBand {
   groupUnion: string;
   /** `PageBreak`: `None`, `BeforeBand`, `BeforeBandExceptFirstEntry`, `AfterBand` or `AfterBandExceptLastEntry`. */
   pageBreak: string;
+  /** For a `DetailReportBand`: the report it prints after each master record. Null for every other band. */
+  sub: SubReport | null;
+}
+
+/**
+ * A `DetailReportBand`: its own bands, printed after each record of the
+ * master's Detail band over that record's related rows. Printed in c06: every
+ * order got its lines header, one Detail per line and a footer whose
+ * `Running="Report"` total was that order's own; an order with no lines still
+ * got the header, ONE blank Detail and a blank total.
+ */
+export interface SubReport {
+  /** `DataMember`, a relation path such as `Orders.OrderLines`. */
+  dataMember: string | null;
+  filterString: string | null;
+  bands: PreviewBand[];
 }
 
 /** One `GroupFields` or `SortFields` item. `None` groups without sorting. */
@@ -1371,34 +1390,59 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
   const styles = parseStyleSheet(text);
   const reportLook = resolveAppearance(rootAttrs, '', styles, DEFAULT_APPEARANCE);
 
-  for (const item of collectionItems(bandsInner)) {
-    const controlType = attrOf(item.attrs, 'ControlType');
-    if (!controlType || !/Band$/.test(controlType)) continue;
-    const kind = bandKind(controlType);
-    if (kind === 'Unknown') {
-      problems.push(`Unrecognised band type "${controlType}" — it is drawn in file order.`);
+  /*
+   * One band collection; a DetailReportBand's own <Bands> are read the same way,
+   * into its `sub`. Until 2026-10-30 a detail report was an "unrecognised"
+   * band whose first nested label was read as its own control, and nothing of
+   * it printed (parity row 14).
+   */
+  const byPrintOrder = (a: PreviewBand, b: PreviewBand) => BAND_ORDER.indexOf(a.kind) - BAND_ORDER.indexOf(b.kind);
+  const parseBandList = (inner: string, base: number, parentLook: Appearance): PreviewBand[] => {
+    const out: PreviewBand[] = [];
+    for (const item of collectionItems(inner)) {
+      const controlType = attrOf(item.attrs, 'ControlType');
+      if (!controlType || !/Band$/.test(controlType)) continue;
+      const kind = bandKind(controlType);
+      if (kind === 'Unknown') {
+        problems.push(`Unrecognised band type "${controlType}" — it is drawn in file order.`);
+      }
+      const bandSpan = innerSpan(inner, item.tag, item.start);
+      const bandLook = resolveAppearance(item.attrs, bandSpan ? ownPart(bandSpan.text) : '', styles, parentLook, controlType);
+      let sub: SubReport | null = null;
+      if (kind === 'DetailReport') {
+        const nestedAt = bandSpan ? bandSpan.text.indexOf('<Bands') : -1;
+        const nested = bandSpan && nestedAt !== -1 ? innerSpan(bandSpan.text, 'Bands', nestedAt) : null;
+        const filter = attrOf(item.attrs, 'FilterString');
+        sub = {
+          dataMember: attrOf(item.attrs, 'DataMember'),
+          filterString: filter ? decodeXmlText(filter) : null,
+          bands: nested && bandSpan ? parseBandList(nested.text, base + bandSpan.start + nested.start, bandLook).sort(byPrintOrder) : [],
+        };
+      }
+      out.push({
+        kind,
+        name: attrOf(item.attrs, 'Name') || controlType,
+        height: numAttr(item.attrs, 'HeightF', 0),
+        // A detail report has no controls of its own; its bands do.
+        controls: bandSpan && kind !== 'DetailReport'
+          ? parseControls(bandSpan.text, base + bandSpan.start, styles, bandLook)
+          : [],
+        columns: bandSpan && kind !== 'DetailReport' ? parseColumns(bandSpan.text) : null,
+        keepTogether: (attrOf(item.attrs, 'KeepTogether') ?? '').toLowerCase() === 'true',
+        canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
+        printOn: attrOf(item.attrs, 'PrintOn') || 'AllPages',
+        printAtBottom: (attrOf(item.attrs, 'PrintAtBottom') ?? '').toLowerCase() === 'true',
+        fields: bandSpan && kind !== 'DetailReport' ? parseBandFields(bandSpan.text, kind === 'Detail' ? 'SortFields' : 'GroupFields') : [],
+        level: numAttr(item.attrs, 'Level', 0),
+        repeatEveryPage: (attrOf(item.attrs, 'RepeatEveryPage') ?? '').toLowerCase() === 'true',
+        groupUnion: attrOf(item.attrs, 'GroupUnion') || 'None',
+        pageBreak: attrOf(item.attrs, 'PageBreak') || 'None',
+        sub,
+      });
     }
-    const bandSpan = innerSpan(bandsInner, item.tag, item.start);
-    const bandLook = resolveAppearance(item.attrs, bandSpan ? ownPart(bandSpan.text) : '', styles, reportLook, controlType);
-    structure.bands.push({
-      kind,
-      name: attrOf(item.attrs, 'Name') || controlType,
-      height: numAttr(item.attrs, 'HeightF', 0),
-      controls: bandSpan
-        ? parseControls(bandSpan.text, bandsSpan.start + bandSpan.start, styles, bandLook)
-        : [],
-      columns: bandSpan ? parseColumns(bandSpan.text) : null,
-      keepTogether: (attrOf(item.attrs, 'KeepTogether') ?? '').toLowerCase() === 'true',
-      canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
-      printOn: attrOf(item.attrs, 'PrintOn') || 'AllPages',
-      printAtBottom: (attrOf(item.attrs, 'PrintAtBottom') ?? '').toLowerCase() === 'true',
-      fields: bandSpan ? parseBandFields(bandSpan.text, kind === 'Detail' ? 'SortFields' : 'GroupFields') : [],
-      level: numAttr(item.attrs, 'Level', 0),
-      repeatEveryPage: (attrOf(item.attrs, 'RepeatEveryPage') ?? '').toLowerCase() === 'true',
-      groupUnion: attrOf(item.attrs, 'GroupUnion') || 'None',
-      pageBreak: attrOf(item.attrs, 'PageBreak') || 'None',
-    });
-  }
+    return out;
+  };
+  structure.bands.push(...parseBandList(bandsInner, bandsSpan.start, reportLook));
 
   if (!structure.bands.length) problems.push('No bands were found inside <Bands>.');
 
@@ -1868,6 +1912,11 @@ export function paginate(
     rows?: RecordValues[] | null;
     /** Parameter values the reader entered, by name; each wins over the file's default. */
     parameters?: Readonly<Record<string, string>>;
+    /**
+     * A detail report's rows for one master record: given its `DataMember` (a
+     * relation path) and the master's row. Absent, every master has none.
+     */
+    related?: (dataMember: string, master: RecordValues) => RecordValues[] | null;
   } = {},
 ): PaginatedReport {
   const maxPages = options.maxPages ?? 50;
@@ -1882,19 +1931,24 @@ export function paginate(
    * ties paired in file order. Until 2026-10-30 this took the file order as
    * outer-first, which nests a file with no `Level` the wrong way round.
    */
-  const outerFirst = (kind: BandKind) =>
-    bands
+  const outerFirstOf = (list: readonly PreviewBand[], kind: BandKind) =>
+    list
       .map((band, index) => ({ band, index }))
       .filter((x) => x.band.kind === kind)
       .sort((x, y) => y.band.level - x.band.level || y.index - x.index)
       .map((x) => x.band);
-  const groupHeaders = outerFirst('GroupHeader');
-  const footerOf = new Map<PreviewBand, PreviewBand>();
-  const unpaired = outerFirst('GroupFooter').reverse();
-  for (const header of [...groupHeaders].reverse()) {
-    const i = unpaired.findIndex((f) => f.level === header.level);
-    if (i >= 0) footerOf.set(header, unpaired.splice(i, 1)[0]);
-  }
+  /** Each header's footer, by declared level; and the footers no header claims. */
+  const pairFooters = (list: readonly PreviewBand[], headers: readonly PreviewBand[]) => {
+    const footers = new Map<PreviewBand, PreviewBand>();
+    const left = outerFirstOf(list, 'GroupFooter').reverse();
+    for (const header of [...headers].reverse()) {
+      const i = left.findIndex((f) => f.level === header.level);
+      if (i >= 0) footers.set(header, left.splice(i, 1)[0]);
+    }
+    return { footers, left };
+  };
+  const groupHeaders = outerFirstOf(bands, 'GroupHeader');
+  const { footers: footerOf, left: unpaired } = pairFooters(bands, groupHeaders);
   /** Footers innermost first, as they print after the records; an unpaired one prints last. */
   const groupFooters = [
     ...[...groupHeaders].reverse().flatMap((h) => (footerOf.has(h) ? [footerOf.get(h)!] : [])),
@@ -2184,8 +2238,82 @@ export function paginate(
      * Each level's header prints when its run starts and its footer when it
      * ends, so nested groups open outermost first and close innermost first.
      */
-    type Step = { inst: BandInstance | null; role: 'header' | 'detail' | 'footer' | 'end'; level: number; first: boolean; last: boolean };
+    type Step = { inst: BandInstance | null; role: 'header' | 'detail' | 'footer' | 'end' | 'sub'; level: number; first: boolean; last: boolean };
     const steps: Step[] = [];
+
+    /*
+     * A detail report after a master record (parity row 14): its report header,
+     * its groups and one Detail per related row, its report footer -- each band
+     * reading that master's related rows, so a `Running="Report"` total inside
+     * it is the master's own, as c06 printed. The rows come from
+     * `options.related`; with none, the master has no related rows, which
+     * DevExpress prints as the header, ONE blank Detail and a blank total. The
+     * Preview's test data is flat, so that is what it shows, and says why.
+     */
+    const detailReports = bands.filter((b) => b.kind === 'DetailReport' && b.sub);
+    const subSteps = (masterIndex: number | null): Step[] => {
+      const out: Step[] = [];
+      for (const report of detailReports) {
+        const sub = report.sub!;
+        const master = masterIndex === null ? null : rowFor(masterIndex);
+        const rows = data && master && options.related ? options.related(sub.dataMember ?? '', master) ?? [] : [];
+        const subHeaders = outerFirstOf(sub.bands, 'GroupHeader');
+        const { footers: subFooters, left: subUnpaired } = pairFooters(sub.bands, subHeaders);
+        const subDetail = sub.bands.find((b) => b.kind === 'Detail') ?? null;
+        let subData = data ? ReportData.from(rows, rows.length, [], structure.parameters, options.parameters) : null;
+        if (subData && sub.filterString) subData = subData.filtered(sub.filterString) ?? subData;
+        if (subData) {
+          subData = subData.reordered(sortedOrder(subData.records, [...subHeaders.flatMap((h) => h.fields), ...(subDetail?.fields ?? [])]));
+        }
+        // Without test data, one line: the structure, as the master shows it.
+        const count = subData ? subData.records.length : 1;
+        const all = subData ? Array.from({ length: count }, (_, i) => i) : [];
+        const runs = subHeaders.map((_, k) =>
+          subData ? groupRuns(subData.records, subHeaders.slice(0, k + 1).flatMap((h) => h.fields.map((f) => f.field))) : [Array.from({ length: count }, (_, i) => i)],
+        );
+        const subCtx: LayoutContext = { ...ctx, data: subData };
+        const last = all.length ? all.length - 1 : null;
+        const lay = (band: PreviewBand, row: number | null, anchor: number | null, group: readonly number[] | null) =>
+          layoutBand(band, null, null, subCtx, { row, anchor, report: all, group, page: null });
+        const push = (inst: BandInstance) => out.push({ inst, role: 'sub', level: -1, first: true, last: true });
+        const runAt = runs.map(() => 0);
+        const open = (k: number) => {
+          const run = runs[k][runAt[k]] ?? [];
+          push(lay(subHeaders[k], run.length ? run[0] : null, run.length ? run[run.length - 1] : null, run));
+        };
+        const close = (k: number) => {
+          const run = runs[k][runAt[k]] ?? [];
+          const footer = subFooters.get(subHeaders[k]);
+          if (footer) push(lay(footer, run.length ? run[run.length - 1] : null, run.length ? run[run.length - 1] : null, run));
+          runAt[k]++;
+        };
+        for (const band of sub.bands.filter((b) => b.kind === 'ReportHeader')) push(lay(band, all.length ? 0 : null, last, null));
+        if (count > 0) {
+          for (let i = 0; i < count; i++) {
+            for (let k = 0; k < subHeaders.length; k++) if (runs[k][runAt[k]]?.[0] === i) open(k);
+            const inner = runs.length ? runs[runs.length - 1].find((r) => r.includes(i)) ?? null : null;
+            if (subDetail) push(lay(subDetail, subData ? i : null, subData ? i : null, inner));
+            for (let k = subHeaders.length - 1; k >= 0; k--) {
+              const run = runs[k][runAt[k]];
+              if (run && run[run.length - 1] === i) close(k);
+            }
+          }
+        } else {
+          for (let k = 0; k < subHeaders.length; k++) open(k);
+          if (subDetail) push(lay(subDetail, null, null, null));
+          for (let k = subHeaders.length - 1; k >= 0; k--) close(k);
+        }
+        for (const footer of subUnpaired) push(lay(footer, last, last, all));
+        for (const band of sub.bands.filter((b) => b.kind === 'ReportFooter')) push(lay(band, last, last, null));
+      }
+      return out;
+    };
+    if (data && detailReports.length && !options.related) {
+      problems.push(
+        `The detail report ${detailReports.map((b) => `"${b.name}"`).join(', ')} reads ${detailReports.map((b) => b.sub!.dataMember ?? 'its own data').join(', ')}, ` +
+          'which the test data does not carry, so each record prints it as DevExpress prints a record with no related rows.',
+      );
+    }
     const runAt = levelRuns.map(() => 0);
     const openStep = (k: number) => {
       const runs = levelRuns[k];
@@ -2207,6 +2335,7 @@ export function paginate(
       for (let i = 0; i < records; i++) {
         for (let k = 0; k < groupHeaders.length; k++) if (levelRuns[k][runAt[k]]?.[0] === i) openStep(k);
         if (detail) steps.push({ inst: instance(detail, i + 1, rowFor(i)), role: 'detail', level: groupHeaders.length, first: i === 0, last: i === records - 1 });
+        steps.push(...subSteps(i));
         for (let k = groupHeaders.length - 1; k >= 0; k--) {
           const run = levelRuns[k][runAt[k]];
           if (run && run[run.length - 1] === i) closeStep(k);
@@ -2222,6 +2351,7 @@ export function paginate(
        */
       for (let k = 0; k < groupHeaders.length; k++) openStep(k);
       if (detail) steps.push({ inst: instance(detail), role: 'detail', level: groupHeaders.length, first: true, last: true });
+      steps.push(...subSteps(null));
       for (let k = groupHeaders.length - 1; k >= 0; k--) closeStep(k);
     }
     unpairedSteps();
@@ -2260,6 +2390,7 @@ export function paginate(
         if (need > pageBottom - cursor + EPS && need <= freshRoom() + EPS && !atContentTop()) startPage();
       }
       place(inst);
+      // A detail report's lines are not master records.
       if (step.role === 'detail' && inst.record !== null) placedRecords++;
       if (step.role === 'header') openGroups.push(inst);
       if (step.role === 'footer' && step.level >= 0) openGroups.length = Math.min(openGroups.length, step.level);
