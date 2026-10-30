@@ -1923,6 +1923,25 @@ export interface PaginatedReport {
 
 const findBand = (bands: PreviewBand[], kind: BandKind) => bands.find((b) => b.kind === kind);
 
+/** How `paginate` is asked to lay a report out; every field is optional. */
+export interface PaginateOptions {
+  maxPages?: number;
+  /** Measures text so controls grow and bands split as DevExpress prints them. */
+  measure?: MeasureText | null;
+  /**
+   * Test data: record n prints row (n - 1) modulo the count. An empty array is
+   * an empty data source, which prints differently from no data at all.
+   */
+  rows?: RecordValues[] | null;
+  /** Parameter values the reader entered, by name; each wins over the file's default. */
+  parameters?: Readonly<Record<string, string>>;
+  /**
+   * A detail report's rows for one master record: given its `DataMember` (a
+   * relation path) and the master's row. Absent, every master has none.
+   */
+  related?: (dataMember: string, master: RecordValues) => RecordValues[] | null;
+}
+
 /**
  * Lay the report out across pages, printing the Detail band once per record.
  *
@@ -1952,23 +1971,7 @@ const findBand = (bands: PreviewBand[], kind: BandKind) => bands.find((b) => b.k
 export function paginate(
   structure: ReportStructure,
   recordCount: number,
-  options: {
-    maxPages?: number;
-    /** Measures text so controls grow and bands split as DevExpress prints them. */
-    measure?: MeasureText | null;
-    /**
-     * Test data: record n prints row (n - 1) modulo the count. An empty array is
-     * an empty data source, which prints differently from no data at all.
-     */
-    rows?: RecordValues[] | null;
-    /** Parameter values the reader entered, by name; each wins over the file's default. */
-    parameters?: Readonly<Record<string, string>>;
-    /**
-     * A detail report's rows for one master record: given its `DataMember` (a
-     * relation path) and the master's row. Absent, every master has none.
-     */
-    related?: (dataMember: string, master: RecordValues) => RecordValues[] | null;
-  } = {},
+  options: PaginateOptions = {},
 ): PaginatedReport {
   /*
    * No cap unless a caller asks for one (parity row 16). The Preview stopped at

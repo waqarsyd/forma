@@ -206,3 +206,28 @@ describe('links in the Preview', () => {
     expect(screen.getByText('LINKED').closest('a')).toBeNull();
   });
 });
+
+/*
+ * Export CSV hands the browser a file named after the report, holding what the
+ * pane shows laid out as DevExpress exports CSV (parity row 20).
+ */
+describe('Export CSV', () => {
+  it('downloads the report as CSV, named after its title', async () => {
+    let blob: Blob | null = null;
+    const create = vi.fn((b: Blob) => { blob = b; return 'blob:csv'; });
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: create, revokeObjectURL: vi.fn() }));
+    const clicked: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.download);
+    });
+    render(<ReportPreview repxContent={geometry} layout={null} title="Geometry Case" />);
+    fireEvent.click(screen.getByText('Export CSV'));
+    expect(clicked).toEqual(['Geometry_Case.csv']);
+    const text = await (blob as unknown as Blob).text();
+    expect(text.split('\r\n')[0]).toContain('PADDED BOX');
+    expect(text.endsWith('\r\n')).toBe(true);
+    click.mockRestore();
+    vi.unstubAllGlobals();
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  });
+});

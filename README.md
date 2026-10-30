@@ -353,6 +353,9 @@ src/
                        fields, parameter defaults, their print order and
                        groups, and which records each printed band's totals
                        and fields read),
+                       csvExport (the report as CSV, laid out on one
+                       continuous page the way DevExpress exports it --
+                       byte for byte, on thirteen measured reports),
                        textMeasure (how many lines a text breaks into and how
                        tall that prints, so the Preview grows controls and
                        breaks pages where DevExpress does),

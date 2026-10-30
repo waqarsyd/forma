@@ -50,6 +50,7 @@ import { parseParameters } from '../lib/repxParameters';
 import { readBoundFields } from '../lib/repxBindingPlan';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
 import { canvasMeasurer, lineSpacingPt } from '../lib/textMeasure';
+import { exportFileName, reportToCsv } from '../lib/csvExport';
 import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
 import type { ReportLayout } from '../lib/reportTypes';
 
@@ -790,6 +791,26 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   const exportPdf = useCallback(() => setPrinting(true), []);
 
   /*
+   * CSV as DevExpress exports it (parity row 20): one continuous page, a line
+   * per distinct top and a column per distinct left edge, the printed text in
+   * each. Thirteen parity cases came out byte for byte the same as
+   * DevExpress's own files. Laid out from the same report, rows and parameter
+   * values the pane shows, so the file holds what the reader sees.
+   */
+  const exportCsv = useCallback(() => {
+    const count = records?.length ? records.length : recordCountFromLayout(layout);
+    const csv = reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues });
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportFileName(title, 'csv');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [structure, records, layout, paramValues, title]);
+
+  /*
    * Only the pages near the viewport are filled in (parity row 16). Every page
    * keeps its frame at full size, so the scroll height and each page's place
    * are exact, but a page's bands are drawn only within a few pages of what is
@@ -1222,6 +1243,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           style={editable ? undefined : { marginLeft: 'auto' }}
         >
           Export PDF
+        </button>
+        <button type="button" className="wb-pill wb-pill--outline" onClick={exportCsv} disabled={!report.pages.length}>
+          Export CSV
         </button>
       </div>
 
