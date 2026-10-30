@@ -25,6 +25,8 @@ import {
   splitInstance,
   recordCountFromLayout,
   decodeXmlText,
+  fontDecoration,
+  safeLink,
   type PaginatedReport,
   type PlacedBand,
   type PlacedControl,
@@ -2403,5 +2405,52 @@ describe('a detail report under each master record, as DevExpress printed it (ca
     const heads = report.pages.flatMap((p) => p.bands.filter((b) => b.band.name === 'LinesHeader'));
     expect(heads).toHaveLength(2);
     expect(heads[0].controls[0].text).toBe('ITEM / QTY / PRICE');
+  });
+});
+
+/*
+ * Case c08 of docs/proposals/devexpress-parity.md: a label whose NavigateUrl is
+ * bound to an expression and one whose NavigateUrl is written on it, printed
+ * through DevExpress 20.1 (`RepxProbe render`, 2026-10-30). Both became link
+ * annotations in its PDF, one pair per record; the expected list is read from
+ * those annotations, top to bottom.
+ */
+describe('links, as DevExpress printed them (case c08)', () => {
+  const REPX = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"ParityCase\" ReportUnit=\"HundredthsOfAnInch\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Sales\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"50\"></Item1><Item2 Ref=\"7\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"22\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"lblLink\" Font=\"Arial, 9pt, style=Underline\" ForeColor=\"Blue\" LocationFloat=\"0,0\" SizeF=\"300,20\"><ExpressionBindings><Item1 Ref=\"4\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /><Item2 Ref=\"5\" EventName=\"BeforePrint\" PropertyName=\"NavigateUrl\" Expression=\"'https://example.com/customers/' + [Customer]\" /></ExpressionBindings></Item1><Item2 Ref=\"6\" ControlType=\"XRLabel\" Name=\"lblStatic\" Text=\"Static link\" Font=\"Arial, 9pt\" NavigateUrl=\"https://example.com/\" LocationFloat=\"310,0\" SizeF=\"300,20\" /></Controls></Item2><Item3 Ref=\"8\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"50\"></Item3></Bands></XtraReportsLayoutSerializer>\n";
+  const ROWS = ["C0001","C0002","C0003","C0004","C0005","C0006","C0007","C0008","C0009","C0010","C0011","C0012"].map((Customer) => ({ Customer }));
+  const PRINTED_LINKS = ["https://example.com/customers/C0001","https://example.com/","https://example.com/customers/C0002","https://example.com/","https://example.com/customers/C0003","https://example.com/","https://example.com/customers/C0004","https://example.com/","https://example.com/customers/C0005","https://example.com/","https://example.com/customers/C0006","https://example.com/","https://example.com/customers/C0007","https://example.com/","https://example.com/customers/C0008","https://example.com/","https://example.com/customers/C0009","https://example.com/","https://example.com/customers/C0010","https://example.com/","https://example.com/customers/C0011","https://example.com/","https://example.com/customers/C0012","https://example.com/"];
+
+  it('links each placement where DevExpress did, literal and bound alike', () => {
+    const report = paginate(parseReportStructure(REPX), ROWS.length, { rows: ROWS });
+    const urls = report.pages.flatMap((p) => [...p.bands].sort((a, b) => a.top - b.top)
+      .flatMap((b) => [...b.controls].sort((x, y) => x.control.x - y.control.x).map((pc) => pc.url).filter(Boolean)));
+    expect(urls).toEqual(PRINTED_LINKS);
+  });
+
+  it('keeps the literal link without test data, and has no address to give a bound one', () => {
+    const placed = paginate(parseReportStructure(REPX), 1).pages[0].bands
+      .find((b) => b.band.kind === 'Detail')!.controls;
+    expect(placed.map((pc) => [pc.control.name, pc.url])).toEqual([['lblLink', null], ['lblStatic', 'https://example.com/']]);
+  });
+
+  it('never links to anything but http, https or mailto', () => {
+    expect(safeLink('https://example.com/a')).toBe('https://example.com/a');
+    expect(safeLink(' mailto:someone@example.com ')).toBe('mailto:someone@example.com');
+    expect(safeLink('javascript:alert(1)')).toBeNull();
+    expect(safeLink('JavaScript:alert(1)')).toBeNull();
+    expect(safeLink('data:text/html,hi')).toBeNull();
+    expect(safeLink('/relative')).toBeNull();
+    expect(safeLink(null)).toBeNull();
+    const hostile = REPX.replace('NavigateUrl="https://example.com/"', 'NavigateUrl="javascript:alert(1)"');
+    const placed = paginate(parseReportStructure(hostile), 1).pages[0].bands.find((b) => b.band.kind === 'Detail')!.controls;
+    expect(placed.find((pc) => pc.control.name === 'lblStatic')!.url).toBeNull();
+  });
+
+  it('reads underline and strikeout out of a resolved font', () => {
+    expect(fontDecoration('Arial, 9pt, style=Underline')).toBe('underline');
+    expect(fontDecoration('Arial, 9pt, style=Bold, Strikeout')).toBe('line-through');
+    expect(fontDecoration('Arial, 9pt, style=Underline, Strikeout')).toBe('underline line-through');
+    expect(fontDecoration('Arial, 9pt, style=Bold')).toBeUndefined();
+    expect(fontDecoration(undefined)).toBeUndefined();
   });
 });

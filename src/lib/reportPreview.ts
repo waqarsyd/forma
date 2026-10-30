@@ -247,6 +247,8 @@ export interface PreviewControl {
   wordWrap: boolean;
   /** What the control prints from data: its whole `Text` binding, its summary scope and its format. */
   data: TextData;
+  /** `NavigateUrl`: written on the control, or bound to an expression. Null when it has none. */
+  link: { literal: string | null; expression: string | null } | null;
   /** Populated for XRPageInfo only: what it prints and how. See `pageInfoText`. */
   pageInfo: PreviewPageInfo | null;
   /** Populated for XRTable only. */
@@ -716,6 +718,27 @@ export function decodeXmlText(text: string): string {
 }
 
 /**
+ * The CSS text decoration a resolved `Font` asks for: `style=Underline`,
+ * `style=Strikeout`, both, or neither. Read at draw time from the appearance,
+ * so the parsed shapes did not have to grow for it.
+ */
+export function fontDecoration(font: string | null | undefined): string | undefined {
+  const styles = (font ?? '').toLowerCase();
+  const parts = [/style=[^"]*underline/.test(styles) && 'underline', /style=[^"]*strikeout/.test(styles) && 'line-through'].filter(Boolean);
+  return parts.length ? parts.join(' ') : undefined;
+}
+
+/**
+ * A link a control may follow, as an address and nothing else: http, https and
+ * mailto. The file is the user's own upload or the model's output, so a
+ * `javascript:` URL in it must never become something the Preview runs.
+ */
+export function safeLink(url: string | null | undefined): string | null {
+  const value = (url ?? '').trim();
+  return /^(https?:\/\/|mailto:)/i.test(value) ? value : null;
+}
+
+/**
  * `Font="Arial, 9.75pt, style=Bold, Italic"`, or the same as a child element.
  * Size is in POINTS here and in nothing else in the file; see reportGeometry.
  */
@@ -985,6 +1008,17 @@ function parseTextData(attrs: string, slice: string): TextData {
   };
 }
 
+/** `NavigateUrl` as an attribute or as an expression binding, from the control's own part. */
+function parseLink(attrs: string, slice: string): { literal: string | null; expression: string | null } | null {
+  const own = ownPart(slice);
+  const item =
+    /<Item\d+\b[^>]*\sPropertyName="NavigateUrl"[^>]*\sExpression="([^"]*)"/.exec(own) ??
+    /<Item\d+\b[^>]*\sExpression="([^"]*)"[^>]*\sPropertyName="NavigateUrl"/.exec(own);
+  const literal = attrOf(attrs, 'NavigateUrl');
+  if (!item && literal === null) return null;
+  return { literal: literal === null ? null : decodeXmlText(literal), expression: item ? decodeXmlText(item[1]) : null };
+}
+
 function parseTextBinding(slice: string): string | null {
   const item =
     /<Item\d+\b[^>]*\sPropertyName="Text"[^>]*\sExpression="([^"]*)"/.exec(slice) ??
@@ -1239,6 +1273,7 @@ function parseControls(
       canShrink: (attrOf(item.attrs, 'CanShrink') ?? '').toLowerCase() === 'true',
       wordWrap: (attrOf(item.attrs, 'WordWrap') ?? '').toLowerCase() !== 'false',
       data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
+      link: parseLink(item.attrs, inner.slice(item.start, extent)),
       pageInfo: type === 'XRPageInfo'
         ? {
             kind: attrOf(item.attrs, 'PageInfo') || 'NumberOfTotal',
@@ -1507,6 +1542,13 @@ export interface PlacedControl {
    */
   text: string | null;
   cellTexts: string[][] | null;
+  /**
+   * Where the control links to in this placement, an http, https or mailto
+   * address only; null for none. Printed in c08: a literal and a bound
+   * `NavigateUrl` both became link annotations in DevExpress's PDF, and the
+   * browser keeps an anchor's link when it prints, so the Preview's does too.
+   */
+  url?: string | null;
 }
 
 /** One printed occurrence of a band: a record's Detail, a page's header, a split part. */
@@ -1551,8 +1593,16 @@ function textsOf(control: PreviewControl, values: RecordValues | null, ctx: Layo
       cellTexts: control.rows.map((row) => row.cells.map((cell) => textFor(cell.text, cell.field, cell.data, values, ctx, scope))),
     };
   }
-  if (control.pageInfo) return { text: null, cellTexts: null };
-  return { text: textFor(control.text, control.field, control.data, values, ctx, scope), cellTexts: null };
+  if (control.pageInfo) return { text: null, cellTexts: null, url: linkFor(control, ctx, scope) };
+  return { text: textFor(control.text, control.field, control.data, values, ctx, scope), cellTexts: null, url: linkFor(control, ctx, scope) };
+}
+
+/** A control's `NavigateUrl` in one instance: its expression evaluated over the test data, or its literal. */
+function linkFor(control: PreviewControl, ctx: LayoutContext, scope: TextScope | null): string | null {
+  if (!control.link) return null;
+  const { literal, expression } = control.link;
+  const evaluated = expression && ctx.data && scope ? ctx.data.text({ expression, running: null, format: null }, scope) : null;
+  return safeLink(evaluated ?? literal);
 }
 
 const EPS = 1e-6;
@@ -1695,6 +1745,7 @@ export function layoutBand(
       rowHeights: it.rowHeights,
       text: it.text,
       cellTexts: it.cellTexts,
+      url: it.url ?? null,
     })),
   };
 }

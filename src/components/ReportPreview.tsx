@@ -38,6 +38,7 @@ import {
   printedText,
   cssColor,
   cssPadding,
+  fontDecoration,
   recordCountFromLayout,
   type Appearance,
   type PlacedControl,
@@ -184,6 +185,7 @@ function ControlBox({
     fontFamily: control.fontFamily ? `${control.fontFamily}, sans-serif` : '"Times New Roman", serif',
     fontWeight: control.bold ? 700 : 400,
     fontStyle: control.italic ? 'italic' : 'normal',
+    textDecoration: fontDecoration(look.Font),
     // Colour, fill, padding and the border's own width and colour, as printed:
     // a 2px red border with 10 units of padding put text 8.7pt inside the edge.
     // Every border was drawn 1px black, and no colour at all, until 2026-10-30.
@@ -503,6 +505,7 @@ function ControlBox({
                     fontFamily: cell.fontFamily ? `${cell.fontFamily}, sans-serif` : undefined,
                     fontWeight: cell.bold ? 700 : 400,
                     fontStyle: cell.italic ? 'italic' : 'normal',
+                    textDecoration: fontDecoration(cell.appearance.Font),
                     color: cssColor(cell.appearance.ForeColor),
                     background: cssColor(cell.appearance.BackColor),
                     // DevExpress printed table cells with no padding of their
@@ -535,11 +538,23 @@ function ControlBox({
   // DevExpress's line spacing for the font, so the page shows the same breaks
   // and the same height the layout used. 18 of 18 texts in 9 fonts broke where
   // DevExpress broke them; see lib/textMeasure.
+  /*
+   * A label with a `NavigateUrl` is an anchor (parity row 17). DevExpress's PDF
+   * carried both a literal and a bound link as link annotations (c08), and a
+   * browser keeps an anchor's link when it prints, so Export PDF does too. It
+   * takes the label's own colour and decoration, as DevExpress draws it: a
+   * link looks like a link only when the report says so.
+   */
+  const Box = placed.url ? 'a' : 'div';
+  const link = placed.url
+    ? { href: placed.url, target: '_blank', rel: 'noopener noreferrer', style: { ...frame, color: frame.color ?? 'inherit', textDecoration: frame.textDecoration ?? 'none' } }
+    : { style: frame };
+
   if (placed.lines) {
     return (
-      <div style={{ ...frame, whiteSpace: 'pre', lineHeight: `${lineSpacingPt(control.fontFamily, control.fontSize ?? 9.75)}pt` }}>
+      <Box {...link} style={{ ...link.style, whiteSpace: 'pre', lineHeight: `${lineSpacingPt(control.fontFamily, control.fontSize ?? 9.75)}pt` }}>
         {placed.lines.join('\n')}
-      </div>
+      </Box>
     );
   }
 
@@ -547,7 +562,7 @@ function ControlBox({
   // formatted for this placement -- `$1,240.00` where the binding is
   // `[Amount]` with `{0:c2}`, a group's total where it is `sumSum` -- which
   // was the raw value or the literal text until parity row 12.
-  return <div style={frame}>{placed.text ?? printed(control.text, control.field, record)}</div>;
+  return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
 export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy }: Props) {

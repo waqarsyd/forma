@@ -172,3 +172,37 @@ describe('parameters over test data', () => {
     expect(screen.getByText('North')).toBeTruthy();
   });
 });
+
+/*
+ * A label with a NavigateUrl is drawn as an anchor, in its own colour and
+ * decoration, so the browser's printed PDF keeps the link as DevExpress's did
+ * (c08). A javascript: address is never made a link.
+ */
+describe('links in the Preview', () => {
+  const linked = (url: string) => `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Links" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />
+    <Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="40">
+      <Controls>
+        <Item1 Ref="4" ControlType="XRLabel" Name="lblLink" Text="LINKED" NavigateUrl="${url}" Font="Arial, 9pt, style=Underline" ForeColor="Blue" LocationFloat="0,0" SizeF="300,20" />
+      </Controls>
+    </Item2>
+    <Item3 Ref="5" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+
+  it('draws the label as an anchor in its own colour and underline', () => {
+    render(<ReportPreview repxContent={linked('https://example.com/')} layout={null} title="Links" />);
+    const a = screen.getByText('LINKED').closest('a') as HTMLAnchorElement;
+    expect(a.getAttribute('href')).toBe('https://example.com/');
+    expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(a.style.color).toBe('blue');
+    expect(a.style.textDecoration).toBe('underline');
+  });
+
+  it('draws no anchor for a javascript: address', () => {
+    render(<ReportPreview repxContent={linked('javascript:alert(1)')} layout={null} title="Links" />);
+    expect(screen.getByText('LINKED').closest('a')).toBeNull();
+  });
+});
