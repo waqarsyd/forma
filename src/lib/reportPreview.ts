@@ -386,6 +386,15 @@ export interface PreviewBand {
   keepTogether: boolean;
   /** `CanGrow="false"` holds the band at its designed height; it grows by default. */
   canGrow: boolean;
+  /**
+   * `PrintOn`, for a page header or footer: `AllPages` by default, or the flags
+   * `NotWithReportHeader` and `NotWithReportFooter`, comma-separated. Printed:
+   * a page header with `NotWithReportHeader` was absent from page 1, and a
+   * page footer with `NotWithReportFooter` from the report footer's page.
+   */
+  printOn: string;
+  /** `PrintAtBottom="true"` on a report footer: printed at the foot of its page. */
+  printAtBottom: boolean;
 }
 
 export interface ReportStructure {
@@ -1291,6 +1300,8 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
       columns: bandSpan ? parseColumns(bandSpan.text) : null,
       keepTogether: (attrOf(item.attrs, 'KeepTogether') ?? '').toLowerCase() === 'true',
       canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
+      printOn: attrOf(item.attrs, 'PrintOn') || 'AllPages',
+      printAtBottom: (attrOf(item.attrs, 'PrintAtBottom') ?? '').toLowerCase() === 'true',
     });
   }
 
@@ -1717,7 +1728,14 @@ export function paginate(
   const pageHeaderInst = pageHeader ? instance(pageHeader) : null;
   const pageFooterInst = pageFooter ? instance(pageFooter) : null;
 
-  const pageBottom = structure.page.height - bottomMargin - (pageFooterInst?.height ?? 0);
+  /** Where the page footer ends: the top of the bottom margin. */
+  const footerBottom = structure.page.height - bottomMargin;
+  /** Where content must stop on the CURRENT page: above its page footer, if it has one. */
+  let pageBottom = footerBottom - (pageFooterInst?.height ?? 0);
+  /** The same on an ordinary page, for the records-per-page readout. */
+  const ordinaryPageBottom = pageBottom;
+  /** `PrintOn` carries a flag, alone or as part of a comma-separated pair. */
+  const skips = (band: PreviewBand | undefined, flag: string) => !!band && band.printOn.split(',').some((f) => f.trim() === flag);
 
   const pages: PreviewPage[] = [];
   let current: PreviewPage | null = null;
@@ -1777,17 +1795,21 @@ export function paginate(
     current = { number: pages.length + 1, bands: [] };
     pages.push(current);
     cursor = topMargin;
-    if (withReportHeader && reportHeaderInst) {
-      current.bands.push(at(reportHeaderInst, cursor));
-      cursor += reportHeaderInst.height;
+    // The page that carries the report header -- page 1, when there is one.
+    const headerPage = withReportHeader && !!reportHeaderInst;
+    if (headerPage) {
+      current.bands.push(at(reportHeaderInst!, cursor));
+      cursor += reportHeaderInst!.height;
     }
-    if (pageHeaderInst) {
+    // PrintOn: printed, a page header marked NotWithReportHeader was absent
+    // from page 1, which then held 27 records where it had held 26.
+    if (pageHeaderInst && !(headerPage && skips(pageHeader, 'NotWithReportHeader'))) {
       current.bands.push(at(pageHeaderInst, cursor));
       cursor += pageHeaderInst.height;
     }
-    if (pageFooterInst) {
-      current.bands.push(at(pageFooterInst, structure.page.height - bottomMargin - pageFooterInst.height));
-    }
+    const footerHere = !!pageFooterInst && !(headerPage && skips(pageFooter, 'NotWithReportHeader'));
+    if (footerHere) current.bands.push(at(pageFooterInst!, footerBottom - pageFooterInst!.height));
+    pageBottom = footerBottom - (footerHere ? pageFooterInst!.height : 0);
     pageContentTop = cursor;
   };
 
@@ -1836,7 +1858,7 @@ export function paginate(
 
   let placedRecords = 0;
   if (detail && records > 0) {
-    const usable = pageBottom - topMargin - (pageHeader?.height ?? 0);
+    const usable = ordinaryPageBottom - topMargin - (pageHeader?.height ?? 0);
     if (detail.height > usable) {
       problems.push(
         `The Detail band is ${Math.round(detail.height)} units tall and only ${Math.round(usable)} fit on a page, ` +
@@ -1929,7 +1951,30 @@ export function paginate(
   }
 
   for (const footer of groupFooters) place(instance(footer));
-  if (reportFooter) place(instance(reportFooter));
+
+  if (reportFooter) {
+    const rf = instance(reportFooter);
+    // A page footer marked NotWithReportFooter is not printed on the page the
+    // report footer prints on, so that page has the footer's room as well.
+    const dropsFooter = skips(pageFooter, 'NotWithReportFooter');
+    const bottomFor = (page: PreviewPage) =>
+      dropsFooter || !page.bands.some((b) => b.band === pageFooter) ? footerBottom : footerBottom - pageFooterInst!.height;
+    if (reportFooter.printAtBottom && rf.height <= footerBottom - topMargin) {
+      // PrintAtBottom: printed, at the foot of its page rather than straight
+      // after the last record -- at 990 on a page whose footer it suppressed.
+      if (!current) startPage();
+      if (cursor + rf.height > bottomFor(current!) + EPS) startPage();
+      const top = bottomFor(current!) - rf.height;
+      current!.bands.push(at(rf, top));
+      cursor = top + rf.height;
+    } else {
+      place(rf);
+    }
+    if (dropsFooter) {
+      const rfPage = [...pages].reverse().find((p) => p.bands.some((b) => b.band === reportFooter));
+      if (rfPage) rfPage.bands = rfPage.bands.filter((b) => b.band !== pageFooter);
+    }
+  }
 
   if (placedRecords < records) {
     problems.push(
@@ -1941,7 +1986,7 @@ export function paginate(
   // full page rather than from the arithmetic above, because the arithmetic
   // ignores the ReportHeader that shortens page 1.
   const recordsPerPage = detail && detail.height > 0
-    ? Math.max(1, Math.floor((pageBottom - topMargin - (pageHeader?.height ?? 0)) / detail.height))
+    ? Math.max(1, Math.floor((ordinaryPageBottom - topMargin - (pageHeader?.height ?? 0)) / detail.height))
     : 0;
 
   return {

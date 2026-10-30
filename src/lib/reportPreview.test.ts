@@ -973,7 +973,7 @@ describe('paginating into columns', () => {
   it('puts the report footer below the columns, not inside them', () => {
     const footer = '';
     const structure = build(2, 'AcrossThenDown', 100, footer);
-    structure.bands.push({ kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null, keepTogether: false, canGrow: true });
+    structure.bands.push({ kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null, keepTogether: false, canGrow: true, printOn: 'AllPages', printAtBottom: false });
     const result = paginate(structure, 4);
     const rf = result.pages[0].bands.find((b) => b.band.kind === 'ReportFooter')!;
     // Two rows of 100 used, so the footer starts at 200 rather than overlapping.
@@ -1752,5 +1752,63 @@ describe('a growing table row, as DevExpress prints it', () => {
     expect(heightOf(2)).toBeCloseTo(31.9, 1); // 2 lines
     expect(heightOf(3)).toBeCloseTo(75, 1); // 5 lines
     expect(details.map((d) => d.length)).toEqual([22, 8]);
+  });
+});
+
+/*
+ * PrintOn and PrintAtBottom, against case c04b as DevExpress PRINTED it:
+ * 100 records of 30 units under a 150-unit report header; the page header marked
+ * NotWithReportHeader, the page footer NotWithReportFooter, the report footer
+ * PrintAtBottom (row 9 of docs/proposals/devexpress-parity.md).
+ */
+describe('PrintOn and PrintAtBottom, as DevExpress prints them', () => {
+  const xml = (pageHeaderAttrs: string, reportFooterAttrs: string, pageFooterAttrs: string) =>
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
+    '<Bands><Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />' +
+    '<Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="150"><Controls><Item1 Ref="10" ControlType="XRLabel" Name="title" Text="SALES REGISTER" LocationFloat="0,0" SizeF="750,60" /></Controls></Item2>' +
+    `<Item3 Ref="4" ControlType="PageHeaderBand" Name="PageHeader" HeightF="30"${pageHeaderAttrs}><Controls><Item1 Ref="11" ControlType="XRLabel" Name="headings" Text="CUSTOMER" LocationFloat="0,0" SizeF="750,25" /></Controls></Item3>` +
+    '<Item4 Ref="5" ControlType="DetailBand" Name="Detail" HeightF="30"><Controls><Item1 Ref="12" ControlType="XRLabel" Name="cust" Text="C" LocationFloat="0,0" SizeF="300,25" /></Controls></Item4>' +
+    `<Item5 Ref="6" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="60"${reportFooterAttrs}><Controls><Item1 Ref="13" ControlType="XRLabel" Name="total" Text="Total" LocationFloat="450,0" SizeF="300,25" /></Controls></Item5>` +
+    `<Item6 Ref="7" ControlType="PageFooterBand" Name="PageFooter" HeightF="30"${pageFooterAttrs}><Controls><Item1 Ref="14" ControlType="XRPageInfo" Name="pn" LocationFloat="0,5" SizeF="300,20" /></Controls></Item6>` +
+    '<Item7 Ref="8" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" /></Bands></XtraReportsLayoutSerializer>';
+  const kinds = (page: { bands: PlacedBand[] }) => page.bands.map((b) => b.band.kind);
+  const count = (page: { bands: PlacedBand[] }) => page.bands.filter((b) => b.band.kind === 'Detail').length;
+
+  it('prints the c04b layout DevExpress printed: 27, 31, 31 and 11 records', () => {
+    const report = paginate(parseReportStructure(xml(' PrintOn="NotWithReportHeader"', ' PrintAtBottom="true"', ' PrintOn="NotWithReportFooter"')), 100);
+    expect(report.pages.map(count)).toEqual([27, 31, 31, 11]);
+    // No page header on the page with the report header; one everywhere else.
+    expect(kinds(report.pages[0])).not.toContain('PageHeader');
+    expect(report.pages.slice(1).every((p) => kinds(p).includes('PageHeader'))).toBe(true);
+    // No page footer on the report footer's page; one on the other three.
+    expect(kinds(report.pages[3])).not.toContain('PageFooter');
+    expect(report.pages.slice(0, 3).every((p) => kinds(p).includes('PageFooter'))).toBe(true);
+    // The report footer at the foot of the page, where its suppressed page footer would have been.
+    expect(report.pages[3].bands.find((b) => b.band.kind === 'ReportFooter')!.top).toBe(990);
+  });
+
+  it('prints every band on every page with the default PrintOn, as the plain c04 case did', () => {
+    const report = paginate(parseReportStructure(xml('', '', '')), 100);
+    expect(report.pages.map(count)).toEqual([26, 31, 31, 12]); // DevExpress, case c04
+    expect(report.pages.every((p) => kinds(p).includes('PageHeader') && kinds(p).includes('PageFooter'))).toBe(true);
+    // Without PrintAtBottom the report footer follows the last record.
+    const rf = report.pages[3].bands.find((b) => b.band.kind === 'ReportFooter')!;
+    const last = report.pages[3].bands.filter((b) => b.band.kind === 'Detail').at(-1)!;
+    expect(rf.top).toBe(last.top + last.height);
+  });
+
+  it('puts a PrintAtBottom footer just above a page footer that stays', () => {
+    const report = paginate(parseReportStructure(xml('', ' PrintAtBottom="true"', '')), 100);
+    const last = report.pages.at(-1)!;
+    const rf = last.bands.find((b) => b.band.kind === 'ReportFooter')!;
+    const pf = last.bands.find((b) => b.band.kind === 'PageFooter')!;
+    expect(rf.top + rf.height).toBe(pf.top);
+  });
+
+  it('reads the flags alone or combined', () => {
+    const both = paginate(parseReportStructure(xml('', '', ' PrintOn="NotWithReportHeader, NotWithReportFooter"')), 100);
+    expect(kinds(both.pages[0])).not.toContain('PageFooter');
+    expect(kinds(both.pages.at(-1)!)).not.toContain('PageFooter');
+    expect(kinds(both.pages[1])).toContain('PageFooter');
   });
 });
