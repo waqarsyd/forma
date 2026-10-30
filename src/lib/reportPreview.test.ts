@@ -18,6 +18,7 @@ import {
   parseReportStructure,
   paginate,
   activeColumns,
+  pageInfoText,
   recordCountFromLayout,
   decodeXmlText,
 } from './reportPreview';
@@ -1354,5 +1355,72 @@ describe('hidden controls, which DevExpress does not print', () => {
   it('does not report a hidden control as running past the margin', () => {
     const xml = header('<Item1 Ref="3" ControlType="XRLabel" Name="ghost" Text="x" LocationFloat="800,0" SizeF="200,20" Visible="false" />');
     expect(paginate(parseReportStructure(xml), 1).problems.some((p) => p.includes('right margin'))).toBe(false);
+  });
+});
+
+/*
+ * Page numbers. Every expectation is the text DevExpress 20.1 printed for the
+ * same control on page 1 of 2, and page 2 of 2, through `RepxProbe render` on
+ * 2026-10-30 (row 15 of docs/proposals/devexpress-parity.md). The Preview drew
+ * "n / N" for every one of them.
+ */
+describe('page numbers, as DevExpress prints them', () => {
+  const footer = (controls: string) =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100">' +
+    `<Bands><Item1 Ref="2" ControlType="PageFooterBand" Name="PageFooter" HeightF="100"><Controls>${controls}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`;
+  const info = (n: number, name: string, attrs: string) =>
+    `<Item${n} Ref="${n + 10}" ControlType="XRPageInfo" Name="${name}" ${attrs} LocationFloat="0,0" SizeF="180,20" />`;
+
+  const controls = parseReportStructure(footer([
+    info(1, 'piNumber', 'PageInfo="Number"'),
+    info(2, 'piNumberOfTotal', 'PageInfo="NumberOfTotal"'),
+    info(3, 'piTotal', 'PageInfo="Total"'),
+    info(4, 'piRomLow', 'PageInfo="RomLowNumber"'),
+    info(5, 'piRomHi', 'PageInfo="RomHiNumber"'),
+    info(6, 'piDateFmt', 'PageInfo="DateTime" TextFormatString="{0:yyyy-MM-dd}"'),
+    info(7, 'piNoneText', 'PageInfo="None" Text="static text"'),
+    info(8, 'piNumberFmt', 'PageInfo="Number" TextFormatString="Page {0}"'),
+    info(9, 'piStart', 'PageInfo="Number" StartPageNumber="5"'),
+    info(10, 'piOfTotalFmt', 'PageInfo="NumberOfTotal" TextFormatString="{0} / {1}"'),
+    info(11, 'piNoKind', ''),
+    info(12, 'piTotalFmt', 'PageInfo="Total" TextFormatString="{0} pages"'),
+    info(13, 'piEmptyFormatItem', 'PageInfo="NumberOfTotal" TextFormatString="{0:} of {1}"'),
+  ].join(''))).bands[0].controls;
+
+  const printed = (page: number) =>
+    Object.fromEntries(controls.map((c) => [c.name, pageInfoText(c.pageInfo!, page, 2, new Date(2026, 9, 30))]));
+
+  it('prints each kind and format the way DevExpress did on page 1 of 2', () => {
+    expect(printed(1)).toEqual({
+      piNumber: '1', piNumberOfTotal: '1/2', piTotal: '2', piRomLow: 'i', piRomHi: 'I',
+      piDateFmt: '2026-10-30', piNoneText: '', piNumberFmt: 'Page 1', piStart: '5',
+      piOfTotalFmt: '1 / 2', piNoKind: '1/2', piTotalFmt: '2 pages', piEmptyFormatItem: '1 of 2',
+    });
+  });
+
+  it('and on page 2 of 2', () => {
+    expect(printed(2)).toMatchObject({
+      piNumber: '2', piNumberOfTotal: '2/2', piRomLow: 'ii', piRomHi: 'II',
+      piNumberFmt: 'Page 2', piStart: '6', piOfTotalFmt: '2 / 2', piNoKind: '2/2', piEmptyFormatItem: '2 of 2',
+    });
+  });
+
+  it('prints a DateTime with no format as the long date', () => {
+    const date = parseReportStructure(footer(info(1, 'd', 'PageInfo="DateTime"'))).bands[0].controls[0];
+    expect(pageInfoText(date.pageInfo!, 1, 1, new Date(2026, 9, 30))).toBe('Friday, October 30, 2026');
+  });
+
+  it('reads the settings, defaulting an absent kind to NumberOfTotal and decoding the format', () => {
+    const [c] = parseReportStructure(footer(info(1, 'x', 'TextFormatString="&quot;{0}&quot; &amp; more"'))).bands[0].controls;
+    expect(c.pageInfo).toEqual({ kind: 'NumberOfTotal', format: '"{0}" & more', start: 1 });
+    // Only XRPageInfo carries one.
+    const label = parseReportStructure(footer('<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="a" LocationFloat="0,0" SizeF="10,10" />')).bands[0].controls[0];
+    expect(label.pageInfo).toBeNull();
+  });
+
+  it('cannot know the user name in a browser, so says so', () => {
+    const user = parseReportStructure(footer(info(1, 'u', 'PageInfo="UserName"'))).bands[0].controls[0];
+    expect(pageInfoText(user.pageInfo!, 1, 1)).toBe('[user name]');
   });
 });

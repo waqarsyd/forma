@@ -36,6 +36,8 @@
  * skipped.
  */
 
+import { formatComposite, formatDate, toRoman } from './netFormat';
+
 /** The bands that carry content, in the order XtraReports prints them. */
 export type BandKind =
   | 'TopMargin'
@@ -216,6 +218,8 @@ export interface PreviewControl {
    * expression is data, not a literal, and is treated as shown.
    */
   visible: boolean;
+  /** Populated for XRPageInfo only: what it prints and how. See `pageInfoText`. */
+  pageInfo: PreviewPageInfo | null;
   /** Populated for XRTable only. */
   rows: PreviewRow[];
   /** Populated for XRChart only. */
@@ -263,6 +267,64 @@ export interface PreviewControl {
    */
   openStart: number;
   openEnd: number;
+}
+
+/**
+ * An `XRPageInfo`'s settings, as the file writes them.
+ *
+ * `kind` is `NumberOfTotal` when the file writes no `PageInfo`: the serializer
+ * omits the default, and DevExpress printed such a control as `1/2`.
+ */
+export interface PreviewPageInfo {
+  kind: string;
+  /** `TextFormatString`, or null for the kind's own default. */
+  format: string | null;
+  /** `StartPageNumber`: what page 1 is numbered. 1 when absent. */
+  start: number;
+}
+
+/**
+ * What an `XRPageInfo` prints on a page, as DevExpress 20.1 printed it.
+ *
+ * Every row was printed through `RepxProbe render` on 2026-10-30 (row 15 of
+ * `docs/proposals/devexpress-parity.md`), on page 1 of 2 in en-US:
+ *
+ * | kind | no format | with a format |
+ * |---|---|---|
+ * | `Number` | `1`; `5` with `StartPageNumber="5"` | `Page {0}` gave `Page 1` |
+ * | `NumberOfTotal`, or no kind | `1/2`, no spaces | `{0} / {1}` gave `1 / 2` |
+ * | `Total` | `2` | `{0} pages` gave `2 pages` |
+ * | `RomLowNumber` / `RomHiNumber` | `i` / `I` | |
+ * | `DateTime` | `Friday, October 30, 2026` | `{0:yyyy-MM-dd}` gave `2026-10-30` |
+ * | `UserName` | the machine's user name | |
+ * | `None` | nothing, even with `Text` set | |
+ *
+ * A user name is not knowable from a browser, so it prints as a placeholder,
+ * the way the Preview names a binding it cannot evaluate. `StartPageNumber`
+ * was measured on `Number`; it is applied to the page position of every kind.
+ */
+export function pageInfoText(info: PreviewPageInfo, page: number, total: number, now: Date = new Date()): string {
+  const position = page + info.start - 1;
+  const fmt = (fallback: string, args: unknown[]) => formatComposite(info.format ?? fallback, args);
+  switch (info.kind) {
+    case 'None':
+      return '';
+    case 'Number':
+      return fmt('{0}', [position]);
+    case 'Total':
+      return fmt('{0}', [total]);
+    case 'RomLowNumber':
+      return fmt('{0}', [toRoman(position), total]);
+    case 'RomHiNumber':
+      return fmt('{0}', [toRoman(position).toUpperCase(), total]);
+    case 'DateTime':
+      return info.format === null ? formatDate(now, 'D') : formatComposite(info.format, [now]);
+    case 'UserName':
+      return fmt('{0}', ['[user name]']);
+    default:
+      // NumberOfTotal, and the absent default, which prints the same.
+      return fmt('{0}/{1}', [position, total]);
+  }
 }
 
 /**
@@ -967,6 +1029,13 @@ function parseControls(
       borders: parseBorders(look.Borders ?? null),
       appearance: look,
       visible: parentVisible && (attrOf(item.attrs, 'Visible') ?? '').toLowerCase() !== 'false',
+      pageInfo: type === 'XRPageInfo'
+        ? {
+            kind: attrOf(item.attrs, 'PageInfo') || 'NumberOfTotal',
+            format: attrOf(item.attrs, 'TextFormatString') === null ? null : decodeXmlText(attrOf(item.attrs, 'TextFormatString')!),
+            start: numAttr(item.attrs, 'StartPageNumber', 1),
+          }
+        : null,
       rows: type === 'XRTable' ? parseTableRows(inner, item.start, styles, look) : [],
       series: type === 'XRChart' ? parseSeries(inner, item.start, extent) : [],
       crossTab: type === 'XRCrossTab' ? parseCrossTab(inner, item.start, extent) : null,

@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,641 tests in 81 files** — under the `node` environment
+`npm test` runs Vitest over **1,657 tests in 82 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -106,6 +106,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/mockupRows` | 12 |  |
 | `lib/modelCache` | 17 |  |
 | `lib/modelCatalog` | 24 |  |
+| `lib/netFormat` | 11 | .NET composite and date formatting in en-US, each printed case a string DevExpress drew |
 | `lib/panelSize` | 13 |  |
 | `lib/pdf` | 5 |  |
 | `lib/promptSections` | 48 |  |
@@ -113,7 +114,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/reportBands` | 15 |  |
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportGeometry` | 37 |  |
-| `lib/reportPreview` | 117 |  |
+| `lib/reportPreview` | 122 |  |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
 | `lib/repxAudit` | 85 |  |
@@ -158,7 +159,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 1,641 in 81 files** — and that total is the arithmetic sum of the column above
+**Total: 1,657 in 82 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.

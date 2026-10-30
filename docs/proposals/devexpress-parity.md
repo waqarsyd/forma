@@ -81,7 +81,7 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 - `PrintOn="NotWithReportFooter"` on the page footer removed it from the page carrying the report footer.
 - `PrintAtBottom="true"` placed the report footer at the bottom of the last page instead of directly after the last record.
 - The page footer prints at the same position on every page, directly above the bottom margin.
-- Page numbers follow their kind and format: `NumberOfTotal` with `Page {0} of {1}` printed "Page 1 of 4", and `RomLowNumber` printed "i", "ii" and so on.
+- Page numbers follow their kind and format: `NumberOfTotal` with `Page {0} of {1}` printed "Page 1 of 4", and `RomLowNumber` printed "i", "ii" and so on. With no format, `NumberOfTotal` prints `1/2` with no spaces, `Total` prints `2`, `RomHiNumber` `I`, and `DateTime` the long date, `Friday, October 30, 2026`. A file with no `PageInfo` prints as `NumberOfTotal`. `None` prints nothing, even with `Text` set. `StartPageNumber="5"` numbered pages 1 and 2 as 5 and 6.
 
 ### Grouping, sorting and totals
 
@@ -172,7 +172,7 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 12 | Totals, running sums, calculated fields, format strings in Preview | Written to file only | Yes | Literal text shown | DevExpress | Adopt: evaluate the aggregate and arithmetic subset Forma writes, and apply `TextFormatString` |
 | 13 | Empty data source | Yes | Yes | Differs | DevExpress: printing the Detail band once shows the report's shape | Adopt |
 | 14 | Master-detail | Written by hand only | Yes | Broken in Preview | DevExpress | Adopt |
-| 15 | Page numbers | Partial | Yes | Always "n / N" | DevExpress | Fix: honour the kind and the format string |
+| 15 | Page numbers | Partial | Yes | **Done 2026-10-30** | DevExpress: Forma drew "n / N" for every kind | Done: all eight kinds, their formats, the absent-kind default and `StartPageNumber`, through a new `netFormat.ts` that row 12 extends to values |
 | 16 | Long reports | 50-page cap | 213 pages in 2.3 s | Partial | DevExpress for length; Forma's pagination itself is fast, at 2,703 pages in 9.5 ms | Adopt: render pages on demand and lift the cap |
 | 17 | PDF links | No | Yes | Missing | DevExpress | Adopt: draw `NavigateUrl` as a real link, which the browser's PDF keeps |
 | 18 | PDF outline from bookmarks | No | Yes | Missing | DevExpress | Candidate: printing from the browser cannot add one, so this needs Forma's own PDF writer; defer |

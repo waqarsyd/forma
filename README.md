@@ -342,6 +342,8 @@ src/
                        out across real pages — Detail once per record,
                        PageHeader on every sheet — which is what the Preview
                        pane and the PDF export are drawn from),
+                       netFormat (.NET composite and date formatting, so a
+                       page number or a value previews as DevExpress prints it),
                        revisions (the report's history, and a
                        structural diff by control name — added, removed,
                        moved, resized, retyped — because the model rewrites

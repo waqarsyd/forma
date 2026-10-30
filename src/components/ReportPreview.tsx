@@ -34,6 +34,7 @@ import {
   parseReportStructure,
   paginate,
   activeColumns,
+  pageInfoText,
   recordCountFromLayout,
   type PreviewControl,
   type PaginatedReport,
@@ -164,11 +165,11 @@ function ControlBox({
     return <div style={{ ...frame, borderTop: '1px solid #111', height: Math.max(1, u(control.height)) }} />;
   }
 
-  if (control.type === 'XRPageInfo') {
-    // The file says which of the eight PageInfo values it wants; the useful one
-    // to show here is the page position, which is also the one most often
-    // dropped on load because the enum was invented (see repxAudit).
-    return <div style={frame}>{`${pageNumber} / ${pageCount}`}</div>;
+  if (control.type === 'XRPageInfo' && control.pageInfo) {
+    // What DevExpress prints for this kind and format on this page -- `1/2`,
+    // `Page 1`, `ii`, a date. It drew "n / N" for every kind until 2026-10-30.
+    // An invented PageInfo value is reported by repxAudit, not drawn here.
+    return <div style={frame}>{pageInfoText(control.pageInfo, pageNumber, pageCount)}</div>;
   }
 
   if (control.type === 'XRPictureBox') {
