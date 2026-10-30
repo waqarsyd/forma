@@ -107,14 +107,14 @@ describe('reading the report out of the REPX', () => {
         text: 'Item', weight: 3, fontSize: 9, fontFamily: 'Arial', bold: true, italic: false,
         align: 'left', vAlign: 'top', borders: { top: false, right: false, bottom: false, left: false },
         appearance: { Font: 'Arial, 9pt, style=Bold' }, canGrow: true, wordWrap: true, field: null,
-        data: { expression: null, running: null, format: null },
+        data: { expression: null, running: null, format: null }, rules: [], ownProps: ['Font'],
       },
       {
         // No font anywhere above it, so DevExpress 20.1's own default.
         text: 'Amount', weight: 1, fontSize: 9.75, fontFamily: 'Times New Roman', bold: false, italic: false,
         align: 'right', vAlign: 'middle', borders: { top: false, right: false, bottom: false, left: false },
         appearance: { Font: 'Times New Roman, 9.75pt', TextAlignment: 'MiddleRight' }, canGrow: true, wordWrap: true, field: null,
-        data: { expression: null, running: null, format: null },
+        data: { expression: null, running: null, format: null }, rules: [], ownProps: ['TextAlignment'],
       },
     ]);
   });
@@ -1008,7 +1008,7 @@ describe('paginating into columns', () => {
     structure.bands.push({
       kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null, keepTogether: false, canGrow: true,
       printOn: 'AllPages', printAtBottom: false, fields: [], level: 0, repeatEveryPage: false, groupUnion: 'None', pageBreak: 'None',
-      sub: null,
+      sub: null, rules: [],
     });
     const result = paginate(structure, 4);
     const rf = result.pages[0].bands.find((b) => b.band.kind === 'ReportFooter')!;
@@ -2452,5 +2452,53 @@ describe('links, as DevExpress printed them (case c08)', () => {
     expect(fontDecoration('Arial, 9pt, style=Underline, Strikeout')).toBe('underline line-through');
     expect(fontDecoration('Arial, 9pt, style=Bold')).toBeUndefined();
     expect(fontDecoration(undefined)).toBeUndefined();
+  });
+});
+
+/*
+ * Case s22a of docs/proposals/devexpress-parity.md: five formatting rules over
+ * six records, printed through DevExpress 20.1 (`RepxProbe render`,
+ * 2026-10-30). Each record below is every control DevExpress printed on it, as
+ * name=text|colour|fill|weight: the later of two rules wins a property they
+ * share, a hiding rule removes the amount on the zero record, and the band's
+ * rule fills every label on the records with more than ten.
+ */
+describe('conditional formatting, as DevExpress printed it (case s22a)', () => {
+  const REPX = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Rules\" ReportUnit=\"HundredthsOfAnInch\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\" Font=\"Arial, 9pt\"><FormattingRuleSheet><Item1 Ref=\"11\" Name=\"High\" Condition=\"[Amount] &gt; 500\"><Formatting Ref=\"111\" ForeColor=\"Red\" Font=\"Arial, 9pt, style=Bold\" /></Item1><Item2 Ref=\"12\" Name=\"Negative\" Condition=\"[Amount] &lt; 0\"><Formatting Ref=\"112\" BackColor=\"255,255,238,238\" /></Item2><Item3 Ref=\"13\" Name=\"HideZero\" Condition=\"[Amount] = 0\"><Formatting Ref=\"113\" Visible=\"False\" /></Item3><Item4 Ref=\"14\" Name=\"Shade\" Condition=\"[Qty] &gt; 10\"><Formatting Ref=\"114\" BackColor=\"255,230,240,255\" /></Item4><Item5 Ref=\"15\" Name=\"Blue\" Condition=\"[Amount] &gt; 500\"><Formatting Ref=\"115\" ForeColor=\"Blue\" /></Item5></FormattingRuleSheet><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"50\" /><Item2 Ref=\"3\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"25\"><FormattingRuleLinks><Item1 Ref=\"30\" Value=\"#Ref-14\" /></FormattingRuleLinks><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"lblCust\" LocationFloat=\"0,0\" SizeF=\"200,20\"><ExpressionBindings><Item1 Ref=\"5\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1><Item2 Ref=\"6\" ControlType=\"XRLabel\" Name=\"lblAmount\" TextFormatString=\"{0:c2}\" TextAlignment=\"TopRight\" LocationFloat=\"250,0\" SizeF=\"200,20\"><FormattingRuleLinks><Item1 Ref=\"31\" Value=\"#Ref-11\" /><Item2 Ref=\"32\" Value=\"#Ref-15\" /><Item3 Ref=\"33\" Value=\"#Ref-12\" /><Item4 Ref=\"34\" Value=\"#Ref-13\" /></FormattingRuleLinks><ExpressionBindings><Item1 Ref=\"7\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Amount]\" /></ExpressionBindings></Item2><Item3 Ref=\"8\" ControlType=\"XRLabel\" Name=\"lblAfter\" Text=\"AFTER\" LocationFloat=\"500,0\" SizeF=\"100,20\" /></Controls></Item2><Item3 Ref=\"9\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+  const ROWS = [{"Customer":"Plain","Amount":"100","Qty":"1"},{"Customer":"High","Amount":"600","Qty":"2"},{"Customer":"Negative","Amount":"-40","Qty":"3"},{"Customer":"Zero","Amount":"0","Qty":"4"},{"Customer":"HighShaded","Amount":"700","Qty":"12"},{"Customer":"Shaded","Amount":"50","Qty":"20"}];
+  const PRINTED: string[][] = [["lblAfter=AFTER|#000000|none|regular","lblAmount=$100.00|#000000|none|regular","lblCust=Plain|#000000|none|regular"],["lblAfter=AFTER|#000000|none|regular","lblAmount=$600.00|#0000FF|none|bold","lblCust=High|#000000|none|regular"],["lblAfter=AFTER|#000000|none|regular","lblAmount=($40.00)|#000000|#FFEEEE|regular","lblCust=Negative|#000000|none|regular"],["lblAfter=AFTER|#000000|none|regular","lblCust=Zero|#000000|none|regular"],["lblAfter=AFTER|#000000|#E6F0FF|regular","lblAmount=$700.00|#0000FF|#E6F0FF|bold","lblCust=HighShaded|#000000|#E6F0FF|regular"],["lblAfter=AFTER|#000000|#E6F0FF|regular","lblAmount=$50.00|#000000|#E6F0FF|regular","lblCust=Shaded|#000000|#E6F0FF|regular"]];
+  const NAMED: Record<string, string> = { red: '#FF0000', blue: '#0000FF', black: '#000000' };
+  const hex = (css: string | undefined, fallback: string) => {
+    if (!css) return fallback;
+    const rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(css);
+    if (rgb) return '#' + rgb.slice(1, 4).map((n) => Number(n).toString(16).padStart(2, '0')).join('').toUpperCase();
+    return NAMED[css.toLowerCase()] ?? css;
+  };
+
+  it('applies every rule per record, as DevExpress did', () => {
+    const report = paginate(parseReportStructure(REPX), ROWS.length, { rows: ROWS });
+    const detail = report.pages[0].bands.filter((b) => b.band.kind === 'Detail');
+    const drawn = detail.map((b) => b.controls.map((pc) => {
+      const look = pc.control.appearance;
+      return `${pc.control.name}=${pc.text}|${hex(cssColor(look.ForeColor), '#000000')}|${look.BackColor ? hex(cssColor(look.BackColor), '') : 'none'}|${pc.control.bold ? 'bold' : 'regular'}`;
+    }).sort());
+    expect(drawn).toEqual(PRINTED);
+  });
+
+  it('fires nothing without test data, where there is no record to test', () => {
+    const report = paginate(parseReportStructure(REPX), 2);
+    const amount = report.pages[0].bands.find((b) => b.band.kind === 'Detail')!.controls.find((pc) => pc.control.name === 'lblAmount')!;
+    expect(amount.control.bold).toBe(false);
+    expect(amount.control.appearance.ForeColor).toBeUndefined();
+  });
+
+  it('reads the rule sheet and every link, in link order', () => {
+    const s = parseReportStructure(REPX);
+    expect(Object.values(s.rules).map((r) => r.name)).toEqual(['High', 'Negative', 'HideZero', 'Shade', 'Blue']);
+    expect(s.rules['13'].visible).toBe(false);
+    expect(s.rules['11'].appearance).toEqual({ ForeColor: 'Red', Font: 'Arial, 9pt, style=Bold' });
+    const detail = s.bands.find((b) => b.kind === 'Detail')!;
+    expect(detail.rules).toEqual(['14']);
+    expect(detail.controls.find((c) => c.name === 'lblAmount')!.rules).toEqual(['11', '15', '12', '13']);
   });
 });

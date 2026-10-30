@@ -1,6 +1,6 @@
 # DevExpress parity: measured behaviour and comparison
 
-Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, wait for approval.
+Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; row 26 is built.
 
 ## Method
 
@@ -223,11 +223,11 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 24 | Audit, accessibility checks, layout checks, overlap repair | Yes | The designer's analyzer | Works | Comparable; Forma's runs on every generation | Keep, and add the check in row 1 |
 | 25 | Revisions, batch, designer companion, version targeting | Yes | No | Works | Forma only | Keep |
 
-**Proposed after row 22's measurements and row 10's finding. Not approved; nothing below is built.**
+**Proposed after row 22's measurements and row 10's finding, and approved by the owner on 2026-10-30, to be built one at a time from row 26.**
 
 | # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
 |---|---|---|---|---|---|---|
-| 26 | Conditional formatting in the Preview | Written to file only | Yes | Rules ignored | DevExpress: Forma's prompt writes formatting rules, and the Preview draws every record as if none fired | Adopt over test data: evaluate each linked rule per record with `criteria.ts`, apply later links over earlier ones property by property, hide on `Visible="False"`, and let a band's rule reach its controls by inheritance, as s22a printed |
+| 26 | Conditional formatting in the Preview | Written to file only | Yes | **Done 2026-10-30** | DevExpress: Forma's prompt writes formatting rules, and the Preview drew every record as if none fired | Done: the rule sheet and every band's, control's and cell's links are read. Each linked rule is evaluated per record over the test data, later links win property by property, and `Visible="False"` drops the control. A band's rule reaches only the properties a control inherits, past any a panel, table or row sets. All six records of s22a print what DevExpress printed. The changed appearance reaches growth, drawing and both exports |
 | 27 | Embedded subreports in the Preview | Kept from uploads only | Yes | Drawn as a box | DevExpress: the inner report prints in full and grows its control and band | Adopt for an embedded `ReportSource`: lay the inner report out inside the control and grow it, as s22b printed. A `ReportSourceUrl` cannot be read from the browser, so keep the box and say so. A subreport with its own data waits for that to be measured |
 | 28 | Charts and cross-tabs over test data | Structure only | Yes | Not measured | Unknown until measured | Measure first: teach `RepxProbe render` to give a cross-tab its data, and read a chart's printed image only if a chart's values matter to the Preview |
 | 29 | Nested groups without `Level` | Written outer-first | Nests later-outer | Prints inside out | DevExpress decides, and a generated nested grouping comes out inverted (s19c) | Fix the file, not the Preview: state `Level` in the prompt's grouping section, and add a repair that numbers group headers and footers outermost-highest in file order when none has a `Level` |

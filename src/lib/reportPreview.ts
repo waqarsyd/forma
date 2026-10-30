@@ -41,7 +41,7 @@ import { unitsPerInch } from './reportGeometry';
 import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, type FontSpec, type MeasureText } from './textMeasure';
 import { ReportData, groupRuns, sortedOrder, type CalculatedField, type TextData, type TextScope } from './reportData';
 import { parseParameters, type ReportParameter } from './repxParameters';
-import type { Value } from './criteria';
+import { isTrue, type Value } from './criteria';
 
 /** The bands that carry content, in the order XtraReports prints them. */
 export type BandKind =
@@ -103,6 +103,20 @@ export type AppearanceProperty =
 /** Resolved raw attribute values, as the file writes them. Absent means unset all the way up. */
 export type Appearance = Partial<Record<AppearanceProperty, string>>;
 
+/**
+ * A rule from the report's `<FormattingRuleSheet>`: a condition over the
+ * record, and the appearance and visibility it applies when the condition holds.
+ * Measured in case s22a of `docs/proposals/devexpress-parity.md`: see
+ * `applyRules` for what DevExpress printed.
+ */
+export interface FormattingRule {
+  name: string;
+  condition: string;
+  appearance: Appearance;
+  /** `Visible` in the rule's formatting; null when the rule does not set it. */
+  visible: boolean | null;
+}
+
 export type { TextData };
 
 export interface PreviewCell {
@@ -138,6 +152,10 @@ export interface PreviewCell {
    * preview, so a record can be printed into the bound cells.
    */
   field: string | null;
+  /** The formatting rules linked to this cell, by `Ref`, in link order. */
+  rules: string[];
+  /** The appearance properties the cell or its row sets itself; the rest it inherits from the table. */
+  ownProps: AppearanceProperty[];
 }
 
 export interface PreviewRow {
@@ -250,6 +268,14 @@ export interface PreviewControl {
   data: TextData;
   /** `NavigateUrl`: written on the control, or bound to an expression. Null when it has none. */
   link: { literal: string | null; expression: string | null } | null;
+  /** The formatting rules linked to this control, by `Ref`, in link order. */
+  rules: string[];
+  /**
+   * The appearance properties this control sets itself -- by its own attribute
+   * or its style -- or that a panel around it sets. A rule linked to the band
+   * reaches only the others, the ones the control inherits from the band.
+   */
+  ownProps: AppearanceProperty[];
   /** Populated for XRPageInfo only: what it prints and how. See `pageInfoText`. */
   pageInfo: PreviewPageInfo | null;
   /** Populated for XRTable only. */
@@ -431,6 +457,8 @@ export interface PreviewBand {
   pageBreak: string;
   /** For a `DetailReportBand`: the report it prints after each master record. Null for every other band. */
   sub: SubReport | null;
+  /** The formatting rules linked to this band, by `Ref`, in link order. */
+  rules: string[];
 }
 
 /**
@@ -494,6 +522,8 @@ export interface ReportStructure {
   parameters: ReportParameter[];
   /** The report's `FilterString`, decoded; null when it has none. */
   filterString: string | null;
+  /** `<FormattingRuleSheet>`, by each rule's `Ref`, which is what a link points at. */
+  rules: Record<string, FormattingRule>;
   /** Non-fatal parse complaints, for the UI to surface rather than swallow. */
   problems: string[];
 }
@@ -900,6 +930,43 @@ export function resolveAppearance(
   return out;
 }
 
+/** The appearance properties a node sets itself, by its own attribute or its style: none inherited. */
+function ownPropsOf(attrs: string, ownSlice: string, styles: ReadonlyMap<string, Appearance>, type = ''): AppearanceProperty[] {
+  return Object.keys(resolveAppearance(attrs, ownSlice, styles, {}, type)) as AppearanceProperty[];
+}
+
+/** The `Ref`s a node's `<FormattingRuleLinks>` point at, in link order. */
+function parseRuleLinks(ownSlice: string): string[] {
+  const block = /<FormattingRuleLinks>([\s\S]*?)<\/FormattingRuleLinks>/.exec(ownSlice);
+  if (!block) return [];
+  return [...block[1].matchAll(/\sValue="#Ref-(\d+)"/g)].map((m) => m[1]);
+}
+
+/** `<FormattingRuleSheet>`, by each rule's `Ref`. */
+function parseRuleSheet(text: string): Record<string, FormattingRule> {
+  const block = /<FormattingRuleSheet>([\s\S]*?)<\/FormattingRuleSheet>/.exec(text);
+  const rules: Record<string, FormattingRule> = {};
+  if (!block) return rules;
+  for (const m of block[1].matchAll(/<Item\d+\b([^>]*?)>\s*<Formatting\b([^>]*?)\/?>/g)) {
+    const ref = attrOf(m[1], 'Ref');
+    const condition = attrOf(m[1], 'Condition');
+    if (!ref || condition === null) continue;
+    const appearance: Appearance = {};
+    for (const property of APPEARANCE) {
+      const value = attrOf(m[2], property);
+      if (value !== null) appearance[property] = value;
+    }
+    const visible = attrOf(m[2], 'Visible');
+    rules[ref] = {
+      name: attrOf(m[1], 'Name') ?? '',
+      condition: decodeXmlText(condition),
+      appearance,
+      visible: visible === null ? null : visible.toLowerCase() !== 'false',
+    };
+  }
+  return rules;
+}
+
 // ------------------------------------------------------------------ parsing
 
 /**
@@ -1050,6 +1117,7 @@ function parseTableRows(
     if (attrOf(item.attrs, 'ControlType') !== 'XRTableRow') continue;
     const rowEnd = rowItems[rowIndex + 1]?.start ?? rowsInner.length;
     const rowLook = resolveAppearance(item.attrs, ownPart(rowsInner.slice(item.start, rowEnd)), styles, tableLook);
+    const rowOwn = ownPropsOf(item.attrs, ownPart(rowsInner.slice(item.start, rowEnd)), styles);
     const cellsIdx = rowsInner.indexOf('<Cells', item.start);
     const cellsInner = cellsIdx === -1 ? null : innerXml(rowsInner, 'Cells', cellsIdx);
     const cells: PreviewCell[] = [];
@@ -1077,6 +1145,8 @@ function parseTableRows(
         wordWrap: (attrOf(cell.attrs, 'WordWrap') ?? '').toLowerCase() !== 'false',
         data: parseTextData(cell.attrs, slice),
         field: parseTextBinding(slice),
+        rules: parseRuleLinks(ownPart(slice)),
+        ownProps: [...new Set([...ownPropsOf(cell.attrs, slice, styles), ...rowOwn])],
       });
     }
     rows.push({ cells });
@@ -1227,6 +1297,8 @@ function parseControls(
   styles: ReadonlyMap<string, Appearance> = new Map(),
   parentLook: Appearance = DEFAULT_APPEARANCE,
   parentVisible = true,
+  /** Properties a containing panel sets itself, which a band's rule cannot reach past. */
+  shield: readonly AppearanceProperty[] = [],
 ): PreviewControl[] {
   const controlsIdx = bandInner.indexOf('<Controls');
   if (controlsIdx === -1) return [];
@@ -1275,6 +1347,8 @@ function parseControls(
       wordWrap: (attrOf(item.attrs, 'WordWrap') ?? '').toLowerCase() !== 'false',
       data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
       link: parseLink(item.attrs, inner.slice(item.start, extent)),
+      rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
+      ownProps: [...new Set([...ownPropsOf(item.attrs, ownPart(inner.slice(item.start, extent)), styles, type), ...shield])],
       pageInfo: type === 'XRPageInfo'
         ? {
             kind: attrOf(item.attrs, 'PageInfo') || 'NumberOfTotal',
@@ -1329,7 +1403,8 @@ function parseControls(
       const childSpan = childIdx === -1 ? null : innerSpan(panelSlice, 'Controls', childIdx);
       if (childSpan) {
         const panelVisible = controls[controls.length - 1].visible;
-        for (const child of parseControls(panelSlice, innerStart + item.start, styles, look, panelVisible)) {
+        const panelOwn = controls[controls.length - 1].ownProps;
+        for (const child of parseControls(panelSlice, innerStart + item.start, styles, look, panelVisible, panelOwn)) {
           controls.push({ ...child, offsetX: loc.a, offsetY: loc.b });
         }
       }
@@ -1374,6 +1449,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     calculatedFields: [],
     parameters: [],
     filterString: null,
+    rules: {},
     problems,
   };
 
@@ -1409,6 +1485,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     calculatedFields: parseCalculatedFields(text),
     parameters: parseParameters(text),
     filterString: attrOf(rootAttrs, 'FilterString') ? decodeXmlText(attrOf(rootAttrs, 'FilterString')!) : null,
+    rules: parseRuleSheet(text),
     problems,
   };
 
@@ -1474,6 +1551,7 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
         groupUnion: attrOf(item.attrs, 'GroupUnion') || 'None',
         pageBreak: attrOf(item.attrs, 'PageBreak') || 'None',
         sub,
+        rules: bandSpan ? parseRuleLinks(ownPart(bandSpan.text)) : [],
       });
     }
     return out;
@@ -1574,6 +1652,89 @@ interface LayoutContext {
   unit: string;
   /** The test data, typed; null when there is none and controls print their own text. */
   data?: ReportData | null;
+  /** The report's formatting rules, by `Ref`. */
+  rules?: Record<string, FormattingRule>;
+}
+
+/** What the rules linked by `refs` set for this record: later links win, property by property. */
+function firedRules(refs: readonly string[], ctx: LayoutContext, scope: TextScope | null) {
+  let look: Appearance | null = null;
+  let visible: boolean | null = null;
+  if (!refs.length || !ctx.data || !scope || !ctx.rules) return { look, visible };
+  for (const ref of refs) {
+    const rule = ctx.rules[ref];
+    if (!rule) continue;
+    if (!isTrue(ctx.data.value({ expression: rule.condition, running: null, format: null }, scope) ?? null)) continue;
+    look = { ...(look ?? {}), ...rule.appearance };
+    if (rule.visible !== null) visible = rule.visible;
+  }
+  return { look, visible };
+}
+
+/** A node re-read through an appearance a rule changed: font, alignment and borders follow it. */
+function restyled<T extends { appearance: Appearance; fontSize: number | null; fontFamily: string | null; bold: boolean; italic: boolean; align: string; vAlign: string; borders: PreviewControl['borders'] }>(node: T, look: Appearance): T {
+  const font = parseFont(look.Font ?? null);
+  const alignment = parseAlignment(look.TextAlignment ?? null);
+  return {
+    ...node,
+    appearance: look,
+    fontSize: font.size,
+    fontFamily: font.family,
+    bold: font.bold,
+    italic: font.italic,
+    align: alignment.align,
+    vAlign: alignment.vAlign,
+    borders: parseBorders(look.Borders ?? null),
+  };
+}
+
+/** `look` with `over` laid on it, only where `owned` does not claim the property. */
+function inheritInto(look: Appearance, over: Appearance | null, owned: readonly AppearanceProperty[]): Appearance {
+  if (!over) return look;
+  const out = { ...look };
+  for (const [p, v] of Object.entries(over) as [AppearanceProperty, string][]) if (!owned.includes(p)) out[p] = v;
+  return out;
+}
+
+/**
+ * A control as it prints for one record, its formatting rules applied
+ * (parity row 26). Measured in case s22a, five rules over six records:
+ *
+ * - a rule applies per record, on exactly the records its condition holds for;
+ * - where two linked rules set one property, the LATER link wins, and their
+ *   other properties merge: "High" (red, bold) then "Blue" printed blue and bold;
+ * - `Visible="False"` removes the control from that record, and the band keeps
+ *   its height;
+ * - a rule linked to the band reaches its controls by inheritance: every label
+ *   on a shaded record printed the band's fill, its own rules on top.
+ *
+ * The control itself is unchanged when nothing fires, so the common case costs
+ * an object identity and nothing else.
+ */
+function applyRules(control: PreviewControl, band: { look: Appearance | null }, ctx: LayoutContext, scope: TextScope | null): PreviewControl {
+  const own = firedRules(control.rules, ctx, scope);
+  const cellRules = control.type === 'XRTable' && control.rows.some((r) => r.cells.some((c) => c.rules.length));
+  if (!band.look && !own.look && own.visible === null && !cellRules) return control;
+  let out = control;
+  if (band.look || own.look) {
+    const look = { ...inheritInto(control.appearance, band.look, control.ownProps), ...(own.look ?? {}) };
+    out = restyled(control, look);
+  }
+  if (own.visible !== null) out = { ...out, visible: own.visible };
+  if (control.type === 'XRTable') {
+    const rows = control.rows.map((row) => ({
+      cells: row.cells.map((cell) => {
+        const fired = firedRules(cell.rules, ctx, scope);
+        if (!band.look && !own.look && !fired.look) return cell;
+        // A band's rule reaches a cell only past the table's own properties.
+        let look = inheritInto(cell.appearance, band.look, [...cell.ownProps, ...control.ownProps]);
+        look = inheritInto(look, own.look, cell.ownProps);
+        return restyled(cell, { ...look, ...(fired.look ?? {}) });
+      }),
+    }));
+    out = { ...out, rows: shareTableBorders(rows) };
+  }
+  return out;
 }
 
 /**
@@ -1696,8 +1857,12 @@ export function layoutBand(
   ctx: LayoutContext,
   scope: TextScope | null = null,
 ): BandInstance {
+  // The band's own rules for this record: its fill and the like reach its
+  // controls by inheritance; `Visible="False"` drops the band from this record.
+  const bandRules = firedRules(band.rules, ctx, scope);
+  if (bandRules.visible === false) return { band, record, scope, height: 0, controls: [] };
   const items = band.controls
-    .map((control, index) => ({ control, index }))
+    .map((control, index) => ({ control: applyRules(control, { look: bandRules.look }, ctx, scope), index }))
     .filter(({ control }) => control.visible)
     .map(({ control, index }) => {
       const top = control.y + control.offsetY;
@@ -2062,7 +2227,7 @@ export function paginate(
   }
   /** Records to lay out: the data's own count when there is test data, none included. */
   const records = data ? data.records.length : recordCount;
-  const ctx: LayoutContext = { measure: options.measure ?? null, unit: structure.unit, data };
+  const ctx: LayoutContext = { measure: options.measure ?? null, unit: structure.unit, data, rules: structure.rules };
   const rowFor = (i: number) =>
     options.rows?.length ? options.rows[(order ? order[i] : i) % options.rows.length] : null;
 
@@ -2528,7 +2693,7 @@ export function paginate(
 
         // Columns keep the designed height: a grid of slots cannot hold records
         // of different heights, and growth inside columns is not measured yet.
-        const slot = layoutBand(detail, i + 1, rowFor(i), { measure: null, unit: ctx.unit, data }, scopeFor('Detail', i + 1, null, null));
+        const slot = layoutBand(detail, i + 1, rowFor(i), { measure: null, unit: ctx.unit, data, rules: ctx.rules }, scopeFor('Detail', i + 1, null, null));
         current!.bands.push({
           band: detail,
           height: detail.height,

@@ -252,6 +252,15 @@ Without test data each level is one run around every record, so the Preview stil
 
 **Over test data, parameters take values and the report's filter applies (2026-10-30).** The Preview listed a report's parameters above the paper and did nothing with them, and it ignored the report's `FilterString`. With test data each parameter is now a small field holding its default. What is typed there wins over the default, as DevExpress printed in c07, and the filter keeps only the records it is true for (parity row 11). Without test data the parameters stay a plain list, because there is nothing to apply a value to. The values live in the pane's state, keyed by parameter name. `ReportData.filtered` evaluates the filter with `criteria.ts`, a null result counting as false. A filter that will not parse is named in the pane's problems and filters nothing, because a blank report would read as "no records matched". A multi-value parameter takes a single value here.
 
+**Formatting rules fire per record over test data (2026-10-30).** Forma's prompt writes `<FormattingRuleSheet>` rules and links, and the Preview used to draw every record as if none had fired. Now `parseReportStructure` reads the sheet into `structure.rules` and each band's, control's and cell's `<FormattingRuleLinks>` into `rules`, and `layoutBand` applies them per record through `applyRules` (parity row 26). The rules were measured in s22a, and the function's doc comment carries them:
+
+- A rule applies on exactly the records its condition holds for.
+- A later link wins a property two rules share, and their other properties merge.
+- `Visible="False"` removes the control from that record without shrinking the band.
+- A rule on the band reaches its controls by inheritance.
+
+That last rule is why every control and cell now records its `ownProps`. A band's rule sets only what a control would inherit, never what the control, its style, its panel, its row or its table sets itself. A control a rule changed is placed as a re-resolved copy, with font, alignment and borders re-read from the new appearance. Growth, drawing and both exports see the formatted control, and editing still addresses the original by index. Without test data there is no record, so no rule fires.
+
 **Export XLSX writes the workbook DevExpress would (2026-10-30).** DevExpress exports one sheet that reproduces the layout, and `xlsxExport.ts` does the same from the continuous layout CSV uses (parity row 19). The rules, read out of its workbooks:
 
 - A column boundary sits at every control's left and right edge, and a row boundary at every top and bottom. Each is sized from the positions rounded to whole pixels, which is why DevExpress's spacer rows alternate 3.75pt and 3pt.
