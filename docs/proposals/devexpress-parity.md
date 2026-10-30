@@ -1,6 +1,6 @@
 # DevExpress parity: measured behaviour and comparison
 
-Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day: rows 30 and 31 are built, and row 32 was approved as "do not adopt". Row 33, found while building row 30, was approved on 2026-10-31 and is built.
+Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day: rows 30 and 31 are built, and row 32 was approved as "do not adopt". Row 33, found while building row 30, was approved on 2026-10-31 and is built. Rows 34 and 35, its two follow-ups, were approved the same day; row 34 is built.
 
 ## Method
 
@@ -287,6 +287,13 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
 |---|---|---|---|---|---|---|
 | 33 | `Dpi` in millimetre and pixel reports | Never written | Reads each band and control at its own `Dpi`, 100 when absent | **Done 2026-10-31** | DevExpress defines the format, and the defect was Forma's: 2.54 times too large in millimetres, 4% too small in pixels (s24) | Done: `repairDpi` writes the report's `Dpi` on exactly the elements DevExpress's serializer writes it on, measured from a report holding every kind, and leaves the numbers alone. Stripped of `Dpi`, DevExpress's own files come back with the same elements and values. The s18 invoice as Forma would write it in millimetres went from nine pages to the original's two, every box in place, and s24's label sat at one inch |
+
+**Follow-ups to row 33, approved by the owner on 2026-10-31, to be built in order.** Reports generated before row 33, and uploaded ones, can still lack `Dpi`. They print at the wrong scale while every pane here shows them at the intended one.
+
+| # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
+|---|---|---|---|---|---|---|
+| 34 | Warn about a report missing `Dpi` | Silent | Prints it at the wrong scale | **Done 2026-10-31** | DevExpress decides how it prints; Forma should say so | Done: the audit's `dpi-missing` warning counts the bands and controls without `Dpi` in a millimetre or pixel report and names the first three. It says how they print, 2.54 times too large or 4% too small, and that generating again writes the `Dpi`. It finds nothing once `repairDpi` has run, and nothing in hundredths of an inch |
+| 35 | The Preview reads each element at its own `Dpi` | Reads every number in the report's unit | Reads each band and control at its own `Dpi`, 100 when absent | Approved, not yet built | DevExpress: the Preview should show what will print | Adopt: scale each band's and control's numbers by its `Dpi` against the report's unit, as s24 printed, so a report missing `Dpi` previews at the size DevExpress prints it |
 
 Rows 1 to 5 and 15 are fixes to behaviour Forma already claims. Rows 6 to 14 and 16 to 17 make the Preview a faithful picture of what DevExpress prints. Rows 18 to 22 are separate decisions.
 

@@ -45,6 +45,7 @@ import { findOverlaps } from './repxOverlaps';
 import { auditLayoutBounds } from './repxLayout';
 import { findSummaryProblems } from './repxSummaries';
 import { crossTabsWithoutData, findCrossTabProblems } from './repxCrossTabs';
+import { findDpiProblem } from './repxDpi';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -741,6 +742,29 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
    * layout into every generated report, so what reaches here came from
    * somewhere the repair does not run. An error: the report cannot be printed.
    */
+  /*
+   * Bands and controls with no `Dpi` in a report not in hundredths of an inch.
+   * DevExpress reads each at its own `Dpi`, 100 when absent, whatever
+   * `ReportUnit` says: a label in a millimetre report printed 2.54 times its
+   * size, in a pixel report 0.96 (case s24, 2026-10-30). `repairDpi` writes it
+   * into every generated report, so this finds the reports it did not reach --
+   * one generated before parity row 33, or uploaded -- which look right in
+   * every pane here and print at the wrong scale.
+   */
+  const dpiProblem = findDpiProblem(text);
+  if (dpiProblem) {
+    const size = dpiProblem.scale > 1
+      ? `${dpiProblem.scale} times too large`
+      : `${Math.round((1 - dpiProblem.scale) * 100)}% too small`;
+    add(
+      'warning',
+      'dpi-missing',
+      `${dpiProblem.count} band(s) and control(s) (${dpiProblem.names.join(', ')}${dpiProblem.count > 3 ? ', ...' : ''}) carry no Dpi, ` +
+        `so DevExpress reads their numbers as hundredths of an inch whatever the report's unit, and prints them ${size}. ` +
+        'Generating the report again in Forma writes the Dpi.',
+    );
+  }
+
   const unprintable = findCrossTabProblems(text);
   if (unprintable.length) {
     add(

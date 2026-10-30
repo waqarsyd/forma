@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import { auditRepx } from './repxAudit';
 import { repairCrossTabs } from './repxCrossTabs';
+import { repairDpi } from './repxDpi';
 
 const report = (bands: string) =>
   '<?xml version="1.0" encoding="utf-8"?>' +
@@ -292,6 +293,40 @@ describe('auditRepx on charts and cross-tabs', () => {
     expect(codes(healthy)).not.toContain('chart-without-series');
     expect(codes(healthy)).not.toContain('crosstab-missing-fields');
     expect(codes(healthy)).not.toContain('crosstab-no-layout');
+  });
+});
+
+/*
+ * Case s24: DevExpress reads every band and control at its own Dpi, 100 when
+ * absent, whatever ReportUnit says, so a millimetre report with none printed
+ * 2.54 times too large and a pixel one 4% too small.
+ */
+describe('auditRepx on Dpi in a report not in hundredths of an inch', () => {
+  const inUnit = (unit: string) => healthy.replace('Name="Report1"', `Name="Report1" ReportUnit="${unit}"`);
+  const finding = (xml: string) => auditRepx(xml).findings.find((f) => f.code === 'dpi-missing');
+
+  it('warns that a millimetre report with no Dpi prints 2.54 times too large', () => {
+    const f = finding(inUnit('TenthsOfAMillimeter'));
+    expect(f?.severity).toBe('warning');
+    // The report, both margin bands, the Detail band, the table, its row and its two cells.
+    expect(f?.message).toMatch(/^8 band\(s\) and control\(s\) \(Report1, TopMargin, Detail, \.\.\.\) carry no Dpi/);
+    expect(f?.message).toContain('prints them 2.54 times too large');
+  });
+
+  it('and that a pixel report prints 4% too small', () => {
+    expect(finding(inUnit('Pixels'))?.message).toContain('prints them 4% too small');
+  });
+
+  it('says nothing once the Dpi is written, or in hundredths of an inch', () => {
+    expect(finding(repairDpi(inUnit('TenthsOfAMillimeter')).xml)).toBeUndefined();
+    expect(finding(repairDpi(inUnit('Pixels')).xml)).toBeUndefined();
+    expect(finding(healthy)).toBeUndefined();
+    expect(finding(inUnit('HundredthsOfAnInch'))).toBeUndefined();
+  });
+
+  it('counts only what is missing when some elements carry one', () => {
+    const partial = repairDpi(inUnit('TenthsOfAMillimeter')).xml.replace(/(Name="c[12]" [^>]*?) Dpi="254"/g, '$1');
+    expect(finding(partial)?.message).toMatch(/^2 band\(s\) and control\(s\) \(c1, c2\) carry no Dpi/);
   });
 });
 
