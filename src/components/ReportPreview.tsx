@@ -35,7 +35,10 @@ import {
   paginate,
   activeColumns,
   pageInfoText,
+  cssColor,
+  cssPadding,
   recordCountFromLayout,
+  type Appearance,
   type PreviewControl,
   type PaginatedReport,
 } from '../lib/reportPreview';
@@ -71,6 +74,16 @@ interface Props {
 }
 
 export type TestRow = Record<string, string>;
+
+/**
+ * A border as CSS, in the control's own width and colour. `BorderWidth` is in
+ * pixels at 96 per inch -- printed, 2 came out 1.5pt -- and both default to
+ * DevExpress's 1px black.
+ */
+function borderLine(look: Appearance): string {
+  const width = Number.parseFloat(look.BorderWidth ?? '');
+  return `${Number.isFinite(width) && width > 0 ? width : 1}px solid ${cssColor(look.BorderColor) ?? '#000'}`;
+}
 
 /** The row's value for a bound field, or the control's own text when there is none. */
 function printed(text: string, field: string | null, record: TestRow | null | undefined): string {
@@ -129,6 +142,9 @@ function ControlBox({
   record?: TestRow | null;
 }) {
   const u = (n: number) => unitsToPx(n, unit);
+  // Resolved appearance: style, StylePriority, own attribute, then parent.
+  const look = control.appearance;
+  const edge = borderLine(look);
   const justify =
     control.align === 'right' ? 'flex-end' : control.align === 'center' ? 'center' : 'flex-start';
   const alignItems =
@@ -154,15 +170,22 @@ function ControlBox({
     fontFamily: control.fontFamily ? `${control.fontFamily}, sans-serif` : '"Times New Roman", serif',
     fontWeight: control.bold ? 700 : 400,
     fontStyle: control.italic ? 'italic' : 'normal',
-    borderTop: control.borders.top ? '1px solid #111' : undefined,
-    borderRight: control.borders.right ? '1px solid #111' : undefined,
-    borderBottom: control.borders.bottom ? '1px solid #111' : undefined,
-    borderLeft: control.borders.left ? '1px solid #111' : undefined,
+    // Colour, fill, padding and the border's own width and colour, as printed:
+    // a 2px red border with 10 units of padding put text 8.7pt inside the edge.
+    // Every border was drawn 1px black, and no colour at all, until 2026-10-30.
+    color: cssColor(look.ForeColor),
+    background: cssColor(look.BackColor),
+    padding: cssPadding(look.Padding),
+    // A table's cells draw its borders, shared edges once; the frame does not.
+    borderTop: control.type !== 'XRTable' && control.borders.top ? edge : undefined,
+    borderRight: control.type !== 'XRTable' && control.borders.right ? edge : undefined,
+    borderBottom: control.type !== 'XRTable' && control.borders.bottom ? edge : undefined,
+    borderLeft: control.type !== 'XRTable' && control.borders.left ? edge : undefined,
     overflow: 'hidden',
   };
 
   if (control.type === 'XRLine') {
-    return <div style={{ ...frame, borderTop: '1px solid #111', height: Math.max(1, u(control.height)) }} />;
+    return <div style={{ ...frame, borderTop: `1px solid ${cssColor(look.ForeColor) ?? '#111'}`, height: Math.max(1, u(control.height)) }} />;
   }
 
   if (control.type === 'XRPageInfo' && control.pageInfo) {
@@ -460,7 +483,15 @@ function ControlBox({
                     fontFamily: cell.fontFamily ? `${cell.fontFamily}, sans-serif` : undefined,
                     fontWeight: cell.bold ? 700 : 400,
                     fontStyle: cell.italic ? 'italic' : 'normal',
-                    padding: '0 2px',
+                    color: cssColor(cell.appearance.ForeColor),
+                    background: cssColor(cell.appearance.BackColor),
+                    // DevExpress printed table cells with no padding of their
+                    // own; this pane used to add 2px each side.
+                    padding: cssPadding(cell.appearance.Padding) ?? 0,
+                    borderTop: cell.borders.top ? borderLine(cell.appearance) : undefined,
+                    borderRight: cell.borders.right ? borderLine(cell.appearance) : undefined,
+                    borderBottom: cell.borders.bottom ? borderLine(cell.appearance) : undefined,
+                    borderLeft: cell.borders.left ? borderLine(cell.appearance) : undefined,
                     overflow: 'hidden',
                     whiteSpace: 'nowrap',
                     textOverflow: 'ellipsis',

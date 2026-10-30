@@ -106,7 +106,13 @@ export interface PreviewCell {
   italic: boolean;
   align: 'left' | 'center' | 'right';
   vAlign: 'top' | 'middle' | 'bottom';
-  /** Everything the cell resolved to, for the properties not yet drawn. */
+  /**
+   * The sides this cell actually draws, after DevExpress's sharing rule: a
+   * shared edge is drawn once, by the cell on the left or above. See
+   * `shareTableBorders`.
+   */
+  borders: { top: boolean; right: boolean; bottom: boolean; left: boolean };
+  /** Everything the cell resolved to: colours, padding, border width and colour. */
   appearance: Appearance;
   /**
    * The data field this cell's text is bound to, or null when it is a literal.
@@ -912,13 +918,92 @@ function parseTableRows(
         italic: font.italic,
         align: alignment.align,
         vAlign: alignment.vAlign,
+        borders: parseBorders(look.Borders ?? null),
         appearance: look,
         field: parseTextBinding(slice),
       });
     }
     rows.push({ cells });
   }
-  return rows;
+  return shareTableBorders(rows);
+}
+
+/**
+ * Draw each shared table edge once, as DevExpress does.
+ *
+ * Measured with `RepxProbe render` on 2026-10-30 (row 6 of the parity table),
+ * on a two-by-two table with `Borders="All"`: the top-left cell drew all four
+ * sides, the cell to its right dropped its left, the cell below dropped its
+ * top, and the last cell dropped both. A cell drops an edge that the cell to
+ * its left, or the cell above, already draws -- and the shared edge then
+ * prints in THAT cell's style: a cell writing `Borders="Left"` with its own red
+ * 3-wide border, beside a cell drawing `Right`, printed no border of its own.
+ *
+ * "Above" is every cell in the previous row that overlaps this one across the
+ * table, and the top is dropped only when all of them draw a bottom. Aligned
+ * grids, the only shape measured, reduce to the cell directly above.
+ */
+export function shareTableBorders(rows: PreviewRow[]): PreviewRow[] {
+  const spans = rows.map((row) => {
+    const total = row.cells.reduce((sum, c) => sum + c.weight, 0) || 1;
+    let at = 0;
+    return row.cells.map((c) => {
+      const span = { from: at / total, to: (at + c.weight) / total };
+      at += c.weight;
+      return span;
+    });
+  });
+  return rows.map((row, r) => ({
+    ...row,
+    cells: row.cells.map((cell, c) => {
+      const sides = { ...cell.borders };
+      if (c > 0 && row.cells[c - 1].borders.right) sides.left = false;
+      if (r > 0 && sides.top) {
+        const mine = spans[r][c];
+        const above = rows[r - 1].cells.filter((_, k) => {
+          const s = spans[r - 1][k];
+          return Math.min(s.to, mine.to) - Math.max(s.from, mine.from) > 1e-9;
+        });
+        if (above.length && above.every((a) => a.borders.bottom)) sides.top = false;
+      }
+      return { ...cell, borders: sides };
+    }),
+  }));
+}
+
+/**
+ * A DevExpress colour as CSS, or undefined for none.
+ *
+ * The file writes three forms, all printed as written on 2026-10-30: a .NET
+ * name (`Navy`, `LightYellow`), hex (`#FF8800`), and comma-separated ARGB
+ * (`255,200,220,240` printed as `#C8DCF0`). Three numbers are RGB. CSS knows
+ * the .NET names the measured reports used.
+ */
+export function cssColor(value: string | undefined | null): string | undefined {
+  const v = (value ?? '').trim();
+  if (!v) return undefined;
+  const parts = v.split(',').map((p) => Number(p.trim()));
+  if (parts.length === 4 && parts.every(Number.isFinite)) {
+    const [a, r, g, b] = parts;
+    return a >= 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${Math.round((a / 255) * 1000) / 1000})`;
+  }
+  if (parts.length === 3 && parts.every(Number.isFinite)) return `rgb(${parts[0]}, ${parts[1]}, ${parts[2]})`;
+  return v;
+}
+
+/**
+ * `Padding="left,right,top,bottom,dpi"` as CSS pixels at 96 per inch, in CSS
+ * order. The last number is the unit the other four are in: 100 is hundredths
+ * of an inch. Printed on 2026-10-30, ten hundredths of padding put the text
+ * 7.2pt inside the border.
+ */
+export function cssPadding(value: string | undefined | null): string | undefined {
+  const parts = (value ?? '').split(',').map((p) => Number(p.trim()));
+  if (parts.length < 4 || !parts.slice(0, 4).every(Number.isFinite)) return undefined;
+  const dpi = parts[4] && parts[4] > 0 ? parts[4] : 100;
+  const px = (n: number) => `${Math.round((n / dpi) * 96 * 100) / 100}px`;
+  const [left, right, top, bottom] = parts;
+  return `${px(top)} ${px(right)} ${px(bottom)} ${px(left)}`;
 }
 
 /**

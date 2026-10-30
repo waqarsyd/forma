@@ -211,8 +211,8 @@ broken, and nothing in the toolchain enforces any of them.
   arithmetic — this bullet used to state it as a before-and-after pair of suite totals,
   which was stale within days of being written.
 - **File naming: `PascalCase.tsx` for React components, `camelCase.ts` for everything
-  else.** 100% consistent today — **28** PascalCase components and **129** `.ts` files
-  (that is `git ls-files src`, tests included; **repo-wide the answer is 136**, because
+  else.** 100% consistent today — **29** PascalCase components and **151** `.ts` files
+  (that is `git ls-files src`, tests included; **repo-wide the answer is 159**, because
   `server.ts` and the four root configs are also `.ts`. State the scope whenever you
   quote this number — an unqualified "67" is the next thing someone will "correct" to
   73.) The single exception is `src/vite-env.d.ts`, which is Vite's own required name.
@@ -226,16 +226,20 @@ broken, and nothing in the toolchain enforces any of them.
   not move at all. That is the pattern to expect — the counts move independently, a
   single commit moves one of them, and the gap is never visible by reading. They are
   cheap to re-measure and the commands are given; re-measure rather than trust them.
+  (Re-measured 2026-10-30, when the last figures written here were 28/129/136/37/35
+  against a real 29/151/159/40/38: `DescribeReportDialog` and its test had arrived
+  unrecorded on 2026-10-28, and the parity work added `ReportPreview.test.tsx`.)
   **Three traps, each of which has been written in here as fact at least once.**
-  **(1) Do not "correct" the 28 to 37 by counting `.tsx` files.** There are 37, and the
-  nine that are not components are deliberate: `main.tsx` is the entry point, `icons.tsx`
+  **(1) Do not "correct" the 29 to 40 by counting `.tsx` files.** There are 40, and the
+  eleven that are not components are deliberate: `main.tsx` is the entry point, `icons.tsx`
   and `sections.tsx` export collections rather than one component, and
   `DataBinding.test.tsx`, `BatchPanel.test.tsx`, `ChatThread.test.tsx`,
-  `Composer.test.tsx`, `AccountDialog.test.tsx` and `LibraryPanel.test.tsx` are
+  `Composer.test.tsx`, `AccountDialog.test.tsx`, `LibraryPanel.test.tsx`,
+  `DescribeReportDialog.test.tsx` and `ReportPreview.test.tsx` are
   colocated component tests, named
   after the component they test exactly as `repx.test.ts` is named after `repx.ts`. Do
   not count them as components and do not rename them.
-  **(2)** `git ls-files 'src/**/*.tsx'` answers **35**, because that pathspec does not
+  **(2)** `git ls-files 'src/**/*.tsx'` answers **38**, because that pathspec does not
   match files sitting directly in `src/` and so drops `App.tsx` and `main.tsx`.
   **(3)** Count with `git ls-files | Where-Object { $_ -like '*.tsx' }` and *read the
   names*, rather than trusting whichever of the three numbers you got.

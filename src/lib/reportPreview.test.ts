@@ -19,6 +19,8 @@ import {
   paginate,
   activeColumns,
   pageInfoText,
+  cssColor,
+  cssPadding,
   recordCountFromLayout,
   decodeXmlText,
 } from './reportPreview';
@@ -96,12 +98,13 @@ describe('reading the report out of the REPX', () => {
     expect(header.controls[0].rows[0].cells).toEqual([
       {
         text: 'Item', weight: 3, fontSize: 9, fontFamily: 'Arial', bold: true, italic: false,
-        align: 'left', vAlign: 'top', appearance: { Font: 'Arial, 9pt, style=Bold' }, field: null,
+        align: 'left', vAlign: 'top', borders: { top: false, right: false, bottom: false, left: false },
+        appearance: { Font: 'Arial, 9pt, style=Bold' }, field: null,
       },
       {
         // No font anywhere above it, so DevExpress 20.1's own default.
         text: 'Amount', weight: 1, fontSize: 9.75, fontFamily: 'Times New Roman', bold: false, italic: false,
-        align: 'right', vAlign: 'middle',
+        align: 'right', vAlign: 'middle', borders: { top: false, right: false, bottom: false, left: false },
         appearance: { Font: 'Times New Roman, 9.75pt', TextAlignment: 'MiddleRight' }, field: null,
       },
     ]);
@@ -1422,5 +1425,71 @@ describe('page numbers, as DevExpress prints them', () => {
   it('cannot know the user name in a browser, so says so', () => {
     const user = parseReportStructure(footer(info(1, 'u', 'PageInfo="UserName"'))).bands[0].controls[0];
     expect(pageInfoText(user.pageInfo!, 1, 1)).toBe('[user name]');
+  });
+});
+
+/*
+ * Colour, fill, padding and borders, as DevExpress PRINTS them. The table
+ * expectations are the sides DevExpress drew on each cell through
+ * `RepxProbe render` on 2026-10-30 (row 6 of docs/proposals/devexpress-parity.md).
+ */
+describe('colour, fill, padding and borders, as DevExpress prints them', () => {
+  const table = (attrs: string, rows: string[][]) =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100">' +
+    '<Bands><Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="200"><Controls>' +
+    `<Item1 Ref="3" ControlType="XRTable" Name="t" LocationFloat="0,0" SizeF="300,50" ${attrs}><Rows>` +
+    rows.map((cells, r) =>
+      `<Item${r + 1} Ref="${10 + r}" ControlType="XRTableRow" Name="row${r}" Weight="1"><Cells>` +
+      cells.map((cellAttrs, c) => `<Item${c + 1} Ref="${20 + r * 10 + c}" ControlType="XRTableCell" Name="r${r}c${c}" Text="x" Weight="1" ${cellAttrs} />`).join('') +
+      `</Cells></Item${r + 1}>`).join('') +
+    '</Rows></Item1></Controls></Item1></Bands></XtraReportsLayoutSerializer>';
+  const sidesOf = (xml: string) =>
+    parseReportStructure(xml).bands[0].controls[0].rows.flatMap((row) => row.cells.map((cell) => {
+      const b = cell.borders;
+      return [b.top && 'Top', b.right && 'Right', b.bottom && 'Bottom', b.left && 'Left'].filter(Boolean).join(', ') || 'None';
+    }));
+
+  it('draws each shared edge once, by the cell to the left or above', () => {
+    // DevExpress drew: All | Top, Right, Bottom / Right, Bottom, Left | Right, Bottom.
+    expect(sidesOf(table('Borders="All"', [['', ''], ['', '']]))).toEqual([
+      'Top, Right, Bottom, Left', 'Top, Right, Bottom', 'Right, Bottom, Left', 'Right, Bottom',
+    ]);
+  });
+
+  it('drops a cell\'s own edge, style and all, when its neighbour already draws it', () => {
+    // DevExpress drew m1c2's red 3-wide left border not at all: m1c1 draws Right.
+    expect(sidesOf(table('', [['Borders="Right"', 'Borders="Left" BorderColor="Red" BorderWidth="3"'], ['Borders="Top"', 'Borders="Bottom"']])))
+      .toEqual(['Right', 'None', 'Top', 'Bottom']);
+  });
+
+  it('keeps a top edge when the cell above draws no bottom', () => {
+    expect(sidesOf(table('', [['', ''], ['Borders="Top"', 'Borders="Top"']]))).toEqual(['None', 'None', 'Top', 'Top']);
+  });
+
+  it('compares across the table when the rows are split differently', () => {
+    // One wide cell above two narrow ones: both narrow tops are under its bottom.
+    const xml = table('', [['Borders="Bottom"'], ['Borders="Top"', 'Borders="Top"']]);
+    expect(sidesOf(xml)).toEqual(['Bottom', 'None', 'None']);
+  });
+
+  it('reads the three colour forms the file writes', () => {
+    expect(cssColor('Navy')).toBe('Navy');
+    expect(cssColor('#FF8800')).toBe('#FF8800');
+    expect(cssColor('255,200,220,240')).toBe('rgb(200, 220, 240)'); // printed as #C8DCF0
+    expect(cssColor('128,0,0,255')).toBe('rgba(0, 0, 255, 0.502)');
+    expect(cssColor('10, 20, 30')).toBe('rgb(10, 20, 30)');
+    expect(cssColor('')).toBeUndefined();
+    expect(cssColor(undefined)).toBeUndefined();
+  });
+
+  it('turns Padding into CSS pixels in CSS order', () => {
+    // left, right, top, bottom, in hundredths: 10 hundredths is 9.6px.
+    expect(cssPadding('10,10,5,5,100')).toBe('4.8px 9.6px 4.8px 9.6px');
+    expect(cssPadding('20,5,3,3,100')).toBe('2.88px 4.8px 2.88px 19.2px');
+    // A different unit in the fifth place: 96 per inch is already pixels.
+    expect(cssPadding('8,8,4,4,96')).toBe('4px 8px 4px 8px');
+    expect(cssPadding('2,2,0,0')).toBe('0px 1.92px 0px 1.92px');
+    expect(cssPadding('nonsense')).toBeUndefined();
   });
 });
