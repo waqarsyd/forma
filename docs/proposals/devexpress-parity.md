@@ -50,7 +50,11 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 
 - `ForeColor`, `BackColor`, `BorderColor`, `BorderWidth` and `Padding` all reach the printed page as written.
 - **A style beats the control's own attribute.** A control carrying `StyleName="Heading"` and its own `Font="Arial, 8pt"` printed in the style's 16pt bold, and a `ForeColor="Red"` beside a style's colour printed in the style's colour. The control's value wins only for a property the style does not set, or when the control carries a `<StylePriority UseFont="false" />` child element for that property; printed that way, the red and a 20pt font both won. The dotted attribute `StylePriority.UseFont="false"` is ignored.
-- A style's `Sides` applied. A style's `BorderWidth="2"` did not: the border printed 1 wide. Forma's style lift already leaves `BorderWidth` on the control, which this confirms is right.
+- A style's `Sides`, `Font`, `ForeColor`, `BackColor`, `TextAlignment`, `Padding` and `BorderColor` all applied. A style's `BorderWidth="2"` did not: the border printed 1 wide. Forma's style lift already leaves `BorderWidth` on the control, which this confirms is right.
+- Each `StylePriority` flag works under its property's name as a child element: `UseFont`, `UseForeColor`, `UseBackColor`, `UseTextAlignment`, `UsePadding`, `UseBorders` and `UseBorderColor` all handed the property back to the control.
+- Appearance inherits all the way down. A Detail label with nothing of its own printed in the report's font and colour. A band's font, borders, padding, alignment and fill reached its controls. A table's style reached its cells, fill and sides included, and a cell's own style overrode only what it set.
+- An `XRPanel`'s own `ForeColor` is dropped, with or without a style on the panel, so its children print in the band's colour. A child's own `ForeColor` still applies.
+- With no font set anywhere, 20.1 printed Times New Roman 9.75pt.
 
 ### Text handling
 
@@ -154,7 +158,7 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 |---|---|---|---|---|---|---|
 | 1 | Totals written by the Data tab | Yes | Yes | **Done 2026-10-30** | DevExpress, and the defect was Forma's: totals were written with no `Summary` element and printed blank | Done: the writer adds the scope and a money format, `repairSummaries` scopes model output in group and report footers, the audit reports the rest, the prompt is corrected. Printed through DevExpress afterwards: `$6,081.03` where there was a blank. See gemini.md, the section on a total with no running scope |
 | 2 | Style priority in Forma's docs | Yes | Yes | **Done 2026-10-30** | DevExpress is the definition; the style lift was safe, but its comment said a control's attribute wins | Done: corrected in `repxStyles.ts`, its tests, both READMEs and gemini.md, with the `StylePriority` child element measured; a test now states the invariant that actually makes the lift safe |
-| 3 | Style sheet in Preview | Yes | Yes | Broken | DevExpress: 23 of 33 controls in a real generated invoice preview in the wrong font | Fix: resolve `StyleName`, style winning by default |
+| 3 | Style sheet in Preview | Yes | Yes | **Done 2026-10-30** | DevExpress: 23 of 33 controls in a real generated invoice previewed in the wrong font | Done: `resolveAppearance` applies style, `StylePriority`, own value and inheritance in the order DevExpress printed; cells carry their own font and alignment; the default font is DevExpress's. Colours and padding are resolved and wait on row 6 to be drawn |
 | 4 | Margins and printable width in Preview | Yes | Yes | Broken | DevExpress: Forma draws everything left by the left margin | Fix: offset by the left margin; printable width is page less both margins, multi-column included |
 | 5 | Hidden controls | Yes | Yes | Broken | DevExpress | Fix: skip `Visible="false"` |
 | 6 | Colour, fill, padding, border width and colour, shared table borders | No | Yes | Missing | DevExpress: Forma's PDF loses visible formatting | Adopt |

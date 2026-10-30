@@ -20,6 +20,7 @@ import {
   recordCountFromLayout,
   decodeXmlText,
 } from './reportPreview';
+import { liftStyles } from './repxStyles';
 
 /** The banded shape reportBands.ts asks the model for. */
 const banded = `<?xml version="1.0" encoding="utf-8"?>
@@ -91,8 +92,16 @@ describe('reading the report out of the REPX', () => {
     expect(header.controls[0].type).toBe('XRTable');
     expect(header.controls[0].rows).toHaveLength(1);
     expect(header.controls[0].rows[0].cells).toEqual([
-      { text: 'Item', weight: 3, bold: true, align: 'left', field: null },
-      { text: 'Amount', weight: 1, bold: false, align: 'right', field: null },
+      {
+        text: 'Item', weight: 3, fontSize: 9, fontFamily: 'Arial', bold: true, italic: false,
+        align: 'left', vAlign: 'top', appearance: { Font: 'Arial, 9pt, style=Bold' }, field: null,
+      },
+      {
+        // No font anywhere above it, so DevExpress 20.1's own default.
+        text: 'Amount', weight: 1, fontSize: 9.75, fontFamily: 'Times New Roman', bold: false, italic: false,
+        align: 'right', vAlign: 'middle',
+        appearance: { Font: 'Times New Roman, 9.75pt', TextAlignment: 'MiddleRight' }, field: null,
+      },
     ]);
   });
 
@@ -1053,5 +1062,152 @@ describe('bound fields, for the test-data preview', () => {
     );
     expect(table.field).toBeNull();
     expect(table.rows[0].cells.map((c: { field: string | null }) => c.field)).toEqual(['Sku', null, 'Qty']);
+  });
+});
+
+/*
+ * Styles and inheritance, as DevExpress PRINTS them.
+ *
+ * Both fixtures were rendered through DevExpress 20.1 with `RepxProbe render`
+ * on 2026-10-30 (row 3 of docs/proposals/devexpress-parity.md), and every
+ * expectation below is what DevExpress actually drew for that control -- the
+ * font, alignment and sides off its printed brick, and the colours it resolved.
+ * Before this, the Preview read each control's own attributes and nothing else,
+ * so a style sheet, which Forma's own style lift writes into most reports,
+ * previewed as 9pt with no alignment and no borders.
+ */
+describe('styles and inheritance, as DevExpress prints them', () => {
+  const doc = (root: string, bands: string, sheet: string) =>
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    `<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1"${root}>` +
+    `<Bands><Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />${bands}</Bands>` +
+    `<StyleSheet>${sheet}</StyleSheet></XtraReportsLayoutSerializer>`;
+
+  const S = '<Item1 Ref="30" Name="S" Font="Times New Roman, 14pt, style=Italic" ForeColor="Green" BackColor="LightBlue" TextAlignment="MiddleRight" Padding="8,8,4,4,100" Sides="All" BorderColor="Red" BorderWidth="3" />' +
+    '<Item2 Ref="31" Name="T" ForeColor="Purple" />';
+
+  const label = (n: number, name: string, attrs: string, children = '') =>
+    children
+      ? `<Item${n} Ref="${10 + n}" ControlType="XRLabel" Name="${name}" Text="${name}" LocationFloat="0,${n * 50}" SizeF="300,40" ${attrs}>${children}</Item${n}>`
+      : `<Item${n} Ref="${10 + n}" ControlType="XRLabel" Name="${name}" Text="${name}" LocationFloat="0,${n * 50}" SizeF="300,40" ${attrs} />`;
+
+  const props = doc('', '<Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="600"><Controls>' + [
+    label(1, 'styleOnly', 'StyleName="S"'),
+    label(2, 'ownAlignNoPriority', 'StyleName="S" TextAlignment="TopLeft"'),
+    label(3, 'ownAlignPriority', 'StyleName="S" TextAlignment="TopLeft"', '<StylePriority UseTextAlignment="false" />'),
+    label(4, 'ownBordersPriority', 'StyleName="S" Borders="None"', '<StylePriority UseBorders="false" />'),
+    label(5, 'ownBackPriority', 'StyleName="S" BackColor="Yellow"', '<StylePriority UseBackColor="false" />'),
+    label(6, 'ownPaddingPriority', 'StyleName="S" Padding="0,0,0,0,100"', '<StylePriority UsePadding="false" />'),
+    label(7, 'ownBorderColorPriority', 'StyleName="S" BorderColor="Blue"', '<StylePriority UseBorderColor="false" />'),
+    label(8, 'ownFontStyleSetsColour', 'StyleName="T" Font="Courier New, 9pt"'),
+    label(9, 'dottedPriority', 'StyleName="S" Font="Arial, 20pt" StylePriority.UseFont="false"'),
+    '<Item10 Ref="40" ControlType="XRTable" Name="tStyled" LocationFloat="400,100" SizeF="300,40" StyleName="S"><Rows>' +
+      '<Item1 Ref="41" ControlType="XRTableRow" Name="tStyledRow" Weight="1"><Cells>' +
+      '<Item1 Ref="42" ControlType="XRTableCell" Name="cellInherits" Text="I" Weight="1" />' +
+      '<Item2 Ref="43" ControlType="XRTableCell" Name="cellOwnStyle" Text="J" Weight="1" StyleName="T" />' +
+      '</Cells></Item1></Rows></Item10>',
+    label(11, 'unknownStyle', 'StyleName="Missing" Font="Arial, 11pt"'),
+  ].join('') + '</Controls></Item2>', S);
+
+  const controls = parseReportStructure(props).bands.find((b) => b.kind === 'ReportHeader')!.controls;
+  const byName = (name: string) => controls.find((c) => c.name === name)!;
+
+  it('prints a style over the control, and lets a <StylePriority> child hand each property back', () => {
+    // Font and alignment off DevExpress's printed bricks.
+    expect(byName('styleOnly')).toMatchObject({ fontFamily: 'Times New Roman', fontSize: 14, italic: true, align: 'right', vAlign: 'middle' });
+    expect(byName('styleOnly').borders).toEqual({ top: true, right: true, bottom: true, left: true });
+    expect(byName('ownAlignNoPriority')).toMatchObject({ align: 'right', vAlign: 'middle' });
+    expect(byName('ownAlignPriority')).toMatchObject({ align: 'left', vAlign: 'top' });
+    expect(byName('ownBordersPriority').borders).toEqual({ top: false, right: false, bottom: false, left: false });
+    expect(byName('ownBackPriority').appearance.BackColor).toBe('Yellow');
+    expect(byName('ownPaddingPriority').appearance.Padding).toBe('0,0,0,0,100');
+    expect(byName('ownBorderColorPriority').appearance.BorderColor).toBe('Blue');
+    // Without the flag the style's value stands for every one of them.
+    expect(byName('styleOnly').appearance).toEqual({
+      Font: 'Times New Roman, 14pt, style=Italic', ForeColor: 'Green', BackColor: 'LightBlue',
+      TextAlignment: 'MiddleRight', Padding: '8,8,4,4,100', Borders: 'All', BorderColor: 'Red',
+    });
+  });
+
+  it('ignores a style\'s BorderWidth, which DevExpress printed 1 wide', () => {
+    expect(byName('styleOnly').appearance.BorderWidth).toBeUndefined();
+  });
+
+  it('ignores the dotted StylePriority attribute, as DevExpress does', () => {
+    expect(byName('dottedPriority')).toMatchObject({ fontFamily: 'Times New Roman', fontSize: 14 });
+  });
+
+  it('keeps a control\'s own value for a property its style does not set', () => {
+    expect(byName('ownFontStyleSetsColour')).toMatchObject({ fontFamily: 'Courier New', fontSize: 9 });
+    expect(byName('ownFontStyleSetsColour').appearance.ForeColor).toBe('Purple');
+  });
+
+  it('falls back to the control\'s own attributes when the style does not exist', () => {
+    expect(byName('unknownStyle')).toMatchObject({ fontFamily: 'Arial', fontSize: 11 });
+  });
+
+  it('carries a table\'s style into its cells, fill and sides included, under a cell\'s own style', () => {
+    const [inherits, own] = byName('tStyled').rows[0].cells;
+    expect(inherits).toMatchObject({ fontFamily: 'Times New Roman', fontSize: 14, italic: true, align: 'right', vAlign: 'middle' });
+    expect(inherits.appearance).toMatchObject({ BackColor: 'LightBlue', Borders: 'All', ForeColor: 'Green' });
+    expect(own.appearance).toMatchObject({ ForeColor: 'Purple', BackColor: 'LightBlue', Font: 'Times New Roman, 14pt, style=Italic' });
+  });
+
+  const inherit = doc(
+    ' Font="Verdana, 11pt" ForeColor="Maroon"',
+    '<Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="300" Font="Georgia, 13pt" Borders="All" Padding="6,6,6,6,100" TextAlignment="MiddleCenter" BackColor="Lavender"><Controls>' +
+      '<Item1 Ref="10" ControlType="XRLabel" Name="inBand" Text="band child" LocationFloat="0,0" SizeF="300,40" />' +
+      '<Item2 Ref="11" ControlType="XRPanel" Name="panel" LocationFloat="0,60" SizeF="400,120" Borders="Left" BackColor="Wheat" ForeColor="Teal" StyleName="P"><Controls>' +
+      '<Item1 Ref="12" ControlType="XRLabel" Name="inPanel" Text="panel child" LocationFloat="10,10" SizeF="300,40" />' +
+      '<Item2 Ref="13" ControlType="XRLabel" Name="inPanelOwn" Text="own teal" LocationFloat="10,60" SizeF="300,40" ForeColor="Teal" />' +
+      '</Controls></Item2></Controls></Item2>' +
+      '<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="60"><Controls>' +
+      '<Item1 Ref="20" ControlType="XRLabel" Name="inDetail" Text="detail child" LocationFloat="0,0" SizeF="300,40" />' +
+      '</Controls></Item3>',
+    '<Item1 Ref="30" Name="P" Font="Courier New, 8pt" />',
+  );
+  const all = parseReportStructure(inherit).bands.flatMap((b) => b.controls);
+  const named = (name: string) => all.find((c) => c.name === name)!;
+
+  it('inherits the report\'s font and colour into a band that sets neither', () => {
+    expect(named('inDetail')).toMatchObject({ fontFamily: 'Verdana', fontSize: 11, align: 'left', vAlign: 'top' });
+    expect(named('inDetail').appearance.ForeColor).toBe('Maroon');
+    expect(named('inDetail').borders).toEqual({ top: false, right: false, bottom: false, left: false });
+  });
+
+  it('inherits a band\'s font, borders, padding, alignment and fill into its controls', () => {
+    expect(named('inBand')).toMatchObject({ fontFamily: 'Georgia', fontSize: 13, align: 'center', vAlign: 'middle' });
+    expect(named('inBand').borders).toEqual({ top: true, right: true, bottom: true, left: true });
+    expect(named('inBand').appearance).toMatchObject({ Padding: '6,6,6,6,100', BackColor: 'Lavender', ForeColor: 'Maroon' });
+  });
+
+  it('drops a panel\'s own ForeColor, as DevExpress did, while its style and fill reach its children', () => {
+    expect(named('panel').appearance.ForeColor).toBe('Maroon');
+    expect(named('inPanel')).toMatchObject({ fontFamily: 'Courier New', fontSize: 8 });
+    expect(named('inPanel').appearance).toMatchObject({ ForeColor: 'Maroon', BackColor: 'Wheat', Borders: 'Left' });
+    expect(named('inPanelOwn').appearance.ForeColor).toBe('Teal');
+  });
+
+  it('prints in DevExpress 20.1\'s default font when nothing sets one', () => {
+    const bare = doc('', '<Item2 Ref="3" ControlType="DetailBand" Name="Detail" HeightF="30"><Controls>' +
+      '<Item1 Ref="4" ControlType="XRLabel" Name="plain" Text="x" LocationFloat="0,0" SizeF="100,20" /></Controls></Item2>', '');
+    const plain = parseReportStructure(bare).bands.find((b) => b.kind === 'Detail')!.controls[0];
+    expect(plain).toMatchObject({ fontFamily: 'Times New Roman', fontSize: 9.75, bold: false, align: 'left', vAlign: 'top' });
+  });
+
+  it('previews a report the same before and after Forma\'s own style lift', () => {
+    // The lift moves shared appearance onto a <StyleSheet>; with styles now
+    // resolved, the Preview must not be able to tell the difference.
+    const HEAD = 'Font="Arial, 12pt, style=Bold" ForeColor="#1A2B3C" TextAlignment="MiddleCenter" Borders="Bottom"';
+    const BODY = 'Font="Arial, 9pt" TextAlignment="TopRight"';
+    const before = doc('', '<Item2 Ref="3" ControlType="DetailBand" Name="Detail" HeightF="200"><Controls>' + [
+      label(1, 'h1', HEAD), label(2, 'h2', HEAD), label(3, 'h3', HEAD),
+      label(4, 'b1', BODY), label(5, 'b2', BODY), label(6, 'b3', BODY), label(7, 'odd', 'Font="Arial, 10pt"'),
+    ].join('') + '</Controls></Item2>', '').replace('<StyleSheet></StyleSheet>', '');
+    const lifted = liftStyles(before);
+    expect(lifted.applied).toBe(true);
+    const look = (xml: string) => parseReportStructure(xml).bands.flatMap((b) => b.controls)
+      .map(({ name, fontSize, fontFamily, bold, italic, align, vAlign, borders }) => ({ name, fontSize, fontFamily, bold, italic, align, vAlign, borders }));
+    expect(look(lifted.xml)).toEqual(look(before));
   });
 });

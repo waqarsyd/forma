@@ -70,12 +70,42 @@ const BAND_ORDER: BandKind[] = [
  * to be dropped. `reportPreview.test.ts` asserts neither appears as content.
  */
 
+/**
+ * The appearance properties a control can take from a style or inherit from
+ * its parent, by the name each carries ON A CONTROL.
+ *
+ * Every one of these was printed through DevExpress 20.1 with `RepxProbe
+ * render` on 2026-10-30 (`docs/proposals/devexpress-parity.md`, row 3): each
+ * applies from a style, each inherits down report, band, panel, table, row and
+ * cell, and each has a `<StylePriority Use… />` flag of the same name, except
+ * that a style's `BorderWidth` has no effect.
+ */
+export type AppearanceProperty =
+  | 'Font'
+  | 'ForeColor'
+  | 'BackColor'
+  | 'TextAlignment'
+  | 'Padding'
+  | 'Borders'
+  | 'BorderColor'
+  | 'BorderWidth';
+
+/** Resolved raw attribute values, as the file writes them. Absent means unset all the way up. */
+export type Appearance = Partial<Record<AppearanceProperty, string>>;
+
 export interface PreviewCell {
   text: string;
   /** Relative width within the row. DevExpress distributes by weight, not px. */
   weight: number;
+  /** Points, resolved through the cell's style, its row and its table. */
+  fontSize: number | null;
+  fontFamily: string | null;
   bold: boolean;
+  italic: boolean;
   align: 'left' | 'center' | 'right';
+  vAlign: 'top' | 'middle' | 'bottom';
+  /** Everything the cell resolved to, for the properties not yet drawn. */
+  appearance: Appearance;
   /**
    * The data field this cell's text is bound to, or null when it is a literal.
    *
@@ -168,6 +198,14 @@ export interface PreviewControl {
   align: 'left' | 'center' | 'right';
   vAlign: 'top' | 'middle' | 'bottom';
   borders: { top: boolean; right: boolean; bottom: boolean; left: boolean };
+  /**
+   * The control's appearance after styles, `StylePriority` and inheritance.
+   *
+   * `fontSize`, `align`, `borders` and the rest above are read out of this, so
+   * they show what DevExpress prints rather than what the control's own
+   * attributes say. See `resolveAppearance`.
+   */
+  appearance: Appearance;
   /** Populated for XRTable only. */
   rows: PreviewRow[];
   /** Populated for XRChart only. */
@@ -497,6 +535,117 @@ function parseBorders(value: string | null) {
   };
 }
 
+// --------------------------------------------------------------- appearance
+
+const APPEARANCE: AppearanceProperty[] = [
+  'Font', 'ForeColor', 'BackColor', 'TextAlignment', 'Padding', 'Borders', 'BorderColor', 'BorderWidth',
+];
+
+/**
+ * The name each property has INSIDE A STYLE, where it differs or is absent.
+ *
+ * A control's `Borders` is a style's `Sides` (`RepxProbe emit-styles`). And a
+ * style's `BorderWidth` is left out on purpose: printed with `BorderWidth="2"`
+ * in the style, the border came out 1 wide, so reading it from a style would
+ * draw something DevExpress does not.
+ */
+const STYLE_NAME: Record<AppearanceProperty, string | null> = {
+  Font: 'Font',
+  ForeColor: 'ForeColor',
+  BackColor: 'BackColor',
+  TextAlignment: 'TextAlignment',
+  Padding: 'Padding',
+  Borders: 'Sides',
+  BorderColor: 'BorderColor',
+  BorderWidth: null,
+};
+
+/**
+ * What a report with no font anywhere prints in: Times New Roman, 9.75pt.
+ *
+ * Measured, not assumed: a table carrying no `Font` on itself, its band or the
+ * report printed in exactly that through DevExpress 20.1. This pane used to fall
+ * back to 9pt in the app's own typeface. It is 20.1's default, the version
+ * installed here; a later DevExpress may differ, and a generated report almost
+ * always writes its own fonts anyway.
+ */
+export const DEFAULT_APPEARANCE: Appearance = { Font: 'Times New Roman, 9.75pt' };
+
+/** Each named style in the report's `<StyleSheet>`, as control-side properties. */
+function parseStyleSheet(text: string): Map<string, Appearance> {
+  const styles = new Map<string, Appearance>();
+  const block = /<StyleSheet>([\s\S]*?)<\/StyleSheet>/.exec(text);
+  if (!block) return styles;
+  for (const item of collectionItems(block[1])) {
+    const name = attrOf(item.attrs, 'Name');
+    if (!name) continue;
+    const style: Appearance = {};
+    for (const property of APPEARANCE) {
+      const inStyle = STYLE_NAME[property];
+      const value = inStyle ? attrOf(item.attrs, inStyle) : null;
+      if (value !== null) style[property] = value;
+    }
+    styles.set(name, style);
+  }
+  return styles;
+}
+
+/**
+ * The part of an element's text that is its OWN: its opening tag and the
+ * children that describe it, but not the controls, rows or cells nested in it.
+ *
+ * A table's `<StylePriority>` must not be confused with one on its first cell,
+ * so the search stops at the first nested collection.
+ */
+function ownPart(slice: string): string {
+  const nested = slice.slice(1).search(/<(Controls|Rows|Cells|Bands)[\s>]/);
+  return nested === -1 ? slice : slice.slice(0, nested + 1);
+}
+
+/**
+ * A control's appearance as DevExpress prints it.
+ *
+ * For each property, in this order, the first that applies wins -- the order
+ * every case of row 3 of the parity table printed:
+ *
+ * 1. **The control's style**, when it sets the property and the control carries
+ *    no `<StylePriority Use… ="false" />` child for it. A style beats the
+ *    control's own attribute: `Font="Arial, 8pt"` under a 16pt style printed
+ *    16pt. The flag is a CHILD ELEMENT; the dotted attribute form
+ *    `StylePriority.UseFont` is ignored by DevExpress and so is ignored here.
+ * 2. **The control's own attribute.**
+ * 3. **Its parent's resolved value** -- panel, row, table, band, then the
+ *    report. A cell with nothing of its own printed in its table's style; a
+ *    label printed in its band's font, borders, padding, alignment and fill.
+ *
+ * One measured exception: **an `XRPanel`'s `ForeColor` is dropped.** A panel
+ * writing `ForeColor="Teal"` printed in its report's colour, and so did its
+ * children, while its own fill and borders applied. So a panel passes down its
+ * parent's colour, not its own.
+ */
+export function resolveAppearance(
+  attrs: string,
+  ownSlice: string,
+  styles: ReadonlyMap<string, Appearance>,
+  parent: Appearance,
+  type = '',
+): Appearance {
+  const style = styles.get(attrOf(attrs, 'StyleName') ?? '') ?? {};
+  const priority = /<StylePriority\b([^>]*?)\/?>/.exec(ownSlice)?.[1] ?? '';
+  const out: Appearance = {};
+  for (const property of APPEARANCE) {
+    if (type === 'XRPanel' && property === 'ForeColor') {
+      if (parent.ForeColor !== undefined) out.ForeColor = parent.ForeColor;
+      continue;
+    }
+    const fromStyle = style[property];
+    const styleWins = fromStyle !== undefined && attrOf(priority, `Use${property}`) !== 'false';
+    const value = styleWins ? fromStyle : attrOf(attrs, property) ?? parent[property];
+    if (value !== undefined) out[property] = value;
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ parsing
 
 /**
@@ -601,29 +750,50 @@ function parseTextBinding(slice: string): string | null {
   return field ? field[1] : null;
 }
 
-function parseTableRows(xml: string, controlStart: number): PreviewRow[] {
+/**
+ * A table's rows and cells, each cell's appearance resolved through its own
+ * style, its row and the table's (`tableLook`) -- a cell with nothing of its own
+ * printed in its table's style, fill and borders included.
+ */
+function parseTableRows(
+  xml: string,
+  controlStart: number,
+  styles: ReadonlyMap<string, Appearance> = new Map(),
+  tableLook: Appearance = DEFAULT_APPEARANCE,
+): PreviewRow[] {
   const rowsIdx = xml.indexOf('<Rows', controlStart);
   if (rowsIdx === -1) return [];
   const rowsInner = innerXml(xml, 'Rows', rowsIdx);
   if (!rowsInner) return [];
   const rows: PreviewRow[] = [];
-  for (const item of collectionItems(rowsInner)) {
+  const rowItems = collectionItems(rowsInner);
+  for (const [rowIndex, item] of rowItems.entries()) {
     if (attrOf(item.attrs, 'ControlType') !== 'XRTableRow') continue;
+    const rowEnd = rowItems[rowIndex + 1]?.start ?? rowsInner.length;
+    const rowLook = resolveAppearance(item.attrs, ownPart(rowsInner.slice(item.start, rowEnd)), styles, tableLook);
     const cellsIdx = rowsInner.indexOf('<Cells', item.start);
     const cellsInner = cellsIdx === -1 ? null : innerXml(rowsInner, 'Cells', cellsIdx);
     const cells: PreviewCell[] = [];
     const items = cellsInner ? collectionItems(cellsInner) : [];
     for (const [index, cell] of items.entries()) {
       if (attrOf(cell.attrs, 'ControlType') !== 'XRTableCell') continue;
-      const font = parseFont(attrOf(cell.attrs, 'Font'));
       // This cell's own extent: up to the next cell, or the end of the collection.
       const extent = items[index + 1]?.start ?? cellsInner!.length;
+      const slice = cellsInner!.slice(cell.start, extent);
+      const look = resolveAppearance(cell.attrs, slice, styles, rowLook);
+      const font = parseFont(look.Font ?? null);
+      const alignment = parseAlignment(look.TextAlignment ?? null);
       cells.push({
         text: decodeXmlText(attrOf(cell.attrs, 'Text') || ''),
         weight: numAttr(cell.attrs, 'Weight', 1) || 1,
+        fontSize: font.size,
+        fontFamily: font.family,
         bold: font.bold,
-        align: parseAlignment(attrOf(cell.attrs, 'TextAlignment')).align,
-        field: parseTextBinding(cellsInner!.slice(cell.start, extent)),
+        italic: font.italic,
+        align: alignment.align,
+        vAlign: alignment.vAlign,
+        appearance: look,
+        field: parseTextBinding(slice),
       });
     }
     rows.push({ cells });
@@ -690,7 +860,12 @@ function parseCrossTab(inner: string, controlStart: number, controlEnd: number):
  * `offsetY` for the renderer to add. Keeping the two apart is what lets dragging
  * a child work without a conversion at the point of writing.
  */
-function parseControls(bandInner: string, bandInnerStart: number): PreviewControl[] {
+function parseControls(
+  bandInner: string,
+  bandInnerStart: number,
+  styles: ReadonlyMap<string, Appearance> = new Map(),
+  parentLook: Appearance = DEFAULT_APPEARANCE,
+): PreviewControl[] {
   const controlsIdx = bandInner.indexOf('<Controls');
   if (controlsIdx === -1) return [];
   const span = innerSpan(bandInner, 'Controls', controlsIdx);
@@ -709,8 +884,11 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
     const extent = items[index + 1]?.start ?? inner.length;
     const loc = pairAttr(item.attrs, 'LocationFloat');
     const size = pairAttr(item.attrs, 'SizeF');
-    const font = parseFont(attrOf(item.attrs, 'Font'));
-    const alignment = parseAlignment(attrOf(item.attrs, 'TextAlignment'));
+    // Style first, then the control's own attribute, then its parent's: what
+    // DevExpress prints, not what this element writes. See resolveAppearance.
+    const look = resolveAppearance(item.attrs, ownPart(inner.slice(item.start, extent)), styles, parentLook, type);
+    const font = parseFont(look.Font ?? null);
+    const alignment = parseAlignment(look.TextAlignment ?? null);
     controls.push({
       type,
       name: attrOf(item.attrs, 'Name') || '',
@@ -727,8 +905,9 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
       italic: font.italic,
       align: alignment.align,
       vAlign: alignment.vAlign,
-      borders: parseBorders(attrOf(item.attrs, 'Borders')),
-      rows: type === 'XRTable' ? parseTableRows(inner, item.start) : [],
+      borders: parseBorders(look.Borders ?? null),
+      appearance: look,
+      rows: type === 'XRTable' ? parseTableRows(inner, item.start, styles, look) : [],
       series: type === 'XRChart' ? parseSeries(inner, item.start, extent) : [],
       crossTab: type === 'XRCrossTab' ? parseCrossTab(inner, item.start, extent) : null,
       /*
@@ -774,7 +953,7 @@ function parseControls(bandInner: string, bandInnerStart: number): PreviewContro
       const childIdx = panelSlice.indexOf('<Controls');
       const childSpan = childIdx === -1 ? null : innerSpan(panelSlice, 'Controls', childIdx);
       if (childSpan) {
-        for (const child of parseControls(panelSlice, innerStart + item.start)) {
+        for (const child of parseControls(panelSlice, innerStart + item.start, styles, look)) {
           controls.push({ ...child, offsetX: loc.a, offsetY: loc.b });
         }
       }
@@ -846,6 +1025,12 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
   }
   const bandsInner = bandsSpan.text;
 
+  // Appearance flows report -> band -> panel or table -> row -> cell, with a
+  // style beating a control's own attribute at every level. The report's own
+  // Font and ForeColor reach a Detail label that sets neither; measured.
+  const styles = parseStyleSheet(text);
+  const reportLook = resolveAppearance(rootAttrs, '', styles, DEFAULT_APPEARANCE);
+
   for (const item of collectionItems(bandsInner)) {
     const controlType = attrOf(item.attrs, 'ControlType');
     if (!controlType || !/Band$/.test(controlType)) continue;
@@ -854,12 +1039,13 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
       problems.push(`Unrecognised band type "${controlType}" — it is drawn in file order.`);
     }
     const bandSpan = innerSpan(bandsInner, item.tag, item.start);
+    const bandLook = resolveAppearance(item.attrs, bandSpan ? ownPart(bandSpan.text) : '', styles, reportLook, controlType);
     structure.bands.push({
       kind,
       name: attrOf(item.attrs, 'Name') || controlType,
       height: numAttr(item.attrs, 'HeightF', 0),
       controls: bandSpan
-        ? parseControls(bandSpan.text, bandsSpan.start + bandSpan.start)
+        ? parseControls(bandSpan.text, bandsSpan.start + bandSpan.start, styles, bandLook)
         : [],
       columns: bandSpan ? parseColumns(bandSpan.text) : null,
     });

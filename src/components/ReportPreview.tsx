@@ -145,9 +145,11 @@ function ControlBox({
     alignItems,
     justifyContent: justify,
     // Font size is in points in the file and `pt` is a real CSS unit, so this
-    // is correct on screen and on paper without a conversion of our own.
-    fontSize: control.fontSize ? `${control.fontSize}pt` : '9pt',
-    fontFamily: control.fontFamily ? `${control.fontFamily}, sans-serif` : 'inherit',
+    // is correct on screen and on paper without a conversion of our own. The
+    // values are already resolved through styles and inheritance, so these
+    // fallbacks are DevExpress's own default rather than this app's typeface.
+    fontSize: control.fontSize ? `${control.fontSize}pt` : '9.75pt',
+    fontFamily: control.fontFamily ? `${control.fontFamily}, sans-serif` : '"Times New Roman", serif',
     fontWeight: control.bold ? 700 : 400,
     fontStyle: control.italic ? 'italic' : 'normal',
     borderTop: control.borders.top ? '1px solid #111' : undefined,
@@ -444,10 +446,18 @@ function ControlBox({
                     flex: `${cell.weight || 1} 1 0`,
                     minWidth: 0,
                     display: 'flex',
-                    alignItems: 'center',
+                    // Each cell's own resolved alignment and font -- its style,
+                    // then its own attributes, then its row's and its table's.
+                    // Vertically centred until 2026-10-30, where DevExpress's
+                    // default is the top.
+                    alignItems:
+                      cell.vAlign === 'bottom' ? 'flex-end' : cell.vAlign === 'middle' ? 'center' : 'flex-start',
                     justifyContent:
                       cell.align === 'right' ? 'flex-end' : cell.align === 'center' ? 'center' : 'flex-start',
-                    fontWeight: cell.bold ? 700 : undefined,
+                    fontSize: cell.fontSize ? `${cell.fontSize}pt` : undefined,
+                    fontFamily: cell.fontFamily ? `${cell.fontFamily}, sans-serif` : undefined,
+                    fontWeight: cell.bold ? 700 : 400,
+                    fontStyle: cell.italic ? 'italic' : 'normal',
                     padding: '0 2px',
                     overflow: 'hidden',
                     whiteSpace: 'nowrap',
