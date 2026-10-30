@@ -42,3 +42,16 @@ describe('the reference', () => {
     }
   });
 });
+
+describe('aggregates in a column binding', () => {
+  it('flags one, because a Detail column has no running scope and prints it blank', () => {
+    const check = checkExpression('sumRunningSum([Amount])', ['Amount']);
+    expect(check.ok).toBe(false);
+    expect(check.problems[0]).toContain('prints blank');
+  });
+
+  it('leaves per-record arithmetic and a field named like an aggregate alone', () => {
+    expect(checkExpression('[Qty] * [Price]', ['Qty', 'Price']).ok).toBe(true);
+    expect(checkExpression('[sumTotal] + 1', ['sumTotal']).ok).toBe(true);
+  });
+});

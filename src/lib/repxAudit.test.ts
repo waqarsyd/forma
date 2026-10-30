@@ -848,3 +848,41 @@ describe('a page number outside a page band', () => {
     expect(find(healthy)).toBeUndefined();
   });
 });
+
+describe('totals with no running scope', () => {
+  // Printed by DevExpress 20.1 on 2026-10-30: an aggregate with no
+  // <Summary Running> is an empty cell in every band, and Running="Group" in
+  // the report footer is "?". See repxSummaries.ts.
+  const footer = (kind: string, summary: string) =>
+    `<Item2 Ref="2" ControlType="DetailBand" Name="Detail"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="amt" Text="1" /></Controls></Item2>` +
+    `<Item3 Ref="4" ControlType="${kind}" Name="Foot"><Controls>` +
+    `<Item1 Ref="5" ControlType="XRLabel" Name="lblTotal">${summary}<ExpressionBindings>` +
+    `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Amount])" /></ExpressionBindings></Item1>` +
+    `</Controls></Item3>`;
+  const xml = (kind: string, summary: string) => report(TOP + footer(kind, summary) + bottom(4, 9));
+  const finding = (doc: string, code: string) => auditRepx(doc).findings.find((f) => f.code === code);
+
+  it('reports a total with no scope as an error naming the control and its band', () => {
+    const found = finding(xml('PageFooterBand', ''), 'summary-no-running');
+    expect(found?.severity).toBe('error');
+    expect(found?.message).toContain('lblTotal');
+    expect(found?.message).toContain('in PageFooter');
+  });
+
+  it('counts a <Summary> with no Running as no scope', () => {
+    expect(finding(xml('ReportFooterBand', '<Summary />'), 'summary-no-running')).toBeDefined();
+  });
+
+  it('reports Running="Group" in the report footer', () => {
+    const found = finding(xml('ReportFooterBand', '<Summary Running="Group" />'), 'summary-group-in-report-footer');
+    expect(found?.severity).toBe('error');
+    expect(found?.message).toContain('"?"');
+  });
+
+  it('is silent for a correctly scoped total', () => {
+    for (const [kind, running] of [['ReportFooterBand', 'Report'], ['PageFooterBand', 'Page'], ['PageFooterBand', 'Report']]) {
+      const codes = auditRepx(xml(kind, `<Summary Running="${running}" />`)).findings.map((f) => f.code);
+      expect(codes.filter((c) => c.startsWith('summary-'))).toEqual([]);
+    }
+  });
+});

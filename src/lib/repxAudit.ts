@@ -43,6 +43,7 @@ import { parseParameters, parameterReferences } from './repxParameters';
 import { auditAccessibility } from './repxAccessibility';
 import { findOverlaps } from './repxOverlaps';
 import { auditLayoutBounds } from './repxLayout';
+import { findSummaryProblems } from './repxSummaries';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -603,6 +604,40 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
           'Usually the cell that should carry the calculation still holds a literal number.',
       );
     }
+  }
+
+  /*
+   * Totals with no running scope, which print blank.
+   *
+   * An aggregate such as `sumSum([Amount])` is evaluated only when the cell's
+   * `<Summary>` says what it runs over. Without `Running` DevExpress prints an
+   * empty cell -- no error, no zero -- in every band; measured by printing on
+   * 2026-10-30, see `repxSummaries.ts`. `repairSummaries` sets the scope in the
+   * group and report footers, where the band decides it, so what reaches here is
+   * a total whose scope is a question of intent: a page footer, the Detail
+   * band, a header. An error, because the content is lost at print time exactly
+   * as surely as a duplicate Ref loses it at load time.
+   */
+  const summaryProblems = findSummaryProblems(text);
+  const unscoped = summaryProblems.filter((p) => p.kind === 'no-running');
+  if (unscoped.length) {
+    const where = [...new Set(unscoped.map((p) => p.band.replace(/Band$/, '')))].join(', ');
+    add(
+      'error',
+      'summary-no-running',
+      `${unscoped.length} total(s) (${unscoped.slice(0, 4).map((p) => p.control).join(', ')}${unscoped.length > 4 ? ', ...' : ''}) ` +
+        `in ${where} aggregate with no running scope, so DevExpress prints each one as an empty cell. ` +
+        'Give the cell a <Summary Running="Group">, "Report" or "Page" for what it totals.',
+    );
+  }
+  const misplaced = summaryProblems.filter((p) => p.kind === 'group-in-report-footer');
+  if (misplaced.length) {
+    add(
+      'error',
+      'summary-group-in-report-footer',
+      `${misplaced.length} total(s) in the ReportFooter run over a group, and there is no group there, ` +
+        'so DevExpress prints "?" instead of the figure. A report footer total runs over the report: Running="Report".',
+    );
   }
 
   /*

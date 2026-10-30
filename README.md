@@ -327,6 +327,9 @@ src/
                        report can be restyled in one place -- a control's
                        Borders is a style's Sides, which is the kind of
                        thing only a measurement finds),
+                       repxSummaries (a total with no running scope prints
+                       blank in DevExpress; scopes the ones whose band
+                       decides it, and finds the rest for the audit),
                        repxAudit (asks what is still wrong with the finished
                        report after every repair has run — errors mean content
                        will be lost, warnings mean it opens and is a worse

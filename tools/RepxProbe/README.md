@@ -183,8 +183,9 @@ And from `emit-group` on 2026-09-05, for the grouping work:
   explicitly, so Forma emits none.
 - **A group subtotal differs from a grand total only by `Running="Group"`** on
   the cell's `<Summary>`; the expression is the same `sumSum([Amount])`, and
-  `Func="Sum"` is omitted as the default. Leaving `Running` off does not fail —
-  it totals the whole report at every group break.
+  `Func="Sum"` is omitted as the default. This bullet said leaving `Running`
+  off "totals the whole report at every group break"; `render` printed it on
+  2026-10-30 and the cell is **blank**. See the `render` section above.
 
 And from `emit-params` the same day, which produced the first useful **negative**
 result:

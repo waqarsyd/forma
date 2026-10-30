@@ -28,12 +28,14 @@
  * have is a cell that prints blank with no error anywhere.
  */
 
+import { isAggregate } from './repxSummaries';
+
 /** Shown to the model verbatim. Kept short on purpose; see the header. */
 export const EXPRESSION_REFERENCE = `DevExpress criteria-language expressions, as written in a report's Expression= attribute:
 - A data field is [FieldName]; a report parameter is [Parameters.Name] (or ?Name inside a FilterString).
 - Operators: + - * / %, comparison = <> < <= > >=, logic And Or Not, text Like with % wildcards, membership In (a, b, c). String literals use single quotes: 'text'.
 - Functions: Iif(condition, whenTrue, whenFalse), IsNull(x, fallback), Concat(a, b, ...), Upper(s), Lower(s), Trim(s), Len(s), Substring(s, start, len), Round(n, digits), Abs(n), FormatString('{0:c2}', x) for formatting (c for currency, n for number, d for date, {0:MM/dd/yyyy}), Now(), Today(), GetDate(d), GetYear(d), GetMonth(d), AddDays(d, n), DateDiffDay(a, b).
-- Aggregates over the records a cell's Summary runs over: sumSum([Amount]), sumAvg, sumCount, sumMin, sumMax, sumRecordNumber(). Use these ONLY for a total, subtotal or running count; a detail cell uses the plain field.
+- Aggregates over the records a cell's Summary runs over: sumSum([Amount]), sumAvg, sumCount, sumMin, sumMax, sumRecordNumber(). They print BLANK unless the cell also carries a Summary with a running scope, which a column binding does not have, so an expression for one record's column never uses them.
 - No semicolons, no assignment, no SQL, no JavaScript. One expression, nothing else.`;
 
 /** `Amount` of `sumSum([Amount])`, `Qty` of `[Qty] * [Price]`; parameters excluded. */
@@ -78,6 +80,18 @@ export function checkExpression(expression: string, knownFields: readonly string
   if (counts('(', ')') !== 0) problems.push('Parentheses do not balance.');
   if (counts('[', ']') !== 0) problems.push('Square brackets do not balance.');
   if ((text.split("'").length - 1) % 2 !== 0) problems.push('A string literal is not closed.');
+
+  /*
+   * An aggregate in a column binding prints blank. DevExpress evaluates
+   * `sumSum()` and its siblings only in a cell whose <Summary> names a running
+   * scope, and the Data tab binds a Detail column, which carries none --
+   * measured by printing on 2026-10-30, see `repxSummaries.ts`. Reported rather
+   * than silently accepted, because the expression is otherwise well formed and
+   * the blank only appears when the report runs.
+   */
+  if (isAggregate(text)) {
+    problems.push('This aggregates over many records (sum, count, average), and in a column it prints blank. Use the plain field here, and put a total in a footer.');
+  }
 
   const used = fieldsIn(text);
   const unknownFields = knownFields.length ? used.filter((f) => !knownFields.includes(f)) : [];

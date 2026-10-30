@@ -17,6 +17,7 @@ import {
   unescapeXml,
   isExpressionEntry,
 } from './repxBindingPlan';
+import { findSummaryProblems } from './repxSummaries';
 import { checkRepxComplete } from './repxTruncation';
 
 const cell = (name: string, text: string, weight = 1) =>
@@ -451,6 +452,32 @@ describe('bindFooterTotals', () => {
     const twice = bindFooterTotals(once.xml);
     expect(twice.applied).toBe(false);
     expect(twice.xml).toBe(once.xml);
+  });
+
+  it('gives each total the report scope, without which DevExpress prints it blank', () => {
+    // Measured by printing on 2026-10-30: sumSum() with no <Summary> is an
+    // empty cell. Every total this function wrote before that date was one.
+    const { xml } = bindFooterTotals(
+      withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total', '1240.00'])
+    );
+    expect(xml).toContain('<Summary Running="Report" /><ExpressionBindings>');
+    expect(findSummaryProblems(xml)).toEqual([]);
+  });
+
+  it('formats the total as money, and keeps a format the model already chose', () => {
+    // Unformatted, DevExpress printed the summed decimals as
+    // "6081.02999999999996" -- measured with RepxProbe render, 2026-10-30.
+    const plain = bindFooterTotals(
+      withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total', '1240.00'])
+    );
+    expect(plain.xml).toMatch(/Text="1240\.00" Weight="1" TextFormatString="\{0:c2\}"><Summary/);
+
+    const chosen = bindFooterTotals(
+      withFooter(['Description', 'Amount'], ['Widget', '1240.00'], ['Total', '1240.00'])
+        .replace(/(Text="1240\.00" Weight="1") \/>(?![\s\S]*Text="1240\.00")/, '$1 TextFormatString="{0:n2}" />')
+    );
+    // The footer pass alone formats only the footer cell, and here it kept n2.
+    expect(chosen.xml.match(/TextFormatString="[^"]*"/g)).toEqual(['TextFormatString="{0:n2}"']);
   });
 
   it('composes with the detail pass, leaving a complete document', () => {

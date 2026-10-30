@@ -152,7 +152,7 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 
 | # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
 |---|---|---|---|---|---|---|
-| 1 | Totals written by the Data tab | Yes | Yes | Broken | DevExpress, and the defect is Forma's: totals are written with no `Summary` element and print blank | Fix: write `Running="Report"` in the report footer and `Running="Group"` in a group footer; audit an aggregate with no `Summary` as an error; correct the grouping prompt's claim |
+| 1 | Totals written by the Data tab | Yes | Yes | **Done 2026-10-30** | DevExpress, and the defect was Forma's: totals were written with no `Summary` element and printed blank | Done: the writer adds the scope and a money format, `repairSummaries` scopes model output in group and report footers, the audit reports the rest, the prompt is corrected. Printed through DevExpress afterwards: `$6,081.03` where there was a blank. See gemini.md, the section on a total with no running scope |
 | 2 | Style priority in Forma's docs | Yes | Yes | Comment wrong | DevExpress is the definition; the style lift is safe, but its comment says a control's attribute wins | Fix the comment and the README claim |
 | 3 | Style sheet in Preview | Yes | Yes | Broken | DevExpress: 23 of 33 controls in a real generated invoice preview in the wrong font | Fix: resolve `StyleName`, style winning by default |
 | 4 | Margins and printable width in Preview | Yes | Yes | Broken | DevExpress: Forma draws everything left by the left margin | Fix: offset by the left margin; printable width is page less both margins, multi-column included |

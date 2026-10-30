@@ -364,11 +364,28 @@ export interface BoundRepx {
  * sees the bindings from the first and declines.
  */
 /**
+ * A cell's opening tag with `TextFormatString` added as its last attribute.
+ *
+ * `slice` is the whole cell element, self-closing or not. trimEnd, or the space
+ * already sitting before `/>` becomes a double space in the attribute list.
+ */
+function withTextFormat(slice: string, format: string): string {
+  const openEnd = slice.indexOf('>');
+  const insertAt = slice[openEnd - 1] === '/' ? openEnd - 1 : openEnd;
+  const left = slice.slice(0, insertAt).trimEnd();
+  const right = slice.slice(insertAt);
+  return `${left} TextFormatString="${format}"${right.startsWith('/') ? ' ' : ''}${right}`;
+}
+
+/**
  * Bind a ReportFooter row's money columns to running totals.
  *
- * `sumSum([Amount])` is what the 20.1 serializer writes for a summary -- it is
- * an ordinary expression, so this is the same splice as the detail row with a
- * different string in it.
+ * `sumSum([Amount])` is what the 20.1 serializer writes for a summary -- an
+ * ordinary expression -- but **the expression alone prints nothing**. It needs a
+ * `<Summary Running="Report" />` beside it, and until 2026-10-30 this wrote
+ * none, so every total it ever applied printed blank. That was found by
+ * printing the file with `RepxProbe render`, not by reading it: the serializer
+ * accepts the bare expression without complaint. See `repxSummaries.ts`.
  *
  * ## Strict, and it will usually decline
  *
@@ -461,8 +478,16 @@ export function bindFooterTotals(
   let out = text;
   for (let t = targets.length - 1; t >= 0; t--) {
     const { cell, i } = targets[t];
-    const slice = out.slice(cell.start, cell.end);
+    let slice = out.slice(cell.start, cell.end);
+    // Money, by the filter above, so the total gets the same format the
+    // detail column does. Without one, DevExpress printed the summed decimals
+    // as "6081.02999999999996" -- measured with `RepxProbe render`, 2026-10-30.
+    // One the model chose is kept, as in the detail pass.
+    if (!/\sTextFormatString\s*=/.test(slice)) slice = withTextFormat(slice, '{0:c2}');
+    // The scope first, where the serializer writes it. Without it DevExpress
+    // prints the total as an empty cell; with it, the sum of every record.
     const children =
+      '<Summary Running="Report" />' +
       '<ExpressionBindings>' +
       `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="sumSum([${chosen(i)}])" />` +
       '</ExpressionBindings>';
@@ -623,13 +648,7 @@ export function bindDetailRow(
     // gets a format inferred from the column.
     const format = isExpressionEntry(name) ? null : inferTextFormat(plan.headings[i], cell.text);
     if (format && !/\sTextFormatString\s*=/.test(slice)) {
-      const openEnd = slice.indexOf('>');
-      const insertAt = slice[openEnd - 1] === '/' ? openEnd - 1 : openEnd;
-      // trimEnd, or the space already sitting before `/>` becomes a double
-      // space in the emitted attribute list.
-      const left = slice.slice(0, insertAt).trimEnd();
-      const right = slice.slice(insertAt);
-      slice = `${left} TextFormatString="${format}"${right.startsWith('/') ? ' ' : ''}${right}`;
+      slice = withTextFormat(slice, format);
       formatted++;
     }
 

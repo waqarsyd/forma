@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,587 tests in 80 files** — under the `node` environment
+`npm test` runs Vitest over **1,614 tests in 81 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -96,7 +96,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/datetime` | 12 |  |
 | `lib/designerBridge` | 38 | 8 from one loop |
 | `lib/embedStore` | 20 |  |
-| `lib/expressions` | 6 | the expression reference and the check a generated one is held to |
+| `lib/expressions` | 8 | the expression reference and the check a generated one is held to, including that an aggregate in a column prints blank |
 | `lib/fidelity` | 18 | the benchmark's scorer; the runner under `scripts/fidelity/` is not in the suite |
 | `lib/geminiClient` | 6 |  |
 | `lib/geminiErrors` | 25 |  |
@@ -116,8 +116,8 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/reportPreview` | 93 |  |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
-| `lib/repxAudit` | 81 |  |
-| `lib/repxBindingPlan` | 65 |  |
+| `lib/repxAudit` | 85 |  |
+| `lib/repxBindingPlan` | 67 |  |
 | `lib/repxBindings` | 33 |  |
 | `lib/repxChunks` | 22 |  |
 | `lib/repxEdit` | 24 |  |
@@ -128,6 +128,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxParameters` | 24 |  |
 | `lib/repxRefs` | 26 |  |
 | `lib/repxStyles` | 17 |  |
+| `lib/repxSummaries` | 19 | totals with no running scope, which DevExpress prints blank; each fixture is a shape it was made to print |
 | `lib/repxTruncation` | 19 |  |
 | `lib/revisions` | 21 |  |
 | `lib/revisionStore` | 26 |  |
@@ -157,7 +158,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 1,587 in 80 files** — and that total is the arithmetic sum of the column above
+**Total: 1,614 in 81 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.

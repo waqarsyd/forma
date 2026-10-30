@@ -17,6 +17,7 @@ import { instructionBlock } from "../lib/userInstructions";
 import { auditRepx } from "../lib/repxAudit";
 import { liftParameterTypes } from "../lib/repxParameters";
 import { liftStyles } from "../lib/repxStyles";
+import { repairSummaries } from "../lib/repxSummaries";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
@@ -2555,6 +2556,25 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.log(`Parameters: ${params.reason}.`);
     } else {
       console.log(`Parameters left as generated: ${params.reason}.`);
+    }
+
+    /*
+     * A total needs a running scope or it prints blank.
+     *
+     * `sumSum([Amount])` with no `<Summary Running="...">` is an empty cell in
+     * DevExpress, in every band -- measured by printing on 2026-10-30, and the
+     * opposite of what this project believed until then. The grouping prompt
+     * asks for the scope, but the model writes the expression and forgets the
+     * element, which looks complete in the file. Group and report footers are
+     * repaired because the band decides the scope; anything else is a question
+     * of intent and is left for the audit to report. See `repxSummaries.ts`.
+     */
+    const summaries = repairSummaries(parsed.repxContent);
+    if (summaries.applied) {
+      parsed.repxContent = summaries.xml;
+      console.warn(`Totals: ${summaries.reason}.`);
+    } else {
+      console.debug(`Totals: ${summaries.reason}.`);
     }
 
     /*

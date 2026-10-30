@@ -473,11 +473,36 @@ Four things in there shape the prompt and the audit:
 - **`<GroupFields>` is a sibling of `<Controls>`, written before it.** A parser that takes a band's first child collection reads the grouping fields as its controls; `reportPreview.ts` has a test asserting the caption control is still found, because that is the shape that would silently draw an empty band.
 - **A group field item carries no `ControlType`.** It is the second place after an `ExpressionBindings` item where that is true, and for the same reason it is invisible to anything that locates elements by control type.
 - **`SortOrder` is omitted for the ascending default** — it was set *explicitly* to `Ascending` in the probe and still did not appear. So the prompt says not to write one, which keeps Forma's output identical to what DevExpress itself produces.
-- **A group subtotal differs from the grand total only by `Running="Group"`.** The expression is the same `sumSum([Amount])`, so leaving `Running` off does not fail — it produces a running total of the whole report at every group break, which reads as a plausible number and is wrong. `Func="Sum"` is omitted as the default, so `Running` really is the whole discriminator.
+- **A group subtotal differs from the grand total only by its `Running` scope**, `"Group"` against `"Report"`. The expression is the same `sumSum([Amount])`, and `Func="Sum"` is omitted as the default, so `Running` really is the whole discriminator. This bullet used to say that leaving `Running` off "produces a running total of the whole report at every group break". That was read off the serializer and never printed, and printing it on 2026-10-30 showed the truth is worse: the cell prints blank. See the section after this one.
 
 Both files round-trip: the designer's own output and a hand-written Forma-shaped one (`Margins="0, 0, 0, 0"`, our `ItemN` numbering, unqualified `ControlType`) each load with nothing lost, and re-save with the group fields, `RepeatEveryPage` and the group `Summary` intact.
 
 `repxAudit.ts` gained two checks from this, both for failures DevExpress accepts silently: a `GroupHeaderBand` with no `<GroupFields>` groups by nothing and prints once, which looks like a heading; and a `GroupFooterBand` with no header never breaks, so its subtotal becomes a second grand total above the real one.
+
+### A total with no running scope prints blank (2026-10-30)
+
+Every measurement above was of what the serializer *writes*. `RepxProbe render`, added for the DevExpress parity work in [`devexpress-parity.md`](../proposals/devexpress-parity.md), asks what DevExpress *prints* over real data, and its first result overturned a belief recorded in this note and in RepxProbe's README since 2026-09-05.
+
+An aggregate in a cell's `Text` binding is evaluated only when the cell's `<Summary>` names a running scope. Printed through the installed 20.1:
+
+| The cell carries | Group footer | Report footer | Elsewhere |
+|---|---|---|---|
+| No `<Summary>` | blank | blank | blank, in group header, Detail and page footer alike |
+| `<Summary />` or `Running="None"` | blank | blank | |
+| `Running="Group"` | the group's total | `?` | |
+| `Running="Report"` | the report's total, at every break | the report's total | a cumulative sum in Detail with `sumRunningSum` |
+| `Running="Page"` | | | the page's total in the page footer |
+
+No `Ref` is needed on the `<Summary>`; every row above printed the same with or without one.
+
+**The Data tab had been writing the blank case since it was built.** `bindFooterTotals` spliced `sumSum([Field])` into the report footer with no `<Summary>`, so every total it applied printed as an empty cell when the report ran. Nothing caught it, because the file loads, the binding reads back through `RepxProbe inspect`, and every unit test checked the expression rather than the printed page. Once the scope was added, the total printed as `6081.02999999999996`, the summed decimals with no format, so the footer cell now gets `{0:c2}` too, keeping a format the model already chose. Both were confirmed by printing: the same Data tab path over a twelve-row data source now prints `$6,081.03`.
+
+The model writes the same defect, since the expression looks complete without the element. So it is fixed in four places:
+
+- **The writer.** `bindFooterTotals` writes `<Summary Running="Report" />` and the money format.
+- **A repair.** `repairSummaries` in `repxSummaries.ts` runs in the generation pipeline. It fills in the scope only where the band decides it, `"Group"` in a group footer and `"Report"` in the report footer, and turns a report-footer `"Group"` into `"Report"`. Run over the case that printed blanks, it made every one print the right figure. A page footer, the Detail band or a header is left alone, because the right scope there is a question of intent.
+- **The audit.** `summary-no-running` and `summary-group-in-report-footer` are errors, reporting whatever the repair left.
+- **The words.** The grouping prompt now asks for `Running="Report"` on the grand total and says why. Prompt-to-Expression's reference and check now treat an aggregate in a column binding as one that prints blank.
 
 ### Parameters, and the first measurement that was a negative result (2026-09-05)
 
