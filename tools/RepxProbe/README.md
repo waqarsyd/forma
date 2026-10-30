@@ -230,7 +230,11 @@ And from `emit-styles` and `emit-rich` the same day:
 
 - **`<StyleSheet>` is a root-level collection after `</Bands>`**, and a control
   refers to a style **by name** — `StyleName="HeadingStyle"` — not by a `#Ref-N`
-  pointer. An explicit attribute on the control still overrides it.
+  pointer. The file keeps an explicit attribute on the control beside the
+  style, but **the printed page does not**: `render` showed the style's value
+  wins for every property it sets, unless the control carries a
+  `<StylePriority UseForeColor="false" />` child element. The dotted attribute
+  form `StylePriority.UseFont="false"` is ignored.
 - **A control's `Borders` is a style's `Sides`.** Writing `Borders=` inside a
   style is silently ignored: the file loads and the border never appears.
 - **`XRShape` puts its figure in a `<Shape ShapeName="…" />` child, and `Ellipse`

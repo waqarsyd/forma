@@ -49,7 +49,7 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 ### Appearance and styles
 
 - `ForeColor`, `BackColor`, `BorderColor`, `BorderWidth` and `Padding` all reach the printed page as written.
-- **A style beats the control's own attribute.** A control carrying `StyleName="Heading"` and its own `Font="Arial, 8pt"` printed in the style's 16pt bold. The style sheet takes priority unless the control also says otherwise through `StylePriority`, which this case did not write.
+- **A style beats the control's own attribute.** A control carrying `StyleName="Heading"` and its own `Font="Arial, 8pt"` printed in the style's 16pt bold, and a `ForeColor="Red"` beside a style's colour printed in the style's colour. The control's value wins only for a property the style does not set, or when the control carries a `<StylePriority UseFont="false" />` child element for that property; printed that way, the red and a 20pt font both won. The dotted attribute `StylePriority.UseFont="false"` is ignored.
 - A style's `Sides` applied. A style's `BorderWidth="2"` did not: the border printed 1 wide. Forma's style lift already leaves `BorderWidth` on the control, which this confirms is right.
 
 ### Text handling
@@ -153,7 +153,7 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
 |---|---|---|---|---|---|---|
 | 1 | Totals written by the Data tab | Yes | Yes | **Done 2026-10-30** | DevExpress, and the defect was Forma's: totals were written with no `Summary` element and printed blank | Done: the writer adds the scope and a money format, `repairSummaries` scopes model output in group and report footers, the audit reports the rest, the prompt is corrected. Printed through DevExpress afterwards: `$6,081.03` where there was a blank. See gemini.md, the section on a total with no running scope |
-| 2 | Style priority in Forma's docs | Yes | Yes | Comment wrong | DevExpress is the definition; the style lift is safe, but its comment says a control's attribute wins | Fix the comment and the README claim |
+| 2 | Style priority in Forma's docs | Yes | Yes | **Done 2026-10-30** | DevExpress is the definition; the style lift was safe, but its comment said a control's attribute wins | Done: corrected in `repxStyles.ts`, its tests, both READMEs and gemini.md, with the `StylePriority` child element measured; a test now states the invariant that actually makes the lift safe |
 | 3 | Style sheet in Preview | Yes | Yes | Broken | DevExpress: 23 of 33 controls in a real generated invoice preview in the wrong font | Fix: resolve `StyleName`, style winning by default |
 | 4 | Margins and printable width in Preview | Yes | Yes | Broken | DevExpress: Forma draws everything left by the left margin | Fix: offset by the left margin; printable width is page less both margins, multi-column included |
 | 5 | Hidden controls | Yes | Yes | Broken | DevExpress | Fix: skip `Visible="false"` |

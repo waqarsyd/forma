@@ -610,7 +610,7 @@ Two things follow. **`CanShrink` is the only one of the three that has to be ask
 - **`<StyleSheet>` is a root-level collection, a sibling of `<Bands>`, written after it.**
 - **A control refers to a style by NAME — `StyleName="HeadingStyle"` — not by a `#Ref-N` pointer.** That is why this one needs no change in `repxRefs.ts`, unlike parameters and cross-band controls, and it was worth checking rather than assuming given the other two.
 - **A control's `Borders` is a style's `Sides`.** Same concept, different attribute name. Writing `Borders=` inside a style is silently ignored — the one thing here that trial and error would not have found, because the file still loads and the border simply never appears.
-- An explicit attribute on the control still wins: `StyleName="HeadingStyle" ForeColor="Red"` writes both and the red survives. That is what makes hoisting safe.
+- **The style wins, not the control.** This bullet used to say an explicit attribute on the control still wins, because `StyleName="HeadingStyle" ForeColor="Red"` writes both and the red survives *in the file*. Printed with `RepxProbe render` on 2026-10-30, it does not survive on the page: the label came out in the style's `#1A2B3C`, and a control's own `Font="Arial, 8pt"` lost to its style's 16pt bold the same way. A control's attribute only applies to a property the style does not set, or when the control carries a `<StylePriority UseForeColor="false" />` child element, one `Use…` flag per property, with or without a `Ref`. Printed with that element, the red and a `Font="Times New Roman, 20pt"` both won. The dotted form `StylePriority.UseFont="false"` written as an attribute is silently ignored. Hoisting is still safe, but for a different reason than the one this bullet gave: `liftStyles` deletes every lifted attribute from every member, so no control is left holding a value its style also sets.
 - Tables carry `OddStyleName` and `EvenStyleName` of their own.
 - A style item carries a `Ref` and **no `ControlType`** — the sixth collection where that holds, after bindings, group fields, chart series, cross-tab fields and checkbox bindings.
 
@@ -618,7 +618,7 @@ Two things follow. **`CanShrink` is the only one of the three that has to be ask
 
 **Verified through the loader, not just by its own tests.** A lifted file was written out and `RepxProbe inspect` re-saved it through DevExpress: all six labels came back with their `StyleName`, the sheet came back with both styles, `Sides="Bottom"` was understood, and the hex `ForeColor="#1A2B3C"` was resolved to `255,26,43,60` — which incidentally confirms hex is accepted where the prompt already uses it.
 
-**One gap left deliberately.** `BorderColor` and `BorderWidth` are not hoisted, because their spelling inside a style was never measured and a guessed attribute name is *silently ignored* rather than rejected — the exact failure the `Borders`/`Sides` finding demonstrates. They stay on the control, where they still apply.
+**One gap left deliberately.** `BorderColor` and `BorderWidth` are not hoisted, because their spelling inside a style was never measured and a guessed attribute name is *silently ignored* rather than rejected — the exact failure the `Borders`/`Sides` finding demonstrates. They stay on the control, where they still apply. Half of that was measured on 2026-10-30: a style carrying `BorderWidth="2"` printed its border 1 wide, so in 20.1 the attribute does not take effect inside a style, and leaving it on the control was right.
 
 ### Shapes yes, rich text no (2026-09-05)
 

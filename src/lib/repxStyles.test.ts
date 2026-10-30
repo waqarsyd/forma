@@ -2,11 +2,14 @@
  * The safety property is the whole test suite, and it is one sentence: a control
  * must end up with exactly the appearance it started with.
  *
- * A style supplies defaults and an explicit attribute overrides it, so moving a
- * set of attributes onto a style and deleting that set from the control is a
- * no-op for rendering — but only if the set moved is *exactly* the set deleted,
- * and only if every control in the group had exactly that set. Most of what
- * follows is that claim, approached from different sides.
+ * A style BEATS the control's own attribute for every property it sets --
+ * printed through DevExpress on 2026-10-30, the opposite of what this header
+ * said before then. So moving a set of attributes onto a style and deleting that
+ * set from the control is a no-op for rendering only if no member is left
+ * holding a value the style also sets: the set moved has to be *exactly* the set
+ * deleted, and every control in the group has to have had exactly that set.
+ * Most of what follows is that claim, approached from different sides; the last
+ * case states it directly.
  */
 import { describe, it, expect } from 'vitest';
 import { liftStyles, MIN_SHARED } from './repxStyles';
@@ -169,5 +172,39 @@ describe('two distinct appearances', () => {
     const twice = liftStyles(once.xml);
     expect(twice.applied).toBe(false);
     expect(twice.xml).toBe(once.xml);
+  });
+});
+
+describe('the property that makes it safe under DevExpress\'s priority', () => {
+  it('leaves no styled control holding a value its style also sets', () => {
+    // A style beats the control for every property it sets (printed through
+    // DevExpress, 2026-10-30), so a member keeping such a value would print
+    // the style's instead. Includes a near-match and a non-stylable extra.
+    const doc = report(
+      [
+        label(1, HEAD), label(2, HEAD), label(3, `${HEAD} BorderColor="Red"`),
+        label(4, 'Font="Arial, 9pt"'), label(5, 'Font="Arial, 9pt"'), label(6, 'Font="Arial, 9pt"'),
+        label(7, 'Font="Arial, 9pt" ForeColor="Red"'),
+      ].join('\n'),
+    );
+    const { xml, applied } = liftStyles(doc);
+    expect(applied).toBe(true);
+
+    const styleAttrs = new Map(
+      [...xml.matchAll(/<Item\d+ Ref="\d+" Name="(\w+)"([^>]*)\/>/g)].map((m) => [
+        m[1],
+        [...m[2].matchAll(/\s(\w+)="/g)].map((a) => (a[1] === 'Sides' ? 'Borders' : a[1])),
+      ]),
+    );
+    const styled = [...xml.matchAll(/<Item\d+ [^>]*ControlType="XRLabel"[^>]*StyleName="(\w+)"[^>]*\/>/g)];
+    expect(styled.length).toBeGreaterThan(0);
+    for (const [tag, style] of styled) {
+      for (const property of styleAttrs.get(style) ?? []) {
+        expect(tag).not.toMatch(new RegExp(`\\s${property}="`));
+      }
+    }
+    // The near-match was left alone, own values intact, under no style.
+    expect(xml).toMatch(/Name="l7"[^>]*Font="Arial, 9pt" ForeColor="Red"/);
+    expect(xml).not.toMatch(/Name="l7"[^>]*StyleName=/);
   });
 });

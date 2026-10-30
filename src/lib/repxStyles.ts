@@ -18,13 +18,23 @@
  *
  * ## Why it cannot change what the report prints
  *
- * A style supplies defaults; an attribute written on the control overrides it.
- * So for a group of controls whose appearance attributes are **exactly** equal,
- * moving that whole set into a style and deleting it from each control leaves
- * every control inheriting precisely what it had. A control keeping some extra
- * attribute keeps it, and it still wins. Equality of the full set is what makes
- * the transform safe, and it is why near-matches are left alone rather than
- * approximated into a shared style.
+ * **A style beats the control.** For every property the style sets, DevExpress
+ * prints the style's value even when the control writes its own, unless the
+ * control also carries a `<StylePriority UseFont="false" />`-style child for that
+ * property. Measured by printing with `RepxProbe render` on 2026-10-30: a
+ * control's own `Font="Arial, 8pt"` and `ForeColor="Red"` both lost to their
+ * style. This comment said the opposite until then -- "an attribute written on
+ * the control overrides it" -- which was true of the file and false of the page.
+ *
+ * The transform is safe anyway, and the reason is the deletion, not an override.
+ * For a group of controls whose appearance attributes are **exactly** equal,
+ * moving that whole set into a style and deleting it from each member leaves no
+ * member holding a value the style also sets, so there is nothing for the style
+ * to beat, and every control prints precisely what it did. An attribute outside
+ * `STYLABLE` stays on the control, and the style sets no such property, so it
+ * still applies. Equality of the full set is what makes this hold, and it is why
+ * near-matches are left alone rather than approximated into a shared style: a
+ * near-match would leave a member's own value under a style that now wins.
  *
  * ## Measured, not inferred (`RepxProbe emit-styles`)
  *
