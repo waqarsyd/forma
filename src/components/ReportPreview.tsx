@@ -372,6 +372,34 @@ function ControlBox({
   }
 
   /*
+   * An embedded subreport draws its own report inside its box (parity row 27),
+   * laid out once by the engine and grown to fit: printed in s22b, the whole
+   * inner report appeared at the control's place for every master record. A
+   * subreport loaded from a file names it instead, because a browser cannot
+   * open a path on the machine that will print the report.
+   */
+  if (control.type === 'XRSubreport') {
+    if (placed.inner) {
+      return (
+        <div style={{ ...frame, display: 'block', padding: 0 }}>
+          {placed.inner.map((band, i) => (
+            <div key={i} style={{ position: 'absolute', left: u(band.left), top: u(band.top), width: u(band.width), height: u(band.height) }}>
+              {band.controls.map((pc) => (
+                <ControlBox key={pc.index} control={pc.control} placed={pc} unit={unit} pageNumber={pageNumber} pageCount={pageCount} />
+              ))}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return (
+      <div style={{ ...frame, border: '1px dashed #999', color: '#777', fontSize: '7pt', alignItems: 'center', justifyContent: 'center' }}>
+        {control.subreport?.url ? `subreport ${control.subreport.url}, not loaded here` : 'subreport'}
+      </div>
+    );
+  }
+
+  /*
    * A checkbox draws its own box, which is the point of it being one.
    *
    * The alternative the prompt warns against -- a label containing "X", or a

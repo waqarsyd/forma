@@ -17,44 +17,72 @@
  * - Fields are quoted only when they hold a comma, a quote or a line break.
  *   Lines end CRLF, the last one too, and there is no byte-order mark.
  */
-import { pageInfoText, paginate, type PaginatedReport, type PaginateOptions, type PreviewBand, type ReportStructure } from './reportPreview';
+import {
+  pageInfoText,
+  paginate,
+  type PaginatedReport,
+  type PaginateOptions,
+  type PlacedControl,
+  type PreviewBand,
+  type PreviewPage,
+  type ReportStructure,
+} from './reportPreview';
 
-/** Controls that print no text of their own make no CSV cell. */
-const TEXTLESS = new Set(['XRLine', 'XRShape', 'XRPictureBox', 'XRBarCode', 'XRChart', 'XRCrossTab', 'XRGauge', 'XRSparkline', 'XRPanel', 'XRRichText']);
+/**
+ * Controls that print no text of their own make no CSV cell. A subreport's
+ * text is its inner report's, reached through `placedControls`; DevExpress's
+ * CSV and workbook of s22b held those lines and no edge for the box itself.
+ */
+const TEXTLESS = new Set(['XRLine', 'XRShape', 'XRPictureBox', 'XRBarCode', 'XRChart', 'XRCrossTab', 'XRGauge', 'XRSparkline', 'XRPanel', 'XRRichText', 'XRSubreport']);
 
 const quote = (field: string) => (/[",\r\n]/.test(field) ? `"${field.replace(/"/g, '""')}"` : field);
 const key = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * Every placed control of a laid-out report with the page-absolute origin of
+ * the band it sits in, an embedded subreport's controls included at their
+ * place inside it.
+ */
+export function placedControls(report: PaginatedReport): { page: PreviewPage; bandLeft: number; bandTop: number; pc: PlacedControl }[] {
+  const out: { page: PreviewPage; bandLeft: number; bandTop: number; pc: PlacedControl }[] = [];
+  const walk = (page: PreviewPage, bandLeft: number, bandTop: number, controls: readonly PlacedControl[]) => {
+    for (const pc of controls) {
+      out.push({ page, bandLeft, bandTop, pc });
+      for (const inner of pc.inner ?? []) {
+        walk(page, bandLeft + pc.control.x + pc.control.offsetX + inner.left, bandTop + pc.y + inner.top, inner.controls);
+      }
+    }
+  };
+  for (const page of report.pages) for (const band of page.bands) walk(page, band.left, band.top, band.controls);
+  return out;
+}
+
 /** Every printed text of a laid-out report with its page-absolute position. */
 function cellsOf(report: PaginatedReport): { x: number; y: number; text: string }[] {
   const out: { x: number; y: number; text: string }[] = [];
-  for (const page of report.pages) {
-    for (const band of page.bands) {
-      for (const pc of band.controls) {
-        const c = pc.control;
-        if (TEXTLESS.has(c.type)) continue;
-        const left = band.left + c.x + c.offsetX;
-        const top = band.top + pc.y;
-        if (c.type === 'XRTable') {
-          const rowHeights = pc.rowHeights ?? c.rows.map(() => c.height / Math.max(1, c.rows.length));
-          let y = top;
-          rowHeights.forEach((h, r) => {
-            const row = c.rows[pc.rowStart + r];
-            if (!row) return;
-            const total = row.cells.reduce((s, cell) => s + cell.weight, 0) || 1;
-            let x = left;
-            row.cells.forEach((cell, i) => {
-              out.push({ x, y, text: pc.cellTexts?.[pc.rowStart + r]?.[i] ?? cell.text });
-              x += (c.width * cell.weight) / total;
-            });
-            y += h;
-          });
-          continue;
-        }
-        const text = c.pageInfo ? pageInfoText(c.pageInfo, page.number, report.pages.length) : pc.text ?? c.text;
-        out.push({ x: left, y: top, text });
-      }
+  for (const { page, bandLeft, bandTop, pc } of placedControls(report)) {
+    const c = pc.control;
+    if (TEXTLESS.has(c.type)) continue;
+    const left = bandLeft + c.x + c.offsetX;
+    const top = bandTop + pc.y;
+    if (c.type === 'XRTable') {
+      const rowHeights = pc.rowHeights ?? c.rows.map(() => c.height / Math.max(1, c.rows.length));
+      let y = top;
+      rowHeights.forEach((h, r) => {
+        const row = c.rows[pc.rowStart + r];
+        if (!row) return;
+        const total = row.cells.reduce((s, cell) => s + cell.weight, 0) || 1;
+        let x = left;
+        row.cells.forEach((cell, i) => {
+          out.push({ x, y, text: pc.cellTexts?.[pc.rowStart + r]?.[i] ?? cell.text });
+          x += (c.width * cell.weight) / total;
+        });
+        y += h;
+      });
+      continue;
     }
+    const text = c.pageInfo ? pageInfoText(c.pageInfo, page.number, report.pages.length) : pc.text ?? c.text;
+    out.push({ x: left, y: top, text });
   }
   return out;
 }

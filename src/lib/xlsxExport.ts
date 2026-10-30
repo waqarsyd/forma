@@ -26,11 +26,11 @@ import { buildZip } from './zip';
 import { NetDecimal } from './netDecimal';
 import type { Value } from './criteria';
 import { unitsPerInch } from './reportGeometry';
-import { layoutContinuous } from './csvExport';
+import { layoutContinuous, placedControls } from './csvExport';
 import { cssColor, fontDecoration, pageInfoText, type Appearance, type PaginateOptions, type PreviewControl, type ReportStructure } from './reportPreview';
 
 /** Controls that print no text of their own make no cell. */
-const TEXTLESS = new Set(['XRLine', 'XRShape', 'XRPictureBox', 'XRBarCode', 'XRChart', 'XRCrossTab', 'XRGauge', 'XRSparkline', 'XRPanel', 'XRRichText']);
+const TEXTLESS = new Set(['XRLine', 'XRShape', 'XRPictureBox', 'XRBarCode', 'XRChart', 'XRCrossTab', 'XRGauge', 'XRSparkline', 'XRPanel', 'XRRichText', 'XRSubreport']);
 
 interface Item {
   left: number;
@@ -79,50 +79,46 @@ const vertical = (a: string): Item['v'] => (a === 'middle' ? 'center' : a === 'b
 function itemsOf(structure: ReportStructure, recordCount: number, options: PaginateOptions): Item[] {
   const report = layoutContinuous(structure, recordCount, options);
   const out: Item[] = [];
-  for (const page of report.pages) {
-    for (const band of page.bands) {
-      for (const pc of band.controls) {
-        const c: PreviewControl = pc.control;
-        if (TEXTLESS.has(c.type)) continue;
-        const left = band.left + c.x + c.offsetX;
-        const top = band.top + pc.y;
-        if (c.type === 'XRTable') {
-          const heights = pc.rowHeights ?? c.rows.map(() => c.height / Math.max(1, c.rows.length));
-          let y = top;
-          heights.forEach((h, r) => {
-            const row = c.rows[pc.rowStart + r];
-            if (!row) return;
-            const total = row.cells.reduce((s, cell) => s + cell.weight, 0) || 1;
-            let x = left;
-            row.cells.forEach((cell, i) => {
-              const w = (c.width * cell.weight) / total;
-              out.push({
-                left: x, top: y, right: x + w, bottom: y + h,
-                text: pc.cellTexts?.[pc.rowStart + r]?.[i] ?? cell.text,
-                value: pc.cellValues?.[pc.rowStart + r]?.[i],
-                format: cell.data.format,
-                font: fontOf(cell, cell.appearance),
-                fill: cssColor(cell.appearance.BackColor) ?? null,
-                h: horizontal(cell.align), v: vertical(cell.vAlign), url: null,
-              });
-              x += w;
-            });
-            y += h;
+  for (const { page, bandLeft, bandTop, pc } of placedControls(report)) {
+    const c: PreviewControl = pc.control;
+    if (TEXTLESS.has(c.type)) continue;
+    const left = bandLeft + c.x + c.offsetX;
+    const top = bandTop + pc.y;
+    if (c.type === 'XRTable') {
+      const heights = pc.rowHeights ?? c.rows.map(() => c.height / Math.max(1, c.rows.length));
+      let y = top;
+      heights.forEach((h, r) => {
+        const row = c.rows[pc.rowStart + r];
+        if (!row) return;
+        const total = row.cells.reduce((s, cell) => s + cell.weight, 0) || 1;
+        let x = left;
+        row.cells.forEach((cell, i) => {
+          const w = (c.width * cell.weight) / total;
+          out.push({
+            left: x, top: y, right: x + w, bottom: y + h,
+            text: pc.cellTexts?.[pc.rowStart + r]?.[i] ?? cell.text,
+            value: pc.cellValues?.[pc.rowStart + r]?.[i],
+            format: cell.data.format,
+            font: fontOf(cell, cell.appearance),
+            fill: cssColor(cell.appearance.BackColor) ?? null,
+            h: horizontal(cell.align), v: vertical(cell.vAlign), url: null,
           });
-          continue;
-        }
-        out.push({
-          left, top, right: left + c.width, bottom: top + pc.height,
-          text: c.pageInfo ? pageInfoText(c.pageInfo, page.number, report.pages.length) : pc.text ?? c.text,
-          value: c.pageInfo ? undefined : pc.value,
-          format: c.data.format,
-          font: fontOf(c, c.appearance),
-          fill: cssColor(c.appearance.BackColor) ?? null,
-          h: horizontal(c.align), v: vertical(c.vAlign), url: pc.url ?? null,
-          pageNumber: !!c.pageInfo,
+          x += w;
         });
-      }
+        y += h;
+      });
+      continue;
     }
+    out.push({
+      left, top, right: left + c.width, bottom: top + pc.height,
+      text: c.pageInfo ? pageInfoText(c.pageInfo, page.number, report.pages.length) : pc.text ?? c.text,
+      value: c.pageInfo ? undefined : pc.value,
+      format: c.data.format,
+      font: fontOf(c, c.appearance),
+      fill: cssColor(c.appearance.BackColor) ?? null,
+      h: horizontal(c.align), v: vertical(c.vAlign), url: pc.url ?? null,
+      pageNumber: !!c.pageInfo,
+    });
   }
   return out;
 }

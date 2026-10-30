@@ -31,6 +31,7 @@ import {
   type PlacedBand,
   type PlacedControl,
 } from './reportPreview';
+import { reportToCsv } from './csvExport';
 import { liftStyles } from './repxStyles';
 
 /** The banded shape reportBands.ts asks the model for. */
@@ -2500,5 +2501,46 @@ describe('conditional formatting, as DevExpress printed it (case s22a)', () => {
     const detail = s.bands.find((b) => b.kind === 'Detail')!;
     expect(detail.rules).toEqual(['14']);
     expect(detail.controls.find((c) => c.name === 'lblAmount')!.rules).toEqual(['11', '15', '12', '13']);
+  });
+});
+
+/*
+ * Case s22b of docs/proposals/devexpress-parity.md: an embedded subreport,
+ * taller than its control, in the master's Detail band over three records, and
+ * another in the report footer, printed through DevExpress 20.1 (`RepxProbe
+ * render`, 2026-10-30). Each text below is "top text", in report units from
+ * the top of the page, as DevExpress placed it; the CSV is its own file.
+ */
+describe('embedded subreports, as DevExpress printed them (case s22b)', () => {
+  const REPX = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Sub\" ReportUnit=\"HundredthsOfAnInch\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\" Font=\"Arial, 9pt\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"50\" /><Item2 Ref=\"3\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"50\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"lblCust\" LocationFloat=\"0,0\" SizeF=\"200,20\"><ExpressionBindings><Item1 Ref=\"5\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1><Item2 Ref=\"6\" ControlType=\"XRSubreport\" Name=\"subDetail\" LocationFloat=\"0,25\" SizeF=\"400,20\"><ReportSource Ref=\"100\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"InD\" PageWidth=\"850\" PageHeight=\"1100\" Margins=\"0, 0, 0, 0\" Version=\"20.1\"><Bands><Item1 Ref=\"101\" ControlType=\"TopMarginBand\" Name=\"iTop\" HeightF=\"0\" /><Item2 Ref=\"102\" ControlType=\"ReportHeaderBand\" Name=\"iHeader\" HeightF=\"20\"><Controls><Item1 Ref=\"103\" ControlType=\"XRLabel\" Name=\"InDHead\" Text=\"InD HEADER\" LocationFloat=\"0,0\" SizeF=\"300,18\" /></Controls></Item2><Item3 Ref=\"104\" ControlType=\"DetailBand\" Name=\"iDetail\" HeightF=\"40\"><Controls><Item1 Ref=\"105\" ControlType=\"XRLabel\" Name=\"InDLine\" Text=\"InD LINE\" LocationFloat=\"0,0\" SizeF=\"300,18\" /><Item2 Ref=\"106\" ControlType=\"XRLabel\" Name=\"InDSecond\" Text=\"InD SECOND\" LocationFloat=\"0,20\" SizeF=\"300,18\" /></Controls></Item3><Item4 Ref=\"107\" ControlType=\"BottomMarginBand\" Name=\"iBottom\" HeightF=\"0\" /></Bands></ReportSource></Item2><Item3 Ref=\"7\" ControlType=\"XRLabel\" Name=\"lblBelow\" Text=\"BELOW\" LocationFloat=\"450,30\" SizeF=\"100,18\" /></Controls></Item2><Item3 Ref=\"8\" ControlType=\"ReportFooterBand\" Name=\"ReportFooter\" HeightF=\"30\"><Controls><Item1 Ref=\"9\" ControlType=\"XRSubreport\" Name=\"subFooter\" LocationFloat=\"0,0\" SizeF=\"400,20\"><ReportSource Ref=\"200\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"InF\" PageWidth=\"850\" PageHeight=\"1100\" Margins=\"0, 0, 0, 0\" Version=\"20.1\"><Bands><Item1 Ref=\"201\" ControlType=\"TopMarginBand\" Name=\"iTop\" HeightF=\"0\" /><Item2 Ref=\"202\" ControlType=\"ReportHeaderBand\" Name=\"iHeader\" HeightF=\"20\"><Controls><Item1 Ref=\"203\" ControlType=\"XRLabel\" Name=\"InFHead\" Text=\"InF HEADER\" LocationFloat=\"0,0\" SizeF=\"300,18\" /></Controls></Item2><Item3 Ref=\"204\" ControlType=\"DetailBand\" Name=\"iDetail\" HeightF=\"40\"><Controls><Item1 Ref=\"205\" ControlType=\"XRLabel\" Name=\"InFLine\" Text=\"InF LINE\" LocationFloat=\"0,0\" SizeF=\"300,18\" /><Item2 Ref=\"206\" ControlType=\"XRLabel\" Name=\"InFSecond\" Text=\"InF SECOND\" LocationFloat=\"0,20\" SizeF=\"300,18\" /></Controls></Item3><Item4 Ref=\"207\" ControlType=\"BottomMarginBand\" Name=\"iBottom\" HeightF=\"0\" /></Bands></ReportSource></Item1></Controls></Item3><Item4 Ref=\"10\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+  const ROWS = [{ Customer: 'A' }, { Customer: 'B' }, { Customer: 'C' }];
+  const PRINTED: string[] = ["50 A","75 InD HEADER","80 BELOW","95 InD LINE","115 InD SECOND","137 B","162 InD HEADER","167 BELOW","182 InD LINE","202 InD SECOND","224 C","249 InD HEADER","254 BELOW","269 InD LINE","289 InD SECOND","311 InF HEADER","331 InF LINE","351 InF SECOND"];
+  const CSV = "A,\r\nInD HEADER,\r\n,BELOW\r\nInD LINE,\r\nInD SECOND,\r\nB,\r\nInD HEADER,\r\n,BELOW\r\nInD LINE,\r\nInD SECOND,\r\nC,\r\nInD HEADER,\r\n,BELOW\r\nInD LINE,\r\nInD SECOND,\r\nInF HEADER,\r\nInF LINE,\r\nInF SECOND,\r\n";
+
+  it('prints the inner report under every record and grows the band to hold it', () => {
+    const report = paginate(parseReportStructure(REPX), ROWS.length, { rows: ROWS });
+    const drawn: string[] = [];
+    for (const band of report.pages[0].bands) {
+      for (const pc of band.controls) {
+        const top = band.top + pc.y;
+        for (const inner of pc.inner ?? []) for (const ipc of inner.controls) drawn.push(`${top + inner.top + ipc.y} ${ipc.text}`);
+        if (!pc.inner && pc.text) drawn.push(`${top} ${pc.text}`);
+      }
+    }
+    expect(drawn.sort((a, b) => parseFloat(a) - parseFloat(b))).toEqual(PRINTED);
+  });
+
+  it('exports the inner report\'s lines in the CSV, byte for byte as DevExpress did', () => {
+    expect(reportToCsv(parseReportStructure(REPX), ROWS.length, { rows: ROWS })).toBe(CSV);
+  });
+
+  it('reads a subreport loaded from a file as a box, and says so', () => {
+    const byUrl = REPX.replace(/<Item2 Ref="6" ControlType="XRSubreport" Name="subDetail"[\s\S]*?<\/ReportSource><\/Item2>/, '<Item2 Ref="6" ControlType="XRSubreport" Name="subDetail" ReportSourceUrl="Lines.repx" LocationFloat="0,25" SizeF="400,20" />');
+    const s = parseReportStructure(byUrl);
+    const sub = s.bands.find((b) => b.kind === 'Detail')!.controls.find((c) => c.name === 'subDetail')!;
+    expect(sub.subreport).toEqual({ structure: null, url: 'Lines.repx' });
+    expect(s.problems.join(' ')).toMatch(/load another file \(Lines\.repx\)/);
+    const placed = paginate(s, 1, { rows: ROWS }).pages[0].bands.find((b) => b.band.kind === 'Detail')!.controls.find((pc) => pc.control.name === 'subDetail')!;
+    expect(placed.height).toBe(20);
   });
 });

@@ -271,6 +271,12 @@ export interface PreviewControl {
   /** The formatting rules linked to this control, by `Ref`, in link order. */
   rules: string[];
   /**
+   * For an `XRSubreport`: the report embedded in its `<ReportSource>`, parsed,
+   * or the file its `ReportSourceUrl` names, which a browser cannot open.
+   * Null for every other control.
+   */
+  subreport: { structure: ReportStructure | null; url: string | null } | null;
+  /**
    * The appearance properties this control sets itself -- by its own attribute
    * or its style -- or that a panel around it sets. A rule linked to the band
    * reaches only the others, the ones the control inherits from the band.
@@ -930,6 +936,22 @@ export function resolveAppearance(
   return out;
 }
 
+/**
+ * An `XRSubreport`'s report: the `<ReportSource>` it embeds, read as a report of
+ * its own -- the serializer writes it with the root's attributes and its own
+ * `<Bands>` (`RepxProbe emit-container`) -- or the `ReportSourceUrl` it names.
+ */
+function parseSubreport(attrs: string, slice: string): { structure: ReportStructure | null; url: string | null } {
+  const at = slice.indexOf('<ReportSource');
+  const open = at === -1 ? null : /^<ReportSource\b([^>]*)>/.exec(slice.slice(at));
+  const span = open ? innerSpan(slice, 'ReportSource', at) : null;
+  const url = attrOf(attrs, 'ReportSourceUrl');
+  return {
+    structure: open && span ? parseReportStructure(`<XtraReportsLayoutSerializer${open[1]}>${span.text}</XtraReportsLayoutSerializer>`) : null,
+    url: url === null ? null : decodeXmlText(url),
+  };
+}
+
 /** The appearance properties a node sets itself, by its own attribute or its style: none inherited. */
 function ownPropsOf(attrs: string, ownSlice: string, styles: ReadonlyMap<string, Appearance>, type = ''): AppearanceProperty[] {
   return Object.keys(resolveAppearance(attrs, ownSlice, styles, {}, type)) as AppearanceProperty[];
@@ -1348,6 +1370,7 @@ function parseControls(
       data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
       link: parseLink(item.attrs, inner.slice(item.start, extent)),
       rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
+      subreport: type === 'XRSubreport' ? parseSubreport(item.attrs, inner.slice(item.start, extent)) : null,
       ownProps: [...new Set([...ownPropsOf(item.attrs, ownPart(inner.slice(item.start, extent)), styles, type), ...shield])],
       pageInfo: type === 'XRPageInfo'
         ? {
@@ -1560,6 +1583,15 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
 
   if (!structure.bands.length) problems.push('No bands were found inside <Bands>.');
 
+  // A subreport loaded from a file cannot be drawn here: say which, once.
+  const loaded = structure.bands.flatMap((b) => b.controls).filter((c) => c.subreport?.url && !c.subreport.structure);
+  if (loaded.length) {
+    problems.push(
+      `${loaded.length} subreport(s) load another file (${loaded.slice(0, 3).map((c) => c.subreport!.url).join(', ')}), ` +
+        'which the Preview cannot open; each is drawn as a box where DevExpress prints that report.',
+    );
+  }
+
   // Print order, not file order. DevExpress places a band by its type, so a file
   // listing PageHeader after Detail still renders the same report -- the preview
   // sorts here so it does not draw one that DevExpress would not. `repxAudit`
@@ -1635,6 +1667,8 @@ export interface PlacedControl {
    */
   value?: Value | null;
   cellValues?: (Value | null | undefined)[][] | null;
+  /** For an embedded subreport: its report's bands as laid out, relative to the control. */
+  inner?: PlacedBand[] | null;
 }
 
 /** One printed occurrence of a band: a record's Detail, a page's header, a split part. */
@@ -1869,8 +1903,14 @@ export function layoutBand(
       let height = control.height;
       let lines: string[] | null = null;
       let rowHeights: number[] | null = null;
+      let inner: PlacedBand[] | null = null;
       const texts = textsOf(control, values, ctx, scope);
-      if (ctx.measure && MEASURED_TYPES.has(control.type)) {
+      if (control.subreport?.structure) {
+        // An embedded subreport grows to its report's height, as s22b printed.
+        const laid = subreportLayout(control.subreport.structure, ctx);
+        inner = laid.bands;
+        if (control.canGrow && laid.height > height) height = laid.height;
+      } else if (ctx.measure && MEASURED_TYPES.has(control.type)) {
         const text = texts.text ?? '';
         const m = textHeight(text, { family: control.fontFamily, size: control.fontSize, bold: control.bold, italic: control.italic },
           control.width, control.appearance, control.borders, control.wordWrap, ctx);
@@ -1893,7 +1933,7 @@ export function layoutBand(
         });
         height = rowHeights.reduce((sum, h) => sum + h, 0);
       }
-      return { control, index, top, designHeight: control.height, height, lines, rowHeights, shift: 0, ...texts };
+      return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, shift: 0, ...texts };
     })
     .sort((a, b) => a.top - b.top);
 
@@ -1928,8 +1968,41 @@ export function layoutBand(
       url: it.url ?? null,
       value: it.value,
       cellValues: it.cellValues ?? null,
+      inner: it.inner,
     })),
   };
+}
+
+const subreportCache = new WeakMap<ReportStructure, Map<MeasureText | null, { height: number; bands: PlacedBand[] }>>();
+
+/**
+ * An embedded subreport's report, laid out as it prints inside its control
+ * (parity row 27). Measured in s22b: the whole inner report printed at the
+ * control's place, once for every master record -- its report header, then its
+ * Detail band once, since it has no data of its own -- and the control grew to
+ * that height, the band with it. Its page header and footer are left out, as a
+ * subreport has no page of its own, and its margins do not apply: the content
+ * starts at the control's top left. Laid out once per report and measurer,
+ * since every record prints the same thing.
+ */
+function subreportLayout(structure: ReportStructure, ctx: LayoutContext): { height: number; bands: PlacedBand[] } {
+  let byMeasure = subreportCache.get(structure);
+  if (!byMeasure) subreportCache.set(structure, (byMeasure = new Map()));
+  const cached = byMeasure.get(ctx.measure);
+  if (cached) return cached;
+  const content: ReportStructure = {
+    ...structure,
+    page: { ...structure.page, height: 1e9 },
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    bands: structure.bands.filter((b) => b.kind !== 'PageHeader' && b.kind !== 'PageFooter' && b.kind !== 'TopMargin' && b.kind !== 'BottomMargin'),
+  };
+  const report = paginate(content, 1, { measure: ctx.measure, maxPages: 1 });
+  const placed = report.pages[0]?.bands ?? [];
+  const top = placed.length ? Math.min(...placed.map((b) => b.top)) : 0;
+  const bottom = placed.length ? Math.max(...placed.map((b) => b.top + b.height)) : 0;
+  const result = { height: bottom - top, bands: placed.map((b) => ({ ...b, top: b.top - top, left: 0 })) };
+  byMeasure.set(ctx.measure, result);
+  return result;
 }
 
 /** A placed control reprinted in a new scope, its lines re-broken if its text changed. */
