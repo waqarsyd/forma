@@ -120,6 +120,8 @@ type Gesture = {
   originY: number;
   originW: number;
   originH: number;
+  /** The control's `dpiScale`: what the file's numbers were multiplied by to reach report units. */
+  dpiScale: number;
 } | null;
 
 /** Bands the reader should be able to tell apart on screen. */
@@ -752,6 +754,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       originY: control.y,
       originW: control.width,
       originH: control.height,
+      dpiScale: control.dpiScale ?? 1,
     };
   };
 
@@ -763,10 +766,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       // Divide out the zoom first: it is a presentation scale, not a unit.
       const dx = pxToUnits((event.clientX - g.fromX) / scale, report.unit);
       const dy = pxToUnits((event.clientY - g.fromY) / scale, report.unit);
+      // Back into the file's own numbers, which a control with no Dpi in a
+      // millimetre report holds at a 2.54th of what prints (parity row 35).
+      const s = g.dpiScale;
       const result =
         g.mode === 'move'
-          ? moveControl(g.baseXml, g.ref, g.originX + dx, g.originY + dy)
-          : resizeControl(g.baseXml, g.ref, g.originW + dx, g.originH + dy);
+          ? moveControl(g.baseXml, g.ref, (g.originX + dx) / s, (g.originY + dy) / s)
+          : resizeControl(g.baseXml, g.ref, (g.originW + dx) / s, (g.originH + dy) / s);
       if (result.applied) onEdit(result.xml, result.reason);
     };
     const onUp = () => { gesture.current = null; };
@@ -798,10 +804,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       const delta = nudge[event.key];
       if (!delta) return;
       // Arrow keys are the precision half of direct manipulation: a drag gets
-      // you close, one unit at a time gets you exact.
+      // you close, one unit at a time gets you exact. A unit of the file's own
+      // numbers, so they stay whole whatever the control's Dpi.
       event.preventDefault();
+      const s = selectedControl.dpiScale ?? 1;
       commit(
-        moveControl(repxContent, selected, selectedControl.x + delta[0], selectedControl.y + delta[1]),
+        moveControl(repxContent, selected, selectedControl.x / s + delta[0], selectedControl.y / s + delta[1]),
         repxContent,
       );
     };

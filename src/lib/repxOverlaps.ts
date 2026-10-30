@@ -135,7 +135,9 @@ export function resolveOverlaps(xml: string | null | undefined, maxPasses = 8): 
           if (!siblings(a, b)) continue;
           if (overlapOf(a, b) === 0) continue;
           const newY = a.y + a.height + GAP;
-          const edit = moveControl(current, { band: bandIndex, control: order[q] }, b.x, newY);
+          // In the file's own numbers: the parse scaled them by the control's Dpi.
+          const s = b.dpiScale ?? 1;
+          const edit = moveControl(current, { band: bandIndex, control: order[q] }, b.x / s, newY / s);
           if (!edit.applied) continue;
           current = edit.xml;
           movedThisPass += 1;
@@ -158,7 +160,7 @@ export function resolveOverlaps(xml: string | null | undefined, maxPasses = 8): 
     const bottom = band.controls.reduce((max, c) => Math.max(max, c.y + c.offsetY + c.height), 0);
     if (bottom > band.height + 0.5 && band.name) {
       const pattern = new RegExp(`(<Item\\d+\\b[^>]*ControlType="\\w+Band"[^>]*\\sName="${band.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*\\sHeightF=")[^"]*(")`);
-      const next = current.replace(pattern, `$1${Math.ceil(bottom)}$2`);
+      const next = current.replace(pattern, `$1${Math.ceil(bottom / (band.dpiScale ?? 1))}$2`);
       if (next !== current) {
         current = next;
         grown += 1;

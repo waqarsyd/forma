@@ -53,6 +53,18 @@ describe('moving a control', () => {
     expect(controlAt(result.xml, TITLE)).toMatchObject({ x: 120, y: 55 });
   });
 
+  it('round-trips a control the parse scaled for its Dpi: an edit writes the file\'s numbers back', () => {
+    // A millimetre report with no Dpi: DevExpress reads the title at 100, so it
+    // is parsed at 2.54 times its numbers (parity row 35), and dpiScale undoes it.
+    const mm = report.replace('ReportUnit="HundredthsOfAnInch"', 'ReportUnit="TenthsOfAMillimeter"');
+    const title = controlAt(mm, TITLE);
+    expect(title).toMatchObject({ x: 50.8, y: 50.8, width: 1016, dpiScale: 2.54 });
+    const s = title.dpiScale ?? 1;
+    const { xml } = moveControl(mm, TITLE, title.x / s + 1, title.y / s);
+    expect(xml).toContain('LocationFloat="21,20"');
+    expect(controlAt(xml, TITLE).x).toBeCloseTo(53.34, 6);
+  });
+
   it('rounds to a whole unit, because sub-unit precision lives in the file forever', () => {
     const { xml } = moveControl(report, TITLE, 120.4, 55.6);
     expect(xml).toContain('LocationFloat="120,56"');

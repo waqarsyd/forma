@@ -2510,6 +2510,26 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.debug(`REPX Refs: ${refs.reason}.`);
     }
 
+    /*
+     * Every band and control is read at its own Dpi, 100 when absent.
+     *
+     * Whatever ReportUnit says: measured by printing in case s24 on 2026-10-30,
+     * where a report in tenths of a millimetre with no Dpi printed every band,
+     * control and margin 2.54 times too large. The numbers are already in the
+     * report's unit; this says so to DevExpress. First of the passes that read
+     * geometry, because the Preview's parse now reads each element at its Dpi
+     * too (parity row 35): written here, every later pass sees the numbers it
+     * expects, and the cross-tab repair sizes its cells to match. See
+     * `repxDpi.ts`.
+     */
+    const dpi = repairDpi(parsed.repxContent);
+    if (dpi.applied) {
+      parsed.repxContent = dpi.xml;
+      console.log(`Dpi: ${dpi.reason}.`);
+    } else {
+      console.debug(`Dpi: ${dpi.reason}.`);
+    }
+
     // The prompt pins Margins to zero so the model can write paper-absolute
     // coordinates, and the model then draws the design's margin as whitespace
     // instead. This puts it back into the structure. It is a translation, so
@@ -2596,23 +2616,6 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.warn(`Groups: ${groups.reason}.`);
     } else {
       console.debug(`Groups: ${groups.reason}.`);
-    }
-
-    /*
-     * Every band and control is read at its own Dpi, 100 when absent.
-     *
-     * Whatever ReportUnit says: measured by printing in case s24 on 2026-10-30,
-     * where a report in tenths of a millimetre with no Dpi printed every band,
-     * control and margin 2.54 times too large. The numbers are already in the
-     * report's unit; this says so to DevExpress. Before the cross-tab repair,
-     * which sizes its cells in the control's own Dpi. See `repxDpi.ts`.
-     */
-    const dpi = repairDpi(parsed.repxContent);
-    if (dpi.applied) {
-      parsed.repxContent = dpi.xml;
-      console.log(`Dpi: ${dpi.reason}.`);
-    } else {
-      console.debug(`Dpi: ${dpi.reason}.`);
     }
 
     /*

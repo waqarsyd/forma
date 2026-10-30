@@ -351,6 +351,14 @@ export interface PreviewControl {
   offsetX: number;
   offsetY: number;
   /**
+   * How much the file's numbers were scaled to reach the report's unit: the
+   * report's units per inch over this control's `Dpi`, which DevExpress reads
+   * as 100 when absent. 1 for every report written as DevExpress writes one;
+   * 2.54 for a millimetre report with no `Dpi`. An edit divides by it, so it
+   * writes the file's own numbers back. Absent means 1.
+   */
+  dpiScale?: number;
+  /**
    * Where this control's opening tag sits in the source REPX: `openStart` is
    * the `<`, `openEnd` the matching `>`. Absolute offsets into the document
    * that was parsed, which is what lets an edit rewrite one attribute list and
@@ -439,7 +447,10 @@ export interface PreviewColumns {
 export interface PreviewBand {
   kind: BandKind;
   name: string;
+  /** In the report's unit, scaled by `dpiScale` from the file's `HeightF`. */
   height: number;
+  /** As on a control: the report's units per inch over the band's `Dpi`. Absent means 1. */
+  dpiScale?: number;
   controls: PreviewControl[];
   /**
    * Multi-column flow, when the band declares it.
@@ -757,6 +768,12 @@ const numAttr = (attrs: string, name: string, fallback = 0): number => {
 };
 
 /** `LocationFloat="20,30"` and `SizeF="500,40"` are both comma pairs. */
+/** An element's `Dpi`: its units per inch, 100 when it writes none, as DevExpress reads it. */
+function dpiOf(attrs: string): number {
+  const dpi = Number(attrOf(attrs, 'Dpi'));
+  return Number.isFinite(dpi) && dpi > 0 ? dpi : 100;
+}
+
 function pairAttr(attrs: string, name: string): { a: number; b: number } {
   const raw = attrOf(attrs, name);
   if (!raw) return { a: 0, b: 0 };
@@ -968,13 +985,21 @@ export function resolveAppearance(
  * its own -- the serializer writes it with the root's attributes and its own
  * `<Bands>` (`RepxProbe emit-container`) -- or the `ReportSourceUrl` it names.
  */
-function parseSubreport(attrs: string, slice: string): { structure: ReportStructure | null; url: string | null } {
+function parseSubreport(
+  attrs: string,
+  slice: string,
+  hostDpi = 100,
+  hostUnit = 'HundredthsOfAnInch',
+): { structure: ReportStructure | null; url: string | null } {
   const at = slice.indexOf('<ReportSource');
   const open = at === -1 ? null : /^<ReportSource\b([^>]*)>/.exec(slice.slice(at));
   const span = open ? innerSpan(slice, 'ReportSource', at) : null;
   const url = attrOf(attrs, 'ReportSourceUrl');
   return {
-    structure: open && span ? parseReportStructure(`<XtraReportsLayoutSerializer${open[1]}>${span.text}</XtraReportsLayoutSerializer>`) : null,
+    // In the host's unit, since the host lays it out inside the control.
+    structure: open && span
+      ? parseReportStructure(`<XtraReportsLayoutSerializer${open[1]}>${span.text}</XtraReportsLayoutSerializer>`, { dpi: hostDpi, unit: hostUnit })
+      : null,
     url: url === null ? null : decodeXmlText(url),
   };
 }
@@ -1357,6 +1382,9 @@ function parseControls(
   parentVisible = true,
   /** Properties a containing panel sets itself, which a band's rule cannot reach past. */
   shield: readonly AppearanceProperty[] = [],
+  /** Units per inch of the unit geometry is read into, and that unit: the report's own, or its host's. */
+  targetDpi = 100,
+  targetUnit = 'HundredthsOfAnInch',
 ): PreviewControl[] {
   const controlsIdx = bandInner.indexOf('<Controls');
   if (controlsIdx === -1) return [];
@@ -1374,8 +1402,14 @@ function parseControls(
     // This control's own extent: up to the next sibling, or the end. Used to
     // stop a chart reading the next chart's series.
     const extent = items[index + 1]?.start ?? inner.length;
-    const loc = pairAttr(item.attrs, 'LocationFloat');
-    const size = pairAttr(item.attrs, 'SizeF');
+    // DevExpress reads every control at its own Dpi, 100 when absent, whatever
+    // the report's unit (s24, s28), so its numbers are put in the report's
+    // unit here. The file's own numbers are what an edit writes back, divided
+    // by `dpiScale` again.
+    const dpiScale = targetDpi / dpiOf(item.attrs);
+    const raw = { loc: pairAttr(item.attrs, 'LocationFloat'), size: pairAttr(item.attrs, 'SizeF') };
+    const loc = { a: raw.loc.a * dpiScale, b: raw.loc.b * dpiScale };
+    const size = { a: raw.size.a * dpiScale, b: raw.size.b * dpiScale };
     // Style first, then the control's own attribute, then its parent's: what
     // DevExpress prints, not what this element writes. See resolveAppearance.
     const look = resolveAppearance(item.attrs, ownPart(inner.slice(item.start, extent)), styles, parentLook, type);
@@ -1406,7 +1440,7 @@ function parseControls(
       data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
       link: parseLink(item.attrs, inner.slice(item.start, extent)),
       rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
-      subreport: type === 'XRSubreport' ? parseSubreport(item.attrs, inner.slice(item.start, extent)) : null,
+      subreport: type === 'XRSubreport' ? parseSubreport(item.attrs, inner.slice(item.start, extent), targetDpi, targetUnit) : null,
       ownProps: [...new Set([...ownPropsOf(item.attrs, ownPart(inner.slice(item.start, extent)), styles, type), ...shield])],
       pageInfo: type === 'XRPageInfo'
         ? {
@@ -1440,6 +1474,7 @@ function parseControls(
           : null,
       offsetX: 0,
       offsetY: 0,
+      dpiScale,
       openStart: innerStart + item.start,
       openEnd: innerStart + inner.indexOf('>', item.start),
     });
@@ -1463,7 +1498,7 @@ function parseControls(
       if (childSpan) {
         const panelVisible = controls[controls.length - 1].visible;
         const panelOwn = controls[controls.length - 1].ownProps;
-        for (const child of parseControls(panelSlice, innerStart + item.start, styles, look, panelVisible, panelOwn)) {
+        for (const child of parseControls(panelSlice, innerStart + item.start, styles, look, panelVisible, panelOwn, targetDpi, targetUnit)) {
           controls.push({ ...child, offsetX: loc.a, offsetY: loc.b });
         }
       }
@@ -1496,7 +1531,14 @@ function parseCalculatedFields(text: string): CalculatedField[] {
  * Never throws. An unusable document comes back with no bands and a `problems`
  * entry saying so, which is what the caller renders.
  */
-export function parseReportStructure(xml: string | undefined | null): ReportStructure {
+export function parseReportStructure(
+  xml: string | undefined | null,
+  /**
+   * Read the geometry into another unit: an embedded subreport's report is
+   * laid out inside its host, so its numbers are wanted in the host's unit.
+   */
+  into?: { dpi: number; unit: string },
+): ReportStructure {
   const text = xml ?? '';
   const problems: string[] = [];
   const empty: ReportStructure = {
@@ -1532,13 +1574,33 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
     .map((p) => Number.parseFloat(p.trim()))
     .map((n) => (Number.isFinite(n) ? n : 0));
 
+  /*
+   * Every band and control is read at its own Dpi, 100 when absent, whatever
+   * ReportUnit says -- measured by printing in s24 and s28, where a millimetre
+   * report without Dpi printed 2.54 times its size and a label with Dpi in a
+   * band without one printed at its own. So each element's numbers are scaled
+   * into the report's unit by the report's units per inch over its own Dpi,
+   * and the Preview draws what DevExpress prints (parity row 35). The root's
+   * Dpi governs the side margins the same way; the paper did not scale.
+   */
+  const ownUnit = attrOf(rootAttrs, 'ReportUnit') || 'HundredthsOfAnInch';
+  const targetUnit = into?.unit ?? ownUnit;
+  const targetDpi = into?.dpi ?? unitsPerInch(ownUnit);
+  const rootScale = targetDpi / dpiOf(rootAttrs);
+  const pageScale = into ? targetDpi / unitsPerInch(ownUnit) : 1;
+
   const structure: ReportStructure = {
     page: {
-      width: numAttr(rootAttrs, 'PageWidth', 850),
-      height: numAttr(rootAttrs, 'PageHeight', 1100),
+      width: numAttr(rootAttrs, 'PageWidth', 850) * pageScale,
+      height: numAttr(rootAttrs, 'PageHeight', 1100) * pageScale,
     },
-    margins: { top: marginRaw[2] ?? 0, bottom: marginRaw[3] ?? 0, left: marginRaw[0] ?? 0, right: marginRaw[1] ?? 0 },
-    unit: attrOf(rootAttrs, 'ReportUnit') || 'HundredthsOfAnInch',
+    margins: {
+      top: (marginRaw[2] ?? 0) * rootScale,
+      bottom: (marginRaw[3] ?? 0) * rootScale,
+      left: (marginRaw[0] ?? 0) * rootScale,
+      right: (marginRaw[1] ?? 0) * rootScale,
+    },
+    unit: targetUnit,
     bands: [],
     watermark: parseWatermark(text),
     calculatedFields: parseCalculatedFields(text),
@@ -1591,15 +1653,18 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
           bands: nested && bandSpan ? parseBandList(nested.text, base + bandSpan.start + nested.start, bandLook).sort(byPrintOrder) : [],
         };
       }
+      const dpiScale = targetDpi / dpiOf(item.attrs);
+      const columns = bandSpan && kind !== 'DetailReport' ? parseColumns(bandSpan.text) : null;
       out.push({
         kind,
         name: attrOf(item.attrs, 'Name') || controlType,
-        height: numAttr(item.attrs, 'HeightF', 0),
+        height: numAttr(item.attrs, 'HeightF', 0) * dpiScale,
+        dpiScale,
         // A detail report has no controls of its own; its bands do.
         controls: bandSpan && kind !== 'DetailReport'
-          ? parseControls(bandSpan.text, base + bandSpan.start, styles, bandLook)
+          ? parseControls(bandSpan.text, base + bandSpan.start, styles, bandLook, true, [], targetDpi, targetUnit)
           : [],
-        columns: bandSpan && kind !== 'DetailReport' ? parseColumns(bandSpan.text) : null,
+        columns: columns && { ...columns, spacing: columns.spacing * dpiScale, width: columns.width * dpiScale },
         keepTogether: (attrOf(item.attrs, 'KeepTogether') ?? '').toLowerCase() === 'true',
         canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
         printOn: attrOf(item.attrs, 'PrintOn') || 'AllPages',

@@ -56,6 +56,17 @@ describe('resolveOverlaps', () => {
     expect(findOverlaps(result.xml)).toEqual([]);
   });
 
+  it('writes the file\'s own numbers in a millimetre report with no Dpi, which the parse reads at 2.54 times', () => {
+    // DevExpress reads each control at its own Dpi, 100 when absent (s24), so
+    // the parse scales these by 2.54; the move must be divided back.
+    const xml = report(label(1, 0, 0, 200, 30) + label(2, 50, 20, 200, 30)).replace('Name="Report1"', 'Name="Report1" ReportUnit="TenthsOfAMillimeter"');
+    const result = resolveOverlaps(xml);
+    expect(result.applied).toBe(true);
+    // 30 + the 2-unit gap over 2.54, rounded: 31, not the 81 a scaled write would give.
+    expect(result.xml).toContain('Name="c2" Text="t" LocationFloat="50,31"');
+    expect(findOverlaps(result.xml)).toEqual([]);
+  });
+
   it('grows the band when the moved control no longer fits', () => {
     const xml = report(label(1, 0, 0, 200, 60) + label(2, 0, 50, 200, 40), 90);
     const result = resolveOverlaps(xml);

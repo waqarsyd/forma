@@ -2618,3 +2618,68 @@ describe('cross-tabs over test data, as DevExpress printed them (cases s25 and c
     expect(plain(S25.replace(/FieldName="Amount" \/>/g, 'FieldName="Amount" SummaryType="Average" />'))).toBe(0);
   });
 });
+
+/*
+ * Parity row 35: every band and control at its own Dpi, 100 when absent,
+ * whatever ReportUnit says, as DevExpress 20.1 printed it (`RepxProbe render`,
+ * 2026-10-30 and 31). s24 is one label one inch down and two wide, in tenths of
+ * a millimetre and in pixels, with Dpi nowhere, on the root only, or everywhere.
+ * s28b mixes them: a band with Dpi holding a label without, a band without
+ * holding a label with, and a panel with Dpi holding a child without. Each text
+ * is where DevExpress printed it on page 1, in 1/300 inch from the content's
+ * top left, and `margins` are its left and right margins in the report's unit.
+ */
+describe('each band and control at its own Dpi, as DevExpress printed it (cases s24 and s28)', () => {
+  const CASES: Record<string, { repx: string; texts: string[]; margins: number[] }> = {"s24-mm-none":{"repx":"<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Dpi\" ReportUnit=\"TenthsOfAMillimeter\" Margins=\"254, 254, 254, 254\" PageWidth=\"2159\" PageHeight=\"2794\" Version=\"20.1\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"254\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"762\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"label\" Text=\"ONE INCH DOWN\" LocationFloat=\"0,254\" SizeF=\"508,127\" /></Controls></Item2><Item3 Ref=\"5\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"254\" /></Bands></XtraReportsLayoutSerializer>","texts":["ONE INCH DOWN@0,762"],"margins":[645,645]},"s24-mm-root":{"repx":"<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Dpi\" ReportUnit=\"TenthsOfAMillimeter\" Margins=\"254, 254, 254, 254\" PageWidth=\"2159\" PageHeight=\"2794\" Version=\"20.1\" Dpi=\"254\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"254\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"762\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"label\" Text=\"ONE INCH DOWN\" LocationFloat=\"0,254\" SizeF=\"508,127\" /></Controls></Item2><Item3 Ref=\"5\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"254\" /></Bands></XtraReportsLayoutSerializer>","texts":["ONE INCH DOWN@0,762"],"margins":[254,254]},"s24-mm-all":{"repx":"<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Dpi\" ReportUnit=\"TenthsOfAMillimeter\" Margins=\"254, 254, 254, 254\" PageWidth=\"2159\" PageHeight=\"2794\" Version=\"20.1\" Dpi=\"254\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"254\" Dpi=\"254\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"762\" Dpi=\"254\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"label\" Text=\"ONE INCH DOWN\" LocationFloat=\"0,254\" SizeF=\"508,127\" Dpi=\"254\" /></Controls></Item2><Item3 Ref=\"5\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"254\" Dpi=\"254\" /></Bands></XtraReportsLayoutSerializer>","texts":["ONE INCH DOWN@0,300"],"margins":[254,254]},"s24-px-none":{"repx":"<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Dpi\" ReportUnit=\"Pixels\" Margins=\"96, 96, 96, 96\" PageWidth=\"816\" PageHeight=\"1056\" Version=\"20.1\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"96\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"288\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"label\" Text=\"ONE INCH DOWN\" LocationFloat=\"0,96\" SizeF=\"192,48\" /></Controls></Item2><Item3 Ref=\"5\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"96\" /></Bands></XtraReportsLayoutSerializer>","texts":["ONE INCH DOWN@0,288"],"margins":[92,92]},"s24-px-root":{"repx":"<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Dpi\" ReportUnit=\"Pixels\" Margins=\"96, 96, 96, 96\" PageWidth=\"816\" PageHeight=\"1056\" Version=\"20.1\" Dpi=\"96\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"96\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"288\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"label\" Text=\"ONE INCH DOWN\" LocationFloat=\"0,96\" SizeF=\"192,48\" /></Controls></Item2><Item3 Ref=\"5\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"96\" /></Bands></XtraReportsLayoutSerializer>","texts":["ONE INCH DOWN@0,288"],"margins":[96,96]},"s24-px-all":{"repx":"<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Dpi\" ReportUnit=\"Pixels\" Margins=\"96, 96, 96, 96\" PageWidth=\"816\" PageHeight=\"1056\" Version=\"20.1\" Dpi=\"96\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"96\" Dpi=\"96\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"288\" Dpi=\"96\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"label\" Text=\"ONE INCH DOWN\" LocationFloat=\"0,96\" SizeF=\"192,48\" Dpi=\"96\" /></Controls></Item2><Item3 Ref=\"5\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"96\" Dpi=\"96\" /></Bands></XtraReportsLayoutSerializer>","texts":["ONE INCH DOWN@0,300"],"margins":[96,96]},"s28b-roomy":{"repx":"<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Mixed\" ReportUnit=\"TenthsOfAMillimeter\" Margins=\"254, 254, 254, 254\" PageWidth=\"2159\" PageHeight=\"2794\" Version=\"20.1\" Dpi=\"254\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"254\" Dpi=\"254\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"508\" Dpi=\"254\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"noDpi\" Text=\"LABEL NO DPI\" LocationFloat=\"254,127\" SizeF=\"508,50.8\" /></Controls></Item2><Item3 Ref=\"5\" ControlType=\"PageHeaderBand\" Name=\"PageHeader\" HeightF=\"254\"><Controls><Item1 Ref=\"6\" ControlType=\"XRLabel\" Name=\"withDpi\" Text=\"LABEL WITH DPI\" LocationFloat=\"254,127\" SizeF=\"508,50.8\" Dpi=\"254\" /></Controls></Item3><Item4 Ref=\"7\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"762\" Dpi=\"254\"><Controls><Item1 Ref=\"8\" ControlType=\"XRPanel\" Name=\"panel\" LocationFloat=\"254,0\" SizeF=\"1016,635\" Dpi=\"254\"><Controls><Item1 Ref=\"9\" ControlType=\"XRLabel\" Name=\"child\" Text=\"CHILD NO DPI\" LocationFloat=\"127,127\" SizeF=\"508,50.8\" /></Controls></Item1></Controls></Item4><Item5 Ref=\"10\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"254\" Dpi=\"254\" /></Bands></XtraReportsLayoutSerializer>","texts":["CHILD NO DPI@681,1743","LABEL NO DPI@762,381","LABEL WITH DPI@300,750"],"margins":[254,254]}};
+  const laidOut = (repx: string) => {
+    const s = parseReportStructure(repx);
+    const k = 300 / ({ TenthsOfAMillimeter: 254, Pixels: 96 } as Record<string, number>)[s.unit];
+    const top = Math.max(s.margins.top, s.bands.find((b) => b.kind === 'TopMargin')?.height ?? 0);
+    const texts: string[] = [];
+    for (const band of paginate(s, 1).pages[0].bands) {
+      for (const pc of band.controls) {
+        if (!pc.text) continue;
+        const x = Math.round((band.left + pc.control.x + pc.control.offsetX - s.margins.left) * k);
+        texts.push(`${pc.text}@${x},${Math.round((band.top + pc.y - top) * k)}`);
+      }
+    }
+    return { texts: texts.sort(), margins: [s.margins.left, s.margins.right].map(Math.round) };
+  };
+
+  it('places every text of s24 where DevExpress printed it, with Dpi nowhere, on the root, or everywhere', () => {
+    const variants = ['s24-mm-none', 's24-mm-root', 's24-mm-all', 's24-px-none', 's24-px-root', 's24-px-all'];
+    expect(variants.map((n) => laidOut(CASES[n].repx))).toEqual(variants.map((n) => ({ texts: CASES[n].texts, margins: CASES[n].margins })));
+  });
+
+  it('reads a band and the control in it at their own Dpi, each without the other, as s28b printed', () => {
+    expect(laidOut(CASES['s28b-roomy'].repx).texts).toEqual(CASES['s28b-roomy'].texts);
+  });
+
+  it('records each scale, so an edit can write the file\'s numbers back', () => {
+    const s = parseReportStructure(CASES['s28b-roomy'].repx);
+    const at = (kind: string) => s.bands.find((b) => b.kind === kind)!;
+    expect([at('ReportHeader').dpiScale, at('PageHeader').dpiScale]).toEqual([1, 2.54]);
+    expect(at('ReportHeader').controls[0]).toMatchObject({ name: 'noDpi', dpiScale: 2.54, x: 645.16, width: 1290.32 });
+    expect(at('PageHeader').controls[0]).toMatchObject({ name: 'withDpi', dpiScale: 1, x: 254, width: 508 });
+    const child = at('Detail').controls.find((c) => c.name === 'child')!;
+    // Its offset is the panel\'s, at the panel\'s Dpi; its own position is at its own.
+    expect([child.offsetX, child.x, child.dpiScale]).toEqual([254, 322.58, 2.54]);
+  });
+
+  it('changes nothing for a report written as DevExpress writes one', () => {
+    const all = parseReportStructure(CASES['s24-mm-all'].repx);
+    expect(all.bands.every((b) => b.dpiScale === 1 && b.controls.every((c) => c.dpiScale === 1))).toBe(true);
+    const hundredths = parseReportStructure(CASES['s24-mm-none'].repx.replace('ReportUnit="TenthsOfAMillimeter"', 'ReportUnit="HundredthsOfAnInch"'));
+    expect(hundredths.bands.every((b) => b.dpiScale === 1)).toBe(true);
+  });
+
+  it('reads an embedded subreport\'s report into its host\'s unit, each element at its own Dpi', () => {
+    // A report in hundredths of an inch, its label 100 wide with no Dpi, inside a millimetre host: one inch is 254 there.
+    const inner = '<ReportSource Ref="40" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" PageWidth="850" PageHeight="1100" Version="20.1"><Bands><Item1 Ref="41" ControlType="DetailBand" Name="InnerDetail" HeightF="30"><Controls><Item1 Ref="42" ControlType="XRLabel" Name="innerLabel" Text="IN" SizeF="100,20" /></Controls></Item1></Bands></ReportSource>';
+    const host = CASES['s24-mm-all'].repx.replace(/<Item1 Ref="4" ControlType="XRLabel"[^>]*\/>/, `<Item1 Ref="4" ControlType="XRSubreport" Name="sub" LocationFloat="0,0" SizeF="508,127" Dpi="254">${inner}</Item1>`);
+    const sub = parseReportStructure(host).bands.find((b) => b.kind === 'ReportHeader')!.controls[0].subreport!.structure!;
+    expect(sub.unit).toBe('TenthsOfAMillimeter');
+    expect(sub.bands[0]).toMatchObject({ height: 76.2, dpiScale: 2.54 });
+    expect(sub.bands[0].controls[0]).toMatchObject({ width: 254, height: 50.8 });
+  });
+});
