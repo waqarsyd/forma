@@ -25,6 +25,7 @@ import {
   splitInstance,
   recordCountFromLayout,
   decodeXmlText,
+  type PaginatedReport,
   type PlacedBand,
   type PlacedControl,
 } from './reportPreview';
@@ -313,10 +314,12 @@ describe('paginating a real report', () => {
     const pageTall = banded.replace('Name="Detail" HeightF="25"', 'Name="Detail" HeightF="1100"');
     const result = paginate(parseReportStructure(pageTall), 4);
     expect(result.problems.join(' ')).toMatch(/Detail band is 1100 units tall and only 1050 fit/);
-    // One record per sheet rather than an infinite loop or a dropped record.
+    // One record per sheet rather than an infinite loop or a dropped record. A
+    // sheet may also carry the empty remainder of the record before it, which
+    // DevExpress carries over a break (c05), so only parts that print count.
     expect(result.records).toBe(4);
     for (const page of result.pages) {
-      expect(page.bands.filter((b) => b.band.kind === 'Detail').length).toBeLessThanOrEqual(1);
+      expect(page.bands.filter((b) => b.band.kind === 'Detail' && b.controls.length > 0).length).toBeLessThanOrEqual(1);
     }
   });
 
@@ -395,18 +398,31 @@ describe('group bands', () => {
     expect(header.controls[0].text).toBe('Region');
   });
 
-  it('keeps every band of a nested grouping, in nesting order', () => {
+  it('keeps every band of a nested grouping, in file order; nesting is decided at layout', () => {
     const s = parseReportStructure(grouped(['Region', 'Category'], []));
     const headers = s.bands.filter((b) => b.kind === 'GroupHeader');
     expect(headers.map((b) => b.name)).toEqual(['GroupRegion', 'GroupCategory']);
   });
 
-  it('places every group header, not just the first', () => {
+  it('places every group header, not just the first, nested as DevExpress nests them', () => {
     // The bug this pins: `find` returned one band and the inner group vanished
-    // from the preview while the file still contained it.
+    // from the preview while the file still contained it. The ORDER is
+    // DevExpress's, measured in case s19: with no Level the band later in the
+    // file is the outer group, so Category opens first here.
     const result = paginate(parseReportStructure(grouped(['Region', 'Category'], [])), 2);
     const placed = result.pages.flatMap((p) => p.bands.filter((b) => b.band.kind === 'GroupHeader'));
-    expect(placed.map((b) => b.band.name)).toEqual(['GroupRegion', 'GroupCategory']);
+    expect(placed.map((b) => b.band.name)).toEqual(['GroupCategory', 'GroupRegion']);
+  });
+
+  it('nests by Level before file order, the higher level outside', () => {
+    const leveled = grouped(['Region', 'Category'], ['Region', 'Category'])
+      .replace('Name="GroupRegion"', 'Name="GroupRegion" Level="1"')
+      .replace('Name="FootRegion"', 'Name="FootRegion" Level="1"');
+    const bands = paginate(parseReportStructure(leveled), 1).pages[0].bands
+      .filter((b) => b.band.kind === 'GroupHeader' || b.band.kind === 'GroupFooter')
+      .sort((a, b) => a.top - b.top)
+      .map((b) => b.band.name);
+    expect(bands).toEqual(['GroupRegion', 'GroupCategory', 'FootCategory', 'FootRegion']);
   });
 
   it('prints group headers before the records and footers after', () => {
@@ -426,8 +442,10 @@ describe('group bands', () => {
       .filter((b) => b.band.kind === 'GroupFooter')
       .sort((a, b) => a.top - b.top)
       .map((b) => b.band.name);
-    // Innermost group closes first, which is the reverse of the file order.
-    expect(footers).toEqual(['FootCategory', 'FootRegion']);
+    // Innermost group closes first. With no Level the inner group is the
+    // EARLIER band (measured, s19c), and a footer closes the group whose header
+    // has its level, ties paired in file order -- so Region closes first.
+    expect(footers).toEqual(['FootRegion', 'FootCategory']);
   });
 
   it('is unaffected when the report has no grouping at all', () => {
@@ -975,7 +993,10 @@ describe('paginating into columns', () => {
   it('puts the report footer below the columns, not inside them', () => {
     const footer = '';
     const structure = build(2, 'AcrossThenDown', 100, footer);
-    structure.bands.push({ kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null, keepTogether: false, canGrow: true, printOn: 'AllPages', printAtBottom: false });
+    structure.bands.push({
+      kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null, keepTogether: false, canGrow: true,
+      printOn: 'AllPages', printAtBottom: false, fields: [], level: 0, repeatEveryPage: false, groupUnion: 'None', pageBreak: 'None',
+    });
     const result = paginate(structure, 4);
     const rf = result.pages[0].bands.find((b) => b.band.kind === 'ReportFooter')!;
     // Two rows of 100 used, so the footer starts at 200 rather than overlapping.
@@ -1822,7 +1843,7 @@ describe('PrintOn and PrintAtBottom, as DevExpress prints them', () => {
  * printed through DevExpress 20.1 (`RepxProbe render`, 2026-10-30). Record 24 was
  * split across pages 1 and 2, so it counts on both, and with no group bands
  * `Group` printed "?" even in Detail. Every expectation is a string DevExpress drew,
- * prefixed by the page it drew it on. The grouped case waits for parity row 10.
+ * prefixed by the page it drew it on. The grouped case, s17, is further down.
  */
 describe('summaries over test data, as DevExpress printed them (case s17b)', () => {
   type Spec = [name: string, expression: string, x: number, y: number, running?: string, format?: string];
@@ -1960,4 +1981,275 @@ describe('summaries over test data, as DevExpress printed them (case s17b)', () 
     const detail = report.pages[0].bands.find((b) => b.band.kind === 'Detail')!;
     expect(detail.controls.find((pc) => pc.control.name === 'd_report')!.text).toBe('');
   });
+});
+
+/*
+ * Cases c05 to c05e of docs/proposals/devexpress-parity.md, end to end: 90
+ * records grouped by Region, sorted by Customer descending within each group,
+ * printed through DevExpress 20.1 (`RepxProbe render`, 2026-10-30) with
+ * RepeatEveryPage, GroupUnion=WholePage, PageBreak=AfterBand, an orphaned
+ * header, and GroupUnion=WithFirstDetail. Each page is written as DevExpress
+ * printed it, read from the PDF it exported: a group header H:, a run of
+ * customers first-last x count, and a group footer F: with its order count.
+ * Records C0052 and C0088 print at the foot of their page with their box
+ * crossing into the page footer, which is the line-fit rule in splitInstance.
+ */
+describe('groups from test data, as DevExpress printed them (cases c05 to c05e)', () => {
+  const BASE = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"ParityCase\" ReportUnit=\"HundredthsOfAnInch\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Sales\"><CalculatedFields><Item1 Ref=\"2\" Name=\"AmountWithTax\" FieldType=\"Decimal\" Expression=\"[Amount] * 1.2\" DataMember=\"Sales\" /></CalculatedFields><Bands><Item1 Ref=\"3\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"50\"></Item1><Item2 Ref=\"5\" ControlType=\"PageHeaderBand\" Name=\"PageHeader\" HeightF=\"25\"><Controls><Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"lblHead\" Text=\"GROUPED SALES\" Font=\"Arial, 9pt, style=Bold\" LocationFloat=\"0,0\" SizeF=\"750,20\" /></Controls></Item2><Item3 Ref=\"10\" ControlType=\"GroupHeaderBand\" Name=\"GroupHeader\" HeightF=\"30\" RepeatEveryPage=\"true\"><GroupFields><Item1 Ref=\"6\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"7\" ControlType=\"XRLabel\" Name=\"lblRegion\" TextFormatString=\"Region: {0}\" Font=\"Arial, 11pt, style=Bold\" LocationFloat=\"0,0\" SizeF=\"400,25\"><ExpressionBindings><Item1 Ref=\"8\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /><Item2 Ref=\"9\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"25\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"22\"><SortFields><Item1 Ref=\"11\" FieldName=\"Customer\" SortOrder=\"Descending\" /></SortFields><Controls><Item1 Ref=\"12\" ControlType=\"XRLabel\" Name=\"lblCust\" Font=\"Arial, 9pt\" LocationFloat=\"0,0\" SizeF=\"100,20\"><ExpressionBindings><Item1 Ref=\"13\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1><Item2 Ref=\"14\" ControlType=\"XRLabel\" Name=\"lblDate\" TextFormatString=\"{0:dd MMM yyyy}\" Font=\"Arial, 9pt\" LocationFloat=\"100,0\" SizeF=\"130,20\"><ExpressionBindings><Item1 Ref=\"15\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[OrderDate]\" /></ExpressionBindings></Item2><Item3 Ref=\"16\" ControlType=\"XRLabel\" Name=\"lblAmt\" TextFormatString=\"{0:c2}\" Font=\"Arial, 9pt\" TextAlignment=\"TopRight\" LocationFloat=\"230,0\" SizeF=\"130,20\"><ExpressionBindings><Item1 Ref=\"17\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Amount]\" /></ExpressionBindings></Item3><Item4 Ref=\"18\" ControlType=\"XRLabel\" Name=\"lblTax\" TextFormatString=\"{0:c2}\" Font=\"Arial, 9pt\" TextAlignment=\"TopRight\" LocationFloat=\"370,0\" SizeF=\"130,20\"><ExpressionBindings><Item1 Ref=\"19\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[AmountWithTax]\" /></ExpressionBindings></Item4><Item5 Ref=\"20\" ControlType=\"XRLabel\" Name=\"lblRun\" TextFormatString=\"{0:c2}\" Font=\"Arial, 9pt\" TextAlignment=\"TopRight\" LocationFloat=\"510,0\" SizeF=\"130,20\"><Summary Ref=\"21\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"22\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumRunningSum([Amount])\" /></ExpressionBindings></Item5><Item6 Ref=\"23\" ControlType=\"XRLabel\" Name=\"lblQty\" TextFormatString=\"{0:n0}\" Font=\"Arial, 9pt\" TextAlignment=\"TopRight\" LocationFloat=\"650,0\" SizeF=\"100,20\"><ExpressionBindings><Item1 Ref=\"24\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Qty]\" /></ExpressionBindings></Item6></Controls></Item4><Item5 Ref=\"32\" ControlType=\"GroupFooterBand\" Name=\"GroupFooter\" HeightF=\"30\"><Controls><Item1 Ref=\"26\" ControlType=\"XRLabel\" Name=\"lblSub\" TextFormatString=\"{0:c2}\" Font=\"Arial, 9pt, style=Bold\" TextAlignment=\"TopRight\" LocationFloat=\"230,0\" SizeF=\"130,20\"><Summary Ref=\"27\" Running=\"Group\" /><ExpressionBindings><Item1 Ref=\"28\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumSum([Amount])\" /></ExpressionBindings></Item1><Item2 Ref=\"29\" ControlType=\"XRLabel\" Name=\"lblCount\" TextFormatString=\"{0} orders\" Font=\"Arial, 9pt\" LocationFloat=\"0,0\" SizeF=\"220,20\"><Summary Ref=\"30\" Running=\"Group\" /><ExpressionBindings><Item1 Ref=\"31\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumCount([Customer])\" /></ExpressionBindings></Item2></Controls></Item5><Item6 Ref=\"36\" ControlType=\"ReportFooterBand\" Name=\"ReportFooter\" HeightF=\"30\"><Controls><Item1 Ref=\"33\" ControlType=\"XRLabel\" Name=\"lblGrand\" TextFormatString=\"{0:c2}\" Font=\"Arial, 9pt, style=Bold\" TextAlignment=\"TopRight\" LocationFloat=\"230,0\" SizeF=\"130,20\"><Summary Ref=\"34\" Running=\"Report\" /><ExpressionBindings><Item1 Ref=\"35\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"sumSum([Amount])\" /></ExpressionBindings></Item1></Controls></Item6><Item7 Ref=\"39\" ControlType=\"PageFooterBand\" Name=\"PageFooter\" HeightF=\"30\"><Controls><Item1 Ref=\"37\" ControlType=\"XRPageInfo\" Name=\"pageOfTotal\" TextFormatString=\"Page {0} of {1}\" PageInfo=\"NumberOfTotal\" LocationFloat=\"0,5\" SizeF=\"300,20\" /><Item2 Ref=\"38\" ControlType=\"XRPageInfo\" Name=\"pageRoman\" PageInfo=\"RomLowNumber\" TextAlignment=\"TopRight\" LocationFloat=\"550,5\" SizeF=\"200,20\" /></Controls></Item7><Item8 Ref=\"40\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"50\"></Item8></Bands></XtraReportsLayoutSerializer>\n";
+  const VARIANTS: Record<string, [string, string][]> = {"c05-groups":[],"c05b-keepgroup":[["RepeatEveryPage=\"true\"","GroupUnion=\"WholePage\""]],"c05c-pagebreak":[[" RepeatEveryPage=\"true\"",""],["Name=\"GroupFooter\" HeightF=\"30\"","Name=\"GroupFooter\" HeightF=\"30\" PageBreak=\"AfterBand\""]],"c05d-orphan":[[" RepeatEveryPage=\"true\"",""],["Name=\"PageHeader\" HeightF=\"25\"","Name=\"PageHeader\" HeightF=\"315\""]],"c05e-union":[["RepeatEveryPage=\"true\"","GroupUnion=\"WithFirstDetail\""],["Name=\"PageHeader\" HeightF=\"25\"","Name=\"PageHeader\" HeightF=\"315\""]]};
+  const REGIONS: Record<string, string> = { W: 'West', N: 'North', S: 'South' };
+  const ROWS = "W,C0001,2026-08-22,984.68,20;W,C0002,2026-11-08,615.46,5;S,C0003,2026-03-11,109.29,11;S,C0004,2026-03-08,406.61,10;S,C0005,2026-10-19,548.97,6;S,C0006,2026-10-17,272.82,12;W,C0007,2026-08-01,680.99,15;N,C0008,2026-01-11,289.03999999999996,2;N,C0009,2026-01-22,314.14,7;W,C0010,2026-04-07,947.54,19;S,C0011,2026-06-28,204.12,3;N,C0012,2026-05-18,707.37,20;W,C0013,2026-07-04,948.55,13;S,C0014,2026-01-06,304.78,17;S,C0015,2026-09-25,343.78,17;S,C0016,2026-01-14,172.04999999999998,17;S,C0017,2026-01-14,934.13,11;S,C0018,2026-01-14,944.1,13;N,C0019,2026-07-22,507.65,3;N,C0020,2026-06-19,757.02,9;N,C0021,2026-01-28,120.12,16;W,C0022,2026-04-25,270.58,14;S,C0023,2026-07-19,822.03,12;W,C0024,2026-08-23,309.64,16;S,C0025,2026-01-05,132.41,9;S,C0026,2026-07-11,956.7,8;W,C0027,2026-06-07,330,12;W,C0028,2026-11-03,402.17,4;N,C0029,2026-12-21,858.26,2;S,C0030,2026-05-27,358.45,7;W,C0031,2026-04-02,651.8,12;W,C0032,2026-07-05,813.98,9;W,C0033,2026-01-22,850.67,5;W,C0034,2026-12-05,621.4,1;S,C0035,2026-11-02,616.61,12;W,C0036,2026-09-09,804.49,8;S,C0037,2026-10-16,100.68,11;S,C0038,2026-08-15,897.62,14;W,C0039,2026-05-03,441.01,5;W,C0040,2026-01-06,900.93,13;S,C0041,2026-03-21,925.88,16;W,C0042,2026-11-06,986.09,12;N,C0043,2026-08-14,639.64,16;N,C0044,2026-05-20,515.97,3;W,C0045,2026-02-11,956.37,9;N,C0046,2026-07-19,947.5,2;S,C0047,2026-06-15,206.07,4;S,C0048,2026-05-27,941.1,20;S,C0049,2026-05-25,472.32,2;S,C0050,2026-04-14,658.85,3;S,C0051,2026-06-13,334.77,17;S,C0052,2026-04-18,683.25,8;N,C0053,2026-05-11,268.8,18;S,C0054,2026-06-07,468.28999999999996,16;N,C0055,2026-11-01,701.29,8;S,C0056,2026-10-02,534.11,20;N,C0057,2026-12-26,769.7,11;W,C0058,2026-08-14,420.56,14;W,C0059,2026-02-27,215.69,3;S,C0060,2026-06-19,633.23,10;W,C0061,2026-05-10,758.22,13;S,C0062,2026-04-15,309.02,10;W,C0063,2026-12-05,475.17,17;W,C0064,2026-01-21,705.56,13;W,C0065,2026-02-06,998.28,18;N,C0066,2026-09-04,480.68,7;N,C0067,2026-02-26,351.34,13;N,C0068,2026-09-06,687.46,3;N,C0069,2026-03-09,571.06,2;S,C0070,2026-01-21,227.46,4;N,C0071,2026-11-11,640.81,17;S,C0072,2026-02-10,557.28,12;W,C0073,2026-01-09,975.23,15;S,C0074,2026-03-17,213.91,6;N,C0075,2026-10-26,459.2,1;N,C0076,2026-08-14,726.97,2;S,C0077,2026-11-08,710.75,19;S,C0078,2026-07-18,924.18,14;S,C0079,2026-12-03,853.99,16;S,C0080,2026-07-11,640.85,15;W,C0081,2026-06-11,108.98,14;N,C0082,2026-10-23,336.09999999999997,9;N,C0083,2026-12-11,784.39,2;S,C0084,2026-12-07,691.03,12;N,C0085,2026-05-16,302.53,15;N,C0086,2026-03-27,474.84,14;N,C0087,2026-06-18,526.23,15;S,C0088,2026-04-08,975.5699999999999,20;W,C0089,2026-04-10,184.84,10;W,C0090,2026-12-04,200.12,4".split(';').map((line) => {
+    const [r, Customer, OrderDate, Amount, Qty] = line.split(',');
+    return { Region: REGIONS[r], Customer, OrderDate, Amount, Qty };
+  });
+  const PRINTED: Record<string, string[][]> = {"c05-groups":[["H:North","C0087-C0008x25","F:25","H:South","C0088-C0052x14"],["H:South","C0051-C0003x23","F:37","H:West","C0090-C0034x16"],["H:West","C0033-C0001x12","F:28"]],"c05b-keepgroup":[["H:North","C0087-C0008x25","F:25"],["H:South","C0088-C0003x37","F:37"],["H:West","C0090-C0001x28","F:28"]],"c05c-pagebreak":[["H:North","C0087-C0008x25","F:25"],["H:South","C0088-C0003x37","F:37"],["H:West","C0090-C0001x28","F:28"],[]],"c05d-orphan":[["H:North","C0087-C0008x25","F:25","H:South","C0088-C0088x1"],["C0084-C0016x29"],["C0015-C0003x7","F:37","H:West","C0090-C0028x20"],["C0027-C0001x8","F:28"]],"c05e-union":[["H:North","C0087-C0008x25","F:25"],["H:South","C0088-C0018x28"],["C0017-C0003x9","F:37","H:West","C0090-C0032x18"],["C0031-C0001x10","F:28"]]};
+
+  /** The same tokens from Forma's pages, every text in reading order. */
+  const pagesOf = (report: PaginatedReport) => report.pages.map((page) => {
+    const texts = page.bands.flatMap((band) => band.controls.map((pc) => ({
+      y: band.top + pc.y, x: band.left + pc.control.x + pc.control.offsetX, s: (pc.text ?? '').trim(),
+    }))).filter((t) => t.s).sort((a, b) => a.y - b.y || a.x - b.x).map((t) => t.s);
+    const out: string[] = [];
+    let run: { first: string; last: string; n: number } | null = null;
+    const flush = () => { if (run) { out.push(`${run.first}-${run.last}x${run.n}`); run = null; } };
+    for (const t of texts) {
+      if (/^C\d{4}$/.test(t)) { if (run) { run.last = t; run.n++; } else run = { first: t, last: t, n: 1 }; continue; }
+      const h = /^Region: (.+)$/.exec(t);
+      const f = /^(\d+) orders$/.exec(t);
+      if (h) { flush(); out.push(`H:${h[1]}`); } else if (f) { flush(); out.push(`F:${f[1]}`); }
+    }
+    flush();
+    return out;
+  });
+
+  for (const [name, pairs] of Object.entries(VARIANTS)) {
+    it(`prints ${name} page for page as DevExpress did`, () => {
+      const repx = pairs.reduce((text, [from, to]) => text.replace(from, to), BASE);
+      const report = paginate(parseReportStructure(repx), ROWS.length, { rows: ROWS });
+      expect(pagesOf(report)).toEqual(PRINTED[name]);
+    });
+  }
+
+  it('repeats a group header only on the pages its group continues onto', () => {
+    const report = paginate(parseReportStructure(BASE), ROWS.length, { rows: ROWS });
+    const heads = report.pages.map((p) => p.bands.filter((b) => b.band.kind === 'GroupHeader').length);
+    expect(heads).toEqual([2, 2, 1]); // North and South; South again and West; West again
+  });
+});
+
+/*
+ * Case s17 of docs/proposals/devexpress-parity.md, end to end with its groups:
+ * every summary scope in every band over 50 records in three groups on three
+ * pages, record 21 split across the first break. Every expectation is a string
+ * DevExpress 20.1 printed, prefixed by its page.
+ */
+describe('groups and summaries from test data, as DevExpress printed them (case s17)', () => {
+  type Spec = [name: string, expression: string, x: number, y: number, running?: string, format?: string];
+  const SPEC: Record<string, Spec[]> = {
+    ReportHeader: [
+      ["rh_report","sumSum([Qty])",0,0,"Report"],
+      ["rh_page","sumSum([Qty])",125,0,"Page"],
+      ["rh_group","sumSum([Qty])",250,0,"Group"],
+      ["rh_none","sumSum([Qty])",375,0,""],
+      ["rh_count","sumCount()",500,0,"Report"],
+      ["rh_rrep","sumRunningSum([Qty])",625,0,"Report"],
+      ["rh_qty","[Qty]",0,18],
+    ],
+    PageHeader: [
+      ["ph_page","sumSum([Qty])",0,0,"Page"],
+      ["ph_report","sumSum([Qty])",125,0,"Report"],
+      ["ph_group","sumSum([Qty])",250,0,"Group"],
+      ["ph_pcount","sumCount()",375,0,"Page"],
+      ["ph_rrep","sumRunningSum([Qty])",500,0,"Report"],
+      ["ph_rpage","sumRunningSum([Qty])",625,0,"Page"],
+      ["ph_qty","[Qty]",0,18],
+    ],
+    GroupHeader: [
+      ["gh_region","[Region]",0,0],
+      ["gh_group","sumSum([Qty])",125,0,"Group"],
+      ["gh_report","sumSum([Qty])",250,0,"Report"],
+      ["gh_page","sumSum([Qty])",375,0,"Page"],
+      ["gh_count","sumCount()",500,0,"Group"],
+      ["gh_rsum","sumRunningSum([Qty])",625,0,"Group"],
+      ["gh_qty","[Qty]",0,18],
+    ],
+    Detail: [
+      ["d_qty","[Qty]",0,0],
+      ["d_group","sumSum([Qty])",60,0,"Group"],
+      ["d_report","sumSum([Qty])",185,0,"Report"],
+      ["d_page","sumSum([Qty])",310,0,"Page"],
+      ["d_none","sumSum([Qty])",435,0,""],
+      ["d_rgroup","sumRunningSum([Qty])",560,0,"Group"],
+      ["d_recgroup","sumRecordNumber()",0,18,"Group"],
+      ["d_recpage","sumRecordNumber()",125,18,"Page"],
+      ["d_recreport","sumRecordNumber()",250,18,"Report"],
+      ["d_rpage","sumRunningSum([Qty])",375,18,"Page"],
+      ["d_avg","sumAvg([Qty])",500,18,"Group"],
+      ["d_nullfmt","[Missing]",625,18,undefined,"Total: {0:c2}"],
+    ],
+    GroupFooter: [
+      ["gf_group","sumSum([Qty])",0,0,"Group"],
+      ["gf_page","sumSum([Qty])",125,0,"Page"],
+      ["gf_report","sumSum([Qty])",250,0,"Report"],
+      ["gf_rsum","sumRunningSum([Qty])",375,0,"Group"],
+      ["gf_rec","sumRecordNumber()",500,0,"Group"],
+      ["gf_qty","[Qty]",0,18],
+      ["gf_region","[Region]",125,18],
+    ],
+    PageFooter: [
+      ["pf_page","sumSum([Qty])",0,0,"Page"],
+      ["pf_report","sumSum([Qty])",125,0,"Report"],
+      ["pf_group","sumSum([Qty])",250,0,"Group"],
+      ["pf_none","sumSum([Qty])",375,0,""],
+      ["pf_rrep","sumRunningSum([Qty])",500,0,"Report"],
+      ["pf_qty","[Qty]",0,18],
+      ["pf_groupfmt","sumSum([Qty])",125,18,"Group","{0:c2}"],
+    ],
+    ReportFooter: [
+      ["rf_report","sumSum([Qty])",0,0,"Report"],
+      ["rf_page","sumSum([Qty])",125,0,"Page"],
+      ["rf_rrep","sumRunningSum([Qty])",250,0,"Report"],
+      ["rf_qty","[Qty]",0,18],
+    ],
+  };
+  const ROWS = [{"Region":"North","Qty":"1"},{"Region":"North","Qty":"2"},{"Region":"North","Qty":"3"},{"Region":"North","Qty":"4"},{"Region":"North","Qty":"5"},{"Region":"North","Qty":"6"},{"Region":"North","Qty":"7"},{"Region":"North","Qty":"8"},{"Region":"North","Qty":"9"},{"Region":"North","Qty":"10"},{"Region":"North","Qty":"11"},{"Region":"North","Qty":"12"},{"Region":"North","Qty":"13"},{"Region":"North","Qty":"14"},{"Region":"North","Qty":"15"},{"Region":"South","Qty":"16"},{"Region":"South","Qty":"17"},{"Region":"South","Qty":"18"},{"Region":"South","Qty":"19"},{"Region":"South","Qty":"20"},{"Region":"South","Qty":"21"},{"Region":"South","Qty":"22"},{"Region":"South","Qty":"23"},{"Region":"South","Qty":"24"},{"Region":"South","Qty":"25"},{"Region":"South","Qty":"26"},{"Region":"South","Qty":"27"},{"Region":"South","Qty":"28"},{"Region":"South","Qty":"29"},{"Region":"South","Qty":"30"},{"Region":"South","Qty":"31"},{"Region":"South","Qty":"32"},{"Region":"South","Qty":"33"},{"Region":"South","Qty":"34"},{"Region":"South","Qty":"35"},{"Region":"West","Qty":"36"},{"Region":"West","Qty":"37"},{"Region":"West","Qty":"38"},{"Region":"West","Qty":"39"},{"Region":"West","Qty":"40"},{"Region":"West","Qty":"41"},{"Region":"West","Qty":"42"},{"Region":"West","Qty":"43"},{"Region":"West","Qty":"44"},{"Region":"West","Qty":"45"},{"Region":"West","Qty":"46"},{"Region":"West","Qty":"47"},{"Region":"West","Qty":"48"},{"Region":"West","Qty":"49"},{"Region":"West","Qty":"50"}];
+  const PRINTED: Record<string, string[]> = {
+    d_avg: ["p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:8","p1:25.5","p1:25.5","p1:25.5","p1:25.5","p1:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:25.5","p2:43","p2:43","p2:43","p2:43","p2:43","p2:43","p2:43","p2:43","p3:43","p3:43","p3:43","p3:43","p3:43","p3:43","p3:43"],
+    d_group: ["p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:120","p1:510","p1:510","p1:510","p1:510","p1:510","p1:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:510","p2:645","p2:645","p2:645","p2:645","p2:645","p2:645","p2:645","p2:645","p3:645","p3:645","p3:645","p3:645","p3:645","p3:645","p3:645"],
+    d_none: ["p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p3:(blank)","p3:(blank)","p3:(blank)","p3:(blank)","p3:(blank)","p3:(blank)","p3:(blank)"],
+    d_nullfmt: ["p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p1:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p2:(blank)","p3:(blank)","p3:(blank)","p3:(blank)","p3:(blank)","p3:(blank)","p3:(blank)","p3:(blank)"],
+    d_page: ["p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:231","p1:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p2:736","p3:329","p3:329","p3:329","p3:329","p3:329","p3:329","p3:329"],
+    d_qty: ["p1:1","p1:2","p1:3","p1:4","p1:5","p1:6","p1:7","p1:8","p1:9","p1:10","p1:11","p1:12","p1:13","p1:14","p1:15","p1:16","p1:17","p1:18","p1:19","p1:20","p1:21","p2:22","p2:23","p2:24","p2:25","p2:26","p2:27","p2:28","p2:29","p2:30","p2:31","p2:32","p2:33","p2:34","p2:35","p2:36","p2:37","p2:38","p2:39","p2:40","p2:41","p2:42","p2:43","p3:44","p3:45","p3:46","p3:47","p3:48","p3:49","p3:50"],
+    d_recgroup: ["p1:1","p1:2","p1:3","p1:4","p1:5","p1:6","p1:7","p1:8","p1:9","p1:10","p1:11","p1:12","p1:13","p1:14","p1:15","p1:1","p1:2","p1:3","p1:4","p1:5","p2:6","p2:7","p2:8","p2:9","p2:10","p2:11","p2:12","p2:13","p2:14","p2:15","p2:16","p2:17","p2:18","p2:19","p2:20","p2:1","p2:2","p2:3","p2:4","p2:5","p2:6","p2:7","p2:8","p3:9","p3:10","p3:11","p3:12","p3:13","p3:14","p3:15"],
+    d_recpage: ["p1:1","p1:2","p1:3","p1:4","p1:5","p1:6","p1:7","p1:8","p1:9","p1:10","p1:11","p1:12","p1:13","p1:14","p1:15","p1:16","p1:17","p1:18","p1:19","p1:20","p2:1","p2:2","p2:3","p2:4","p2:5","p2:6","p2:7","p2:8","p2:9","p2:10","p2:11","p2:12","p2:13","p2:14","p2:15","p2:16","p2:17","p2:18","p2:19","p2:20","p2:21","p2:22","p2:23","p3:1","p3:2","p3:3","p3:4","p3:5","p3:6","p3:7"],
+    d_recreport: ["p1:1","p1:2","p1:3","p1:4","p1:5","p1:6","p1:7","p1:8","p1:9","p1:10","p1:11","p1:12","p1:13","p1:14","p1:15","p1:16","p1:17","p1:18","p1:19","p1:20","p2:21","p2:22","p2:23","p2:24","p2:25","p2:26","p2:27","p2:28","p2:29","p2:30","p2:31","p2:32","p2:33","p2:34","p2:35","p2:36","p2:37","p2:38","p2:39","p2:40","p2:41","p2:42","p2:43","p3:44","p3:45","p3:46","p3:47","p3:48","p3:49","p3:50"],
+    d_report: ["p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p1:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p2:1275","p3:1275","p3:1275","p3:1275","p3:1275","p3:1275","p3:1275","p3:1275"],
+    d_rgroup: ["p1:1","p1:3","p1:6","p1:10","p1:15","p1:21","p1:28","p1:36","p1:45","p1:55","p1:66","p1:78","p1:91","p1:105","p1:120","p1:16","p1:33","p1:51","p1:70","p1:90","p1:111","p2:133","p2:156","p2:180","p2:205","p2:231","p2:258","p2:286","p2:315","p2:345","p2:376","p2:408","p2:441","p2:475","p2:510","p2:36","p2:73","p2:111","p2:150","p2:190","p2:231","p2:273","p2:316","p3:360","p3:405","p3:451","p3:498","p3:546","p3:595","p3:645"],
+    d_rpage: ["p1:1","p1:3","p1:6","p1:10","p1:15","p1:21","p1:28","p1:36","p1:45","p1:55","p1:66","p1:78","p1:91","p1:105","p1:120","p1:136","p1:153","p1:171","p1:190","p1:210","p2:21","p2:43","p2:66","p2:90","p2:115","p2:141","p2:168","p2:196","p2:225","p2:255","p2:286","p2:318","p2:351","p2:385","p2:420","p2:456","p2:493","p2:531","p2:570","p2:610","p2:651","p2:693","p2:736","p3:44","p3:89","p3:135","p3:182","p3:230","p3:279","p3:329"],
+    gf_group: ["p1:120","p2:510","p3:645"],
+    gf_page: ["p1:231","p2:736","p3:329"],
+    gf_qty: ["p1:15","p2:35","p3:50"],
+    gf_rec: ["p1:15","p2:20","p3:15"],
+    gf_region: ["p1:North","p2:South","p3:West"],
+    gf_report: ["p1:1275","p2:1275","p3:1275"],
+    gf_rsum: ["p1:120","p2:510","p3:645"],
+    gh_count: ["p1:15","p1:20","p2:15"],
+    gh_group: ["p1:120","p1:510","p2:645"],
+    gh_page: ["p1:231","p1:231","p2:736"],
+    gh_qty: ["p1:1","p1:16","p2:36"],
+    gh_region: ["p1:North","p1:South","p2:West"],
+    gh_report: ["p1:1275","p1:1275","p2:1275"],
+    gh_rsum: ["p1:120","p1:510","p2:645"],
+    pf_group: ["p1:?","p2:?","p3:?"],
+    pf_groupfmt: ["p1:?","p2:?","p3:?"],
+    pf_none: ["p1:(blank)","p2:(blank)","p3:(blank)"],
+    pf_page: ["p1:231","p2:736","p3:329"],
+    pf_qty: ["p1:21","p2:43","p3:50"],
+    pf_report: ["p1:1275","p2:1275","p3:1275"],
+    pf_rrep: ["p1:231","p2:946","p3:1275"],
+    ph_group: ["p1:?","p2:?","p3:?"],
+    ph_page: ["p1:231","p2:736","p3:329"],
+    ph_pcount: ["p1:21","p2:23","p3:7"],
+    ph_qty: ["p1:1","p2:21","p3:44"],
+    ph_report: ["p1:1275","p2:1275","p3:1275"],
+    ph_rpage: ["p1:231","p2:736","p3:329"],
+    ph_rrep: ["p1:231","p2:946","p3:1275"],
+    rf_page: ["p3:329"],
+    rf_qty: ["p3:50"],
+    rf_report: ["p3:1275"],
+    rf_rrep: ["p3:1275"],
+    rh_count: ["p1:50"],
+    rh_group: ["p1:?"],
+    rh_none: ["p1:(blank)"],
+    rh_page: ["p1:231"],
+    rh_qty: ["p1:1"],
+    rh_report: ["p1:1275"],
+    rh_rrep: ["p1:1275"],
+  };
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  function report(): string {
+    let ref = 100;
+    const R = () => ++ref;
+    const label = (n: number, [name, expression, x, y, running, format]: Spec) => {
+      const summary = running === undefined ? '' : running === '' ? `<Summary Ref="${R()}" />` : `<Summary Ref="${R()}" Running="${running}" />`;
+      return `<Item${n} Ref="${R()}" ControlType="XRLabel" Name="${name}"${format ? ` TextFormatString="${esc(format)}"` : ''} WordWrap="false" LocationFloat="${x},${y}" SizeF="120,16">${summary}` +
+        `<ExpressionBindings><Item1 Ref="${R()}" EventName="BeforePrint" PropertyName="Text" Expression="${esc(expression)}" /></ExpressionBindings></Item${n}>`;
+    };
+    let item = 1;
+    const bands = [`<Item${item++} Ref="${R()}" ControlType="TopMarginBand" Name="TopMargin" HeightF="20" />`];
+    for (const [kind, controls] of Object.entries(SPEC)) {
+      const group = kind === 'GroupHeader' ? `<GroupFields><Item1 Ref="${R()}" FieldName="Region" /></GroupFields>` : '';
+      const inner = group + '<Controls>' + controls.map((c, i) => label(i + 1, c)).join('') + '</Controls>';
+      bands.push(`<Item${item} Ref="${R()}" ControlType="${kind}Band" Name="${kind}" HeightF="40">${inner}</Item${item}>`);
+      item++;
+    }
+    bands.push(`<Item${item} Ref="${R()}" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="20" />`);
+    return '<?xml version="1.0" encoding="utf-8"?>' +
+      '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="Scopes" ReportUnit="HundredthsOfAnInch" Margins="20, 20, 20, 20" PageWidth="850" PageHeight="1100" Version="20.1" DataMember="Items" Font="Arial, 7pt">' +
+      `<Bands>${bands.join('')}</Bands></XtraReportsLayoutSerializer>`;
+  }
+
+  it('prints every group, summary and field on the page DevExpress printed it on', () => {
+    const result = paginate(parseReportStructure(report()), ROWS.length, { rows: ROWS });
+    expect(result.pages).toHaveLength(3);
+    const printed: Record<string, string[]> = {};
+    result.pages.forEach((page, p) => {
+      for (const band of page.bands) for (const pc of band.controls) {
+        if (pc.text === null) continue;
+        (printed[pc.control.name] ??= []).push(`p${p + 1}:${pc.text === '' ? '(blank)' : pc.text}`);
+      }
+    });
+    for (const name of Object.keys(PRINTED)) expect([name, printed[name]]).toEqual([name, PRINTED[name]]);
+  });
+});
+
+/*
+ * Case s19: which group is the outer one. Two group headers and footers over
+ * twelve records, written seven ways, page 1 in reading order as DevExpress 20.1
+ * printed it. a and b: Level 1 and 0, in either file order. c: no Level, so the
+ * later band is outer. d and e: only the outer band writes Level="1", as a
+ * designer-saved file does. f and g: one footer, at Level 1 and with none.
+ */
+describe('nested groups, as DevExpress nests them (case s19)', () => {
+  const ROWS = [{"Region":"B","Category":"Z","Qty":"1"},{"Region":"A","Category":"X","Qty":"2"},{"Region":"B","Category":"Y","Qty":"3"},{"Region":"A","Category":"Z","Qty":"4"},{"Region":"B","Category":"X","Qty":"5"},{"Region":"A","Category":"Y","Qty":"6"},{"Region":"B","Category":"Z","Qty":"7"},{"Region":"A","Category":"X","Qty":"8"},{"Region":"B","Category":"Y","Qty":"9"},{"Region":"A","Category":"Z","Qty":"10"},{"Region":"B","Category":"X","Qty":"11"},{"Region":"A","Category":"Y","Qty":"12"}];
+  const PRINTED: Record<string, string[]> = {"a":["Region A","Category X","A/X 2","A/X 8","end Category 10","Category Y","A/Y 6","A/Y 12","end Category 18","Category Z","A/Z 4","A/Z 10","end Category 14","end Region 42","Region B","Category X","B/X 5","B/X 11","end Category 16","Category Y","B/Y 3","B/Y 9","end Category 12","Category Z","B/Z 1","B/Z 7","end Category 8","end Region 36"],"b":["Region A","Category X","A/X 2","A/X 8","end Category 10","Category Y","A/Y 6","A/Y 12","end Category 18","Category Z","A/Z 4","A/Z 10","end Category 14","end Region 42","Region B","Category X","B/X 5","B/X 11","end Category 16","Category Y","B/Y 3","B/Y 9","end Category 12","Category Z","B/Z 1","B/Z 7","end Category 8","end Region 36"],"c":["Category X","Region A","A/X 2","A/X 8","end Region 10","Region B","B/X 5","B/X 11","end Region 16","end Category 26","Category Y","Region A","A/Y 6","A/Y 12","end Region 18","Region B","B/Y 3","B/Y 9","end Region 12","end Category 30","Category Z","Region A","A/Z 4","A/Z 10","end Region 14","Region B","B/Z 1","B/Z 7","end Region 8","end Category 22"],"d":["Region A","Category X","A/X 2","A/X 8","end Category 10","Category Y","A/Y 6","A/Y 12","end Category 18","Category Z","A/Z 4","A/Z 10","end Category 14","end Region 42","Region B","Category X","B/X 5","B/X 11","end Category 16","Category Y","B/Y 3","B/Y 9","end Category 12","Category Z","B/Z 1","B/Z 7","end Category 8","end Region 36"],"e":["Region A","Category X","A/X 2","A/X 8","end Category 10","Category Y","A/Y 6","A/Y 12","end Category 18","Category Z","A/Z 4","A/Z 10","end Category 14","end Region 42","Region B","Category X","B/X 5","B/X 11","end Category 16","Category Y","B/Y 3","B/Y 9","end Category 12","Category Z","B/Z 1","B/Z 7","end Category 8","end Region 36"],"f":["Region A","Category X","A/X 2","A/X 8","Category Y","A/Y 6","A/Y 12","Category Z","A/Z 4","A/Z 10","end Region 42","Region B","Category X","B/X 5","B/X 11","Category Y","B/Y 3","B/Y 9","Category Z","B/Z 1","B/Z 7","end Region 36"],"g":["Region A","Category X","A/X 2","A/X 8","end Region 10","Category Y","A/Y 6","A/Y 12","end Region 18","Category Z","A/Z 4","A/Z 10","end Region 14","Region B","Category X","B/X 5","B/X 11","end Region 16","Category Y","B/Y 3","B/Y 9","end Region 12","Category Z","B/Z 1","B/Z 7","end Region 8"]};
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/'/g, '&apos;').replace(/"/g, '&quot;');
+  function report(variant: string): string {
+    let ref = 1;
+    const R = () => ++ref;
+    const label = (name: string, expression: string, x: number, running?: string) =>
+      `<Item1 Ref="${R()}" ControlType="XRLabel" Name="${name}" LocationFloat="${x},0" SizeF="200,18">` +
+      (running ? `<Summary Ref="${R()}" Running="${running}" />` : '') +
+      `<ExpressionBindings><Item1 Ref="${R()}" EventName="BeforePrint" PropertyName="Text" Expression="${esc(expression)}" /></ExpressionBindings></Item1>`;
+    const levelOf = (l: number) => (variant === 'c' || ('defg'.includes(variant) && l === 0) ? '' : ` Level="${l}"`);
+    const header = (field: string, l: number) => (n: number) =>
+      `<Item${n} Ref="${R()}" ControlType="GroupHeaderBand" Name="gh${field}"${levelOf(l)} HeightF="20">` +
+      `<GroupFields><Item1 Ref="${R()}" FieldName="${field}" /></GroupFields><Controls>${label(`h${field}`, `'${field} ' + [${field}]`, l ? 0 : 20)}</Controls></Item${n}>`;
+    const footer = (field: string, l: number) => (n: number) =>
+      `<Item${n} Ref="${R()}" ControlType="GroupFooterBand" Name="gf${field}"${levelOf(l)} HeightF="20">` +
+      `<Controls>${label(`f${field}`, `'end ${field} ' + sumSum([Qty])`, l ? 0 : 20, 'Group')}</Controls></Item${n}>`;
+    const flipped = variant === 'b' || variant === 'e';
+    const heads = flipped ? [header('Category', 0), header('Region', 1)] : [header('Region', 1), header('Category', 0)];
+    const foots = variant === 'f' ? [footer('Region', 1)] : variant === 'g' ? [footer('Region', 0)]
+      : flipped ? [footer('Category', 0), footer('Region', 1)] : [footer('Region', 1), footer('Category', 0)];
+    const parts = [
+      (n: number) => `<Item${n} Ref="${R()}" ControlType="TopMarginBand" Name="TopMargin" HeightF="20" />`,
+      ...heads,
+      (n: number) => `<Item${n} Ref="${R()}" ControlType="DetailBand" Name="Detail" HeightF="20"><Controls>${label('dQty', "[Region] + '/' + [Category] + ' ' + [Qty]", 40)}</Controls></Item${n}>`,
+      ...foots,
+      (n: number) => `<Item${n} Ref="${R()}" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="20" />`,
+    ];
+    return '<?xml version="1.0" encoding="utf-8"?>' +
+      '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="Nested" ReportUnit="HundredthsOfAnInch" Margins="20, 20, 20, 20" PageWidth="850" PageHeight="1100" Version="20.1" DataMember="Items" Font="Arial, 8pt">' +
+      `<Bands>${parts.map((p, i) => p(i + 1)).join('')}</Bands></XtraReportsLayoutSerializer>`;
+  }
+
+  for (const variant of Object.keys(PRINTED)) {
+    it(`nests variant ${variant} as DevExpress did`, () => {
+      const page = paginate(parseReportStructure(report(variant)), ROWS.length, { rows: ROWS }).pages[0];
+      const texts = page.bands.flatMap((band) => band.controls.map((pc) => ({ y: band.top + pc.y, s: pc.text ?? '' })))
+        .sort((a, b) => a.y - b.y).map((t) => t.s);
+      expect(texts).toEqual(PRINTED[variant]);
+    });
+  }
 });

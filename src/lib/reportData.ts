@@ -163,6 +163,56 @@ export function aggregate(
 /** How a value prints with no format, re-exported for the renderer. */
 export { valueText };
 
+// ------------------------------------------------------- order and groups
+
+/** A field to sort or group by, as a band declares it. `None` groups without sorting. */
+export interface OrderKey {
+  field: string;
+  order: 'Ascending' | 'Descending' | 'None';
+}
+
+/**
+ * Compare for sorting: null first, strings by en-US collation, everything else
+ * by value. The collation is .NET's culture default for en-US, not measured
+ * against DevExpress beyond the ordinary names the parity cases used.
+ */
+export function sortCompare(a: Value, b: Value): number {
+  if (a === null || b === null) return a === b ? 0 : a === null ? -1 : 1;
+  if (typeof a === 'string' && typeof b === 'string') return a.localeCompare(b, 'en-US');
+  return compareValues(a, b) ?? 0;
+}
+
+/** The records' print order: a stable sort by each key in turn, the first key outermost. */
+export function sortedOrder(records: readonly TypedRow[], keys: readonly OrderKey[]): number[] {
+  const order = records.map((_, i) => i);
+  const active = keys.filter((k) => k.order !== 'None');
+  if (!active.length) return order;
+  return order.sort((x, y) => {
+    for (const k of active) {
+      const c = sortCompare(records[x][k.field] ?? null, records[y][k.field] ?? null);
+      if (c) return k.order === 'Descending' ? -c : c;
+    }
+    return 0;
+  });
+}
+
+const sameValue = (a: Value, b: Value) => (a === null || b === null ? a === b : compareValues(a, b) === 0);
+
+/**
+ * The groups at one level: runs of consecutive records sharing every value in
+ * `fields`, as indices. Each run is its own array, and the arrays are what the
+ * summary cache is keyed on, so one run must stay one array.
+ */
+export function groupRuns(records: readonly TypedRow[], fields: readonly string[]): number[][] {
+  const runs: number[][] = [];
+  records.forEach((row, i) => {
+    const prev = i ? records[i - 1] : null;
+    if (prev && fields.every((f) => sameValue(prev[f] ?? null, row[f] ?? null))) runs[runs.length - 1].push(i);
+    else runs.push([i]);
+  });
+  return runs;
+}
+
 // ------------------------------------------------------------ band text
 
 /**
@@ -280,6 +330,11 @@ export class ReportData {
   }
 
   readonly param = (name: string): Value => this.params.get(name) ?? null;
+
+  /** The same data with its records in `order`, which is print order from then on. */
+  reordered(order: readonly number[]): ReportData {
+    return new ReportData(order.map((i) => this.records[i]), this.params);
+  }
 
   /** What a control bound to `data` prints in `scope`; null when it has no binding. */
   text(data: TextData, scope: TextScope): string | null {

@@ -7,7 +7,7 @@
  * layout tests check end to end.
  */
 import { describe, it, expect } from 'vitest';
-import { ReportData, typeRows, type TextData, type TextScope } from './reportData';
+import { ReportData, groupRuns, sortCompare, sortedOrder, typeRows, type TextData, type TextScope } from './reportData';
 
 type Spec = [name: string, expression: string, x: number, y: number, running?: string, format?: string];
 const SPEC: Record<string, Spec[]> = {
@@ -238,5 +238,56 @@ describe('ReportData', () => {
     expect(row.when).toBeInstanceOf(Date);
     expect(row.ok).toBe(true);
     expect(row.s).toBe('007x');
+  });
+});
+
+describe('order and groups', () => {
+  const rows = typeRows([
+    { Region: 'West', Customer: 'C3', Qty: '2' },
+    { Region: 'north', Customer: 'C1', Qty: '10' },
+    { Region: 'West', Customer: 'C9', Qty: '1' },
+    { Region: '', Customer: 'C5', Qty: '7' },
+    { Region: 'North', Customer: 'C2', Qty: '3' },
+  ]);
+
+  it('sorts by each key in turn, outermost first, with a descending key reversed', () => {
+    const order = sortedOrder(rows, [
+      { field: 'Region', order: 'Ascending' },
+      { field: 'Customer', order: 'Descending' },
+    ]);
+    // Null first; en-US collation puts "north" before "North"; Customer descending within.
+    expect(order.map((i) => rows[i].Customer)).toEqual(['C5', 'C1', 'C2', 'C9', 'C3']);
+  });
+
+  it('compares numbers as numbers, not as text', () => {
+    expect(sortedOrder(rows, [{ field: 'Qty', order: 'Ascending' }]).map((i) => String(rows[i].Qty))).toEqual(['1', '2', '3', '7', '10']);
+  });
+
+  it('keeps the data order for None, and between equal keys', () => {
+    expect(sortedOrder(rows, [{ field: 'Region', order: 'None' }])).toEqual([0, 1, 2, 3, 4]);
+    const same = typeRows([{ k: 'a', n: '1' }, { k: 'a', n: '2' }, { k: 'a', n: '3' }]);
+    expect(sortedOrder(same, [{ field: 'k', order: 'Ascending' }])).toEqual([0, 1, 2]);
+  });
+
+  it('breaks consecutive records into runs that share every grouping field', () => {
+    const sorted = typeRows([
+      { R: 'A', C: 'X' }, { R: 'A', C: 'X' }, { R: 'A', C: 'Y' }, { R: 'B', C: 'Y' }, { R: 'B', C: 'Y' },
+    ]);
+    expect(groupRuns(sorted, ['R'])).toEqual([[0, 1, 2], [3, 4]]);
+    expect(groupRuns(sorted, ['R', 'C'])).toEqual([[0, 1], [2], [3, 4]]);
+    expect(groupRuns([], ['R'])).toEqual([]);
+  });
+
+  it('orders null before anything and equal values as equal', () => {
+    expect(sortCompare(null, 'a')).toBeLessThan(0);
+    expect(sortCompare(null, null)).toBe(0);
+    expect(sortCompare(2n, 10n)).toBeLessThan(0);
+  });
+
+  it('reorders its records into print order', () => {
+    const data = ReportData.from([{ Qty: '3' }, { Qty: '1' }, { Qty: '2' }], 3, [], []);
+    const sorted = data.reordered(sortedOrder(data.records, [{ field: 'Qty', order: 'Ascending' }]));
+    expect(sorted.records.map((r) => String(r.Qty))).toEqual(['1', '2', '3']);
+    expect(sorted.text({ expression: 'sumRunningSum([Qty])', running: 'Report', format: null }, { row: 1, anchor: 1, report: [0, 1, 2], group: null, page: null })).toBe('3');
   });
 });

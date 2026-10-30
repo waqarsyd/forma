@@ -479,6 +479,15 @@ Both files round-trip: the designer's own output and a hand-written Forma-shaped
 
 `repxAudit.ts` gained two checks from this, both for failures DevExpress accepts silently: a `GroupHeaderBand` with no `<GroupFields>` groups by nothing and prints once, which looks like a heading; and a `GroupFooterBand` with no header never breaks, so its subtotal becomes a second grand total above the real one.
 
+**Nesting is decided by `Level`, not by file order (measured 2026-10-30, case s19 of `docs/proposals/devexpress-parity.md`).** Two group headers over the same records were printed seven ways:
+
+- The higher `Level` is the outer group, in either file order.
+- A missing `Level` is 0. Between equal levels the band LATER in the file is the outer one, so two headers written outer-first with no `Level` nest the wrong way round: Region then Category in the file printed Category outside Region.
+- A designer-saved file writes `Level="1"` on the outer band and omits the inner band's default 0. That nests correctly in either file order.
+- A group footer closes the group whose header declares its level, with ties paired in file order. A lone footer with `Level="1"` closed the outer group; one with no `Level` closed the inner one.
+
+Nothing in the prompt mentions `Level`, so a nested grouping the model writes outer-first without it would print inside out. `reportPreview.ts` now draws what DevExpress prints, so the Preview shows that. Whether the generator should write `Level` or a repair should add it is a separate decision, recorded in the parity proposal rather than made here.
+
 ### A total with no running scope prints blank (2026-10-30)
 
 Every measurement above was of what the serializer *writes*. `RepxProbe render`, added for the DevExpress parity work in [`devexpress-parity.md`](../proposals/devexpress-parity.md), asks what DevExpress *prints* over real data, and its first result overturned a belief recorded in this note and in RepxProbe's README since 2026-09-05.

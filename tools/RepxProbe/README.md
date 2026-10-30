@@ -41,6 +41,11 @@ PNG and HTML. A failed export is recorded in `render.json` rather than thrown,
 because a format this install cannot produce is itself a finding. The culture is
 pinned to en-US; this machine's own culture would print rupees.
 
+**`render.json` is not every brick that prints.** A record whose box crosses into
+the page footer printed in the exported PDF and had no brick in the dump (cases
+c05 and c05d, 2026-10-30). Before concluding DevExpress dropped something, read
+the PDF; `pdfjs-dist` is already a dependency.
+
 The first thing it measured overturned a line in this file's own history: an
 aggregate such as `sumSum([Amount])` with **no `<Summary>` element prints
 blank**, in a group footer and in the report footer. The `emit-group` note

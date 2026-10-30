@@ -350,8 +350,9 @@ src/
                        criteria (DevExpress's expression language, evaluated
                        with .NET's types over the Preview's test data),
                        reportData (test rows typed by column, calculated
-                       fields, parameter defaults, and which records each
-                       printed band's totals and fields read),
+                       fields, parameter defaults, their print order and
+                       groups, and which records each printed band's totals
+                       and fields read),
                        textMeasure (how many lines a text breaks into and how
                        tall that prints, so the Preview grows controls and
                        breaks pages where DevExpress does),

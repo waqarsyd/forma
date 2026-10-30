@@ -39,7 +39,7 @@
 import { formatComposite, formatDate, toRoman } from './netFormat';
 import { unitsPerInch } from './reportGeometry';
 import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, type FontSpec, type MeasureText } from './textMeasure';
-import { ReportData, type CalculatedField, type TextData, type TextScope } from './reportData';
+import { ReportData, groupRuns, sortedOrder, type CalculatedField, type TextData, type TextScope } from './reportData';
 import { parseParameters, type ReportParameter } from './repxParameters';
 
 /** The bands that carry content, in the order XtraReports prints them. */
@@ -402,6 +402,48 @@ export interface PreviewBand {
   printOn: string;
   /** `PrintAtBottom="true"` on a report footer: printed at the foot of its page. */
   printAtBottom: boolean;
+  /**
+   * `<GroupFields>` on a group header, `<SortFields>` on Detail, in file order.
+   * Printed: groups came out in ascending order of their field whatever order
+   * the data arrived in, and a descending `SortFields` on Detail sorted the
+   * records within each group.
+   */
+  fields: BandField[];
+  /**
+   * `Level` as written, 0 when absent. It decides nesting, NOT the file order:
+   * measured in case s19, the higher level is the outer group, and between
+   * equal levels the band LATER in the file is the outer one -- so two group
+   * headers written outer-first with no `Level` nest the other way round. A
+   * group footer closes the group whose header has its level.
+   */
+  level: number;
+  /** `RepeatEveryPage="true"` on a group header: printed again at the top of each page its group continues onto. */
+  repeatEveryPage: boolean;
+  /** `GroupUnion` on a group header: `None`, `WholePage` or `WithFirstDetail`. */
+  groupUnion: string;
+  /** `PageBreak`: `None`, `BeforeBand`, `BeforeBandExceptFirstEntry`, `AfterBand` or `AfterBandExceptLastEntry`. */
+  pageBreak: string;
+}
+
+/** One `GroupFields` or `SortFields` item. `None` groups without sorting. */
+export interface BandField {
+  field: string;
+  order: 'Ascending' | 'Descending' | 'None';
+}
+
+/** A band's `<GroupFields>` or `<SortFields>`, from its own part of the file. */
+function parseBandFields(bandText: string, tag: 'GroupFields' | 'SortFields'): BandField[] {
+  const head = bandText.split(/<(?:Controls|Bands|SubBands)\b/)[0];
+  const block = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(head);
+  if (!block) return [];
+  const out: BandField[] = [];
+  for (const m of block[1].matchAll(/<Item\d+\b([^>]*?)\/?>/g)) {
+    const field = attrOf(m[1], 'FieldName');
+    if (!field) continue;
+    const order = attrOf(m[1], 'SortOrder');
+    out.push({ field, order: order === 'Descending' ? 'Descending' : order === 'None' ? 'None' : 'Ascending' });
+  }
+  return out;
 }
 
 export interface ReportStructure {
@@ -1346,6 +1388,11 @@ export function parseReportStructure(xml: string | undefined | null): ReportStru
       canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
       printOn: attrOf(item.attrs, 'PrintOn') || 'AllPages',
       printAtBottom: (attrOf(item.attrs, 'PrintAtBottom') ?? '').toLowerCase() === 'true',
+      fields: bandSpan ? parseBandFields(bandSpan.text, kind === 'Detail' ? 'SortFields' : 'GroupFields') : [],
+      level: numAttr(item.attrs, 'Level', 0),
+      repeatEveryPage: (attrOf(item.attrs, 'RepeatEveryPage') ?? '').toLowerCase() === 'true',
+      groupUnion: attrOf(item.attrs, 'GroupUnion') || 'None',
+      pageBreak: attrOf(item.attrs, 'PageBreak') || 'None',
     });
   }
 
@@ -1420,6 +1467,8 @@ export interface BandInstance {
   record: number | null;
   height: number;
   controls: PlacedControl[];
+  /** The records its text read, when there is test data; kept to reprint it once its page is known. */
+  scope?: TextScope | null;
 }
 
 interface LayoutContext {
@@ -1586,6 +1635,7 @@ export function layoutBand(
   return {
     band,
     record,
+    scope,
     height: band.canGrow ? band.height + Math.max(0, placedBottom - designBottom) : band.height,
     controls: items.map((it) => ({
       control: it.control,
@@ -1640,11 +1690,28 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string): 
     if (pc.y >= avail - EPS) { below.push(pc); continue; }
 
     const c = pc.control;
-    if (pc.lines && pc.lines.length > 1) {
+    if (MEASURED_TYPES.has(c.type)) {
       const inset = insetsPt(c.appearance, c.borders);
       const spacing = toUnits(lineSpacingPt(c.fontFamily ?? 'Times New Roman', c.fontSize ?? 9.75));
       const fit = Math.floor((avail - pc.y - toUnits(inset.top)) / spacing + EPS);
-      if (fit >= 1 && fit < pc.lines.length) {
+      // Unmeasured text is taken as one line.
+      const lineCount = pc.lines ? pc.lines.length : pc.text ? 1 : 0;
+      // An empty label has no line to keep, so it goes with its record: c02's
+      // record 12, with empty notes, moved to page 2 whole.
+      if (lineCount >= 1 && fit >= lineCount) {
+        /*
+         * Every line fits above the cut, so the label stays on this page and
+         * only its box is cut -- even a one-line label whose box crosses into
+         * the page footer. Printed in c05 and c05d: records C0052 and C0088
+         * ended 1 and 5 units past the footer's top and printed there anyway,
+         * and the rest of their band carried over and pushed the next page's
+         * first record down by 3 and 7 units. A label whose line does NOT fit
+         * moved whole (s20). Until 2026-10-30 such a label always moved.
+         */
+        first.push({ ...pc, height: avail - pc.y });
+        continue;
+      }
+      if (pc.lines && fit >= 1) {
         const rest = pc.lines.slice(fit);
         first.push({ ...pc, height: avail - pc.y, lines: pc.lines.slice(0, fit) });
         crossing.push({
@@ -1688,10 +1755,12 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string): 
 
   const contentBottom = Math.max(0, ...inst.controls.map((pc) => pc.y + pc.height));
   const gap = Math.max(0, inst.height - contentBottom);
-  const restHeight = rest.length ? Math.max(...rest.map((pc) => pc.y + pc.height)) + gap : 0;
+  // With nothing left to print, the band's own remainder still carries over:
+  // printed, it pushed the next page's first record down by exactly that much.
+  const restHeight = rest.length ? Math.max(...rest.map((pc) => pc.y + pc.height)) + gap : Math.max(0, inst.height - avail);
   return [
-    { band: inst.band, record: inst.record, height: avail, controls: first },
-    rest.length ? { band: inst.band, record: inst.record, height: restHeight, controls: rest } : null,
+    { band: inst.band, record: inst.record, scope: inst.scope, height: avail, controls: first },
+    restHeight > EPS ? { band: inst.band, record: inst.record, scope: inst.scope, height: restHeight, controls: rest } : null,
   ];
 }
 
@@ -1726,6 +1795,8 @@ export interface PlacedBand {
   width: number;
   /** 1-based record number for a repeated Detail band; null for everything else. */
   record: number | null;
+  /** As on `BandInstance`. */
+  scope?: TextScope | null;
 }
 
 export interface PreviewPage {
@@ -1793,49 +1864,108 @@ export function paginate(
   const maxPages = options.maxPages ?? 50;
   const problems = [...structure.problems];
   const bands = structure.bands;
+
+  /*
+   * Group nesting, as DevExpress decides it -- by `Level`, not by file order.
+   * Measured in case s19: the higher level is the outer group; between equal
+   * levels, and a missing `Level` is 0, the band LATER in the file is the outer
+   * one; and a group footer closes the group whose header declares its level,
+   * ties paired in file order. Until 2026-10-30 this took the file order as
+   * outer-first, which nests a file with no `Level` the wrong way round.
+   */
+  const outerFirst = (kind: BandKind) =>
+    bands
+      .map((band, index) => ({ band, index }))
+      .filter((x) => x.band.kind === kind)
+      .sort((x, y) => y.band.level - x.band.level || y.index - x.index)
+      .map((x) => x.band);
+  const groupHeaders = outerFirst('GroupHeader');
+  const footerOf = new Map<PreviewBand, PreviewBand>();
+  const unpaired = outerFirst('GroupFooter').reverse();
+  for (const header of [...groupHeaders].reverse()) {
+    const i = unpaired.findIndex((f) => f.level === header.level);
+    if (i >= 0) footerOf.set(header, unpaired.splice(i, 1)[0]);
+  }
+  /** Footers innermost first, as they print after the records; an unpaired one prints last. */
+  const groupFooters = [
+    ...[...groupHeaders].reverse().flatMap((h) => (footerOf.has(h) ? [footerOf.get(h)!] : [])),
+    ...unpaired,
+  ];
+
   // The test data, typed, with calculated fields and parameter defaults: what
-  // a binding, a summary and a format string are evaluated against.
-  const data = options.rows?.length
+  // a binding, a summary and a format string are evaluated against. Then put
+  // in print order: sorted by every group's fields, outermost first, then by
+  // Detail's SortFields -- printed, groups came out in ascending order whatever
+  // order the rows arrived in, and a descending sort within them held.
+  let data = options.rows?.length
     ? ReportData.from(options.rows, records, structure.calculatedFields, structure.parameters)
     : null;
+  let order: number[] | null = null;
+  if (data) {
+    order = sortedOrder(data.records, [
+      ...groupHeaders.flatMap((h) => h.fields),
+      ...(findBand(bands, 'Detail')?.fields ?? []),
+    ]);
+    data = data.reordered(order);
+  }
   const ctx: LayoutContext = { measure: options.measure ?? null, unit: structure.unit, data };
-  const rowFor = (i: number) => (options.rows?.length ? options.rows[i % options.rows.length] : null);
+  const rowFor = (i: number) =>
+    options.rows?.length ? options.rows[(order ? order[i] : i) % options.rows.length] : null;
 
   /*
    * The records each printed band reads; see `TextScope` for what DevExpress
-   * printed. Record indices are 0-based, in print order. Until parity row 10
-   * draws groups from data the Preview draws one group around every record, so
-   * a group's records are all of them. With no group bands at all, `Group`
-   * prints "?" in Detail too: measured in case s17b.
+   * printed. Record indices are 0-based, in print order. Each group level
+   * breaks the records into runs sharing that level's fields and every outer
+   * level's; without test data there is nothing to break on, so each level is
+   * one run around every record -- the band structure, not the data. With no
+   * group bands at all, `Group` prints "?" in Detail too: measured in case s17b.
    */
-  const all: number[] = Array.from({ length: data ? records : 0 }, (_, i) => i);
+  const positions: number[] = Array.from({ length: records }, (_, i) => i);
+  const all: number[] = data ? positions : [];
   const firstRecord = all.length ? 0 : null;
   const lastRecord = all.length ? all.length - 1 : null;
-  const grouped = bands.some((b) => b.kind === 'GroupHeader' || b.kind === 'GroupFooter');
+  const grouped = groupHeaders.length > 0 || groupFooters.length > 0;
+  const levelRuns: number[][][] = groupHeaders.map((_, k) =>
+    data
+      ? groupRuns(data.records, groupHeaders.slice(0, k + 1).flatMap((h) => h.fields.map((f) => f.field)))
+      : [positions],
+  );
+  /** The innermost group each record is in, for a Detail band's `Group` summaries. */
+  const innermost: (readonly number[])[] = [];
+  for (const run of levelRuns[levelRuns.length - 1] ?? []) for (const i of run) innermost[i] = run;
   const scopeFor = (
     kind: BandKind,
     record: number | null,
     page: readonly number[] | null,
     before: number | null,
+    run: readonly number[] | null = null,
   ): TextScope => {
     const base = { report: all, group: null as readonly number[] | null, page };
     const pageFirst = page ? page[0] ?? before : firstRecord;
     const pageLast = page ? page[page.length - 1] ?? before : lastRecord;
+    const group = run && data ? run : grouped ? all : null;
+    const runFirst = group?.length ? group[0] : null;
+    const runLast = group?.length ? group[group.length - 1] : null;
     switch (kind) {
       case 'Detail': {
         const i = record === null ? null : record - 1;
-        return { ...base, group: grouped ? all : null, row: i, anchor: i };
+        const own = i !== null && data && innermost[i] ? innermost[i] : grouped ? all : null;
+        return { ...base, group: own, row: i, anchor: i };
       }
-      case 'GroupHeader': return { ...base, group: all, row: firstRecord, anchor: lastRecord };
-      case 'GroupFooter': return { ...base, group: all, row: lastRecord, anchor: lastRecord };
+      case 'GroupHeader': return { ...base, group, row: runFirst, anchor: runLast };
+      case 'GroupFooter': return { ...base, group, row: runLast, anchor: runLast };
       case 'ReportHeader': return { ...base, row: firstRecord, anchor: lastRecord };
       case 'ReportFooter': return { ...base, row: lastRecord, anchor: lastRecord };
       case 'PageHeader': case 'TopMargin': return { ...base, row: pageFirst, anchor: pageLast };
       default: return { ...base, row: pageLast, anchor: pageLast };
     }
   };
-  const instance = (band: PreviewBand, record: number | null = null, values: RecordValues | null = null) =>
-    layoutBand(band, record, values, ctx, scopeFor(band.kind, record, null, null));
+  const instance = (
+    band: PreviewBand,
+    record: number | null = null,
+    values: RecordValues | null = null,
+    run: readonly number[] | null = null,
+  ) => layoutBand(band, record, values, ctx, scopeFor(band.kind, record, null, null, run));
 
   const topMargin = Math.max(structure.margins.top, findBand(bands, 'TopMargin')?.height ?? 0);
   const bottomMargin = Math.max(structure.margins.bottom, findBand(bands, 'BottomMargin')?.height ?? 0);
@@ -1847,18 +1977,12 @@ export function paginate(
   const pageFooter = findBand(bands, 'PageFooter');
 
   /*
-   * Every group band, not the first.
-   *
-   * DevExpress nests groups by emitting several GroupHeaderBands, each with its
-   * own GroupFields and Level -- region, then category within it. Taking only
-   * `find`'s first match drew the outer group and silently dropped the inner
-   * one, which is precisely the "looks right, is missing content" failure this
-   * preview exists to expose. Headers print outermost-first, footers in the
-   * reverse order, which is what the file order already gives once the footers
-   * are read back to front.
+   * Every group band, not the first: `groupHeaders` and `groupFooters` above.
+   * DevExpress nests groups by emitting several GroupHeaderBands -- region,
+   * then category within it -- and taking only `find`'s first match once drew
+   * the outer group and silently dropped the inner one, which is precisely the
+   * "looks right, is missing content" failure this preview exists to expose.
    */
-  const groupHeaders = bands.filter((b) => b.kind === 'GroupHeader');
-  const groupFooters = [...bands.filter((b) => b.kind === 'GroupFooter')].reverse();
 
   // The page furniture prints the same on every page, so it is laid out once.
   const reportHeaderInst = reportHeader ? instance(reportHeader) : null;
@@ -1879,6 +2003,15 @@ export function paginate(
   let cursor = 0;
   /** Where content starts on the current page, below its headers. */
   let pageContentTop = 0;
+  /**
+   * The group headers whose groups are open, outermost first. A new page
+   * reprints those marked `RepeatEveryPage` below its page header: printed, the
+   * South and West headers reappeared at the top of the pages their groups ran
+   * onto.
+   */
+  const openGroups: BandInstance[] = [];
+  /** A band asked for a page break after itself; the next thing placed starts a new page. */
+  let breakPending = false;
 
   /*
    * Where band content goes across the page: from the left margin, as wide as
@@ -1926,6 +2059,7 @@ export function paginate(
   /** A placement at the full printable width, from an instance. */
   const at = (inst: BandInstance, top: number): PlacedBand => ({
     band: inst.band, height: inst.height, controls: inst.controls, top, left: contentLeft, width: fullWidth, record: inst.record,
+    scope: inst.scope,
   });
 
   const startPage = (withReportHeader = false) => {
@@ -1947,6 +2081,11 @@ export function paginate(
     const footerHere = !!pageFooterInst && !(headerPage && skips(pageFooter, 'NotWithReportHeader'));
     if (footerHere) current.bands.push(at(pageFooterInst!, footerBottom - pageFooterInst!.height));
     pageBottom = footerBottom - (footerHere ? pageFooterInst!.height : 0);
+    for (const header of openGroups) {
+      if (!header.band.repeatEveryPage) continue;
+      current.bands.push(at(header, cursor));
+      cursor += header.height;
+    }
     pageContentTop = cursor;
   };
 
@@ -1991,8 +2130,6 @@ export function paginate(
 
   startPage(true);
 
-  for (const header of groupHeaders) place(instance(header));
-
   let placedRecords = 0;
   if (detail && records > 0) {
     const usable = ordinaryPageBottom - topMargin - (pageHeader?.height ?? 0);
@@ -2003,17 +2140,105 @@ export function paginate(
           'design went into one band instead of being split across ReportHeader, PageHeader and Detail.',
       );
     }
-    // Only the columns DevExpress prints: a declared count with no Mode is one.
-    const columns = activeColumns(detail.columns, fullWidth);
+  }
+  // Only the columns DevExpress prints: a declared count with no Mode is one.
+  const columns = detail && records > 0 ? activeColumns(detail.columns, fullWidth) : null;
 
-    if (!columns) {
+  if (!columns) {
+    /*
+     * Groups from the data (parity row 10), as one sequence of band instances
+     * laid out first and placed second, because two rules need to look ahead:
+     *
+     * - `GroupUnion="WholePage"` moved a group that did not fit in the room
+     *   left to the next page whole -- c05b printed one group per page -- and
+     *   `WithFirstDetail` moved a header that fitted at the foot of a page with
+     *   its first record when that record did not (c05e). By default the
+     *   header stays there alone (c05d). A group too tall for any page is not
+     *   moved, which was not measured.
+     * - `PageBreak="AfterBand"` on a group footer started a new page after
+     *   every group, the last included, so the grand total printed alone (c05c).
+     *
+     * Each level's header prints when its run starts and its footer when it
+     * ends, so nested groups open outermost first and close innermost first.
+     */
+    type Step = { inst: BandInstance | null; role: 'header' | 'detail' | 'footer' | 'end'; level: number; first: boolean; last: boolean };
+    const steps: Step[] = [];
+    const runAt = levelRuns.map(() => 0);
+    const openStep = (k: number) => {
+      const runs = levelRuns[k];
+      const run = runs[runAt[k]] ?? [];
+      steps.push({ inst: instance(groupHeaders[k], null, run.length ? rowFor(run[0]) : null, run), role: 'header', level: k, first: runAt[k] === 0, last: runAt[k] === runs.length - 1 });
+    };
+    const closeStep = (k: number) => {
+      const runs = levelRuns[k];
+      const run = runs[runAt[k]] ?? [];
+      const footer = footerOf.get(groupHeaders[k]);
+      const meta = { level: k, first: runAt[k] === 0, last: runAt[k] === runs.length - 1 };
+      steps.push(footer ? { inst: instance(footer, null, run.length ? rowFor(run[run.length - 1]) : null, run), role: 'footer', ...meta } : { inst: null, role: 'end', ...meta });
+      runAt[k]++;
+    };
+    const unpairedSteps = () => {
+      for (const footer of unpaired) steps.push({ inst: instance(footer), role: 'footer', level: -1, first: true, last: true });
+    };
+    if (records > 0) {
       for (let i = 0; i < records; i++) {
-        const record = instance(detail, i + 1, rowFor(i));
-        if (pages.length >= maxPages && cursor + record.height > pageBottom) break;
-        place(record);
-        placedRecords++;
+        for (let k = 0; k < groupHeaders.length; k++) if (levelRuns[k][runAt[k]]?.[0] === i) openStep(k);
+        if (detail) steps.push({ inst: instance(detail, i + 1, rowFor(i)), role: 'detail', level: groupHeaders.length, first: i === 0, last: i === records - 1 });
+        for (let k = groupHeaders.length - 1; k >= 0; k--) {
+          const run = levelRuns[k][runAt[k]];
+          if (run && run[run.length - 1] === i) closeStep(k);
+        }
       }
     } else {
+      // No records: every group band once, around nothing.
+      for (let k = 0; k < groupHeaders.length; k++) openStep(k);
+      for (let k = groupHeaders.length - 1; k >= 0; k--) closeStep(k);
+    }
+    unpairedSteps();
+
+    const height = (from: number, to: number) => {
+      let total = 0;
+      for (let s = from; s <= to && s < steps.length; s++) total += steps[s].inst?.height ?? 0;
+      return total;
+    };
+    /** The room a page has for content once its page header and repeated group headers are down. */
+    const freshRoom = () =>
+      ordinaryPageBottom - topMargin - (pageHeaderInst?.height ?? 0) -
+      openGroups.reduce((sum, h) => sum + (h.band.repeatEveryPage ? h.height : 0), 0);
+    const atContentTop = () => cursor <= pageContentTop + EPS;
+
+    for (let s = 0; s < steps.length; s++) {
+      const step = steps[s];
+      if (step.role === 'end') {
+        openGroups.length = Math.min(openGroups.length, step.level);
+        continue;
+      }
+      const inst = step.inst!;
+      const band = inst.band;
+      if (pages.length >= maxPages && cursor + inst.height > pageBottom + EPS) break;
+      const breaksBefore = band.pageBreak === 'BeforeBand' || (band.pageBreak === 'BeforeBandExceptFirstEntry' && !step.first);
+      if ((breakPending || breaksBefore) && !atContentTop()) startPage();
+      breakPending = false;
+      if (step.role === 'header' && (band.groupUnion === 'WholePage' || band.groupUnion === 'WithFirstDetail')) {
+        // The whole group runs to the step that closes this level; the header
+        // with its first record runs to the first Detail after it.
+        const closes = (t: Step) =>
+          band.groupUnion === 'WholePage' ? (t.role === 'footer' || t.role === 'end') && t.level === step.level : t.role === 'detail';
+        let end = s + 1;
+        while (end < steps.length && !closes(steps[end])) end++;
+        const need = height(s, end);
+        if (need > pageBottom - cursor + EPS && need <= freshRoom() + EPS && !atContentTop()) startPage();
+      }
+      place(inst);
+      if (step.role === 'detail') placedRecords++;
+      if (step.role === 'header') openGroups.push(inst);
+      if (step.role === 'footer' && step.level >= 0) openGroups.length = Math.min(openGroups.length, step.level);
+      if (band.pageBreak === 'AfterBand' || (band.pageBreak === 'AfterBandExceptLastEntry' && !step.last)) breakPending = true;
+    }
+    openGroups.length = 0;
+  } else if (detail) {
+    for (const header of groupHeaders) place(instance(header));
+    {
       /*
        * Multi-column flow.
        *
@@ -2074,6 +2299,7 @@ export function paginate(
           left: contentLeft + column * (columnWidth + columns.spacing),
           width: columnWidth,
           record: i + 1,
+          scope: slot.scope,
         });
         onPage++;
         rowsUsed = Math.max(rowsUsed, row + 1);
@@ -2085,11 +2311,14 @@ export function paginate(
       // vertical cursor cannot describe two records at the same height.
       cursor = pageTop + rowsUsed * detail.height;
     }
+    for (const footer of groupFooters) place(instance(footer));
   }
 
-  for (const footer of groupFooters) place(instance(footer));
-
   if (reportFooter) {
+    // A page break asked for after the last group: printed, the grand total
+    // went to a page of its own (c05c).
+    if (breakPending && cursor > pageContentTop + EPS) startPage();
+    breakPending = false;
     const rf = instance(reportFooter);
     // A page footer marked NotWithReportFooter is not printed on the page the
     // report footer prints on, so that page has the footer's room as well.
@@ -2136,8 +2365,10 @@ export function paginate(
     const sensitive = new Set(
       bands.filter((b) => b.kind === 'PageHeader' || b.kind === 'PageFooter' || b.controls.some(readsPage)),
     );
+    // An empty remainder carried over a break prints nothing, so it does not
+    // put its record on that page -- not measured, since nothing it prints shows.
     const detailRecords = (page: PreviewPage) =>
-      page.bands.filter((b) => b.band.kind === 'Detail' && b.record !== null).map((b) => b.record! - 1);
+      page.bands.filter((b) => b.band.kind === 'Detail' && b.record !== null && b.controls.length > 0).map((b) => b.record! - 1);
     // Every record with any part on the page, a split one on both of its pages.
     const onPage = pages.map((page) => [...new Set(detailRecords(page))].sort((a, b) => a - b));
     const finishesOn = new Map<number, number>();
@@ -2152,7 +2383,12 @@ export function paginate(
       page.bands = page.bands.map((pb) => {
         if (!sensitive.has(pb.band)) return pb;
         const own = pb.band.kind === 'Detail' && pb.record !== null ? finishesOn.get(pb.record - 1) ?? k : k;
-        const scope = scopeFor(pb.band.kind, pb.record, onPage[own], before[own]);
+        // A page band reads the page's records; anything else keeps the
+        // records it was laid out with -- its group -- and learns its page.
+        const pageBand = pb.band.kind === 'PageHeader' || pb.band.kind === 'PageFooter';
+        const scope = pageBand || !pb.scope
+          ? scopeFor(pb.band.kind, pb.record, onPage[own], before[own])
+          : { ...pb.scope, page: onPage[own] };
         const values = pb.record !== null ? rowFor(pb.record - 1) : null;
         return { ...pb, controls: pb.controls.map((pc) => retext(pc, values, ctx, scope)) };
       });

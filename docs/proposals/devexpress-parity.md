@@ -39,6 +39,8 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 | s17-scopes | Every summary scope, a running sum, a record number and a bound field in every band, over 50 records in three groups on three pages. |
 | s17b-nogroup | s17 without the group bands. |
 | s18-invoice | An invoice as Forma writes one: a bound table, a calculated line total, money formats, a page total and a grand total, over 40 records with wrapping text. |
+| s19a to s19g | Two nested group headers and their footers over twelve records, with `Level` in either order, with none, with only the outer one, and with a single footer. |
+| s20-pfgap | A page footer whose only label sits 40 units down or at its top, to see whether content may use the empty part of the band. |
 
 ## How DevExpress 20.1 behaves
 
@@ -99,6 +101,8 @@ Not measured: DevExpress versions above 20.1; subreports; charts and cross-tabs 
 - `GroupUnion="WholePage"` moved a group that did not fit in the remaining space to the next page whole, so c05b printed one group per page.
 - `PageBreak="AfterBand"` on the group footer started a new page after every group, including the last, so the grand total printed alone on page 4.
 - **Orphan control.** By default a group header that fits at the foot of a page prints there even when its first record does not fit, leaving the header alone at the bottom. `GroupUnion="WithFirstDetail"` moved the header to the next page with its first record.
+- **Nesting follows `Level`** (s19). The higher level is the outer group whatever the file order. A missing `Level` is 0, and between equal levels the later band is outer. A group footer closes the group whose header declares its level.
+- **A label stays on its page when its text line fits above the break, even if its box does not.** In c05 and c05d, records C0052 and C0088 printed at the foot of page 1 with their boxes 1 and 5 units into the page footer's band. The rest of their band carried to the next page, pushing its first record down by 3 and 7 units. In s20 a label whose line did not fit moved whole, and the page footer's empty top was never used.
 - Subtotals, counts, a running sum, a calculated field and the grand total all matched the data to the cent.
 - **An aggregate needs a `Summary` element.** `sumSum([Amount])` with no `<Summary>` printed blank, in a group footer and in the report footer alike. `Running="Group"` printed each group's total. `Running="Report"` printed the whole report's total, in a group footer too. `Running="Group"` in the report footer printed "?".
 - `sumRunningSum` with `Running="Report"` accumulated across group boundaries.
@@ -188,9 +192,9 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 7 | Text growth, push-down, band growth, row growth, shrink | No | Yes | **Done 2026-10-30** | DevExpress: page breaks fell in the wrong place for any report with long text | Done: `layoutBand` and `textMeasure.ts`. The browser canvas broke 18 of 18 printed texts identically, and the app's engine in Edge placed 190 records of four printed reports on DevExpress's pages to a tenth of a unit. Multi-column records and panels do not grow yet |
 | 8 | Splitting a record across pages, and keep-together | No | Yes | **Done 2026-10-30** | DevExpress | Done with 7: `splitInstance` splits at lines, rows and controls, reproducing DevExpress's split positions exactly; `KeepTogether` moves the record whole |
 | 9 | `PrintOn` and `PrintAtBottom` | No | Yes | **Done 2026-10-30** | DevExpress | Done: page headers and footers skip the report header's or footer's page as flagged, the freed room is used, and `PrintAtBottom` puts the report footer at the foot of its page. The c04b case reproduces exactly. A page header marked `NotWithReportFooter` still prints, unmeasured |
-| 10 | Groups from data, repeated headers, `GroupUnion`, `PageBreak` | Partial | Yes | One group drawn | DevExpress | Adopt over test data |
+| 10 | Groups from data, repeated headers, `GroupUnion`, `PageBreak` | Partial | Yes | **Done 2026-10-30** | DevExpress | Done: records are sorted by the group fields and Detail's `SortFields`, each level breaks into runs, and headers and footers print per group with `RepeatEveryPage`, both `GroupUnion` modes and every `PageBreak` mode. Nesting follows `Level` as s19 measured, and a label whose line fits stays at the foot of its page. c05 to c05e, s17 and s19 match DevExpress's PDF page for page, in Node and in Edge. Without test data the Preview still draws one group, now repeated where `RepeatEveryPage` says |
 | 11 | Sorting, filtering, entering a parameter value | Written to file only | Yes | Not previewed | DevExpress | Adopt over test data, with a value field per parameter |
-| 12 | Totals, running sums, calculated fields, format strings in Preview | Written to file only | Yes | **Done 2026-10-30** | DevExpress | Done: `criteria.ts` evaluates DevExpress's expression language with .NET types, `netDecimal.ts` carries decimals, `netFormat.ts` formats numbers, and `reportData.ts` gives each band its scope as s17 measured. Every expression in s16, every format in s15 and every scope in s17 matches what DevExpress printed. In Edge, all 175 texts of s18 matched on the same pages. Groups are still drawn as one until row 10 |
+| 12 | Totals, running sums, calculated fields, format strings in Preview | Written to file only | Yes | **Done 2026-10-30** | DevExpress | Done: `criteria.ts` evaluates DevExpress's expression language with .NET types, `netDecimal.ts` carries decimals, `netFormat.ts` formats numbers, and `reportData.ts` gives each band its scope as s17 measured. Every expression in s16, every format in s15 and every scope in s17 matches what DevExpress printed. In Edge, all 175 texts of s18 matched on the same pages. Group scopes became real groups with row 10 |
 | 13 | Empty data source | Yes | Yes | Differs | DevExpress: printing the Detail band once shows the report's shape | Adopt |
 | 14 | Master-detail | Written by hand only | Yes | Broken in Preview | DevExpress | Adopt |
 | 15 | Page numbers | Partial | Yes | **Done 2026-10-30** | DevExpress: Forma drew "n / N" for every kind | Done: all eight kinds, their formats, the absent-kind default and `StartPageNumber`, through a new `netFormat.ts` that row 12 extends to values |
@@ -205,6 +209,8 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 24 | Audit, accessibility checks, layout checks, overlap repair | Yes | The designer's analyzer | Works | Comparable; Forma's runs on every generation | Keep, and add the check in row 1 |
 | 25 | Revisions, batch, designer companion, version targeting | Yes | No | Works | Forma only | Keep |
 
+**Found while building row 10, not yet a row:** Forma's prompt never mentions `Level`, so a nested grouping the model writes outer-first without it prints inside out in DevExpress (s19c). The Preview now shows that. Writing `Level` in the prompt, or adding a repair that numbers group bands in file order, would fix the exported file. That is the owner's decision.
+
 Rows 1 to 5 and 15 are fixes to behaviour Forma already claims. Rows 6 to 14 and 16 to 17 make the Preview a faithful picture of what DevExpress prints. Rows 18 to 22 are separate decisions.
 
 ## Reproducing
@@ -215,4 +221,6 @@ Rows 1 to 5 and 15 are fixes to behaviour Forma already claims. Rows 6 to 14 and
 tools\RepxProbe\bin\Release\RepxProbe.exe render <case-dir> <out-dir>
 ```
 
-The case generator and the analyser that produced these numbers were written for this session and are not yet in the repository. Step 5 of the programme, the automated comparison, is where they belong: the DevExpress output becomes committed expected values that the unit suite checks Forma's Preview against, since CI cannot run DevExpress. Row 12 began that: the printed values of s15, s16, s17 and s17b are written into `netFormat.test.ts`, `criteria.test.ts`, `reportData.test.ts` and `reportPreview.test.ts` as literals.
+The case generator and the analyser that produced these numbers were written for this session and are not yet in the repository. Step 5 of the programme, the automated comparison, is where they belong: the DevExpress output becomes committed expected values that the unit suite checks Forma's Preview against, since CI cannot run DevExpress. Row 12 began that: the printed values of s15, s16, s17 and s17b are written into `netFormat.test.ts`, `criteria.test.ts`, `reportData.test.ts` and `reportPreview.test.ts` as literals. Row 10 added c05 to c05e, read from the PDFs DevExpress exported, and s17 and s19.
+
+**The brick dump can miss what prints.** In c05 DevExpress's PDF has records C0052 and C0034 at the foot of their pages, while `render.json` has no brick for either. A record whose box crosses into the page footer appears to be stored where the dump does not reach. Read the PDF before concluding DevExpress dropped something.
