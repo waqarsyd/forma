@@ -577,6 +577,8 @@ Both a designer-written file and a hand-written Forma-shaped one load with the s
 
 `repxAudit.ts` gained two checks, both for controls that load happily and print an empty frame: a chart with no series, and a cross-tab missing one of its three collections.
 
+**Loading is not printing, and the cross-tab above cannot be printed (2026-10-30).** Everything in this section was measured by loading, and `RepxProbe render` later printed it. The cross-tab shown above loads with its fields. `CreateDocument()` then throws, with data or without, because DevExpress expects the file to also carry the column definitions, row definitions and cells it generates from those fields. A file missing any of the three throws. Printing also showed that a cross-tab missing one collection is not empty, which contradicts the audit check just described. Both are case s23 in [`devexpress-parity.md`](../proposals/devexpress-parity.md). The fix is that proposal's row 30, and until it is approved and built, every cross-tab Forma writes opens in the designer but will not print.
+
 **`{0:n0}` is deliberately never emitted.** It renders 12345 as "12,345", which is right for a quantity and wrong for an invoice number, order id, product code or year — all columns of bare integers that one sample value cannot distinguish from a count. A format that mangles an identifier is worse than none, because the unformatted column was already correct. Currency and dates only, where the meaning is not in doubt.
 
 ### Auto-sizing: the bug that was not there (2026-09-05)

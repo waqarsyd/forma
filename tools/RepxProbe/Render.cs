@@ -82,6 +82,7 @@ static class Render {
                 if (data.Tables.Contains((string)member)) rowCount = data.Tables[(string)member].Rows.Count;
             }
             foreach (Band band in report.Bands) AttachDetailReports(band, data);
+            AttachDataControls(report, data, notes);
 
             object parameters;
             if (root.TryGetValue("parameters", out parameters) && parameters is Dictionary<string, object>) {
@@ -117,6 +118,7 @@ static class Render {
         sb.Append("  \"margins\": [").Append(report.Margins.Left).Append(", ").Append(report.Margins.Right)
           .Append(", ").Append(report.Margins.Top).Append(", ").Append(report.Margins.Bottom).Append("],\n");
         sb.Append("  \"notes\": [").Append(string.Join(", ", notes.ConvertAll(Str))).Append("],\n");
+        sb.Append("  \"charts\": [").Append(string.Join(", ", ChartPoints(report))).Append("],\n");
         sb.Append("  \"exports\": [\n    ").Append(string.Join(",\n    ", exportLines)).Append("\n  ],\n");
         sb.Append("  \"pages\": [\n");
 
@@ -274,6 +276,49 @@ static class Render {
         if (allNumber) return typeof(decimal);
         if (allDate) return typeof(DateTime);
         return typeof(string);
+    }
+
+    // ------------------------------------------------------- data controls
+
+    /// A cross-tab or a chart reads its own DataSource, not the report's, so a
+    /// case's data reaches neither unless it is handed over -- which is what an
+    /// application binding a report does too. Given the report's data and data
+    /// member when it has none of its own (parity row 28, 2026-10-30).
+    static void AttachDataControls(XtraReport report, DataSet data, List<string> notes) {
+        foreach (XRControl control in report.AllControls<XRControl>()) {
+            var crossTab = control as DevExpress.XtraReports.UI.XRCrossTab;
+            if (crossTab != null && crossTab.DataSource == null) {
+                crossTab.DataSource = data;
+                if (string.IsNullOrEmpty(crossTab.DataMember)) crossTab.DataMember = report.DataMember;
+                notes.Add("cross-tab " + crossTab.Name + " given the report's data");
+            }
+            var chart = control as XRChart;
+            if (chart != null && chart.DataSource == null) {
+                chart.DataSource = data;
+                if (string.IsNullOrEmpty(chart.DataMember)) chart.DataMember = report.DataMember;
+                notes.Add("chart " + chart.Name + " given the report's data");
+            }
+        }
+    }
+
+    /// Every chart's series as plotted, after layout: the points DevExpress drew,
+    /// argument then values, read from the chart rather than from its image.
+    static List<string> ChartPoints(XtraReport report) {
+        var charts = new List<string>();
+        foreach (XRChart chart in report.AllControls<XRChart>()) {
+            var series = new List<string>();
+            foreach (DevExpress.XtraCharts.Series s in chart.Series) {
+                var points = new List<string>();
+                foreach (DevExpress.XtraCharts.SeriesPoint p in s.Points) {
+                    var values = new List<string>();
+                    foreach (double v in p.Values) values.Add(Num((float)v));
+                    points.Add("[" + Str(Convert.ToString(p.Argument, CultureInfo.InvariantCulture)) + ", " + string.Join(", ", values) + "]");
+                }
+                series.Add("{ \"name\": " + Str(s.Name) + ", \"points\": [" + string.Join(", ", points) + "] }");
+            }
+            charts.Add("{ \"name\": " + Str(chart.Name) + ", \"series\": [" + string.Join(", ", series) + "] }");
+        }
+        return charts;
     }
 
     // ---------------------------------------------------------------- bricks

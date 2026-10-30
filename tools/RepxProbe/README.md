@@ -52,6 +52,18 @@ blank**, in a group footer and in the report footer. The `emit-group` note
 below says leaving `Running` off totals the whole report at every break; that
 was read from the serializer, never printed, and printing says otherwise.
 
+**A cross-tab or a chart is handed the report's data** when it has no data
+source of its own, because each reads its own `DataSource` rather than the
+report's and would otherwise print empty. An application binding the report
+does the same. Each one handed data is listed in `notes`. After layout,
+`render.json` carries a `charts` array with every series' points as plotted,
+read from the chart rather than from its image, which is a picture in every
+export. Added for parity row 28. The second thing `render` measured was that
+a cross-tab written as fields alone **cannot be printed**: `CreateDocument()`
+throws, with data or without, until the file carries the column definitions,
+row definitions and cells that DevExpress generates from those fields. That
+is case s23 in the parity proposal.
+
 ## Why this exists
 
 Forma emits `XtraReportsLayoutSerializer` XML. The DevExpress documentation
