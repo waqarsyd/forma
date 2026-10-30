@@ -41,6 +41,7 @@ import { unitsPerInch } from './reportGeometry';
 import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, type FontSpec, type MeasureText } from './textMeasure';
 import { ReportData, groupRuns, sortedOrder, type CalculatedField, type TextData, type TextScope } from './reportData';
 import { parseParameters, type ReportParameter } from './repxParameters';
+import type { Value } from './criteria';
 
 /** The bands that carry content, in the order XtraReports prints them. */
 export type BandKind =
@@ -1549,6 +1550,13 @@ export interface PlacedControl {
    * browser keeps an anchor's link when it prints, so the Preview's does too.
    */
   url?: string | null;
+  /**
+   * The typed value the binding evaluated to, before formatting, for an export
+   * that keeps numbers as numbers; undefined with no test data or no binding.
+   * For a table, `cellValues` holds every row's cells.
+   */
+  value?: Value | null;
+  cellValues?: (Value | null | undefined)[][] | null;
 }
 
 /** One printed occurrence of a band: a record's Detail, a page's header, a split part. */
@@ -1587,14 +1595,21 @@ function textFor(
 
 /** Every text a control prints in one instance; see `PlacedControl.text`. */
 function textsOf(control: PreviewControl, values: RecordValues | null, ctx: LayoutContext, scope: TextScope | null) {
+  const valueOf = (data: TextData) => (ctx.data && scope ? ctx.data.value(data, scope) : undefined);
   if (control.type === 'XRTable') {
     return {
       text: null,
       cellTexts: control.rows.map((row) => row.cells.map((cell) => textFor(cell.text, cell.field, cell.data, values, ctx, scope))),
+      cellValues: ctx.data ? control.rows.map((row) => row.cells.map((cell) => valueOf(cell.data))) : null,
     };
   }
   if (control.pageInfo) return { text: null, cellTexts: null, url: linkFor(control, ctx, scope) };
-  return { text: textFor(control.text, control.field, control.data, values, ctx, scope), cellTexts: null, url: linkFor(control, ctx, scope) };
+  return {
+    text: textFor(control.text, control.field, control.data, values, ctx, scope),
+    cellTexts: null,
+    url: linkFor(control, ctx, scope),
+    value: valueOf(control.data),
+  };
 }
 
 /** A control's `NavigateUrl` in one instance: its expression evaluated over the test data, or its literal. */
@@ -1746,6 +1761,8 @@ export function layoutBand(
       text: it.text,
       cellTexts: it.cellTexts,
       url: it.url ?? null,
+      value: it.value,
+      cellValues: it.cellValues ?? null,
     })),
   };
 }

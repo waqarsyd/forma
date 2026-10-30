@@ -356,6 +356,10 @@ src/
                        csvExport (the report as CSV, laid out on one
                        continuous page the way DevExpress exports it --
                        byte for byte, on thirteen measured reports),
+                       xlsxExport (the report as an Excel workbook: the
+                       layout as a grid of merged cells, numbers and dates
+                       kept as values, format strings converted -- cell for
+                       cell the same as DevExpress's own workbooks),
                        textMeasure (how many lines a text breaks into and how
                        tall that prints, so the Preview grows controls and
                        breaks pages where DevExpress does),

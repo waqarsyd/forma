@@ -60,10 +60,10 @@ function cellsOf(report: PaginatedReport): { x: number; y: number; text: string 
 }
 
 /**
- * Lay the report out as DevExpress lays it out for CSV -- on one page tall
- * enough to hold everything -- and write it.
+ * The report laid out as DevExpress lays it out for CSV and Excel: on one page
+ * tall enough to hold everything, with the settings about pages neutral.
  */
-export function reportToCsv(structure: ReportStructure, recordCount: number, options: PaginateOptions = {}): string {
+export function layoutContinuous(structure: ReportStructure, recordCount: number, options: PaginateOptions = {}): PaginatedReport {
   // On one continuous page, settings about pages do nothing: DevExpress's CSV of
   // c04b (PrintOn, PrintAtBottom) was byte for byte its CSV of c04, and c05c's
   // (PageBreak after every group) was c05's.
@@ -77,7 +77,19 @@ export function reportToCsv(structure: ReportStructure, recordCount: number, opt
   });
   const continuous: ReportStructure = { ...structure, page: { ...structure.page, height: 1e9 }, bands: structure.bands.map(flow) };
   const report = paginate(continuous, recordCount, { ...options, maxPages: 1 });
-  const cells = cellsOf(report);
+  // The page footer follows the last of the content, not the foot of a page a
+  // billion units tall: DevExpress's workbooks put it directly after the report
+  // footer, the gap between them exactly the two bands' own spacing.
+  for (const page of report.pages) {
+    const end = Math.max(0, ...page.bands.filter((b) => b.band.kind !== 'PageFooter').map((b) => b.top + b.height));
+    page.bands = page.bands.map((b) => (b.band.kind === 'PageFooter' ? { ...b, top: end } : b));
+  }
+  return report;
+}
+
+/** Lay the report out on one continuous page and write it as CSV. */
+export function reportToCsv(structure: ReportStructure, recordCount: number, options: PaginateOptions = {}): string {
+  const cells = cellsOf(layoutContinuous(structure, recordCount, options));
   const xs = [...new Set(cells.map((c) => key(c.x)))].sort((a, b) => a - b);
   const ys = [...new Set(cells.map((c) => key(c.y)))].sort((a, b) => a - b);
   const grid = ys.map(() => xs.map(() => [] as string[]));

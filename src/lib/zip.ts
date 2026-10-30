@@ -154,15 +154,19 @@ export interface ZipResult {
  * so two reports the model titled the same cannot silently overwrite one
  * another inside the archive — which is a real risk with generated titles and
  * an invisible one, since the archive still opens.
+ *
+ * `keepPaths` is for a package whose names are fixed and nested, such as an
+ * .xlsx (`xl/worksheets/sheet1.xml`): sanitising would flatten the slashes the
+ * format needs. The names are the writer's own constants, never a title.
  */
-export function buildZip(entries: readonly ZipEntry[], now = new Date()): ZipResult {
+export function buildZip(entries: readonly ZipEntry[], now = new Date(), options: { keepPaths?: boolean } = {}): ZipResult {
   if (!entries.length) return { bytes: null, reason: 'nothing to archive' };
   if (entries.length > MAX_ENTRIES) {
     return { bytes: null, reason: `${entries.length} files exceeds the ${MAX_ENTRIES} this format can index` };
   }
 
   const encoder = new TextEncoder();
-  const names = uniqueEntryNames(entries.map((e) => safeEntryName(e.name)));
+  const names = options.keepPaths ? entries.map((e) => e.name) : uniqueEntryNames(entries.map((e) => safeEntryName(e.name)));
   const prepared = entries.map((entry, i) => {
     const data = typeof entry.content === 'string' ? encoder.encode(entry.content) : entry.content;
     return { name: encoder.encode(names[i]), data, crc: crc32(data) };

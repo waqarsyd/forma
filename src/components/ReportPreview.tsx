@@ -51,6 +51,7 @@ import { readBoundFields } from '../lib/repxBindingPlan';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
 import { canvasMeasurer, lineSpacingPt } from '../lib/textMeasure';
 import { exportFileName, reportToCsv } from '../lib/csvExport';
+import { reportToXlsx } from '../lib/xlsxExport';
 import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
 import type { ReportLayout } from '../lib/reportTypes';
 
@@ -797,18 +798,33 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * DevExpress's own files. Laid out from the same report, rows and parameter
    * values the pane shows, so the file holds what the reader sees.
    */
-  const exportCsv = useCallback(() => {
-    const count = records?.length ? records.length : recordCountFromLayout(layout);
-    const csv = reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues });
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const download = useCallback((data: BlobPart, type: string, extension: string) => {
+    const url = URL.createObjectURL(new Blob([data], { type }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = exportFileName(title, 'csv');
+    a.download = exportFileName(title, extension);
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-  }, [structure, records, layout, paramValues, title]);
+  }, [title]);
+  const exportCsv = useCallback(() => {
+    const count = records?.length ? records.length : recordCountFromLayout(layout);
+    download(reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues }), 'text/csv;charset=utf-8', 'csv');
+  }, [structure, records, layout, paramValues, download]);
+
+  /*
+   * An Excel workbook as DevExpress exports one (parity row 19): the layout as
+   * a grid of merged cells, numbers and dates kept as values with the format
+   * string converted. The thirteen parity workbooks came out cell for cell the
+   * same as DevExpress's. It takes the pane's measurer, because a row is as tall
+   * as its grown text, and DevExpress's rows were.
+   */
+  const exportXlsx = useCallback(() => {
+    const count = records?.length ? records.length : recordCountFromLayout(layout);
+    const bytes = reportToXlsx(structure, count, { rows: records ?? null, parameters: paramValues, measure });
+    download(bytes as BlobPart, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
+  }, [structure, records, layout, paramValues, measure, download]);
 
   /*
    * Only the pages near the viewport are filled in (parity row 16). Every page
@@ -1243,6 +1259,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           style={editable ? undefined : { marginLeft: 'auto' }}
         >
           Export PDF
+        </button>
+        <button type="button" className="wb-pill wb-pill--outline" onClick={exportXlsx} disabled={!report.pages.length}>
+          Export XLSX
         </button>
         <button type="button" className="wb-pill wb-pill--outline" onClick={exportCsv} disabled={!report.pages.length}>
           Export CSV

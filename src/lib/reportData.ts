@@ -374,6 +374,23 @@ export class ReportData {
       if (data.running === null || data.running === 'None') return '';
       if (data.running === 'Group' && !scope.group) return '?';
     }
+    const value = this.value(data, scope);
+    // Printed: a null prints nothing, even inside "Total: {0:c2}".
+    if (value === null || value === undefined) return '';
+    return data.format !== null ? formatComposite(data.format, [value]) : valueText(value);
+  }
+
+  /**
+   * The typed value a binding evaluates to in `scope`, before formatting: what
+   * an Excel cell holds, where the text is only what prints. Undefined when the
+   * control has no binding, null when the binding has no value.
+   */
+  value(data: TextData, scope: TextScope): Value | undefined {
+    if (data.expression === null) return undefined;
+    if (AGGREGATE_CALL.test(data.expression)) {
+      if (data.running === null || data.running === 'None') return null;
+      if (data.running === 'Group' && !scope.group) return null;
+    }
     const extent =
       data.running === 'Group' ? scope.group! : data.running === 'Page' ? scope.page ?? scope.report : scope.report;
     const row = scope.row === null ? null : this.records[scope.row] ?? null;
@@ -382,10 +399,7 @@ export class ReportData {
     const pageSumOfNothing = (name: string) => data.running === 'Page' && extent.length === 0 && name === 'sumsum';
     const env = rowEnv(row, this.param, (name, args) =>
       pageSumOfNothing(name) ? 0n : this.aggregate(name, args, extent, scope.anchor));
-    const value = evaluateText(data.expression, env);
-    // Printed: a null prints nothing, even inside "Total: {0:c2}".
-    if (value === null) return '';
-    return data.format !== null ? formatComposite(data.format, [value]) : valueText(value);
+    return evaluateText(data.expression, env);
   }
 
   private rowsOf(indices: readonly number[]): TypedRow[] {

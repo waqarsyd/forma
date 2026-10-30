@@ -172,3 +172,14 @@ describe('de-duplicating names', () => {
     expect(all).toContain('second');
   });
 });
+
+describe('keeping the paths a package needs', () => {
+  it('keeps nested names as given when asked, and flattens them otherwise', () => {
+    // An .xlsx is a zip whose parts live in folders: flattening
+    // xl/worksheets/sheet1.xml to xl-worksheets-sheet1.xml makes it no workbook.
+    const entries = [{ name: 'xl/worksheets/sheet1.xml', content: '<worksheet/>' }];
+    const name = (bytes: Uint8Array) => text(bytes.subarray(30, 30 + u16(bytes, 26)));
+    expect(name(buildZip(entries, new Date(2026, 9, 30), { keepPaths: true }).bytes!)).toBe('xl/worksheets/sheet1.xml');
+    expect(name(buildZip(entries, new Date(2026, 9, 30)).bytes!)).toBe('xl-worksheets-sheet1.xml');
+  });
+});
