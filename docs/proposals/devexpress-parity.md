@@ -1,6 +1,6 @@
 # DevExpress parity: measured behaviour and comparison
 
-Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day: rows 30 and 31 are built, and row 32 was approved as "do not adopt". Row 33, found while building row 30, waits for approval.
+Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day: rows 30 and 31 are built, and row 32 was approved as "do not adopt". Row 33, found while building row 30, was approved on 2026-10-31 and is built.
 
 ## Method
 
@@ -51,6 +51,7 @@ Not measured at first: DevExpress versions above 20.1; subreports; charts and cr
 | s24-dpi | One label one inch down and two wide, in a millimetre and a pixel report, with `Dpi` written nowhere, on the root only, or on every band and control. |
 | s25-crosstab | Two cross-tabs of Amount by Region and Quarter over nine records: regions differing only in case, a missing region, integer quarters, decimal amounts, an empty intersection and one whose only record has no amount. The second carries its own font, colours, borders, padding and alignment. |
 | s26-origin | One label at 50,20, exported to Excel, to see where the sheet starts. |
+| s27 | A report holding every kind of band and control, saved by DevExpress in tenths of a millimetre and pixels; and the s18 invoice converted to each by DevExpress, with every `Dpi` stripped, printed unrepaired and repaired. |
 
 ## How DevExpress 20.1 behaves
 
@@ -202,7 +203,9 @@ Not measured at first: DevExpress versions above 20.1; subreports; charts and cr
 - **Every band and control is read at its own `Dpi`, 100 when absent, whatever `ReportUnit` says.** In s24 a label meant to sit one inch down and two inches wide printed 2.54 inches down and 5.08 wide in a millimetre report with no `Dpi` written, and 0.96 down and 1.92 wide in a pixel one. `Dpi` on the root alone changed nothing for the label. Written on the bands and controls too, as DevExpress's serializer writes it, the label printed at one inch.
 - **The root's margins follow the same rule.** With no `Dpi` anywhere, margins of 254 tenths of a millimetre printed as 2.54 inches, on paper of the right size.
 - **DevExpress 20.1's `ReportUnit` has three members:** `HundredthsOfAnInch`, `TenthsOfAMillimeter` and `Pixels`. `Document`, which `reportGeometry.ts` carries, is not one of them in 20.1.
-- Forma writes `Dpi` nowhere, so its millimetre and pixel reports print at the wrong scale in DevExpress while looking right in its own panes. Row 33 below is the proposed fix.
+- Forma wrote `Dpi` nowhere, so its millimetre and pixel reports printed at the wrong scale in DevExpress while looking right in its own panes. Row 33 below fixes it.
+- **Where the serializer writes `Dpi`** (s27): on the root, every band, including sub-bands and detail reports, and every control. That covered 17 kinds, table rows and cells and cross-tab cells included. Never on styles, rules, parameters, calculated fields, field items, definitions, chart internals or the watermark. An embedded subreport's report keeps its own unit, and `Padding` carries its own dpi as its fifth value.
+- **The s18 invoice, converted by DevExpress to tenths of a millimetre with every `Dpi` stripped**, printed on nine pages where the original prints on two. With `Dpi` written back on those elements it printed the original's 261 boxes exactly. In pixels it printed exactly what DevExpress's own pixel conversion prints. That sits 2/300 of an inch off the hundredths original at the page footer, because the conversion rounds a 22-unit band to 21.12 pixels.
 
 ### Documented by DevExpress, not measured here
 
@@ -279,11 +282,11 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 31 | A cross-tab's values over test data | Field names only | Prints the grid of sums | **Done 2026-10-30** | DevExpress | Done for up to one field of each kind. The Preview draws the grid from the test rows before the report's filter, with order, blanks, zeros, sums and appearance as s25 printed. The control grows by whole cells and pushes what is below, and the CSV and workbook carry the grid. s25 and the four one-field-per-kind cases match DevExpress cell for cell in the pane and the CSV, and in the workbook in Edge. Doing so found and fixed the workbook's origin, an omission from row 19. Nested fields, two data fields, a grid wider than the page, a summary setting and styled cells keep the structure drawing |
 | 32 | A chart's values over test data | Frame, and the binding in words | A picture of one point per record | Structure only | Neither: no export can be compared with a picture, and drawing it means a charting engine in the Preview | **Not adopted, as approved 2026-10-30**: the frame and the binding in words stay. The measured points are recorded above for when this is reconsidered |
 
-**Proposed while building row 30, waiting for the owner's approval.**
+**Proposed while building row 30, and approved by the owner on 2026-10-31.**
 
 | # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
 |---|---|---|---|---|---|---|
-| 33 | `Dpi` in millimetre and pixel reports | Never written | Reads each band and control at its own `Dpi`, 100 when absent | **Prints at the wrong scale** (s24): 2.54 times too large in millimetres, 4% too small in pixels | DevExpress defines the format, and the defect is Forma's | Fix the file. A repair writes `Dpi` on the root and on every element DevExpress's serializer writes it on, in a report whose unit is not hundredths of an inch. The numbers stay as they are, since they are already in the report's unit. Measure first which elements those are, including table rows and cells, then print s24 and a generated millimetre report through DevExpress to confirm |
+| 33 | `Dpi` in millimetre and pixel reports | Never written | Reads each band and control at its own `Dpi`, 100 when absent | **Done 2026-10-31** | DevExpress defines the format, and the defect was Forma's: 2.54 times too large in millimetres, 4% too small in pixels (s24) | Done: `repairDpi` writes the report's `Dpi` on exactly the elements DevExpress's serializer writes it on, measured from a report holding every kind, and leaves the numbers alone. Stripped of `Dpi`, DevExpress's own files come back with the same elements and values. The s18 invoice as Forma would write it in millimetres went from nine pages to the original's two, every box in place, and s24's label sat at one inch |
 
 Rows 1 to 5 and 15 are fixes to behaviour Forma already claims. Rows 6 to 14 and 16 to 17 make the Preview a faithful picture of what DevExpress prints. Rows 18 to 22 are separate decisions.
 

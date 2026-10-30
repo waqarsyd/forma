@@ -20,6 +20,7 @@ import { liftStyles } from "../lib/repxStyles";
 import { repairSummaries } from "../lib/repxSummaries";
 import { repairGroupLevels } from "../lib/repxGroups";
 import { repairCrossTabs } from "../lib/repxCrossTabs";
+import { repairDpi } from "../lib/repxDpi";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
@@ -2595,6 +2596,23 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.warn(`Groups: ${groups.reason}.`);
     } else {
       console.debug(`Groups: ${groups.reason}.`);
+    }
+
+    /*
+     * Every band and control is read at its own Dpi, 100 when absent.
+     *
+     * Whatever ReportUnit says: measured by printing in case s24 on 2026-10-30,
+     * where a report in tenths of a millimetre with no Dpi printed every band,
+     * control and margin 2.54 times too large. The numbers are already in the
+     * report's unit; this says so to DevExpress. Before the cross-tab repair,
+     * which sizes its cells in the control's own Dpi. See `repxDpi.ts`.
+     */
+    const dpi = repairDpi(parsed.repxContent);
+    if (dpi.applied) {
+      parsed.repxContent = dpi.xml;
+      console.log(`Dpi: ${dpi.reason}.`);
+    } else {
+      console.debug(`Dpi: ${dpi.reason}.`);
     }
 
     /*

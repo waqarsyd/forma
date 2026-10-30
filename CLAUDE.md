@@ -49,7 +49,7 @@ Most of the reasoning behind this codebase is **not in this file**. It lives in 
 | a group band, `GroupFields`, a subtotal, `src/lib/reportBands.ts`, nested groups, `Level`, `src/lib/repxGroups.ts` | [`gemini.md`](docs/notes/gemini.md) — *Grouping, measured the same way* + *The report is banded now*. Nesting follows `Level`, not file order, so a grouping written outer-first without it prints inside out; the prompt asks for it and `repairGroupLevels` supplies it when the model forgets |
 | a total, a `<Summary>`, `Running`, `sumSum`, a footer total the Data tab writes, `src/lib/repxSummaries.ts` | [`gemini.md`](docs/notes/gemini.md) — *A total with no running scope prints blank*. Measured by printing, and the opposite of what this project believed before 2026-10-30: an aggregate whose cell has no `Running` scope is an empty cell in every band. Only the group and report footers are repaired, because elsewhere the scope is intent |
 | a chart, a cross-tab, `XRChart`, `XRCrossTab`, `src/lib/repxCrossTabs.ts` | [`gemini.md`](docs/notes/gemini.md) — *Charts and cross-tabs, and the pattern that finally became a rule*. That pattern — an item inside a collection carries no `ControlType` — is now four measurements deep and applies well beyond charts. A cross-tab written as its fields alone throws when DevExpress prints it; `repairCrossTabs` writes the layout DevExpress generates, checked cell for cell against 24 shapes. Its grid over test data is drawn by `crossTabGrid` in `reportPreview.ts`: [`app-shell.md`](docs/notes/app-shell.md), *A cross-tab draws its values over test data* |
-| `Dpi`, a millimetre or pixel report printing at the wrong scale | [`gemini.md`](docs/notes/gemini.md) — *A control is read at its own Dpi*. DevExpress reads every band and control at its own `Dpi`, 100 when absent, whatever `ReportUnit` says, and Forma writes none: its millimetre reports print 2.54 times too large. Parity row 33 proposes the fix |
+| `Dpi`, a millimetre or pixel report printing at the wrong scale, `src/lib/repxDpi.ts` | [`gemini.md`](docs/notes/gemini.md) — *A control is read at its own Dpi*. DevExpress reads every band and control at its own `Dpi`, 100 when absent, whatever `ReportUnit` says. Until parity row 33 Forma wrote none, and its millimetre reports printed 2.54 times too large. `repairDpi` now writes it on exactly the elements the serializer does, and must run before the cross-tab repair |
 | the REPX audit, a finding `code`, the status-bar error/warning count, `src/lib/repxAudit.ts` | **That file's own doc comment for why a check exists**, [`gemini.md`](docs/notes/gemini.md) for how each was measured against DevExpress, and [`app-shell.md`](docs/notes/app-shell.md) — *The REPX audit is a count in the status bar* — for where it runs and what the user sees. It asks what is still wrong *after* the repairs, so an error means a repair declined; it gates nothing, and that is deliberate |
 | Prompt-to-Report, the **Describe a report** button, a predefined prompt, a clarification question, `src/lib/promptToReport.ts`, `DescribeReportDialog.tsx`, `clarifyReportRequest`, `GenerationOptions` | [`gemini.md`](docs/notes/gemini.md) — *Prompt-to-Report: a report from a written description*. Modelled on DevExpress's wizard, read out of its designer's own strings with REA; the brief replaces the image framing, overlaps are resolved only in description mode, the repair loop retries on audit ERRORS only, and page orientation and a test-data preview are deliberately not copied |
 | the **Test data** button, `generateTestData`, a `field` on a Preview cell, `control-outside-page`, `control-below-band`, `band-taller-than-page`, `src/lib/repxLayout.ts` | [`gemini.md`](docs/notes/gemini.md) — *Test data for the Preview, and the rest of the layout checks*. Rows are keyed by bound fields and nothing else, cleared when that set changes; the bounds checks are the other half of the analyzer's layout group |
@@ -212,8 +212,8 @@ broken, and nothing in the toolchain enforces any of them.
   arithmetic — this bullet used to state it as a before-and-after pair of suite totals,
   which was stale within days of being written.
 - **File naming: `PascalCase.tsx` for React components, `camelCase.ts` for everything
-  else.** 100% consistent today — **29** PascalCase components and **167** `.ts` files
-  (that is `git ls-files src`, tests included; **repo-wide the answer is 175**, because
+  else.** 100% consistent today — **29** PascalCase components and **169** `.ts` files
+  (that is `git ls-files src`, tests included; **repo-wide the answer is 177**, because
   `server.ts` and the four root configs are also `.ts`. State the scope whenever you
   quote this number — an unqualified "67" is the next thing someone will "correct" to
   73.) The single exception is `src/vite-env.d.ts`, which is Vite's own required name.
@@ -232,7 +232,7 @@ broken, and nothing in the toolchain enforces any of them.
   unrecorded on 2026-10-28, and the parity work added `ReportPreview.test.tsx`. Measured
   again the same day after parity row 12: 153 and 161 before its six new `.ts` files,
   so the 151 written above had already been two short; rows 20 and 19 added two each,
-  and rows 29 and 30 two more each.)
+  and rows 29, 30 and 33 two more each.)
   **Three traps, each of which has been written in here as fact at least once.**
   **(1) Do not "correct" the 29 to 40 by counting `.tsx` files.** There are 40, and the
   eleven that are not components are deliberate: `main.tsx` is the entry point, `icons.tsx`

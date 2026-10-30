@@ -336,6 +336,9 @@ src/
                        repxCrossTabs (a cross-tab written as its fields alone
                        throws when DevExpress prints it; writes the layout
                        DevExpress generates from those fields),
+                       repxDpi (DevExpress reads every band and control at
+                       its own Dpi, 100 when absent; writes the report's on
+                       each, so millimetre reports print at their size),
                        repxAudit (asks what is still wrong with the finished
                        report after every repair has run — errors mean content
                        will be lost, warnings mean it opens and is a worse
