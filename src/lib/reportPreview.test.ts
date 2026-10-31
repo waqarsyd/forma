@@ -1736,6 +1736,29 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
     expect(inst.height).toBeCloseTo(100 + growthA + growthB, 6);
   });
 
+  // Parity row 52, s38d, record by record: a growing label, a shrinking one
+  // under it and a label under both. The bottom label moves with the
+  // shrinking one alone, the shrink less the growth, and the band follows.
+  it('moves a control with the nearest above it, by a shrink as by a growth (s38d)', () => {
+    const chain = (note: string) => layoutBand(band(label(1, 'grow', 'LLL', 0) +
+      label(2, 'shrink', note, 30, 50, ' CanShrink="true"') + label(3, 'under', 'x', 100), '', 120), 1, null, ctx);
+    const empty = chain('');
+    expect(by(empty, 'under').y).toBeCloseTo(80, 1); // DevExpress: 80
+    expect(empty.height).toBeCloseTo(100, 1); // 100
+    const one = chain('L');
+    expect(by(one, 'shrink').height).toBeCloseTo(17.6, 1); // 17.6, as it would grow to
+    expect(by(one, 'under').y).toBeCloseTo(97.59, 1); // 97.59
+    expect(one.height).toBeCloseTo(117.59, 1); // 117.59
+  });
+
+  it('shortens the band when its lowest label shrinks, beside one that does not or alone (s38b, s38c)', () => {
+    const beside = '<Item2 Ref="12" ControlType="XRLabel" Name="beside" Text="x" Font="Arial, 10pt" LocationFloat="300,0" SizeF="200,20" />';
+    expect(layoutBand(band(label(1, 'shrink', '', 0, 60, ' CanShrink="true"') + beside, '', 60), 1, null, ctx).height).toBeCloseTo(20, 6);
+    const bottom = (note: string) => layoutBand(band(label(1, 'top', 'x', 0) + label(2, 'shrink', note, 30, 30, ' CanShrink="true"'), '', 60), 1, null, ctx).height;
+    expect(bottom('')).toBeCloseTo(30, 6); // DevExpress: 30
+    expect(bottom('L')).toBeCloseTo(47.6, 1); // 47.6
+  });
+
   // Parity row 51, s37: one line of 14pt Arial printed 17.141pt tall, two
   // lines 33.697pt: one line without the gap between lines, two with it each.
   it('grows one line of Arial to its own height and two to the line spacing each (s37)', () => {
@@ -2188,6 +2211,16 @@ describe('suppressed and merged repeats, as DevExpress printed them (cases s31b,
       `<Controls>${label(7, 'grp', 'Region', 0)}</Controls></Item1>`;
     const all = printed(report(label(3, 'sup', 'Name', 0, ' ProcessDuplicatesMode="Suppress"'), group), 'sup').flat().map((t) => t.split('@')[0]);
     expect(all).toEqual(['a', 'b', 'c']);
+  });
+
+  // Parity row 52: SuppressAndShrink gives up the label's height, so the label
+  // under it moves up and the record prints shorter; Suppress keeps it (s32b).
+  it('gives up a SuppressAndShrink label\'s height, and keeps a Suppress label\'s (s32b)', () => {
+    const under = '<Item4 Ref="4" ControlType="XRLabel" Name="under" SizeF="100,20" LocationFloat="0,25">' +
+      '<ExpressionBindings><Item1 Ref="40" EventName="BeforePrint" PropertyName="Text" Expression="[Idx]" /></ExpressionBindings></Item4>';
+    const unders = (mode: string) => printed(report(label(3, 'sup', 'Name', 0, ` ProcessDuplicatesMode="${mode}"`) + under), 'under')[0].slice(0, 3);
+    expect(unders('SuppressAndShrink')).toEqual(['1@25+20', '2@50+20', '3@75+20']);
+    expect(unders('Suppress')).toEqual(['1@25+20', '2@70+20', '3@115+20']);
   });
 
   it('merges a run into one box per page, its value printed again after the break (s32a)', () => {

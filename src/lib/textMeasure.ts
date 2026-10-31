@@ -20,8 +20,11 @@
  *   its top and bottom borders: three lines of Arial 9pt printed 32.544pt
  *   against 3 x 10.35 + 1.5 = 32.55; ten hundredths of padding and a 3px
  *   border each added exactly their own height.
- * - **A control that shrinks uses 1.17pt rather than 1.5pt**, measured at
- *   9pt and 10pt, and an empty one shrinks to nothing.
+ * - **A control that shrinks prints exactly as tall as one that grows**, and
+ *   an empty one shrinks to nothing (s38, parity row 52). Row 8 had fitted
+ *   1.17pt in place of 1.5pt to one-line Arial labels, which is row 51's
+ *   shorter single line seen from the other side: one line of Verdana 10pt
+ *   shrank to 13.653pt, where 1.17pt would have given 13.32.
  *
  * The browser measures the words with a canvas in the same font. On Windows,
  * where DevExpress itself runs, that is the same font file; elsewhere a
@@ -38,11 +41,8 @@ export interface FontSpec {
 /** Lines a text breaks into at a width, in points. */
 export type MeasureText = (text: string, font: FontSpec, widthPt: number) => string[];
 
-/** Added to the lines of a control that GROWS. Measured: 1.5pt at every font and size. */
+/** Added to the lines of a control that grows or shrinks. Measured: 1.5pt at every font and size. */
 export const GROW_EXTRA_PT = 1.5;
-
-/** Added to the lines of a control that SHRINKS. Measured at 9pt and 10pt Arial. */
-export const SHRINK_EXTRA_PT = 1.17;
 
 /*
  * Line spacing over font size, by family, as DevExpress printed each one:

@@ -38,7 +38,7 @@
 
 import { formatComposite, formatDate, toRoman } from './netFormat';
 import { pxToUnits, unitsPerInch } from './reportGeometry';
-import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, linesHeightPt, type FontSpec, type MeasureText } from './textMeasure';
+import { GROW_EXTRA_PT, lineSpacingPt, linesHeightPt, type FontSpec, type MeasureText } from './textMeasure';
 import { ReportData, aggregate, groupRuns, sortCompare, sortedOrder, valueText, type CalculatedField, type TextData, type TextScope, type TypedRow } from './reportData';
 import { parseParameters, type ReportParameter } from './repxParameters';
 import { isTrue, parseCriteria, type Value } from './criteria';
@@ -320,7 +320,7 @@ export interface PreviewControl {
    * (parity row 46). Printed in s31b and s32: a repeat is blank, compared with
    * the record before in print order across pages and groups; a merged run
    * prints once, in one box per page; a null is blank. The shrinking modes
-   * suppress the same way, and their shrink is row 52.
+   * suppress the same way and give up the label's height too (row 52).
    */
   duplicates?: 'Suppress' | 'SuppressAndShrink' | 'Merge';
   nulls?: 'Suppress' | 'SuppressAndShrink';
@@ -2102,21 +2102,23 @@ function applyRules(control: PreviewControl, band: { look: Appearance | null }, 
 }
 
 /**
- * Whether a control prints nothing on this record, keeping its space, because
- * its value is null or repeats the record before's (parity row 46). Printed
- * in s31b and s32: a null printed nothing under `ProcessNullValues`, and under
- * `ProcessDuplicatesMode="Suppress"` a value printed on the first record of
- * each run and nowhere after it, compared with the record before in print
- * order, across a page break and across a group break alike. Without test
- * data nothing is suppressed, so the Preview shows every record as designed.
+ * The mode under which a control prints nothing on this record, because its
+ * value is null or repeats the record before's (parity row 46); null when it
+ * prints. Printed in s31b and s32: a null printed nothing under
+ * `ProcessNullValues`, and under `ProcessDuplicatesMode="Suppress"` a value
+ * printed on the first record of each run and nowhere after it, compared with
+ * the record before in print order, across a page break and across a group
+ * break alike. `Suppress` keeps the control's space; `SuppressAndShrink` gives
+ * it up (s32b, row 52). Without test data nothing is suppressed, so the
+ * Preview shows every record as designed.
  */
-function suppressed(control: PreviewControl, band: PreviewBand, ctx: LayoutContext, scope: TextScope | null): boolean {
-  const repeats = control.duplicates === 'Suppress' || control.duplicates === 'SuppressAndShrink';
-  if (!ctx.data || !scope || (!control.nulls && !repeats)) return false;
-  if (control.nulls && ctx.data.value(control.data, scope) === null) return true;
-  if (!repeats || band.kind !== 'Detail' || scope.row === null || scope.row < 1) return false;
+function suppressed(control: PreviewControl, band: PreviewBand, ctx: LayoutContext, scope: TextScope | null): 'Suppress' | 'SuppressAndShrink' | null {
+  const repeats = control.duplicates === 'Suppress' || control.duplicates === 'SuppressAndShrink' ? control.duplicates : null;
+  if (!ctx.data || !scope || (!control.nulls && !repeats)) return null;
+  if (control.nulls && ctx.data.value(control.data, scope) === null) return control.nulls;
+  if (!repeats || band.kind !== 'Detail' || scope.row === null || scope.row < 1) return null;
   const before = { ...scope, row: scope.row - 1, anchor: scope.row - 1 };
-  return textsOf(control, null, ctx, before).text === textsOf(control, null, ctx, scope).text;
+  return textsOf(control, null, ctx, before).text === textsOf(control, null, ctx, scope).text ? repeats : null;
 }
 
 /**
@@ -2276,7 +2278,9 @@ function insetsPt(look: Appearance, borders: PreviewControl['borders']) {
 /**
  * The height a piece of text needs, in report units, with the lines it breaks
  * into. The formula is the one DevExpress printed: lines times the font's line
- * spacing, plus 1.5pt, plus the vertical padding and borders. See textMeasure.ts.
+ * spacing, one line of some fonts shorter, plus 1.5pt, plus the vertical
+ * padding and borders. A control grows to it or shrinks to it alike (s38,
+ * parity row 52). See textMeasure.ts.
  */
 function textHeight(
   text: string,
@@ -2286,7 +2290,7 @@ function textHeight(
   borders: PreviewControl['borders'],
   wordWrap: boolean,
   ctx: LayoutContext,
-): { lines: string[]; needUnits: number; shrinkUnits: number } {
+): { lines: string[]; needUnits: number } {
   const perInch = unitsPerInch(ctx.unit);
   const toPt = (units: number) => (units / perInch) * 72;
   const toUnits = (pt: number) => (pt / 72) * perInch;
@@ -2299,16 +2303,9 @@ function textHeight(
   };
   const area = toPt(widthUnits) - inset.left - inset.right;
   const lines = wordWrap ? ctx.measure!(text, spec, area) : text ? [text.replace(/\r?\n/g, ' ')] : [];
-  const insets = inset.top + inset.bottom;
-  // Grown: one line at its own height, more at the spacing each (row 51).
-  const grown = linesHeightPt(lines.length, spec.family, spec.sizePt) + insets;
-  // Shrunk: as row 8 measured it, every line at the spacing; row 52 revisits it.
-  const shrunk = lines.length * lineSpacingPt(spec.family, spec.sizePt) + insets;
-  return {
-    lines,
-    needUnits: lines.length ? toUnits(grown + GROW_EXTRA_PT) : 0,
-    shrinkUnits: lines.length ? toUnits(shrunk + SHRINK_EXTRA_PT) : 0,
-  };
+  // One line at its own height, more at the spacing each (row 51).
+  const body = linesHeightPt(lines.length, spec.family, spec.sizePt) + inset.top + inset.bottom;
+  return { lines, needUnits: lines.length ? toUnits(body + GROW_EXTRA_PT) : 0 };
 }
 
 /**
@@ -2354,13 +2351,13 @@ export function heldHeight(band: PreviewBand): number {
  * - a label grows to fit its text when `CanGrow` (the default), and shrinks to
  *   it when `CanShrink`; `WordWrap="false"` keeps it to one line;
  * - a table row grows to its tallest cell, and every cell takes that height;
- * - a control whose top is at or below a growing control's bottom moves down by
- *   that growth -- whether or not the two overlap across the band, which the
+ * - a control moves by the largest change, growth or shrink, of the controls
+ *   nearest above it -- whether or not they overlap across the band, which the
  *   printed report showed for a label beside, not under, the growing one;
- * - the band prints at least to its lowest visible control, and grows by
- *   however far its lowest content moved, keeping the space that was below it.
- *   That is `heldHeight` plus the growth, whatever the band's `CanGrow` says
- *   (parity row 36, s29a to s29g).
+ * - the band prints at least to its lowest visible control, and grows or
+ *   shrinks by however far its lowest content moved, keeping the space that
+ *   was below it. That is `heldHeight` plus the change, whatever the band's
+ *   `CanGrow` says (parity rows 36 and 52, s29a to s29g, s38).
  */
 export function layoutBand(
   band: PreviewBand,
@@ -2375,16 +2372,26 @@ export function layoutBand(
   if (bandRules.visible === false || isEmptyBand(band)) return { band, record, scope, height: 0, controls: [] };
   const items = band.controls
     .map((control, index) => ({ control: applyRules(control, { look: bandRules.look }, ctx, scope), index }))
-    .filter(({ control }) => control.visible && !suppressed(control, band, ctx, scope))
+    .filter(({ control }) => control.visible)
     .map(({ control, index }) => {
       const top = control.y + control.offsetY;
-      let height = control.height;
+      /*
+       * A suppressed control prints nothing but still takes part in the
+       * push-down: `Suppress` at its own height, so what is below stays put,
+       * and `SuppressAndShrink` at none, so what is below moves up. Printed in
+       * s32b: with both labels above it shrunk the label below moved up 20, and
+       * with one of the two shrunk nothing moved.
+       */
+      const hiddenBy = suppressed(control, band, ctx, scope);
+      let height = hiddenBy === 'SuppressAndShrink' ? 0 : control.height;
       let lines: string[] | null = null;
       let rowHeights: number[] | null = null;
       let inner: PlacedBand[] | null = null;
       let crossTab: CrossTabGrid | null = null;
       const texts = textsOf(control, values, ctx, scope);
-      if (control.crossTab && (crossTab = crossTabGrid(control, ctx))) {
+      if (hiddenBy) {
+        // Prints nothing, so it neither grows nor shrinks to its text.
+      } else if (control.crossTab && (crossTab = crossTabGrid(control, ctx))) {
         // A cross-tab grows by whole cells to hold its grid, as s23 printed.
         if (crossTab.height > height) height = crossTab.height;
       } else if (control.subreport?.structure) {
@@ -2400,7 +2407,7 @@ export function layoutBand(
           control.width, control.appearance, control.borders, control.wordWrap, ctx);
         lines = m.lines;
         if (control.canGrow && m.needUnits > height) height = m.needUnits;
-        else if (control.canShrink && m.shrinkUnits < height) height = m.shrinkUnits;
+        else if (control.canShrink && m.needUnits < height) height = m.needUnits;
       } else if (ctx.measure && control.type === 'XRTable' && control.rows.length) {
         const designRow = control.height / control.rows.length;
         rowHeights = control.rows.map((row, r) => {
@@ -2417,25 +2424,39 @@ export function layoutBand(
         });
         height = rowHeights.reduce((sum, h) => sum + h, 0);
       }
-      return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, crossTab, shift: 0, ...texts };
+      return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, crossTab, shift: 0, hidden: !!hiddenBy, ...texts };
     })
     .sort((a, b) => a.top - b.top);
   type Item = (typeof items)[number];
 
   /*
-   * Push-down, cascading: each control moves by the largest growth of anything
-   * that ended at or above its top, plus however far that thing itself moved.
-   * `at` is a control's top within its container. Returns the container's
-   * designed and placed bottoms.
+   * Push-down, cascading (parity rows 36 and 52). Each control moves with the
+   * controls nearest above it, those ending at or above its top with nothing
+   * else wholly between: by the largest of their changes, growth or shrink,
+   * plus however far each itself moved. Printed in s38: each row of shrunk
+   * labels moved up by the row above's smallest shrink, and the next row by
+   * its own on top of that. In s38d a label under a shrinking one, itself
+   * under a growing one, moved up by the shrink less the growth, where the
+   * growing label two above would have held it down. With growth alone this
+   * is the largest growth of anything above, as it was before row 52. With
+   * nothing above, a control stays where it is. `at` is a control's top
+   * within its container. Returns the container's designed and placed
+   * bottoms.
    */
   const pushDown = (group: Item[], at: (it: Item) => number) => {
+    const ends = (it: Item) => at(it) + it.designHeight;
     for (let i = 0; i < group.length; i++) {
+      const top = at(group[i]);
+      let shift: number | null = null;
       for (let j = 0; j < i; j++) {
         const above = group[j];
-        if (at(above) + above.designHeight <= at(group[i]) + EPS) {
-          group[i].shift = Math.max(group[i].shift, above.shift + Math.max(0, above.height - above.designHeight));
-        }
+        if (ends(above) > top + EPS) continue;
+        const between = group.some((b, k) => k !== i && k !== j && at(b) >= ends(above) - EPS && ends(b) <= top + EPS);
+        if (between) continue;
+        const moved = above.shift + above.height - above.designHeight;
+        shift = shift === null ? moved : Math.max(shift, moved);
       }
+      group[i].shift = shift ?? 0;
     }
     return {
       design: Math.max(0, ...group.map((it) => at(it) + it.designHeight)),
@@ -2468,8 +2489,11 @@ export function layoutBand(
     band,
     record,
     scope,
-    height: Math.max(band.height, bottoms.design) + Math.max(0, bottoms.placed - bottoms.design),
-    controls: kept.map((it) => ({
+    // Grown or shrunk by however far its lowest content moved: in s38b and
+    // s38c a 60-unit Detail band printed 20 and 30 with its lowest label
+    // shrunk to nothing, and nothing below it.
+    height: Math.max(0, Math.max(band.height, bottoms.design) + bottoms.placed - bottoms.design),
+    controls: kept.filter((it) => !it.hidden).map((it) => ({
       control: it.control,
       index: it.index,
       y: yOf(it),

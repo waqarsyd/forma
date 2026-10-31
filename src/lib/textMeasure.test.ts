@@ -6,7 +6,7 @@
  * identical lines; these cases pin the rules that made that true.
  */
 import { describe, it, expect } from 'vitest';
-import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, GROW_EXTRA_PT, SHRINK_EXTRA_PT } from './textMeasure';
+import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, GROW_EXTRA_PT } from './textMeasure';
 
 /** Every character one point wide, so widths are character counts. */
 const mono = (s: string) => s.length;
@@ -90,9 +90,8 @@ describe('lineSpacingPt and linesHeightPt', () => {
     expect(linesHeightPt(1, 'Some Font', 10)).toBeCloseTo(linesHeightPt(1, 'Arial', 10), 6);
   });
 
-  it('carries the measured height constants', () => {
+  it('carries the measured height constant', () => {
     expect(GROW_EXTRA_PT).toBe(1.5);
-    expect(SHRINK_EXTRA_PT).toBe(1.17);
   });
 });
 
