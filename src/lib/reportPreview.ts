@@ -145,6 +145,8 @@ export interface PreviewCell {
   /** As on a control: a cell grows and wraps unless the file says otherwise. */
   canGrow: boolean;
   wordWrap: boolean;
+  /** As on a control: `Multiline="true"`, without which its line breaks are dropped. */
+  multiline?: true;
   data: TextData;
   /**
    * The data field this cell's text is bound to, or null when it is a literal.
@@ -307,6 +309,12 @@ export interface PreviewControl {
   canGrow: boolean;
   canShrink: boolean;
   wordWrap: boolean;
+  /**
+   * `Multiline="true"`, present only then (parity row 58). Without it
+   * DevExpress drops a text's line breaks, joining its lines with nothing
+   * between, in print, CSV and workbook alike, labels and table cells (s42).
+   */
+  multiline?: true;
   /** What the control prints from data: its whole `Text` binding, its summary scope and its format. */
   data: TextData;
   /** `NavigateUrl`: written on the control, or bound to an expression. Null when it has none. */
@@ -868,6 +876,9 @@ function pairAttr(attrs: string, name: string): { a: number; b: number } {
 /**
  * XML entities, in the order that keeps `&amp;lt;` reading as a literal
  * `&lt;` rather than a `<`. Ampersand last on the way out, as always.
+ * Character references come decimal or hexadecimal: DevExpress's serializer
+ * writes a line break as `&#xD;&#xA;`, which the Preview showed as those
+ * characters until parity row 58 (s37, s42).
  */
 export function decodeXmlText(text: string): string {
   return text
@@ -876,6 +887,7 @@ export function decodeXmlText(text: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
     .replace(/&amp;/g, '&');
 }
 
@@ -1369,6 +1381,7 @@ function parseTableRows(
         appearance: look,
         canGrow: (attrOf(cell.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
         wordWrap: (attrOf(cell.attrs, 'WordWrap') ?? '').toLowerCase() !== 'false',
+        ...((attrOf(cell.attrs, 'Multiline') ?? '').toLowerCase() === 'true' ? { multiline: true as const } : {}),
         data: parseTextData(cell.attrs, slice),
         field: parseTextBinding(slice),
         rules: parseRuleLinks(ownPart(slice)),
@@ -1593,6 +1606,7 @@ function parseControls(
       canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
       canShrink: (attrOf(item.attrs, 'CanShrink') ?? '').toLowerCase() === 'true',
       wordWrap: (attrOf(item.attrs, 'WordWrap') ?? '').toLowerCase() !== 'false',
+      ...((attrOf(item.attrs, 'Multiline') ?? '').toLowerCase() === 'true' ? { multiline: true as const } : {}),
       data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
       link: parseLink(item.attrs, inner.slice(item.start, extent)),
       rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
@@ -2236,19 +2250,28 @@ function textFor(
   return evaluated ?? printedText(literal, field, values);
 }
 
+/** A text as one line, its line breaks dropped with nothing between, as DevExpress prints a text that is not `Multiline` (s42). */
+function oneLine(text: string): string {
+  return text.replace(/\r\n?|\n/g, '');
+}
+
 /** Every text a control prints in one instance; see `PlacedControl.text`. */
 function textsOf(control: PreviewControl, values: RecordValues | null, ctx: LayoutContext, scope: TextScope | null) {
   const valueOf = (data: TextData) => (ctx.data && scope ? ctx.data.value(data, scope) : undefined);
   if (control.type === 'XRTable') {
     return {
       text: null,
-      cellTexts: control.rows.map((row) => row.cells.map((cell) => textFor(cell.text, cell.field, cell.data, values, ctx, scope))),
+      cellTexts: control.rows.map((row) => row.cells.map((cell) => {
+        const text = textFor(cell.text, cell.field, cell.data, values, ctx, scope);
+        return cell.multiline ? text : oneLine(text);
+      })),
       cellValues: ctx.data ? control.rows.map((row) => row.cells.map((cell) => valueOf(cell.data))) : null,
     };
   }
   if (control.pageInfo) return { text: null, cellTexts: null, url: linkFor(control, ctx, scope) };
+  const text = textFor(control.text, control.field, control.data, values, ctx, scope);
   return {
-    text: textFor(control.text, control.field, control.data, values, ctx, scope),
+    text: control.multiline ? text : oneLine(text),
     cellTexts: null,
     url: linkFor(control, ctx, scope),
     value: valueOf(control.data),

@@ -177,6 +177,44 @@ it('does not read a SortFields item as a control of the band', () => {
     expect(decodeXmlText('&amp;lt;')).toBe('&lt;');
     expect(decodeXmlText('&#8212;')).toBe('—');
   });
+
+  // Parity row 58: DevExpress's serializer writes a line break as &#xD;&#xA;.
+  it('decodes hexadecimal character references too, and leaves an escaped one literal', () => {
+    expect(decodeXmlText('First line&#xD;&#xA;Second')).toBe('First line\r\nSecond');
+    expect(decodeXmlText('&#x2014;')).toBe('—');
+    expect(decodeXmlText('&amp;#xD;')).toBe('&#xD;');
+  });
+});
+
+/*
+ * Parity row 58, case s42, built and saved by DevExpress 20.1: a text's line
+ * breaks print only under Multiline="true". Without it DevExpress joined the
+ * lines with nothing between, in print, CSV and workbook, labels and cells.
+ */
+describe('line breaks and Multiline, as DevExpress printed them (case s42)', () => {
+  const TEXT = 'First line&#xD;&#xA;Second line&#xD;&#xA;Third';
+  const s42 = parseReportStructure(
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50"><Bands>' +
+    '<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="200"><Controls>' +
+    `<Item1 Ref="3" ControlType="XRLabel" Name="multi" Multiline="true" Text="${TEXT}" SizeF="300,20" LocationFloat="0,0" />` +
+    `<Item2 Ref="4" ControlType="XRLabel" Name="single" Text="${TEXT}" SizeF="300,20" LocationFloat="400,0" />` +
+    '<Item3 Ref="5" ControlType="XRTable" Name="tbl" SizeF="600,20" LocationFloat="0,120"><Rows><Item1 Ref="6" ControlType="XRTableRow" Name="row" Weight="1"><Cells>' +
+    `<Item1 Ref="7" ControlType="XRTableCell" Name="cmulti" Weight="1" Multiline="true" Text="${TEXT}" />` +
+    `<Item2 Ref="8" ControlType="XRTableCell" Name="csingle" Weight="1" Text="${TEXT}" />` +
+    '</Cells></Item1></Rows></Item3></Controls></Item1></Bands></XtraReportsLayoutSerializer>');
+
+  it('keeps a Multiline text\'s breaks and drops the others, on labels and in cells', () => {
+    const placed = paginate(s42, 0).pages[0].bands.flatMap((b) => b.controls);
+    const label = (name: string) => placed.find((pc) => pc.control.name === name)!.text;
+    expect(label('multi')).toBe('First line\r\nSecond line\r\nThird');
+    expect(label('single')).toBe('First lineSecond lineThird');
+    expect(placed.find((pc) => pc.control.name === 'tbl')!.cellTexts).toEqual([['First line\r\nSecond line\r\nThird', 'First lineSecond lineThird']]);
+  });
+
+  it('carries the same into the CSV', () => {
+    const lines = reportToCsv(s42, 0);
+    expect(lines).toBe('"First line\r\nSecond line\r\nThird",,First lineSecond lineThird\r\n"First line\r\nSecond line\r\nThird",First lineSecond lineThird,\r\n');
+  });
 });
 
 describe('paginating a real report', () => {
