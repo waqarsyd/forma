@@ -208,6 +208,36 @@ describe('links in the Preview', () => {
 });
 
 /*
+ * Cross-band lines and boxes, drawn over the bands they cross (parity row 48):
+ * a box as its frame, 2 pixels when no BorderWidth is written, as DevExpress
+ * printed s34a; a line down the middle of its strip.
+ */
+describe('cross-band controls in the Preview', () => {
+  const crossed = `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Cross" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">
+  <CrossBandControls>
+    <Item1 Ref="10" ControlType="XRCrossBandBox" Name="frame" WidthF="750" StartBand="#Ref-3" EndBand="#Ref-5" StartPointFloat="0,0" EndPointFloat="0,30" />
+    <Item2 Ref="11" ControlType="XRCrossBandLine" Name="rule" WidthF="3" StartBand="#Ref-3" EndBand="#Ref-5" StartPointFloat="5,5" EndPointFloat="5,25" />
+  </CrossBandControls>
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />
+    <Item2 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="30"><Controls><Item1 Ref="4" ControlType="XRLabel" Name="ph" Text="HEADER" LocationFloat="10,5" SizeF="200,20" /></Controls></Item2>
+    <Item3 Ref="5" ControlType="PageFooterBand" Name="PageFooter" HeightF="30"><Controls><Item1 Ref="6" ControlType="XRLabel" Name="pf" Text="FOOTER" LocationFloat="10,5" SizeF="200,20" /></Controls></Item3>
+    <Item4 Ref="7" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+
+  it('draws the box as a 2-pixel frame and the line down its strip', () => {
+    const { container } = render(<ReportPreview repxContent={crossed} layout={null} title="Cross" />);
+    const drawn = [...container.querySelectorAll<HTMLElement>('div[aria-hidden]')].filter((d) => d.style.pointerEvents === 'none' && d.style.position === 'absolute');
+    const box = drawn.find((d) => d.style.border);
+    const line = drawn.find((d) => d.style.background && !d.style.border);
+    expect(box?.style.border).toBe('2px solid rgb(0, 0, 0)');
+    expect(line?.style.width).toBe('1px');
+  });
+});
+
+/*
  * Export CSV hands the browser a file named after the report, holding what the
  * pane shows laid out as DevExpress exports CSV (parity row 20).
  */

@@ -481,6 +481,8 @@ export interface PreviewColumns {
 export interface PreviewBand {
   kind: BandKind;
   name: string;
+  /** Its `Ref`, which a cross-band control names its bands by (parity row 48). */
+  ref?: string;
   /** In the report's unit, scaled by `dpiScale` from the file's `HeightF`. */
   height: number;
   /** As on a control: the report's units per inch over the band's `Dpi`. Absent means 1. */
@@ -606,8 +608,42 @@ export interface ReportStructure {
   filterString: string | null;
   /** `<FormattingRuleSheet>`, by each rule's `Ref`, which is what a link points at. */
   rules: Record<string, FormattingRule>;
+  /** `<CrossBandControls>`: lines and boxes drawn from one band to another (parity row 48). */
+  crossBands?: CrossBandControl[];
   /** Non-fatal parse complaints, for the UI to surface rather than swallow. */
   problems: string[];
+}
+
+/**
+ * An `XRCrossBandLine` or `XRCrossBandBox`: drawn from a point in its start
+ * band to a point in its end band, through every band between (parity row
+ * 48). Positions are from the left margin and from each band's top.
+ */
+export interface CrossBandControl {
+  kind: 'line' | 'box';
+  name: string;
+  /** The `Ref`s of the bands it starts and ends in. */
+  startRef: string;
+  endRef: string;
+  x: number;
+  startY: number;
+  endY: number;
+  /** `WidthF`: the box's width, or the strip a line is drawn down the middle of. */
+  width: number;
+  /** Pixels: a box's `BorderWidth`, 2 when absent as DevExpress printed it; a line's `LineWidth`, 1. */
+  strokePx: number;
+  color: string | undefined;
+}
+
+/** One stretch of a cross-band control on one page, page-relative. */
+export interface CrossBandSegment {
+  kind: 'line' | 'box';
+  left: number;
+  width: number;
+  top: number;
+  bottom: number;
+  strokePx: number;
+  color: string | undefined;
 }
 
 /**
@@ -1065,6 +1101,42 @@ function parseAppearanceBindings(ownSlice: string): AppearanceBinding[] {
     if (property && expression !== null && BOUND_PROPERTIES.has(property)) out.push({ property, expression: decodeXmlText(expression) });
   }
   return out;
+}
+
+/**
+ * The report's `<CrossBandControls>`, as the serializer wrote them in s31c and
+ * s34: `StartBand` and `EndBand` name bands by `Ref`, and each point is from
+ * the left margin and from that band's top. A box with no `BorderWidth`
+ * printed a 2-pixel frame. Each is read at its own `Dpi`, as every control is.
+ */
+function crossBandsOf(text: string, targetDpi: number): { crossBands?: CrossBandControl[] } {
+  const block = /<CrossBandControls>([\s\S]*?)<\/CrossBandControls>/.exec(text);
+  if (!block) return {};
+  const out: CrossBandControl[] = [];
+  for (const m of block[1].matchAll(/<Item\d+\b([^>]*?)\/?>/g)) {
+    const type = attrOf(m[1], 'ControlType');
+    if (type !== 'XRCrossBandLine' && type !== 'XRCrossBandBox') continue;
+    const startRef = /^#Ref-(\d+)$/.exec(attrOf(m[1], 'StartBand') ?? '')?.[1];
+    const endRef = /^#Ref-(\d+)$/.exec(attrOf(m[1], 'EndBand') ?? '')?.[1];
+    if (!startRef || !endRef) continue;
+    const scale = targetDpi / dpiOf(m[1]);
+    const start = pairAttr(m[1], 'StartPointFloat');
+    const end = pairAttr(m[1], 'EndPointFloat');
+    const box = type === 'XRCrossBandBox';
+    out.push({
+      kind: box ? 'box' : 'line',
+      name: attrOf(m[1], 'Name') ?? '',
+      startRef,
+      endRef,
+      x: start.a * scale,
+      startY: start.b * scale,
+      endY: end.b * scale,
+      width: numAttr(m[1], 'WidthF', box ? 0 : 1) * scale,
+      strokePx: box ? numAttr(m[1], 'BorderWidth', 2) : numAttr(m[1], 'LineWidth', 1),
+      color: attrOf(m[1], box ? 'BorderColor' : 'ForeColor') ?? undefined,
+    });
+  }
+  return out.length ? { crossBands: out } : {};
 }
 
 /** `ProcessDuplicatesMode` and `ProcessNullValues`, for a control that writes either. */
@@ -1690,6 +1762,7 @@ export function parseReportStructure(
     parameters: parseParameters(text),
     filterString: attrOf(rootAttrs, 'FilterString') ? decodeXmlText(attrOf(rootAttrs, 'FilterString')!) : null,
     rules: parseRuleSheet(text),
+    ...crossBandsOf(text, targetDpi),
     problems,
   };
 
@@ -1741,6 +1814,7 @@ export function parseReportStructure(
       out.push({
         kind,
         name: attrOf(item.attrs, 'Name') || controlType,
+        ...(attrOf(item.attrs, 'Ref') ? { ref: attrOf(item.attrs, 'Ref')! } : {}),
         height: numAttr(item.attrs, 'HeightF', 0) * dpiScale,
         dpiScale,
         // A detail report has no controls of its own; its bands do.
@@ -2035,6 +2109,51 @@ function suppressed(control: PreviewControl, band: PreviewBand, ctx: LayoutConte
   if (!repeats || band.kind !== 'Detail' || scope.row === null || scope.row < 1) return false;
   const before = { ...scope, row: scope.row - 1, anchor: scope.row - 1 };
   return textsOf(control, null, ctx, before).text === textsOf(control, null, ctx, scope).text;
+}
+
+/**
+ * Where each cross-band line and box prints, page by page (parity row 48).
+ * Printed in s31c and s34: one runs from its start band's top plus its start
+ * point to its end band's top plus its end point, each start paired with the
+ * next end, so a line from a group header to its group footer prints once
+ * per group. On a page it only crosses it runs from below the page header to
+ * above the page footer, and so it does on its first and last pages beyond
+ * the band it starts or ends in: a group's line stopped at the page footer's
+ * top and began again below the next page's header.
+ */
+function drawCrossBands(
+  controls: readonly CrossBandControl[],
+  bands: readonly PreviewBand[],
+  pages: PreviewPage[],
+  content: { top: number; bottom: number; left: number },
+): void {
+  for (const cb of controls) {
+    const start = bands.find((b) => b.ref === cb.startRef);
+    const end = bands.find((b) => b.ref === cb.endRef);
+    if (!start || !end) continue;
+    let open = false;
+    for (const page of pages) {
+      const header = page.bands.find((b) => b.band.kind === 'PageHeader');
+      const footer = page.bands.find((b) => b.band.kind === 'PageFooter');
+      const top = header ? header.top + header.height : content.top;
+      const bottom = footer ? footer.top : content.bottom;
+      const draw = (from: number, to: number) => (page.crossBands ??= []).push({
+        kind: cb.kind, left: content.left + cb.x, width: cb.width, top: from, bottom: to, strokePx: cb.strokePx, color: cb.color,
+      });
+      let from: number | null = open ? top : null;
+      for (const pb of [...page.bands].sort((a, b) => a.top - b.top)) {
+        if (pb.band === start && from === null) {
+          if (start === end) draw(pb.top + cb.startY, pb.top + cb.endY);
+          else from = pb.top + cb.startY;
+        } else if (pb.band === end && from !== null) {
+          draw(from, pb.top + cb.endY);
+          from = null;
+        }
+      }
+      if (from !== null) draw(from, bottom);
+      open = from !== null;
+    }
+  }
 }
 
 /**
@@ -2517,7 +2636,7 @@ function retext(pc: PlacedControl, values: RecordValues | null, ctx: LayoutConte
  * fits, and the second is then what continues, the space above the cut left
  * behind. With no room at all the instance itself continues.
  */
-export function splitInstance(inst: BandInstance, avail: number, unit: string): [BandInstance | null, BandInstance | null] {
+export function splitInstance(inst: BandInstance, avail: number, unit: string, spanned = false): [BandInstance | null, BandInstance | null] {
   if (avail <= EPS) return [null, inst];
   const perInch = unitsPerInch(unit);
   const toUnits = (pt: number) => (pt / 72) * perInch;
@@ -2525,8 +2644,10 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string): 
   const crossing: { origBottom: number; origY: number; part: PlacedControl }[] = [];
   const below: PlacedControl[] = [];
   // Whether a control's box was cut while its text stayed, which is what
-  // carries the band's own remainder over (c05, s29s4).
-  let boxCut = false;
+  // carries the band's own remainder over (c05, s29s4). A cross-band line
+  // running through the band across the cut counts as one: printed in s34c,
+  // the blank remainder carried where without the line it did not (s34d).
+  let boxCut = spanned;
 
   for (const pc of inst.controls) {
     const bottom = pc.y + pc.height;
@@ -2650,6 +2771,8 @@ export interface PreviewPage {
   /** 1-based, as a reader counts pages. */
   number: number;
   bands: PlacedBand[];
+  /** The cross-band lines and boxes on this page, once the pages exist (parity row 48). */
+  crossBands?: CrossBandSegment[];
 }
 
 export interface PaginatedReport {
@@ -2984,6 +3107,29 @@ export function paginate(
   };
   /** The report header's part below its first page break, placed once page 2 is open. */
   let headerAfterBreak: BandInstance | null = null;
+  /*
+   * The cross-band controls open at the point of placing (parity row 48). One
+   * runs through every band between its start and its end, and where it runs
+   * across a page's foot the band's remainder carries over as for a control
+   * crossing it (s34c against s34d).
+   */
+  const crossBands = structure.crossBands ?? [];
+  const crossBand = (ref: string) => bands.find((b) => b.ref === ref);
+  const crossOpen = new Set<CrossBandControl>();
+  const spans = (inst: BandInstance, avail: number) => crossBands.some((cb) => {
+    const [start, end] = [crossBand(cb.startRef), crossBand(cb.endRef)];
+    if (inst.band === start && inst.band === end) return cb.startY < avail && cb.endY > avail;
+    if (inst.band === start) return crossOpen.has(cb) || cb.startY < avail;
+    if (inst.band === end) return crossOpen.has(cb) && cb.endY > avail;
+    return crossOpen.has(cb);
+  });
+  const track = (inst: BandInstance) => {
+    for (const cb of crossBands) {
+      const [start, end] = [crossBand(cb.startRef), crossBand(cb.endRef)];
+      if (inst.band === end) crossOpen.delete(cb);
+      else if (inst.band === start) crossOpen.add(cb);
+    }
+  };
 
   const startPage = (withReportHeader = false) => {
     current = { number: pages.length + 1, bands: [] };
@@ -3038,6 +3184,7 @@ export function paginate(
       const put = () => {
         current!.bands.push(at(part!, cursor));
         cursor += part!.height;
+        track(part!);
       };
       if (part.height <= avail + EPS) return put();
       if (pages.length >= maxPages && !atTop) return put();
@@ -3045,7 +3192,7 @@ export function paginate(
         startPage();
         continue;
       }
-      const [first, rest]: [BandInstance | null, BandInstance | null] = splitInstance(part, avail, ctx.unit);
+      const [first, rest]: [BandInstance | null, BandInstance | null] = splitInstance(part, avail, ctx.unit, spans(part, avail));
       if (!first) {
         if (atTop) return put();
         // Nothing prints here; what continues starts the next page, the space
@@ -3056,6 +3203,7 @@ export function paginate(
       }
       current!.bands.push(at(first, cursor));
       cursor += first.height;
+      track(first);
       if (!rest || pages.length >= maxPages) return;
       startPage();
       part = rest;
@@ -3460,6 +3608,9 @@ export function paginate(
 
   // A merged run prints once per page, so it is drawn once the pages exist.
   if (data) mergeRuns(pages);
+  if (structure.crossBands) drawCrossBands(structure.crossBands, bands, pages, {
+    top: topMargin, bottom: structure.page.height - bottomMargin, left: contentLeft,
+  });
 
   // Reported for the UI's "N records per page" readout. Derived from the first
   // full page rather than from the arithmetic above, because the arithmetic

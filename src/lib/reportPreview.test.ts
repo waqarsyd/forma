@@ -2219,6 +2219,61 @@ describe('the XRPageBreak control, as DevExpress printed it (cases s31c, s33)', 
   });
 });
 
+/*
+ * Parity row 48, cases s31c and s34a to s34d, built and saved by DevExpress
+ * 20.1: cross-band lines and boxes. Each segment is where DevExpress printed
+ * it, as left,top..right,bottom from the page's top left.
+ */
+describe('cross-band lines and boxes, as DevExpress printed them (cases s31c, s34)', () => {
+  const ROWS = Array.from({ length: 70 }, (_, i) => ({ Idx: String(i + 1), Region: i < 10 ? 'North' : 'South' }));
+  const label = (ref: number, name: string, text: string) =>
+    `<Controls><Item1 Ref="${ref}" ControlType="XRLabel" Name="${name}" Text="${text}" LocationFloat="20,5" SizeF="100,20" /></Controls>`;
+  const cross = (type: string, start: number, end: number, from: string, to: string, width: number) =>
+    `<CrossBandControls><Item1 Ref="90" ControlType="${type}" Name="cb" WidthF="${width}" StartBand="#Ref-${start}" EndBand="#Ref-${end}" StartPointFloat="${from}" EndPointFloat="${to}" /></CrossBandControls>`;
+  const report = (crossBands: string, bands: string) => parseReportStructure(
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50">' +
+    `${crossBands}<Bands>${bands}</Bands></XtraReportsLayoutSerializer>`);
+  const segments = (r: PaginatedReport) => r.pages.map((p) => (p.crossBands ?? []).map((s) => `${s.kind}:${s.left},${s.top}..${s.left + s.width},${s.bottom}`));
+  const groups = (pageBands = '') =>
+    '<Item1 Ref="3" ControlType="GroupHeaderBand" Name="GroupHeader1" HeightF="30"><GroupFields><Item1 Ref="31" FieldName="Region" /></GroupFields>' + label(32, 'grp', 'GROUP') + '</Item1>' +
+    `<Item2 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="30">${label(41, 'idx', 'row')}</Item2>` +
+    `<Item3 Ref="5" ControlType="GroupFooterBand" Name="GroupFooter1" HeightF="30">${label(51, 'gf', 'END')}</Item3>` + pageBands;
+
+  it('frames every page with a box from the page header to the page footer (s34a)', () => {
+    const r = paginate(report(cross('XRCrossBandBox', 6, 7, '0,0', '0,30', 750),
+      `<Item1 Ref="6" ControlType="PageHeaderBand" Name="PageHeader" HeightF="30">${label(61, 'ph', 'HEADER')}</Item1>` +
+      `<Item2 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="30">${label(41, 'idx', 'row')}</Item2>` +
+      `<Item3 Ref="7" ControlType="PageFooterBand" Name="PageFooter" HeightF="30">${label(71, 'pf', 'FOOTER')}</Item3>`), 70);
+    expect(segments(r)).toEqual([['box:50,50..800,1050'], ['box:50,50..800,1050'], ['box:50,50..800,1050']]);
+    expect(r.pages[0].crossBands![0].strokePx).toBe(2);
+  });
+
+  it('draws a group\'s line from its header to its footer, through every page between (s34b)', () => {
+    const r = paginate(report(cross('XRCrossBandLine', 3, 5, '5,5', '5,25', 3), groups()), ROWS.length, { rows: ROWS });
+    expect(segments(r)).toEqual([['line:55,55..58,405', 'line:55,415..58,1050'], ['line:55,50..58,1050'], ['line:55,50..58,280']]);
+  });
+
+  it('starts a continued line below the page header and stops it above the page footer (s34c)', () => {
+    const pageBands = `<Item4 Ref="6" ControlType="PageHeaderBand" Name="PageHeader" HeightF="40">${label(61, 'ph', 'HEADER')}</Item4>` +
+      `<Item5 Ref="7" ControlType="PageFooterBand" Name="PageFooter" HeightF="40">${label(71, 'pf', 'FOOTER')}</Item5>`;
+    const r = paginate(report(cross('XRCrossBandLine', 3, 5, '5,5', '5,25', 3), groups(pageBands)), ROWS.length, { rows: ROWS });
+    expect(segments(r)).toEqual([['line:55,95..58,445', 'line:55,455..58,1010'], ['line:55,90..58,1010'], ['line:55,90..58,480']]);
+    // The line through record 58 at the foot of page 2 carried its 5 blank units
+    // to page 3, as DevExpress did; without it they were dropped (s34d).
+    const first = (rep: PaginatedReport) => rep.pages[2].bands.find((b) => b.band.kind === 'Detail' && b.controls.length)!.top;
+    expect(first(r)).toBe(95);
+    expect(first(paginate(report('', groups(pageBands)), ROWS.length, { rows: ROWS }))).toBe(90);
+  });
+
+  it('runs a line from the report header to the report footer across pages (s31c)', () => {
+    const r = paginate(report(cross('XRCrossBandLine', 2, 9, '600,10', '600,30', 9),
+      `<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="200"><Controls><Item1 Ref="21" ControlType="XRLabel" Name="b" Text="B" SizeF="100,20" /><Item2 Ref="22" ControlType="XRPageBreak" Name="brk" LocationFloat="0,160" /><Item3 Ref="23" ControlType="XRLabel" Name="a" Text="A" LocationFloat="200,170" SizeF="100,20" /></Controls></Item1>` +
+      `<Item2 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="25">${label(41, 'n', 'row')}</Item2>` +
+      `<Item3 Ref="9" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="40">${label(91, 'foot', 'FOOTER')}</Item3>`), 5);
+    expect(segments(r)).toEqual([['line:650,60..659,1050'], ['line:650,50..659,245']]);
+  });
+});
+
 describe('a record at the foot of a page, as DevExpress printed it (case s29s)', () => {
   const report = (detail: string, height: number) => paginate(parseReportStructure(
     '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +

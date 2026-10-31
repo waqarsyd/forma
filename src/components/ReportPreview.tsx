@@ -1130,6 +1130,24 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                   })}
                 </div>
               ))}
+              {/* Cross-band lines and boxes, drawn over the bands they cross
+                  (parity row 48): a box as its frame, a line down the middle
+                  of its strip, each stroke in pixels as DevExpress draws it. */}
+              {(!windowed || isDrawn(pageIndex)) && page.crossBands?.map((cb, i) => (
+                <div
+                  key={`cross${i}`}
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    pointerEvents: 'none',
+                    top: unitsToPx(cb.top, report.unit),
+                    height: unitsToPx(cb.bottom - cb.top, report.unit),
+                    ...(cb.kind === 'box'
+                      ? { left: unitsToPx(cb.left, report.unit), width: unitsToPx(cb.width, report.unit), boxSizing: 'border-box', border: `${cb.strokePx}px solid ${cssColor(cb.color) ?? '#000'}` }
+                      : { left: `calc(${unitsToPx(cb.left + cb.width / 2, report.unit)}px - ${cb.strokePx / 2}px)`, width: cb.strokePx, background: cssColor(cb.color) ?? '#000' }),
+                  }}
+                />
+              ))}
             </div>
           </div>
         </div>
