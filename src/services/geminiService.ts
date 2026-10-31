@@ -21,6 +21,7 @@ import { repairSummaries } from "../lib/repxSummaries";
 import { repairGroupLevels } from "../lib/repxGroups";
 import { repairCrossTabs } from "../lib/repxCrossTabs";
 import { repairDpi } from "../lib/repxDpi";
+import { repairPaper } from "../lib/repxPaper";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
@@ -2528,6 +2529,21 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console.log(`Dpi: ${dpi.reason}.`);
     } else {
       console.debug(`Dpi: ${dpi.reason}.`);
+    }
+
+    /*
+     * DevExpress prints on PaperKind's paper, Letter when there is none,
+     * whatever PageWidth and PageHeight say: measured in s30, where an A4 report
+     * written as Forma wrote it printed on two Letter pages (parity row 44).
+     * Named here, before the passes that parse the page, so every one of them
+     * and the Preview read the paper written for. See `repxPaper.ts`.
+     */
+    const paper = repairPaper(parsed.repxContent);
+    if (paper.applied) {
+      parsed.repxContent = paper.xml;
+      console.log(`Paper: ${paper.reason}.`);
+    } else {
+      console.debug(`Paper: ${paper.reason}.`);
     }
 
     // The prompt pins Margins to zero so the model can write paper-absolute

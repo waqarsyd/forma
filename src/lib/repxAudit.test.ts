@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { auditRepx } from './repxAudit';
 import { repairCrossTabs } from './repxCrossTabs';
 import { repairDpi } from './repxDpi';
+import { repairPaper } from './repxPaper';
 
 const report = (bands: string) =>
   '<?xml version="1.0" encoding="utf-8"?>' +
@@ -338,6 +339,26 @@ describe('auditRepx on Dpi in a report not in hundredths of an inch', () => {
   it('counts only what is missing when some elements carry one', () => {
     const partial = repairDpi(inUnit('TenthsOfAMillimeter')).xml.replace(/(Name="c[12]" [^>]*?) Dpi="254"/g, '$1');
     expect(finding(partial)?.message).toMatch(/^2 band\(s\) and control\(s\) \(c1, c2\) carry no Dpi/);
+  });
+});
+
+/*
+ * Parity row 44, case s30: DevExpress prints on PaperKind's paper, Letter when
+ * there is none, whatever PageWidth and PageHeight say.
+ */
+describe('auditRepx on the paper', () => {
+  const finding = (xml: string) => auditRepx(xml).findings.find((f) => f.code === 'paper-mismatch');
+  const onPaper = (size: string) => healthy.replace('PageWidth="850" PageHeight="1100"', size);
+
+  it('warns that an A4 page written with no paper named prints on Letter', () => {
+    const f = finding(onPaper('PageWidth="827" PageHeight="1169"'));
+    expect(f?.severity).toBe('warning');
+    expect(f?.message).toContain('written as 827 by 1169, but DevExpress prints it on Letter, 850 by 1100, because the report names no paper');
+  });
+
+  it('says nothing once the paper is named, nor for Letter', () => {
+    expect(finding(repairPaper(onPaper('PageWidth="827" PageHeight="1169"')).xml)).toBeUndefined();
+    expect(finding(healthy)).toBeUndefined();
   });
 });
 

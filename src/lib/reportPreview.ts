@@ -43,6 +43,7 @@ import { ReportData, aggregate, groupRuns, sortCompare, sortedOrder, valueText, 
 import { parseParameters, type ReportParameter } from './repxParameters';
 import { isTrue, parseCriteria, type Value } from './criteria';
 import { crossTabFacts } from './repxCrossTabs';
+import { printedPaper } from './repxPaper';
 import { NetDecimal } from './netDecimal';
 
 /** The bands that carry content, in the order XtraReports prints them. */
@@ -1604,11 +1605,14 @@ export function parseReportStructure(
   const targetDpi = into?.dpi ?? unitsPerInch(ownUnit);
   const rootScale = targetDpi / dpiOf(rootAttrs);
   const pageScale = into ? targetDpi / unitsPerInch(ownUnit) : 1;
+  // The paper DevExpress prints on: PaperKind's, Letter when there is none,
+  // whatever PageWidth and PageHeight say (parity row 44, s30).
+  const paper = printedPaper(rootAttrs);
 
   const structure: ReportStructure = {
     page: {
-      width: numAttr(rootAttrs, 'PageWidth', 850) * pageScale,
-      height: numAttr(rootAttrs, 'PageHeight', 1100) * pageScale,
+      width: paper.width * pageScale,
+      height: paper.height * pageScale,
     },
     margins: {
       top: (marginRaw[2] ?? 0) * rootScale,

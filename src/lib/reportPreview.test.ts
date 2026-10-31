@@ -916,7 +916,7 @@ it('reads an absent Layout as DownThenAcross, which is the default', () => {
 
   it('paginates an unlabelled multi-column band down the first column', () => {
     const structure = parseReportStructure(
-      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="900" PageHeight="1000">' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="900" PageHeight="1000">' +
       '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100">' +
       '<MultiColumn Ref="2" ColumnCount="2" ColumnSpacing="20" Mode="UseColumnCount" />' +
       '<Controls><Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" LocationFloat="0,0" /></Controls>' +
@@ -947,9 +947,11 @@ it('reads an absent Layout as DownThenAcross, which is the default', () => {
  * follows the detail flow.
  */
 describe('paginating into columns', () => {
+  // A 900 by 1000 page needs PaperKind="Custom": without it DevExpress prints
+  // Letter whatever the size written, and so does the Preview (parity row 44).
   const build = (count: number, layout: string, detailHeight: number, extra = '') =>
     parseReportStructure(
-      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="900" PageHeight="1000">' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="900" PageHeight="1000">' +
       '<Bands>' +
       extra +
       `<Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${detailHeight}">` +
@@ -1007,7 +1009,7 @@ describe('paginating into columns', () => {
     // The regression that matters: everything without <MultiColumn> must be
     // untouched by this code path.
     const plain = parseReportStructure(
-      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="900" PageHeight="1000">' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="900" PageHeight="1000">' +
       '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls><Item1 Ref="2" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" /></Controls></Item1></Bands></XtraReportsLayoutSerializer>'
     );
     const placed = details(paginate(plain, 3));

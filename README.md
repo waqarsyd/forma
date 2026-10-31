@@ -339,6 +339,9 @@ src/
                        repxDpi (DevExpress reads every band and control at
                        its own Dpi, 100 when absent; writes the report's on
                        each, so millimetre reports print at their size),
+                       repxPaper (DevExpress prints on PaperKind's paper,
+                       Letter when absent; names the paper the written size
+                       is, so A4 and landscape reports print on it),
                        repxAudit (asks what is still wrong with the finished
                        report after every repair has run — errors mean content
                        will be lost, warnings mean it opens and is a worse

@@ -209,6 +209,25 @@ With no `Dpi` anywhere, the margins were read the same way: 254 tenths of a mill
 - **The audit says so (parity row 34).** `findDpiProblem` uses the same walk as the repair. The audit's `dpi-missing` warning counts the bands and controls DevExpress will read at 100 in a report that is not in hundredths, names the first three, and says how they print: 2.54 times too large, or 4% too small. A generated report never shows it, since the repair has run. An older or uploaded one does.
 - **The Preview draws it as DevExpress prints it (parity row 35).** `parseReportStructure` scales each band's and control's numbers by the report's units per inch over that element's own `Dpi`, so a millimetre report without `Dpi` previews 2.54 times too large, exactly as it prints. Side margins follow the root's `Dpi`, and an embedded report is read into its host's unit. Each control keeps its `dpiScale`, and everything that writes geometry back divides by it: the drag, the resize, the arrow-key nudge (which steps one of the file's own units) and the overlap repair. So editing such a report writes the file's numbers, not the scaled ones. `repairDpi` now runs first among the passes that read geometry, so in generation every later pass sees a scale of 1. s28 measured that each element really is independent: a band and its control, or a panel and its child, can differ.
 
+### The paper is PaperKind, not the size written (2026-10-31)
+
+The units audit made `PageWidth` and `PageHeight` follow the configured paper, and that was the whole of what Forma said about the paper. **DevExpress does not read the page from them.** It takes the paper from `PaperKind`, which is Letter when absent, turns it for `Landscape="true"`, and prints the size written only when `PaperKind="Custom"`. Measured in cases s30p1 to s30p8 of [`devexpress-parity.md`](../proposals/devexpress-parity.md):
+
+| Root as written | Printed on |
+|---|---|
+| `PageWidth="827" PageHeight="1169"`, as Forma wrote A4 | Letter, two pages |
+| the same, with `PaperKind="A4"` | A4, one page |
+| `PageWidth="1100" PageHeight="850"` | Letter portrait |
+| the same, with `Landscape="true"` | Letter landscape |
+| `PaperKind="A4"` with Letter's size written | A4 |
+| `PaperKind="Custom" PageWidth="900" PageHeight="600"` | 900 by 600 |
+
+Loading such a file and reading it back said the same thing before any printing: an A4 size with no `PaperKind` loaded as Letter, 850 by 1100. So **every report Forma generated on A4, Legal or Tabloid, or in landscape, printed on Letter portrait**, spilling past it onto extra pages, while Forma's own Preview read the size written and showed the paper intended.
+
+**What the serializer writes**, read from reports DevExpress saved: nothing for Letter, `PaperKind="A4"`, `"Legal"` or `"Tabloid"` with the size, `Landscape="true"` with the size turned (plus the `PaperKind` unless it is Letter), and `PaperKind="Custom"` for any other size. The sizes it writes are exactly what `pageSizeInUnits` computes, in all three units.
+
+**Fixed by parity row 44.** `repairPaper` in `repxPaper.ts` runs straight after `repairDpi` and names the paper the written size is, as the serializer would. It leaves Letter portrait unwritten and a report that already names its paper alone. `printedPaper` is the page the Preview now reads: the named paper's own size, so A4 is 826.77 by 1169.29 as DevExpress printed it, not the 827 by 1169 written. The audit's `paper-mismatch` warning finds a report the repair did not reach, older or uploaded, and names the paper it will print on. Reports generated before the fix print on Letter until they are generated again.
+
 ## The margin is drawn, not declared (2026-09-02)
 
 Item 1 of the units audit above — *nothing has been opened in the real DevExpress designer* — was finally paid on 2026-09-02. A generated invoice was opened in a real 20.1 designer beside its source image, and the verdict was that **it matches**. What the eye caught instead was structural: the report declares no margins at all.

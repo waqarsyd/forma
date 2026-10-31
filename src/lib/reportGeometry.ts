@@ -167,6 +167,11 @@ const PAGE_INCHES: Record<string, { w: number; h: number }> = {
   Tabloid: { w: 11, h: 17 },
 };
 
+/** A paper's size in inches, portrait, or null for a paper this app has no size for. */
+export function paperInches(paper: string): { w: number; h: number } | null {
+  return Object.prototype.hasOwnProperty.call(PAGE_INCHES, paper) ? PAGE_INCHES[paper] : null;
+}
+
 /** The paper assumed when none is set. */
 export const DEFAULT_PAGE_SIZE = 'Letter';
 

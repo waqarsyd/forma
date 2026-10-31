@@ -46,6 +46,7 @@ import { auditLayoutBounds } from './repxLayout';
 import { findSummaryProblems } from './repxSummaries';
 import { crossTabsWithoutData, findCrossTabProblems } from './repxCrossTabs';
 import { findDpiProblem } from './repxDpi';
+import { findPaperProblem } from './repxPaper';
 import { parseReportStructure } from './reportPreview';
 import type { ReportLayout } from './reportTypes';
 
@@ -779,6 +780,26 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
       `${dpiProblem.count} band(s) and control(s) (${dpiProblem.names.join(', ')}${dpiProblem.count > 3 ? ', ...' : ''}) carry no Dpi, ` +
         `so DevExpress reads their numbers as hundredths of an inch whatever the report's unit, and prints them ${size}. ` +
         'Generating the report again in Forma writes the Dpi.',
+    );
+  }
+
+  /*
+   * The paper DevExpress prints on is PaperKind's, Letter when there is none,
+   * whatever PageWidth and PageHeight say (case s30, parity row 44). Every
+   * non-Letter report Forma generated before `repairPaper` names no paper, so
+   * it prints on Letter and spills onto extra pages while the panes here show
+   * the page it was written for.
+   */
+  const paperProblem = findPaperProblem(text);
+  if (paperProblem) {
+    const { written, printed } = paperProblem;
+    const paper = `${printed.kind}${printed.landscape ? ' landscape' : ''}`;
+    add(
+      'warning',
+      'paper-mismatch',
+      `The page is written as ${Math.round(written.width)} by ${Math.round(written.height)}, but DevExpress prints it on ${paper}, ` +
+        `${Math.round(printed.width)} by ${Math.round(printed.height)}, because ${paperProblem.named ? `the report names ${printed.kind}` : 'the report names no paper'}. ` +
+        'Content past that page prints on extra pages. Generating the report again in Forma names the paper.',
     );
   }
 
