@@ -284,7 +284,10 @@ describe('paginating a real report', () => {
 
   it('moves the ReportFooter to a new page when it does not fit', () => {
     // 34 records fill page 1 exactly, leaving no room for a 60-unit footer.
-    const result = run(34);
+    // The footer needs a control to take room at all (parity row 41).
+    const withTotal = banded.replace('<Item5 Ref="11" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="60" />',
+      '<Item5 Ref="11" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="60"><Controls><Item1 Ref="14" ControlType="XRLabel" Name="total" Text="TOTAL" SizeF="200,20" /></Controls></Item5>');
+    const result = paginate(parseReportStructure(withTotal), 34);
     const footerPage = result.pages.find((p) => p.bands.some((b) => b.band.kind === 'ReportFooter'))!;
     expect(footerPage.number).toBe(2);
     expect(footerPage.bands.some((b) => b.band.kind === 'PageHeader')).toBe(true);
@@ -993,7 +996,8 @@ describe('paginating into columns', () => {
     // A 400-unit ReportHeader leaves 600 on page one and 1000 after it, so the
     // first page fits fewer rows. Computing the grid once would under-fill
     // every later page, which reads as a bug in the report rather than here.
-    const header = '<Item1 Ref="1" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="400" />';
+    // A control, or the header would take no room at all (parity row 41).
+    const header = '<Item1 Ref="1" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="400"><Controls><Item1 Ref="5" ControlType="XRLabel" Name="t" Text="T" SizeF="100,20" /></Controls></Item1>';
     const result = paginate(build(2, 'AcrossThenDown', 200, header), 20);
     expect(details(result, 0)).toHaveLength(6);   // 3 rows x 2
     expect(details(result, 1)).toHaveLength(10);  // 5 rows x 2
@@ -1004,7 +1008,7 @@ describe('paginating into columns', () => {
     // untouched by this code path.
     const plain = parseReportStructure(
       '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="900" PageHeight="1000">' +
-      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100" /></Bands></XtraReportsLayoutSerializer>'
+      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls><Item1 Ref="2" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" /></Controls></Item1></Bands></XtraReportsLayoutSerializer>'
     );
     const placed = details(paginate(plain, 3));
     expect(placed.map((b) => b.left)).toEqual([0, 0, 0]);
@@ -1988,6 +1992,53 @@ describe('controls in the margin bands, as DevExpress printed them (case s29m)',
     const lines = reportToCsv(parseReportStructure(xml), 70).split('\r\n');
     expect(lines.slice(0, 3)).toEqual(['TMtitle,', ',TMright', 'PH,']);
     expect(lines.slice(-3)).toEqual(['Page 1 of 1,', ',BMlit', '']);
+  });
+});
+
+/*
+ * Parity row 41, cases s29x1, s29x2, s29x3 and s29s6, printed through
+ * DevExpress 20.1 on 2026-10-31: a band with no visible control takes no
+ * room. Until this row the Preview drew each at its height.
+ */
+describe('a band with no visible control, as DevExpress printed it (cases s29x, s29s6)', () => {
+  const label = (ref: number, name: string, extra = '') =>
+    `<Controls><Item1 Ref="${ref}" ControlType="XRLabel" Name="${name}" Text="${name}" SizeF="200,20"${extra} /></Controls>`;
+  const report = (bands: string) => parseReportStructure(
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
+    `<Bands>${bands}</Bands></XtraReportsLayoutSerializer>`);
+  const top = (r: PaginatedReport, kind: string) => r.pages[0].bands.find((b) => b.band.kind === kind)!.top;
+
+  it('puts the report footer straight after the header past empty bands (s29x1)', () => {
+    const r = paginate(report(
+      `<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="30">${label(20, 'RH')}</Item1>` +
+      '<Item2 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="40" />' +
+      '<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="30" />' +
+      `<Item4 Ref="5" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="30">${label(50, 'RF')}</Item4>`), 3);
+    expect(top(r, 'ReportFooter')).toBe(80);
+  });
+
+  it('gives no room to a band holding only a hidden label, or only a fill and borders (s29x2)', () => {
+    const r = paginate(report(
+      `<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="30">${label(20, 'RH')}</Item1>` +
+      `<Item2 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="40">${label(30, 'hidden', ' Visible="false"')}</Item2>` +
+      '<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="30" BackColor="LightYellow" />' +
+      '<Item4 Ref="6" ControlType="GroupFooterBand" Name="GroupFooter1" HeightF="25" BackColor="LightBlue" Borders="All" />' +
+      `<Item5 Ref="5" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="30">${label(50, 'RF')}</Item5>`), 3);
+    expect(top(r, 'ReportFooter')).toBe(80);
+  });
+
+  it('leaves an empty page footer\'s room to the records, 33 a page (s29x3)', () => {
+    const r = paginate(report(
+      `<Item1 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="30">${label(40, 'row')}</Item1>` +
+      '<Item2 Ref="5" ControlType="PageFooterBand" Name="PageFooter" HeightF="100" />'), 70);
+    expect(r.pages.map((p) => p.bands.filter((b) => b.band.kind === 'Detail').length)).toEqual([33, 33, 4]);
+  });
+
+  it('prints no room for an empty group header before each record (s29s6)', () => {
+    const r = paginate(report(
+      '<Item1 Ref="3" ControlType="GroupHeaderBand" Name="GroupHeader1" HeightF="45" />' +
+      `<Item2 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="30">${label(40, 'row')}</Item2>`), 13);
+    expect(r.pages[0].bands.filter((b) => b.band.kind === 'Detail').map((b) => b.top).slice(0, 3)).toEqual([50, 80, 110]);
   });
 });
 

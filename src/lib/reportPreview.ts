@@ -1993,6 +1993,19 @@ function textHeight(
 }
 
 /**
+ * A band with no visible control, which DevExpress prints as nothing at all
+ * (parity row 41). Printed in s29x1, s29x2, s29s6 and s29x3: an empty page
+ * header, Detail band, group header and page footer took no room, and nor
+ * did a band holding only a hidden label, or only a fill and borders, whose
+ * fill did not print either. The empty page footer left its room to the
+ * records, 33 a page where it would have allowed 30. The margin bands are not
+ * included: their height is the page's margin whatever they hold.
+ */
+export function isEmptyBand(band: PreviewBand): boolean {
+  return band.kind !== 'TopMargin' && band.kind !== 'BottomMargin' && !band.controls.some((c) => c.visible);
+}
+
+/**
  * How tall a band prints before anything grows: its declared height, or its
  * lowest visible control's bottom when that is lower down. Printed in s29a, a
  * report header declared 100 holding a label to 140 printed 140, and the
@@ -2004,6 +2017,7 @@ function textHeight(
  * does by never laying them out.
  */
 export function heldHeight(band: PreviewBand): number {
+  if (isEmptyBand(band)) return 0;
   const held = (c: PreviewControl, index: number) =>
     c.type === 'XRPanel' && c.canGrow
       ? Math.max(c.height, ...band.controls.filter((k) => k.visible && k.panel === index).map((k) => k.y + k.height))
@@ -2039,7 +2053,7 @@ export function layoutBand(
   // The band's own rules for this record: its fill and the like reach its
   // controls by inheritance; `Visible="False"` drops the band from this record.
   const bandRules = firedRules(band.rules, ctx, scope);
-  if (bandRules.visible === false) return { band, record, scope, height: 0, controls: [] };
+  if (bandRules.visible === false || isEmptyBand(band)) return { band, record, scope, height: 0, controls: [] };
   const items = band.controls
     .map((control, index) => ({ control: applyRules(control, { look: bandRules.look }, ctx, scope), index }))
     .filter(({ control }) => control.visible)
