@@ -280,6 +280,20 @@ describe('turned text in the Preview', () => {
 });
 
 /*
+ * DevExpress draws text unkerned, in every font measured (parity row 53, s39):
+ * its widths were Edge's with kerning off, up to 24 units longer than kerned.
+ * The page turns kerning off for everything drawn on it, the print host too.
+ */
+describe('kerning in the Preview', () => {
+  it('draws the page unkerned', () => {
+    const { container } = render(<ReportPreview repxContent={geometry} layout={null} title="Kerning" />);
+    const css = [...container.querySelectorAll('style')].map((s) => s.textContent ?? '').join('\n');
+    const page = css.slice(css.indexOf('.rp-page {'), css.indexOf('}', css.indexOf('.rp-page {')));
+    expect(page).toContain('font-kerning: none');
+  });
+});
+
+/*
  * Export CSV hands the browser a file named after the report, holding what the
  * pane shows laid out as DevExpress exports CSV (parity row 20).
  */

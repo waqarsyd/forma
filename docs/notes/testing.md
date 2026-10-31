@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,963 tests in 93 files** — under the `node` environment
+`npm test` runs Vitest over **1,964 tests in 93 files** — under the `node` environment
 by default, with the eleven files that genuinely need a DOM opting into jsdom on their
 own first line; see `vitest.config.ts` for why that split is load-bearing rather than
 tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
@@ -83,7 +83,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/DataBinding` | 18 | jsdom |
 | `components/DescribeReportDialog` | 6 | jsdom; the Prompt-to-Report wizard, no key and no network |
 | `components/LibraryPanel` | 17 | jsdom |
-| `components/ReportPreview` | 15 | jsdom; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; Export CSV |
+| `components/ReportPreview` | 16 | jsdom; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
 | `lib/announcements` | 7 |  |
@@ -170,7 +170,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 1,963 in 93 files** — and that total is the arithmetic sum of the column above
+**Total: 1,964 in 93 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -184,7 +184,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,892** against a real 1,963 and will talk you into
+A grep for `\bit(` answers **1,893** against a real 1,964 and will talk you into
 "correcting" numbers that were already right. **Nine** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

@@ -1202,6 +1202,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         .rp-page {
           background: var(--rp-paper); color: var(--rp-ink);
           position: relative; overflow: hidden;
+          /* DevExpress draws its text unkerned, every font measured (parity row 53, s39). */
+          font-kerning: none;
           box-shadow: 0 1px 3px rgba(0,0,0,.16), 0 8px 24px rgba(0,0,0,.10);
           transform-origin: top left;
         }

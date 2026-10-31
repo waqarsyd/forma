@@ -164,6 +164,12 @@ export function cssFont(font: FontSpec): string {
  * Null under jsdom as well as under Node, because jsdom's canvas is a stub
  * that logs an error and measures nothing; the Preview then lays text out at
  * its designed size, which is what it did before rows 7 and 8.
+ *
+ * It measures kerned, as a canvas does by default, though DevExpress draws
+ * unkerned (row 53). DevExpress does not break lines by its drawn widths:
+ * in s39b six fonts kept a line wider unkerned than its box, and the kerned
+ * widths here predicted six of those seven breaks and all 18 of row 7's.
+ * What DevExpress does break by is a proposed row of its own.
  */
 export function canvasMeasurer(): MeasureText | null {
   const context = canvasContext();
@@ -197,12 +203,18 @@ function canvasContext(): CanvasRenderingContext2D | null {
 let lineContext: CanvasRenderingContext2D | null | undefined;
 
 /**
- * One line's width in points, measured on a canvas; null where there is none.
- * For a turned label (parity row 49), whose turned line the pane aligns in the
- * label's box by its bounding box, so it needs the line's length.
+ * One line's width in points as it is drawn, unkerned, measured on a canvas;
+ * null where there is none. For a turned label (parity row 49), whose turned
+ * line the pane aligns in the label's box by its bounding box, so it needs
+ * the length the line prints at. DevExpress draws text unkerned (row 53, s39):
+ * s31c's turned line printed 101.2 units long, Edge's unkerned width, and
+ * sat 2.2 short of it while this measured it kerned.
  */
 export function lineWidthPt(text: string, font: FontSpec): number | null {
-  if (lineContext === undefined) lineContext = canvasContext();
+  if (lineContext === undefined) {
+    lineContext = canvasContext();
+    if (lineContext && 'fontKerning' in lineContext) lineContext.fontKerning = 'none';
+  }
   if (!lineContext) return null;
   lineContext.font = cssFont(font);
   return lineContext.measureText(text).width * 0.75;
