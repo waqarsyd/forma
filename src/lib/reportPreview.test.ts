@@ -2114,6 +2114,63 @@ describe('expression bindings on appearance and visibility, as DevExpress printe
   });
 });
 
+/*
+ * Parity row 46, cases s31b and s32a to s32c, built and saved by DevExpress
+ * 20.1 and printed over 45 records 30 to a page: a ten times, b thirty times
+ * across the page break and the group break, c five times, and a null note
+ * on every third. Each expectation is what printed.
+ */
+describe('suppressed and merged repeats, as DevExpress printed them (cases s31b, s32)', () => {
+  const ROWS = Array.from({ length: 45 }, (_, i) => ({
+    Idx: String(i + 1), Name: i < 10 ? 'a' : i < 40 ? 'b' : 'c', Region: i < 20 ? 'North' : 'South', Note: (i + 1) % 3 === 0 ? '' : `n${i + 1}`,
+  }));
+  const label = (ref: number, name: string, field: string, x: number, extra = '') =>
+    `<Item${ref} Ref="${ref}" ControlType="XRLabel" Name="${name}" SizeF="100,20" LocationFloat="${x},0"${extra}>` +
+    `<ExpressionBindings><Item1 Ref="${ref}0" EventName="BeforePrint" PropertyName="Text" Expression="[${field}]" /></ExpressionBindings></Item${ref}>`;
+  const report = (detail: string, group = '') => parseReportStructure(
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" DataMember="Items">' +
+    `<Bands>${group}<Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="33.33"><Controls>${detail}</Controls></Item2></Bands></XtraReportsLayoutSerializer>`);
+  /** Each page's printings of the named control, as text@top+height from the content's top. */
+  const printed = (structure: ReturnType<typeof parseReportStructure>, name: string, rows = ROWS) =>
+    paginate(structure, rows.length, { rows }).pages.map((page) => page.bands.flatMap((b) => b.controls
+      .filter((pc) => pc.control.name === name)
+      .map((pc) => `${pc.text}@${Math.round((b.top + pc.y - 50) * 10) / 10}+${Math.round(pc.height * 10) / 10}`)));
+
+  it('prints a suppressed value once per run, across the page break (s32a)', () => {
+    expect(printed(report(label(3, 'sup', 'Name', 0, ' ProcessDuplicatesMode="Suppress"')), 'sup')).toEqual([['a@0+20', 'b@333.3+20'], ['c@333.3+20']]);
+  });
+
+  it('and across a group break (s32c)', () => {
+    const group = '<Item1 Ref="5" ControlType="GroupHeaderBand" Name="GroupHeader1" HeightF="25"><GroupFields><Item1 Ref="6" FieldName="Region" /></GroupFields>' +
+      `<Controls>${label(7, 'grp', 'Region', 0)}</Controls></Item1>`;
+    const all = printed(report(label(3, 'sup', 'Name', 0, ' ProcessDuplicatesMode="Suppress"'), group), 'sup').flat().map((t) => t.split('@')[0]);
+    expect(all).toEqual(['a', 'b', 'c']);
+  });
+
+  it('merges a run into one box per page, its value printed again after the break (s32a)', () => {
+    expect(printed(report(label(3, 'mrg', 'Name', 150, ' ProcessDuplicatesMode="Merge"')), 'mrg'))
+      .toEqual([['a@0+320', 'b@333.3+653.3'], ['b@0+320', 'c@333.3+153.3']]);
+  });
+
+  it('carries a merged run once in the CSV, on its first line (s32a)', () => {
+    const lines = reportToCsv(report(label(3, 'mrg', 'Name', 150, ' ProcessDuplicatesMode="Merge"') + label(4, 'idx', 'Idx', 450)), ROWS.length, { rows: ROWS }).split('\r\n');
+    expect(lines.slice(0, 3)).toEqual(['a,1', ',2', ',3']);
+    expect(lines[10]).toBe('b,11');
+  });
+
+  it('prints nothing for a null under ProcessNullValues="Suppress" (s31b)', () => {
+    const notes = printed(report(label(3, 'nul', 'Note', 320, ' ProcessNullValues="Suppress"')), 'nul').flat().map((t) => t.split('@')[0]);
+    expect(notes.slice(0, 4)).toEqual(['n1', 'n2', 'n4', 'n5']);
+    expect(notes).toHaveLength(30);
+  });
+
+  it('suppresses and merges nothing without test data', () => {
+    const s = report(label(3, 'sup', 'Name', 0, ' ProcessDuplicatesMode="Suppress"') + label(4, 'mrg', 'Name', 150, ' ProcessDuplicatesMode="Merge"'));
+    const placed = paginate(s, 3).pages[0].bands.filter((b) => b.band.kind === 'Detail');
+    expect(placed.map((b) => b.controls.length)).toEqual([2, 2, 2]);
+  });
+});
+
 describe('a record at the foot of a page, as DevExpress printed it (case s29s)', () => {
   const report = (detail: string, height: number) => paginate(parseReportStructure(
     '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +

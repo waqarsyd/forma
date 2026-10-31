@@ -316,6 +316,15 @@ export interface PreviewControl {
   /** Its expression bindings on anything but the text; see `AppearanceBinding`. */
   bindings?: AppearanceBinding[];
   /**
+   * `ProcessDuplicatesMode` and `ProcessNullValues` as written, when they are
+   * (parity row 46). Printed in s31b and s32: a repeat is blank, compared with
+   * the record before in print order across pages and groups; a merged run
+   * prints once, in one box per page; a null is blank. The shrinking modes
+   * suppress the same way, and their shrink is row 52.
+   */
+  duplicates?: 'Suppress' | 'SuppressAndShrink' | 'Merge';
+  nulls?: 'Suppress' | 'SuppressAndShrink';
+  /**
    * For an `XRSubreport`: the report embedded in its `<ReportSource>`, parsed,
    * or the file its `ReportSourceUrl` names, which a browser cannot open.
    * Null for every other control.
@@ -1058,6 +1067,16 @@ function parseAppearanceBindings(ownSlice: string): AppearanceBinding[] {
   return out;
 }
 
+/** `ProcessDuplicatesMode` and `ProcessNullValues`, for a control that writes either. */
+function repeatsOf(attrs: string): Pick<PreviewControl, 'duplicates' | 'nulls'> {
+  const duplicates = attrOf(attrs, 'ProcessDuplicatesMode');
+  const nulls = attrOf(attrs, 'ProcessNullValues');
+  return {
+    ...(duplicates === 'Suppress' || duplicates === 'SuppressAndShrink' || duplicates === 'Merge' ? { duplicates } : {}),
+    ...(nulls === 'Suppress' || nulls === 'SuppressAndShrink' ? { nulls } : {}),
+  };
+}
+
 /** `{ bindings }` for a node that has any, and nothing for one that has none. */
 function boundProperties(ownSlice: string): { bindings?: AppearanceBinding[] } {
   const bindings = parseAppearanceBindings(ownSlice);
@@ -1499,6 +1518,7 @@ function parseControls(
       link: parseLink(item.attrs, inner.slice(item.start, extent)),
       rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
       ...boundProperties(ownPart(inner.slice(item.start, extent))),
+      ...repeatsOf(item.attrs),
       subreport: type === 'XRSubreport' ? parseSubreport(item.attrs, inner.slice(item.start, extent), targetDpi, targetUnit) : null,
       ownProps: [...new Set([...ownPropsOf(item.attrs, ownPart(inner.slice(item.start, extent)), styles, type), ...shield])],
       pageInfo: type === 'XRPageInfo'
@@ -2000,6 +2020,71 @@ function applyRules(control: PreviewControl, band: { look: Appearance | null }, 
 }
 
 /**
+ * Whether a control prints nothing on this record, keeping its space, because
+ * its value is null or repeats the record before's (parity row 46). Printed
+ * in s31b and s32: a null printed nothing under `ProcessNullValues`, and under
+ * `ProcessDuplicatesMode="Suppress"` a value printed on the first record of
+ * each run and nowhere after it, compared with the record before in print
+ * order, across a page break and across a group break alike. Without test
+ * data nothing is suppressed, so the Preview shows every record as designed.
+ */
+function suppressed(control: PreviewControl, band: PreviewBand, ctx: LayoutContext, scope: TextScope | null): boolean {
+  const repeats = control.duplicates === 'Suppress' || control.duplicates === 'SuppressAndShrink';
+  if (!ctx.data || !scope || (!control.nulls && !repeats)) return false;
+  if (control.nulls && ctx.data.value(control.data, scope) === null) return true;
+  if (!repeats || band.kind !== 'Detail' || scope.row === null || scope.row < 1) return false;
+  const before = { ...scope, row: scope.row - 1, anchor: scope.row - 1 };
+  return textsOf(control, null, ctx, before).text === textsOf(control, null, ctx, scope).text;
+}
+
+/**
+ * A `ProcessDuplicatesMode="Merge"` control printed once per run on each page
+ * (parity row 46). Printed in s31b and s32a: a run of equal values printed one
+ * box, from the top of the run's first record's control to the bottom of its
+ * last's, its text aligned within that box, and a run crossing a page break
+ * printed a box on each page, the value on both. Runs are consecutive Detail
+ * placements of one band; anything printed between them ends a run.
+ */
+function mergeRuns(pages: PreviewPage[]): void {
+  type Member = { at: number; pc: PlacedControl };
+  for (const page of pages) {
+    const runs = new Map<number, { band: PreviewBand; text: string; members: Member[] }>();
+    const drop = new Map<number, Set<PlacedControl>>();
+    const close = (key: number) => {
+      const run = runs.get(key);
+      runs.delete(key);
+      if (!run || run.members.length < 2) return;
+      const [first, last] = [run.members[0], run.members[run.members.length - 1]];
+      const top = page.bands[first.at].top + first.pc.y;
+      const bottom = page.bands[last.at].top + last.pc.y + last.pc.height;
+      page.bands[first.at] = {
+        ...page.bands[first.at],
+        controls: page.bands[first.at].controls.map((pc) => (pc === first.pc ? { ...pc, height: bottom - top } : pc)),
+      };
+      for (const m of run.members.slice(1)) (drop.get(m.at) ?? drop.set(m.at, new Set()).get(m.at)!).add(m.pc);
+    };
+    page.bands.forEach((pb, at) => {
+      if (pb.band.kind !== 'Detail') {
+        for (const key of [...runs.keys()]) close(key);
+        return;
+      }
+      for (const pc of pb.controls) {
+        if (pc.control.duplicates !== 'Merge') continue;
+        const text = pc.text ?? pc.control.text;
+        const run = runs.get(pc.index);
+        if (run && run.band === pb.band && run.text === text) run.members.push({ at, pc });
+        else {
+          close(pc.index);
+          runs.set(pc.index, { band: pb.band, text, members: [{ at, pc }] });
+        }
+      }
+    });
+    for (const key of [...runs.keys()]) close(key);
+    for (const [at, gone] of drop) page.bands[at] = { ...page.bands[at], controls: page.bands[at].controls.filter((pc) => !gone.has(pc)) };
+  }
+}
+
+/**
  * What a control prints in one instance: its binding evaluated in `scope` when
  * there is test data, otherwise the row's raw value or its own text, as before
  * parity row 12.
@@ -2160,7 +2245,7 @@ export function layoutBand(
   if (bandRules.visible === false || isEmptyBand(band)) return { band, record, scope, height: 0, controls: [] };
   const items = band.controls
     .map((control, index) => ({ control: applyRules(control, { look: bandRules.look }, ctx, scope), index }))
-    .filter(({ control }) => control.visible)
+    .filter(({ control }) => control.visible && !suppressed(control, band, ctx, scope))
     .map(({ control, index }) => {
       const top = control.y + control.offsetY;
       let height = control.height;
@@ -3330,6 +3415,9 @@ export function paginate(
       });
     });
   }
+
+  // A merged run prints once per page, so it is drawn once the pages exist.
+  if (data) mergeRuns(pages);
 
   // Reported for the UI's "N records per page" readout. Derived from the first
   // full page rather than from the arithmetic above, because the arithmetic
