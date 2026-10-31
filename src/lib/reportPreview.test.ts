@@ -2357,7 +2357,7 @@ describe('cross-band lines and boxes, as DevExpress printed them (cases s31c, s3
  * content's top.
  */
 describe('a report header taller than the page, as DevExpress printed it (cases s36)', () => {
-  const report = (tall: number, ys: number[], ph = 0, pf = 0, opts: { printOn?: string; breakAt?: number } = {}) => {
+  const report = (tall: number, ys: number[], ph = 0, pf = 0, opts: { printOn?: string; breakAt?: number; detail?: [number, number] } = {}) => {
     let ref = 10;
     const lbl = (y: number, text: string, x = 100) => `<Item${++ref} Ref="${ref}" ControlType="XRLabel" Name="l${ref}" Text="${text}" SizeF="200,20" LocationFloat="${x},${y}" />`;
     const po = opts.printOn ? ` PrintOn="${opts.printOn}"` : '';
@@ -2366,7 +2366,7 @@ describe('a report header taller than the page, as DevExpress printed it (cases 
       `<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="${tall}"><Controls>${ys.map((y) => lbl(y, `RH${y}`)).join('')}${brk}</Controls></Item1>` +
       (ph ? `<Item2 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="${ph}"${po}><Controls>${lbl(5, 'HEADER', 400)}</Controls></Item2>` : '') +
       (pf ? `<Item3 Ref="4" ControlType="PageFooterBand" Name="PageFooter" HeightF="${pf}"${po}><Controls>${lbl(5, 'FOOTER', 400)}</Controls></Item3>` : '') +
-      `<Item4 Ref="5" ControlType="DetailBand" Name="Detail" HeightF="30"><Controls>${lbl(5, 'row', 10)}</Controls></Item4>`;
+      `<Item4 Ref="5" ControlType="DetailBand" Name="Detail" HeightF="${opts.detail?.[0] ?? 30}"><Controls>${lbl(opts.detail?.[1] ?? 5, 'row', 10)}</Controls></Item4>`;
     return paginate(parseReportStructure(
       '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50">' +
       `<Bands>${bands}</Bands></XtraReportsLayoutSerializer>`), 2);
@@ -2412,6 +2412,23 @@ describe('a report header taller than the page, as DevExpress printed it (cases 
       '1:RH0@0', '1:RH900@900', '1:RH920@920', '1:RH950@950',
       '2:RH1200@200', '2:RH1480@480', '2:HEADER@505', '2:row@575', '2:row@605',
     ));
+  });
+
+  // Parity row 55: on the page where the report header ends, page 1 for one
+  // that fits, the footer goes no higher than ten pixels below the page
+  // header, and the first record is cut there, its rest on page 2.
+  it('pushes the footer below a page header that ends at its top, and cuts the first record there (s36m)', () => {
+    const r = report(900, [0, 880], 30, 70, { detail: [60, 20] });
+    expect(where(r)).toEqual(printed(
+      '1:RH0@0', '1:RH880@880', '1:HEADER@905', '1:FOOTER@945',
+      '2:HEADER@5', '2:row@40', '2:row@100', '2:FOOTER@935',
+    ));
+    expect(r.pages[0].bands.find((b) => b.band.kind === 'PageFooter')!.top).toBeCloseTo(990.42, 1); // DevExpress: 990.42
+  });
+
+  it('leaves the footer where it is when the page header ends well above it (s36k)', () => {
+    const r = report(850, [0, 830], 30, 70);
+    expect(r.pages[0].bands.find((b) => b.band.kind === 'PageFooter')!.top).toBe(980); // DevExpress: 980
   });
 
   it('leaves no page header on a page it leaves at a page break, the footer where it always is (s36n)', () => {

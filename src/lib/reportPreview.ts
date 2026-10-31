@@ -3257,12 +3257,22 @@ export function paginate(
    * not fit still moves to the next page whole unless its controls are
    * separately placeable, which is DevExpress's behaviour too.
    */
+  /** The room a page opened now would give its content, below its page header and repeated group headers. */
+  const roomOnFreshPage = () =>
+    ordinaryPageBottom - topMargin - (pageHeaderInst?.height ?? 0) -
+    openGroups.reduce((sum, h) => sum + (h.band.repeatEveryPage ? h.height : 0), 0);
   const flow = (inst: BandInstance) => {
     if (!current) startPage();
     let part: BandInstance | null = inst;
     for (let guard = 0; part && guard < 10_000; guard++) {
       const avail = pageBottom - cursor;
-      const atTop = cursor <= pageContentTop + EPS;
+      /*
+       * At the top of a page, nothing better is possible than to put what does
+       * not fit here as it is -- unless the page is short of a fresh one's room,
+       * as page 1 is below a report header. There DevExpress cut the first
+       * record at the foot like any other (s36m, parity row 55).
+       */
+      const atTop = cursor <= pageContentTop + EPS && pageBottom - pageContentTop >= roomOnFreshPage() - EPS;
       // Put the part here as it is: it fits, or nothing better is possible.
       const put = () => {
         current!.bands.push(at(part!, cursor));
@@ -3311,18 +3321,31 @@ export function paginate(
     if (part) flow(part);
   };
 
-  // The report header, over as many pages as it takes, then its last page's
-  // page bands: the page header straight after it, the page footer at the foot.
+  /*
+   * The report header, over as many pages as it takes, then its last page's
+   * page bands: the page header straight after it, and the page footer at the
+   * foot, but no higher than ten pixels below that page header, as on the
+   * pages before (parity row 55). The content stops at the footer's top. In
+   * s36h and s36m a 900-unit header and its 30-unit page header ended at the
+   * 70-unit footer's top, and DevExpress put the footer at 990.42 and cut the
+   * first record there; in s36k, ending higher, the footer kept its place.
+   */
   inReportHeader = !!reportHeaderInst;
   startPage();
   if (reportHeaderInst) {
     place(reportHeaderInst);
     inReportHeader = false;
+    let footerTop = footerBottom - (headerPageFooter?.height ?? 0);
     if (headerPageHeader) {
       current!.bands.push(at(headerPageHeader, cursor));
       cursor += headerPageHeader.height;
+      footerTop = Math.max(footerTop, cursor + pxToUnits(10, ctx.unit));
     }
-    if (headerPageFooter) current!.bands.push(at(headerPageFooter, footerBottom - headerPageFooter.height));
+    if (headerPageFooter) {
+      const footer = onPage(headerPageFooter, footerTop);
+      if (footer) current!.bands.push(footer);
+      pageBottom = footerTop;
+    }
     pageContentTop = cursor;
   }
 
