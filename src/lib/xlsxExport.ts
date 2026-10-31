@@ -257,6 +257,23 @@ export function reportToXlsx(structure: ReportStructure, recordCount: number, op
     return indexOf(xfs, xf);
   };
 
+  /*
+   * A cell with no value of its own -- a literal label, or a page number --
+   * takes the number format of the first such cell with its look, top to
+   * bottom (parity row 43). That first one is General for a literal and text
+   * for a page number. Printed in s29m to s29m11: a page number after a
+   * literal of the same font and alignment was General, a literal after a
+   * page number was text, and a page number with a look of its own was text.
+   * A bound field neither gives its format nor takes one: a literal after
+   * bound text stayed General, and a page number after bound numbers was
+   * text. Until this row every page number was text, which held for every
+   * case measured before s29m because none followed a literal of its look.
+   */
+  const lookOf = (item: Item) => JSON.stringify([item.font, item.fill, item.h, item.v]);
+  const unvalued = items.filter((i) => i.value === undefined && i.text).sort((a, b) => a.top - b.top || a.left - b.left);
+  const lookFormat = new Map<string, string>();
+  for (const item of unvalued) if (!lookFormat.has(lookOf(item))) lookFormat.set(lookOf(item), item.pageNumber ? '@' : 'General');
+
   const strings: string[] = [];
   const stringId = (s: string) => indexOf(strings, s);
   const rows: Map<number, string[]> = new Map();
@@ -283,8 +300,9 @@ export function reportToXlsx(structure: ReportStructure, recordCount: number, op
         ? `<c r="${ref}" s="${styleOf(item, '@')}"/>`
         : `<c r="${ref}" t="s" s="${styleOf(item, excelFormat(item.format, 'text'))}"><v>${stringId(value)}</v></c>`;
     } else if (value === undefined && item.text) {
-      // A literal label, or no test data: the printed text, General; a page number is text.
-      cell = `<c r="${ref}" t="s" s="${styleOf(item, item.pageNumber ? '@' : 'General')}"><v>${stringId(item.text)}</v></c>`;
+      // A literal label, a page number, or no test data: the printed text, in
+      // the format the first such cell of its look set.
+      cell = `<c r="${ref}" t="s" s="${styleOf(item, lookFormat.get(lookOf(item)) ?? 'General')}"><v>${stringId(item.text)}</v></c>`;
     } else {
       cell = `<c r="${ref}" s="${styleOf(item, 'General')}"/>`;
     }

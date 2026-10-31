@@ -153,6 +153,39 @@ describe('reportToXlsx over a cross-tab, and from the content\'s corner', () => 
     expect(canonical(reportToXlsx(parseReportStructure(S26), 1))).toBe(S26_GRID);
   });
 
+  /*
+   * Parity row 43, cases s29m4, s29m6, s29m9 and s29m11: a literal or a page
+   * number takes the format of the first such cell with its look, which is
+   * General for a literal and text for a page number; bound fields neither
+   * give nor take. Each expectation is the format DevExpress wrote.
+   */
+  it('formats a literal and a page number by the first of their look, as DevExpress did', () => {
+    const lbl = (ref: number, name: string, text: string) =>
+      `<Controls><Item1 Ref="${ref}" ControlType="XRLabel" Name="${name}" Text="${text}" SizeF="200,20" /></Controls>`;
+    const bound = (ref: number, field: string) =>
+      `<Controls><Item1 Ref="${ref}" ControlType="XRLabel" Name="d" SizeF="200,20"><ExpressionBindings><Item1 Ref="${ref}1" EventName="BeforePrint" PropertyName="Text" Expression="[${field}]" /></ExpressionBindings></Item1></Controls>`;
+    const page = (ref: number) =>
+      `<Controls><Item1 Ref="${ref}" ControlType="XRPageInfo" Name="pg" TextFormatString="Page {0} of {1}" SizeF="300,20" /></Controls>`;
+    const report = (bands: string) => parseReportStructure(
+      '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
+      `<Bands>${bands}</Bands></XtraReportsLayoutSerializer>`);
+    const band = (n: number, type: string, controls: string) => `<Item${n} Ref="${n + 1}" ControlType="${type}Band" Name="${type}" HeightF="30">${controls}</Item${n}>`;
+    const formats = (bands: string, rows: Record<string, string>[]) => Object.fromEntries(
+      (JSON.parse(canonical(reportToXlsx(report(bands), rows.length, { rows }))).cells as unknown[][]).map((c) => [c[2], c[3]]));
+    const names = [{ Name: 'alpha' }, { Name: 'beta' }];
+    const counts = [{ Qty: '1' }, { Qty: '2' }];
+    // s29m4: a literal first, so the page number after it is General.
+    expect(formats(band(1, 'PageHeader', lbl(10, 'PH', 'PH')) + band(2, 'Detail', bound(20, 'Name')) + band(3, 'PageFooter', page(30)), names))
+      .toMatchObject({ PH: 'General', alpha: '@', 'Page 1 of 1': 'General' });
+    // s29m6: the page number first, so the literal after it is text.
+    expect(formats(band(1, 'ReportHeader', page(30)) + band(2, 'PageHeader', lbl(10, 'PH', 'PH')) + band(3, 'Detail', bound(20, 'Name')), names))
+      .toMatchObject({ 'Page 1 of 1': '@', PH: '@', alpha: '@' });
+    // s29m9: a literal after bound text stays General.
+    expect(formats(band(1, 'Detail', bound(20, 'Name')) + band(2, 'ReportFooter', lbl(10, 'RF', 'RF')), names)).toMatchObject({ RF: 'General' });
+    // s29m11: a page number after bound numbers is text.
+    expect(formats(band(1, 'Detail', bound(20, 'Qty')) + band(2, 'PageFooter', page(30)), counts)).toMatchObject({ 'Page 1 of 1': '@' });
+  });
+
   it('starts it at the page\'s top edge when the top margin band prints, as s29m did (parity row 38)', () => {
     // DevExpress put s29m's top margin label, 10 units down, in row 2.
     const withMargin = S26.replace('<Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />',
