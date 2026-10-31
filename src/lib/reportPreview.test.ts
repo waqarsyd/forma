@@ -1012,7 +1012,7 @@ describe('paginating into columns', () => {
     const footer = '';
     const structure = build(2, 'AcrossThenDown', 100, footer);
     structure.bands.push({
-      kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null, keepTogether: false, canGrow: true,
+      kind: 'ReportFooter', name: 'ReportFooter', height: 50, controls: [], columns: null, keepTogether: false,
       printOn: 'AllPages', printAtBottom: false, fields: [], level: 0, repeatEveryPage: false, groupUnion: 'None', pageBreak: 'None',
       sub: null, rules: [],
     });
@@ -1724,10 +1724,31 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
     expect(inst.height).toBeCloseTo(100 + growthA + growthB, 6);
   });
 
-  it('holds a band at its designed height when it says CanGrow="false"', () => {
+  // Parity row 36. Until it, a band saying CanGrow="false" was held at its
+  // designed height, which nothing had measured: s29g printed it growing.
+  it('grows a band with its text whatever the band\'s CanGrow says (s29g)', () => {
     const inst = layoutBand(band(label(1, 'a', 'LLLLL', 0), ' CanGrow="false"'), 1, null, ctx);
     expect(by(inst, 'a').height).toBeCloseTo(grown(5), 6);
-    expect(inst.height).toBe(100);
+    expect(inst.height).toBeCloseTo(100 + grown(5) - 20, 6);
+  });
+
+  it('prints a band at least to its lowest visible control, plus growth (s29a, s29d)', () => {
+    // A label placed past the bottom holds the band open: 140 for a declared 100.
+    expect(layoutBand(band(label(1, 'a', 'x', 0) + label(2, 'past', 'x', 120)), 1, null, ctx).height).toBe(140);
+    // Growth above it pushes it down, and the band ends at its new bottom.
+    const grownBand = layoutBand(band(label(1, 'a', 'LLL', 0) + label(2, 'past', 'x', 120)), 1, null, ctx);
+    expect(by(grownBand, 'past').y).toBeCloseTo(120 + grown(3) - 20, 6);
+    expect(grownBand.height).toBeCloseTo(140 + grown(3) - 20, 6);
+    // A hidden control holds nothing open (s29e).
+    expect(layoutBand(band(label(1, 'a', 'x', 0) + label(2, 'hidden', 'x', 150, 20, ' Visible="false"')), 1, null, ctx).height).toBe(100);
+  });
+
+  it('reads a control written above its band\'s top at 0, a panel\'s child too (s29e)', () => {
+    const b = band(label(1, 'neg', 'x', -30) +
+      '<Item2 Ref="30" ControlType="XRPanel" Name="pnl" LocationFloat="300,10" SizeF="200,60"><Controls>' +
+      '<Item1 Ref="31" ControlType="XRLabel" Name="kid" Text="k" LocationFloat="0,-20" SizeF="100,20" /></Controls></Item2>');
+    expect(b.controls.find((c) => c.name === 'neg')!.y).toBe(0);
+    expect(b.controls.find((c) => c.name === 'kid')).toMatchObject({ y: 0, offsetY: 10 });
   });
 
   it('splits a text taller than several pages into consecutive parts, every line exactly once', () => {
@@ -1798,6 +1819,35 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
  * header, with 30 units (20 for the 60-unit record) left at the foot of each
  * page. Every position is the label DevExpress printed, from the page's top.
  */
+/*
+ * Cases s29a and s29b of docs/proposals/devexpress-parity.md, printed through
+ * DevExpress 20.1 on 2026-10-31: every content band holds a label at its top
+ * and one placed past its bottom, over three records. s29b says
+ * CanGrow="false" on every band and printed exactly the same. Positions are
+ * DevExpress's, from the page's top; the margin bands' labels are row 38's.
+ */
+describe('a band holds every control placed in it, as DevExpress printed it (cases s29a, s29b)', () => {
+  const lbl = (ref: number, n: number, name: string, y: number) => `<Item${n} Ref="${ref}" ControlType="XRLabel" Name="${name}" Text="${name}" LocationFloat="${n === 1 ? 0 : 300},${y}" SizeF="200,20" />`;
+  const bandXml = (n: number, type: string, height: number, past: number, extra: string) =>
+    `<Item${n} Ref="${n}" ControlType="${type}Band" Name="${type}" HeightF="${height}"${extra}><Controls>${lbl(n * 10, 1, `${type}0`, 0)}${lbl(n * 10 + 1, 2, `${type}past`, past)}</Controls></Item${n}>`;
+  const xml = (extra: string) =>
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="99" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
+    '<Bands>' + bandXml(1, 'ReportHeader', 100, 120, extra) + bandXml(2, 'PageHeader', 50, 60, extra) + bandXml(3, 'Detail', 30, 40, extra) +
+    bandXml(4, 'ReportFooter', 50, 60, extra) + bandXml(5, 'PageFooter', 50, 60, extra) + '</Bands></XtraReportsLayoutSerializer>';
+  const PRINTED = ['ReportHeader0 50', 'ReportHeaderpast 170', 'PageHeader0 190', 'PageHeaderpast 250',
+    'Detail0 270', 'Detailpast 310', 'Detail0 330', 'Detailpast 370', 'Detail0 390', 'Detailpast 430',
+    'ReportFooter0 450', 'ReportFooterpast 510', 'PageFooter0 970', 'PageFooterpast 1030'];
+
+  for (const [name, extra] of [['s29a', ''], ['s29b', ' CanGrow="false"']]) {
+    it(`prints ${name} where DevExpress did`, () => {
+      const report = paginate(parseReportStructure(xml(extra)), 3);
+      expect(report.pages).toHaveLength(1);
+      const at = report.pages[0].bands.flatMap((b) => b.controls.map((pc) => ({ s: `${pc.text} ${Math.round(b.top + pc.y)}`, y: b.top + pc.y })));
+      expect(at.sort((p, q) => p.y - q.y).map((t) => t.s)).toEqual(PRINTED);
+    });
+  }
+});
+
 describe('a record at the foot of a page, as DevExpress printed it (case s29s)', () => {
   const report = (detail: string, height: number) => paginate(parseReportStructure(
     '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +

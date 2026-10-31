@@ -467,8 +467,12 @@ export interface PreviewBand {
    * page break moved whole instead. False, the default, splits it.
    */
   keepTogether: boolean;
-  /** `CanGrow="false"` holds the band at its designed height; it grows by default. */
-  canGrow: boolean;
+  /*
+   * There is no `canGrow` here, deliberately. A band's `CanGrow="false"` was
+   * read as holding it at its designed height until parity row 36, which nothing
+   * had measured; printed, a band marked so still grew with its text and still
+   * held a control placed past its bottom (s29b, s29f, s29g).
+   */
   /**
    * `PrintOn`, for a page header or footer: `AllPages` by default, or the flags
    * `NotWithReportHeader` and `NotWithReportFooter`, comma-separated. Printed:
@@ -1408,7 +1412,9 @@ function parseControls(
     // by `dpiScale` again.
     const dpiScale = targetDpi / dpiOf(item.attrs);
     const raw = { loc: pairAttr(item.attrs, 'LocationFloat'), size: pairAttr(item.attrs, 'SizeF') };
-    const loc = { a: raw.loc.a * dpiScale, b: raw.loc.b * dpiScale };
+    // A control written above its band's or panel's top loads at 0 and prints
+    // there (s29e), and a panel moved so takes its children with it.
+    const loc = { a: raw.loc.a * dpiScale, b: Math.max(0, raw.loc.b * dpiScale) };
     const size = { a: raw.size.a * dpiScale, b: raw.size.b * dpiScale };
     // Style first, then the control's own attribute, then its parent's: what
     // DevExpress prints, not what this element writes. See resolveAppearance.
@@ -1666,7 +1672,6 @@ export function parseReportStructure(
           : [],
         columns: columns && { ...columns, spacing: columns.spacing * dpiScale, width: columns.width * dpiScale },
         keepTogether: (attrOf(item.attrs, 'KeepTogether') ?? '').toLowerCase() === 'true',
-        canGrow: (attrOf(item.attrs, 'CanGrow') ?? '').toLowerCase() !== 'false',
         printOn: attrOf(item.attrs, 'PrintOn') || 'AllPages',
         printAtBottom: (attrOf(item.attrs, 'PrintAtBottom') ?? '').toLowerCase() === 'true',
         fields: bandSpan && kind !== 'DetailReport' ? parseBandFields(bandSpan.text, kind === 'Detail' ? 'SortFields' : 'GroupFields') : [],
@@ -1979,6 +1984,20 @@ function textHeight(
 }
 
 /**
+ * How tall a band prints before anything grows: its declared height, or its
+ * lowest visible control's bottom when that is lower down. Printed in s29a, a
+ * report header declared 100 holding a label to 140 printed 140, and the
+ * page header, Detail band and page footer did the same. The loader keeps the
+ * declared `HeightF`, so this is a rule of printing, not of the file. Lines
+ * and tables count; a hidden control does not (s29e). Margin bands are page
+ * furniture and stay fixed, which `paginate` already does by never laying
+ * them out.
+ */
+export function heldHeight(band: PreviewBand): number {
+  return Math.max(band.height, ...band.controls.filter((c) => c.visible).map((c) => c.y + c.offsetY + c.height));
+}
+
+/**
  * Lay out one printed instance of a band, the way DevExpress grows it.
  *
  * With no measurer every control keeps its designed size, which is what the
@@ -1991,8 +2010,10 @@ function textHeight(
  * - a control whose top is at or below a growing control's bottom moves down by
  *   that growth -- whether or not the two overlap across the band, which the
  *   printed report showed for a label beside, not under, the growing one;
- * - the band grows by however far its lowest content moved, keeping the space
- *   that was below it, unless the band says `CanGrow="false"`.
+ * - the band prints at least to its lowest visible control, and grows by
+ *   however far its lowest content moved, keeping the space that was below it.
+ *   That is `heldHeight` plus the growth, whatever the band's `CanGrow` says
+ *   (parity row 36, s29a to s29g).
  */
 export function layoutBand(
   band: PreviewBand,
@@ -2068,7 +2089,7 @@ export function layoutBand(
     band,
     record,
     scope,
-    height: band.canGrow ? band.height + Math.max(0, placedBottom - designBottom) : band.height,
+    height: Math.max(band.height, designBottom) + Math.max(0, placedBottom - designBottom),
     controls: items.map((it) => ({
       control: it.control,
       index: it.index,
@@ -2761,10 +2782,11 @@ export function paginate(
 
   let placedRecords = 0;
   if (detail && records > 0) {
-    const usable = ordinaryPageBottom - topMargin - (pageHeader?.height ?? 0);
-    if (detail.height > usable) {
+    const usable = ordinaryPageBottom - topMargin - (pageHeader ? heldHeight(pageHeader) : 0);
+    const tall = heldHeight(detail);
+    if (tall > usable) {
       problems.push(
-        `The Detail band is ${Math.round(detail.height)} units tall and only ${Math.round(usable)} fit on a page, ` +
+        `The Detail band is ${Math.round(tall)} units tall and only ${Math.round(usable)} fit on a page, ` +
           'so every record starts a new sheet. A Detail band near the height of the page usually means the whole ' +
           'design went into one band instead of being split across ReportHeader, PageHeader and Detail.',
       );
@@ -2972,6 +2994,9 @@ export function paginate(
        */
       const columnWidth = columns.width;
       const downThenAcross = columns.layout === 'DownThenAcross';
+      // A slot holds every control placed in the record, as a band does (row
+      // 36); growth inside columns is not measured, so nothing else moves it.
+      const slotHeight = heldHeight(detail);
 
       /*
        * Recomputed per page rather than once, because the first page is
@@ -2981,7 +3006,7 @@ export function paginate(
        * report rather than in this function.
        */
       let pageTop = cursor;
-      let rowsPerPage = Math.max(1, Math.floor((pageBottom - pageTop) / detail.height));
+      let rowsPerPage = Math.max(1, Math.floor((pageBottom - pageTop) / slotHeight));
       let perPage = rowsPerPage * columns.count;
       let onPage = 0;
       let rowsUsed = 0;
@@ -2991,7 +3016,7 @@ export function paginate(
           if (pages.length >= maxPages) break;
           startPage();
           pageTop = cursor;
-          rowsPerPage = Math.max(1, Math.floor((pageBottom - pageTop) / detail.height));
+          rowsPerPage = Math.max(1, Math.floor((pageBottom - pageTop) / slotHeight));
           perPage = rowsPerPage * columns.count;
           onPage = 0;
           rowsUsed = 0;
@@ -3001,14 +3026,14 @@ export function paginate(
         const row = downThenAcross ? onPage % rowsPerPage : Math.floor(onPage / columns.count);
         const column = downThenAcross ? Math.floor(onPage / rowsPerPage) : onPage % columns.count;
 
-        // Columns keep the designed height: a grid of slots cannot hold records
-        // of different heights, and growth inside columns is not measured yet.
+        // Columns keep the slot height: a grid of slots cannot hold records of
+        // different heights, and growth inside columns is not measured yet.
         const slot = layoutBand(detail, i + 1, rowFor(i), { measure: null, unit: ctx.unit, data, rules: ctx.rules }, scopeFor('Detail', i + 1, null, null));
         current!.bands.push({
           band: detail,
-          height: detail.height,
+          height: slotHeight,
           controls: slot.controls,
-          top: pageTop + row * detail.height,
+          top: pageTop + row * slotHeight,
           left: contentLeft + column * (columnWidth + columns.spacing),
           width: columnWidth,
           record: i + 1,
@@ -3022,7 +3047,7 @@ export function paginate(
       // Below every column, so a group or report footer does not land inside
       // the grid. `place` is not used above precisely because its single
       // vertical cursor cannot describe two records at the same height.
-      cursor = pageTop + rowsUsed * detail.height;
+      cursor = pageTop + rowsUsed * slotHeight;
     }
     for (const footer of groupFooters) place(instance(footer));
   }
@@ -3111,8 +3136,8 @@ export function paginate(
   // Reported for the UI's "N records per page" readout. Derived from the first
   // full page rather than from the arithmetic above, because the arithmetic
   // ignores the ReportHeader that shortens page 1.
-  const recordsPerPage = detail && detail.height > 0
-    ? Math.max(1, Math.floor((ordinaryPageBottom - topMargin - (pageHeader?.height ?? 0)) / detail.height))
+  const recordsPerPage = detail && heldHeight(detail) > 0
+    ? Math.max(1, Math.floor((ordinaryPageBottom - topMargin - (pageHeader ? heldHeight(pageHeader) : 0)) / heldHeight(detail)))
     : 0;
 
   return {

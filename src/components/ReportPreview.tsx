@@ -1281,8 +1281,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                   {' · '}{Math.round(selectedControl.width)}×{Math.round(selectedControl.height)}
                   {/* Said rather than prevented. A control dragged past its
                       band's HeightF is a real edit with a real consequence --
-                      the designer pushes the band taller or drops the control
-                      onto a second page -- and refusing the drag would be
+                      DevExpress prints the band tall enough to hold it, as the
+                      pages here now show -- and refusing the drag would be
                       guessing at what the user meant. */}
                   {selected && overflowsBand(selectedControl, structureBands[selected.band]?.height ?? 0) && (
                     <span className="rp-over"> · past the band’s {Math.round(structureBands[selected.band]?.height ?? 0)}-unit height</span>

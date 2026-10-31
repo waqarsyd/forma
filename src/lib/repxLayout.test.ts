@@ -50,6 +50,9 @@ describe('auditLayoutBounds', () => {
     const findings = auditLayoutBounds(report(detail(label(1, 0, 80, 200, 40))));
     expect(findings.map((f) => f.code)).toEqual(['control-below-band']);
     expect(findings[0].message).toContain('l1');
+    // What DevExpress prints (s29a), not the load-time change this once claimed.
+    expect(findings[0].message).toContain('prints the band tall enough to hold them');
+    expect(findings[0].message).not.toMatch(/on load|next page/);
   });
 
   it('flags a band taller than the usable page, net of the margins', () => {

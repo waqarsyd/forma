@@ -14,10 +14,13 @@
  *   into the right margin turned a one-page report into two, exactly as one
  *   past the page edge did. This compared against the whole page width until
  *   then, so it missed every control in the margin;
- * - a control past the bottom of its band makes the designer push the band
- *   taller on load, or drop the control onto a second page -- which is what
- *   the Preview's selection readout says when a drag causes it, and nothing
- *   said when a generation did;
+ * - a control past the bottom of its band makes DevExpress print the band tall
+ *   enough to hold it, so everything after it moves down. Printed in s29a: a
+ *   report header declared 100 holding a label to 140 printed 140, while the
+ *   loader kept the declared height. This said the designer pushed the band
+ *   taller on load or dropped the control onto a second page until parity row
+ *   36 measured neither. The Preview's selection readout says it when a drag
+ *   causes it, and nothing said when a generation did;
  * - a band taller than the usable page can never fit, so it paginates one
  *   record per sheet, the "page-height Detail band" that the Preview was built
  *   to expose.
@@ -82,7 +85,7 @@ export function auditLayoutBounds(xml: string | null | undefined): RepxFinding[]
       code: 'control-below-band',
       message:
         `${belowBand.length} control(s) extend past the bottom of their band — ${names(belowBand)}. ` +
-        'The designer pushes the band taller on load or drops the control onto the next page, so the layout prints differently from how it was drawn.',
+        'DevExpress prints the band tall enough to hold them, so it prints taller than it was drawn and everything after it moves down.',
     });
   }
 
