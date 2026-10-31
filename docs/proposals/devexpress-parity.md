@@ -1,6 +1,6 @@
 # DevExpress parity: measured behaviour and comparison
 
-Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day: rows 30 and 31 are built, and row 32 was approved as "do not adopt". Row 33, found while building row 30, was approved on 2026-10-31 and is built. Rows 34 and 35, its two follow-ups, were approved the same day, and both are built. Rows 36 to 40 came from a finding while building row 35, were measured in s29, and were approved on 2026-10-31, to be built in the recommended order, and all five are built. Rows 41 and 42, found while building them, were approved the same day, and both are built. Row 43, found while building row 38, was approved the same day and is built.
+Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day: rows 30 and 31 are built, and row 32 was approved as "do not adopt". Row 33, found while building row 30, was approved on 2026-10-31 and is built. Rows 34 and 35, its two follow-ups, were approved the same day, and both are built. Rows 36 to 40 came from a finding while building row 35, were measured in s29, and were approved on 2026-10-31, to be built in the recommended order, and all five are built. Rows 41 and 42, found while building them, were approved the same day, and both are built. Row 43, found while building row 38, was approved the same day and is built. Rows 44 to 49, measured in s30 and s31 afterwards, wait for the owner's approval.
 
 ## Method
 
@@ -63,6 +63,8 @@ Not measured at first: DevExpress versions above 20.1; subreports; charts and cr
 | s29s5 | 70 fixed 60-unit records with 20 units left at the foot of each page, whose one label sits wholly below the foot with nothing above it. |
 | s29s6, s29x1 | Bands with no controls: a 45-unit group header before each record, and a page header and Detail band between a report header and footer that each hold a label. |
 | s29x2, s29x3 | A page header holding only a hidden label, a Detail band with only a fill, and a group footer with a fill and borders; and an empty 100-unit page footer under 70 records. |
+| s30p1 to s30p8 | The paper: a root with only `PageWidth` and `PageHeight` for A4, Legal and landscape Letter, as Forma writes every report, against the `PaperKind` and `Landscape` DevExpress's serializer writes, a `Custom` paper, a named paper with the wrong size written, and landscape A4 with its portrait size written. A label sits near each intended page's far corner. |
+| s31a to s31c | Built in DevExpress 20.1 and saved by its serializer, over five records: expression bindings on `Visible`, `ForeColor`, `BackColor` and `Font.Bold`; `ProcessDuplicatesMode` `Suppress` and `Merge` and `ProcessNullValues` `Suppress`; a label with `Angle="90"`, an `XRPageBreak` between two labels, and an `XRCrossBandLine` from the report header to the report footer. |
 
 ## How DevExpress 20.1 behaves
 
@@ -267,6 +269,24 @@ All in s29, in hundredths of an inch with no `Dpi`, each band marked by a label 
   - **A label wholly below the foot (s29s5).** With 20 units left and a 60-unit record's only label at 35, the record was still cut at the foot: the label continued 15 units into the next page, its own gap below the cut, not 35.
 - **A band with no controls takes no room** (s29x1, s29s6). A 40-unit page header and a 30-unit Detail band with no controls, over three records, printed nothing, and the report footer followed the report header directly. A 45-unit group header with no controls, before each of 70 records, printed none of its 70 instances, and the records ran every 30 units from the content's top. A band holding only a hidden label took no room, nor did one with only a fill and borders, whose fill did not print (s29x2). An empty 100-unit page footer left its room to the records, 33 a page where it would have allowed 30 (s29x3). Forma drew each at its height until row 41.
 
+### The paper, and five things Forma's parser does not read (measured after row 43)
+
+- **DevExpress takes the page size from `PaperKind`, not from `PageWidth` and `PageHeight`** (s30p1 to s30p8).
+  - **Without `PaperKind` the paper is Letter.** A root with only `PageWidth="827" PageHeight="1169"`, A4 as Forma writes it, loaded as Letter 850 by 1100 and printed on two Letter pages, its far-corner label on the second. Legal and landscape Letter written the same way did the same.
+  - **What DevExpress writes.** Its serializer writes `PaperKind="A4"` with the size, or `"Legal"` or `"Tabloid"`, and nothing for Letter. Landscape adds `Landscape="true"` and swaps the size. With those, each case printed on its own paper, on one page.
+  - **The paper wins over the size.** `PaperKind="A4"` with Letter's size written printed A4 (s30p7), and landscape A4 with its portrait size written printed landscape (s30p8). Only `PaperKind="Custom"` printed the size written (s30p5).
+  - **Forma writes no `PaperKind` at all**, so every report it generates on A4, Legal or Tabloid, or in landscape, prints on Letter portrait in DevExpress. The Preview reads the size written and shows it on its intended paper.
+- **Expression bindings set more than text** (s31a). Bindings on `Visible`, `ForeColor`, `BackColor` and `Font.Bold` were each evaluated per record. The label bound `[Qty] > 2` printed on three records of five, red or blue, yellow or white and bold or regular followed `Qty`. A label hidden this way kept its space: the one below it did not move. Forma reads only the `Text` and `NavigateUrl` bindings.
+- **`ProcessDuplicatesMode` and `ProcessNullValues`** (s31b).
+  - **`Suppress`:** a repeated name printed on the first record of each run and blank after it.
+  - **`Merge`:** the region printed once per run, in one box spanning the run's records. The CSV carried it once, on the run's first line.
+  - **`ProcessNullValues="Suppress"`:** a label printed nothing on a record whose value was null.
+
+  Forma prints every record's value.
+- **`XRPageBreak` breaks the page where it sits** (s31c). A label after the break printed at the top of page 2, 10 units down, its own gap below the break, and everything after it followed. Forma ignores the control.
+- **A cross-band line runs through the bands between its two** (s31c). An `XRCrossBandLine` from the report header to the report footer printed from its start down to the foot of page 1, then again from the top of page 2 to the report footer. Forma does not read the report's `CrossBandControls`.
+- **`Angle` rotates a label's text** (s31c). `Angle="90"` printed the text turned through a quarter turn in its 100 by 150 box. Forma draws it level.
+
 ### Documented by DevExpress, not measured here
 
 Subreports that embed another report; charts and cross-tabs drawn from data; conditional formatting rules; a table of contents; drill-down and interactive sorting in the viewer; report merging; PDF/A, password and signature options; per-page or per-file Excel export modes; right-to-left layout. These are listed so the comparison does not imply they were checked.
@@ -296,6 +316,10 @@ Forma's Preview has no data source unless the Test data button supplies up to tw
 | s29c, s29h | The panel grows and pushes the label below it; the label beside it stays | The panel keeps its size; in Edge, a growing child would push the label beside the panel | Panels are flattened into their band |
 | s29m | Both margin bands' texts on all three pages, and in the CSV | None of them, in the pane or the CSV | Margin bands are never drawn |
 | s29n1 | The report header and a "?" total | Three group headers and footers, a count of 3, and "Preview stopped at Infinity pages" | No Detail band is treated as records that did not fit |
+| s30p1, s30p3, s30p6 | Letter portrait, two pages, the far label on the second | The intended A4, landscape or Legal page, one page | `PaperKind` and `Landscape` are neither written nor read |
+| s31a | `VISIBLE` on three records of five; colours and bold by record | `VISIBLE` on all five; no colours or bold | Only `Text` and `NavigateUrl` bindings are read |
+| s31b | Repeats blank, a region once per run, nulls blank | Every value on every record | `ProcessDuplicatesMode` and `ProcessNullValues` are not read |
+| s31c | Two pages, the page break obeyed; a cross-band line on both; the label rotated | One page; no line; the label level | `XRPageBreak`, `CrossBandControls` and `Angle` are not read |
 | s29s1, s29s3, s29m | Every page after the first starts straight under its page header | 20 blank units carried to page 2 in s29s1, and every later page shifted with it; the record of s29s3 moved whole, 20 units lower | A record's blank remainder is carried, and a record with a gap above its label moves whole |
 
 ## Comparison and recommendations
@@ -384,6 +408,19 @@ Recommended order: 40 first, because it moves the pages of an ordinary report, o
 | # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
 |---|---|---|---|---|---|---|
 | 43 | A page number's cell in the workbook | Always text (`@`) | The number format of the first cell sharing its appearance: text after a bound field, General after a literal label (s29m, s29m4) | **Done 2026-10-31** | DevExpress | Done: measured first in s29m5 to s29m11, the rule reaches literals as well. A literal or page number takes the format of the first such cell with its font, fill and alignment, top to bottom: General if that is a literal, text if a page number. Bound fields neither give nor take. All eleven s29m workbooks match DevExpress cell for cell, s29m included, and so do c04 to c09, s22b, s25 and s26. The seven workbooks that need the browser's text measurer gave the same comparison before and after |
+
+**Proposed after row 43, measured in s30 and s31 on 2026-10-31, and waiting for the owner's approval.**
+
+| # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
+|---|---|---|---|---|---|---|
+| 44 | The paper a report prints on | Writes `PageWidth` and `PageHeight` only, and the Preview reads them | Takes the size from `PaperKind`, Letter when absent, turned by `Landscape`; only `Custom` prints the size written | Wrong, in Forma's own output | DevExpress decides the paper, and the defect is Forma's: every A4, Legal, Tabloid or landscape report it generates prints on Letter portrait, spilling onto extra pages | Fix: a repair, run with `repairDpi`, writes the `PaperKind` the written size names, `Landscape="true"` when it is wider than tall, and `Custom` for a size no paper has, leaving Letter portrait unwritten as the serializer does. The Preview reads the page as DevExpress does. The audit warns about a report whose written size and paper disagree, naming the paper it will print on. s30p1 to s30p8 are the checks |
+| 45 | Expression bindings on appearance and visibility | Read for `Text` and `NavigateUrl` only | Evaluated per record for `Visible`, `ForeColor`, `BackColor` and `Font.Bold` | Missing | DevExpress, for uploaded 20.1 reports, which use these bindings where older reports used scripts | Adopt: evaluate each binding per record over the test data with `criteria.ts`, as text and formatting rules already are. A control hidden this way keeps its space. The other appearance properties, and a binding's priority against a formatting rule, are measured when built. s31a is the check |
+| 46 | Suppressing repeated and null values | Every value printed | `ProcessDuplicatesMode` `Suppress` blanks a repeat, `Merge` prints a run's value once in one box, and `ProcessNullValues="Suppress"` blanks a null | Missing | DevExpress | Adopt in the Preview and both exports. The `SuppressAndShrink` modes, and where a merged run's text sits in its box, are measured when built. s31b is the check, its CSV included |
+| 47 | The `XRPageBreak` control | Ignored | Breaks the page where it sits; what follows continues on the next page at its own gap below the break | Missing | DevExpress | Adopt: cut the band at the control as at a page's foot. s31c is the check |
+| 48 | Cross-band lines and boxes | Not read | Drawn through every band between their start and end bands, on each page they cross | Missing | DevExpress: a frame or rule drawn across bands previews absent | Adopt in the pane and its PDF. A line exports no text, so the CSV and workbook are unchanged. s31c is the check |
+| 49 | Rotated text | Drawn level | `Angle` turns the text inside its box | Missing | DevExpress | Adopt in the pane's drawing. The exports carry the text either way. s31c is the check |
+
+Recommended order: 44 first, because it is Forma's own output printing on the wrong paper. Then 45 and 46, which change what uploaded reports print, then 47, 48 and 49.
 
 Rows 1 to 5 and 15 are fixes to behaviour Forma already claims. Rows 6 to 14 and 16 to 17 make the Preview a faithful picture of what DevExpress prints. Rows 18 to 22 are separate decisions.
 
