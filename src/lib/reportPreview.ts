@@ -2967,11 +2967,23 @@ export function paginate(
    * on page 1 and how much height it consumes, both of which are order-blind.
    * Found on 2026-09-06 by looking at the Preview pane rather than at the code.
    */
-  /** A placement at the full printable width, from an instance. */
+  /** A placement at the full printable width, from an instance. A page break prints nothing of its own. */
   const at = (inst: BandInstance, top: number): PlacedBand => ({
-    band: inst.band, height: inst.height, controls: inst.controls, top, left: contentLeft, width: fullWidth, record: inst.record,
-    scope: inst.scope,
+    band: inst.band, height: inst.height, controls: inst.controls.filter((pc) => pc.control.type !== 'XRPageBreak'),
+    top, left: contentLeft, width: fullWidth, record: inst.record, scope: inst.scope,
   });
+  /**
+   * Where an instance's first `XRPageBreak` sits, or null (parity row 47). On
+   * one continuous page, as the exports and an embedded report lay out, a
+   * break does nothing.
+   */
+  const firstBreak = (inst: BandInstance): number | null => {
+    if (maxPages <= 1) return null;
+    const ys = inst.controls.filter((pc) => pc.control.type === 'XRPageBreak').map((pc) => pc.y);
+    return ys.length ? Math.min(...ys) : null;
+  };
+  /** The report header's part below its first page break, placed once page 2 is open. */
+  let headerAfterBreak: BandInstance | null = null;
 
   const startPage = (withReportHeader = false) => {
     current = { number: pages.length + 1, bands: [] };
@@ -2982,8 +2994,14 @@ export function paginate(
     // The page that carries the report header -- page 1, when there is one.
     const headerPage = withReportHeader && !!reportHeaderInst;
     if (headerPage) {
-      current.bands.push(at(reportHeaderInst!, cursor));
-      cursor += reportHeaderInst!.height;
+      // Only the part above a page break prints here; the rest opens page 2.
+      const breakAt = firstBreak(reportHeaderInst!);
+      const [above, below] = breakAt === null ? [reportHeaderInst!, null] : breakAt > EPS ? splitInstance(reportHeaderInst!, breakAt, ctx.unit) : [null, reportHeaderInst!];
+      if (above) {
+        current.bands.push(at(above, cursor));
+        cursor += above.height;
+      }
+      headerAfterBreak = breakAt === null ? null : below;
     }
     // PrintOn: printed, a page header marked NotWithReportHeader was absent
     // from page 1, which then held 27 records where it had held 26.
@@ -3010,7 +3028,7 @@ export function paginate(
    * not fit still moves to the next page whole unless its controls are
    * separately placeable, which is DevExpress's behaviour too.
    */
-  const place = (inst: BandInstance) => {
+  const flow = (inst: BandInstance) => {
     if (!current) startPage();
     let part: BandInstance | null = inst;
     for (let guard = 0; part && guard < 10_000; guard++) {
@@ -3044,7 +3062,31 @@ export function paginate(
     }
   };
 
+  /**
+   * `flow`, breaking the page at each `XRPageBreak` the instance holds (parity
+   * row 47). Printed in s31c: the band was cut where the break sat, as at a
+   * page's foot, and what was below continued at the top of the next page at
+   * its own gap below the break, the next band after it.
+   */
+  const place = (inst: BandInstance) => {
+    let part: BandInstance | null = inst;
+    for (let breakAt = firstBreak(part); part && breakAt !== null; breakAt = part ? firstBreak(part) : null) {
+      const [above, below]: [BandInstance | null, BandInstance | null] = breakAt > EPS ? splitInstance(part, breakAt, ctx.unit) : [null, part];
+      if (above) flow(above);
+      if (!current || cursor > pageContentTop + EPS) startPage();
+      // A break at the very top cuts nothing; drop it so it is not met again.
+      part = above ? below : below && { ...below, controls: below.controls.filter((pc) => !(pc.control.type === 'XRPageBreak' && pc.y === breakAt)) };
+    }
+    if (part) flow(part);
+  };
+
   startPage(true);
+  if (headerAfterBreak) {
+    const rest: BandInstance = headerAfterBreak;
+    headerAfterBreak = null;
+    startPage();
+    place(rest);
+  }
 
   let placedRecords = 0;
   if (detail && records > 0) {

@@ -2171,6 +2171,54 @@ describe('suppressed and merged repeats, as DevExpress printed them (cases s31b,
   });
 });
 
+/*
+ * Parity row 47, cases s31c, s33a and s33b, built and saved by DevExpress
+ * 20.1: an `XRPageBreak` breaks the page where it sits. Each expectation is
+ * where DevExpress printed the text, page and top from the content's top.
+ */
+describe('the XRPageBreak control, as DevExpress printed it (cases s31c, s33)', () => {
+  const label = (ref: number, name: string, y: number, text: string) =>
+    `<Item${ref} Ref="${ref}" ControlType="XRLabel" Name="${name}" Text="${text}" SizeF="100,20" LocationFloat="0,${y}" />`;
+  const brk = (ref: number, y: number) => `<Item${ref} Ref="${ref}" ControlType="XRPageBreak" Name="brk${ref}" LocationFloat="0,${y}" />`;
+  const report = (bands: string) => parseReportStructure(
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50">' +
+    `<Bands>${bands}</Bands></XtraReportsLayoutSerializer>`);
+  const where = (r: PaginatedReport) => r.pages.flatMap((page, p) => page.bands.flatMap((b) => b.controls.map((pc) => `${p + 1}:${pc.text}@${Math.round(b.top + pc.y - 50)}`)));
+
+  it('carries the report header past its break to page 2, at its gap below the break (s31c)', () => {
+    const r = paginate(report(
+      `<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="200"><Controls>${label(3, 'before', 0, 'BEFORE')}${brk(4, 160)}${label(5, 'after', 170, 'AFTER')}</Controls></Item1>` +
+      `<Item2 Ref="6" ControlType="DetailBand" Name="Detail" HeightF="25"><Controls>${label(7, 'n', 0, 'row')}</Controls></Item2>`), 2);
+    expect(where(r)).toEqual(['1:BEFORE@0', '2:AFTER@10', '2:row@40', '2:row@65']);
+  });
+
+  it('breaks inside every record of a Detail band, seven pages for six records (s33a)', () => {
+    const r = paginate(report(
+      `<Item1 Ref="2" ControlType="PageHeaderBand" Name="PageHeader" HeightF="25"><Controls>${label(3, 'ph', 0, 'HEADER')}</Controls></Item1>` +
+      `<Item2 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="60"><Controls>${label(5, 'top', 0, 'top')}${brk(6, 25)}${label(7, 'bot', 35, 'bottom')}</Controls></Item2>`), 6);
+    expect(r.pages).toHaveLength(7);
+    expect(where(r).slice(0, 6)).toEqual(['1:HEADER@0', '1:top@25', '2:HEADER@0', '2:bottom@35', '2:top@60', '3:HEADER@0']);
+  });
+
+  it('breaks after each group footer that holds one (s33b)', () => {
+    const rows = ['North', 'North', 'North', 'South', 'South', 'South'].map((Region, i) => ({ Region, Idx: String(i + 1) }));
+    const r = paginate(report(
+      '<Item1 Ref="2" ControlType="GroupHeaderBand" Name="GroupHeader1" HeightF="25"><GroupFields><Item1 Ref="3" FieldName="Region" /></GroupFields></Item1>' +
+      `<Item2 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="25"><Controls>${label(5, 'idx', 0, 'row')}</Controls></Item2>` +
+      `<Item3 Ref="6" ControlType="GroupFooterBand" Name="GroupFooter1" HeightF="30"><Controls>${label(7, 'end', 0, 'END')}${brk(8, 25)}</Controls></Item3>` +
+      `<Item4 Ref="9" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="25"><Controls>${label(10, 'rf', 0, 'REPORT END')}</Controls></Item4>`), rows.length, { rows });
+    expect(r.pages.map((p) => p.bands.flatMap((b) => b.controls.map((pc) => pc.text)))).toEqual([
+      ['row', 'row', 'row', 'END'], ['row', 'row', 'row', 'END'], ['REPORT END'],
+    ]);
+  });
+
+  it('breaks nothing on the one continuous page the CSV is laid out on', () => {
+    const lines = reportToCsv(report(
+      `<Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="60"><Controls>${label(5, 'top', 0, 'top')}${brk(6, 25)}${label(7, 'bot', 35, 'bottom')}</Controls></Item1>`), 2).split('\r\n');
+    expect(lines).toEqual(['top', 'bottom', 'top', 'bottom', '']);
+  });
+});
+
 describe('a record at the foot of a page, as DevExpress printed it (case s29s)', () => {
   const report = (detail: string, height: number) => paginate(parseReportStructure(
     '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
