@@ -1,6 +1,6 @@
 # DevExpress parity: measured behaviour and comparison
 
-Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day: rows 30 and 31 are built, and row 32 was approved as "do not adopt". Row 33, found while building row 30, was approved on 2026-10-31 and is built. Rows 34 and 35, its two follow-ups, were approved the same day, and both are built.
+Status: proposal, 2026-10-30. Phases 1 to 3 of the owner's parity programme are done, and **the owner approved every row of the comparison table at the end on 2026-10-30**, to be built one row at a time starting with row 1. When an approved row is built and proven, its reasoning moves into the note that owns its area and the row here is marked done. **By the end of 2026-10-30:** rows 1 to 17, 19 and 20 are built. Rows 18 and 21 were approved as "defer" and "do not adopt now", and row 22 has been measured. Rows 26 to 29, proposed after the table, were approved the same day; rows 26, 27 and 29 are built and row 28 has been measured. Rows 30 to 32, proposed from that measurement, were approved the same day: rows 30 and 31 are built, and row 32 was approved as "do not adopt". Row 33, found while building row 30, was approved on 2026-10-31 and is built. Rows 34 and 35, its two follow-ups, were approved the same day, and both are built. Rows 36 to 39 came from a finding while building row 35. They were measured in s29 and wait for the owner's approval.
 
 ## Method
 
@@ -53,6 +53,10 @@ Not measured at first: DevExpress versions above 20.1; subreports; charts and cr
 | s26-origin | One label at 50,20, exported to Excel, to see where the sheet starts. |
 | s27 | A report holding every kind of band and control, saved by DevExpress in tenths of a millimetre and pixels; and the s18 invoice converted to each by DevExpress, with every `Dpi` stripped, printed unrepaired and repaired. |
 | s28-mixed, s28b-roomy | A millimetre report with `Dpi` on the root: a band with `Dpi` holding a label without, a band without holding a label with, and a panel with `Dpi` holding a child without. s28b gives the band and panel room enough that nothing grows. |
+| s29a to s29h | A control past the bottom of every kind of band and of a panel, with and without `CanGrow="false"`, alone and below a growing label. What counts as content: a hidden label, a line, a table and a negative `y`. A panel whose child grows, with labels below and beside it. |
+| s29m-margin-bands | Labels and a page number in both margin bands over three pages, the bands taller than the declared margins. |
+| s29n1 to s29n4 | Three records and no Detail band: a group by name with its footer, report totals, and fields in the report header and footer. s29n3 is s29n1 with a Detail band 0 tall. |
+| s29s1 to s29s4 | 70 fixed 50-unit records with 30 units left at the foot of each page: one label that fits there, a second label that crosses the foot, a label that crosses it below a gap, and one label whose line fits while its box crosses. |
 
 ## How DevExpress 20.1 behaves
 
@@ -209,6 +213,47 @@ Not measured at first: DevExpress versions above 20.1; subreports; charts and cr
 - **Each element is read at its own `Dpi`, independently** (s28). A label without `Dpi` in a band with one printed 2.54 times its size, and the band at its own. A label with `Dpi` in a band without printed at its own size, while the band printed 2.54 times too tall. A panel and its child split the same way. The side margins follow the root's `Dpi`, the top and bottom margins follow the margin bands', and the paper never scaled.
 - **The s18 invoice, converted by DevExpress to tenths of a millimetre with every `Dpi` stripped**, printed on nine pages where the original prints on two. With `Dpi` written back on those elements it printed the original's 261 boxes exactly. In pixels it printed exactly what DevExpress's own pixel conversion prints. That sits 2/300 of an inch off the hundredths original at the page footer, because the conversion rounds a 22-unit band to 21.12 pixels.
 
+### What a band holds, panels, margin bands, and no Detail band (measured after row 35)
+
+All in s29, in hundredths of an inch with no `Dpi`, each band marked by a label at its top.
+
+- **A band prints at least as tall as its lowest visible control.** In s29a:
+  - a report header declared 100 tall, holding a label from 120 to 140, printed 140 tall;
+  - a page header declared 50, with a label reaching 80, printed 80;
+  - the page footer did the same, so it started 30 higher on the page;
+  - a Detail band declared 30, with a label reaching 60, printed 60 for each of three records.
+
+  Read back after loading, every `HeightF` was the declared one. So this happens when the report prints, not when it opens.
+- **Growth adds to that.** In s29d a 20-unit label grew by 44.37. It pushed a label placed past the band's bottom down by the same amount, and the band ended at that label's new bottom: 184.37 for a declared 100. The printed height is the larger of the declared height and the lowest control's bottom, plus the growth.
+- **Lines and tables count; a hidden control does not** (s29e). A label with `Visible="false"` at 150 left its 100-unit band at 100. A control written at a negative `y` loads at 0 and prints at its band's top.
+- **`CanGrow="false"` on a band changes nothing in 20.1.**
+  - With it on every band, s29b printed exactly as s29a.
+  - A report header marked so still grew by its growing label's 44.37, both with a label past its bottom (s29f) and without one (s29g). A Detail band marked so grew 13.23 for each record.
+  - The loader did read the attribute: it reported `CanGrow` false.
+
+  Forma's engine holds such a band at its declared height. That rule was never measured: row 7 measured `CanGrow="false"` on labels only.
+- **The margin bands stay fixed.** A label past the bottom of the top margin band printed over the content without moving it. One past the bottom of the bottom margin band fell off the page.
+- **A panel is laid out like a small band.**
+  - **A child past its bottom.** In s28 and s29c a panel grew to hold such a child, and pushed a label below it down by as much.
+  - **A growing child.** In s29h a child grew by 44.37 and pushed its sibling inside the panel. The panel grew by the same 44.37, keeping the 10 units below its lowest child, and the label under the panel moved down with it.
+  - **A label beside it.** A label beside the panel, level with the growing child, did not move, though it sat below that child's bottom. Within its band, a panel pushes as one control.
+  - **`CanGrow="false"`.** A panel marked so kept its height and pushed nothing, and its child printed past its edge (s29c).
+- **Margin bands print their controls on every page** (s29m).
+  - The top margin band's controls are placed from the page's top edge. The bottom margin band's are placed from that band's top, and the band ends at the page's foot.
+  - A page number there printed "Page 1 of 3" to "Page 3 of 3".
+  - The CSV and the workbook carry the top margin band's texts first and the bottom margin band's last, once each, with the page number as "Page 1 of 1".
+- **With data and no Detail band, only the report header and footer print, once.** No group band prints (s29n1, s29n2, s29n4).
+  - A field in the report header printed the first record, and one in the report footer the last.
+  - A group header and footer by name, over three names, printed nothing.
+  - Every total printed "?".
+
+  With a Detail band 0 tall added, the same report printed three groups and a count of 3, as Forma does (s29n3).
+- **A record's blank space does not carry over to the next page.** Each case has 30 units left at the foot of every page, under a 50-unit record.
+  - **The controls fit (s29s1).** With its one label from 0 to 20, the record printed there whole. The next page began with the next record, straight under the page header. The 20 blank units that did not fit were dropped. s29m did the same with 10.
+  - **A box crosses the foot (s29s4).** With a label 0 to 35, whose one line fits while its box crosses the foot, the remaining 20 units did carry over. They pushed the next page's first record down by 20, as c05 and c05d measured with smaller numbers.
+  - **A label straddles the foot (s29s2).** A second label from 25 to 45 crossed the foot, continued at the top of the next page and took the rest of the record with it. Forma already prints this.
+  - **A label below a gap straddles it (s29s3).** A record whose only label sits from 20 to 40 did not move whole: the label continued at the very top of the next page, and the gap above it stayed behind.
+
 ### Documented by DevExpress, not measured here
 
 Subreports that embed another report; charts and cross-tabs drawn from data; conditional formatting rules; a table of contents; drill-down and interactive sorting in the viewer; report merging; PDF/A, password and signature options; per-page or per-file Excel export modes; right-to-left layout. These are listed so the comparison does not imply they were checked.
@@ -234,6 +279,11 @@ Forma's Preview has no data source unless the Test data button supplies up to tw
 | c07 | 37 filtered rows on 1 page | 90 rows on 3 pages | No filter |
 | c09 | 213 pages | 50 pages, the rest cut with a message | Page cap |
 | c10 | Blank where no `Summary` | Not evaluated | Shows the cell's literal text |
+| s29a, s29b | Report header 140, page header 80, each Detail 60, page footer 80 | Every band at its declared height, so 12 of Forma's 14 texts land elsewhere | A control past a band's bottom does not grow the band |
+| s29c, s29h | The panel grows and pushes the label below it; the label beside it stays | The panel keeps its size; in Edge, a growing child would push the label beside the panel | Panels are flattened into their band |
+| s29m | Both margin bands' texts on all three pages, and in the CSV | None of them, in the pane or the CSV | Margin bands are never drawn |
+| s29n1 | The report header and a "?" total | Three group headers and footers, a count of 3, and "Preview stopped at Infinity pages" | No Detail band is treated as records that did not fit |
+| s29s1, s29s3, s29m | Every page after the first starts straight under its page header | 20 blank units carried to page 2 in s29s1, and every later page shifted with it; the record of s29s3 moved whole, 20 units lower | A record's blank remainder is carried, and a record with a gap above its label moves whole |
 
 ## Comparison and recommendations
 
@@ -297,7 +347,17 @@ Rows marked **Fix** correct something Forma does wrong. **Adopt** brings in DevE
 | 34 | Warn about a report missing `Dpi` | Silent | Prints it at the wrong scale | **Done 2026-10-31** | DevExpress decides how it prints; Forma should say so | Done: the audit's `dpi-missing` warning counts the bands and controls without `Dpi` in a millimetre or pixel report and names the first three. It says how they print, 2.54 times too large or 4% too small, and that generating again writes the `Dpi`. It finds nothing once `repairDpi` has run, and nothing in hundredths of an inch |
 | 35 | The Preview reads each element at its own `Dpi` | Reads every number in the report's unit | Reads each band and control at its own `Dpi`, 100 when absent | **Done 2026-10-31** | DevExpress: the Preview should show what will print | Done: the parse scales each band's and control's numbers, and the root's side margins, by the report's units per inch over that element's `Dpi`. An embedded report is read into its host's unit. s24's six variants and the mixed s28b place every text where DevExpress printed it. In Edge, the pixel invoice with no `Dpi` puts every word on DevExpress's page. Edits and the overlap repair divide by the scale, so they write the file's own numbers back. The repair now runs before every pass that reads geometry |
 
-A finding from row 35's measurement, recorded here rather than built: DevExpress made a band tall enough for a control placed past its bottom (s28: the report header printed 533 units tall for a declared 300), and grew a panel the same way for its child. The Preview's engine grows a band only by how far its contents grew, and does not grow panels at all, so such a band previews short. The audit's `control-below-band` warning already names the case. Measure and propose it as its own row before changing the engine.
+**Proposed from a finding while building row 35, measured in s29 on 2026-10-31, and waiting for the owner's approval.** In s28 DevExpress made a band tall enough for a control placed past its bottom, and grew a panel the same way: rows 36 and 37. Measuring that properly found rows 38 and 40. Row 39 is the false message reported with row 35.
+
+| # | Feature | In Forma | In DevExpress | Forma status | Which behaves better and why | Recommendation |
+|---|---|---|---|---|---|---|
+| 36 | A band holds every control placed in it | Keeps its declared height, and holds there when it says `CanGrow="false"` | Prints at least to its lowest visible control, plus any growth, whatever `CanGrow` says; the margin bands stay fixed | Wrong | DevExpress: such a band previews short, and what follows it lands in the wrong place | Fix: a band prints at the larger of its declared height and its lowest visible control's bottom, plus its growth. That holds in every band but the two margin bands, whatever its `CanGrow`. A control at a negative `y` is read at 0. The `control-below-band` warning says how DevExpress prints the band, in place of a change on load that does not happen. The engine's `CanGrow` rule for bands goes, with its comment and the test asserting it, since s29b, s29f and s29g measured it wrong. s29a to s29g are the checks |
+| 37 | A panel grows with its children | Children drawn where written, the panel at its own size; a growing child pushes band controls beside the panel | Laid out as a small band: children grow and push inside it, and it grows to hold them, pushing only what is below it, unless it says `CanGrow="false"` | Wrong | DevExpress | Fix: lay out a panel's children as its own content and grow it by the band rule, unless it says `CanGrow="false"`. Its growth pushes the band's controls below it and nothing beside it. Children keep the positions an edit writes back, and a panel inside a panel stays undrawn, as now. s28 and s29c are the checks, and s29h in Edge |
+| 38 | Controls in the margin bands | Never drawn: not in the pane, its PDF or the exports | Printed on every page, page numbers included; the CSV and workbook carry them once at each end | Missing | DevExpress, for uploaded reports. Forma's prompt never puts anything in a margin band, but a report that keeps its title or page numbers there previews without them | Adopt: draw both margin bands' controls on every page, the top one's from the page's top edge and the bottom one's in the band that ends at the page's foot. The CSV and workbook put them first and last, as DevExpress's do. s29m is the check |
+| 39 | A report with data and no Detail band | Prints each group's header and footer and totals over the rows, then says "Preview stopped at Infinity pages; 3 of 3 records are not shown" | Prints the report header and footer once, no group band, and "?" for every total | Wrong, and the message is false | DevExpress, and the message is Forma's defect | Fix: with no Detail band the Preview prints what DevExpress printed, the header's fields reading the first record and the footer's the last, and the message is no longer given for it. The audit's `no-detail-band` warning already says such a report prints once. s29n1 to s29n4 are the checks |
+| 40 | A record at the foot of a page | Carries the band's blank remainder to the next page, and moves a record whole when nothing fits above the foot | Drops the blank space when every control fits, and carries the rest only when a control crosses the foot. A crossing control continues at the next page's top, even with a gap above it | Wrong | DevExpress: in s29s1 Forma's page 2 holds 19 records where DevExpress printed 20, and every later page is shifted | Fix in `splitInstance`: carry a record's remainder only when a control crosses the foot. When nothing fits above the foot, leave the space above the first control behind and continue from the foot. s29s1 to s29s4 and s29m are the checks, and c02, c05 and c05d must not move |
+
+Recommended order: 40 first, because it moves the pages of an ordinary report, one whose Detail band leaves room below its controls; then 36, 37, 39 and 38.
 
 Rows 1 to 5 and 15 are fixes to behaviour Forma already claims. Rows 6 to 14 and 16 to 17 make the Preview a faithful picture of what DevExpress prints. Rows 18 to 22 are separate decisions.
 
