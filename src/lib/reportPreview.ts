@@ -351,6 +351,13 @@ export interface PreviewControl {
   offsetX: number;
   offsetY: number;
   /**
+   * For a panel's child, the index in its band's `controls` of the panel it
+   * sits in, which `layoutBand` lays it out inside; absent at the band's top
+   * level. A panel inside a panel is flattened into the outer one, as its
+   * offset is.
+   */
+  panel?: number;
+  /**
    * How much the file's numbers were scaled to reach the report's unit: the
    * report's units per inch over this control's `Dpi`, which DevExpress reads
    * as 100 when absent. 1 for every report written as DevExpress writes one;
@@ -1502,10 +1509,11 @@ function parseControls(
       const childIdx = panelSlice.indexOf('<Controls');
       const childSpan = childIdx === -1 ? null : innerSpan(panelSlice, 'Controls', childIdx);
       if (childSpan) {
-        const panelVisible = controls[controls.length - 1].visible;
-        const panelOwn = controls[controls.length - 1].ownProps;
+        const panelIndex = controls.length - 1;
+        const panelVisible = controls[panelIndex].visible;
+        const panelOwn = controls[panelIndex].ownProps;
         for (const child of parseControls(panelSlice, innerStart + item.start, styles, look, panelVisible, panelOwn, targetDpi, targetUnit)) {
-          controls.push({ ...child, offsetX: loc.a, offsetY: loc.b });
+          controls.push({ ...child, offsetX: loc.a, offsetY: loc.b, panel: panelIndex });
         }
       }
     }
@@ -1989,12 +1997,17 @@ function textHeight(
  * report header declared 100 holding a label to 140 printed 140, and the
  * page header, Detail band and page footer did the same. The loader keeps the
  * declared `HeightF`, so this is a rule of printing, not of the file. Lines
- * and tables count; a hidden control does not (s29e). Margin bands are page
- * furniture and stay fixed, which `paginate` already does by never laying
- * them out.
+ * and tables count; a hidden control does not (s29e). A panel counts at the
+ * height it holds its children to, unless it says `CanGrow="false"` (row 37).
+ * Margin bands are page furniture and stay fixed, which `paginate` already
+ * does by never laying them out.
  */
 export function heldHeight(band: PreviewBand): number {
-  return Math.max(band.height, ...band.controls.filter((c) => c.visible).map((c) => c.y + c.offsetY + c.height));
+  const held = (c: PreviewControl, index: number) =>
+    c.type === 'XRPanel' && c.canGrow
+      ? Math.max(c.height, ...band.controls.filter((k) => k.visible && k.panel === index).map((k) => k.y + k.height))
+      : c.height;
+  return Math.max(band.height, ...band.controls.map((c, index) => (c.visible && c.panel === undefined ? c.y + held(c, index) : 0)));
 }
 
 /**
@@ -2071,29 +2084,59 @@ export function layoutBand(
       return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, crossTab, shift: 0, ...texts };
     })
     .sort((a, b) => a.top - b.top);
+  type Item = (typeof items)[number];
 
-  // Push-down, cascading: each control moves by the largest growth of anything
-  // that ended at or above its top, plus however far that thing itself moved.
-  for (let i = 0; i < items.length; i++) {
-    for (let j = 0; j < i; j++) {
-      const above = items[j];
-      if (above.top + above.designHeight <= items[i].top + EPS) {
-        items[i].shift = Math.max(items[i].shift, above.shift + Math.max(0, above.height - above.designHeight));
+  /*
+   * Push-down, cascading: each control moves by the largest growth of anything
+   * that ended at or above its top, plus however far that thing itself moved.
+   * `at` is a control's top within its container. Returns the container's
+   * designed and placed bottoms.
+   */
+  const pushDown = (group: Item[], at: (it: Item) => number) => {
+    for (let i = 0; i < group.length; i++) {
+      for (let j = 0; j < i; j++) {
+        const above = group[j];
+        if (at(above) + above.designHeight <= at(group[i]) + EPS) {
+          group[i].shift = Math.max(group[i].shift, above.shift + Math.max(0, above.height - above.designHeight));
+        }
       }
     }
-  }
+    return {
+      design: Math.max(0, ...group.map((it) => at(it) + it.designHeight)),
+      placed: Math.max(0, ...group.map((it) => at(it) + it.shift + it.height)),
+    };
+  };
 
-  const designBottom = Math.max(0, ...items.map((it) => it.top + it.designHeight));
-  const placedBottom = Math.max(0, ...items.map((it) => it.top + it.shift + it.height));
+  /*
+   * A panel is laid out like a small band (parity row 37). Its children grow
+   * and push one another inside it, from their own panel-relative tops, and it
+   * holds them and grows by their growth unless it says `CanGrow="false"`. In
+   * its band it then pushes as one control: printed in s29h, a label below the
+   * panel moved with it and one beside it did not, though that one sat below
+   * the growing child. A child whose panel did not print does not print.
+   */
+  const panels = new Map<number, Item>(items.filter((it) => it.control.type === 'XRPanel').map((it) => [it.index, it]));
+  const kept = items.filter((it) => it.control.panel === undefined || panels.has(it.control.panel));
+  for (const panel of panels.values()) {
+    const children = kept.filter((it) => it.control.panel === panel.index).sort((a, b) => a.control.y - b.control.y);
+    const inside = pushDown(children, (it) => it.control.y);
+    if (panel.control.canGrow) panel.height = Math.max(panel.designHeight, inside.design) + Math.max(0, inside.placed - inside.design);
+  }
+  const bottoms = pushDown(kept.filter((it) => it.control.panel === undefined), (it) => it.top);
+  const yOf = (it: Item) => {
+    const panel = it.control.panel === undefined ? undefined : panels.get(it.control.panel);
+    return panel ? panel.top + panel.shift + it.control.y + it.shift : it.top + it.shift;
+  };
+
   return {
     band,
     record,
     scope,
-    height: Math.max(band.height, designBottom) + Math.max(0, placedBottom - designBottom),
-    controls: items.map((it) => ({
+    height: Math.max(band.height, bottoms.design) + Math.max(0, bottoms.placed - bottoms.design),
+    controls: kept.map((it) => ({
       control: it.control,
       index: it.index,
-      y: it.top + it.shift,
+      y: yOf(it),
       height: it.height,
       lines: it.lines,
       rowStart: 0,

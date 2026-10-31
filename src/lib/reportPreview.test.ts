@@ -22,11 +22,13 @@ import {
   cssColor,
   cssPadding,
   layoutBand,
+  heldHeight,
   splitInstance,
   recordCountFromLayout,
   decodeXmlText,
   fontDecoration,
   safeLink,
+  type BandInstance,
   type PaginatedReport,
   type PlacedBand,
   type PlacedControl,
@@ -1846,6 +1848,56 @@ describe('a band holds every control placed in it, as DevExpress printed it (cas
       expect(at.sort((p, q) => p.y - q.y).map((t) => t.s)).toEqual(PRINTED);
     });
   }
+});
+
+/*
+ * Parity row 37, cases s29c and s29h, printed through DevExpress 20.1 on
+ * 2026-10-31: a panel is laid out like a small band. s29c's positions are
+ * DevExpress's, from the band's top; s29h's growth is the test measurer's.
+ */
+describe('a panel laid out like a small band, as DevExpress printed it (cases s29c, s29h)', () => {
+  const lbl = (ref: number, name: string, x: number, y: number, text = name, h = 20) =>
+    `<Item${ref} Ref="${ref}" ControlType="XRLabel" Name="${name}" Text="${text}" Font="Arial, 10pt" LocationFloat="${x},${y}" SizeF="${x ? 200 : 150},${h}" />`;
+  const panel = (ref: number, y: number, h: number, kids: string, extra = '') =>
+    `<Item${ref} Ref="${ref}" ControlType="XRPanel" Name="p${ref}" LocationFloat="0,${y}" SizeF="300,${h}"${extra}><Controls>${kids}</Controls></Item${ref}>`;
+  const band = (height: number, controls: string) => parseReportStructure(
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" PageWidth="850" PageHeight="1100">' +
+    `<Bands><Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="${height}"><Controls>${controls}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`,
+  ).bands[0];
+  const ys = (inst: BandInstance) => Object.fromEntries(inst.controls.map((pc) => [pc.control.name, [Math.round(pc.y * 100) / 100, Math.round(pc.height * 100) / 100]]));
+
+  it('grows a panel to hold a child past its bottom and pushes what is below it (s29c)', () => {
+    const b = band(200, lbl(3, 'R0', 0, 0) + panel(4, 30, 50, lbl(41, 'kid0', 0, 0) + lbl(42, 'kidpast', 0, 40, 'kidpast', 30)) +
+      lbl(5, 'below', 0, 90) + lbl(6, 'beside', 400, 30) + lbl(7, 'under', 0, 150));
+    const inst = layoutBand(b, null, null, { measure: null, unit: 'HundredthsOfAnInch' });
+    expect(ys(inst)).toEqual({ R0: [0, 20], p4: [30, 70], kid0: [30, 20], kidpast: [70, 30], below: [110, 20], beside: [30, 20], under: [170, 20] });
+    expect(inst.height).toBe(220);
+    expect(heldHeight(b)).toBe(200);
+  });
+
+  it('holds a panel that says CanGrow="false" at its height, pushing nothing (s29c)', () => {
+    const b = band(200, lbl(3, 'F0', 0, 0) + panel(4, 30, 50, lbl(41, 'fkid0', 0, 0) + lbl(42, 'fkidpast', 0, 40, 'fkidpast', 30), ' CanGrow="false"') + lbl(5, 'fbelow', 0, 90));
+    const inst = layoutBand(b, null, null, { measure: null, unit: 'HundredthsOfAnInch' });
+    expect(ys(inst)).toEqual({ F0: [0, 20], p4: [30, 50], fkid0: [30, 20], fkidpast: [70, 30], fbelow: [90, 20] });
+    expect(inst.height).toBe(200);
+  });
+
+  it('lays a growing child out inside its panel and pushes only what is below the panel (s29h)', () => {
+    // Each "L" is one line of 10pt Arial: 11.5pt spacing plus 1.5pt.
+    const byL = (text: string) => Array.from({ length: Math.max(1, (text.match(/L/g) ?? []).length) }, (_, i) => `line ${i + 1}`);
+    const growth = ((3 * 11.5 + 1.5) / 72) * 100 - 20;
+    const b = band(150, panel(4, 10, 60, lbl(41, 'grow', 0, 0, 'LLL') + lbl(42, 'sib', 0, 30)) +
+      lbl(5, 'below', 0, 80) + lbl(6, 'beside', 400, 10) + lbl(7, 'nextto', 400, 40));
+    const inst = layoutBand(b, null, null, { measure: byL, unit: 'HundredthsOfAnInch' });
+    const at = ys(inst);
+    expect(at.p4[1]).toBeCloseTo(60 + growth, 1);
+    expect(at.sib[0]).toBeCloseTo(40 + growth, 1);
+    expect(at.below[0]).toBeCloseTo(80 + growth, 1);
+    // Below the growing child's bottom in band terms, but beside the panel: it stays.
+    expect(at.nextto[0]).toBe(40);
+    expect(at.beside[0]).toBe(10);
+    expect(inst.height).toBeCloseTo(150 + growth, 1);
+  });
 });
 
 describe('a record at the foot of a page, as DevExpress printed it (case s29s)', () => {
