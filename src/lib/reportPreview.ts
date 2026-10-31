@@ -76,10 +76,11 @@ const BAND_ORDER: BandKind[] = [
 
 /*
  * There is deliberately no MARGIN_BANDS list to filter against. TopMargin and
- * BottomMargin are page furniture, and `paginate` never places them because it
- * places bands by naming the ones it wants rather than by excluding the ones it
- * does not -- so a list of exclusions would be a second, silent way for a band
- * to be dropped. `reportPreview.test.ts` asserts neither appears as content.
+ * BottomMargin are page furniture, and `paginate` places bands by naming the
+ * ones it wants rather than by excluding the ones it does not -- so a list of
+ * exclusions would be a second, silent way for a band to be dropped. Since
+ * parity row 38 it names the margin bands too, as furniture on every page that
+ * holds their controls and never as content in the flow.
  */
 
 /**
@@ -2492,8 +2493,9 @@ export interface PaginateOptions {
  * This is the whole point of the module, so the rules are worth stating rather
  * than leaving in the arithmetic:
  *
- * - TopMargin and BottomMargin are page furniture. Their heights reserve space
- *   and they are never placed as content.
+ * - TopMargin and BottomMargin are page furniture. Their heights reserve space,
+ *   and their controls print on every page at the page's top edge and in the
+ *   band ending at its foot, never in the flow of content (parity row 38).
  * - ReportHeader prints once, at the top of page 1 only.
  * - PageHeader repeats below the top margin of EVERY page.
  * - Detail repeats once per record and flows onto as many pages as it needs.
@@ -2680,6 +2682,20 @@ export function paginate(
   const reportHeaderInst = reportHeader ? instance(reportHeader) : null;
   const pageHeaderInst = pageHeader ? instance(pageHeader) : null;
   const pageFooterInst = pageFooter ? instance(pageFooter) : null;
+  /*
+   * The margin bands print their controls on every page (parity row 38, s29m):
+   * the top one from the page's top edge, the bottom one in the band that ends
+   * at the page's foot, page numbers included. Neither grows, and neither moves
+   * the content: a label past the top one's bottom printed over the content,
+   * and one past the bottom one's fell off the page (s29a). One with no
+   * controls places nothing.
+   */
+  const marginInst = (kind: BandKind) => {
+    const band = findBand(bands, kind);
+    return band && band.controls.length ? { ...instance(band), height: band.height } : null;
+  };
+  const topMarginInst = marginInst('TopMargin');
+  const bottomMarginInst = marginInst('BottomMargin');
 
   /** Where the page footer ends: the top of the bottom margin. */
   const footerBottom = structure.page.height - bottomMargin;
@@ -2757,6 +2773,8 @@ export function paginate(
   const startPage = (withReportHeader = false) => {
     current = { number: pages.length + 1, bands: [] };
     pages.push(current);
+    if (topMarginInst) current.bands.push(at(topMarginInst, 0));
+    if (bottomMarginInst) current.bands.push(at(bottomMarginInst, structure.page.height - bottomMargin));
     cursor = topMargin;
     // The page that carries the report header -- page 1, when there is one.
     const headerPage = withReportHeader && !!reportHeaderInst;
@@ -3162,9 +3180,9 @@ export function paginate(
   if (data) {
     const readsPage = (c: PreviewControl) =>
       c.data.running === 'Page' || c.rows.some((row) => row.cells.some((cell) => cell.data.running === 'Page'));
-    const sensitive = new Set(
-      bands.filter((b) => b.kind === 'PageHeader' || b.kind === 'PageFooter' || b.controls.some(readsPage)),
-    );
+    // The page bands, the margin bands among them (row 38), read their page.
+    const isPageBand = (kind: BandKind) => kind === 'PageHeader' || kind === 'PageFooter' || kind === 'TopMargin' || kind === 'BottomMargin';
+    const sensitive = new Set(bands.filter((b) => isPageBand(b.kind) || b.controls.some(readsPage)));
     // An empty remainder carried over a break prints nothing, so it does not
     // put its record on that page -- not measured, since nothing it prints shows.
     const detailRecords = (page: PreviewPage) =>
@@ -3185,7 +3203,7 @@ export function paginate(
         const own = pb.band.kind === 'Detail' && pb.record !== null ? finishesOn.get(pb.record - 1) ?? k : k;
         // A page band reads the page's records; anything else keeps the
         // records it was laid out with -- its group -- and learns its page.
-        const pageBand = pb.band.kind === 'PageHeader' || pb.band.kind === 'PageFooter';
+        const pageBand = isPageBand(pb.band.kind);
         const scope = pageBand || !pb.scope
           ? scopeFor(pb.band.kind, pb.record, onPage[own], before[own])
           : { ...pb.scope, page: onPage[own] };

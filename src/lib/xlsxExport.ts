@@ -223,8 +223,11 @@ export function reportToXlsx(structure: ReportStructure, recordCount: number, op
   // The sheet starts at the content's top-left corner, not at the first
   // control: DevExpress's workbook of s26, one label at 50,20, opened with a
   // half-inch column and a 20-unit row before it, and s23's cross-tab at y=10
-  // with a 10-unit row. Every earlier case had a control at both edges.
-  const origin = { x: key(structure.margins.left), y: key(structure.margins.top) };
+  // with a 10-unit row. Every earlier case had a control at both edges. A top
+  // margin band that prints is content too, and it starts at the page's top
+  // edge: in s29m its label at 10 sat in row 2, after a 10-unit row (row 38).
+  const marginTop = structure.bands.some((b) => b.kind === 'TopMargin' && b.controls.length);
+  const origin = { x: key(structure.margins.left), y: marginTop ? 0 : key(structure.margins.top) };
   const xs = [...new Set([origin.x, ...items.flatMap((i) => [key(i.left), key(i.right)])])].sort((a, b) => a - b);
   const ys = [...new Set([origin.y, ...items.flatMap((i) => [key(i.top), key(i.bottom)])])].sort((a, b) => a - b);
 

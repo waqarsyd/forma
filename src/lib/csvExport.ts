@@ -22,6 +22,7 @@ import {
   paginate,
   type PaginatedReport,
   type PaginateOptions,
+  type PlacedBand,
   type PlacedControl,
   type PreviewBand,
   type PreviewPage,
@@ -112,10 +113,15 @@ export function layoutContinuous(structure: ReportStructure, recordCount: number
   const report = paginate(continuous, recordCount, { ...options, maxPages: 1 });
   // The page footer follows the last of the content, not the foot of a page a
   // billion units tall: DevExpress's workbooks put it directly after the report
-  // footer, the gap between them exactly the two bands' own spacing.
+  // footer, the gap between them exactly the two bands' own spacing. The bottom
+  // margin band follows it: DevExpress's CSV and workbook of s29m ended with its
+  // texts, as they began with the top margin band's (parity row 38).
+  const atFoot = (b: PlacedBand) => b.band.kind === 'PageFooter' || b.band.kind === 'BottomMargin';
   for (const page of report.pages) {
-    const end = Math.max(0, ...page.bands.filter((b) => b.band.kind !== 'PageFooter').map((b) => b.top + b.height));
-    page.bands = page.bands.map((b) => (b.band.kind === 'PageFooter' ? { ...b, top: end } : b));
+    const end = Math.max(0, ...page.bands.filter((b) => !atFoot(b)).map((b) => b.top + b.height));
+    const footer = page.bands.find((b) => b.band.kind === 'PageFooter');
+    page.bands = page.bands.map((b) =>
+      b.band.kind === 'PageFooter' ? { ...b, top: end } : b.band.kind === 'BottomMargin' ? { ...b, top: end + (footer?.height ?? 0) } : b);
   }
   return report;
 }

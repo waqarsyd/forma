@@ -290,7 +290,9 @@ describe('paginating a real report', () => {
     expect(footerPage.bands.some((b) => b.band.kind === 'PageHeader')).toBe(true);
   });
 
-  it('never places a margin band as content', () => {
+  it('places an empty margin band nowhere', () => {
+    // A margin band with controls prints them on every page (row 38, below);
+    // the prompt's margin bands are empty, so they place nothing.
     const placed = run(3).pages.flatMap((p) => p.bands.map((b) => b.band.kind));
     expect(placed).not.toContain('TopMargin');
     expect(placed).not.toContain('BottomMargin');
@@ -1944,6 +1946,48 @@ describe('a report with data and no Detail band, as DevExpress printed it (cases
   it('says DevExpress refuses a report with a detail report and no Detail band of its own (s29n5)', () => {
     const s = xml('<Item1 Ref="2" ControlType="DetailReportBand" Name="DetailReport"><Bands><Item1 Ref="3" ControlType="DetailBand" Name="LinesDetail" HeightF="20" /></Bands></Item1>');
     expect(paginate(s, ROWS.length, { rows: ROWS }).problems.join(' ')).toMatch(/DevExpress will not print this report/);
+  });
+});
+
+/*
+ * Parity row 38, case s29m, printed through DevExpress 20.1 on 2026-10-31: 70
+ * records under labels and a page number in both margin bands, the bands 80
+ * and 70 tall over declared margins of 50. Positions are DevExpress's, from
+ * the page's top; the CSV is the first and last lines of DevExpress's own.
+ */
+describe('controls in the margin bands, as DevExpress printed them (case s29m)', () => {
+  const lbl = (ref: number, name: string, x: number, y: number) =>
+    `<Item${ref % 10} Ref="${ref}" ControlType="XRLabel" Name="${name}" Text="${name}" LocationFloat="${x},${y}" SizeF="300,20" />`;
+  const xml =
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
+    `<Bands><Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="80"><Controls>${lbl(21, 'TMtitle', 0, 10)}${lbl(22, 'TMright', 450, 50)}</Controls></Item1>` +
+    `<Item2 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="30"><Controls>${lbl(31, 'PH', 0, 0)}</Controls></Item2>` +
+    `<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="30"><Controls>${lbl(41, 'row', 0, 0)}</Controls></Item3>` +
+    '<Item4 Ref="5" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="70"><Controls>' +
+    '<Item1 Ref="51" ControlType="XRPageInfo" Name="BMpage" TextFormatString="Page {0} of {1}" LocationFloat="0,10" SizeF="300,20" />' +
+    `${lbl(52, 'BMlit', 450, 40)}</Controls></Item4></Bands></XtraReportsLayoutSerializer>`;
+
+  it('prints both margin bands\' controls on every page, the page number included', () => {
+    const report = paginate(parseReportStructure(xml), 70);
+    expect(report.pages).toHaveLength(3);
+    report.pages.forEach((page) => {
+      const at = Object.fromEntries(page.bands
+        .filter((b) => b.band.kind === 'TopMargin' || b.band.kind === 'BottomMargin')
+        .flatMap((b) => b.controls.map((pc) => [pc.control.name, [b.left + pc.control.x, b.top + pc.y]])));
+      expect(at).toEqual({ TMtitle: [50, 10], TMright: [500, 50], BMpage: [50, 1040], BMlit: [500, 1070] });
+      const pageNo = page.bands.flatMap((b) => b.controls).find((pc) => pc.control.name === 'BMpage')!.control.pageInfo!;
+      expect(pageInfoText(pageNo, page.number, report.pages.length)).toBe(`Page ${page.number} of 3`);
+    });
+    // The content starts below the 80-unit top margin band, as it did printed.
+    const first = report.pages[0].bands.find((b) => b.band.kind === 'PageHeader')!;
+    expect(first.top).toBe(80);
+    expect(report.pages.map((p) => p.bands.filter((b) => b.band.kind === 'Detail' && b.controls.length).length)).toEqual([31, 31, 8]);
+  });
+
+  it('exports the top margin band first and the bottom one last, as DevExpress\'s CSV did', () => {
+    const lines = reportToCsv(parseReportStructure(xml), 70).split('\r\n');
+    expect(lines.slice(0, 3)).toEqual(['TMtitle,', ',TMright', 'PH,']);
+    expect(lines.slice(-3)).toEqual(['Page 1 of 1,', ',BMlit', '']);
   });
 });
 

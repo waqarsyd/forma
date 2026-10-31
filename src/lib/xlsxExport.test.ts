@@ -152,4 +152,12 @@ describe('reportToXlsx over a cross-tab, and from the content\'s corner', () => 
   it('starts the sheet at the content\'s top-left corner, as s26 did', () => {
     expect(canonical(reportToXlsx(parseReportStructure(S26), 1))).toBe(S26_GRID);
   });
+
+  it('starts it at the page\'s top edge when the top margin band prints, as s29m did (parity row 38)', () => {
+    // DevExpress put s29m's top margin label, 10 units down, in row 2.
+    const withMargin = S26.replace('<Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />',
+      '<Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50"><Controls><Item1 Ref="7" ControlType="XRLabel" Name="tm" Text="TMtitle" LocationFloat="0,10" SizeF="300,20" /></Controls></Item1>');
+    const cells = JSON.parse(canonical(reportToXlsx(parseReportStructure(withMargin), 1))).cells as unknown[][];
+    expect(cells.find((c) => c[2] === 'TMtitle')?.[0]).toBe('A2');
+  });
 });
