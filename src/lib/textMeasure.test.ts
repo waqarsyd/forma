@@ -6,7 +6,7 @@
  * identical lines; these cases pin the rules that made that true.
  */
 import { describe, it, expect } from 'vitest';
-import { wrapText, lineSpacingPt, cssFont, canvasMeasurer, GROW_EXTRA_PT, SHRINK_EXTRA_PT } from './textMeasure';
+import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, GROW_EXTRA_PT, SHRINK_EXTRA_PT } from './textMeasure';
 
 /** Every character one point wide, so widths are character counts. */
 const mono = (s: string) => s.length;
@@ -58,23 +58,36 @@ describe('wrapText', () => {
   });
 });
 
-describe('lineSpacingPt', () => {
-  it('uses the ratio DevExpress printed for each font', () => {
-    expect(lineSpacingPt('Arial', 9)).toBeCloseTo(10.35, 6); // printed 10.35
-    expect(lineSpacingPt('Arial', 14)).toBeCloseTo(16.1, 6); // printed 16.10
-    expect(lineSpacingPt('Times New Roman', 10)).toBeCloseTo(11.5, 6);
-    expect(lineSpacingPt('Verdana', 10)).toBeCloseTo(12.153, 6);
-    expect(lineSpacingPt('Tahoma', 10)).toBeCloseTo(12.07, 6);
-    expect(lineSpacingPt('Segoe UI', 10)).toBeCloseTo(13.3, 6);
-    expect(lineSpacingPt('Calibri', 10)).toBeCloseTo(12.21, 6);
-    expect(lineSpacingPt('Georgia', 10)).toBeCloseTo(11.363, 6);
-    expect(lineSpacingPt('Courier New', 10)).toBeCloseTo(11.328, 6);
+describe('lineSpacingPt and linesHeightPt', () => {
+  // Parity row 51, case s37: each font from 6 to 36pt, printed by DevExpress.
+  it('uses the line spacing DevExpress printed for each font', () => {
+    expect(lineSpacingPt('Arial', 9)).toBeCloseTo(10.349, 3); // printed 10.35 a line
+    expect(lineSpacingPt('Times New Roman', 10)).toBeCloseTo(11.499, 3);
+    expect(lineSpacingPt('Verdana', 10)).toBeCloseTo(12.153, 3);
+    expect(lineSpacingPt('Tahoma', 10)).toBeCloseTo(12.07, 3);
+    expect(lineSpacingPt('Segoe UI', 10)).toBeCloseTo(13.301, 3);
+    expect(lineSpacingPt('Calibri', 10)).toBeCloseTo(12.207, 3);
+    expect(lineSpacingPt('Georgia', 10)).toBeCloseTo(11.362, 3);
+    expect(lineSpacingPt('Courier New', 10)).toBeCloseTo(11.328, 3);
+    expect(lineSpacingPt('Microsoft Sans Serif', 10)).toBeCloseTo(11.318, 3);
+    expect(lineSpacingPt('Trebuchet MS', 10)).toBeCloseTo(11.611, 3);
+  });
+
+  it('prints one line of Arial or Times New Roman shorter, and two or more at the spacing each', () => {
+    // DevExpress's heights less the 1.5pt every grown label adds (s37, s31e).
+    expect(linesHeightPt(1, 'Arial', 14)).toBeCloseTo(17.141 - 1.5, 2);
+    expect(linesHeightPt(1, 'Times New Roman', 14)).toBeCloseTo(17.004 - 1.5, 2);
+    expect(linesHeightPt(2, 'Arial', 14)).toBeCloseTo(33.697 - 1.5, 2);
+    expect(linesHeightPt(3, 'Arial', 9)).toBeCloseTo(32.547 - 1.5, 2);
+    expect(linesHeightPt(1, 'Verdana', 10)).toBeCloseTo(13.653 - 1.5, 2);
+    expect(linesHeightPt(0, 'Arial', 10)).toBe(0);
   });
 
   it('ignores case, and gives an unmeasured font Arial\'s ratio', () => {
-    expect(lineSpacingPt('ARIAL', 10)).toBeCloseTo(11.5, 6);
-    expect(lineSpacingPt('Some Font', 10)).toBeCloseTo(11.5, 6);
-    expect(lineSpacingPt(null, 10)).toBeCloseTo(11.5, 6);
+    expect(lineSpacingPt('ARIAL', 10)).toBeCloseTo(11.499, 3);
+    expect(lineSpacingPt('Some Font', 10)).toBeCloseTo(11.499, 3);
+    expect(lineSpacingPt(null, 10)).toBeCloseTo(11.499, 3);
+    expect(linesHeightPt(1, 'Some Font', 10)).toBeCloseTo(linesHeightPt(1, 'Arial', 10), 6);
   });
 
   it('carries the measured height constants', () => {

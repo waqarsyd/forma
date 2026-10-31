@@ -36,6 +36,7 @@ import {
 import { reportToCsv } from './csvExport';
 import { liftStyles } from './repxStyles';
 import { repairCrossTabs } from './repxCrossTabs';
+import { linesHeightPt, lineSpacingPt } from './textMeasure';
 
 /** The banded shape reportBands.ts asks the model for. */
 const banded = `<?xml version="1.0" encoding="utf-8"?>
@@ -1718,11 +1719,12 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
     ).bands[0];
   const label = (n: number, name: string, text: string, y: number, h = 20, extra = '') =>
     `<Item${n} Ref="${10 + n}" ControlType="XRLabel" Name="${name}" Text="${text}" Font="Arial, 10pt"${extra} LocationFloat="0,${y}" SizeF="300,${h}" />`;
-  // Each "L" in a text is one line; 10pt Arial spacing is 11.5pt, 15.97 units.
+  // Each "L" in a text is one line of 10pt Arial: 11.5pt a line, about 15.97
+  // units, and one line alone a little less (row 51).
   const byL = (text: string) => (text ? Array.from({ length: Math.max(1, (text.match(/L/g) ?? []).length) }, (_, i) => `line ${i + 1}`) : []);
   const ctx = { measure: byL, unit: 'HundredthsOfAnInch' };
-  const line = (11.5 / 72) * 100;
-  const grown = (lines: number) => ((lines * 11.5 + 1.5) / 72) * 100;
+  const line = (lineSpacingPt('Arial', 10) / 72) * 100;
+  const grown = (lines: number) => ((linesHeightPt(lines, 'Arial', 10) + 1.5) / 72) * 100;
   const by = (inst: { controls: { control: { name: string } }[] }, name: string) => inst.controls.find((pc) => pc.control.name === name) as PlacedControl;
 
   it('cascades push-down through a chain of growing controls', () => {
@@ -1732,6 +1734,16 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
     expect(by(inst, 'b').y).toBeCloseTo(25 + growthA, 6);
     expect(by(inst, 'c').y).toBeCloseTo(50 + growthA + growthB, 6);
     expect(inst.height).toBeCloseTo(100 + growthA + growthB, 6);
+  });
+
+  // Parity row 51, s37: one line of 14pt Arial printed 17.141pt tall, two
+  // lines 33.697pt: one line without the gap between lines, two with it each.
+  it('grows one line of Arial to its own height and two to the line spacing each (s37)', () => {
+    const big = (n: number, text: string, y: number) =>
+      `<Item${n} Ref="${10 + n}" ControlType="XRLabel" Name="b${n}" Text="${text}" Font="Arial, 14pt" LocationFloat="0,${y}" SizeF="300,2" />`;
+    const inst = layoutBand(band(big(1, 'L', 0) + big(2, 'LL', 100)), 1, null, ctx);
+    expect(by(inst, 'b1').height).toBeCloseTo((17.141 / 72) * 100, 1);
+    expect(by(inst, 'b2').height).toBeCloseTo((33.697 / 72) * 100, 1);
   });
 
   // Parity row 49. In s35b a turned heading far wider than its box across
@@ -1931,9 +1943,9 @@ describe('a panel laid out like a small band, as DevExpress printed it (cases s2
   });
 
   it('lays a growing child out inside its panel and pushes only what is below the panel (s29h)', () => {
-    // Each "L" is one line of 10pt Arial: 11.5pt spacing plus 1.5pt.
+    // Each "L" is one line of 10pt Arial: its spacing a line, plus 1.5pt.
     const byL = (text: string) => Array.from({ length: Math.max(1, (text.match(/L/g) ?? []).length) }, (_, i) => `line ${i + 1}`);
-    const growth = ((3 * 11.5 + 1.5) / 72) * 100 - 20;
+    const growth = ((linesHeightPt(3, 'Arial', 10) + 1.5) / 72) * 100 - 20;
     const b = band(150, panel(4, 10, 60, lbl(41, 'grow', 0, 0, 'LLL') + lbl(42, 'sib', 0, 30)) +
       lbl(5, 'below', 0, 80) + lbl(6, 'beside', 400, 10) + lbl(7, 'nextto', 400, 40));
     const inst = layoutBand(b, null, null, { measure: byL, unit: 'HundredthsOfAnInch' });

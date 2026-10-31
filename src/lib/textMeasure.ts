@@ -12,8 +12,10 @@
  *   wide Arial 9pt label broke "...two vehicles because" at 203.1pt and fitted
  *   "...and the customer" at exactly 216.0pt.
  * - **The line spacing is a fixed ratio of the font size, per font**: Arial
- *   and Times New Roman 1.15, Verdana 1.2153, Tahoma 1.207, Segoe UI 1.33,
- *   Calibri 1.221, Georgia 1.1363, Courier New 1.1328. Bold does not change it.
+ *   and Times New Roman 1.1499, Verdana 1.2153, Tahoma 1.207, Segoe UI
+ *   1.3301, Calibri 1.2207, Georgia 1.1362, Courier New 1.1328, Microsoft
+ *   Sans Serif 1.1318, Trebuchet MS 1.1611. Bold does not change it. One
+ *   line of Arial or Times New Roman is shorter, 1.1172 and 1.1074 (row 51).
  * - **A grown control is the lines plus 1.5pt**, plus its vertical padding and
  *   its top and bottom borders: three lines of Arial 9pt printed 32.544pt
  *   against 3 x 10.35 + 1.5 = 32.55; ten hundredths of padding and a 3px
@@ -42,21 +44,56 @@ export const GROW_EXTRA_PT = 1.5;
 /** Added to the lines of a control that SHRINKS. Measured at 9pt and 10pt Arial. */
 export const SHRINK_EXTRA_PT = 1.17;
 
-/** Line spacing over font size, by family, as DevExpress printed each one. */
+/*
+ * Line spacing over font size, by family, as DevExpress printed each one:
+ * every font from 6 to 36pt in s37 (parity row 51), one, two and three
+ * lines, each a straight line through the sizes. To six places each ratio
+ * is a whole number of 2048ths, the grid these fonts are designed on, so
+ * that is how it is written; four places left a 1/300-inch error after
+ * fourteen grown rows.
+ */
 const LINE_SPACING: Record<string, number> = {
-  'arial': 1.15,
-  'times new roman': 1.15,
-  'verdana': 1.2153,
-  'tahoma': 1.207,
-  'segoe ui': 1.33,
-  'calibri': 1.221,
-  'georgia': 1.1363,
-  'courier new': 1.1328,
+  'arial': 2355 / 2048,
+  'times new roman': 2355 / 2048,
+  'verdana': 2489 / 2048,
+  'tahoma': 2472 / 2048,
+  'segoe ui': 2724 / 2048,
+  'calibri': 2500 / 2048,
+  'georgia': 2327 / 2048,
+  'courier new': 2320 / 2048,
+  'microsoft sans serif': 2318 / 2048,
+  'trebuchet ms': 2378 / 2048,
 };
 
-/** One line's height in points. An unmeasured family takes Arial's 1.15. */
+/*
+ * A label of one line in these fonts printed shorter than one line of
+ * several: without the gap the font sets between lines (s37). Arial 14pt
+ * printed 17.14pt where 1.15 gives 17.6 (s31e). Two lines were twice the
+ * line spacing, not one of these and one of it. Every other font measured
+ * has no such gap, so its one line is its spacing.
+ */
+const ONE_LINE: Record<string, number> = {
+  'arial': 2288 / 2048,
+  'times new roman': 2268 / 2048,
+};
+
+const fontKey = (family: string | null | undefined) => {
+  const key = (family ?? '').trim().toLowerCase();
+  return key in LINE_SPACING ? key : 'arial';
+};
+
+/** One line's height in points. An unmeasured family takes Arial's. */
 export function lineSpacingPt(family: string | null | undefined, sizePt: number): number {
-  return (LINE_SPACING[(family ?? '').trim().toLowerCase()] ?? 1.15) * sizePt;
+  return LINE_SPACING[fontKey(family)] * sizePt;
+}
+
+/**
+ * How tall `count` lines print, in points, before the 1.5pt a grown control
+ * adds: one line at its own height, more at the line spacing each (row 51).
+ */
+export function linesHeightPt(count: number, family: string | null | undefined, sizePt: number): number {
+  const key = fontKey(family);
+  return count === 1 ? (ONE_LINE[key] ?? LINE_SPACING[key]) * sizePt : count * LINE_SPACING[key] * sizePt;
 }
 
 /**

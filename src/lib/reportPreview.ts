@@ -38,7 +38,7 @@
 
 import { formatComposite, formatDate, toRoman } from './netFormat';
 import { pxToUnits, unitsPerInch } from './reportGeometry';
-import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, type FontSpec, type MeasureText } from './textMeasure';
+import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, linesHeightPt, type FontSpec, type MeasureText } from './textMeasure';
 import { ReportData, aggregate, groupRuns, sortCompare, sortedOrder, valueText, type CalculatedField, type TextData, type TextScope, type TypedRow } from './reportData';
 import { parseParameters, type ReportParameter } from './repxParameters';
 import { isTrue, parseCriteria, type Value } from './criteria';
@@ -2299,12 +2299,15 @@ function textHeight(
   };
   const area = toPt(widthUnits) - inset.left - inset.right;
   const lines = wordWrap ? ctx.measure!(text, spec, area) : text ? [text.replace(/\r?\n/g, ' ')] : [];
-  const spacing = lineSpacingPt(spec.family, spec.sizePt);
-  const body = lines.length * spacing + inset.top + inset.bottom;
+  const insets = inset.top + inset.bottom;
+  // Grown: one line at its own height, more at the spacing each (row 51).
+  const grown = linesHeightPt(lines.length, spec.family, spec.sizePt) + insets;
+  // Shrunk: as row 8 measured it, every line at the spacing; row 52 revisits it.
+  const shrunk = lines.length * lineSpacingPt(spec.family, spec.sizePt) + insets;
   return {
     lines,
-    needUnits: lines.length ? toUnits(body + GROW_EXTRA_PT) : 0,
-    shrinkUnits: lines.length ? toUnits(body + SHRINK_EXTRA_PT) : 0,
+    needUnits: lines.length ? toUnits(grown + GROW_EXTRA_PT) : 0,
+    shrinkUnits: lines.length ? toUnits(shrunk + SHRINK_EXTRA_PT) : 0,
   };
 }
 
@@ -2695,6 +2698,8 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string, s
         crossing.push({
           origBottom: bottom,
           origY: pc.y,
+          // The rest of a longer text, so every line at the spacing, one left
+          // over included: c02's page 3 sits where DevExpress printed it so.
           part: { ...pc, y: 0, lines: rest, height: rest.length * spacing + toUnits(GROW_EXTRA_PT + inset.top + inset.bottom) },
         });
         continue;
