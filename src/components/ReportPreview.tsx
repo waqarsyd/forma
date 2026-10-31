@@ -49,7 +49,7 @@ import {
 import { parseParameters } from '../lib/repxParameters';
 import { readBoundFields } from '../lib/repxBindingPlan';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
-import { canvasMeasurer, lineSpacingPt } from '../lib/textMeasure';
+import { canvasMeasurer, lineSpacingPt, lineWidthPt } from '../lib/textMeasure';
 import { exportFileName, reportToCsv } from '../lib/csvExport';
 import { reportToXlsx } from '../lib/xlsxExport';
 import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
@@ -619,6 +619,33 @@ function ControlBox({
   const link = placed.url
     ? { href: placed.url, target: '_blank', rel: 'noopener noreferrer', style: { ...frame, color: frame.color ?? 'inherit', textDecoration: frame.textDecoration ?? 'none' } }
     : { style: frame };
+
+  /*
+   * Turned text (parity row 49). Printed in s35, DevExpress turned the text by
+   * its `Angle`, counter-clockwise, and aligned the turned text's bounding box
+   * in the label's box by `TextAlignment`, the box unturned. So the frame
+   * aligns a box the size of that bounding box, and the text turns about its
+   * centre inside it. Where nothing can measure, as under jsdom, a character
+   * is taken as half an em.
+   */
+  if (control.angle) {
+    const text = placed.text ?? printed(control.text, control.field, record);
+    const sizePt = control.fontSize ?? 9.75;
+    const font = { family: control.fontFamily ?? 'Times New Roman', sizePt, bold: control.bold, italic: control.italic };
+    const w = ((lineWidthPt(text, font) ?? text.length * sizePt * 0.5) * 96) / 72;
+    const h = (lineSpacingPt(control.fontFamily, sizePt) * 96) / 72;
+    const turn = (control.angle * Math.PI) / 180;
+    const [boxW, boxH] = [Math.abs(w * Math.cos(turn)) + Math.abs(h * Math.sin(turn)), Math.abs(w * Math.sin(turn)) + Math.abs(h * Math.cos(turn))];
+    return (
+      <Box {...link}>
+        <span style={{ position: 'relative', flex: 'none', width: boxW, height: boxH }}>
+          <span style={{ position: 'absolute', left: '50%', top: '50%', width: w, lineHeight: `${h}px`, whiteSpace: 'pre', transform: `translate(-50%, -50%) rotate(${-control.angle}deg)` }}>
+            {text}
+          </span>
+        </span>
+      </Box>
+    );
+  }
 
   if (placed.lines) {
     return (

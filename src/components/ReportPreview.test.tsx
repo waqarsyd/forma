@@ -238,6 +238,48 @@ describe('cross-band controls in the Preview', () => {
 });
 
 /*
+ * A label's Angle turns its text (parity row 49). DevExpress aligned the turned
+ * text's bounding box in the label's box by TextAlignment (s35): at 90 degrees
+ * a line reads upwards, so its box is a line tall across and its length down.
+ */
+describe('turned text in the Preview', () => {
+  const turned = (attrs: string) => `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Turned" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />
+    <Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="200">
+      <Controls>
+        <Item1 Ref="4" ControlType="XRLabel" Name="lbl" Text="TURNED" ${attrs} LocationFloat="0,0" SizeF="100,150" />
+      </Controls>
+    </Item2>
+    <Item3 Ref="5" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+  const box = (attrs: string) => {
+    render(<ReportPreview repxContent={turned(attrs)} layout={null} title="Turned" />);
+    const text = screen.getByText('TURNED');
+    return { text, box: text.parentElement as HTMLElement, frame: text.parentElement!.parentElement as HTMLElement };
+  };
+
+  it('turns the text a quarter turn and sets its box upright at the top left', () => {
+    const { text, box: b, frame } = box('Angle="90"');
+    expect(text.style.transform).toBe('translate(-50%, -50%) rotate(-90deg)');
+    expect(parseFloat(b.style.height)).toBeGreaterThan(parseFloat(b.style.width));
+    expect([frame.style.justifyContent, frame.style.alignItems]).toEqual(['flex-start', 'flex-start']);
+  });
+
+  it('centres the turned box when the label is centred', () => {
+    const { frame } = box('Angle="90" TextAlignment="MiddleCenter"');
+    expect([frame.style.justifyContent, frame.style.alignItems]).toEqual(['center', 'center']);
+  });
+
+  it('draws a level label as it was', () => {
+    const { text } = box('');
+    expect(text.style.transform).toBe('');
+  });
+});
+
+/*
  * Export CSV hands the browser a file named after the report, holding what the
  * pane shows laid out as DevExpress exports CSV (parity row 20).
  */

@@ -1734,6 +1734,24 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
     expect(inst.height).toBeCloseTo(100 + growthA + growthB, 6);
   });
 
+  // Parity row 49. In s35b a turned heading far wider than its box across
+  // kept the box, and the label below it stayed where it was designed.
+  it('keeps a turned label at its box, where the same label level grows (s35b)', () => {
+    const turned = layoutBand(band(label(1, 'a', 'LLL', 0, 20, ' Angle="90"') + label(2, 'b', 'x', 25)), 1, null, ctx);
+    expect(by(turned, 'a').height).toBe(20);
+    expect(by(turned, 'b').y).toBe(25);
+    expect(turned.height).toBe(100);
+    const level = layoutBand(band(label(1, 'a', 'LLL', 0) + label(2, 'b', 'x', 25)), 1, null, ctx);
+    expect(by(level, 'b').y).toBeCloseTo(25 + grown(3) - 20, 6);
+  });
+
+  it('reads Angle, and leaves a level label without one', () => {
+    const [turned, upright, round] = band(label(1, 'a', 'x', 0, 20, ' Angle="270"') + label(2, 'b', 'x', 25) + label(3, 'c', 'x', 50, 20, ' Angle="360"')).controls;
+    expect(turned.angle).toBe(270);
+    expect('angle' in upright).toBe(false);
+    expect('angle' in round).toBe(false);
+  });
+
   // Parity row 36. Until it, a band saying CanGrow="false" was held at its
   // designed height, which nothing had measured: s29g printed it growing.
   it('grows a band with its text whatever the band\'s CanGrow says (s29g)', () => {

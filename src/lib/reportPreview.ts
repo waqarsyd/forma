@@ -325,6 +325,13 @@ export interface PreviewControl {
   duplicates?: 'Suppress' | 'SuppressAndShrink' | 'Merge';
   nulls?: 'Suppress' | 'SuppressAndShrink';
   /**
+   * `Angle`, degrees counter-clockwise, when it is not 0 (parity row 49).
+   * Printed in s35: the text turns and its turned bounding box is aligned in
+   * the label's box by `TextAlignment`, the box itself unturned and, in s35b,
+   * never grown.
+   */
+  angle?: number;
+  /**
    * For an `XRSubreport`: the report embedded in its `<ReportSource>`, parsed,
    * or the file its `ReportSourceUrl` names, which a browser cannot open.
    * Null for every other control.
@@ -1591,6 +1598,7 @@ function parseControls(
       rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
       ...boundProperties(ownPart(inner.slice(item.start, extent))),
       ...repeatsOf(item.attrs),
+      ...(numAttr(item.attrs, 'Angle', 0) % 360 ? { angle: numAttr(item.attrs, 'Angle', 0) } : {}),
       subreport: type === 'XRSubreport' ? parseSubreport(item.attrs, inner.slice(item.start, extent), targetDpi, targetUnit) : null,
       ownProps: [...new Set([...ownPropsOf(item.attrs, ownPart(inner.slice(item.start, extent)), styles, type), ...shield])],
       pageInfo: type === 'XRPageInfo'
@@ -2381,7 +2389,9 @@ export function layoutBand(
         const laid = subreportLayout(control.subreport.structure, ctx);
         inner = laid.bands;
         if (control.canGrow && laid.height > height) height = laid.height;
-      } else if (ctx.measure && MEASURED_TYPES.has(control.type)) {
+      } else if (ctx.measure && MEASURED_TYPES.has(control.type) && !control.angle) {
+        // A turned label keeps its box: in s35b a heading far wider than its
+        // 20-unit box across did not grow it, and the label below stayed put.
         const text = texts.text ?? '';
         const m = textHeight(text, { family: control.fontFamily, size: control.fontSize, bold: control.bold, italic: control.italic },
           control.width, control.appearance, control.borders, control.wordWrap, ctx);

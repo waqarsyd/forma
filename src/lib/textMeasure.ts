@@ -129,10 +129,8 @@ export function cssFont(font: FontSpec): string {
  * its designed size, which is what it did before rows 7 and 8.
  */
 export function canvasMeasurer(): MeasureText | null {
-  if (typeof document === 'undefined') return null;
-  if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) return null;
-  const context = document.createElement('canvas').getContext('2d');
-  if (!context || typeof context.measureText !== 'function') return null;
+  const context = canvasContext();
+  if (!context) return null;
   const cache = new Map<string, number>();
   return (text, font, widthPt) => {
     const css = cssFont(font);
@@ -149,4 +147,26 @@ export function canvasMeasurer(): MeasureText | null {
     };
     return wrapText(text, widthOf, widthPt);
   };
+}
+
+/** A canvas to measure on, or null under Node and jsdom, as for `canvasMeasurer`. */
+function canvasContext(): CanvasRenderingContext2D | null {
+  if (typeof document === 'undefined') return null;
+  if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) return null;
+  const context = document.createElement('canvas').getContext('2d');
+  return context && typeof context.measureText === 'function' ? context : null;
+}
+
+let lineContext: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * One line's width in points, measured on a canvas; null where there is none.
+ * For a turned label (parity row 49), whose turned line the pane aligns in the
+ * label's box by its bounding box, so it needs the line's length.
+ */
+export function lineWidthPt(text: string, font: FontSpec): number | null {
+  if (lineContext === undefined) lineContext = canvasContext();
+  if (!lineContext) return null;
+  lineContext.font = cssFont(font);
+  return lineContext.measureText(text).width * 0.75;
 }
