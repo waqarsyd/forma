@@ -2053,6 +2053,67 @@ describe('a band with no visible control, as DevExpress printed it (cases s29x, 
   });
 });
 
+/*
+ * Parity row 45, cases s31a and s31d: expression bindings on anything but the
+ * text, in the syntax DevExpress 20.1's serializer wrote, printed over five
+ * records whose Qty is 1, 3, 5, 2 and 4. Each expectation is what printed.
+ */
+describe('expression bindings on appearance and visibility, as DevExpress printed them (cases s31a, s31d)', () => {
+  const QTY = ['1', '3', '5', '2', '4'].map((Qty) => ({ Qty }));
+  const binding = (ref: number, property: string, expression: string) =>
+    `<Item${ref % 10} Ref="${ref}" EventName="BeforePrint" PropertyName="${property}" Expression="${expression}" />`;
+  const label = (ref: number, name: string, bindings: string, extra = '') =>
+    `<Item${ref} Ref="${ref}" ControlType="XRLabel" Name="${name}" Text="${name}" SizeF="150,20" LocationFloat="0,0"${extra}><ExpressionBindings>${bindings}</ExpressionBindings></Item${ref}>`;
+  const report = (controls: string, sheet = '') => parseReportStructure(
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50">' +
+    `${sheet}<Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="30"><Controls>${controls}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`);
+  /** Each record's placement of the named control, or null where it did not print. */
+  const per = (structure: ReturnType<typeof parseReportStructure>, name: string, rows = QTY) =>
+    paginate(structure, rows.length, { rows }).pages[0].bands
+      .filter((b) => b.band.kind === 'Detail')
+      .map((b) => b.controls.find((pc) => pc.control.name === name)?.control ?? null);
+
+  it('shows a label only on the records its Visible binding holds for (s31a)', () => {
+    expect(per(report(label(3, 'vis', binding(30, 'Visible', '[Qty] &gt; 2'))), 'vis').map((c) => c !== null)).toEqual([false, true, true, false, true]);
+  });
+
+  it('colours, emboldens and resizes a label record by record (s31a, s31d)', () => {
+    const red = "Iif([Qty] &gt; 2, 'Red', 'Blue')";
+    const s = report(
+      label(3, 'fore', binding(30, 'ForeColor', red)) +
+      label(4, 'back', binding(40, 'BackColor', "Iif([Qty] &gt; 2, 'Yellow', 'White')")) +
+      label(5, 'bold', binding(50, 'Font.Bold', '[Qty] &gt; 2') + binding(51, 'Font.Italic', '[Qty] &gt; 2')) +
+      label(6, 'size', binding(60, 'Font.Size', 'Iif([Qty] &gt; 2, 14, 8)') + binding(61, 'Font.Name', "Iif([Qty] &gt; 2, 'Arial', 'Courier New')")) +
+      label(7, 'bord', binding(70, 'Borders', "Iif([Qty] &gt; 2, 'All', 'None')") + binding(71, 'BorderColor', "Iif([Qty] &gt; 2, 'Red', 'Black')")) +
+      label(8, 'algn', binding(80, 'TextAlignment', "Iif([Qty] &gt; 2, 'TopRight', 'TopLeft')")));
+    expect(per(s, 'fore').map((c) => c!.appearance.ForeColor)).toEqual(['Blue', 'Red', 'Red', 'Blue', 'Red']);
+    expect(per(s, 'back').map((c) => c!.appearance.BackColor)).toEqual(['White', 'Yellow', 'Yellow', 'White', 'Yellow']);
+    expect(per(s, 'bold').map((c) => [c!.bold, c!.italic])).toEqual([[false, false], [true, true], [true, true], [false, false], [true, true]]);
+    expect(per(s, 'size').map((c) => `${c!.fontFamily} ${c!.fontSize}`)).toEqual(['Courier New 8', 'Arial 14', 'Arial 14', 'Courier New 8', 'Arial 14']);
+    expect(per(s, 'bord').map((c) => [c!.borders.top && c!.borders.left, c!.appearance.BorderColor])).toEqual([[false, 'Black'], [true, 'Red'], [true, 'Red'], [false, 'Black'], [true, 'Red']]);
+    expect(per(s, 'algn').map((c) => c!.align)).toEqual(['left', 'right', 'right', 'left', 'right']);
+  });
+
+  it('lets a formatting rule win over a binding on the same property (s31d)', () => {
+    const sheet = '<FormattingRuleSheet><Item1 Ref="90" Name="GreenHigh" Condition="[Qty] &gt; 2"><Formatting Ref="91" ForeColor="Green" /></Item1></FormattingRuleSheet>';
+    const s = report(label(3, 'prio', binding(30, 'ForeColor', "Iif([Qty] &gt; 2, 'Red', 'Blue')") + '</ExpressionBindings><FormattingRuleLinks><Item1 Ref="31" Value="#Ref-90" /></FormattingRuleLinks><ExpressionBindings>'), sheet);
+    expect(per(s, 'prio').map((c) => c!.appearance.ForeColor)).toEqual(['Blue', 'Green', 'Green', 'Blue', 'Green']);
+  });
+
+  it('colours a table cell by its own binding (s31d)', () => {
+    const table = '<Item3 Ref="3" ControlType="XRTable" Name="tbl" SizeF="150,20" LocationFloat="0,0"><Rows><Item1 Ref="4" ControlType="XRTableRow" Name="tr" Weight="1"><Cells>' +
+      `<Item1 Ref="5" ControlType="XRTableCell" Name="tc" Text="CELL" Weight="1"><ExpressionBindings>${binding(50, 'ForeColor', "Iif([Qty] &gt; 2, 'Red', 'Blue')")}</ExpressionBindings></Item1>` +
+      '</Cells></Item1></Rows></Item3>';
+    expect(per(report(table), 'tbl').map((c) => c!.rows[0].cells[0].appearance.ForeColor)).toEqual(['Blue', 'Red', 'Red', 'Blue', 'Red']);
+  });
+
+  it('evaluates nothing without test data, so the label prints as designed', () => {
+    const s = report(label(3, 'vis', binding(30, 'Visible', '[Qty] &gt; 2') + binding(31, 'ForeColor', "'Red'")));
+    const placed = paginate(s, 2).pages[0].bands.filter((b) => b.band.kind === 'Detail').map((b) => b.controls[0]?.control);
+    expect(placed.map((c) => [c?.name, c?.appearance.ForeColor])).toEqual([['vis', undefined], ['vis', undefined]]);
+  });
+});
+
 describe('a record at the foot of a page, as DevExpress printed it (case s29s)', () => {
   const report = (detail: string, height: number) => paginate(parseReportStructure(
     '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +

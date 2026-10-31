@@ -158,6 +158,8 @@ export interface PreviewCell {
   field: string | null;
   /** The formatting rules linked to this cell, by `Ref`, in link order. */
   rules: string[];
+  /** Its expression bindings on anything but the text; see `AppearanceBinding`. */
+  bindings?: AppearanceBinding[];
   /** The appearance properties the cell or its row sets itself; the rest it inherits from the table. */
   ownProps: AppearanceProperty[];
 }
@@ -247,6 +249,18 @@ export interface PreviewMeter {
   bound: string | null;
 }
 
+/**
+ * An `ExpressionBindings` item that sets something other than the text:
+ * `Visible`, a colour, the borders, the alignment, or a part of the font.
+ * Evaluated per record over the test data (parity row 45). Printed in s31a
+ * and s31d, each changed its control record by record, and a formatting rule
+ * setting the same property won over the binding.
+ */
+export interface AppearanceBinding {
+  property: string;
+  expression: string;
+}
+
 export interface PreviewControl {
   /** The DevExpress ControlType verbatim, e.g. `XRLabel`. */
   type: string;
@@ -299,6 +313,8 @@ export interface PreviewControl {
   link: { literal: string | null; expression: string | null } | null;
   /** The formatting rules linked to this control, by `Ref`, in link order. */
   rules: string[];
+  /** Its expression bindings on anything but the text; see `AppearanceBinding`. */
+  bindings?: AppearanceBinding[];
   /**
    * For an `XRSubreport`: the report embedded in its `<ReportSource>`, parsed,
    * or the file its `ReportSourceUrl` names, which a browser cannot open.
@@ -1023,6 +1039,31 @@ function ownPropsOf(attrs: string, ownSlice: string, styles: ReadonlyMap<string,
 }
 
 /** The `Ref`s a node's `<FormattingRuleLinks>` point at, in link order. */
+/** The properties an expression binding is applied to besides the text, as s31a and s31d printed them. */
+const BOUND_PROPERTIES = new Set([
+  'Visible', 'ForeColor', 'BackColor', 'BorderColor', 'Borders', 'TextAlignment',
+  'Font.Bold', 'Font.Italic', 'Font.Underline', 'Font.Strikeout', 'Font.Size', 'Font.Name',
+]);
+
+/** A node's own expression bindings on those properties, from its own part of the file. */
+function parseAppearanceBindings(ownSlice: string): AppearanceBinding[] {
+  const block = /<ExpressionBindings>([\s\S]*?)<\/ExpressionBindings>/.exec(ownSlice);
+  if (!block) return [];
+  const out: AppearanceBinding[] = [];
+  for (const m of block[1].matchAll(/<Item\d+\b([^>]*?)\/?>/g)) {
+    const property = attrOf(m[1], 'PropertyName');
+    const expression = attrOf(m[1], 'Expression');
+    if (property && expression !== null && BOUND_PROPERTIES.has(property)) out.push({ property, expression: decodeXmlText(expression) });
+  }
+  return out;
+}
+
+/** `{ bindings }` for a node that has any, and nothing for one that has none. */
+function boundProperties(ownSlice: string): { bindings?: AppearanceBinding[] } {
+  const bindings = parseAppearanceBindings(ownSlice);
+  return bindings.length ? { bindings } : {};
+}
+
 function parseRuleLinks(ownSlice: string): string[] {
   const block = /<FormattingRuleLinks>([\s\S]*?)<\/FormattingRuleLinks>/.exec(ownSlice);
   if (!block) return [];
@@ -1233,6 +1274,7 @@ function parseTableRows(
         data: parseTextData(cell.attrs, slice),
         field: parseTextBinding(slice),
         rules: parseRuleLinks(ownPart(slice)),
+        ...boundProperties(ownPart(slice)),
         ownProps: [...new Set([...ownPropsOf(cell.attrs, slice, styles), ...rowOwn])],
       });
     }
@@ -1456,6 +1498,7 @@ function parseControls(
       data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
       link: parseLink(item.attrs, inner.slice(item.start, extent)),
       rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
+      ...boundProperties(ownPart(inner.slice(item.start, extent))),
       subreport: type === 'XRSubreport' ? parseSubreport(item.attrs, inner.slice(item.start, extent), targetDpi, targetUnit) : null,
       ownProps: [...new Set([...ownPropsOf(item.attrs, ownPart(inner.slice(item.start, extent)), styles, type), ...shield])],
       pageInfo: type === 'XRPageInfo'
@@ -1834,6 +1877,54 @@ function firedRules(refs: readonly string[], ctx: LayoutContext, scope: TextScop
   return { look, visible };
 }
 
+/** The font styles a `Font.` binding can turn on or off, as DevExpress writes them. */
+const FONT_STYLES = ['Bold', 'Italic', 'Underline', 'Strikeout'];
+
+/** `font` with one part changed: its family, its size in points, or one style. */
+function fontWith(font: string | undefined, part: string, value: Value): string {
+  const tokens = (font ?? DEFAULT_APPEARANCE.Font!).split(',').map((t) => t.trim()).filter(Boolean);
+  let family = tokens[0] ?? 'Times New Roman';
+  let size = tokens.find((t) => /^[\d.]+pt$/i.test(t)) ?? '9.75pt';
+  const styles = new Set<string>();
+  const rest: string[] = [];
+  for (const token of tokens.slice(1)) {
+    const name = token.replace(/^style=/i, '');
+    if (FONT_STYLES.includes(name)) styles.add(name);
+    else if (token !== size) rest.push(token);
+  }
+  if (part === 'Font.Name') family = String(value);
+  else if (part === 'Font.Size') size = `${Number(value)}pt`;
+  else if (isTrue(value)) styles.add(part.slice('Font.'.length));
+  else styles.delete(part.slice('Font.'.length));
+  const style = FONT_STYLES.filter((s) => styles.has(s));
+  return [family, size, ...(style.length ? [`style=${style.join(', ')}`] : []), ...rest].join(', ');
+}
+
+/**
+ * `look` with a node's expression bindings applied for this record, and what
+ * `Visible` binds to (parity row 45). Printed in s31a and s31d: each binding
+ * changed its node record by record, a table cell's included. Without test
+ * data nothing is evaluated, as for text.
+ */
+function boundAppearance(look: Appearance, bindings: readonly AppearanceBinding[] | undefined, ctx: LayoutContext, scope: TextScope | null) {
+  let visible: boolean | null = null;
+  if (!bindings?.length || !ctx.data || !scope) return { look, visible };
+  const out = { ...look };
+  for (const { property, expression } of bindings) {
+    let value: Value | undefined;
+    try {
+      value = ctx.data.value({ expression, running: null, format: null }, scope);
+    } catch {
+      continue;
+    }
+    if (value === undefined || value === null) continue;
+    if (property === 'Visible') visible = isTrue(value);
+    else if (property.startsWith('Font.')) out.Font = fontWith(out.Font, property, value);
+    else out[property as AppearanceProperty] = String(value);
+  }
+  return { look: out, visible };
+}
+
 /** A node re-read through an appearance a rule changed: font, alignment and borders follow it. */
 function restyled<T extends { appearance: Appearance; fontSize: number | null; fontFamily: string | null; bold: boolean; italic: boolean; align: string; vAlign: string; borders: PreviewControl['borders'] }>(node: T, look: Appearance): T {
   const font = parseFont(look.Font ?? null);
@@ -1871,27 +1962,35 @@ function inheritInto(look: Appearance, over: Appearance | null, owned: readonly 
  * - a rule linked to the band reaches its controls by inheritance: every label
  *   on a shaded record printed the band's fill, its own rules on top.
  *
+ * An expression binding on an appearance property applies first, so a rule
+ * setting the same property wins over it: printed in s31d, a label bound red
+ * and caught by a green rule printed green (parity row 45).
+ *
  * The control itself is unchanged when nothing fires, so the common case costs
  * an object identity and nothing else.
  */
 function applyRules(control: PreviewControl, band: { look: Appearance | null }, ctx: LayoutContext, scope: TextScope | null): PreviewControl {
   const own = firedRules(control.rules, ctx, scope);
-  const cellRules = control.type === 'XRTable' && control.rows.some((r) => r.cells.some((c) => c.rules.length));
-  if (!band.look && !own.look && own.visible === null && !cellRules) return control;
+  const bound = !!control.bindings?.length && !!ctx.data && !!scope;
+  const cellRules = control.type === 'XRTable' && control.rows.some((r) => r.cells.some((c) => c.rules.length || c.bindings?.length));
+  if (!band.look && !own.look && own.visible === null && !bound && !cellRules) return control;
   let out = control;
-  if (band.look || own.look) {
-    const look = { ...inheritInto(control.appearance, band.look, control.ownProps), ...(own.look ?? {}) };
-    out = restyled(control, look);
+  let visible = own.visible;
+  if (band.look || own.look || bound) {
+    const bindings = boundAppearance(inheritInto(control.appearance, band.look, control.ownProps), control.bindings, ctx, scope);
+    out = restyled(control, { ...bindings.look, ...(own.look ?? {}) });
+    visible ??= bindings.visible;
   }
-  if (own.visible !== null) out = { ...out, visible: own.visible };
+  if (visible !== null) out = { ...out, visible };
   if (control.type === 'XRTable') {
     const rows = control.rows.map((row) => ({
       cells: row.cells.map((cell) => {
         const fired = firedRules(cell.rules, ctx, scope);
-        if (!band.look && !own.look && !fired.look) return cell;
+        if (!band.look && !own.look && !fired.look && !cell.bindings?.length) return cell;
         // A band's rule reaches a cell only past the table's own properties.
         let look = inheritInto(cell.appearance, band.look, [...cell.ownProps, ...control.ownProps]);
         look = inheritInto(look, own.look, cell.ownProps);
+        look = boundAppearance(look, cell.bindings, ctx, scope).look;
         return restyled(cell, { ...look, ...(fired.look ?? {}) });
       }),
     }));
