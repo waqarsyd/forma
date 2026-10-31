@@ -1420,9 +1420,10 @@ function parseControls(
     // by `dpiScale` again.
     const dpiScale = targetDpi / dpiOf(item.attrs);
     const raw = { loc: pairAttr(item.attrs, 'LocationFloat'), size: pairAttr(item.attrs, 'SizeF') };
-    // A control written above its band's or panel's top loads at 0 and prints
-    // there (s29e), and a panel moved so takes its children with it.
-    const loc = { a: raw.loc.a * dpiScale, b: Math.max(0, raw.loc.b * dpiScale) };
+    // A control written above or left of its band's or panel's corner loads at
+    // 0 and prints there (s29e, s29e2; parity rows 36 and 42), and a panel moved
+    // so takes its children with it.
+    const loc = { a: Math.max(0, raw.loc.a * dpiScale), b: Math.max(0, raw.loc.b * dpiScale) };
     const size = { a: raw.size.a * dpiScale, b: raw.size.b * dpiScale };
     // Style first, then the control's own attribute, then its parent's: what
     // DevExpress prints, not what this element writes. See resolveAppearance.

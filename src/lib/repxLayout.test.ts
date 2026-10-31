@@ -46,6 +46,10 @@ describe('auditLayoutBounds', () => {
     expect(codes(report(detail(label(1, 550, 0, 200, 30)), '60, 40, 50, 50'))).toEqual([]);
   });
 
+  it('does not flag a control written at a negative x, which DevExpress loads at 0 (parity row 42)', () => {
+    expect(codes(report(detail(label(1, -30, 0, 200, 30))))).toEqual([]);
+  });
+
   it('flags a control past the bottom of its band', () => {
     const findings = auditLayoutBounds(report(detail(label(1, 0, 80, 200, 40))));
     expect(findings.map((f) => f.code)).toEqual(['control-below-band']);

@@ -1759,6 +1759,15 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
     expect(b.controls.find((c) => c.name === 'kid')).toMatchObject({ y: 0, offsetY: 10 });
   });
 
+  it('reads a control written left of its band\'s or panel\'s edge at 0 (parity row 42, s29e2)', () => {
+    // DevExpress's loader read -30,10 back as 0,10, and a panel's child at -10,-20 as 0,0.
+    const b = band('<Item1 Ref="20" ControlType="XRLabel" Name="negx" Text="x" LocationFloat="-30,10" SizeF="200,20" />' +
+      '<Item2 Ref="30" ControlType="XRPanel" Name="pnl" LocationFloat="300,10" SizeF="200,60"><Controls>' +
+      '<Item1 Ref="31" ControlType="XRLabel" Name="kidneg" Text="k" LocationFloat="-10,-20" SizeF="100,20" /></Controls></Item2>');
+    expect(b.controls.find((c) => c.name === 'negx')).toMatchObject({ x: 0, y: 10 });
+    expect(b.controls.find((c) => c.name === 'kidneg')).toMatchObject({ x: 0, y: 0, offsetX: 300, offsetY: 10 });
+  });
+
   it('splits a text taller than several pages into consecutive parts, every line exactly once', () => {
     const lines = 'L'.repeat(200);
     const xml = '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100">' +

@@ -64,7 +64,9 @@ export function auditLayoutBounds(xml: string | null | undefined): RepxFinding[]
       const left = c.x + c.offsetX;
       const right = left + c.width;
       const bottom = c.y + c.offsetY + c.height;
-      if (left < -TOLERANCE || right > printableWidth + TOLERANCE) offPage.push(c);
+      // No left-hand test: a negative x loads at 0, as DevExpress loads it, so
+      // nothing starts left of the margin (parity row 42, s29e2).
+      if (right > printableWidth + TOLERANCE) offPage.push(c);
       if (bottom > band.height + TOLERANCE) belowBand.push(c);
     }
   }
