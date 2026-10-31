@@ -1810,6 +1810,19 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
     // The picture crossed the cut and cannot be divided, so it continues whole.
     expect(first!.controls.some((pc) => pc.control.name === 'pic')).toBe(false);
     expect(by(rest!, 'pic')).toMatchObject({ y: 0, height: 60 });
+    // The part still holds its two rows, though the picture moved from its top.
+    expect(first!.height).toBe(40);
+  });
+
+  // Parity row 50: in s36e a report header's part ended at 920, the top of the
+  // label that moved whole, where the room ran to 930, and its page header
+  // followed it there. A label whose line stays keeps the part to the foot.
+  it('ends a part above a label that moves whole, and at the foot when one stays', () => {
+    const two = layoutBand(band(label(1, 'a', 'x', 0) + label(2, 'b', 'x', 40)), 1, null, { measure: null, unit: 'HundredthsOfAnInch' });
+    const [moved] = splitInstance(two, 50, 'HundredthsOfAnInch');
+    expect(moved!.height).toBe(40);
+    const [stayed] = splitInstance(two, 57, 'HundredthsOfAnInch');
+    expect(stayed!.height).toBe(57);
   });
 
   // Parity row 40, measured in s29s: DevExpress cuts a record at the foot of
@@ -2289,6 +2302,78 @@ describe('cross-band lines and boxes, as DevExpress printed them (cases s31c, s3
       `<Item2 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="25">${label(41, 'n', 'row')}</Item2>` +
       `<Item3 Ref="9" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="40">${label(91, 'foot', 'FOOTER')}</Item3>`), 5);
     expect(segments(r)).toEqual([['line:650,60..659,1050'], ['line:650,50..659,245']]);
+  });
+});
+
+/*
+ * Parity row 50, cases s36a to s36n, built and saved by DevExpress 20.1 on
+ * Letter with 50-unit margins: a report header taller than the page. Each
+ * expectation is where DevExpress printed the text, page and top from the
+ * content's top.
+ */
+describe('a report header taller than the page, as DevExpress printed it (cases s36)', () => {
+  const report = (tall: number, ys: number[], ph = 0, pf = 0, opts: { printOn?: string; breakAt?: number } = {}) => {
+    let ref = 10;
+    const lbl = (y: number, text: string, x = 100) => `<Item${++ref} Ref="${ref}" ControlType="XRLabel" Name="l${ref}" Text="${text}" SizeF="200,20" LocationFloat="${x},${y}" />`;
+    const po = opts.printOn ? ` PrintOn="${opts.printOn}"` : '';
+    const brk = opts.breakAt === undefined ? '' : `<Item${++ref} Ref="${ref}" ControlType="XRPageBreak" Name="brk" LocationFloat="0,${opts.breakAt}" />`;
+    const bands =
+      `<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="${tall}"><Controls>${ys.map((y) => lbl(y, `RH${y}`)).join('')}${brk}</Controls></Item1>` +
+      (ph ? `<Item2 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="${ph}"${po}><Controls>${lbl(5, 'HEADER', 400)}</Controls></Item2>` : '') +
+      (pf ? `<Item3 Ref="4" ControlType="PageFooterBand" Name="PageFooter" HeightF="${pf}"${po}><Controls>${lbl(5, 'FOOTER', 400)}</Controls></Item3>` : '') +
+      `<Item4 Ref="5" ControlType="DetailBand" Name="Detail" HeightF="30"><Controls>${lbl(5, 'row', 10)}</Controls></Item4>`;
+    return paginate(parseReportStructure(
+      '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50">' +
+      `<Bands>${bands}</Bands></XtraReportsLayoutSerializer>`), 2);
+  };
+  const where = (r: PaginatedReport) => r.pages.flatMap((page, p) => page.bands.flatMap((b) => b.controls.map((pc) => `${p + 1}:${pc.text}@${Math.round(b.top + pc.y - 50)}`))).sort();
+  const printed = (...texts: string[]) => texts.sort();
+  const s36a = printed('1:RH0@0', '1:RH970@970', '2:RH990@0', '2:RH1200@210', '2:RH1480@490', '2:row@515', '2:row@545');
+
+  it('cuts it at the foot like any band, a label across the foot moving whole (s36a)', () => {
+    expect(where(report(1500, [0, 970, 990, 1200, 1480]))).toEqual(s36a);
+  });
+
+  it('puts the page header after its part on a page it runs off, and the page footer below that (s36b)', () => {
+    expect(where(report(1500, [0, 970, 990, 1200, 1480], 40, 40))).toEqual(printed(
+      '1:RH0@0', '1:HEADER@965',
+      '2:RH970@10', '2:RH990@30', '2:RH1200@240', '2:RH1480@520', '2:HEADER@545', '2:row@585', '2:row@615', '2:FOOTER@965',
+    ));
+  });
+
+  it('runs on over three pages, the page header after it on each (s36c)', () => {
+    expect(where(report(2500, [0, 900, 1500, 2000, 2480], 40, 40))).toEqual(printed(
+      '1:RH0@0', '1:RH900@900', '1:HEADER@965', '2:RH1500@540', '2:HEADER@965',
+      '3:RH2000@80', '3:RH2480@560', '3:HEADER@585', '3:row@625', '3:row@655', '3:FOOTER@965',
+    ));
+  });
+
+  it('prints neither page band on any of its pages when they say NotWithReportHeader (s36d)', () => {
+    expect(where(report(1500, [0, 970, 990, 1200, 1480], 40, 40, { printOn: 'NotWithReportHeader' }))).toEqual(s36a);
+  });
+
+  it('holds back the page footer and not the page header, and puts the footer ten pixels below it (s36e)', () => {
+    const r = report(1500, [0, 900, 920, 950, 1200, 1480], 30, 70);
+    expect(where(r)).toEqual(printed(
+      '1:RH0@0', '1:RH900@900', '1:HEADER@925', '1:FOOTER@965',
+      '2:RH920@0', '2:RH950@30', '2:RH1200@280', '2:RH1480@560', '2:HEADER@585', '2:row@615', '2:row@645', '2:FOOTER@935',
+    ));
+    // DevExpress: 1010.42, ten pixels below the page header ending at 1000.
+    expect(r.pages[0].bands.find((b) => b.band.kind === 'PageFooter')!.top).toBeCloseTo(1010.42, 1);
+  });
+
+  it('prints no page header that would start below the page\'s foot (s36f)', () => {
+    expect(where(report(1500, [0, 900, 920, 950, 1200, 1480], 70))).toEqual(printed(
+      '1:RH0@0', '1:RH900@900', '1:RH920@920', '1:RH950@950',
+      '2:RH1200@200', '2:RH1480@480', '2:HEADER@505', '2:row@575', '2:row@605',
+    ));
+  });
+
+  it('leaves no page header on a page it leaves at a page break, the footer where it always is (s36n)', () => {
+    expect(where(report(600, [0, 280, 310, 580], 30, 70, { breakAt: 300 }))).toEqual(printed(
+      '1:RH0@0', '1:RH280@280', '1:FOOTER@935',
+      '2:RH310@10', '2:RH580@280', '2:HEADER@305', '2:row@335', '2:row@365', '2:FOOTER@935',
+    ));
   });
 });
 

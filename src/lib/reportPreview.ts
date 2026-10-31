@@ -37,7 +37,7 @@
  */
 
 import { formatComposite, formatDate, toRoman } from './netFormat';
-import { unitsPerInch } from './reportGeometry';
+import { pxToUnits, unitsPerInch } from './reportGeometry';
 import { GROW_EXTRA_PT, SHRINK_EXTRA_PT, lineSpacingPt, type FontSpec, type MeasureText } from './textMeasure';
 import { ReportData, aggregate, groupRuns, sortCompare, sortedOrder, valueText, type CalculatedField, type TextData, type TextScope, type TypedRow } from './reportData';
 import { parseParameters, type ReportParameter } from './repxParameters';
@@ -2658,6 +2658,8 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string, s
   // running through the band across the cut counts as one: printed in s34c,
   // the blank remainder carried where without the line it did not (s34d).
   let boxCut = spanned;
+  /** The top of the highest control that moves whole. */
+  let movedTop = Number.POSITIVE_INFINITY;
 
   for (const pc of inst.controls) {
     const bottom = pc.y + pc.height;
@@ -2715,6 +2717,7 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string, s
     }
     // Cannot split: the whole control continues at the top of the next part.
     crossing.push({ origBottom: bottom, origY: pc.y, part: { ...pc, y: 0 } });
+    movedTop = Math.min(movedTop, pc.y);
   }
 
   // Everything below the cut follows the continuation that was above it.
@@ -2739,7 +2742,17 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string, s
   const restHeight = rest.length ? Math.max(...rest.map((pc) => pc.y + pc.height)) + gap : boxCut ? Math.max(0, inst.height - avail) : 0;
   const continues = restHeight > EPS ? { band: inst.band, record: inst.record, scope: inst.scope, height: restHeight, controls: rest } : null;
   if (!first.length) return [null, continues ?? inst];
-  return [{ band: inst.band, record: inst.record, scope: inst.scope, height: avail, controls: first }, continues];
+  /*
+   * The part ends at the foot, unless nothing it keeps reaches the foot and a
+   * control moved whole: then it ends above that control, though never above
+   * what it keeps. Only something placed after it on the same page shows
+   * this, and a report header's page header is (parity row 50): in s36e it
+   * followed the part at 920, the top of the label that moved, where the room
+   * ran to 930.
+   */
+  const keptBottom = Math.max(...first.map((pc) => pc.y + pc.height));
+  const height = keptBottom >= avail - EPS ? avail : Math.min(avail, Math.max(movedTop, keptBottom));
+  return [{ band: inst.band, record: inst.record, scope: inst.scope, height, controls: first }, continues];
 }
 
 // --------------------------------------------------------------- pagination
@@ -3115,8 +3128,46 @@ export function paginate(
     const ys = inst.controls.filter((pc) => pc.control.type === 'XRPageBreak').map((pc) => pc.y);
     return ys.length ? Math.min(...ys) : null;
   };
-  /** The report header's part below its first page break, placed once page 2 is open. */
-  let headerAfterBreak: BandInstance | null = null;
+  /*
+   * The report header's pages (parity row 50, s36). The report header prints
+   * first on every page it runs over, cut at the page's foot like any band
+   * and at its page breaks, the room on each being the page less its page
+   * footer: the page header was never held back (s36e, s36f). The page bands
+   * wait for it:
+   * - On a page it runs off the foot of, the page header prints straight
+   *   after it, and the page footer no higher than ten pixels below that page
+   *   header: 10.42 hundredths of an inch in each of s36e, s36j and s36l. Of
+   *   either, only the controls that end on the page print: s36f printed no
+   *   page header at the foot, and s36b and s36i no page footer below it.
+   * - On a page it leaves at an XRPageBreak, there is no page header, and the
+   *   page footer is where it always is (s36n).
+   * - On the page where it ends, the page header follows it, then the rest.
+   * A page band marked NotWithReportHeader printed on none of them (s36d).
+   * Until row 50 the report header was put whole on page 1 under its page
+   * bands, and a part below a page break followed the page header on page 2.
+   */
+  /** True while the report header is placed: a page opened meanwhile is one of its pages. */
+  let inReportHeader = false;
+  const headerPageHeader = pageHeaderInst && !skips(pageHeader, 'NotWithReportHeader') ? pageHeaderInst : null;
+  const headerPageFooter = pageFooterInst && !skips(pageFooter, 'NotWithReportHeader') ? pageFooterInst : null;
+  /** A page band at `top` on a report header page, without the controls that would end past the page; null when none is left. */
+  const onPage = (inst: BandInstance, top: number): PlacedBand | null => {
+    const room = footerBottom - top;
+    const controls = inst.controls.filter((pc) => pc.y + pc.height <= room + EPS);
+    if (room <= EPS || !controls.length) return null;
+    return { ...at({ ...inst, controls }, top), height: Math.min(inst.height, room) };
+  };
+  /** Puts the page bands on a report header page being left, at its foot or at a page break. */
+  const leaveHeaderPage = (atBreak: boolean) => {
+    let footerTop = footerBottom - (headerPageFooter?.height ?? 0);
+    if (!atBreak && headerPageHeader) {
+      const header = onPage(headerPageHeader, cursor);
+      if (header) current!.bands.push(header);
+      footerTop = Math.max(footerTop, cursor + headerPageHeader.height + pxToUnits(10, ctx.unit));
+    }
+    const footer = headerPageFooter && onPage(headerPageFooter, footerTop);
+    if (footer) current!.bands.push(footer);
+  };
   /*
    * The cross-band controls open at the point of placing (parity row 48). One
    * runs through every band between its start and its end, and where it runs
@@ -3141,33 +3192,26 @@ export function paginate(
     }
   };
 
-  const startPage = (withReportHeader = false) => {
+  /** Opens the next page; `atBreak` when the page before is left at an XRPageBreak. */
+  const startPage = (atBreak = false) => {
+    if (current && inReportHeader) leaveHeaderPage(atBreak);
     current = { number: pages.length + 1, bands: [] };
     pages.push(current);
     if (topMarginInst) current.bands.push(at(topMarginInst, 0));
     if (bottomMarginInst) current.bands.push(at(bottomMarginInst, structure.page.height - bottomMargin));
     cursor = topMargin;
-    // The page that carries the report header -- page 1, when there is one.
-    const headerPage = withReportHeader && !!reportHeaderInst;
-    if (headerPage) {
-      // Only the part above a page break prints here; the rest opens page 2.
-      const breakAt = firstBreak(reportHeaderInst!);
-      const [above, below] = breakAt === null ? [reportHeaderInst!, null] : breakAt > EPS ? splitInstance(reportHeaderInst!, breakAt, ctx.unit) : [null, reportHeaderInst!];
-      if (above) {
-        current.bands.push(at(above, cursor));
-        cursor += above.height;
-      }
-      headerAfterBreak = breakAt === null ? null : below;
+    if (inReportHeader) {
+      // The report header prints first; its page bands wait for it (s36).
+      pageBottom = footerBottom - (headerPageFooter?.height ?? 0);
+      pageContentTop = cursor;
+      return;
     }
-    // PrintOn: printed, a page header marked NotWithReportHeader was absent
-    // from page 1, which then held 27 records where it had held 26.
-    if (pageHeaderInst && !(headerPage && skips(pageHeader, 'NotWithReportHeader'))) {
+    if (pageHeaderInst) {
       current.bands.push(at(pageHeaderInst, cursor));
       cursor += pageHeaderInst.height;
     }
-    const footerHere = !!pageFooterInst && !(headerPage && skips(pageFooter, 'NotWithReportHeader'));
-    if (footerHere) current.bands.push(at(pageFooterInst!, footerBottom - pageFooterInst!.height));
-    pageBottom = footerBottom - (footerHere ? pageFooterInst!.height : 0);
+    if (pageFooterInst) current.bands.push(at(pageFooterInst, footerBottom - pageFooterInst.height));
+    pageBottom = footerBottom - (pageFooterInst?.height ?? 0);
     for (const header of openGroups) {
       if (!header.band.repeatEveryPage) continue;
       current.bands.push(at(header, cursor));
@@ -3231,19 +3275,26 @@ export function paginate(
     for (let breakAt = firstBreak(part); part && breakAt !== null; breakAt = part ? firstBreak(part) : null) {
       const [above, below]: [BandInstance | null, BandInstance | null] = breakAt > EPS ? splitInstance(part, breakAt, ctx.unit) : [null, part];
       if (above) flow(above);
-      if (!current || cursor > pageContentTop + EPS) startPage();
+      if (!current || cursor > pageContentTop + EPS) startPage(true);
       // A break at the very top cuts nothing; drop it so it is not met again.
       part = above ? below : below && { ...below, controls: below.controls.filter((pc) => !(pc.control.type === 'XRPageBreak' && pc.y === breakAt)) };
     }
     if (part) flow(part);
   };
 
-  startPage(true);
-  if (headerAfterBreak) {
-    const rest: BandInstance = headerAfterBreak;
-    headerAfterBreak = null;
-    startPage();
-    place(rest);
+  // The report header, over as many pages as it takes, then its last page's
+  // page bands: the page header straight after it, the page footer at the foot.
+  inReportHeader = !!reportHeaderInst;
+  startPage();
+  if (reportHeaderInst) {
+    place(reportHeaderInst);
+    inReportHeader = false;
+    if (headerPageHeader) {
+      current!.bands.push(at(headerPageHeader, cursor));
+      cursor += headerPageHeader.height;
+    }
+    if (headerPageFooter) current!.bands.push(at(headerPageFooter, footerBottom - headerPageFooter.height));
+    pageContentTop = cursor;
   }
 
   let placedRecords = 0;
