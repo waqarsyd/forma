@@ -313,8 +313,23 @@ export class ReportData {
   private readonly cache = new WeakMap<readonly number[], Map<string, Map<Node[], Value | Value[]>>>();
   private readonly scopeRows = new WeakMap<readonly number[], TypedRow[]>();
 
-  private constructor(readonly records: TypedRow[], params: Map<string, Value>) {
+  private constructor(
+    readonly records: TypedRow[],
+    params: Map<string, Value>,
+    /** Every total prints "?": the report has no Detail band (parity row 39). */
+    private readonly unsummed = false,
+  ) {
     this.params = params;
+  }
+
+  /**
+   * The same data for a report with no Detail band. Printed in s29n1, s29n2
+   * and s29n4: such a report's fields still read its records, the first in a
+   * header and the last in a footer, but every total printed "?", a count of
+   * three records included.
+   */
+  withoutDetail(): ReportData {
+    return new ReportData(this.records, this.params, true);
   }
 
   /**
@@ -358,21 +373,22 @@ export class ReportData {
         return false;
       }
     });
-    return new ReportData(keep, this.params);
+    return new ReportData(keep, this.params, this.unsummed);
   }
 
   /** The same data with its records in `order`, which is print order from then on. */
   reordered(order: readonly number[]): ReportData {
-    return new ReportData(order.map((i) => this.records[i]), this.params);
+    return new ReportData(order.map((i) => this.records[i]), this.params, this.unsummed);
   }
 
   /** What a control bound to `data` prints in `scope`; null when it has no binding. */
   text(data: TextData, scope: TextScope): string | null {
     if (data.expression === null) return null;
     if (AGGREGATE_CALL.test(data.expression)) {
-      // Printed: no <Summary>, or one with no scope, is blank; Group outside a group is "?".
+      // Printed: no <Summary>, or one with no scope, is blank; Group outside a
+      // group is "?", and so is every total of a report with no Detail band.
       if (data.running === null || data.running === 'None') return '';
-      if (data.running === 'Group' && !scope.group) return '?';
+      if ((data.running === 'Group' && !scope.group) || this.unsummed) return '?';
     }
     const value = this.value(data, scope);
     // Printed: a null prints nothing, even inside "Total: {0:c2}".
@@ -389,7 +405,7 @@ export class ReportData {
     if (data.expression === null) return undefined;
     if (AGGREGATE_CALL.test(data.expression)) {
       if (data.running === null || data.running === 'None') return null;
-      if (data.running === 'Group' && !scope.group) return null;
+      if ((data.running === 'Group' && !scope.group) || this.unsummed) return null;
     }
     const extent =
       data.running === 'Group' ? scope.group! : data.running === 'Page' ? scope.page ?? scope.report : scope.report;

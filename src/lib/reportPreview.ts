@@ -2586,6 +2586,8 @@ export function paginate(
       ...(findBand(bands, 'Detail')?.fields ?? []),
     ]);
     data = data.reordered(order);
+    // No Detail band: every total prints "?" (parity row 39, s29n1 to s29n4).
+    if (!findBand(bands, 'Detail')) data = data.withoutDetail();
   }
   /** Records to lay out: the data's own count when there is test data, none included. */
   const records = data ? data.records.length : recordCount;
@@ -2925,7 +2927,14 @@ export function paginate(
       }
       return out;
     };
-    if (data && detailReports.length && !options.related) {
+    if (!detail && detailReports.length) {
+      // Printed (s29n5, c06 without its Detail band): DevExpress threw rather than
+      // create the document, so there is no printed report to picture.
+      problems.push(
+        `DevExpress will not print this report: it has the detail report ${detailReports.map((b) => `"${b.name}"`).join(', ')} ` +
+          'and no Detail band of its own, and refuses to create the document. Add a Detail band, even an empty one.',
+      );
+    } else if (data && detailReports.length && !options.related) {
       problems.push(
         `The detail report ${detailReports.map((b) => `"${b.name}"`).join(', ')} reads ${detailReports.map((b) => b.sub!.dataMember ?? 'its own data').join(', ')}, ` +
           'which the test data does not carry, so each record prints it as DevExpress prints a record with no related rows.',
@@ -2948,7 +2957,15 @@ export function paginate(
     const unpairedSteps = () => {
       for (const footer of unpaired) steps.push({ inst: instance(footer), role: 'footer', level: -1, first: true, last: true });
     };
-    if (records > 0) {
+    if (!detail) {
+      /*
+       * No Detail band: DevExpress walks no records, so no group band and no
+       * detail report prints, while the report and page bands do (parity row
+       * 39). Printed in s29n1 over three names, a group header and footer by
+       * name printed nothing, where a Detail band 0 tall printed three groups
+       * (s29n3). Totals print "?", which `ReportData.withoutDetail` gives.
+       */
+    } else if (records > 0) {
       for (let i = 0; i < records; i++) {
         for (let k = 0; k < groupHeaders.length; k++) if (levelRuns[k][runAt[k]]?.[0] === i) openStep(k);
         if (detail) steps.push({ inst: instance(detail, i + 1, rowFor(i)), role: 'detail', level: groupHeaders.length, first: i === 0, last: i === records - 1 });
@@ -2971,7 +2988,7 @@ export function paginate(
       steps.push(...subSteps(null));
       for (let k = groupHeaders.length - 1; k >= 0; k--) closeStep(k);
     }
-    unpairedSteps();
+    if (detail) unpairedSteps();
 
     const height = (from: number, to: number) => {
       let total = 0;
@@ -3123,7 +3140,9 @@ export function paginate(
     }
   }
 
-  if (placedRecords < records) {
+  // Only a report with a Detail band places records; one without prints its
+  // report bands once, which is not a page cap (parity row 39).
+  if (detail && placedRecords < records) {
     problems.push(
       `Preview stopped at ${maxPages} pages; ${records - placedRecords} of ${records} records are not shown.`,
     );

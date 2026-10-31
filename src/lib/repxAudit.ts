@@ -46,6 +46,7 @@ import { auditLayoutBounds } from './repxLayout';
 import { findSummaryProblems } from './repxSummaries';
 import { crossTabsWithoutData, findCrossTabProblems } from './repxCrossTabs';
 import { findDpiProblem } from './repxDpi';
+import { parseReportStructure } from './reportPreview';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -202,17 +203,33 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
 
   const grid = biggestGrid(layout);
 
-  if (!has(text, 'DetailBand')) {
+  // The report's own bands: a detail report and an embedded subreport each hold
+  // a DetailBand of their own, which says nothing about the report's.
+  const ownBands = parseReportStructure(text).bands;
+  const ownDetail = ownBands.some((b) => b.kind === 'Detail');
+  if (!ownDetail && ownBands.some((b) => b.kind === 'DetailReport')) {
+    // Printed (parity row 39, s29n5): c06 without its Detail band threw when
+    // DevExpress created the document, so nothing printed at all.
+    add(
+      'error',
+      'no-detail-band',
+      'There is a detail report but no Detail band of the report\'s own, so DevExpress refuses to print it: creating the document fails. ' +
+        'Add a Detail band, even an empty one.'
+    );
+  } else if (!ownDetail) {
     // The layout is what turns this from an observation into a diagnosis: a
     // certificate legitimately has no Detail band, a document whose mockup
     // shows a multi-row grid does not.
     const evidence = grid && grid.rows >= 2
       ? ` The mockup drew a ${grid.rows}-row grid in "${grid.section}", so this document does have repeating rows — they belong in a Detail band as ONE row, not in the header.`
       : '';
+    // Printed in s29n1 to s29n4: its fields read the first record in a header
+    // and the last in a footer, but no group band printed and every total was "?".
     add(
       'warning',
       'no-detail-band',
-      'There is no Detail band, so this report prints its content exactly once and cannot be bound to a data source. ' +
+      'There is no Detail band, so this report prints its content exactly once: DevExpress walks none of its records, ' +
+        'so no group band prints and every total prints "?". ' +
         'It is a picture of the document rather than something that can produce it for every record.' + evidence
     );
   }

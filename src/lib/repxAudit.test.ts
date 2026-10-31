@@ -88,9 +88,20 @@ describe('auditRepx warnings', () => {
   it('reports a report with no Detail band, and says what it costs', () => {
     const audit = auditRepx(noDetail);
     expect(codes(noDetail)).toContain('no-detail-band');
-    expect(audit.findings.find((f) => f.code === 'no-detail-band')?.message).toMatch(/cannot be bound to a data source/);
+    // What DevExpress printed in s29n1 to s29n4 (parity row 39). This said the
+    // report could not be bound to a data source, which its fields disproved.
+    expect(audit.findings.find((f) => f.code === 'no-detail-band')?.message).toMatch(/no group band prints and every total prints "\?"/);
     // Degraded, not broken: this must never be an error.
     expect(audit.errors).toBe(0);
+  });
+
+  it('makes a detail report with no Detail band of its own an error, since DevExpress will not print it (s29n5)', () => {
+    const detailOnly = report(TOP +
+      '<Item2 Ref="2" ControlType="DetailReportBand" Name="DetailReport"><Bands>' +
+      '<Item1 Ref="3" ControlType="DetailBand" Name="LinesDetail" HeightF="20" /></Bands></Item2>' + bottom(3, 9));
+    const audit = auditRepx(detailOnly);
+    expect(audit.findings.find((f) => f.code === 'no-detail-band')).toMatchObject({ severity: 'error' });
+    expect(audit.findings.find((f) => f.code === 'no-detail-band')?.message).toMatch(/refuses to print it/);
   });
 
   it('reports a missing margin band', () => {

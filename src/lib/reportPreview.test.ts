@@ -1900,6 +1900,53 @@ describe('a panel laid out like a small band, as DevExpress printed it (cases s2
   });
 });
 
+/*
+ * Parity row 39, cases s29n1 to s29n5, printed through DevExpress 20.1 on
+ * 2026-10-31 over three records named alpha, beta and gamma: a report with no
+ * Detail band prints its report bands once, no group band, and "?" for every
+ * total. Until this row the Preview printed each group and said "Preview
+ * stopped at Infinity pages; 3 of 3 records are not shown".
+ */
+describe('a report with data and no Detail band, as DevExpress printed it (cases s29n)', () => {
+  const ROWS = [{ Name: 'alpha' }, { Name: 'beta' }, { Name: 'gamma' }];
+  const bound = (ref: number, name: string, y: number, expression: string, running = '') =>
+    `<Item${ref} Ref="${ref}" ControlType="XRLabel" Name="${name}" LocationFloat="0,${y}" SizeF="200,20">` +
+    (running ? `<Summary Ref="${ref}1" Running="${running}" />` : '') +
+    `<ExpressionBindings><Item1 Ref="${ref}2" EventName="BeforePrint" PropertyName="Text" Expression="${expression}" /></ExpressionBindings></Item${ref}>`;
+  const xml = (bands: string) => parseReportStructure(
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" DataMember="Items">' +
+    `<Bands>${bands}</Bands></XtraReportsLayoutSerializer>`);
+  const texts = (r: PaginatedReport) => r.pages.flatMap((p) => p.bands.flatMap((b) => b.controls.map((pc) => `${b.band.kind}:${pc.text}`)));
+
+  it('prints the report header and footer, no group band, and "?" for a total (s29n1)', () => {
+    const s = xml(
+      '<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="30"><Controls><Item1 Ref="20" ControlType="XRLabel" Name="RH" Text="RH" SizeF="200,20" /></Controls></Item1>' +
+      `<Item2 Ref="3" ControlType="GroupHeaderBand" Name="GroupHeader1" HeightF="30"><GroupFields><Item1 Ref="30" FieldName="Name" /></GroupFields><Controls>${bound(31, 'G', 0, '[Name]')}</Controls></Item2>` +
+      `<Item3 Ref="4" ControlType="GroupFooterBand" Name="GroupFooter1" HeightF="30"><Controls>${bound(41, 'gcnt', 0, 'sumCount([Name])', 'Group')}</Controls></Item3>` +
+      `<Item4 Ref="5" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="30"><Controls>${bound(51, 'cnt', 0, 'sumCount([Name])', 'Report')}</Controls></Item4>`);
+    const r = paginate(s, ROWS.length, { rows: ROWS });
+    expect(texts(r)).toEqual(['ReportHeader:RH', 'ReportFooter:?']);
+    expect(r.problems.join(' ')).not.toMatch(/records are not shown/);
+  });
+
+  it('reads the first record in the header and the last in the footer (s29n4)', () => {
+    const s = xml(
+      `<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="30"><Controls>${bound(21, 'RHname', 0, '[Name]')}${bound(22, 'RHcount', 0, 'sumCount([Name])', 'Report')}</Controls></Item1>` +
+      `<Item2 Ref="5" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="30"><Controls>${bound(51, 'RFname', 0, '[Name]')}</Controls></Item2>`);
+    expect(texts(paginate(s, ROWS.length, { rows: ROWS }))).toEqual(['ReportHeader:alpha', 'ReportHeader:?', 'ReportFooter:gamma']);
+  });
+
+  it('says nothing about records without test data either', () => {
+    const s = xml('<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="30"><Controls><Item1 Ref="20" ControlType="XRLabel" Name="RH" Text="RH" SizeF="200,20" /></Controls></Item1>');
+    expect(paginate(s, 1).problems).toEqual([]);
+  });
+
+  it('says DevExpress refuses a report with a detail report and no Detail band of its own (s29n5)', () => {
+    const s = xml('<Item1 Ref="2" ControlType="DetailReportBand" Name="DetailReport"><Bands><Item1 Ref="3" ControlType="DetailBand" Name="LinesDetail" HeightF="20" /></Bands></Item1>');
+    expect(paginate(s, ROWS.length, { rows: ROWS }).problems.join(' ')).toMatch(/DevExpress will not print this report/);
+  });
+});
+
 describe('a record at the foot of a page, as DevExpress printed it (case s29s)', () => {
   const report = (detail: string, height: number) => paginate(parseReportStructure(
     '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
