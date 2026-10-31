@@ -490,7 +490,7 @@ export interface PreviewBand {
   name: string;
   /** Its `Ref`, which a cross-band control names its bands by (parity row 48). */
   ref?: string;
-  /** In the report's unit, scaled by `dpiScale` from the file's `HeightF`. */
+  /** In the report's unit, scaled by `dpiScale` from the file's `HeightF`, 100 when it is absent. */
   height: number;
   /** As on a control: the report's units per inch over the band's `Dpi`. Absent means 1. */
   dpiScale?: number;
@@ -1823,7 +1823,13 @@ export function parseReportStructure(
         kind,
         name: attrOf(item.attrs, 'Name') || controlType,
         ...(attrOf(item.attrs, 'Ref') ? { ref: attrOf(item.attrs, 'Ref')! } : {}),
-        height: numAttr(item.attrs, 'HeightF', 0) * dpiScale,
+        /*
+         * DevExpress's serializer leaves out a height of exactly 100 in the
+         * band's own units, its default, at any Dpi (parity row 56, s40): a
+         * band of 100 tenths of a millimetre or 100 pixels printed that tall
+         * with no `HeightF` written. A detail report has no height of its own.
+         */
+        height: numAttr(item.attrs, 'HeightF', kind === 'DetailReport' ? 0 : 100) * dpiScale,
         dpiScale,
         // A detail report has no controls of its own; its bands do.
         controls: bandSpan && kind !== 'DetailReport'

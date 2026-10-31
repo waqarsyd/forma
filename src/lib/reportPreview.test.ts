@@ -2439,6 +2439,32 @@ describe('a report header taller than the page, as DevExpress printed it (cases 
   });
 });
 
+/*
+ * Parity row 56, case s40, built and saved by DevExpress 20.1: the serializer
+ * leaves out a band height of exactly 100 in the band's own units, at any
+ * Dpi, and printed the band that tall.
+ */
+describe('a band with no HeightF, as DevExpress read it (case s40)', () => {
+  const first = (unit: string, dpi = '', type = 'DetailBand') => parseReportStructure(
+    `<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="${unit}">` +
+    `<Bands><Item1 Ref="2" ControlType="${type}" Name="B"${dpi ? ` Dpi="${dpi}"` : ''}><Controls>` +
+    '<Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" /></Controls></Item1></Bands></XtraReportsLayoutSerializer>').bands[0];
+
+  it('reads it as 100 in the band\'s own units, in each report unit', () => {
+    expect(first('HundredthsOfAnInch').height).toBe(100);
+    expect(first('TenthsOfAMillimeter', '254').height).toBeCloseTo(100, 6);
+    expect(first('Pixels', '96').height).toBeCloseTo(100, 6);
+  });
+
+  it('scales it from the band\'s Dpi like any height: 100 tenths of a millimetre is 39.37 hundredths', () => {
+    expect(first('HundredthsOfAnInch', '254').height).toBeCloseTo(39.37, 2); // DevExpress printed 39.37
+  });
+
+  it('leaves a detail report, which has no height of its own, at none', () => {
+    expect(first('HundredthsOfAnInch', '', 'DetailReportBand').height).toBe(0);
+  });
+});
+
 describe('a record at the foot of a page, as DevExpress printed it (case s29s)', () => {
   const report = (detail: string, height: number) => paginate(parseReportStructure(
     '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
