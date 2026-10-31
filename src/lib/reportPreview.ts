@@ -2232,23 +2232,33 @@ function retext(pc: PlacedControl, values: RecordValues | null, ctx: LayoutConte
 /**
  * Cut a band instance at `avail` units down, for a page break.
  *
- * Returns the part that stays and the part that continues, or a null first
- * part when nothing at all fits above the cut. Measured on a record DevExpress
- * split across pages 2 and 3: the lines of a growing label that fit stayed,
- * the rest continued at the top of the next page, and every control below it
- * followed at its original distance from where that continuation ENDED -- so
- * the label below landed at 71.5 and the record's remainder was 46.5 tall,
- * both of which this reproduces exactly.
+ * Returns the part that stays and the part that continues. Measured on a
+ * record DevExpress split across pages 2 and 3: the lines of a growing label
+ * that fit stayed, the rest continued at the top of the next page, and every
+ * control below it followed at its original distance from where that
+ * continuation ENDED -- so the label below landed at 71.5 and the record's
+ * remainder was 46.5 tall, both of which this reproduces exactly.
  *
  * Text splits between lines, a table between rows; anything else that crosses
  * the cut moves whole.
+ *
+ * DevExpress cuts at the foot even when nothing prints above it (parity row
+ * 40, s29s3 and s29s5): a label at 35 with 20 units left continued 15 units
+ * into the next page, not 35, and one straddling the foot below a gap
+ * continued at the page's top. So the first part is null only when nothing
+ * fits, and the second is then what continues, the space above the cut left
+ * behind. With no room at all the instance itself continues.
  */
 export function splitInstance(inst: BandInstance, avail: number, unit: string): [BandInstance | null, BandInstance | null] {
+  if (avail <= EPS) return [null, inst];
   const perInch = unitsPerInch(unit);
   const toUnits = (pt: number) => (pt / 72) * perInch;
   const first: PlacedControl[] = [];
   const crossing: { origBottom: number; origY: number; part: PlacedControl }[] = [];
   const below: PlacedControl[] = [];
+  // Whether a control's box was cut while its text stayed, which is what
+  // carries the band's own remainder over (c05, s29s4).
+  let boxCut = false;
 
   for (const pc of inst.controls) {
     const bottom = pc.y + pc.height;
@@ -2275,6 +2285,7 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string): 
          * moved whole (s20). Until 2026-10-30 such a label always moved.
          */
         first.push({ ...pc, height: avail - pc.y });
+        boxCut = true;
         continue;
       }
       if (pc.lines && fit >= 1) {
@@ -2307,8 +2318,6 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string): 
     crossing.push({ origBottom: bottom, origY: pc.y, part: { ...pc, y: 0 } });
   }
 
-  if (!first.length) return [null, inst];
-
   // Everything below the cut follows the continuation that was above it.
   const rest: PlacedControl[] = crossing.map((x) => x.part);
   for (const pc of below) {
@@ -2321,13 +2330,17 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string): 
 
   const contentBottom = Math.max(0, ...inst.controls.map((pc) => pc.y + pc.height));
   const gap = Math.max(0, inst.height - contentBottom);
-  // With nothing left to print, the band's own remainder still carries over:
-  // printed, it pushed the next page's first record down by exactly that much.
-  const restHeight = rest.length ? Math.max(...rest.map((pc) => pc.y + pc.height)) + gap : Math.max(0, inst.height - avail);
-  return [
-    { band: inst.band, record: inst.record, scope: inst.scope, height: avail, controls: first },
-    restHeight > EPS ? { band: inst.band, record: inst.record, scope: inst.scope, height: restHeight, controls: rest } : null,
-  ];
+  /*
+   * With nothing left to print, the band's own remainder carries over only when
+   * a control's box was cut: printed, it pushed the next page's first record
+   * down by exactly that much (c05, s29s4). When every control ended above the
+   * foot the blank remainder was dropped, and the next page began straight
+   * under its header (s29s1, s29m).
+   */
+  const restHeight = rest.length ? Math.max(...rest.map((pc) => pc.y + pc.height)) + gap : boxCut ? Math.max(0, inst.height - avail) : 0;
+  const continues = restHeight > EPS ? { band: inst.band, record: inst.record, scope: inst.scope, height: restHeight, controls: rest } : null;
+  if (!first.length) return [null, continues ?? inst];
+  return [{ band: inst.band, record: inst.record, scope: inst.scope, height: avail, controls: first }, continues];
 }
 
 // --------------------------------------------------------------- pagination
@@ -2730,7 +2743,10 @@ export function paginate(
       const [first, rest]: [BandInstance | null, BandInstance | null] = splitInstance(part, avail, ctx.unit);
       if (!first) {
         if (atTop) return put();
+        // Nothing prints here; what continues starts the next page, the space
+        // above the cut left behind as DevExpress leaves it (s29s3, s29s5).
         startPage();
+        part = rest;
         continue;
       }
       current!.bands.push(at(first, cursor));

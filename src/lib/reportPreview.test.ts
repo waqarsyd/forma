@@ -1754,9 +1754,84 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
     expect(by(rest!, 'pic')).toMatchObject({ y: 0, height: 60 });
   });
 
-  it('reports nothing to place when nothing fits above the cut', () => {
+  // Parity row 40, measured in s29s: DevExpress cuts a record at the foot of
+  // the page even when nothing prints above the cut, and carries the band's
+  // blank remainder only when a control's box crossed the foot.
+  it('continues from the cut when nothing fits above it, leaving the space above behind', () => {
+    // s29s5: a label wholly below the cut continues at its own gap below it.
+    const below = layoutBand(band(label(1, 'a', 'x', 35)), 1, null, ctx);
+    const [none, rest] = splitInstance(below, 20, 'HundredthsOfAnInch');
+    expect(none).toBeNull();
+    expect(rest!.height).toBeCloseTo(80, 6);
+    expect(by(rest!, 'a').y).toBeCloseTo(15, 6);
+    // s29s3: one straddling the cut below a gap continues at the very top.
+    const straddling = layoutBand(band(label(1, 'a', 'x', 20), '', 50), 1, null, ctx);
+    const [none2, rest2] = splitInstance(straddling, 30, 'HundredthsOfAnInch');
+    expect(none2).toBeNull();
+    expect(by(rest2!, 'a').y).toBe(0);
+    expect(rest2!.height).toBeCloseTo(30, 6);
+  });
+
+  it('continues the instance itself when there is no room at all', () => {
     const inst = layoutBand(band(label(1, 'a', 'x', 10)), 1, null, ctx);
-    expect(splitInstance(inst, 5, 'HundredthsOfAnInch')).toEqual([null, inst]);
+    expect(splitInstance(inst, 0, 'HundredthsOfAnInch')).toEqual([null, inst]);
+  });
+
+  it('drops the blank remainder of a record whose controls all fit (s29s1)', () => {
+    const inst = layoutBand(band(label(1, 'a', 'x', 0), '', 50), 1, null, ctx);
+    const [first, rest] = splitInstance(inst, 30, 'HundredthsOfAnInch');
+    expect(first!.controls.map((pc) => pc.control.name)).toEqual(['a']);
+    expect(rest).toBeNull();
+  });
+
+  it('carries the remainder when a box crossed the foot while its line fit (s29s4)', () => {
+    const inst = layoutBand(band(label(1, 'a', 'x', 0, 35), '', 50), 1, null, ctx);
+    const [first, rest] = splitInstance(inst, 30, 'HundredthsOfAnInch');
+    expect(by(first!, 'a').height).toBe(30);
+    expect(rest).toMatchObject({ height: 20, controls: [] });
+  });
+});
+
+/*
+ * Cases s29s1, s29s3 and s29s5 of docs/proposals/devexpress-parity.md, printed
+ * through DevExpress 20.1 on 2026-10-31: 70 fixed records under a 20-unit page
+ * header, with 30 units (20 for the 60-unit record) left at the foot of each
+ * page. Every position is the label DevExpress printed, from the page's top.
+ */
+describe('a record at the foot of a page, as DevExpress printed it (case s29s)', () => {
+  const report = (detail: string, height: number) => paginate(parseReportStructure(
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
+    '<Bands><Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />' +
+    '<Item2 Ref="3" ControlType="PageHeaderBand" Name="PageHeader" HeightF="20"><Controls><Item1 Ref="10" ControlType="XRLabel" Name="ph" Text="PH" LocationFloat="0,0" SizeF="200,20" /></Controls></Item2>' +
+    `<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="${height}"><Controls>${detail}</Controls></Item3>` +
+    '<Item4 Ref="5" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" /></Bands></XtraReportsLayoutSerializer>'), 70);
+  const label = (y: number) => `<Item1 Ref="11" ControlType="XRLabel" Name="row" Text="row" LocationFloat="0,${y}" SizeF="200,20" />`;
+  /** Each record's label as page:top, from the page's top edge. */
+  const labels = (r: PaginatedReport) => r.pages.flatMap((page, p) => page.bands
+    .filter((b) => b.band.kind === 'Detail')
+    .flatMap((b) => b.controls.map((pc) => ({ record: b.record, at: `${p + 1}:${Math.round(b.top + pc.y)}` }))));
+  const perPage = (r: PaginatedReport) => r.pages.map((page) => new Set(page.bands.filter((b) => b.band.kind === 'Detail' && b.controls.length).map((b) => b.record)).size);
+
+  it('starts the next page straight under its header when the record\'s label fitted (s29s1)', () => {
+    const r = report(label(0), 50);
+    const at = labels(r);
+    expect(at.find((x) => x.record === 20)!.at).toBe('1:1020');
+    expect(at.find((x) => x.record === 21)!.at).toBe('2:70');
+    expect(perPage(r)).toEqual([20, 20, 20, 10]);
+  });
+
+  it('continues a label that straddles the foot below a gap at the next page\'s top (s29s3)', () => {
+    const at = labels(report(label(20), 50));
+    expect(at.find((x) => x.record === 19)!.at).toBe('1:990');
+    expect(at.filter((x) => x.record === 20).map((x) => x.at)).toEqual(['2:70']);
+    expect(at.find((x) => x.record === 21)!.at).toBe('2:120');
+  });
+
+  it('continues a label wholly below the foot at its gap below the cut (s29s5)', () => {
+    const at = labels(report(label(35), 60));
+    expect(at.find((x) => x.record === 16)!.at).toBe('1:1005');
+    expect(at.filter((x) => x.record === 17).map((x) => x.at)).toEqual(['2:85']);
+    expect(at.find((x) => x.record === 18)!.at).toBe('2:145');
   });
 });
 
