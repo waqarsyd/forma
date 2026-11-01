@@ -52,7 +52,7 @@ const draw = (props: Partial<React.ComponentProps<typeof Composer>> = {}) =>
     />
   );
 
-const field = () => screen.getByLabelText('Describe a change') as HTMLInputElement;
+const field = () => screen.getByLabelText('Message') as HTMLTextAreaElement;
 const send = () => screen.getByLabelText('Send note') as HTMLButtonElement;
 
 describe('sending', () => {
@@ -174,7 +174,7 @@ describe('when sending is not possible', () => {
     draw();
     expect(send().disabled).toBe(false);
     expect(field().disabled).toBe(false);
-    expect(field().placeholder).toBe('Describe a change…');
+    expect(field().placeholder).toBe('Describe a report, attach or paste an image, or ask anything…');
   });
 });
 
@@ -293,24 +293,47 @@ describe('notices', () => {
   });
 });
 
-describe('describe a report', () => {
-  const describeButton = () => screen.queryByLabelText('Describe a report') as HTMLButtonElement | null;
+/*
+ * One box for everything (2026-11-01): the Describe-a-report and OCR buttons
+ * went into it. An image's text is read as it is attached, its chip saying
+ * how far it has got and opening the review once read; the send waits for
+ * the reading, as any chat's waits for an upload; a pasted image is attached.
+ */
+describe('one chat box', () => {
+  const group = (file: string, i: number): AttachmentGroup => ({ file, indices: [i], pages: 1 });
+  const withImage = (props: Partial<React.ComponentProps<typeof Composer>> = {}) =>
+    draw({ previews: ['data:image/png;base64,AAAA'], previewGroups: [group('scan.png', 0)], previewMeta: [{ uploadId: 'u1', file: 'scan.png' }], ...props });
 
-  it('draws the button only when a handler is given, and calls it', () => {
-    draw();
-    expect(describeButton()).toBeNull();
-    cleanup();
-    const onDescribe = vi.fn();
-    draw({ onDescribe });
-    fireEvent.click(describeButton()!);
-    expect(onDescribe).toHaveBeenCalledTimes(1);
+  it('has no separate Describe or OCR button', () => {
+    withImage();
+    expect(screen.queryByLabelText('Describe a report')).toBeNull();
+    expect(screen.queryByLabelText('Read text with OCR')).toBeNull();
   });
 
-  it('is disabled while a generation or a chat turn is running', () => {
-    draw({ onDescribe: vi.fn(), isAnalyzing: true });
-    expect(describeButton()!.disabled).toBe(true);
+  it('shows each image\'s reading on its chip, and holds the send until it is read', () => {
+    withImage({ ocrStatus: { u1: { state: 'reading', progress: 0.42 } } });
+    expect(screen.getByText('Reading text 42%')).toBeTruthy();
+    expect(send().disabled).toBe(true);
+    expect(send().title).toBe('Reading the text of your image…');
     cleanup();
-    draw({ onDescribe: vi.fn(), isChatting: true });
-    expect(describeButton()!.disabled).toBe(true);
+    const onReviewOcr = vi.fn();
+    withImage({ ocrStatus: { u1: { state: 'done', lines: 12, flagged: 2 } }, onReviewOcr });
+    expect(send().disabled).toBe(false);
+    fireEvent.click(screen.getByText('Text read, 2 unsure'));
+    expect(onReviewOcr).toHaveBeenCalledWith('u1');
+    cleanup();
+    withImage({ ocrStatus: { u1: { state: 'failed' } } });
+    expect(send().disabled).toBe(false);
+    expect((screen.getByText('Text not read').closest('button') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('attaches an image pasted into the box, and leaves pasted text alone', () => {
+    const onPasteFiles = vi.fn();
+    draw({ onPasteFiles });
+    const file = new File(['x'], 'shot.png', { type: 'image/png' });
+    fireEvent.paste(field(), { clipboardData: { files: [file] } });
+    expect(onPasteFiles).toHaveBeenCalledWith([file]);
+    fireEvent.paste(field(), { clipboardData: { files: [] } });
+    expect(onPasteFiles).toHaveBeenCalledTimes(1);
   });
 });

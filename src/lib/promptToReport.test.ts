@@ -3,6 +3,7 @@ import {
   PREDEFINED_PROMPTS,
   buildDescriptionBrief,
   describeDataSource,
+  describedRequest,
   fixInstruction,
   isDescribable,
   normalizeDescription,
@@ -95,5 +96,31 @@ describe('the repair decision', () => {
     expect(text).toContain('[duplicate-ref] Ref values are reused (5x2).');
     expect(text).not.toContain('a11y-text-size');
     expect(text).toContain('fix ONLY these');
+  });
+});
+
+/*
+ * A description typed into the chat box (2026-11-01), which took over the
+ * Describe dialog and its separate data-source field: a schema in a fenced
+ * block or a CREATE TABLE is the data source, the rest the description.
+ */
+describe('describedRequest', () => {
+  it('takes a fenced block that reads as fields as the data source', () => {
+    const r = describedRequest('A customer list grouped by country.\n```json\n{"Name":"Ann","Country":"UK","Balance":12.5}\n```\nwith totals');
+    expect(r.description).toBe('A customer list grouped by country. with totals');
+    expect(requestDataSource(r)!.fields.map((f) => f.name)).toEqual(['Name', 'Country', 'Balance']);
+  });
+
+  it('takes a CREATE TABLE statement as the data source', () => {
+    const r = describedRequest('Orders by month, CREATE TABLE Orders (Id int, OrderDate date, Total decimal(10,2)); sorted by date');
+    expect(r.dataSchema).toMatch(/^CREATE TABLE Orders/);
+    expect(requestDataSource(r)!.fields.map((f) => f.name)).toEqual(['Id', 'OrderDate', 'Total']);
+    expect(r.description).toBe('Orders by month, sorted by date');
+  });
+
+  it('leaves everything in the description when nothing reads as fields', () => {
+    expect(describedRequest('An  invoice\nwith line items')).toEqual({ description: 'An invoice with line items' });
+    // A fence holding prose is not a schema.
+    expect(describedRequest('Like this: ```a nice header```').dataSchema).toBeUndefined();
   });
 });

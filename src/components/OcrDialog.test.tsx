@@ -5,8 +5,7 @@
  * the OCR section of docs/notes/app-shell.md records; what is pinned here is
  * the contract with App.tsx: pages read one at a time, a failed page left out
  * and said so, Stop aborting the run, low-confidence text listed and either
- * named or left out, a report built only after the app's own checks, and the
- * text attached for the model with its header and markers.
+ * named or left out, and a report built only after the app's own checks.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
@@ -48,10 +47,9 @@ const page = (n?: number): OcrPageSource => ({
 
 const draw = (pages: OcrPageSource[] = [page()]) => {
   const onBuild = vi.fn();
-  const onUseText = vi.fn();
   const onClose = vi.fn();
-  const view = render(<OcrDialog pages={pages} unit="HundredthsOfAnInch" pageSize="Letter" onBuild={onBuild} onUseText={onUseText} onClose={onClose} />);
-  return { onBuild, onUseText, onClose, ...view };
+  const view = render(<OcrDialog pages={pages} unit="HundredthsOfAnInch" pageSize="Letter" onBuild={onBuild} onClose={onClose} />);
+  return { onBuild, onClose, ...view };
 };
 
 const button = (name: string) => screen.getByText(name) as HTMLButtonElement;
@@ -99,19 +97,6 @@ describe('the OCR dialog', () => {
     expect(dropped.repxContent).not.toMatch(/Smudge/);
   });
 
-  it('attaches the text for the model, with its header, its table and its unsure marker', async () => {
-    recognizePage.mockResolvedValue(scan);
-    const { onUseText } = draw([page(2)]);
-    await ready();
-    fireEvent.click(button('Use for generation'));
-    const [texts] = onUseText.mock.calls[0];
-    expect(texts).toHaveLength(1);
-    expect(texts[0]).toMatchObject({ uploadId: 'u1', file: 'invoice scan.pdf', page: 2 });
-    expect(texts[0].text).toMatch(/^invoice scan\.pdf, page 2: text READ BY OCR/);
-    expect(texts[0].text).toMatch(/"Smudge" .* LOW CONFIDENCE \(30\)/);
-    expect(texts[0].text).toMatch(/Table 1: .*3 columns/);
-  });
-
   it('reads a rendered PDF page at the resolution its page size gives it', async () => {
     recognizePage.mockResolvedValue({ ...scan, width: 1530, height: 1980 });
     const { onBuild } = draw([page(1)]);
@@ -142,6 +127,18 @@ describe('the OCR dialog', () => {
   });
 });
 
+describe('the review the chat box opens', () => {
+  it('shows pages already read without reading them again, and leaves the text to the message', async () => {
+    const onBuild = vi.fn();
+    render(<OcrDialog pages={[page()]} preread={[scan]} unit="HundredthsOfAnInch" pageSize="Letter" onBuild={onBuild} onClose={vi.fn()} />);
+    await ready();
+    expect(recognizePage).not.toHaveBeenCalled();
+    expect(screen.queryByText('Use for generation')).toBeNull();
+    expect(screen.getByText('Close')).toBeTruthy();
+    fireEvent.click(button('Build .repx'));
+    expect(onBuild).toHaveBeenCalledTimes(1);
+  });
+});
 describe('reportNameFor', () => {
   it('makes a report Name DevExpress accepts out of a file name', () => {
     expect(reportNameFor('invoice scan.pdf')).toBe('invoicescan');

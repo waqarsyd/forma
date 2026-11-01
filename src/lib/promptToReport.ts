@@ -26,8 +26,10 @@
  * half of closing that gap -- the catalogue, the brief the model is given, the
  * question-and-answer merge and the retry decision -- so each piece can be
  * tested without a key. `geminiService.ts` carries the request framing and the
- * clarification call; `repxOverlaps.ts` is the FixLayoutErrors half;
- * `DescribeReportDialog.tsx` is the wizard.
+ * clarification call; `repxOverlaps.ts` is the FixLayoutErrors half. The
+ * wizard is the chat box since 2026-11-01: `describeFromChat` in `App.tsx`
+ * asks the questions in the thread. The dialog it replaced is recoverable from
+ * the commit that removed it, with `git log -- src/components/DescribeReportDialog.tsx`.
  *
  * ## What is deliberately different
  *
@@ -131,6 +133,49 @@ export interface ClarificationAnswer {
   id: string;
   question: string;
   answer: string;
+}
+
+/**
+ * A message typed into the chat, as a Prompt-to-Report request (2026-11-01).
+ *
+ * The dialog this replaced had a field of its own for a data source; the chat
+ * has one box. So a fenced code block (three backticks) holding a JSON row,
+ * a CSV header or a `CREATE TABLE`, or a bare `CREATE TABLE` statement, is
+ * taken as the data source, and the rest of the message is the description.
+ * A plain list of names counts only on lines of its own in a fence, since any
+ * sentence would otherwise read as one. Anything else stays in the
+ * description, where the model can still read it.
+ */
+export function describedRequest(message: string): ReportDescriptionRequest {
+  // A language tag only when a line break follows it: "```a nice header```" has none.
+  const fenced = /```(?:[\w-]*\n)?([\s\S]*?)```/.exec(message);
+  if (fenced) {
+    const source = parseDataSource(fenced[1]);
+    const structured = source.kind !== 'list' || fenced[1].trim().split(/\r?\n/).length > 1;
+    if (source.fields.length && structured) {
+      return { description: normalizeDescription(message.replace(fenced[0], ' ')), dataSchema: fenced[1].trim() };
+    }
+  }
+  const create = createTableIn(message);
+  if (create && parseDataSource(create).fields.length) {
+    return { description: normalizeDescription(message.replace(create, ' ')), dataSchema: create.trim() };
+  }
+  return { description: normalizeDescription(message) };
+}
+
+/** A `CREATE TABLE` statement to its balancing parenthesis, `decimal(10,2)` and all, with any `;`. */
+function createTableIn(message: string): string | null {
+  const start = /\bcreate\s+table\b[^(]*\(/i.exec(message);
+  if (!start) return null;
+  let depth = 0;
+  for (let i = start.index + start[0].length - 1; i < message.length; i++) {
+    if (message[i] === '(') depth++;
+    else if (message[i] === ')' && --depth === 0) {
+      const end = message[i + 1] === ';' ? i + 2 : i + 1;
+      return message.slice(start.index, end);
+    }
+  }
+  return null;
 }
 
 /** Collapse whitespace; an empty description is a request for nothing. */

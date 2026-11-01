@@ -22,7 +22,7 @@
  * twice in a row. Owning the ref here would silently break that.
  */
 
-import { useRef, type ChangeEventHandler, type RefObject } from 'react';
+import { useLayoutEffect, useRef, type ChangeEventHandler, type RefObject } from 'react';
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
 import {
@@ -32,10 +32,18 @@ import {
   IconClose,
   IconDoc,
   IconPaperclip,
-  IconText,
   IconScan,
   IconWarn,
 } from './landing/icons';
+
+/**
+ * Where reading an image's text has got to (OCR, 2026-11-01): it starts the
+ * moment a page with only pixels is attached, so the chip says so.
+ */
+export type OcrChipState =
+  | { state: 'reading'; progress: number }
+  | { state: 'done'; lines: number; flagged: number }
+  | { state: 'failed' };
 
 /** A staged text-only upload — a `.repx`, or a PDF whose pages did not render. */
 export interface TextAttachmentGroup extends AttachmentGroup {
@@ -70,16 +78,12 @@ export interface ComposerProps {
   isChatting: boolean;
   isIngesting: boolean;
   onAddKey: () => void;
-  /**
-   * Opens the Describe-a-report dialog (Prompt-to-Report). Optional so the
-   * component can be rendered without it; absent, no button is drawn.
-   */
-  onDescribe?: () => void;
-  /**
-   * Opens the OCR dialog for the attached images and scans. Absent when
-   * nothing attached has only pixels, and then no button is drawn.
-   */
-  onReadText?: () => void;
+  /** Files pasted into the box, as a drop or a pick would bring them. */
+  onPasteFiles?: (files: File[]) => void;
+  /** Reading each image's text, by upload; absent for uploads with none to read. */
+  ocrStatus?: Readonly<Record<string, OcrChipState>>;
+  /** Opens the review of what was read in one upload, from which a report can be built with no model. */
+  onReviewOcr?: (uploadId: string) => void;
 }
 
 export default function Composer({
@@ -103,8 +107,9 @@ export default function Composer({
   isChatting,
   isIngesting,
   onAddKey,
-  onDescribe,
-  onReadText,
+  onPasteFiles,
+  ocrStatus,
+  onReviewOcr,
 }: ComposerProps) {
   /*
    * One condition, read by the button *and* the keyboard.
@@ -122,7 +127,10 @@ export default function Composer({
    * `isChatting` is new here for the same reason: the button never had it, so a
    * chat turn in flight left the control fully live.
    */
-  const canSend = hasApiKey && !isAnalyzing && !isChatting && !isIngesting;
+  // Reading an image's text holds the send, as an upload in flight does in
+  // any chat: the text goes with the message, so the message waits for it.
+  const reading = Object.values(ocrStatus ?? {}).some((s) => s.state === 'reading');
+  const canSend = hasApiKey && !isAnalyzing && !isChatting && !isIngesting && !reading;
 
   /*
    * Sending puts the caret back in the field, and this is not a nicety.
@@ -139,7 +147,16 @@ export default function Composer({
    * the time the button goes disabled it is no longer the focused element, so
    * there is nothing to steal. It is also where the next keystroke wants to be.
    */
-  const promptRef = useRef<HTMLInputElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  // The box grows with what is typed, to a limit, as chat boxes do.
+  useLayoutEffect(() => {
+    const el = promptRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [prompt]);
+
   const sendAndKeepFocus = () => {
     onSend();
     promptRef.current?.focus();
@@ -172,6 +189,28 @@ export default function Composer({
                   <span className="wb-attach-name">{group.file}</span>
                   {group.pages > 1 && <span className="wb-attach-count">{group.pages} pages</span>}
                 </button>
+                {uploadId && ocrStatus?.[uploadId] && (() => {
+                  const s = ocrStatus[uploadId];
+                  const text =
+                    s.state === 'reading'
+                      ? `Reading text ${Math.round(s.progress * 100)}%`
+                      : s.state === 'done'
+                        ? s.flagged ? `Text read, ${s.flagged} unsure` : 'Text read'
+                        : 'Text not read';
+                  return (
+                    <button
+                      type="button"
+                      className={`wb-attach-ocr${s.state === 'done' && s.flagged ? ' is-unsure' : ''}${s.state === 'failed' ? ' is-failed' : ''}`}
+                      onClick={() => onReviewOcr?.(uploadId)}
+                      disabled={s.state !== 'done' || !onReviewOcr}
+                      title={s.state === 'done' ? 'See what was read, over the image, and build a report from it with no model' : s.state === 'failed' ? 'The text could not be read; the image still goes with your message' : 'Reading the text of this image, in your browser'}
+                      aria-live="polite"
+                    >
+                      <IconScan size={11} />
+                      {text}
+                    </button>
+                  );
+                })()}
                 <button
                   onClick={() => onRemoveFile(group.indices, uploadId)}
                   title={`Remove ${label}`}
@@ -235,28 +274,6 @@ export default function Composer({
         >
           <IconPaperclip size={16} />
         </button>
-        {onDescribe && (
-          <button
-            className="wb-tool"
-            aria-label="Describe a report"
-            title="Describe the report you want, with no source document (Prompt-to-Report)"
-            onClick={onDescribe}
-            disabled={isAnalyzing || isChatting}
-          >
-            <IconText size={16} />
-          </button>
-        )}
-        {onReadText && (
-          <button
-            className="wb-tool"
-            aria-label="Read text with OCR"
-            title="Read the text of the attached images and scans with OCR, in your browser, and see what was found"
-            onClick={onReadText}
-            disabled={isAnalyzing || isChatting || isIngesting}
-          >
-            <IconScan size={16} />
-          </button>
-        )}
         <input
           ref={fileInputRef}
           type="file"
@@ -265,34 +282,34 @@ export default function Composer({
           onChange={onFileChange}
           className="wb-hidden"
         />
-        <input
+        <textarea
           ref={promptRef}
           className="wb-line"
+          rows={1}
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
-          /* Enter sends; Shift+Enter is deliberately left alone.
-             `preventDefault` happens either way — suppressing the key is right
-             even when the send is refused.
-
-             This said Shift+Enter kept "a multi-line note still possible", and
-             that was never true of the element it sits on. This is an `<input>`,
-             not a `<textarea>`, so it cannot hold a newline at all: measured
-             2026-09-08, Shift+Enter leaves the value exactly as it was. What
-             the combination actually does is nothing, which is the right
-             behaviour and worth stating as the intent rather than dressing up
-             as a feature. `preventDefault` is likewise belt-and-braces here —
-             an `<input>` outside a form has no default action on Enter — and
-             is kept because it would start mattering the moment this becomes a
-             textarea or gains a form ancestor. */
+          /* Enter sends; Shift+Enter starts a new line, as in any chat box. It
+             did nothing until 2026-11-01, when this was an `<input>` that could
+             not hold a newline; a description with a schema in it needs lines.
+             `preventDefault` on Enter keeps the newline out of the message
+             whether or not the send is allowed. */
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               if (canSend) onSend();
             }
           }}
+          /* An image pasted into the box is attached, as a dropped one is. */
+          onPaste={(e) => {
+            const files = Array.from(e.clipboardData?.files ?? []);
+            if (files.length && onPasteFiles) {
+              e.preventDefault();
+              onPasteFiles(files);
+            }
+          }}
           disabled={!hasApiKey}
-          placeholder={hasApiKey ? 'Describe a change…' : 'Add your API key to start'}
-          aria-label="Describe a change"
+          placeholder={hasApiKey ? 'Describe a report, attach or paste an image, or ask anything…' : 'Add your API key to start'}
+          aria-label="Message"
         />
         <button
           className="wb-send"
@@ -302,6 +319,7 @@ export default function Composer({
              it straight to onClick passes the click event as the prompt. */
           onClick={sendAndKeepFocus}
           disabled={!canSend}
+          title={reading ? 'Reading the text of your image…' : undefined}
         >
           <IconArrowUp size={15} />
         </button>

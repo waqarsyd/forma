@@ -67,6 +67,13 @@ export interface ChatMessage<R = unknown, M = unknown> {
    * composer — two things that were never visually connected.
    */
   error?: string;
+  /**
+   * Questions the assistant asks before designing a report from a typed
+   * description (Prompt-to-Report in the chat, 2026-11-01), each with a
+   * suggested answer the thread draws as a field to keep or change. `answered`
+   * once the reader has replied, by the form or by typing.
+   */
+  clarify?: { questions: { id: string; question: string; suggestion?: string }[]; answered: boolean };
 }
 
 /**

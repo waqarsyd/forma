@@ -637,11 +637,14 @@ export interface ChatOutcome {
  */
 function buildMockChatReply(userText: string): ChatOutcome {
   const asks = /\b(build|create|generate|make|design|convert|turn|produce|draft)\b/i.test(userText);
+  // A build request is one, as the comment above has always said; it returned
+  // false until 2026-11-01, which left the chat box's description path
+  // unreachable offline.
   return {
     reply: asks
-      ? "Mock mode is on, so I'm not calling Gemini — attach a design and I'll return the canned invoice layout."
+      ? "Mock mode is on, so I'm not calling Gemini — I'll design the canned invoice layout from your description."
       : "Mock mode is on, so this reply is canned rather than generated. Set VITE_FORMA_MOCK aside and add your API key for real answers.",
-    wantsReport: false,
+    wantsReport: asks,
   };
 }
 

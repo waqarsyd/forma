@@ -9,14 +9,14 @@
  * when one was not, and dashed where the reading was set aside as a picture.
  * The red ones are listed, to be checked against the source.
  *
- * Then one of two things happens, the user's choice:
+ * **Build .repx** then writes the report straight from the layout, with no
+ * model involved, after the app's own checks: `layoutToRepx` and
+ * `validateOcrRepx` in ocrRepx.ts. It fills every pane a generated report does.
  *
- * - **Build .repx** writes the report straight from the layout, with no model
- *   involved, after the app's own checks: `layoutToRepx` and `validateOcrRepx`
- *   in ocrRepx.ts. It fills every pane a generated report does.
- * - **Use for generation** attaches the text, positions and tables to the
- *   message, as a PDF's text layer is attached, so the model works from what
- *   OCR measured and draws what OCR cannot read: borders, fills and images.
+ * Since 2026-11-01 this is the review the chat box opens from an image's
+ * chip. The chat box reads each page as it is attached (`lib/ocrAttach.ts`)
+ * and hands the pages over in `preread`; their text goes with the message on
+ * its own, so the "Use for generation" button this dialog had is gone.
  *
  * Nothing here leaves the browser. The engine is loaded from this site's own
  * `/ocr/` the first time, about 7 MB, and kept for the next run.
@@ -26,7 +26,7 @@ import { IconClose } from './landing/icons';
 import { useFocusTrap } from './useFocusTrap';
 import type { PreviewMeta } from '../lib/attachments';
 import { recognizePage, type OcrPage } from '../lib/ocr';
-import { detectLayout, layoutText, placementFor, type DetectedLayout, type DetectedText } from '../lib/ocrLayout';
+import { detectLayout, placementFor, type DetectedLayout, type DetectedText } from '../lib/ocrLayout';
 import { layoutToRepx, layoutToReport, ocrSummary, validateOcrRepx } from '../lib/ocrRepx';
 import { imageDpi, pageForImage } from '../lib/reportGeometry';
 import type { ReportLayout } from '../lib/reportTypes';
@@ -46,22 +46,18 @@ export interface OcrBuiltReport {
   flagged: number;
 }
 
-/** OCR text for one attached page, in the shape the composer sends. */
-export interface OcrTextAttachment {
-  uploadId: string;
-  file: string;
-  page?: number;
-  text: string;
-}
-
 export interface OcrDialogProps {
   pages: OcrPageSource[];
   /** The report unit and paper the configuration names. */
   unit: string;
   pageSize: string;
   onBuild: (report: OcrBuiltReport) => void;
-  onUseText: (texts: OcrTextAttachment[]) => void;
   onClose: () => void;
+  /**
+   * Pages the chat box has read already (2026-11-01), by index into `pages`;
+   * those are shown, not read again.
+   */
+  preread?: readonly (OcrPage | null | undefined)[];
 }
 
 type PageRun =
@@ -85,8 +81,9 @@ export function reportNameFor(file: string): string {
   return /^[A-Za-z_]/.test(base) ? base : `Ocr${base}`;
 }
 
-export default function OcrDialog({ pages, unit, pageSize, onBuild, onUseText, onClose }: OcrDialogProps) {
-  const [runs, setRuns] = useState<PageRun[]>(() => pages.map(() => ({ status: 'waiting' })));
+export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, preread }: OcrDialogProps) {
+  const initialRuns = (): PageRun[] => pages.map((_, i) => (preread?.[i] ? { status: 'done', ocr: preread[i]! } : { status: 'waiting' }));
+  const [runs, setRuns] = useState<PageRun[]>(initialRuns);
   const [attempt, setAttempt] = useState(0);
   const [shown, setShown] = useState(0);
   const [focus, setFocus] = useState<DetectedText | null>(null);
@@ -105,6 +102,7 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onUseText, o
     void (async () => {
       for (let i = 0; i < pages.length; i++) {
         if (abort.signal.aborted) return;
+        if (preread?.[i]) continue;
         set(i, { status: 'reading', stage: '', progress: 0 });
         try {
           const read = await recognizePage(pages[i].src, null, {
@@ -153,7 +151,7 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onUseText, o
 
   const stop = () => controller.current?.abort();
   const retry = () => {
-    setRuns(pages.map(() => ({ status: 'waiting' })));
+    setRuns(initialRuns());
     setProblems(null);
     setAttempt((a) => a + 1);
   };
@@ -177,15 +175,6 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onUseText, o
     });
   };
 
-  const useText = () => {
-    if (!layout) return;
-    onUseText(
-      read.map(({ index }, k) => {
-        const { meta } = pages[index];
-        return { uploadId: meta.uploadId, file: meta.file, page: meta.page, text: layoutText(layout.pages[k], meta.page ?? 1, unit, meta.file) };
-      }),
-    );
-  };
 
   const shownRead = read.findIndex((r) => r.index === shown);
   const shownPage = layout && shownRead >= 0 ? layout.pages[shownRead] : null;
@@ -319,17 +308,8 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onUseText, o
           {!finished ? (
             <button className="wb-pill" type="button" onClick={stop}>Stop</button>
           ) : (
-            <button className="wb-pill" type="button" onClick={onClose}>Cancel</button>
+            <button className="wb-pill" type="button" onClick={onClose}>Close</button>
           )}
-          <button
-            className="wb-pill wb-pill--outline"
-            type="button"
-            onClick={useText}
-            disabled={!finished || !layout}
-            title="Attach the text OCR read to your next message, so the model builds the report from it"
-          >
-            Use for generation
-          </button>
           <button
             className="wb-pill wb-pill--accent"
             type="button"

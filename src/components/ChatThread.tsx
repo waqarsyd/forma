@@ -19,7 +19,7 @@
  * exactly what the tests want.
  */
 
-import { memo, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import type { ChatMessage } from '../lib/chatSession';
 
@@ -49,8 +49,26 @@ export interface ChatThreadProps<R> {
   streamingReply: string;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
+  /**
+   * Answers to a message's clarifying questions (Prompt-to-Report in the
+   * chat). Absent, the questions are drawn without a form.
+   */
+  onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
+  /**
+   * Starting points for an empty conversation: the predefined report
+   * descriptions the Describe dialog offered before the chat took it over.
+   * Choosing one puts its text in the composer, to edit or send.
+   */
+  suggestions?: readonly { id: string; title: string; text: string }[];
+  onSuggest?: (text: string) => void;
   /** The generation progress card, rendered after the transcript. */
   children?: ReactNode;
+}
+
+export interface ClarifyAnswer {
+  id: string;
+  question: string;
+  answer: string;
 }
 
 /**
@@ -65,16 +83,62 @@ export interface ChatThreadProps<R> {
  * Messages are immutable — a new object only when something actually changes —
  * so identity is the right comparison and no custom comparator is needed.
  */
+/**
+ * A message's clarifying questions as a form: each a field holding its
+ * suggested answer, so building with nothing typed accepts them all, as the
+ * Describe dialog's questions did. Typing in the composer instead answers
+ * them too; `App.tsx` reads that as a reply to the open questions.
+ */
+function ClarifyForm({
+  id,
+  questions,
+  disabled,
+  onAnswer,
+}: {
+  id: string;
+  questions: NonNullable<ChatMessage['clarify']>['questions'];
+  disabled: boolean;
+  onAnswer: (id: string, answers: ClarifyAnswer[]) => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>(() => Object.fromEntries(questions.map((q) => [q.id, q.suggestion ?? ''])));
+  return (
+    <form
+      className="wb-clarify"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onAnswer(id, questions.map((q) => ({ id: q.id, question: q.question, answer: (answers[q.id] ?? '').trim() })));
+      }}
+    >
+      {questions.map((q) => (
+        <label key={q.id} className="wb-clarify-q">
+          <span>{q.question}</span>
+          <input
+            className="wb-ctl"
+            value={answers[q.id] ?? ''}
+            onChange={(e) => setAnswers((all) => ({ ...all, [q.id]: e.target.value }))}
+            disabled={disabled}
+          />
+        </label>
+      ))}
+      <button type="submit" className="wb-pill wb-pill--accent" disabled={disabled}>
+        Build the report
+      </button>
+    </form>
+  );
+}
+
 const ChatNote = memo(function ChatNote<R>({
   message,
   retryDisabled,
   onRetry,
   onOpenAttachment,
+  onAnswer,
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
+  onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
 }) {
   return (
     <article className={`wb-note${message.role === 'user' ? ' wb-note--me' : ''}`}>
@@ -82,6 +146,9 @@ const ChatNote = memo(function ChatNote<R>({
       <div>
         <div className="wb-who">{message.role === 'user' ? 'You' : 'Forma'}</div>
         {message.text && <p>{message.text}</p>}
+        {message.clarify && !message.clarify.answered && onAnswer && (
+          <ClarifyForm id={message.id} questions={message.clarify.questions} disabled={retryDisabled} onAnswer={onAnswer} />
+        )}
 
         {message.images && message.images.length > 0 && (
           // Sent messages showed a count and nothing else, so once a
@@ -131,6 +198,7 @@ const ChatNote = memo(function ChatNote<R>({
   retryDisabled: boolean;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
+  onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
 }) => React.ReactElement;
 
 export default function ChatThread<R>({
@@ -140,6 +208,9 @@ export default function ChatThread<R>({
   streamingReply,
   onRetry,
   onOpenAttachment,
+  onAnswer,
+  suggestions,
+  onSuggest,
   children,
 }: ChatThreadProps<R>) {
   /*
@@ -152,13 +223,14 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment });
-  latest.current = { onRetry, onOpenAttachment };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer });
+  latest.current = { onRetry, onOpenAttachment, onAnswer };
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
   const openAttachment = useCallback(
     (view: AttachmentView) => latest.current.onOpenAttachment(view),
     []
   );
+  const answer = useCallback((id: string, answers: ClarifyAnswer[]) => latest.current.onAnswer?.(id, answers), []);
 
   const retryDisabled = isChatting || isAnalyzing;
 
@@ -202,6 +274,27 @@ export default function ChatThread<R>({
 
   return (
     <div className="wb-thread" ref={threadRef} onScroll={notePinned}>
+      {/* One box does everything, so the empty thread says what it takes, and
+          offers the predefined descriptions as places to start. */}
+      {messages.length === 0 && !isChatting && !isAnalyzing && suggestions && suggestions.length > 0 && (
+        <article className="wb-note wb-note--start">
+          <span className="wb-spine" />
+          <div>
+            <div className="wb-who">Forma</div>
+            <p>
+              Attach an image, a scan, a PDF or a .repx, describe the report you want, or both. An image's text is
+              read as you attach it, and a description gets a question or two when it leaves something open.
+            </p>
+            <div className="wb-chips" role="group" aria-label="Start from a description">
+              {suggestions.map((s) => (
+                <button key={s.id} type="button" className="wb-pill wb-pill--outline" onClick={() => onSuggest?.(s.text)}>
+                  {s.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        </article>
+      )}
       {messages.map((msg) => (
         <ChatNote
           key={msg.id}
@@ -209,6 +302,7 @@ export default function ChatThread<R>({
           retryDisabled={retryDisabled}
           onRetry={retry}
           onOpenAttachment={openAttachment}
+          onAnswer={onAnswer ? answer : undefined}
         />
       ))}
 

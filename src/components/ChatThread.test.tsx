@@ -400,3 +400,56 @@ describe('the progress card passed through', () => {
     expect(document.querySelector('.wb-thread')!.children).toHaveLength(1);
   });
 });
+
+/*
+ * The chat box took over the Describe dialog (2026-11-01): its predefined
+ * descriptions are where an empty conversation starts, and its follow-up
+ * questions are a form in the thread, each field holding its suggestion.
+ */
+describe('a report described in the chat', () => {
+  const suggestions = [
+    { id: 'invoice', title: 'Invoice', text: 'An invoice with line items.' },
+    { id: 'list', title: 'Customer list', text: 'A customer list.' },
+  ];
+
+  it('offers the predefined descriptions in an empty conversation, and only there', () => {
+    const onSuggest = vi.fn();
+    draw({ suggestions, onSuggest });
+    fireEvent.click(screen.getByText('Customer list'));
+    expect(onSuggest).toHaveBeenCalledWith('A customer list.');
+    cleanup();
+    draw({ suggestions, onSuggest, messages: [msg({ id: '1', text: 'hello' })] });
+    expect(screen.queryByText('Customer list')).toBeNull();
+  });
+
+  it('asks its questions as a form holding the suggestions, and hands up the answers', () => {
+    const onAnswer = vi.fn();
+    const asking = msg({
+      id: 'q',
+      role: 'assistant',
+      text: 'Before I design it, 2 questions.',
+      clarify: { answered: false, questions: [
+        { id: 'group', question: 'Group by what?', suggestion: 'Region' },
+        { id: 'total', question: 'Total of what?' },
+      ] },
+    });
+    draw({ messages: [asking], onAnswer });
+    const group = screen.getByLabelText('Group by what?') as HTMLInputElement;
+    expect(group.value).toBe('Region');
+    fireEvent.change(screen.getByLabelText('Total of what?'), { target: { value: 'Amount' } });
+    fireEvent.click(screen.getByText('Build the report'));
+    expect(onAnswer).toHaveBeenCalledWith('q', [
+      { id: 'group', question: 'Group by what?', answer: 'Region' },
+      { id: 'total', question: 'Total of what?', answer: 'Amount' },
+    ]);
+  });
+
+  it('drops the form once the questions are answered, and holds it while something runs', () => {
+    const questions = [{ id: 'a', question: 'Sorted how?', suggestion: 'By date' }];
+    draw({ messages: [msg({ id: 'q', role: 'assistant', text: 'One question.', clarify: { answered: true, questions } })], onAnswer: vi.fn() });
+    expect(screen.queryByText('Build the report')).toBeNull();
+    cleanup();
+    draw({ messages: [msg({ id: 'q', role: 'assistant', text: 'One question.', clarify: { answered: false, questions } })], onAnswer: vi.fn(), isAnalyzing: true });
+    expect((screen.getByText('Build the report') as HTMLButtonElement).disabled).toBe(true);
+  });
+});

@@ -201,7 +201,10 @@ import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
 import { auditRepx } from './lib/repxAudit';
 import {
+  describedRequest,
   fixInstruction,
+  isDescribable,
+  PREDEFINED_PROMPTS,
   shouldRetryForErrors,
   withAnswers,
   type ClarificationAnswer,
@@ -226,8 +229,9 @@ import { repeatedHeadingTables } from './lib/mockupRows';
 import LogoPulse from './components/LogoPulse';
 import ChatThread from './components/ChatThread';
 import Composer from './components/Composer';
-import DescribeReportDialog, { type DescribePhase } from './components/DescribeReportDialog';
-import type { OcrBuiltReport, OcrTextAttachment } from './components/OcrDialog';
+import type { OcrBuiltReport } from './components/OcrDialog';
+import type { OcrChipState } from './components/Composer';
+import type { ReadPage } from './lib/ocrAttach';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
   clampReviewWidth,
@@ -507,8 +511,8 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
           }
         } else if (n === 1) {
           out.notices.push(
-            `"${name}" has no text layer — it looks like a scan. Read its text with OCR (the scan button) to place every ` +
-            `string where it was printed; otherwise the model reads it from the image, less exactly.`
+            `"${name}" has no text layer — it looks like a scan, so its text is being read with OCR in your browser, ` +
+            `to place every string where it was printed. Its chip shows how far that has got.`
           );
         }
       }
@@ -1870,8 +1874,12 @@ export default function App() {
 
   const [error, setError] = useState<string | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  /** The Describe-a-report dialog: closed, collecting, or asking the model's follow-up questions. */
-  const [describe, setDescribe] = useState<DescribePhase | null>(null);
+  /**
+   * The questions a typed description is waiting on (Prompt-to-Report in the
+   * chat, 2026-11-01): the request they belong to and the message that asks
+   * them. Answered by that message's form or by the next message typed.
+   */
+  const pendingClarifyRef = useRef<{ request: ReportDescriptionRequest; messageId: string } | null>(null);
   /** The description a run was started from, so Resume re-issues the same request. */
   const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
   /**
@@ -2653,7 +2661,66 @@ export default function App() {
       return meta && !withText.has(`${meta.uploadId}#${meta.page ?? 0}`) ? [{ src, meta }] : [];
     });
   }, [previews, previewMeta, attachmentTexts]);
-  const [ocrOpen, setOcrOpen] = useState(false);
+
+  /*
+   * Reading starts as a page is attached (2026-11-01), one page at a time,
+   * since the engine is one worker. The owner asked for a chat box that takes
+   * every input as other chat apps do, so there is no OCR button any more: an
+   * image's text is read in the browser while the message is being written,
+   * and goes with it. The engine and its layout code load only now.
+   */
+  type OcrRun = { state: 'reading'; progress: number } | { state: 'done'; read: ReadPage } | { state: 'failed' };
+  const [ocrRuns, setOcrRuns] = useState<Record<string, OcrRun>>({});
+  const ocrStarted = useRef(new Set<string>());
+  const ocrQueue = useRef<Promise<void>>(Promise.resolve());
+  const ocrKey = (meta: PreviewMeta) => `${meta.uploadId}#${meta.page ?? 0}`;
+  useEffect(() => {
+    for (const { src, meta } of ocrPages) {
+      const key = ocrKey(meta);
+      if (ocrStarted.current.has(key)) continue;
+      ocrStarted.current.add(key);
+      setOcrRuns((runs) => ({ ...runs, [key]: { state: 'reading', progress: 0 } }));
+      ocrQueue.current = ocrQueue.current.then(async () => {
+        try {
+          const { readPage } = await import('./lib/ocrAttach');
+          const read = await readPage(src, meta, config.unit, config.pageSize, (progress) =>
+            setOcrRuns((runs) => (runs[key]?.state === 'reading' ? { ...runs, [key]: { state: 'reading', progress } } : runs)),
+          );
+          setOcrRuns((runs) => ({ ...runs, [key]: { state: 'done', read } }));
+        } catch (err) {
+          // The image still goes with the message; only its text does not.
+          console.warn(`The text of ${meta.file} could not be read:`, err);
+          setOcrRuns((runs) => ({ ...runs, [key]: { state: 'failed' } }));
+        }
+      });
+    }
+  }, [ocrPages, config.unit, config.pageSize]);
+
+  /** Each staged upload's reading, for its chip: still reading, read, or not read. */
+  const ocrStatus = useMemo(() => {
+    const out: Record<string, OcrChipState> = {};
+    for (const { meta } of ocrPages) {
+      const run = ocrRuns[ocrKey(meta)];
+      if (!run) continue;
+      const prev = out[meta.uploadId];
+      if (run.state === 'reading') {
+        out[meta.uploadId] = { state: 'reading', progress: prev?.state === 'reading' ? Math.min(prev.progress, run.progress) : run.progress };
+      } else if (prev?.state === 'reading') {
+        continue;
+      } else if (run.state === 'done') {
+        out[meta.uploadId] = prev?.state === 'done'
+          ? { state: 'done', lines: prev.lines + run.read.lines, flagged: prev.flagged + run.read.flagged }
+          : { state: 'done', lines: run.read.lines, flagged: run.read.flagged };
+      } else if (!prev) {
+        out[meta.uploadId] = { state: 'failed' };
+      }
+    }
+    return out;
+  }, [ocrPages, ocrRuns]);
+
+  /** The upload whose reading is being reviewed, over its image, with Build .repx. */
+  const [ocrReview, setOcrReview] = useState<string | null>(null);
+  const ocrReviewPages = useMemo(() => ocrPages.filter(({ meta }) => meta.uploadId === ocrReview), [ocrPages, ocrReview]);
 
   /** A report built from OCR alone: every pane, a revision, and a line in the thread. */
   const handleOcrBuild = (built: OcrBuiltReport) => {
@@ -2678,19 +2745,19 @@ export default function App() {
       text: `Built "${built.title}" from the text OCR read, with no model involved.${unsure}`,
       result: newResult,
     }]);
-    setOcrOpen(false);
+    setOcrReview(null);
   };
 
-  /** OCR's text, attached to the next message as a PDF's text layer is. */
-  const handleOcrText = (texts: OcrTextAttachment[]) => {
+  /** The text read from the staged pages, as attachments for the message being sent. */
+  const ocrAttachments = async (pages: readonly { meta: PreviewMeta }[]): Promise<TextAttachment[]> => {
+    const read = pages.flatMap(({ meta }) => {
+      const run = ocrRuns[ocrKey(meta)];
+      return run?.state === 'done' ? [{ meta, read: run.read }] : [];
+    });
+    if (!read.length) return [];
+    const { ocrTexts } = await import('./lib/ocrAttach');
     const stamp = Date.now();
-    setAttachmentTexts(prev => [
-      ...prev,
-      ...texts.map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}` })),
-    ]);
-    const files = [...new Set(texts.map((t) => `"${t.file}"`))].join(', ');
-    setUploadNotices(prev => [...prev, `Text read by OCR from ${files} is attached and goes with your next message.`]);
-    setOcrOpen(false);
+    return ocrTexts(read, config.unit, config.pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}` }));
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -2727,6 +2794,9 @@ export default function App() {
     setPrompt('');
     setError(null);
     setMessages([]);
+    // A new conversation owes no answers to the last one's questions.
+    pendingClarifyRef.current = null;
+    setOcrReview(null);
   };
 
   // Keeps the once-registered auth listener pointing at the current handler.
@@ -3435,7 +3505,9 @@ export default function App() {
 
     const currentPrompt = promptText;
     const currentPreviews = [...previews];
-    const currentTexts = [...attachmentTexts];
+    // The staged pages whose text is read in the browser, captured before the
+    // composer is cleared below; their text joins the attachments after.
+    const stagedForOcr = ocrPages;
 
     // Add user message
     const newUserMsg: ChatMessage = {
@@ -3453,6 +3525,28 @@ export default function App() {
     setAttachmentTexts([]);
     setUploadNotices([]);
 
+    // What OCR read from the attached images goes with them, as a PDF's text
+    // layer does (2026-11-01). The send waited for the reading to finish.
+    const readByOcr = await ocrAttachments(stagedForOcr);
+    const currentTexts = [...attachmentTexts, ...readByOcr];
+    if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
+
+    /*
+     * A reply to the questions a description is waiting on. Typed into the
+     * box rather than given in the form, it is taken as the answer, as any
+     * chat takes the next message after a question; an attachment instead is a
+     * new request, and the questions are dropped.
+     */
+    const pending = pendingClarifyRef.current;
+    if (pending) {
+      pendingClarifyRef.current = null;
+      setMessages(prev => prev.map(m => (m.id === pending.messageId && m.clarify ? { ...m, clarify: { ...m.clarify, answered: true } } : m)));
+      if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
+        await startDescribedGeneration(withAnswers(pending.request, [{ id: 'reply', question: 'In the reader\'s own words', answer: currentPrompt }]));
+        return;
+      }
+    }
+
     /* ---------------------------------------------------------------- *
      * Conversation vs. work.
      *
@@ -3464,6 +3558,8 @@ export default function App() {
      * ---------------------------------------------------------------- */
     // Any attachment — a page image or text lifted out of a PDF/.repx — is an
     // unambiguous request to build something, so it skips the chat turn.
+    /** A report asked for in words, with no attachment and no report yet: Prompt-to-Report. */
+    let fromDescription = false;
     if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
       setIsChatting(true);
       setStreamingReply('');
@@ -3488,6 +3584,10 @@ export default function App() {
           role: 'assistant',
           text: outcome.reply,
         }]);
+        // With no report to refine, a description is designed as the Describe
+        // dialog designed one, which the chat box took over on 2026-11-01:
+        // a question or two first if it leaves something open, then the brief.
+        fromDescription = !result;
       } catch (err: any) {
         console.error('Chat turn failed:', err);
         const message = isMissingApiKey(err)
@@ -3503,6 +3603,11 @@ export default function App() {
         setIsChatting(false);
         setStreamingReply('');
       }
+    }
+
+    if (fromDescription) {
+      await describeFromChat(currentPrompt);
+      return;
     }
 
     setIsAnalyzing(true);
@@ -3542,33 +3647,39 @@ export default function App() {
     await runGeneration('', [], [], DESCRIBE_RUN, request);
   };
 
-  const handleDescribeSubmit = async (request: ReportDescriptionRequest) => {
-    setDescribe(null);
-    if (!hasApiKey) {
-      setError('Add your Gemini API key to use the workspace.');
-      setIsConfigOpen(true);
+  /*
+   * A report described in the chat (2026-11-01). The Describe dialog's two
+   * stages, without the dialog: the typed message is the description, a
+   * fenced code block or CREATE TABLE in it the data source; the
+   * clarification call may come back with questions, which the thread asks
+   * as a form; then the brief. A failure inside the clarification already
+   * answers "ready", so the only way out without a generation is a key problem.
+   */
+  const describeFromChat = async (message: string) => {
+    const request = describedRequest(message);
+    // Too little to design from, the dialog's Build button stayed disabled;
+    // in the chat the same rule asks for more instead.
+    if (!isDescribable(request)) {
+      setMessages((prev) => [...prev, {
+        id: nextMessageId(),
+        role: 'assistant',
+        text: 'Tell me a little more about the report: what it lists, how it is grouped or sorted, and what it totals. Or attach an image or a PDF of one.',
+      }]);
       return;
     }
-
-    setMessages((prev) => [...prev, {
-      id: nextMessageId(),
-      role: 'user',
-      text: request.title ? `${request.title}: ${request.description}` : request.description,
-    }]);
-
-    // The clarification stage. A failure inside it already answers "ready",
-    // so the only way out of here without a generation is a key problem.
     setIsChatting(true);
     try {
       const { clarifyReportRequest } = await loadGemini();
       const outcome = await clarifyReportRequest(request, config);
       if (!outcome.ready) {
+        const id = nextMessageId();
         setMessages((prev) => [...prev, {
-          id: nextMessageId(),
+          id,
           role: 'assistant',
-          text: `Before I design it, ${outcome.questions.length === 1 ? 'one question' : `${outcome.questions.length} questions`}.`,
+          text: `Before I design it, ${outcome.questions.length === 1 ? 'one question' : `${outcome.questions.length} questions`}. Keep the suggested answers, change them, or reply in your own words.`,
+          clarify: { questions: outcome.questions, answered: false },
         }]);
-        setDescribe({ kind: 'questions', request, questions: outcome.questions });
+        pendingClarifyRef.current = { request, messageId: id };
         return;
       }
     } catch (err: any) {
@@ -3579,14 +3690,15 @@ export default function App() {
     } finally {
       setIsChatting(false);
     }
-
     await startDescribedGeneration(request);
   };
 
-  const handleDescribeAnswers = async (answers: ClarificationAnswer[]) => {
-    if (describe?.kind !== 'questions') return;
-    const request = withAnswers(describe.request, answers);
-    setDescribe(null);
+  /** The answers given in a message's question form. */
+  const handleClarifyAnswers = async (messageId: string, answers: ClarificationAnswer[]) => {
+    const pending = pendingClarifyRef.current;
+    if (!pending || pending.messageId !== messageId || isChatting || isAnalyzing) return;
+    pendingClarifyRef.current = null;
+    setMessages((prev) => prev.map((m) => (m.id === messageId && m.clarify ? { ...m, clarify: { ...m.clarify, answered: true } } : m)));
     const answered = answers.filter((a) => a.answer.trim());
     if (answered.length) {
       setMessages((prev) => [...prev, {
@@ -3595,7 +3707,7 @@ export default function App() {
         text: answered.map((a) => `${a.question} ${a.answer.trim()}`).join('\n'),
       }]);
     }
-    await startDescribedGeneration(request);
+    await startDescribedGeneration(withAnswers(pending.request, answers));
   };
 
   /**
@@ -4316,6 +4428,9 @@ export default function App() {
             streamingReply={streamingReply}
             onRetry={handleRetryMessage}
             onOpenAttachment={setFullScreenImage}
+            onAnswer={handleClarifyAnswers}
+            suggestions={PREDEFINED_PROMPTS}
+            onSuggest={setPrompt}
           >
             {/* Generation. The ring around the mark *is* the progress bar — same
                 `analyzingProgress`, same guarantee that it only ever reports
@@ -4389,8 +4504,9 @@ export default function App() {
             isChatting={isChatting}
             isIngesting={isIngesting}
             onAddKey={() => setIsConfigOpen(true)}
-            onDescribe={() => setDescribe({ kind: 'describe' })}
-            onReadText={ocrPages.length ? () => setOcrOpen(true) : undefined}
+            onPasteFiles={ingestFiles}
+            ocrStatus={ocrStatus}
+            onReviewOcr={setOcrReview}
           />
         </div>
 
@@ -4850,24 +4966,20 @@ export default function App() {
       </div>
 
       {/* =========================================================== modals */}
-      {describe && (
-        <DescribeReportDialog
-          phase={describe}
-          pageSize={config.pageSize}
-          onSubmit={handleDescribeSubmit}
-          onAnswer={handleDescribeAnswers}
-          onClose={() => setDescribe(null)}
-        />
-      )}
-      {ocrOpen && ocrPages.length > 0 && (
+      {/* What was read from one attached upload, over its image: opened from
+          the chip, the pages already read, Build .repx with no model. */}
+      {ocrReview && ocrReviewPages.length > 0 && (
         <Suspense fallback={null}>
           <OcrDialog
-            pages={ocrPages}
+            pages={ocrReviewPages}
+            preread={ocrReviewPages.map(({ meta }) => {
+              const run = ocrRuns[ocrKey(meta)];
+              return run?.state === 'done' ? run.read.ocr : null;
+            })}
             unit={config.unit}
             pageSize={config.pageSize}
             onBuild={handleOcrBuild}
-            onUseText={handleOcrText}
-            onClose={() => setOcrOpen(false)}
+            onClose={() => setOcrReview(null)}
           />
         </Suspense>
       )}

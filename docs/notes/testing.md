@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,105 tests in 102 files** — under the `node` environment
+`npm test` runs Vitest over **2,106 tests in 101 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -78,13 +78,12 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 |---|---:|---|
 | `components/AccountDialog` | 23 | jsdom |
 | `components/BatchPanel` | 11 | jsdom |
-| `components/ChatThread` | 27 | jsdom |
-| `components/Composer` | 35 | jsdom, 8 from one loop |
+| `components/ChatThread` | 30 | jsdom; since 2026-11-01 also the predefined descriptions an empty conversation starts from, and a description's questions asked as a form holding their suggestions |
+| `components/Composer` | 36 | jsdom, 8 from one loop; the one chat box (2026-11-01): no separate Describe or OCR button, each image's reading on its chip with the send held until it is read, a pasted image attached |
 | `components/DataBinding` | 18 | jsdom |
-| `components/DescribeReportDialog` | 6 | jsdom; the Prompt-to-Report wizard, no key and no network |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
-| `components/OcrDialog` | 7 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run, low-confidence text listed and named or left out, a report built after the app's checks, the text attached for the model, a PDF page read at its resolution |
+| `components/OcrDialog` | 7 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run, low-confidence text listed and named or left out, a report built after the app's checks, a PDF page read at its resolution, and pages the chat box read already shown without reading them again |
 | `components/ReportPreview` | 17 | jsdom; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
@@ -123,7 +122,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/pdfCrypto` | 8 | 3 from one loop; MD5, RC4 and AES-128/256 against their published vectors; the file's `PasswordSecurityOptions` as DevExpress wrote them (s61); Forma's encrypted PDF opened by pdf.js at AES-128, RC4 and AES-256 with either password, its text, title, link and outline read, and refused without; the permissions under each password (row 73) |
 | `lib/pdfWriter` | 5 | the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
 | `lib/promptSections` | 48 |  |
-| `lib/promptToReport` | 9 | the pure half of Prompt-to-Report |
+| `lib/promptToReport` | 12 | the pure half of Prompt-to-Report; a description typed into the chat box, its fenced or CREATE TABLE schema taken as the data source |
 | `lib/reportBands` | 15 |  |
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
@@ -179,7 +178,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,105 in 102 files** — and that total is the arithmetic sum of the column above
+**Total: 2,106 in 101 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -193,7 +192,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,985** against a real 2,105 and will talk you into
+A grep for `\bit(` answers **1,986** against a real 2,106 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

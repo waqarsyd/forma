@@ -90,7 +90,7 @@ The claim is enforced, not just intended: the server sends a Content-Security-Po
 Each of these is a shipped code path, not a plan.
 
 - **Image, PDF and `.repx` intake.** Drop a mockup, a scan, a photo, or an existing report. PDFs are rasterised *and* have their text layer extracted, so exact strings survive rather than being read back out of pixels ([`src/App.tsx`](src/App.tsx), [`src/lib/pdf.ts`](src/lib/pdf.ts)).
-- **OCR for images and scans, in the browser.** The scan button reads every attached image and every PDF page with no text layer with Tesseract.js, shows what it found over the source with the unsure text marked, and then builds the `.repx` straight from it or hands the text to the model. Nothing leaves the browser ([`src/components/OcrDialog.tsx`](src/components/OcrDialog.tsx), [`src/lib/ocrLayout.ts`](src/lib/ocrLayout.ts)).
+- **One chat box for everything.** Attach or paste an image, a scan, a PDF or a `.repx`, describe the report you want, or both, and the box works out what to do: an image's text is read with OCR in the browser as it is attached (Tesseract.js; nothing leaves the browser), its chip opening a review of what was found over the source from which a `.repx` can be built with no model; a description with no attachment gets a question or two in the thread when it leaves something open, then a report designed from it; words and an attachment together go to one generation ([`src/components/Composer.tsx`](src/components/Composer.tsx), [`src/lib/ocrAttach.ts`](src/lib/ocrAttach.ts), [`src/lib/promptToReport.ts`](src/lib/promptToReport.ts)).
 - **Three artifacts in one structured response** — spec, `layout`, and `repxContent` — guaranteed parseable by a Gemini `responseSchema` rather than by hoping the model returns valid JSON ([`src/services/geminiService.ts`](src/services/geminiService.ts)).
 - **Targets your DevExpress version** — eight of them, 26.1 back to 20.1, written into the file's `SerializerVersion` so it drops into the codebase you already have. Worth knowing that the tag is a *label rather than a gate*: a newer `.repx` still opens in an older designer, which was measured with `RepxProbe inspect` and then confirmed through the product — a 23.2 file opened correctly in a real 20.1 designer, and the designer rewrote the tag on save. So pick the version you build against; nothing is lost if you pick wrong.
 - **In-browser mockup** drawn from the `layout` JSON, so you can see what the model understood before downloading anything.
@@ -275,12 +275,9 @@ src/
                        LoginPage, LegalPage (/terms and /privacy),
                        SiteHeader, SiteFooter, MobileNav, Logo, LogoPulse,
                        AccountDialog, UserAvatar, NotFoundPage,
-                       DescribeReportDialog (the Prompt-to-Report wizard:
-                       predefined prompts, a description, an optional pasted
-                       data source, and the model's follow-up questions),
-                       OcrDialog (the text of an image or a scan read with
-                       OCR, its detected layout drawn over the source before
-                       a .repx is built or the text sent to the model),
+                       OcrDialog (the review a chat-box chip opens: the text
+                       OCR read, its detected layout drawn over the source,
+                       and Build .repx with no model),
                        ChatThread
                        (the review column's transcript, lifted out of App.tsx
                        once chatSession.ts held its rules — the progress card
@@ -443,8 +440,9 @@ src/
                        promptToReport (the pure half of Prompt-to-Report:
                        the predefined prompts, the brief a description run
                        opens the prompt with, the follow-up answers and the
-                       repair decision; the wizard is DescribeReportDialog
-                       and the clarification call is in geminiService),
+                       repair decision; the wizard is the chat box, whose
+                       questions are a form in the thread, and the
+                       clarification call is in geminiService),
                        repxLayout (controls past the page or their band and
                        bands taller than the page, the other half of the
                        analyzer's layout group, appended to the audit),
@@ -731,7 +729,7 @@ Forma is usable but young, and some things are worth knowing before you rely on 
 - **Models are detected at runtime, never hardcoded.** Google retires models "for new users", so a pinned id works for existing projects and 404s for every new key. Forma probes a preference list on first use and caches the winner for the session.
 - **Reports with large images may not sync to the cloud.** A single detailed 2048px upload can exceed Firestore's 1 MiB document limit on its own; Forma saves the spec and REPX without the images in that case, and says so.
 - **PDFs are read to 8 pages.** Beyond that, later pages are ignored. A single upload is capped at **20 MB** and a request at **12 attachments**; anything over either is reported on screen rather than dropped silently.
-- **Component coverage is eight components deep.** `DataBinding`, `BatchPanel`, `ChatThread`, `Composer`, `AccountDialog`, `LibraryPanel`, `DescribeReportDialog` and `ReportPreview` have render tests; nothing else does, and `App.tsx` is still several thousand lines of which only the pieces extracted into `src/lib` are tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`. (No line count here on purpose: it was written down as "4,500" and was wrong within a week. Measure it if you need it.)
+- **Component coverage is nine components deep.** `DataBinding`, `BatchPanel`, `ChatThread`, `Composer`, `AccountDialog`, `LibraryPanel`, `OcrDialog`, `NotFoundPage` and `ReportPreview` have render tests; nothing else does, and `App.tsx` is still several thousand lines of which only the pieces extracted into `src/lib` are tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`. (No line count here on purpose: it was written down as "4,500" and was wrong within a week. Measure it if you need it.)
 
 ---
 
