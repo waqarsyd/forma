@@ -6,7 +6,7 @@
  * identical lines; these cases pin the rules that made that true.
  */
 import { describe, it, expect } from 'vitest';
-import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, GROW_EXTRA_PT } from './textMeasure';
+import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, resolveLineMetrics, GROW_EXTRA_PT } from './textMeasure';
 
 /** Every character one point wide, so widths are character counts. */
 const mono = (s: string) => s.length;
@@ -104,6 +104,20 @@ describe('lineSpacingPt and linesHeightPt', () => {
     expect(lineSpacingPt('Some Font', 10)).toBeCloseTo(11.499, 3);
     expect(lineSpacingPt(null, 10)).toBeCloseTo(11.499, 3);
     expect(linesHeightPt(1, 'Some Font', 10)).toBeCloseTo(linesHeightPt(1, 'Arial', 10), 6);
+  });
+
+  it('takes a family outside the table from the browser, whose metrics are GDI+\'s (row 63)', () => {
+    const garamond = { one: 2304 / 2048, spacing: 2304 / 2048 };
+    expect(resolveLineMetrics('Garamond', garamond)).toEqual(garamond);
+    // The table wins for its ten families, whatever the browser says.
+    expect(resolveLineMetrics('Arial', garamond)).toEqual({ one: 2288 / 2048, spacing: 2355 / 2048 });
+    expect(resolveLineMetrics(' VERDANA ', null)).toEqual({ one: 2489 / 2048, spacing: 2489 / 2048 });
+    // Nothing measured, as under Node: Arial's.
+    expect(resolveLineMetrics('Garamond', null)).toEqual({ one: 2288 / 2048, spacing: 2355 / 2048 });
+    expect(resolveLineMetrics(null, null)).toEqual({ one: 2288 / 2048, spacing: 2355 / 2048 });
+    // s45a: one line of Garamond 20pt printed 33.33 units, two 64.58.
+    expect(((garamond.one * 20 + 1.5) / 72) * 100).toBeCloseTo(33.33, 2);
+    expect(((2 * garamond.spacing * 20 + 1.5) / 72) * 100).toBeCloseTo(64.58, 2);
   });
 
   it('carries the measured height constant', () => {

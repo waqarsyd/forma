@@ -27,6 +27,8 @@
  *   1.3301, Calibri 1.2207, Georgia 1.1362, Courier New 1.1328, Microsoft
  *   Sans Serif 1.1318, Trebuchet MS 1.1611. Bold does not change it. One
  *   line of Arial or Times New Roman is shorter, 1.1172 and 1.1074 (row 51).
+ *   Both are GDI+'s font metrics, which the browser reads too for any other
+ *   installed family (row 63).
  * - **A grown control is the lines plus 1.5pt**, plus its vertical padding and
  *   its top and bottom borders: three lines of Arial 9pt printed 32.544pt
  *   against 3 x 10.35 + 1.5 = 32.55; ten hundredths of padding and a 3px
@@ -99,14 +101,46 @@ const ONE_LINE: Record<string, number> = {
   'times new roman': 2268 / 2048,
 };
 
-const fontKey = (family: string | null | undefined) => {
-  const key = (family ?? '').trim().toLowerCase();
-  return key in LINE_SPACING ? key : 'arial';
-};
+/** A font's vertical metrics as shares of its size: one line alone, and the spacing of several. */
+export interface LineMetrics {
+  one: number;
+  spacing: number;
+}
 
-/** One line's height in points. An unmeasured family takes Arial's. */
-export function lineSpacingPt(family: string | null | undefined, sizePt: number): number {
-  return LINE_SPACING[fontKey(family)] * sizePt;
+/** Bold and italic, which a family outside the table may measure differently in. */
+export interface FontStyleSpec {
+  bold: boolean;
+  italic: boolean;
+}
+
+/**
+ * The metrics a line is printed at (parity row 63): the table's for a family
+ * it holds, else what the browser measured of the installed font, else
+ * Arial's. DevExpress takes both from GDI+'s font metrics, one line from the
+ * cell ascent and descent and several from the line spacing: every height
+ * it printed in s43 to s45, eighty faces and sizes among them Garamond,
+ * Gabriola and Leelawadee UI, matched those within 0.04 of a 1/300 inch. The
+ * table holds the same numbers for the ten fonts row 51 measured.
+ */
+export function resolveLineMetrics(family: string | null | undefined, browser: LineMetrics | null): LineMetrics {
+  const key = (family ?? '').trim().toLowerCase();
+  if (key in LINE_SPACING) return { one: ONE_LINE[key] ?? LINE_SPACING[key], spacing: LINE_SPACING[key] };
+  return browser ?? { one: ONE_LINE.arial, spacing: LINE_SPACING.arial };
+}
+
+function lineMetricsFor(family: string | null | undefined, style?: FontStyleSpec): LineMetrics {
+  const key = (family ?? '').trim().toLowerCase();
+  const browser = key && !(key in LINE_SPACING) ? browserLineMetrics(family!.trim(), style?.bold ?? false, style?.italic ?? false) : null;
+  return resolveLineMetrics(family, browser);
+}
+
+/**
+ * One line's height in points, at the spacing several lines take. A family
+ * outside the table takes the browser's measure of it (row 63), and one the
+ * browser cannot measure, as under Node, Arial's.
+ */
+export function lineSpacingPt(family: string | null | undefined, sizePt: number, style?: FontStyleSpec): number {
+  return lineMetricsFor(family, style).spacing * sizePt;
 }
 
 /**
@@ -115,9 +149,9 @@ export function lineSpacingPt(family: string | null | undefined, sizePt: number)
  * `short` false is one line that fits its box only kerned, which takes the
  * full spacing (row 59).
  */
-export function linesHeightPt(count: number, family: string | null | undefined, sizePt: number, short = true): number {
-  const key = fontKey(family);
-  return count === 1 && short ? (ONE_LINE[key] ?? LINE_SPACING[key]) * sizePt : count * LINE_SPACING[key] * sizePt;
+export function linesHeightPt(count: number, family: string | null | undefined, sizePt: number, short = true, style?: FontStyleSpec): number {
+  const m = lineMetricsFor(family, style);
+  return count === 1 && short ? m.one * sizePt : count * m.spacing * sizePt;
 }
 
 /*
@@ -378,4 +412,41 @@ export function lineWidthPt(text: string, font: FontSpec): number | null {
   if (!lineContext) return null;
   lineContext.font = cssFont(font);
   return lineContext.measureText(text).width * 0.75;
+}
+
+let metricsContext: CanvasRenderingContext2D | null | undefined;
+const metricsCache = new Map<string, LineMetrics | null>();
+
+/**
+ * An installed font's line metrics as the browser reads them, or null where
+ * nothing can measure (Node, jsdom). One line is the canvas's font box, its
+ * ascent and descent; the spacing is a line's height at `line-height:
+ * normal`, which adds the font's gap. Of the 711 installed faces the browser
+ * found by name, 710 matched GDI+'s metrics both ways to within a 2048th of
+ * the em (row 63). A synthesized bold is measured as its regular, since the
+ * browser may answer another face's.
+ */
+function browserLineMetrics(family: string, bold: boolean, italic: boolean): LineMetrics | null {
+  const regular = bold && synthesizedBold({ family, sizePt: 1, bold, italic });
+  const css = `${italic ? 'italic ' : ''}${bold && !regular ? 'bold ' : ''}${MEASURE_PX}px "${family}"`;
+  if (metricsCache.has(css)) return metricsCache.get(css)!;
+  if (metricsContext === undefined) metricsContext = canvasContext();
+  let metrics: LineMetrics | null = null;
+  if (metricsContext && document.body) {
+    metricsContext.font = css;
+    const box = metricsContext.measureText('Hg');
+    const line = document.createElement('div');
+    line.setAttribute('aria-hidden', 'true');
+    line.style.cssText = 'position:absolute;left:-100000px;top:0;visibility:hidden;white-space:pre;line-height:normal';
+    line.style.font = css;
+    line.style.lineHeight = 'normal';
+    line.textContent = 'Hg';
+    document.body.appendChild(line);
+    const height = line.getBoundingClientRect().height;
+    line.remove();
+    const one = (box.fontBoundingBoxAscent + box.fontBoundingBoxDescent) / MEASURE_PX;
+    if (Number.isFinite(one) && one > 0 && height > 0) metrics = { one, spacing: height / MEASURE_PX };
+  }
+  metricsCache.set(css, metrics);
+  return metrics;
 }

@@ -2336,7 +2336,7 @@ function textHeight(
   // that fits only kerned, or not at all, at the spacing too (row 59), which
   // s43l printed alike with WordWrap on and off.
   const short = lines.length !== 1 || (ctx.measure?.fitsUnkerned?.(lines[0], spec, area) ?? true);
-  const body = linesHeightPt(lines.length, spec.family, spec.sizePt, short) + inset.top + inset.bottom;
+  const body = linesHeightPt(lines.length, spec.family, spec.sizePt, short, spec) + inset.top + inset.bottom;
   return { lines, needUnits: lines.length ? toUnits(body + GROW_EXTRA_PT) : 0 };
 }
 
@@ -2728,7 +2728,7 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string, s
     const c = pc.control;
     if (MEASURED_TYPES.has(c.type)) {
       const inset = insetsPt(c.appearance, c.borders);
-      const spacing = toUnits(lineSpacingPt(c.fontFamily ?? 'Times New Roman', c.fontSize ?? 9.75));
+      const spacing = toUnits(lineSpacingPt(c.fontFamily ?? 'Times New Roman', c.fontSize ?? 9.75, c));
       const fit = Math.floor((avail - pc.y - toUnits(inset.top)) / spacing + EPS);
       // Unmeasured text is taken as one line.
       const lineCount = pc.lines ? pc.lines.length : pc.text ? 1 : 0;

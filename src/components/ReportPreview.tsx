@@ -591,7 +591,7 @@ function ControlBox({
                     // to fit. It clipped with an ellipsis until 2026-10-30.
                     whiteSpace: cell.wordWrap ? 'normal' : 'nowrap',
                     overflowWrap: 'anywhere',
-                    lineHeight: `${lineSpacingPt(cell.fontFamily, cell.fontSize ?? 9.75)}pt`,
+                    lineHeight: `${lineSpacingPt(cell.fontFamily, cell.fontSize ?? 9.75, cell)}pt`,
                   }}
                 >
                   {placed.cellTexts?.[placed.rowStart + r]?.[c] ?? printed(cell.text, cell.field, record)}
@@ -633,7 +633,7 @@ function ControlBox({
     const sizePt = control.fontSize ?? 9.75;
     const font = { family: control.fontFamily ?? 'Times New Roman', sizePt, bold: control.bold, italic: control.italic };
     const w = ((lineWidthPt(text, font) ?? text.length * sizePt * 0.5) * 96) / 72;
-    const h = (lineSpacingPt(control.fontFamily, sizePt) * 96) / 72;
+    const h = (lineSpacingPt(control.fontFamily, sizePt, control) * 96) / 72;
     const turn = (control.angle * Math.PI) / 180;
     const [boxW, boxH] = [Math.abs(w * Math.cos(turn)) + Math.abs(h * Math.sin(turn)), Math.abs(w * Math.sin(turn)) + Math.abs(h * Math.cos(turn))];
     return (
@@ -649,7 +649,7 @@ function ControlBox({
 
   if (placed.lines) {
     return (
-      <Box {...link} style={{ ...link.style, whiteSpace: 'pre', lineHeight: `${lineSpacingPt(control.fontFamily, control.fontSize ?? 9.75)}pt` }}>
+      <Box {...link} style={{ ...link.style, whiteSpace: 'pre', lineHeight: `${lineSpacingPt(control.fontFamily, control.fontSize ?? 9.75, control)}pt` }}>
         {placed.lines.join('\n')}
       </Box>
     );
