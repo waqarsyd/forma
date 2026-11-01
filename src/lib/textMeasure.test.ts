@@ -6,7 +6,7 @@
  * identical lines; these cases pin the rules that made that true.
  */
 import { describe, it, expect } from 'vitest';
-import { wrapText, lineSpacingPt, linesHeightPt, cssFont, cssFace, browserFace, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, resolveLineMetrics, GROW_EXTRA_PT } from './textMeasure';
+import { wrapText, lineSpacingPt, linesHeightPt, cssFont, cssFace, browserFace, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, drawnBoldWideningPt, resolveLineMetrics, GROW_EXTRA_PT } from './textMeasure';
 
 /** Every character one point wide, so widths are character counts. */
 const mono = (s: string) => s.length;
@@ -203,9 +203,55 @@ describe('the canvas measurer', () => {
     for (const family of ['Arial', 'Times New Roman', 'Verdana', 'Tahoma', 'Segoe UI', 'Calibri', 'Georgia', 'Courier New', 'Trebuchet MS', 'Consolas']) {
       expect(bold(family)).toBe(false);
     }
-    // s44b: MS Gothic and SimSun's bold measured otherwise, so they are left out.
-    expect(bold('MS Gothic')).toBe(false);
-    expect(bold('SimSun')).toBe(false);
+    // Row 60 left out MS Gothic and SimSun, whose bold measured otherwise in
+    // s44b; row 67 found how, and the families GDI+ widens the same way.
+    for (const family of ['MS Gothic', 'SimSun', 'MS PGothic', 'Gulim', 'Dotum', 'MingLiU', 'PMingLiU', 'Elephant', 'Ink Free']) {
+      expect(bold(family)).toBe(true);
+    }
+    // A symbol font GDI+ widens evenly but DevExpress printed by neither rule.
+    expect(bold('Marlett')).toBe(false);
+  });
+
+  /*
+   * DevExpress's own line breaks and short lines, from s53, s53b and s53c:
+   * for each, the widening past the regular's GDI width at the last box the
+   * text did not fit and the first it did, in hundredths of an inch. A line
+   * break ('b') is GDI+'s widening at a large em, a short line ('d') GDI+'s at
+   * the size drawn (row 67).
+   */
+  const DX_BOLD: [string, string, number, 'b' | 'd', number, number][] = [
+    ['MS Gothic', 'AVATAR Wave To LT Yo', 8, 'b', 0.4989, 0.5489],
+    ['MS Gothic', 'AVATAR Wave To LT Yo', 30, 'b', 2.0033, 2.0533],
+    ['MS Gothic', 'AAAAAAAAAA', 10, 'b', 0.2956, 0.3456],
+    ['MS Gothic', 'A A A A A A', 8, 'b', 0.2489, 0.2989],
+    ['MS Gothic', 'A A A A A A', 20, 'b', 0.7022, 0.7522],
+    ['SimSun', 'A A A A A A', 20, 'b', 0.7022, 0.7522],
+    ['MS PGothic', 'AVATAR Wave To LT Yo', 20, 'b', 1.3474, 1.3974],
+    ['Gulim', 'A A A A A A', 20, 'b', 2.9543, 3.0043],
+    ['Gulim', 'A A A A A A', 8, 'b', 1.1457, 1.1957],
+    ['Dotum', 'AVATAR Wave To LT Yo', 12, 'b', 3.2024, 3.2524],
+    ['MingLiU', 'AVATAR Wave To LT Yo', 20, 'b', 5.4022, 5.4522],
+    ['PMingLiU', 'A A A A A A', 10, 'b', 1.4529, 1.5029],
+    ['Elephant', 'A A A A A A', 8, 'b', 1.1013, 1.1513],
+    ['Elephant', 'A A A A A A', 20, 'b', 2.8033, 2.8533],
+    ['Ink Free', 'AVATAR Wave To LT Yo', 20, 'b', 5.1469, 5.1969],
+    ['Modern No. 20', 'AAAAAAAAAA', 12, 'b', 1.5025, 1.5525],
+    ['Impact', 'A A A A A A', 20, 'b', 3.3027, 3.3527],
+    ['SimSun', 'AVATAR Wave To LT Yo', 8, 'd', 3.4489, 3.4989],
+    ['Gulim', 'AVATAR Wave To LT Yo', 20, 'd', 8.6546, 8.7046],
+    ['Gulim', 'A A A A A A', 8, 'd', 1.2957, 1.3457],
+    ['Dotum', 'AVATAR Wave To LT Yo', 12, 'd', 5.2024, 5.2524],
+    ['MingLiU', 'AVATAR Wave To LT Yo', 20, 'd', 8.6522, 8.7022],
+    ['PMingLiU', 'A A A A A A', 10, 'd', 1.6029, 1.6529],
+    ['Modern No. 20', 'AAAAAAAAAA', 12, 'd', 3.3025, 3.3525],
+  ];
+  it.each(DX_BOLD)('widens %s Bold "%s" at %spt as DevExpress does (%s, row 67)', (family, text, sizePt, kind, notFit, fit) => {
+    const font = { family, sizePt, bold: true, italic: false };
+    const hundredths = ((kind === 'b' ? boldWideningPt(text, font) : drawnBoldWideningPt(text, font)) / 72) * 100;
+    // Above the box it did not fit, and within the first it did, allowing
+    // row 59's slack of 22.5 millionths of a box of that size.
+    expect(hundredths).toBeGreaterThan(notFit);
+    expect(hundredths).toBeLessThanOrEqual(fit + 0.01);
   });
 
   it('widens a synthesized bold by 41/2048 of an em for every character but a space (row 60)', () => {

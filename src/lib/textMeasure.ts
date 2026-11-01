@@ -377,15 +377,53 @@ export function gdiKerns(font: FontSpec): boolean {
 }
 
 /*
- * Families with no bold face, whose bold Windows synthesizes (parity row 60):
- * every family on the Windows Server 2019 machine DevExpress was measured on
- * whose bold GDI+ widened every character by the same share of the em, which
- * a drawn bold face never does. Not the Chinese, Japanese and Korean ones,
- * such as MS Gothic and SimSun, whose bold DevExpress widened by about a
- * sixth of that in s44b. The browser cannot tell these apart itself: given a
- * bold of Cambria Math it measures another face's bold, and it widens no
- * synthesized bold at all.
+ * Families with no bold face, whose bold Windows synthesizes (parity rows 60
+ * and 67): every family on the Windows Server 2019 machine DevExpress was
+ * measured on whose bold GDI+ widened every character by the same share of
+ * the em, which a drawn bold face never does. The browser cannot tell these
+ * apart itself: given a bold of Cambria Math it measures another face's bold,
+ * and it widens no synthesized bold at all.
+ *
+ * How far each widens is GDI+'s, in two places that differ (row 67, s53 to
+ * s53c). DevExpress breaks lines by GDI+'s widening at a large em, which it
+ * measured at every size from 8 to 30pt; and it decides whether one line is
+ * short (row 59) by GDI+'s widening at the size drawn. For most families the
+ * two are the same, 41/2048 of the em for every character but a space. For
+ * three groups GDI+ widens less once the em is large, and widens spaces too:
+ *
+ * - the twelve designed on a thousand units, Elephant, Ink Free, Modern No. 20
+ *   and nine barcode fonts: 20/1000 drawn, 19/2048 for line breaks. Elephant's
+ *   "A A A A A A" broke 1.13 units past its regular at 8pt and 2.84 at 20pt.
+ * - Gulim, Dotum, MingLiU and PMingLiU, with their fixed-pitch and extension
+ *   faces: 40/2048 drawn, 20/2048 for line breaks.
+ * - MS Gothic, MS Mincho, SimSun and the faces made with them: 40/2048 drawn,
+ *   5/2048 for line breaks, which is why s44b found their bold widened by about
+ *   a sixth of what row 60's rule gives.
+ *
+ * Marlett, a symbol font GDI+ also widens evenly, printed by neither rule in
+ * s53c and is left out.
  */
+interface BoldWidening {
+  /** Share of the em each character widens by where DevExpress breaks lines. */
+  breaks: number;
+  /** Whether that widens spaces as well. */
+  spaces: boolean;
+  /** Share of the em each character but a space widens by at the drawn size. */
+  drawn: number;
+}
+const WIDE: BoldWidening = { breaks: 41 / 2048, spaces: false, drawn: 41 / 2048 };
+const THOUSAND_UNITS: BoldWidening = { breaks: 19 / 2048, spaces: true, drawn: 20 / 1000 };
+const GULIM: BoldWidening = { breaks: 20 / 2048, spaces: true, drawn: 40 / 2048 };
+const GOTHIC: BoldWidening = { breaks: 5 / 2048, spaces: true, drawn: 40 / 2048 };
+const BOLD_WIDENING = new Map<string, BoldWidening>([
+  ...['elephant', 'ink free', 'modern no. 20', 'code39azaleanarrow1', 'code39azaleanarrow2', 'code39azaleanarrow3',
+    'code39azalearegular1', 'code39azalearegular2', 'code39azalearegular3', 'code39azaleawide1', 'code39azaleawide2',
+    'code39azaleawide3'].map((f): [string, BoldWidening] => [f, THOUSAND_UNITS]),
+  ...['dotum', 'dotumche', 'gulim', 'gulimche', 'mingliu', 'mingliu-extb', 'mingliu_hkscs', 'mingliu_hkscs-extb',
+    'pmingliu', 'pmingliu-extb'].map((f): [string, BoldWidening] => [f, GULIM]),
+  ...['bookshelf symbol 7', 'ms gothic', 'ms mincho', 'ms pgothic', 'ms ui gothic', 'nsimsun', 'simsun', 'simsun-extb',
+    'simsun-extg'].map((f): [string, BoldWidening] => [f, GOTHIC]),
+]);
 const SYNTHESIZED_BOLD = new Set([
   '3 of 9 barcode', 'algerian', 'arial unicode ms', 'baskerville old face', 'bauhaus 93',
   'bernard mt condensed', 'blackadder itc', 'bradley hand itc', 'broadway', 'buxton sketch',
@@ -413,23 +451,37 @@ const SYNTHESIZED_BOLD = new Set([
   'wingdings 3',
 ]);
 
-/*
- * How far a synthesized bold widens each character but a space, as a share of
- * the em: 41/2048, GDI+'s at every size from 8 to 20pt (row 60). A space is
- * not widened. A font designed on 1000 units widens by 20 of them, which is
- * within a thousandth of this.
- */
-const SYNTHESIZED_BOLD_EM = 41 / 2048;
+/** How a family's synthesized bold widens, or null when its bold is drawn. */
+function boldWidening(font: FontSpec): BoldWidening | null {
+  if (!font.bold) return null;
+  const family = font.family.trim().toLowerCase();
+  return BOLD_WIDENING.get(family) ?? (SYNTHESIZED_BOLD.has(family) ? WIDE : null);
+}
 
 /** Whether a font's bold is synthesized, so measured as its regular widened. */
 export function synthesizedBold(font: FontSpec): boolean {
-  return font.bold && SYNTHESIZED_BOLD.has(font.family.trim().toLowerCase());
+  return boldWidening(font) !== null;
 }
 
-/** Points a synthesized bold adds to a text's regular width; 0 for any other font. */
+const letters = (text: string) => [...text].filter((ch) => ch !== ' ').length;
+
+/**
+ * Points a synthesized bold adds to a text's regular width where DevExpress
+ * breaks lines (rows 60 and 67); 0 for any other font.
+ */
 export function boldWideningPt(text: string, font: FontSpec): number {
-  if (!synthesizedBold(font)) return 0;
-  return [...text].filter((ch) => ch !== ' ').length * SYNTHESIZED_BOLD_EM * font.sizePt;
+  const widening = boldWidening(font);
+  if (!widening) return 0;
+  return (widening.spaces ? [...text].length : letters(text)) * widening.breaks * font.sizePt;
+}
+
+/**
+ * Points a synthesized bold adds to a text's width at the size it is drawn,
+ * which decides whether one line is short (rows 59 and 67); 0 for any other font.
+ */
+export function drawnBoldWideningPt(text: string, font: FontSpec): number {
+  const widening = boldWidening(font);
+  return widening ? letters(text) * widening.drawn * font.sizePt : 0;
 }
 
 /** The CSS font string a measuring canvas uses: MEASURE_PX pixels. */
@@ -456,7 +508,9 @@ export function canvasMeasurer(): MeasureText | null {
   const cache = new Map<string, number>();
   // A width in points: at MEASURE_PX pixels an em is MEASURE_PX wide, and at
   // the font's size it is that many points.
-  const widthPt = (s: string, font: FontSpec, kerned: boolean) => {
+  // The bold's widening is added after: GDI+'s at a large em for a line
+  // break, at the drawn size for whether one line is short (row 67).
+  const widthPt = (s: string, font: FontSpec, kerned: boolean, widening: (s: string, font: FontSpec) => number) => {
     const synthesized = synthesizedBold(font);
     const face = measureFont(synthesized ? { ...font, bold: false } : font);
     const key = `${face.css}\u0000${face.stretch}\u0000${kerned ? 'k' : 'u'}\u0000${s}`;
@@ -467,18 +521,18 @@ export function canvasMeasurer(): MeasureText | null {
       width = context.measureText(s).width;
       cache.set(key, width);
     }
-    return (width * font.sizePt) / MEASURE_PX + boldWideningPt(s, font);
+    return (width * font.sizePt) / MEASURE_PX + widening(s, font);
   };
   const measure: MeasureText = (text, font, maxPt) => {
     const kerned = gdiKerns(font);
-    return wrapText(text, (s) => widthPt(s, font, kerned), maxPt);
+    return wrapText(text, (s) => widthPt(s, font, kerned, boldWideningPt), maxPt);
   };
   /*
    * Exact, with no slack: in s43j Arial's 311.822-unit line was short in a
    * 311.822 box and not in 311.821, and Times New Roman's 307.020-unit line
    * in a 307.021 box and not in 307.020.
    */
-  measure.fitsUnkerned = (text, font, maxPt) => widthPt(text, font, false) <= maxPt * (1 + 1e-9);
+  measure.fitsUnkerned = (text, font, maxPt) => widthPt(text, font, false, drawnBoldWideningPt) <= maxPt * (1 + 1e-9);
   return measure;
 }
 
