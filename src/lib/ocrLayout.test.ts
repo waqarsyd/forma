@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectLayout, fontFromInk } from './ocrLayout';
+import { detectLayout, fontFromInk, fontFromWidth, layoutText } from './ocrLayout';
 import type { OcrLine, OcrPage } from './ocr';
 
 /** A line of words, each `[text, x0, x1, confidence]`, at a height of 13 pixels from `y`. */
@@ -47,6 +47,8 @@ describe('detectLayout', () => {
     ]);
     expect(t.columns).toHaveLength(3);
     expect(t.x).toBe(60);
+    // One size for every cell, the median of theirs.
+    expect(new Set(t.rows.flatMap((r) => r.cells.map((c) => c?.fontSize))).size).toBe(1);
   });
 
   it('keeps words a space apart in one label, and a single row of two texts as labels', () => {
@@ -74,6 +76,56 @@ describe('detectLayout', () => {
     expect(layout.ignored).toBe(2);
   });
 
+  it('does not run a row into a table it does not line up with, however close', () => {
+    // s23-gen: a chart's axis labels sit just above the cross-tab printed under it.
+    const [p] = layoutOf([
+      line(280, ['North', 157, 187], ['South', 307, 338], ['West', 461, 489]),
+      line(300, ['Region', 50, 91], ['Q1', 151, 166], ['Q2', 250, 267], ['Q3', 350, 367], ['Q4', 450, 468], ['Total', 550, 620]),
+      line(320, ['North', 51, 85], ['100', 152, 171], ['400', 251, 272], ['700', 352, 373], ['1000', 452, 480], ['2200', 551, 579]),
+    ]).pages;
+    expect(p.tables).toHaveLength(1);
+    expect(p.tables[0].rows.map((r) => r.cells[0]?.text)).toEqual(['Region', 'North']);
+    expect(p.labels.map((l) => l.text)).toEqual(['North', 'South', 'West']);
+  });
+
+  it('keeps values printed on a picture out of tables, and sets aside a mark with no letter or digit', () => {
+    const bar = (x0: number, x1: number): OcrLine => {
+      const l = line(200, ['||', x0, x1, 30]);
+      l.box = { ...l.box, y1: 360 };
+      l.words[0].box = { ...l.words[0].box, y1: 360 };
+      return l;
+    };
+    const layout = layoutOf([
+      bar(300, 340),
+      bar(400, 440),
+      line(210, ['1000', 305, 335], ['1200', 405, 435]),
+      line(230, ['700', 305, 330], ['900', 405, 430]),
+      line(400, ['Sales', 60, 90], ['|]', 300, 304, 50]),
+    ]);
+    const [p] = layout.pages;
+    expect(p.tables).toEqual([]);
+    expect(p.labels.map((l) => l.text).sort()).toEqual(['1000', '1200', '700', '900', 'Sales']);
+    expect(p.ignored.map((l) => l.text)).toEqual(['||', '||', '|]']);
+    // A letter or two standing far taller than the text is a picture too.
+    const big: OcrLine = { ...line(500, ['B', 300, 330, 90]), box: { x0: 300, y0: 500, x1: 330, y1: 530 } };
+    big.words[0].box = { x0: 300, y0: 500, x1: 330, y1: 530 };
+    expect(layoutOf([line(100, ['Sales', 60, 90]), line(120, ['North', 60, 95]), big]).pages[0].ignored.map((l) => l.text)).toEqual(['B']);
+  });
+  it('sizes a table by the widths of its cells when their boxes take in the borders', () => {
+    // s23-gen's cross-tab: Tesseract's boxes were as tall as the cells.
+    const boxed = (l: OcrLine): OcrLine => ({
+      ...l,
+      box: { ...l.box, y1: l.box.y0 + 30 },
+      words: l.words.map((w) => ({ ...w, box: { ...w.box, y1: w.box.y0 + 30 } })),
+    });
+    const [p] = layoutOf([
+      boxed(line(300, ['Region', 60, 100], ['Q1', 300, 318], ['Total', 450, 480])),
+      boxed(line(340, ['North', 60, 92], ['1000', 300, 327], ['2200', 450, 477])),
+    ]).pages;
+    expect(p.tables).toHaveLength(1);
+    // By height every cell is 31pt; by width they run 8.5 to 10.5, and the median is 9.
+    expect(p.tables[0].rows.flatMap((r) => r.cells.map((c) => c?.fontSize))).toEqual([9, 9, 9, 9, 9, 9]);
+  });
   it('narrows a margin the text sits inside, so nothing lands outside the page\'s content', () => {
     const [p] = layoutOf([line(20, ['Header', 30, 90])]).pages;
     expect(p.margins.left).toBe(30);
@@ -97,5 +149,29 @@ describe('fontFromInk', () => {
     expect(fontFromInk('sum', 7, 'HundredthsOfAnInch').em).toBeCloseTo(14, 6);
     expect(fontFromInk('X', 1, 'HundredthsOfAnInch').size).toBe(6);
     expect(fontFromInk('X', 500, 'HundredthsOfAnInch').size).toBe(48);
+  });
+
+  it('reads a size from the width as well, digits about half an em', () => {
+    // 1000 at 9.75pt in Times New Roman is 19.5pt wide, 27.08 hundredths of an inch.
+    expect(fontFromWidth('1000', 27.08, 'HundredthsOfAnInch')).toBe(9);
+    expect(fontFromWidth('Region', 40, 'HundredthsOfAnInch')).toBe(9.5);
+    expect(fontFromWidth('', 40, 'HundredthsOfAnInch')).toBe(48);
+  });
+});
+
+describe('layoutText', () => {
+  it('writes every string with its box for the model, tables as tables, unsure strings marked', () => {
+    const [p] = layoutOf([
+      line(100, ['Total', 60, 90], ['due', 94, 112, 41]),
+      line(300, ['Item', 60, 90], ['Qty', 300, 325], ['Price', 450, 490]),
+      line(320, ['Chai', 60, 88], ['12', 305, 320], ['18.00', 450, 492]),
+    ]).pages;
+    const lines = layoutText(p, 3, 'HundredthsOfAnInch', 'scan.pdf').split('\n');
+    expect(lines[0]).toMatch(/^scan\.pdf, page 3: text READ BY OCR from the page image/);
+    expect(lines[1]).toBe('Page is 850 x 1100 report units.');
+    expect(lines[2]).toMatch(/^"Total due" x=60 y=97 w=52 h=\d+ size=9\.5pt LOW CONFIDENCE \(41\)$/);
+    expect(lines[3]).toMatch(/^Table 1: x=60 y=\d+, 3 columns of widths \d+, \d+, \d+, 2 rows:$/);
+    expect(lines[4]).toMatch(/^ {2}row y=\d+ h=\d+: "Item" .* \| "Qty" .* \| "Price" .*$/);
+    expect(lines).toHaveLength(6);
   });
 });

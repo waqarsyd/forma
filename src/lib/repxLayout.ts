@@ -23,7 +23,8 @@
  *   causes it, and nothing said when a generation did;
  * - a band taller than the usable page can never fit, so it paginates one
  *   record per sheet, the "page-height Detail band" that the Preview was built
- *   to expose.
+ *   to expose. A band its page breaks divide into pieces that each fit is not
+ *   one: DevExpress prints the pieces on pages of their own (2026-11-01).
  *
  * All three are warnings: the file opens and prints, wrongly. One finding per
  * kind per report, with the first few names, like the accessibility checks.
@@ -55,7 +56,14 @@ export function auditLayoutBounds(xml: string | null | undefined): RepxFinding[]
   const allBands = structure.bands.flatMap((b) => (b.sub ? [b, ...b.sub.bands] : [b]));
   for (const band of allBands) {
     if (band.kind === 'TopMargin' || band.kind === 'BottomMargin' || band.kind === 'DetailReport') continue;
-    if (band.height > usableHeight + TOLERANCE) tallBands.push(band.name || band.kind);
+    // A page break divides a band, and only the tallest piece has to fit: a
+    // report built from OCR carries a two-page scan as one band, broken where
+    // the first page ends, and `RepxProbe render` printed it as two pages with
+    // every text in place (2026-11-01).
+    const breaks = band.controls.filter((c) => c.type === 'XRPageBreak').map((c) => c.y + c.offsetY).sort((a, b) => a - b);
+    const edges = [0, ...breaks, band.height];
+    const tallest = Math.max(...edges.slice(1).map((e, i) => e - edges[i]));
+    if (tallest > usableHeight + TOLERANCE) tallBands.push(band.name || band.kind);
     for (const c of band.controls) {
       // Cells have no rectangle; everything else does. A hidden control prints
       // nothing, so it cannot run off the page or out of its band.

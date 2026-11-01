@@ -174,3 +174,14 @@ describe('a generation that fails for a reason retrying cannot fix', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('what the generation prompt says about text read by OCR', () => {
+  it('calls it measured rather than exact, with its tables as tables and its unsure strings read from the image', async () => {
+    const fetchMock = stubSequence(good);
+    await analyzeReportDesign('', parts, config);
+    const body = String((fetchMock.mock.calls[0][1] as RequestInit | undefined)?.body);
+    expect(body).toContain('Text READ BY OCR is a third kind');
+    expect(body).toContain('write one XRTable with those columns and rows');
+    expect(body).toContain('A string marked LOW CONFIDENCE may be misread');
+  });
+});

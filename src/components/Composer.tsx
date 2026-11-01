@@ -33,6 +33,7 @@ import {
   IconDoc,
   IconPaperclip,
   IconText,
+  IconScan,
   IconWarn,
 } from './landing/icons';
 
@@ -74,6 +75,11 @@ export interface ComposerProps {
    * component can be rendered without it; absent, no button is drawn.
    */
   onDescribe?: () => void;
+  /**
+   * Opens the OCR dialog for the attached images and scans. Absent when
+   * nothing attached has only pixels, and then no button is drawn.
+   */
+  onReadText?: () => void;
 }
 
 export default function Composer({
@@ -98,6 +104,7 @@ export default function Composer({
   isIngesting,
   onAddKey,
   onDescribe,
+  onReadText,
 }: ComposerProps) {
   /*
    * One condition, read by the button *and* the keyboard.
@@ -237,6 +244,17 @@ export default function Composer({
             disabled={isAnalyzing || isChatting}
           >
             <IconText size={16} />
+          </button>
+        )}
+        {onReadText && (
+          <button
+            className="wb-tool"
+            aria-label="Read text with OCR"
+            title="Read the text of the attached images and scans with OCR, in your browser, and see what was found"
+            onClick={onReadText}
+            disabled={isAnalyzing || isChatting || isIngesting}
+          >
+            <IconScan size={16} />
           </button>
         )}
         <input

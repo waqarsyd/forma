@@ -321,6 +321,8 @@ Three things worth knowing before touching this again:
 - **`h` is 0 for vertical fonts**, which is the same branch that leaves them unsized in pdf.js. The prompt says so, and says to fall back to the image for those.
 - **Nothing in the suite covers any of this.** It is prompt prose plus one line of extracted text. Verified by reading; the check that settles it is a generation from a PDF with a real text layer, then measuring a known heading in the designer against the source.
 
+**Text read by OCR is a third kind, and the prompt says so (2026-11-01).** A scan has no text layer, so the OCR dialog can attach what Tesseract read instead (see *OCR reads the text of an image or a scan, in the browser* in `app-shell.md`). It is measured, not exact, and the attachment's header says it was READ BY OCR. SOURCE PRECEDENCE gained one bullet for it: use its boxes for LocationFloat and SizeF and its strings for Text=; take its size in points for Font=; write each table it lists as one XRTable; and read any string marked LOW CONFIDENCE from the image instead. Otherwise it wins over a fresh reading of the pixels. `generationRetry.test.ts` pins the bullet in the request. **`npm run bench:fidelity` has not been run against this change**; it spends the owner's quota, so it is theirs to run.
+
 ## The report that finished without the REPX finishing (2026-09-03)
 
 There are **two** truncations in this pipeline and they had been discussed as one. Separating them is most of the fix.

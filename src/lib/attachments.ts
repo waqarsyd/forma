@@ -18,6 +18,12 @@ export interface PreviewMeta {
   file: string;
   /** 1-based page number, only for multi-page sources. */
   page?: number;
+  /**
+   * A rendered PDF page's size in PDF points, so OCR can read the image at its
+   * resolution and place its text on the page it came from. Absent for an
+   * uploaded image, which OCR fits to the configured paper instead.
+   */
+  pagePoints?: { width: number; height: number };
 }
 
 export interface AttachmentGroup {

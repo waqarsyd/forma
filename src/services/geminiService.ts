@@ -1899,6 +1899,7 @@ ${houseStyleContext}
           - **An extracted string's h is its font's em size, read out of the file — so it is that string's EXACT font size as well as its height.** Use it for that element's "fontSize" verbatim and do NOT re-estimate the size from the page image; convert it to points for Font= with the arithmetic under FONT SIZE IS ALWAYS IN POINTS. (An h of 0 means the extractor could not size that one string — only then read it from the image.)
           - Use the page image for what the text layer cannot express: borders, rules, fills, logos, images, alignment and overall visual structure.
           - If the image and the extracted text disagree about a string or a position, the extracted text wins.
+          - **Text READ BY OCR is a third kind, and its header says so.** It was measured from the page image in the browser, not taken from the file. Use its x/y/w/h for LocationFloat and SizeF and its strings for Text= exactly as above, and its size (in points) for Font=, converting to the layout's fontSize. Where it lists a table, write one XRTable with those columns and rows, not a grid of labels. A string marked LOW CONFIDENCE may be misread: read that one from the image. Otherwise its positions and strings win over a fresh reading of the image.
           - When an existing .repx is supplied, treat it as the base structure and preserve it, applying only the changes the user asks for.
 
           PHASE 1: SPATIAL MAPPING

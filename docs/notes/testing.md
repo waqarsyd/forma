@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,054 tests in 100 files** — under the `node` environment
+`npm test` runs Vitest over **2,071 tests in 101 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -84,6 +84,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/DescribeReportDialog` | 6 | jsdom; the Prompt-to-Report wizard, no key and no network |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
+| `components/OcrDialog` | 7 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run, low-confidence text listed and named or left out, a report built after the app's checks, the text attached for the model, a PDF page read at its resolution |
 | `components/ReportPreview` | 16 | jsdom; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
@@ -115,8 +116,8 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/netDecimal` | 8 | .NET's decimal: scale, exact sums, 28-place division, both roundings |
 | `lib/netFormat` | 15 | .NET composite, date and number formatting in en-US; every cell of parity case s15's format table is a string DevExpress drew |
 | `lib/ocr` | 3 | Tesseract's blocks read as words and lines with boxes and confidence, enlarged boxes divided back |
-| `lib/ocrLayout` | 8 | OCR to layout: a label at its text, a line split at a gap wider than it is tall, aligned rows as a table, low-confidence words flagged, picture readings set aside, margins fitted to the content, a screenshot fitted to the printable width, the font from the ink |
-| `lib/ocrRepx` | 4 | jsdom; a detected layout written as a .repx: the app's own checks pass, every label and cell where the layout put it, a page break per page, Dpi and paper by the repair passes, flagged text named or left out |
+| `lib/ocrLayout` | 13 | OCR to layout: a label at its text, a line split at a gap wider than it is tall, aligned rows as a table and a row that does not line up kept out of it, a table sized by its cells' widths when their boxes take in the borders, the text for the model, low-confidence words flagged, picture readings set aside, margins fitted to the content, a screenshot fitted to the printable width, the font from the ink |
+| `lib/ocrRepx` | 6 | jsdom; a detected layout written as a .repx: the app's own checks pass, every label and cell where the layout put it on the report header, a page break per page, labels as wide as Arial prints them, the Mockup's layout and the spec from the same controls, Dpi and paper by the repair passes, flagged text named or left out |
 | `lib/panelSize` | 13 |  |
 | `lib/pdf` | 5 |  |
 | `lib/pdfWriter` | 5 | the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
@@ -125,7 +126,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/reportBands` | 15 |  |
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
-| `lib/reportGeometry` | 40 |  |
+| `lib/reportGeometry` | 41 |  |
 | `lib/reportPreview` | 280 | 22 from five loops, the fifth an `it.each` over the four table-of-contents placements: parity cases c05 to c05e page for page, the seven s19 nesting variants, the four one-field-per-kind cross-tabs' CSVs, and s29a and s29b; a chart's points over test data against DevExpress's, and its pie shares (row 32) |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
@@ -138,7 +139,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxEdit` | 25 |  |
 | `lib/repxGroups` | 12 | nested groups written without `Level`; parity case s19, written as DevExpress printed it inside out, repaired and paginated into the nesting it printed with `Level` |
 | `lib/repxItems` | 12 |  |
-| `lib/repxLayout` | 10 | controls past the printable width or their band, bands taller than the page, inside a detail report too |
+| `lib/repxLayout` | 11 | controls past the printable width or their band, bands taller than the page, inside a detail report too |
 | `lib/repxMargins` | 24 |  |
 | `lib/repxOverlaps` | 11 | FixLayoutErrors: overlapping siblings found and moved apart |
 | `lib/repxPaper` | 10 | the paper DevExpress prints on, and naming it as its serializer does; parity row 44 |
@@ -168,7 +169,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `server/staticCache` | 10 |  |
 | `services/chatRetry` | 10 |  |
 | `services/embeddings` | 20 | SDK mocked, as `geminiService` is |
-| `services/generationRetry` | 7 | the generation path's runaway and truncated-stream retries, against a stubbed stream |
+| `services/generationRetry` | 8 | the generation path's runaway and truncated-stream retries, against a stubbed stream |
 | `services/geminiService` | 33 | 7 of these come from one loop |
 | `services/keyVault` | 21 | jsdom |
 | `services/library` | 15 | storage and embedding injected |
@@ -177,7 +178,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,054 in 100 files** — and that total is the arithmetic sum of the column above
+**Total: 2,071 in 101 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -191,7 +192,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,955** against a real 2,054 and will talk you into
+A grep for `\bit(` answers **1,972** against a real 2,071 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

@@ -20,6 +20,7 @@ import {
   placeImage,
   pixelBoxToUnits,
   pageForImage,
+  imageDpi,
 } from './reportGeometry';
 
 /**
@@ -365,5 +366,14 @@ describe('placing a page image on the report page', () => {
     expect(pageForImage({ width: 1530, height: 1980, dpi: 180 }, 'HundredthsOfAnInch')).toEqual({ width: 850, height: 1100 });
     expect(pageForImage({ width: 800, height: 1200, dpi: null }, 'HundredthsOfAnInch')).toEqual({ width: 850, height: 1100 });
     expect(pageForImage({ width: 1600, height: 900, dpi: null }, 'HundredthsOfAnInch')).toEqual({ width: 1100, height: 850 });
+  });
+
+  it('takes the configured paper for a screenshot, and a rendered page\'s resolution from its own width', () => {
+    const a4 = pageSizeInUnits('A4', 'HundredthsOfAnInch');
+    expect(pageForImage({ width: 800, height: 1200, dpi: null }, 'HundredthsOfAnInch', 'A4')).toEqual(a4);
+    expect(pageForImage({ width: 1200, height: 800, dpi: null }, 'HundredthsOfAnInch', 'A4')).toEqual({ width: a4.height, height: a4.width });
+    // A Letter page, 612 points wide, rendered 1,530 pixels across.
+    expect(imageDpi(1530, 612)).toBe(180);
+    expect(imageDpi(0, 612)).toBeNull();
   });
 });

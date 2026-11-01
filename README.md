@@ -90,6 +90,7 @@ The claim is enforced, not just intended: the server sends a Content-Security-Po
 Each of these is a shipped code path, not a plan.
 
 - **Image, PDF and `.repx` intake.** Drop a mockup, a scan, a photo, or an existing report. PDFs are rasterised *and* have their text layer extracted, so exact strings survive rather than being read back out of pixels ([`src/App.tsx`](src/App.tsx), [`src/lib/pdf.ts`](src/lib/pdf.ts)).
+- **OCR for images and scans, in the browser.** The scan button reads every attached image and every PDF page with no text layer with Tesseract.js, shows what it found over the source with the unsure text marked, and then builds the `.repx` straight from it or hands the text to the model. Nothing leaves the browser ([`src/components/OcrDialog.tsx`](src/components/OcrDialog.tsx), [`src/lib/ocrLayout.ts`](src/lib/ocrLayout.ts)).
 - **Three artifacts in one structured response** — spec, `layout`, and `repxContent` — guaranteed parseable by a Gemini `responseSchema` rather than by hoping the model returns valid JSON ([`src/services/geminiService.ts`](src/services/geminiService.ts)).
 - **Targets your DevExpress version** — eight of them, 26.1 back to 20.1, written into the file's `SerializerVersion` so it drops into the codebase you already have. Worth knowing that the tag is a *label rather than a gate*: a newer `.repx` still opens in an older designer, which was measured with `RepxProbe inspect` and then confirmed through the product — a 23.2 file opened correctly in a real 20.1 designer, and the designer rewrote the tag on save. So pick the version you build against; nothing is lost if you pick wrong.
 - **In-browser mockup** drawn from the `layout` JSON, so you can see what the model understood before downloading anything.
@@ -277,6 +278,9 @@ src/
                        DescribeReportDialog (the Prompt-to-Report wizard:
                        predefined prompts, a description, an optional pasted
                        data source, and the model's follow-up questions),
+                       OcrDialog (the text of an image or a scan read with
+                       OCR, its detected layout drawn over the source before
+                       a .repx is built or the text sent to the model),
                        ChatThread
                        (the review column's transcript, lifted out of App.tsx
                        once chatSession.ts held its rules — the progress card

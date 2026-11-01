@@ -265,14 +265,29 @@ export function pixelBoxToUnits(box: PixelBox, at: ImagePlacement): { x: number;
 
 /**
  * The page an image is a picture of, in report units: a rendered PDF page's
- * own size from its pixels and resolution; for a screenshot, Letter, turned
- * when the image is wider than it is tall.
+ * own size from its pixels and resolution; for a screenshot, `paper` (the
+ * configured page size, Letter when absent), turned when the image is wider
+ * than it is tall.
  */
-export function pageForImage(image: { width: number; height: number; dpi: number | null }, reportUnit?: string): PageSize {
+export function pageForImage(
+  image: { width: number; height: number; dpi: number | null },
+  reportUnit?: string,
+  paper?: string,
+): PageSize {
   if (image.dpi && image.dpi > 0) {
     const per = unitsPerInch(reportUnit) / image.dpi;
     return { width: Math.round(image.width * per), height: Math.round(image.height * per) };
   }
-  const letter = pageSizeInUnits('Letter', reportUnit);
-  return image.width > image.height ? { width: letter.height, height: letter.width } : letter;
+  const size = pageSizeInUnits(paper ?? 'Letter', reportUnit);
+  return image.width > image.height ? { width: size.height, height: size.width } : size;
+}
+
+/**
+ * The resolution of a rendered PDF page as it reached the app: its width in
+ * pixels against the page's width in PDF points. Measured from the image
+ * rather than taken from the render scale, because a page image is resized
+ * on the way in when it is larger than the upload cap.
+ */
+export function imageDpi(pixelWidth: number, pageWidthPoints: number): number | null {
+  return pixelWidth > 0 && pageWidthPoints > 0 ? (pixelWidth * POINTS_PER_INCH) / pageWidthPoints : null;
 }

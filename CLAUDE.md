@@ -40,7 +40,7 @@ Most of the reasoning behind this codebase is **not in this file**. It lives in 
 | a truncated or half-written REPX, `src/lib/repxTruncation.ts` | [`gemini.md`](docs/notes/gemini.md) — *The report that finished without the REPX finishing*. Asked at the parse rather than at Export, and deliberately not `checkRepx`: that one answers *will the designer open this*, which a hand-written malformation fails the same way, and truncation is a specific enough diagnosis to repair automatically |
 | a repeated `Font`/`ForeColor`, a `<StyleSheet>`, `src/lib/repxStyles.ts` | [`gemini.md`](docs/notes/gemini.md) — *The style sheet, and one attribute that changes its name*. Every control the model writes carries its own appearance, so one heading treatment used forty times is forty edits that have to agree; note a control's `Borders` is a style's `Sides`, which is the kind of thing only a measurement finds |
 | file upload, PDF handling, `.repx` intake | [`app-shell.md`](docs/notes/app-shell.md) — File intake |
-| OCR, an image or a scan read for its text, `src/lib/ocr.ts`, `ocrLayout.ts`, `ocrRepx.ts`, the `/ocr/` assets, `'wasm-unsafe-eval'` | [`app-shell.md`](docs/notes/app-shell.md) — *OCR reads the text of an image or a scan, in the browser*. Approved by the owner on 2026-11-01 as Tesseract.js in the browser so that an upload never leaves it; its files come from `node_modules` through `ocrAssets` in `vite.config.ts`, never a CDN and never committed, and `check:size` budgets `dist/ocr/` apart from the rest. A digital PDF never comes here: its text layer is exact |
+| OCR, an image or a scan read for its text, the scan button, `OcrDialog.tsx`, `src/lib/ocr.ts`, `ocrLayout.ts`, `ocrRepx.ts`, the `/ocr/` assets, `'wasm-unsafe-eval'` | [`app-shell.md`](docs/notes/app-shell.md) — *OCR reads the text of an image or a scan, in the browser*. Approved by the owner on 2026-11-01 as Tesseract.js in the browser so that an upload never leaves it; its files come from `node_modules` through `ocrAssets` in `vite.config.ts`, never a CDN and never committed, and `check:size` budgets `dist/ocr/` apart from the rest. A digital PDF never comes here: its text layer is exact |
 | which pane the bench shows, adding a sixth plate, `src/lib/workspaceView.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *The result views are derived, not stored*. Two functions derive in opposite directions and must agree; a plate in one and not the other highlights its button and never opens its pane |
 | the Preview pane, pagination, PDF export, `src/lib/reportPreview.ts`, a page number or a `TextFormatString` as previewed, `src/lib/netFormat.ts`, text growth, line breaks or a split record, `src/lib/textMeasure.ts`, an expression, a total or a calculated field as previewed, `src/lib/criteria.ts`, `netDecimal.ts`, `reportData.ts`, a group's order or nesting, a `FilterString`, a parameter value or a formatting rule as previewed, Export CSV or XLSX, `src/lib/csvExport.ts`, `xlsxExport.ts`, a bookmark, a table of contents, the PDF outline, **PDF with outline**, `src/lib/pdfWriter.ts`, `pdfFromDom.ts`, Word, RTF, HTML or image export, `src/lib/exportItems.ts`, `docxExport.ts`, `rtfExport.ts`, `htmlExport.ts`, `exportFromDom.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *Preview is the only pane drawn from `repxContent`*. It is the only thing in the product that shows the artifact actually downloaded, which is why a page-height Detail band was invisible before it existed |
 | the Mockup pane, `ReportMockup`, a table row it draws, `src/lib/mockupRows.ts` | [`app-shell.md`](docs/notes/app-shell.md) — *The Mockup draws a repeated heading row once*. The layout deliberately holds the heading twice and the record count is derived from that, so the duplicate is fixed in the renderer and must not be fixed in the data |
@@ -214,7 +214,7 @@ broken, and nothing in the toolchain enforces any of them.
   arithmetic — this bullet used to state it as a before-and-after pair of suite totals,
   which was stale within days of being written.
 - **File naming: `PascalCase.tsx` for React components, `camelCase.ts` for everything
-  else.** 100% consistent today — **29** PascalCase components and **187** `.ts` files
+  else.** 100% consistent today — **30** PascalCase components and **187** `.ts` files
   (that is `git ls-files src`, tests included; **repo-wide the answer is 195**, because
   `server.ts` and the four root configs are also `.ts`. State the scope whenever you
   quote this number — an unqualified "67" is the next thing someone will "correct" to
@@ -234,18 +234,18 @@ broken, and nothing in the toolchain enforces any of them.
   unrecorded on 2026-10-28, and the parity work added `ReportPreview.test.tsx`. Measured
   again the same day after parity row 12: 153 and 161 before its six new `.ts` files,
   so the 151 written above had already been two short; rows 20 and 19 added two each,
-  and rows 29, 30, 33 and 44 two more each. The 2026-11-01 audit added `firebaseClient.test.ts` and `NotFoundPage.test.tsx`, re-measured as 172, 180, 41 and 39; parity row 18 added `pdfWriter.ts`, `pdfFromDom.ts` and a test, 175 and 183; row 21 six more, 181 and 189; OCR six more, 187 and 195.)
+  and rows 29, 30, 33 and 44 two more each. The 2026-11-01 audit added `firebaseClient.test.ts` and `NotFoundPage.test.tsx`, re-measured as 172, 180, 41 and 39; parity row 18 added `pdfWriter.ts`, `pdfFromDom.ts` and a test, 175 and 183; row 21 six more, 181 and 189; OCR six more, 187 and 195; its dialog and test, 30 components and 43 `.tsx` files.)
   **Three traps, each of which has been written in here as fact at least once.**
-  **(1) Do not "correct" the 29 to 41 by counting `.tsx` files.** There are 41, and the
-  twelve that are not components are deliberate: `main.tsx` is the entry point, `icons.tsx`
+  **(1) Do not "correct" the 30 to 43 by counting `.tsx` files.** There are 43, and the
+  thirteen that are not components are deliberate: `main.tsx` is the entry point, `icons.tsx`
   and `sections.tsx` export collections rather than one component, and
   `DataBinding.test.tsx`, `BatchPanel.test.tsx`, `ChatThread.test.tsx`,
   `Composer.test.tsx`, `AccountDialog.test.tsx`, `LibraryPanel.test.tsx`,
-  `DescribeReportDialog.test.tsx`, `ReportPreview.test.tsx` and `NotFoundPage.test.tsx` are
+  `DescribeReportDialog.test.tsx`, `ReportPreview.test.tsx`, `NotFoundPage.test.tsx` and `OcrDialog.test.tsx` are
   colocated component tests, named
   after the component they test exactly as `repx.test.ts` is named after `repx.ts`. Do
   not count them as components and do not rename them.
-  **(2)** `git ls-files 'src/**/*.tsx'` answers **39**, because that pathspec does not
+  **(2)** `git ls-files 'src/**/*.tsx'` answers **41**, because that pathspec does not
   match files sitting directly in `src/` and so drops `App.tsx` and `main.tsx`.
   **(3)** Count with `git ls-files | Where-Object { $_ -like '*.tsx' }` and *read the
   names*, rather than trusting whichever of the three numbers you got.

@@ -68,6 +68,15 @@ describe('auditLayoutBounds', () => {
     expect(codes(report(detail(label(1, 0, 0, 200, 30), 1000), '0, 0, 50, 50'))).toEqual([]);
   });
 
+  it('measures a band a page break divides by its tallest piece', () => {
+    // A two-page scan built by OCR: one band, broken where the first page ends.
+    // RepxProbe render printed it as two pages, every text in place (2026-11-01).
+    const pageBreak = (y: number) => `<Item9 Ref="30" ControlType="XRPageBreak" Name="pageBreak1" LocationFloat="0,${y}" />`;
+    expect(codes(report(detail(label(1, 0, 0, 200, 30) + pageBreak(1000) + label(2, 0, 1010, 200, 30), 2000), '0, 0, 50, 50'))).toEqual([]);
+    // A break that leaves a piece taller than the page does not excuse it.
+    expect(codes(report(detail(label(1, 0, 0, 200, 30) + pageBreak(1200), 2000), '0, 0, 50, 50'))).toEqual(['band-taller-than-page']);
+  });
+
   it('ignores a unit of rounding past an edge', () => {
     expect(codes(report(detail(label(1, 0, 0, 850.5, 100.5))))).toEqual([]);
   });

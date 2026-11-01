@@ -1603,3 +1603,46 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .lp-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
 .lp-count { flex: none; color: var(--ink-faint); font-family: var(--mono); font-size: 10.5px; white-space: nowrap; }
 .lp-row .wb-pill { flex: none; }
+
+/* ------------------------------------------------------------ OCR dialog
+   2026-11-01. The detected layout over its source, before any .repx is
+   written: OcrDialog.tsx. The sheet is paper, so it stays white in both
+   themes, as the Preview's pages do. */
+.wb-modal.wb-ocr { max-width: 980px; }
+.wb-root .wb-ocr .wb-modal-body { grid-template-columns: minmax(0, 560px) minmax(0, 1fr); }
+.wb-ocr-sheet { position: relative; margin: 0 auto; background: #fff; border: 1px solid var(--rule); box-shadow: var(--shadow-sm, none); overflow: hidden; }
+.wb-ocr-sheet img { position: absolute; max-width: none; height: auto; opacity: .85; pointer-events: none; }
+.wb-ocr-margin { position: absolute; border: 1px dashed rgba(0, 0, 0, .18); pointer-events: none; }
+.wb-ocr-box { position: absolute; border: 1px solid rgba(15, 157, 107, .55); background: rgba(15, 157, 107, .10); }
+.wb-ocr-box.is-flagged { border-color: #ba1a1a; background: rgba(186, 26, 26, .16); }
+.wb-ocr-box.is-ignored { border: 1px dashed rgba(0, 0, 0, .35); background: none; }
+.wb-ocr-box.is-focus { outline: 2px solid var(--accent); outline-offset: 2px; z-index: 1; }
+.wb-ocr-table { position: absolute; border: 1.5px solid rgba(254, 107, 0, .55); pointer-events: none; }
+.wb-ocr-col { position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(254, 107, 0, .45); }
+.wb-ocr-wait { display: grid; place-items: center; min-height: 240px; padding: 20px; border: 1px dashed var(--rule-strong); border-radius: 10px; font-size: 13px; color: var(--ink-faint); text-align: center; }
+.wb-ocr-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--ink-faint); }
+.wb-ocr-key { display: inline-block; width: 12px; height: 9px; margin-left: 8px; border: 1px solid rgba(15, 157, 107, .55); background: rgba(15, 157, 107, .10); }
+.wb-ocr-key:first-child { margin-left: 0; }
+.wb-ocr-key.is-flagged { border-color: #ba1a1a; background: rgba(186, 26, 26, .16); }
+.wb-ocr-key.is-ignored { border-style: dashed; border-color: var(--ink-faint); background: none; }
+.wb-ocr-key.is-table { border: 1.5px solid rgba(254, 107, 0, .55); background: none; }
+.wb-ocr-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.wb-ocr-runs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 13px; }
+.wb-ocr-run-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-ocr-run-state { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.wb-ocr-runs li.is-failed .wb-ocr-run-state { color: var(--bad-ink); }
+.wb-ocr-bar { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: var(--rule); overflow: hidden; }
+.wb-ocr-bar > span { display: block; height: 100%; background: var(--accent); transition: width .2s ease; }
+.wb-ocr-counts { margin: 0; font-size: 13px; }
+.wb-ocr-counts b { font-weight: 600; }
+.wb-ocr-counts b.is-flagged { color: var(--bad-ink); }
+.wb-ocr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
+.wb-ocr-list button { display: flex; width: 100%; justify-content: space-between; gap: 10px; padding: 6px 9px; border: 1px solid var(--bad-line); border-radius: 8px; background: var(--bad-wash); color: var(--ink); font-size: 12.5px; text-align: left; cursor: pointer; }
+.wb-ocr-list button.is-focus { border-color: var(--accent); }
+.wb-ocr-list-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-ocr-list-meta { flex: none; font-family: var(--mono); font-size: 11px; color: var(--bad-ink); }
+.wb-ocr-problems { padding: 10px 12px; border: 1px solid var(--bad-line); border-radius: 10px; background: var(--bad-wash); font-size: 12.5px; color: var(--ink); }
+.wb-ocr-problems p, .wb-ocr-problems ul { margin: 0 0 6px; }
+.wb-ocr-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+/* The sheet keeps its drawn width; on a narrow screen it scrolls rather than squeezing the boxes off their text. */
+.wb-ocr-scroll { max-width: 100%; overflow-x: auto; }

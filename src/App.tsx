@@ -143,6 +143,8 @@ const RevisionsPanel = lazy(() => import('./components/RevisionsPanel'));
    never opens the panel should not download it, and it pulls in the chunker,
    the store and the search behind it. */
 const LibraryPanel = lazy(() => import('./components/LibraryPanel'));
+/* OCR's dialog, and the engine it loads, are fetched only when someone opens it. */
+const OcrDialog = lazy(() => import('./components/OcrDialog'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -225,6 +227,7 @@ import LogoPulse from './components/LogoPulse';
 import ChatThread from './components/ChatThread';
 import Composer from './components/Composer';
 import DescribeReportDialog, { type DescribePhase } from './components/DescribeReportDialog';
+import type { OcrBuiltReport, OcrTextAttachment } from './components/OcrDialog';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
   clampReviewWidth,
@@ -484,7 +487,9 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
           out.images.push(image);
           // Same uploadId for every page, so the composer shows one attachment
           // for the file the user actually dropped rather than one per page.
-          out.imageMeta.push({ uploadId, file: name, page: n });
+          // Its size in points too, so OCR can read the image at its resolution.
+          const points = page.getViewport({ scale: 1 });
+          out.imageMeta.push({ uploadId, file: name, page: n, pagePoints: { width: points.width, height: points.height } });
         }
 
         const extracted = await extractPdfPageText(page, n, reportUnit);
@@ -502,7 +507,8 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
           }
         } else if (n === 1) {
           out.notices.push(
-            `"${name}" has no text layer — it looks like a scan, so text will be read from the image and may be less exact.`
+            `"${name}" has no text layer — it looks like a scan. Read its text with OCR (the scan button) to place every ` +
+            `string where it was printed; otherwise the model reads it from the image, less exactly.`
           );
         }
       }
@@ -2636,6 +2642,57 @@ export default function App() {
     setAttachmentTexts(prev => prev.filter(t => t.uploadId !== uploadId));
   };
 
+  /**
+   * The attached pages OCR can read: every image, and every PDF page with no
+   * text layer. A page whose text came out of its file is exact already.
+   */
+  const ocrPages = useMemo(() => {
+    const withText = new Set(attachmentTexts.map((t) => `${t.uploadId}#${t.page ?? 0}`));
+    return previews.flatMap((src, i) => {
+      const meta = previewMeta[i];
+      return meta && !withText.has(`${meta.uploadId}#${meta.page ?? 0}`) ? [{ src, meta }] : [];
+    });
+  }, [previews, previewMeta, attachmentTexts]);
+  const [ocrOpen, setOcrOpen] = useState(false);
+
+  /** A report built from OCR alone: every pane, a revision, and a line in the thread. */
+  const handleOcrBuild = (built: OcrBuiltReport) => {
+    const newResult: DesignResult = {
+      content: built.markdown,
+      timestamp: new Date(),
+      title: built.title,
+      layout: built.layout,
+      repxContent: built.repxContent,
+      usage: null,
+    };
+    setResult(newResult);
+    recordRevision('Read by OCR', newResult);
+    setActiveTab('ui');
+    const unsure = built.flagged
+      ? ` ${built.flagged} ${built.flagged === 1 ? 'text holds a word' : 'texts hold words'} read at low confidence, ` +
+        `named lowConfidence… in the report: check ${built.flagged === 1 ? 'it' : 'them'} against the source.`
+      : '';
+    setMessages(prev => [...prev, {
+      id: nextMessageId(),
+      role: 'assistant',
+      text: `Built "${built.title}" from the text OCR read, with no model involved.${unsure}`,
+      result: newResult,
+    }]);
+    setOcrOpen(false);
+  };
+
+  /** OCR's text, attached to the next message as a PDF's text layer is. */
+  const handleOcrText = (texts: OcrTextAttachment[]) => {
+    const stamp = Date.now();
+    setAttachmentTexts(prev => [
+      ...prev,
+      ...texts.map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}` })),
+    ]);
+    const files = [...new Set(texts.map((t) => `"${t.file}"`))].join(', ');
+    setUploadNotices(prev => [...prev, `Text read by OCR from ${files} is attached and goes with your next message.`]);
+    setOcrOpen(false);
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -4333,6 +4390,7 @@ export default function App() {
             isIngesting={isIngesting}
             onAddKey={() => setIsConfigOpen(true)}
             onDescribe={() => setDescribe({ kind: 'describe' })}
+            onReadText={ocrPages.length ? () => setOcrOpen(true) : undefined}
           />
         </div>
 
@@ -4800,6 +4858,18 @@ export default function App() {
           onAnswer={handleDescribeAnswers}
           onClose={() => setDescribe(null)}
         />
+      )}
+      {ocrOpen && ocrPages.length > 0 && (
+        <Suspense fallback={null}>
+          <OcrDialog
+            pages={ocrPages}
+            unit={config.unit}
+            pageSize={config.pageSize}
+            onBuild={handleOcrBuild}
+            onUseText={handleOcrText}
+            onClose={() => setOcrOpen(false)}
+          />
+        </Suspense>
       )}
       {isConfigOpen && (
         <div className="wb-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) dismissConfigWithoutSaving(); }}>

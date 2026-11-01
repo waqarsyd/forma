@@ -8,7 +8,7 @@
  * nothing lost, and printed every text where the layout put it.
  */
 import { describe, expect, it } from 'vitest';
-import { layoutToRepx, validateOcrRepx } from './ocrRepx';
+import { layoutToRepx, layoutToReport, ocrSummary, validateOcrRepx } from './ocrRepx';
 import { parseReportStructure } from './reportPreview';
 import type { DetectedLayout, DetectedText } from './ocrLayout';
 
@@ -45,12 +45,15 @@ describe('layoutToRepx', () => {
   });
 
   it('places every label and cell where the layout put it, a later page behind a page break', () => {
-    const detail = parseReportStructure(xml).bands.find((b) => b.kind === 'Detail')!;
-    const at = (type: string) => detail.controls.filter((c) => c.type === type).map((c) => `${c.text}@${c.x},${c.y}`);
+    // On the report header, which prints once; Detail is there, empty, because DevExpress expects one.
+    const bands = parseReportStructure(xml).bands;
+    expect(bands.map((b) => [b.kind, b.height])).toEqual([['TopMargin', 50], ['ReportHeader', 2000], ['Detail', 0], ['BottomMargin', 50]]);
+    const header = bands.find((b) => b.kind === 'ReportHeader')!;
+    const at = (type: string) => header.controls.filter((c) => c.type === type).map((c) => `${c.text}@${c.x},${c.y}`);
     // Band coordinates: the margin is the band's edge.
     expect(at('XRLabel')).toEqual(['Invoice & Co <42>@10,10', 'Smudge@350,10', 'Page two@10,1010']);
     expect(at('XRPageBreak')).toEqual(['@0,1000']);
-    const table = detail.controls.find((c) => c.type === 'XRTable')!;
+    const table = header.controls.find((c) => c.type === 'XRTable')!;
     expect([table.x, table.y, table.width, table.height]).toEqual([10, 70, 400, 40]);
     expect(table.rows.map((r) => r.cells.map((c) => c.text))).toEqual([['Item', 'Qty', 'Price'], ['Chai', '12', '']]);
   });
@@ -64,5 +67,39 @@ describe('layoutToRepx', () => {
     expect(xml).toMatch(/Name="lowConfidenceLabel2" Text="Smudge"/);
     expect(xml).toMatch(/Name="ocrLabel1"/);
     expect(layoutToRepx(layout, { dropFlagged: true })).not.toMatch(/Smudge/);
+  });
+});
+
+describe('layoutToReport and ocrSummary', () => {
+  it('gives the Mockup the same controls, a section per page, its font sizes in report units', () => {
+    const report = layoutToReport(layout, { title: 'Scan' });
+    expect([report.title, report.pageWidth]).toEqual(['Scan', 850]);
+    expect(report.sections.map((s) => [s.name, s.type, s.height])).toEqual([['Report header, page 1', 'header', 1000], ['Report header, page 2', 'header', 1000]]);
+    const [label, smudge, table] = report.sections[0].elements;
+    // As wide as the text prints in Arial: with no canvas, 0.6 em a character,
+    // 17 characters at 10pt, is 141.67 units, and 4% and 4 units more.
+    expect([label.type, label.content, label.x, label.y, label.width, label.height]).toEqual(['label', 'Invoice & Co <42>', 10, 10, 151.33, 18]);
+    // A label already wider than that keeps the width it was seen at.
+    const wide = layoutToReport({ ...layout, pages: [{ ...layout.pages[0], labels: [{ ...layout.pages[0].labels[1], w: 300 }], tables: [] }] });
+    expect(wide.sections[0].elements[0].width).toBe(328);
+    expect(smudge.id).toBe('lowConfidenceLabel2');
+    // 10pt is 13.89 hundredths of an inch.
+    expect(label.fontSize).toBe(13.89);
+    expect([table.type, table.x, table.y, table.width, table.height]).toEqual(['table', 10, 70, 400, 40]);
+    expect(table.rows!.map((r) => r.cells.map((c) => c.content))).toEqual([['Item', 'Qty', 'Price'], ['Chai', '12', '']]);
+    expect(table.rows![0].cells.map((c) => c.weight)).toEqual([200, 100, 100]);
+    expect(report.sections[1].elements.map((e) => [e.content, e.x, e.y])).toEqual([['Page two', 10, 10]]);
+  });
+
+  it('lists the unsure text in the spec, to check against the source, or says it was left out', () => {
+    const md = ocrSummary(layout, { title: 'Scan' });
+    expect(md).toMatch(/^# Scan\n/);
+    expect(md).toMatch(/2 pages read by OCR in the browser, with no model involved: 3 labels and 1 table/);
+    expect(ocrSummary(layout, { dropFlagged: true })).toMatch(/2 labels and 1 table/);
+    expect(md).toContain('| 1 | Smudge | 40 |');
+    const dropped = ocrSummary(layout, { dropFlagged: true });
+    // Left out of the report, not out of sight: the spec still says what it read.
+    expect(dropped).toMatch(/1 text held a word read at low confidence and was left out\.\*\* What it read, to add by hand if needed:/);
+    expect(dropped).toContain('| 1 | Smudge | 40 |');
   });
 });
