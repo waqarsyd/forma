@@ -1074,6 +1074,81 @@ describe('paginating into columns', () => {
     expect(rf.top).toBe(200);
     expect(rf.left).toBe(0);
   });
+
+  /*
+   * Records that grow (parity row 66). The shape of s52: two columns on a
+   * Letter-wide page with 50 a side, a 40-unit record whose note at 0,5 grows
+   * and pushes an id label at 0,25 down. `byL` gives a note one line per "L",
+   * so each record's growth is chosen by its data.
+   */
+  const byL = (text: string) => (text ? Array.from({ length: Math.max(1, (text.match(/L/g) ?? []).length) }, (_, i) => `line ${i + 1}`) : []);
+  const growing = (layout: string, pageHeight: number) =>
+    parseReportStructure(
+      `<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="850" PageHeight="${pageHeight}" Margins="50, 50, 50, 50">` +
+      '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="40">' +
+      `<MultiColumn Ref="2" ColumnCount="2" Layout="${layout}" Mode="UseColumnCount" />` +
+      '<Controls>' +
+      '<Item1 Ref="3" ControlType="XRLabel" Name="note" Font="Arial, 10pt" LocationFloat="0,5" SizeF="300,20"><ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="Text" Expression="[Note]" /></ExpressionBindings></Item1>' +
+      '<Item2 Ref="5" ControlType="XRLabel" Name="id" Font="Arial, 10pt" LocationFloat="0,25" SizeF="100,15"><ExpressionBindings><Item1 Ref="6" EventName="BeforePrint" PropertyName="Text" Expression="[Id]" /></ExpressionBindings></Item2>' +
+      '</Controls></Item1></Bands></XtraReportsLayoutSerializer>',
+    );
+  const run = (layout: string, pageHeight: number, notes: string[]) =>
+    paginate(growing(layout, pageHeight), notes.length, { measure: byL, rows: notes.map((Note, i) => ({ Id: `id ${i + 1}`, Note })) });
+  /** Where each placed part of a record is: record@page:top,left, with its height. */
+  const parts = (result: ReturnType<typeof paginate>) =>
+    result.pages.flatMap((page, p) => page.bands.filter((b) => b.band.kind === 'Detail').map((b) => ({ record: b.record, page: p + 1, top: b.top, left: Math.round(b.left), height: b.height })));
+  const idOf = (result: ReturnType<typeof paginate>, record: number) =>
+    result.pages.flatMap((page, p) => page.bands.filter((b) => b.record === record).flatMap((b) =>
+      b.controls.filter((pc) => pc.control.name === 'id').map((pc) => ({ page: p + 1, left: Math.round(b.left), y: b.top + pc.y }))));
+
+  it('starts a row of growing records below the tallest record above it (s52a)', () => {
+    const placed = parts(run('AcrossThenDown', 1100, ['L', 'LLLLL', 'L', 'L']));
+    const [r1, r2, r3, r4] = placed;
+    expect(r2.height).toBeGreaterThan(r1.height);
+    expect([r1.left, r2.left, r3.left, r4.left]).toEqual([50, 425, 50, 425]);
+    expect(r3.top).toBeCloseTo(r2.top + r2.height, 6);
+    expect(r4.top).toBe(r3.top);
+  });
+
+  it('stacks growing records down a column at their own heights (s52b)', () => {
+    const placed = parts(run('DownThenAcross', 1100, ['LLL', 'L', 'LLLLLL', 'L']));
+    expect(placed.map((p) => p.left)).toEqual([50, 50, 50, 50]);
+    // Each at its own height: equal slots would also stack, and are what this replaced.
+    expect(placed[2].height).toBeGreaterThan(placed[1].height);
+    for (let i = 1; i < placed.length; i++) expect(placed[i].top).toBeCloseTo(placed[i - 1].top + placed[i - 1].height, 6);
+  });
+
+  it('carries a record cut at a column foot to the top of the next column, then the next page (s52f)', () => {
+    // 330 tall with 50 a side leaves 230; three ten-line notes overrun column 1.
+    const result = run('DownThenAcross', 330, Array.from({ length: 8 }, () => 'LLLLLLLLLL'));
+    const placed = parts(result);
+    const cut = placed.find((p, i) => placed.findIndex((q) => q.record === p.record) !== i)!;
+    const pieces = placed.filter((p) => p.record === cut.record);
+    expect(pieces).toHaveLength(2);
+    expect(pieces[0]).toMatchObject({ page: 1, left: 50 });
+    expect(pieces[1]).toMatchObject({ page: 1, left: 425, top: 50 });
+    expect(pieces[0].top + pieces[0].height).toBeLessThanOrEqual(280 + 1e-6);
+    // Its id printed where the record continued, as record 4's did in s52f.
+    expect(idOf(result, cut.record!)).toEqual([expect.objectContaining({ page: 1, left: 425 })]);
+    // Once both columns are full, the next page.
+    expect(placed.some((p) => p.page === 2 && p.left === 50 && p.top === 50)).toBe(true);
+  });
+
+  it('cuts each record of a row at the foot on its own and starts the next row below the taller rest (s52e)', () => {
+    // The second row meets the foot: record 3 short, record 4 long.
+    const result = run('AcrossThenDown', 330, ['LLLLLLL', 'LLLLLLL', 'LL', 'LLLLLLLLLLLLLL', 'L', 'L']);
+    const placed = parts(result);
+    const four = placed.filter((p) => p.record === 4);
+    expect(four.map((p) => p.page)).toEqual([1, 2]);
+    expect(four[1]).toMatchObject({ left: 425, top: 50 });
+    // Record 3 fitted, so nothing of it moves.
+    expect(placed.filter((p) => p.record === 3).map((p) => p.page)).toEqual([1]);
+    // Records 5 and 6 start below what continued of record 4, side by side.
+    const [five, six] = [placed.find((p) => p.record === 5)!, placed.find((p) => p.record === 6)!];
+    expect(five).toMatchObject({ page: 2, left: 50 });
+    expect(five.top).toBeCloseTo(four[1].top + four[1].height, 6);
+    expect(six.top).toBe(five.top);
+  });
 });
 
 /**

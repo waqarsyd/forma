@@ -3608,70 +3608,129 @@ export function paginate(
        * headers, the footers, the group bands — still spans the full width,
        * because only the detail flow is divided.
        *
-       * The whole block below is arithmetic on a grid of `rows x count` slots.
-       * `cursor` is deliberately NOT used inside it: `place` advances a single
-       * vertical cursor, which is the one thing that cannot describe two
-       * records at the same height. It is set once at the end, to the bottom of
-       * the last row used, so whatever comes after the detail flow — the group
-       * footers, the report footer — lands below all of the columns rather than
-       * inside them.
+       * Records grow and split in columns as they do in one (parity row 66,
+       * s52a to s52f, printed by DevExpress 20.1 with a note that grows from
+       * one line to several and an id label it pushes down):
+       *
+       * - `DownThenAcross` runs each column as a page of its own. A record
+       *   cut at a column's foot continues at the top of the next column, and
+       *   after the last column on the next page: in s52f record 4's note
+       *   ended column 1 and its id printed at the top of column 2.
+       * - `AcrossThenDown` starts each row below the tallest record of the
+       *   row above, and each record in a row is cut at the foot on its own,
+       *   what is left of it continuing in its column at the top of the next
+       *   page; the next row starts below the tallest of those. In s52e
+       *   records 11 and 12 shared a row at the foot of page 2: 12 ended
+       *   there, and 11's id printed on page 3.
+       *
+       * A cut is `flow`'s cut, `splitInstance` at the room left, so what a
+       * record leaves behind at a column's foot is what it leaves at a page's.
+       * `KeepTogether` was not measured in columns, and is read as it is at a
+       * page's foot, against a fresh column's room.
+       *
+       * Until this row the block was a grid of equal slots, each record at the
+       * band's designed height and laid out with no measurer, so a note that
+       * grew printed over the record below it.
+       *
+       * `cursor` is not advanced inside: `place` moves one vertical cursor,
+       * which cannot describe records side by side. It is set once at the end,
+       * to the bottom of the lowest record on the last page, so the group
+       * footers and the report footer land below every column.
        */
       const columnWidth = columns.width;
-      const downThenAcross = columns.layout === 'DownThenAcross';
-      // A slot holds every control placed in the record, as a band does (row
-      // 36); growth inside columns is not measured, so nothing else moves it.
-      const slotHeight = heldHeight(detail);
+      const columnLeft = (column: number) => contentLeft + column * (columnWidth + columns.spacing);
+      const putIn = (part: BandInstance, top: number, column: number) => {
+        current!.bands.push({ ...at(part, top), left: columnLeft(column), width: columnWidth });
+        track(part);
+      };
+      /** What of `part` prints in `avail`, and what continues, as `flow` cuts at a page's foot. */
+      const cut = (part: BandInstance, avail: number, atTop: boolean): [BandInstance | null, BandInstance | null] => {
+        if (part.height <= avail + EPS) return [part, null];
+        if (part.band.keepTogether && part.height <= pageBottom - pageContentTop + EPS && !atTop) return [null, part];
+        const [first, rest]: [BandInstance | null, BandInstance | null] = splitInstance(part, avail, ctx.unit, spans(part, avail));
+        // Nothing better is possible at the top than to print it as it is.
+        return !first && atTop ? [part, null] : [first, rest];
+      };
+      /** A page as tall as a fresh one: page 1 below a report header is not, and there a record is cut (row 55). */
+      const fullHeight = () => pageBottom - pageContentTop >= roomOnFreshPage() - EPS;
 
-      /*
-       * Recomputed per page rather than once, because the first page is
-       * shorter: it spends height on the ReportHeader and any group headers.
-       * Computing the grid once from the first page's remaining height would
-       * under-fill every page after it, which reads as a pagination bug in the
-       * report rather than in this function.
-       */
-      let pageTop = cursor;
-      let rowsPerPage = Math.max(1, Math.floor((pageBottom - pageTop) / slotHeight));
-      let perPage = rowsPerPage * columns.count;
-      let onPage = 0;
-      let rowsUsed = 0;
-
-      for (let i = 0; i < records; i++) {
-        if (onPage === perPage) {
-          if (pages.length >= maxPages) break;
+      if (columns.layout === 'DownThenAcross') {
+        let column = 0;
+        let columnTop = cursor;
+        let y = cursor;
+        let lowest = cursor;
+        /** On to the next column, or the first of a new page; false at the page cap. */
+        const nextColumn = () => {
+          if (++column < columns.count) {
+            y = columnTop;
+            return true;
+          }
+          if (pages.length >= maxPages) return false;
           startPage();
-          pageTop = cursor;
-          rowsPerPage = Math.max(1, Math.floor((pageBottom - pageTop) / slotHeight));
-          perPage = rowsPerPage * columns.count;
-          onPage = 0;
-          rowsUsed = 0;
+          column = 0;
+          columnTop = y = lowest = cursor;
+          return true;
+        };
+        records: for (let i = 0; i < records; i++) {
+          let part: BandInstance | null = instance(detail, i + 1, rowFor(i));
+          for (let guard = 0; part && guard < 10_000; guard++) {
+            const [here, rest] = cut(part, pageBottom - y, y <= columnTop + EPS && fullHeight());
+            if (here) {
+              putIn(here, y, column);
+              y += here.height;
+              lowest = Math.max(lowest, y);
+            }
+            part = rest;
+            if (part && !nextColumn()) {
+              placedRecords++;
+              break records;
+            }
+          }
+          placedRecords++;
         }
-
-        // Which slot of the rows x count grid, in this layout's fill order.
-        const row = downThenAcross ? onPage % rowsPerPage : Math.floor(onPage / columns.count);
-        const column = downThenAcross ? Math.floor(onPage / rowsPerPage) : onPage % columns.count;
-
-        // Columns keep the slot height: a grid of slots cannot hold records of
-        // different heights, and growth inside columns is not measured yet.
-        const slot = layoutBand(detail, i + 1, rowFor(i), { measure: null, unit: ctx.unit, data, rules: ctx.rules }, scopeFor('Detail', i + 1, null, null));
-        current!.bands.push({
-          band: detail,
-          height: slotHeight,
-          controls: slot.controls,
-          top: pageTop + row * slotHeight,
-          left: contentLeft + column * (columnWidth + columns.spacing),
-          width: columnWidth,
-          record: i + 1,
-          scope: slot.scope,
-        });
-        onPage++;
-        rowsUsed = Math.max(rowsUsed, row + 1);
-        placedRecords++;
+        cursor = lowest;
+      } else {
+        let rowTop = cursor;
+        for (let first = 0; first < records; first += columns.count) {
+          const inRow = Math.min(columns.count, records - first);
+          let bottom = rowTop;
+          let pending: { part: BandInstance; column: number }[] = [];
+          const atTop = rowTop <= pageContentTop + EPS && fullHeight();
+          for (let c = 0; c < inRow; c++) {
+            const [here, rest] = cut(instance(detail, first + c + 1, rowFor(first + c)), pageBottom - rowTop, atTop);
+            if (here) {
+              putIn(here, rowTop, c);
+              bottom = Math.max(bottom, rowTop + here.height);
+            }
+            if (rest) pending.push({ part: rest, column: c });
+          }
+          // What did not fit continues at the top of the next page, each in its column.
+          let capped = false;
+          for (let guard = 0; pending.length && guard < 10_000; guard++) {
+            if (pages.length >= maxPages) {
+              capped = true;
+              break;
+            }
+            startPage();
+            const top = cursor;
+            bottom = top;
+            const next: typeof pending = [];
+            for (const { part, column } of pending) {
+              const [here, rest] = cut(part, pageBottom - top, fullHeight());
+              if (here) {
+                putIn(here, top, column);
+                bottom = Math.max(bottom, top + here.height);
+              }
+              if (rest) next.push({ part: rest, column });
+            }
+            pending = next;
+          }
+          placedRecords += inRow;
+          rowTop = bottom;
+          if (capped) break;
+        }
+        cursor = rowTop;
       }
-
-      // Below every column, so a group or report footer does not land inside
-      // the grid. `place` is not used above precisely because its single
-      // vertical cursor cannot describe two records at the same height.
-      cursor = pageTop + rowsUsed * slotHeight;
     }
     for (const footer of groupFooters) place(instance(footer));
   }
