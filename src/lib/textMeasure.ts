@@ -224,7 +224,20 @@ export function wrapText(text: string, widthOf: (s: string) => number, maxPt: nu
 
 /** The CSS font string for a canvas, in points as the report writes them. */
 export function cssFont(font: FontSpec): string {
-  return `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${font.sizePt}pt "${font.family}"`;
+  return canvasFont(font, `${font.sizePt}pt`).css;
+}
+
+/** A canvas font for the face the browser finds (row 62): the shorthand, and the width it cannot carry. */
+function canvasFont(font: { family: string; bold: boolean; italic: boolean }, size: string): { css: string; stretch: string } {
+  const face = browserFace(font);
+  const weight = face.weight === 400 ? '' : face.weight === 700 ? 'bold ' : `${face.weight} `;
+  return { css: `${face.italic ? 'italic ' : ''}${weight}${size} "${face.family}"`, stretch: face.stretch };
+}
+
+/** Set a canvas to a font from `canvasFont`. */
+function setCanvasFont(context: CanvasRenderingContext2D, font: { css: string; stretch: string }): void {
+  context.font = font.css;
+  if ('fontStretch' in context) context.fontStretch = font.stretch as CanvasFontStretch;
 }
 
 /*
@@ -262,10 +275,93 @@ const GDI_UNKERNED = new Set([
   'old english text mt', 'onyx', 'perpetua', 'perpetua titling mt', 'rockwell',
   'rockwell condensed', 'segoe marker', 'segoe ui emoji', 'segoe ui historic',
   'segoe ui symbol', 'snap itc', 'tahoma', 'tw cen mt', 'tw cen mt condensed',
+  // Found by the browser under another name (row 62), and unkerned in GDI.
+  'arial rounded mt bold', 'bodoni mt poster compressed', 'copperplate gothic bold',
+  'franklin gothic demi', 'franklin gothic demi cond', 'franklin gothic medium',
+  'franklin gothic medium cond', 'gloucester mt extra condensed', 'leelawadee ui semilight',
+  'rockwell extra bold', 'script mt bold', 'tw cen mt condensed extra bold',
 ]);
 
 /* Families GDI kerns upright and not in italic. */
-const GDI_UNKERNED_ITALIC = new Set(['segoe ui', 'segoe ui light', 'segoe ui semibold']);
+const GDI_UNKERNED_ITALIC = new Set(['segoe ui', 'segoe ui light', 'segoe ui semibold', 'segoe ui semilight']);
+
+/*
+ * Family names GDI knows that the browser does not, with the family, weight
+ * and width the browser finds the same face under (parity row 62). Windows
+ * names a weight or width of an older family as a family of its own, such as
+ * "Franklin Gothic Demi", where the browser groups those faces into one
+ * family and tells them apart by weight. Asked for the name GDI uses, it fell
+ * back to another font for 51 installed families; for these 30 it measured,
+ * under the family, weight and width given, exactly GDI's widths, and in s46a
+ * DevExpress broke six of them where those widths fall. Each entry is the
+ * browser's family, its weight, its width if not normal, and a weight of the
+ * bold and of the italic where they differ.
+ */
+const FACE_NAMES: Record<string, [string, number, string?, number?, number?]> = {
+  'arial rounded mt bold': ['Arial Rounded MT', 400],
+  'bahnschrift light semicondensed': ['Bahnschrift SemiCondensed', 400],
+  'bahnschrift semibold semiconden': ['Bahnschrift SemiBold', 400, 'semi-condensed'],
+  'bahnschrift semilight': ['Bahnschrift', 400],
+  'bahnschrift semilight semiconde': ['Bahnschrift', 400, 'semi-condensed'],
+  'berlin sans fb demi': ['Berlin Sans FB', 600],
+  'bodoni mt poster compressed': ['Bodoni MT Poster', 400],
+  'britannic bold': ['Britannic', 400],
+  'copperplate gothic bold': ['Copperplate Gothic', 700],
+  'din pro bold': ['DIN Pro', 700],
+  'eras bold itc': ['Eras ITC', 700],
+  'eras demi itc': ['Eras ITC', 600],
+  'eras light itc': ['Eras ITC', 300],
+  'eras medium itc': ['Eras ITC', 450],
+  'franklin gothic demi': ['Franklin Gothic', 600],
+  'franklin gothic demi cond': ['Franklin Gothic', 600, 'semi-condensed'],
+  'franklin gothic medium': ['Franklin Gothic', 450],
+  'franklin gothic medium cond': ['Franklin Gothic', 450, 'semi-condensed'],
+  'gloucester mt extra condensed': ['Gloucester MT Condensed', 400],
+  'harlow solid italic': ['Harlow Solid', 400],
+  'leelawadee ui semilight': ['Leelawadee UI', 350],
+  'malgun gothic semilight': ['Malgun Gothic', 350],
+  'nirmala ui semilight': ['Nirmala UI', 350],
+  'ocr a extended': ['OCR A', 400],
+  'rage italic': ['Rage', 400],
+  'rockwell extra bold': ['Rockwell', 800, undefined, 750, 850],
+  'script mt bold': ['Script MT', 400],
+  'segoe ui semilight': ['Segoe UI', 350],
+  'tw cen mt condensed extra bold': ['Tw Cen MT Condensed', 800, undefined, undefined, 850],
+  'yu gothic ui semilight': ['Yu Gothic UI', 350],
+};
+
+/** A face as the browser is asked for it: family, CSS weight and width, italic. */
+export interface BrowserFace {
+  family: string;
+  weight: number;
+  stretch: string;
+  italic: boolean;
+}
+
+/**
+ * The face the browser finds for a family as the report names it: the same
+ * name, 700 for bold and 400 otherwise, unless GDI's name is one the browser
+ * does not know (row 62).
+ */
+export function browserFace(font: { family: string; bold: boolean; italic: boolean }): BrowserFace {
+  const family = font.family.trim();
+  const entry = FACE_NAMES[family.toLowerCase()];
+  if (!entry) return { family, weight: font.bold ? 700 : 400, stretch: 'normal', italic: font.italic };
+  const [name, weight, stretch = 'normal', boldWeight, italicWeight] = entry;
+  const w = font.bold && boldWeight ? boldWeight : font.italic && italicWeight ? italicWeight : weight;
+  return { family: name, weight: w, stretch, italic: font.italic };
+}
+
+/** The CSS a page element draws a report font with: the face the browser finds, quoted. */
+export function cssFace(font: { family: string; bold: boolean; italic: boolean }): {
+  fontFamily: string;
+  fontWeight: number;
+  fontStretch: string;
+  fontStyle: string;
+} {
+  const face = browserFace(font);
+  return { fontFamily: `"${face.family.replace(/"/g, '')}", sans-serif`, fontWeight: face.weight, fontStretch: face.stretch, fontStyle: face.italic ? 'italic' : 'normal' };
+}
 
 /**
  * Whether Windows GDI kerns a face, which DevExpress breaks lines by. It
@@ -337,8 +433,8 @@ export function boldWideningPt(text: string, font: FontSpec): number {
 }
 
 /** The CSS font string a measuring canvas uses: MEASURE_PX pixels. */
-function measureFont(font: FontSpec): string {
-  return `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${MEASURE_PX}px "${font.family}"`;
+function measureFont(font: FontSpec): { css: string; stretch: string } {
+  return canvasFont(font, `${MEASURE_PX}px`);
 }
 
 /**
@@ -362,11 +458,11 @@ export function canvasMeasurer(): MeasureText | null {
   // the font's size it is that many points.
   const widthPt = (s: string, font: FontSpec, kerned: boolean) => {
     const synthesized = synthesizedBold(font);
-    const css = measureFont(synthesized ? { ...font, bold: false } : font);
-    const key = `${css}\u0000${kerned ? 'k' : 'u'}\u0000${s}`;
+    const face = measureFont(synthesized ? { ...font, bold: false } : font);
+    const key = `${face.css}\u0000${face.stretch}\u0000${kerned ? 'k' : 'u'}\u0000${s}`;
     let width = cache.get(key);
     if (width === undefined) {
-      context.font = css;
+      setCanvasFont(context, face);
       if ('fontKerning' in context) context.fontKerning = kerned ? 'normal' : 'none';
       width = context.measureText(s).width;
       cache.set(key, width);
@@ -410,7 +506,7 @@ export function lineWidthPt(text: string, font: FontSpec): number | null {
     if (lineContext && 'fontKerning' in lineContext) lineContext.fontKerning = 'none';
   }
   if (!lineContext) return null;
-  lineContext.font = cssFont(font);
+  setCanvasFont(lineContext, canvasFont(font, `${font.sizePt}pt`));
   return lineContext.measureText(text).width * 0.75;
 }
 
@@ -428,17 +524,19 @@ const metricsCache = new Map<string, LineMetrics | null>();
  */
 function browserLineMetrics(family: string, bold: boolean, italic: boolean): LineMetrics | null {
   const regular = bold && synthesizedBold({ family, sizePt: 1, bold, italic });
-  const css = `${italic ? 'italic ' : ''}${bold && !regular ? 'bold ' : ''}${MEASURE_PX}px "${family}"`;
-  if (metricsCache.has(css)) return metricsCache.get(css)!;
+  const face = canvasFont({ family, bold: bold && !regular, italic }, `${MEASURE_PX}px`);
+  const key = `${face.css}\u0000${face.stretch}`;
+  if (metricsCache.has(key)) return metricsCache.get(key)!;
   if (metricsContext === undefined) metricsContext = canvasContext();
   let metrics: LineMetrics | null = null;
   if (metricsContext && document.body) {
-    metricsContext.font = css;
+    setCanvasFont(metricsContext, face);
     const box = metricsContext.measureText('Hg');
     const line = document.createElement('div');
     line.setAttribute('aria-hidden', 'true');
     line.style.cssText = 'position:absolute;left:-100000px;top:0;visibility:hidden;white-space:pre;line-height:normal';
-    line.style.font = css;
+    line.style.font = face.css;
+    line.style.fontStretch = face.stretch;
     line.style.lineHeight = 'normal';
     line.textContent = 'Hg';
     document.body.appendChild(line);
@@ -447,6 +545,6 @@ function browserLineMetrics(family: string, bold: boolean, italic: boolean): Lin
     const one = (box.fontBoundingBoxAscent + box.fontBoundingBoxDescent) / MEASURE_PX;
     if (Number.isFinite(one) && one > 0 && height > 0) metrics = { one, spacing: height / MEASURE_PX };
   }
-  metricsCache.set(css, metrics);
+  metricsCache.set(key, metrics);
   return metrics;
 }

@@ -6,7 +6,7 @@
  * identical lines; these cases pin the rules that made that true.
  */
 import { describe, it, expect } from 'vitest';
-import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, resolveLineMetrics, GROW_EXTRA_PT } from './textMeasure';
+import { wrapText, lineSpacingPt, linesHeightPt, cssFont, cssFace, browserFace, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, resolveLineMetrics, GROW_EXTRA_PT } from './textMeasure';
 
 /** Every character one point wide, so widths are character counts. */
 const mono = (s: string) => s.length;
@@ -168,6 +168,29 @@ describe('the canvas measurer', () => {
       expect(face(family)).toBe(true);
       expect(face(family, false, true)).toBe(false);
     }
+  });
+
+  it('asks the browser for the face GDI names by a weight or width of a family (row 62)', () => {
+    const face = (family: string, bold = false, italic = false) => browserFace({ family, bold, italic });
+    // s46a: DevExpress broke each where the browser's widths of this face fall.
+    expect(face('Franklin Gothic Demi')).toEqual({ family: 'Franklin Gothic', weight: 600, stretch: 'normal', italic: false });
+    expect(face('franklin gothic demi cond', false, true)).toEqual({ family: 'Franklin Gothic', weight: 600, stretch: 'semi-condensed', italic: true });
+    expect(face('Eras Medium ITC').weight).toBe(450);
+    expect(face('Segoe UI Semilight')).toMatchObject({ family: 'Segoe UI', weight: 350 });
+    expect(face('Rockwell Extra Bold', true).weight).toBe(750);
+    expect(face('Rockwell Extra Bold', false, true).weight).toBe(850);
+    // Any other name is asked for as written.
+    expect(face(' Arial ', true)).toEqual({ family: 'Arial', weight: 700, stretch: 'normal', italic: false });
+    // The page draws the same face, its family quoted so that a name such
+    // as "3 of 9 Barcode" stays one valid declaration.
+    expect(cssFace({ family: 'Franklin Gothic Demi', bold: false, italic: false })).toEqual({ fontFamily: '"Franklin Gothic", sans-serif', fontWeight: 600, fontStretch: 'normal', fontStyle: 'normal' });
+    expect(cssFace({ family: '3 of 9 Barcode', bold: false, italic: true }).fontFamily).toBe('"3 of 9 Barcode", sans-serif');
+    // And the canvas: a weight it has no keyword for is a number.
+    expect(cssFont({ family: 'Leelawadee UI Semilight', sizePt: 9, bold: false, italic: false })).toBe('350 9pt "Leelawadee UI"');
+    // GDI kerns these names no more than the families above.
+    expect(gdiKerns({ family: 'Franklin Gothic Demi', sizePt: 9, bold: false, italic: false })).toBe(false);
+    expect(gdiKerns({ family: 'Segoe UI Semilight', sizePt: 9, bold: false, italic: false })).toBe(true);
+    expect(gdiKerns({ family: 'Segoe UI Semilight', sizePt: 9, bold: false, italic: true })).toBe(false);
   });
 
   it('knows which families have no bold face, whose bold is synthesized (row 60)', () => {

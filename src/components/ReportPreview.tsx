@@ -49,7 +49,7 @@ import {
 import { parseParameters } from '../lib/repxParameters';
 import { readBoundFields } from '../lib/repxBindingPlan';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
-import { canvasMeasurer, lineSpacingPt, lineWidthPt } from '../lib/textMeasure';
+import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt } from '../lib/textMeasure';
 import { exportFileName, reportToCsv } from '../lib/csvExport';
 import { reportToXlsx } from '../lib/xlsxExport';
 import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
@@ -186,9 +186,8 @@ function ControlBox({
     // values are already resolved through styles and inheritance, so these
     // fallbacks are DevExpress's own default rather than this app's typeface.
     fontSize: control.fontSize ? `${control.fontSize}pt` : '9.75pt',
-    fontFamily: control.fontFamily ? `${control.fontFamily}, sans-serif` : '"Times New Roman", serif',
-    fontWeight: control.bold ? 700 : 400,
-    fontStyle: control.italic ? 'italic' : 'normal',
+    // The face the browser finds for the report's family name (parity row 62).
+    ...(control.fontFamily ? cssFace({ family: control.fontFamily, bold: control.bold, italic: control.italic }) : { fontFamily: '"Times New Roman", serif', fontWeight: control.bold ? 700 : 400, fontStyle: control.italic ? 'italic' : 'normal' }),
     textDecoration: fontDecoration(look.Font),
     // Colour, fill, padding and the border's own width and colour, as printed:
     // a 2px red border with 10 units of padding put text 8.7pt inside the edge.
@@ -572,9 +571,7 @@ function ControlBox({
                     justifyContent:
                       cell.align === 'right' ? 'flex-end' : cell.align === 'center' ? 'center' : 'flex-start',
                     fontSize: cell.fontSize ? `${cell.fontSize}pt` : undefined,
-                    fontFamily: cell.fontFamily ? `${cell.fontFamily}, sans-serif` : undefined,
-                    fontWeight: cell.bold ? 700 : 400,
-                    fontStyle: cell.italic ? 'italic' : 'normal',
+                    ...(cell.fontFamily ? cssFace({ family: cell.fontFamily, bold: cell.bold, italic: cell.italic }) : { fontWeight: cell.bold ? 700 : 400, fontStyle: cell.italic ? 'italic' : 'normal' }),
                     textDecoration: fontDecoration(cell.appearance.Font),
                     color: cssColor(cell.appearance.ForeColor),
                     background: cssColor(cell.appearance.BackColor),
