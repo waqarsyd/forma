@@ -14,6 +14,15 @@
    CLAUDE.md records this exact failure from the marketing-page ports ("Inherited
    line-height. The artifact has no Tailwind preflight, so its buttons and inputs
    keep the UA's line-height: normal while ours inherited the body's 1.62").
+
+   PRUNED (2026-11-01, repository audit): the ported block below no longer holds
+   the 57 rules for elements the workspace never drew -- the artifact's search
+   field, badges, group labels, invoice proof, code view, stacked chart and
+   legend, outline tree, checklist, sign-in button, auth note and Google button,
+   about 6.9 KB every visitor downloaded for nothing. Rules were removed whole;
+   every declaration still in the block is byte-identical to the artifact, so a
+   diff against it lists exactly that commit's removals. Recover any of them
+   from its parent.
    ----------------------------------------------------------------------------- */
 .wb-root button,
 .wb-root input,
@@ -101,11 +110,12 @@
    rail's button chrome. These are `.wb-rail button`'s own declarations applied to
    an anchor — nothing new, just a different element.
 
-   Note `.wb-signin-btn` from the ported block is deliberately unused: it painted
-   this slot with the accent wash and ring, which is the avatar's treatment AND the
+   The ported block's `.wb-signin-btn` was deliberately not used: it painted this
+   slot with the accent wash and ring, which is the avatar's treatment AND the
    `aria-current` treatment for a selected rail section. An accent disc here read
    as "signed in" and as "active" at once, which is exactly the confusion this
-   change fixes. The rule is left in the verbatim block rather than deleted. */
+   change fixes. It was kept in the verbatim block until the 2026-11-01 audit
+   removed it with the other rules nothing used (see the note below). */
 .wb-rail a:not(.wb-mark) {
   width: 38px;
   height: 38px;
@@ -315,18 +325,10 @@
        it so these rules resolve unchanged.
    ============================================================================= */
 
-
-
-
-
-
-
-
 /* The UA's `[hidden] { display: none }` is an easy rule to beat: any author
    `display` declaration wins, so `<div class="note-line" hidden>` rendered as an
    empty flex row — a stray tick with no text under the key field. Restore it
    with author-level weight. */
-
 
 /* --------------------------------------------------------------------------
    Devices lifted from the marketing pages so this reads as the same product,
@@ -388,9 +390,6 @@
 .wb-rise { animation: wb-rise .5s cubic-bezier(.22, 1, .36, 1) both; }
 .wb-rise-1 { animation-delay: .04s; }
 .wb-rise-2 { animation-delay: .10s; }
-.wb-rise-3 { animation-delay: .16s; }
-
-
 
 /* The artifact set these on `body`. Scoped to the workspace root here, because
    the app shares that body with five marketing pages that set their own measure
@@ -500,18 +499,6 @@
 .wb-thread { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 18px; }
 
 /* search + lists */
-.wb-search {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 14px 20px 6px;
-  padding: 8px 14px;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  background: var(--panel);
-}
-.wb-search span { flex: 1; font-size: 12.5px; color: var(--ink-faint); }
-.wb-search svg { color: var(--ink-faint); flex: none; }
 
 .wb-list { flex: 1; overflow-y: auto; padding: 8px 16px 18px; display: flex; flex-direction: column; gap: 8px; }
 .wb-card {
@@ -583,28 +570,7 @@
 .wb-col-head .wb-mini.wb-danger:hover { color: var(--bad-ink); border-color: var(--bad-ink); }
 .wb-col-head .wb-confirm { display: inline-flex; align-items: center; gap: 0; }
 .wb-col-head .wb-confirm > span { color: var(--bad-ink); }
-.wb-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-wash);
-  border: 1px solid var(--accent-line);
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-.wb-group-label {
-  padding: 14px 20px 6px;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
+
 .wb-empty { padding: 26px 20px; text-align: center; color: var(--ink-faint); font-size: 12.5px; }
 
 /* Saved state. A workspace has to say whether the work is safe before you start
@@ -852,9 +818,6 @@
    the document. The registration marks are the only mark on the plate. */
 .wb-proof-holder { position: relative; width: 100%; max-width: 760px; }
 
-
-
-
 .wb-proof {
   background: var(--paper);
   color: var(--on-paper);
@@ -864,59 +827,9 @@
   padding: 52px 56px 44px;
   font-size: 12px;
 }
-.wb-proof-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 34px; }
+
 .wb-proof h2 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 27px; letter-spacing: -.03em; }
 .wb-proof .wb-sub { color: color-mix(in srgb, var(--on-paper) 55%, transparent); margin-top: 3px; }
-.wb-proof .wb-meta { font-family: var(--mono); font-size: 10px; line-height: 1.8; text-align: right; font-variant-numeric: tabular-nums; }
-.wb-plate-rule { height: 3px; width: 62px; background: var(--paper-accent); margin-top: 16px; border-radius: 2px; }
-.wb-parties { margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; font-size: 11.5px; line-height: 1.7; }
-.wb-parties .wb-lbl {
-  font-family: var(--mono);
-  font-size: 8.5px;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--on-paper) 48%, transparent);
-  margin-bottom: 6px;
-}
-.wb-rows-wrap { overflow-x: auto; margin-top: 30px; }
-table.wb-rows { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-table.wb-rows th {
-  text-align: left;
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: 8.5px;
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--on-paper) 55%, transparent);
-  padding: 0 12px 8px 0;
-  border-bottom: 1.5px solid var(--on-paper);
-}
-table.wb-rows td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--paper-rule); }
-table.wb-rows .wb-n { text-align: right; font-variant-numeric: tabular-nums; }
-.wb-sum { margin: 18px 0 0 auto; width: 250px; font-size: 11.5px; }
-.wb-sum div { display: flex; justify-content: space-between; padding: 5px 0; font-variant-numeric: tabular-nums; }
-.wb-sum .wb-lab { color: color-mix(in srgb, var(--on-paper) 58%, transparent); }
-.wb-sum .wb-due {
-  margin-top: 6px;
-  padding-top: 10px;
-  border-top: 1.5px solid var(--on-paper);
-  font-family: var(--display);
-  font-weight: 800;
-  font-size: 16px;
-  letter-spacing: -.02em;
-}
-.wb-proof-foot {
-  margin-top: 34px;
-  padding-top: 15px;
-  border-top: 1px solid var(--paper-rule);
-  display: flex;
-  justify-content: space-between;
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--on-paper) 46%, transparent);
-}
 
 /* spec + repx sheets sit on the same ground */
 .wb-sheet {
@@ -942,74 +855,6 @@ table.wb-rows .wb-n { text-align: right; font-variant-numeric: tabular-nums; }
 .wb-sheet ul { margin: 0; padding-left: 17px; color: var(--ink-2); font-size: 13px; }
 .wb-sheet li { margin-bottom: 7px; }
 .wb-sheet li b { color: var(--ink); font-weight: 600; }
-.wb-code-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
-.wb-status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 13px;
-  border-radius: 999px;
-  border: 1px solid var(--ok-line);
-  background: var(--ok-wash);
-  color: var(--ok-ink);
-  font-size: 11.5px;
-  font-weight: 600;
-}
-/* Dark in BOTH themes, like the docs page and the app's REPX pane — so nothing
-   inside may use a token that flips. The syntax colours are fixed. */
-.wb-code {
-  border: 1px solid var(--code-rule);
-  border-radius: 14px;
-  background: var(--code-bg);
-  overflow-x: auto;
-  padding: 15px 17px;
-}
-.wb-code pre { margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.8; color: var(--code-ink); }
-.wb-code .wb-ln { display: inline-block; width: 22px; text-align: right; margin-right: 15px; color: var(--code-ink-faint); user-select: none; }
-.wb-tg { color: #38bdf8; }
-.wb-at { color: #c4b5fd; }
-.wb-vl { color: #34d399; }
-.wb-pn { color: var(--code-ink-faint); }
-
-
-
-/* A stacked bar is the honest chart here: the bands really do partition the page
-   height, so the widths carry the information. */
-.wb-stack { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--track); }
-.wb-stack i { display: block; }
-.wb-legend { display: flex; flex-direction: column; gap: 7px; }
-.wb-legend div { display: flex; align-items: center; gap: 9px; font-size: 12px; }
-.wb-legend .wb-sw { width: 9px; height: 9px; border-radius: 999px; flex: none; }
-.wb-legend .wb-nm { flex: 1; color: var(--ink-2); }
-.wb-legend .wb-amt { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
-
-.wb-tree { display: flex; flex-direction: column; gap: 2px; }
-.wb-node {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  color: var(--ink-2);
-}
-.wb-node:hover { background: var(--track); color: var(--ink); }
-.wb-node .wb-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-node .wb-tag {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-.wb-node.wb-child { margin-left: 15px; border-left: 1px solid var(--rule); border-radius: 0 999px 999px 0; padding-left: 13px; }
-.wb-node svg { color: var(--ink-faint); flex: none; }
-
-.wb-check { display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; color: var(--ink-2); }
-.wb-check svg { flex: none; margin-top: 2px; }
-.wb-check.wb-ok svg { color: var(--ok-ink); }
-.wb-check.wb-warn svg { color: var(--accent); }
-.wb-check b { color: var(--ink); font-weight: 600; }
 
 /* ------------------------------------------------------------- status bar */
 .wb-status {
@@ -1209,33 +1054,6 @@ table.wb-rows .wb-n { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .wb-pop button:hover { background: var(--track); color: var(--ink); }
 .wb-pop button.wb-danger:hover { color: var(--bad-ink); }
-
-/* Signed out, the rail's account slot is an invitation rather than initials. */
-.wb-signin-btn { color: var(--accent) !important; background: var(--accent-wash) !important; box-shadow: inset 0 0 0 1px var(--accent-line); }
-
-/* --------------------------------------------------------------- auth */
-.wb-auth-note { font-size: 11.5px; line-height: 1.5; color: var(--ink-2); }
-.wb-auth-note a { color: var(--accent); text-decoration: none; font-weight: 600; }
-.wb-auth-note a:hover { text-decoration: underline; }
-.wb-divider-or { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint); }
-.wb-divider-or::before, .wb-divider-or::after { content: ""; height: 1px; flex: 1; background: var(--rule); }
-.wb-google {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid var(--rule-strong);
-  border-radius: 999px;
-  background: var(--panel);
-  cursor: pointer;
-  font-family: var(--body);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.wb-google:hover { background: var(--track); }
 
 /* ------------------------------------------------------------- key gate */
 /* The key gates the whole workspace, so the composer is disabled rather than
@@ -1768,7 +1586,6 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
   .wb-root .wb-card .wb-row-actions { transition: opacity .15s ease !important; }
   .wb-root .wb-card.wb-leaving { transition: opacity .18s ease !important; }
 }
-
 
 /* ------------------------------------------------------------ report library
    The rail's sixth panel (docs/proposals/rag.md). Only what the markup cannot

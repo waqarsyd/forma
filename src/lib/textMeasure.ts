@@ -506,7 +506,7 @@ export function lineWidthPt(text: string, font: FontSpec): number | null {
     if (lineContext && 'fontKerning' in lineContext) lineContext.fontKerning = 'none';
   }
   if (!lineContext) return null;
-  setCanvasFont(lineContext, canvasFont(font, `${font.sizePt}pt`));
+  setCanvasFont(lineContext, { css: cssFont(font), stretch: browserFace(font).stretch });
   return lineContext.measureText(text).width * 0.75;
 }
 

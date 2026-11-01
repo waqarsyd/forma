@@ -523,13 +523,9 @@ body {
   background: var(--muted-foreground);
 }
 
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
-}
+/* `.no-scrollbar`, which hid an element's scrollbar, was removed on 2026-11-01
+   in the repository audit: no element used it. Recover it from that commit's
+   parent. */
 
 /* ====================================================================
    SHARED INTERACTION HELPERS

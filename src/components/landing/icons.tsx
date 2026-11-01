@@ -334,14 +334,9 @@ export const IconMoon = (p: Props) => (
    as everything above, so a workspace toolbar and a marketing page read as one
    drawing. Where a Material glyph had no counterpart the shape follows the
    glyph it replaced, not a new invention — `architecture` was a drafting
-   compass, so IconRuler is a compass. */
-export const IconHistory = (p: Props) => (
-  <Svg {...p}>
-    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-    <path d="M3 3v5h5" />
-    <path d="M12 8v4.5l3.5 2" />
-  </Svg>
-);
+   compass, so IconRuler is a compass. `IconHistory`, a clock with a turning
+   arrow, was removed on 2026-11-01 in the repository audit as unrendered:
+   nothing imported it. Recover it from this commit's parent. */
 export const IconTrash = (p: Props) => (
   <Svg {...p}>
     <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />

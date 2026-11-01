@@ -73,7 +73,7 @@
  * splice rather than a re-serialisation, so every byte the model wrote that we
  * are not deliberately changing survives untouched.
  */
-import { deriveFieldNames, inferTextFormat, type DerivedField } from './repxBindings';
+import { deriveFieldNames, fieldExpression, inferTextFormat, type DerivedField } from './repxBindings';
 import { escapeXmlAttribute } from './repxEdit';
 
 /** One complete `<Tag …>`, `</Tag>` or `<Tag … />`, as repxTruncation reads them. */
@@ -330,7 +330,7 @@ export function isExpressionEntry(entry: string | null | undefined): entry is st
 }
 
 function bindingElement(entry: string): string {
-  const expression = isExpressionEntry(entry) ? escapeXmlAttribute(entry.slice(1).trim()) : `[${entry}]`;
+  const expression = isExpressionEntry(entry) ? escapeXmlAttribute(entry.slice(1).trim()) : fieldExpression(entry);
   return (
     '<ExpressionBindings>' +
     `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="${expression}" />` +
