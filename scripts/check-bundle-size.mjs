@@ -258,8 +258,19 @@ const BUDGETS = [
    * `services/firebase` creeping back into the eager graph. That would not show
    * up here -- it shows up as the entry chunk jumping ~500 kB against its own
    * cap. This budget catches the other direction: the SDK itself growing.
+   *
+   * Split in two on 2026-11-01, when the repository audit found the chunk was
+   * fetched by every page for the header's auth state: `firebase-` is now the
+   * app and auth, 169,880 B, which every page still loads; `firestore-` is the
+   * database, 449,408 B, loaded once someone signs in. The two come to 227 B
+   * more than the one chunk did. Both caps are retuned to about 94%, where the
+   * vendored caps sit: 660,000 left on the auth half would have had 74% headroom
+   * and could not have fired, and the half the split protects is precisely the
+   * one whose growth now reaches every visitor. The 2.9 kB `firebase-` beside it
+   * is services/firebase.ts itself and matches this prefix too.
    */
-  { prefix: 'firebase-', ext: '.js', max: 660_000, note: 'firebase app + auth + firestore, lazy' },
+  { prefix: 'firebase-', ext: '.js', max: 181_000, note: 'firebase app + auth, lazy, loaded by every page' },
+  { prefix: 'firestore-', ext: '.js', max: 478_000, note: 'firestore, lazy, loaded once signed in' },
   /*
    * Every self-hosted font, checked individually. An empty prefix matches all
    * of them; the cap is the largest (inter-latin-ext, 85,068 B) plus a little.

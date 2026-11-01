@@ -19,10 +19,10 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **1,982 tests in 93 files** — under the `node` environment
-by default, with the eleven files that genuinely need a DOM opting into jsdom on their
-own first line; see `vitest.config.ts` for why that split is load-bearing rather than
-tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those eleven fail in a way
+`npm test` runs Vitest over **1,988 tests in 95 files** — under the `node` environment
+by default, with the files that genuinely need a DOM, marked in the inventory below,
+opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
+load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
 that looks like a broken install.
 
 They cover the pure helpers in `src/lib`, the config-persistence allowlist in
@@ -83,6 +83,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/DataBinding` | 18 | jsdom |
 | `components/DescribeReportDialog` | 6 | jsdom; the Prompt-to-Report wizard, no key and no network |
 | `components/LibraryPanel` | 17 | jsdom |
+| `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
 | `components/ReportPreview` | 16 | jsdom; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
@@ -101,6 +102,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/embedStore` | 20 |  |
 | `lib/expressions` | 8 | the expression reference and the check a generated one is held to, including that an aggregate in a column prints blank |
 | `lib/fidelity` | 18 | the benchmark's scorer; the runner under `scripts/fidelity/` is not in the suite |
+| `lib/firebaseClient` | 4 | the auth and Firestore halves of the loader against mocks, and the imports that would undo the split against the source |
 | `lib/geminiClient` | 6 |  |
 | `lib/geminiErrors` | 25 |  |
 | `lib/generationProgress` | 22 |  |
@@ -170,7 +172,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 1,982 in 93 files** — and that total is the arithmetic sum of the column above
+**Total: 1,988 in 95 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -184,7 +186,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,911** against a real 1,982 and will talk you into
+A grep for `\bit(` answers **1,917** against a real 1,988 and will talk you into
 "correcting" numbers that were already right. **Nine** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

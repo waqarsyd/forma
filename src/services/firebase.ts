@@ -17,13 +17,20 @@ import {
   deleteUser,
   type User,
 } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { deleteAccountData } from '../lib/accountData';
 import { OperationType, type FirestoreErrorInfo } from '../lib/firestoreOps';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+/*
+ * Auth only: Firestore is not imported here (2026-11-01). It was, with `db`
+ * opened at import, and that made every visitor of every page download and
+ * parse 395 KB of database SDK to learn whether they were signed in, which is
+ * all the site's header needs. `loadFirebase` in lib/firebaseClient.ts opens
+ * the database from `app` and `firestoreDatabaseId` when something first
+ * reads or writes it; account deletion loads it below when it runs.
+ */
+export const app = initializeApp(firebaseConfig);
+/** The Firestore database this project's data lives in; `loadFirebase` opens it. */
+export const firestoreDatabaseId = firebaseConfig.firestoreDatabaseId;
 // Bound to `app` explicitly. A bare getAuth() resolves the *default* app, which
 // only happens to be this one because nothing else calls initializeApp — add a
 // second app and the auth instance silently points at the wrong project.
@@ -120,7 +127,9 @@ export const setDisplayName = async (user: User, displayName: string) => {
  */
 export const deleteAccountAndData = async (user: User, password?: string) => {
   await reauthenticate(user, password);
-  await deleteAccountData(db, user.uid);
+  // Loaded here rather than at import: see the note on `app` above.
+  const [{ getFirestore }, { deleteAccountData }] = await Promise.all([import('firebase/firestore'), import('../lib/accountData')]);
+  await deleteAccountData(getFirestore(app, firestoreDatabaseId), user.uid);
   await deleteUser(user);
 };
 

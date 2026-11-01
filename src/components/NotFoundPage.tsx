@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { User } from 'firebase/auth';
 import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
@@ -21,6 +22,14 @@ import { Eyebrow } from './landing/sections';
  * Same chrome as every other marketing page on purpose. Someone who lands here
  * from a broken link should still be able to get where they were going, and a
  * bare error page with no header is a dead end.
+ *
+ * Telling a crawler is the client's job as well, and until 2026-11-01 nothing
+ * did: the page said "not found" to a person and nothing to a search engine,
+ * which still saw a 200 and could index every mistyped path as a page of the
+ * site. A `robots` meta of `noindex` is how a client-routed app says it, and
+ * crawlers that run the page's script read it. It is added while this page is
+ * mounted and removed when it is not, so navigating on to a real page does not
+ * carry it there.
  */
 export default function NotFoundPage({
   onEnterWorkspace,
@@ -39,6 +48,14 @@ export default function NotFoundPage({
   isDarkMode: boolean;
   setIsDarkMode: (val: boolean) => void;
 }) {
+  useEffect(() => {
+    const robots = document.createElement('meta');
+    robots.name = 'robots';
+    robots.content = 'noindex';
+    document.head.appendChild(robots);
+    return () => robots.remove();
+  }, []);
+
   return (
     <div className="landing font-body-lg text-[16px] leading-[1.62] bg-surface text-on-surface min-h-screen flex flex-col">
       <SheetRuler />

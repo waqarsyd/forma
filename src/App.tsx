@@ -98,7 +98,7 @@ import { circularThemeSwap } from './lib/themeTransition';
    had to move with it. `OperationType` is the one piece that stays eager: it is
    an enum, so referencing a member is a value reference that would pull the SDK
    back into this chunk unaided. */
-import { loadFirebase, type FirebaseClient } from './lib/firebaseClient';
+import { loadAuth, loadFirebase, type AuthClient, type FirebaseClient } from './lib/firebaseClient';
 import { OperationType } from './lib/firestoreOps';
 import {
   toFirestoreDocument,
@@ -1767,11 +1767,17 @@ export default function App() {
    * SDK is here, and a ref would not retrigger them.
    */
   const [firebase, setFirebase] = useState<FirebaseClient | null>(null);
+  /*
+   * Auth alone at start, for the signed-in state every page shows; Firestore
+   * only once someone is signed in, below (2026-11-01, see lib/firebaseClient):
+   * a signed-out visitor never downloads the database SDK.
+   */
+  const [authClient, setAuthClient] = useState<AuthClient | null>(null);
   useEffect(() => {
     let alive = true;
-    loadFirebase().then(
+    loadAuth().then(
       (client) => {
-        if (alive) setFirebase(client);
+        if (alive) setAuthClient(client);
       },
       (err) => {
         // A failed chunk load leaves the app signed-out and local-only, which is
@@ -1786,8 +1792,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!firebase) return;
-    const unsubscribe = firebase.service.auth.onAuthStateChanged((u) => {
+    if (!authClient) return;
+    const unsubscribe = authClient.service.auth.onAuthStateChanged((u) => {
       const wasSignedIn = previousUidRef.current !== null;
       const isSignedIn = !!u;
       previousUidRef.current = u?.uid ?? null;
@@ -1812,14 +1818,30 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, [firebase]);
+  }, [authClient]);
+
+  // Firestore, once someone is signed in: the projects list and the key vault
+  // below wait for it.
+  useEffect(() => {
+    if (!user || firebase) return;
+    let alive = true;
+    loadFirebase().then(
+      (client) => {
+        if (alive) setFirebase(client);
+      },
+      (err) => console.warn('Firestore could not be loaded; projects stay on this device.', err),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [user, firebase]);
 
   // Fetch from Firebase
   useEffect(() => {
     if (!user || !firebase) return;
-    const { service, sdk, paths } = firebase;
+    const { service, sdk, paths, db } = firebase;
     try {
-      const q = sdk.query(paths.reportsCollectionRef(service.db, user.uid));
+      const q = sdk.query(paths.reportsCollectionRef(db, user.uid));
       const unsubscribe = sdk.onSnapshot(q, (snapshot) => {
         const reports: SavedReport[] = [];
         snapshot.forEach((doc) => {
@@ -2006,7 +2028,7 @@ export default function App() {
   // so deletion cannot discover it, and two copies of the id meant a rename
   // here would silently orphan every stored key.
   const vaultDocRef = useCallback(
-    () => (user && firebase ? firebase.paths.vaultDocRef(firebase.service.db, user.uid) : null),
+    () => (user && firebase ? firebase.paths.vaultDocRef(firebase.db, user.uid) : null),
     [user, firebase]
   );
 
@@ -2671,11 +2693,13 @@ export default function App() {
     path: string,
     userMessage: string
   ) => {
-    /* `loadFirebase()` is already resolved wherever this is reached — every
-       caller failed a Firestore call to get here, so the SDK is in memory and
-       this only awaits a settled promise. The user message is set outside the
-       chain so it lands even if the module itself is what failed. */
-    loadFirebase()
+    /* `loadAuth()` is already resolved wherever this is reached — every
+       caller failed a Firestore call to get here, so the module is in memory
+       and this only awaits a settled promise. It is the auth half rather than
+       `loadFirebase()` because `handleFirestoreError` lives there, so this
+       still reports when the Firestore chunk is what failed. The user message
+       is set outside the chain so it lands even if the module itself did. */
+    loadAuth()
       .then(({ service }) => {
         try {
           service.handleFirestoreError(err, operation, path);
@@ -2704,9 +2728,9 @@ export default function App() {
    * Firestore returned first.
    */
   const versionIo = async (uid: string, reportId: string): Promise<VersionIo> => {
-    const { service, sdk, paths } = await loadFirebase();
-    const collectionRef = paths.versionsCollectionRef(service.db, uid, reportId);
-    const docRef = (id: string) => paths.versionDocRef(service.db, uid, reportId, id);
+    const { sdk, paths, db } = await loadFirebase();
+    const collectionRef = paths.versionsCollectionRef(db, uid, reportId);
+    const docRef = (id: string) => paths.versionDocRef(db, uid, reportId, id);
     return {
       list: async () => (await sdk.getDocs(collectionRef)).docs.map((entry) => entry.id),
       read: async () =>
@@ -2791,8 +2815,8 @@ export default function App() {
 
     if (user) {
       try {
-        const { service, sdk, paths } = await loadFirebase();
-        const docRef = paths.reportDocRef(service.db, user.uid, reportId);
+        const { sdk, paths, db } = await loadFirebase();
+        const docRef = paths.reportDocRef(db, user.uid, reportId);
 
         // The transcript carries the user's uploads inline as base64 data URLs,
         // and one of those alone can be several times the size of an entire
@@ -2922,12 +2946,12 @@ export default function App() {
     // wherever it was written.
     if (user) {
       try {
-        const { service, paths } = await loadFirebase();
+        const { paths, db } = await loadFirebase();
         // Not `deleteDoc(reportDocRef(...))`. Firestore does not delete a
         // subcollection with its parent, so that would leave the whole version
         // history behind, under an account that may itself go next, reachable
         // by nobody -- and it looks exactly like a successful delete.
-        await paths.deleteReportAndVersions(service.db, user.uid, id);
+        await paths.deleteReportAndVersions(db, user.uid, id);
       } catch (err) {
         reportFirestoreFailure(err, OperationType.DELETE, `users/${user.uid}/reports/${id}`,
           'That project could not be deleted from your account. It is still listed — try again in a moment.');
@@ -2947,7 +2971,7 @@ export default function App() {
 
   const handleLogOut = async () => {
     try {
-      await (await loadFirebase()).service.logOut();
+      await (await loadAuth()).service.logOut();
     } catch (err) {
       console.error(err);
     }

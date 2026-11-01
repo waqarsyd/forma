@@ -12,7 +12,7 @@
  * with one extra wrinkle: three separate modules had to move together or the SDK
  * came back through whichever one was left behind.
  *
- *   - `services/firebase.ts`   the app singleton, auth helpers, `db`
+ *   - `services/firebase.ts`   the app singleton and auth helpers (`db` until 2026-11-01)
  *   - `firebase/firestore`     the document operations `App.tsx` calls directly
  *   - `lib/accountData.ts`     the path builders, which import `collection`/`doc`
  *
@@ -27,36 +27,58 @@
  * signed-out visitor is in — so anything reading `user` must already tolerate it,
  * and it did: that null is what every visitor got before Firebase answered
  * anyway. What changed is how long it lasts, not that it happens.
+ *
+ * ## Auth first, Firestore only once someone is signed in (2026-11-01)
+ *
+ * Every page still loaded all three modules at start, for the auth state the
+ * header shows, and Firestore was 64% of it: 395 KB of the 619 KB chunk,
+ * parsed by every visitor, signed in or not. `loadAuth` now loads the app and
+ * auth alone, which is what the auth subscription needs; `loadFirebase` adds
+ * Firestore and the path builders, and opens the database, when something
+ * first reads or writes it, which in the app is once a user has signed in.
  */
 type FirebaseService = typeof import('../services/firebase');
 type FirestoreSdk = typeof import('firebase/firestore');
 type AccountData = typeof import('./accountData');
 
-export interface FirebaseClient {
-  /** The app singleton, auth helpers, `db`, `handleFirestoreError`. */
+/** What the auth state needs: the app singleton and its auth helpers. */
+export interface AuthClient {
+  /** The app singleton, auth helpers, `handleFirestoreError`. */
   service: FirebaseService;
+}
+
+export interface FirebaseClient extends AuthClient {
   /** `onSnapshot`, `query`, `getDoc`, `setDoc`, `deleteDoc`. */
   sdk: FirestoreSdk;
   /** `reportsCollectionRef`, `reportDocRef`, `vaultDocRef`. */
   paths: AccountData;
+  /** The project's Firestore database, opened when this client first loads. */
+  db: import('firebase/firestore').Firestore;
 }
 
+let pendingAuth: Promise<AuthClient> | null = null;
 let pending: Promise<FirebaseClient> | null = null;
 
+/** Load the app and auth alone, as every page does for the signed-in state. Memoised like `loadFirebase`. */
+export function loadAuth(): Promise<AuthClient> {
+  if (!pendingAuth) pendingAuth = import('../services/firebase').then((service) => ({ service }));
+  return pendingAuth;
+}
+
 /**
- * Load Firebase.
+ * Load Firebase with Firestore.
  *
- * Memoised on the promise rather than the module, like `loadGenAI`: the auth
- * subscription, a cloud save and a vault read can all be the first caller, and
+ * Memoised on the promise rather than the module, like `loadGenAI`: a cloud
+ * save, the projects list and a vault read can all be the first caller, and
  * on a fast connection two of them routinely overlap.
  */
 export function loadFirebase(): Promise<FirebaseClient> {
   if (!pending) {
     pending = Promise.all([
-      import('../services/firebase'),
+      loadAuth(),
       import('firebase/firestore'),
       import('./accountData'),
-    ]).then(([service, sdk, paths]) => ({ service, sdk, paths }));
+    ]).then(([{ service }, sdk, paths]) => ({ service, sdk, paths, db: sdk.getFirestore(service.app, service.firestoreDatabaseId) }));
   }
   return pending;
 }

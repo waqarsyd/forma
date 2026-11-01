@@ -18,25 +18,31 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           /**
-           * Keep the whole Firebase SDK in one chunk.
+           * The Firebase SDK in two chunks: `firebase` (the app, auth and the
+           * `@firebase` internals both halves share) and `firestore` (the
+           * database and its channel).
            *
-           * `lib/firebaseClient.ts` dynamically imports `services/firebase` and
-           * `firebase/firestore` separately, and Rollup's default splitting gave
-           * each its own chunk: 129.52 kB + 492.32 kB. Grouping them yields one
-           * 619.08 kB chunk — worth about 3 kB, so this is **not** a size fix. It
-           * was tried as one, on the theory that the two chunks were duplicating
-           * shared `@firebase` internals, and the measurement says they were not.
+           * Until 2026-11-01 this kept the whole SDK in one 619 kB chunk, on the
+           * reasoning that `lib/firebaseClient.ts` always loaded both halves
+           * together, so splitting would only add a request: Rollup's default
+           * gave 129.52 kB + 492.32 kB, about 3 kB less than one chunk, and the
+           * two did not duplicate shared internals. That premise stopped holding
+           * when the repository audit found the "lazy" chunk fetched by every
+           * page, because the header asks for the auth state on mount. Now
+           * `loadAuth` loads auth alone and Firestore waits for a signed-in user,
+           * which a single chunk would undo: the grouping would put the database
+           * back in front of every visitor.
            *
-           * What it buys is one request instead of two on the sign-in path, and
-           * a single artifact that `check:size` can hold a budget against.
-           *
-           * It costs nothing in load behaviour: nothing in the eager graph
-           * references `@firebase` any more, so this chunk is fetched only when
-           * something actually asks for Firebase. If a static import of it
-           * reappears in the entry graph the chunk turns eager again — the entry
-           * chunk's own budget is what will catch that.
+           * The shared internals are named into `firebase` rather than left to
+           * Rollup, because left alone they could land in whichever chunk asks
+           * first, and auth is always first. If a static import of either half
+           * reappears in the entry graph it turns eager again — the entry chunk's
+           * own budget is what will catch that.
            */
           manualChunks(id: string) {
+            if (/node_modules[\\/](@firebase[\\/](firestore|webchannel-wrapper)|firebase[\\/]firestore)[\\/]/.test(id)) {
+              return 'firestore';
+            }
             if (id.includes('node_modules/@firebase') || id.includes('node_modules/firebase')) {
               return 'firebase';
             }
