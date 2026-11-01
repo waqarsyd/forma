@@ -110,7 +110,7 @@ export function layoutContinuous(structure: ReportStructure, recordCount: number
     sub: band.sub ? { ...band.sub, bands: band.sub.bands.map(flow) } : null,
   });
   const continuous: ReportStructure = { ...structure, page: { ...structure.page, height: 1e9 }, bands: structure.bands.map(flow) };
-  const report = paginate(continuous, recordCount, { ...options, maxPages: 1 });
+  const report = paginate(continuous, recordCount, { ...options, maxPages: 1, overflowPages: false });
   // The page footer follows the last of the content, not the foot of a page a
   // billion units tall: DevExpress's workbooks put it directly after the report
   // footer, the gap between them exactly the two bands' own spacing. The bottom

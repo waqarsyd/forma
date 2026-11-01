@@ -2895,6 +2895,13 @@ export interface PaginateOptions {
    * relation path) and the master's row. Absent, every master has none.
    */
   related?: (dataMember: string, master: RecordValues) => RecordValues[] | null;
+  /**
+   * Whether to add the pages DevExpress prints for what runs past the right
+   * margin (parity row 64). On unless false: the exports, which lay a report
+   * out as one continuous page, turn it off, as DevExpress's CSV and workbook
+   * hold each control once.
+   */
+  overflowPages?: boolean;
 }
 
 /**
@@ -3144,18 +3151,9 @@ export function paginate(
    * A control past the printable width. DevExpress clips it at the right margin
    * and prints what was clipped on an EXTRA page -- measured both for a control
    * that only reached into the margin and for one past the page edge; each
-   * turned a one-page report into two. This pane clips at the margin too (see
-   * `content` below) but does not draw the extra page, so it says so.
+   * turned a one-page report into two. Until parity row 64 this pane said so
+   * here rather than drawing the page; `addOverflowPages` now draws it.
    */
-  const overhanging = bands
-    .flatMap((b) => b.controls)
-    .filter((c) => c.visible && c.width > 0 && c.x + c.offsetX + c.width > fullWidth + 1);
-  if (overhanging.length) {
-    problems.push(
-      `${overhanging.length} control(s) run past the right margin (${overhanging.slice(0, 3).map((c) => c.name || c.type).join(', ')}). ` +
-        'DevExpress clips them at the margin and prints the clipped part on an extra page, which this preview does not draw.',
-    );
-  }
 
   /*
    * `withReportHeader` is only true for page 1, and the ordering it produces is
@@ -3765,7 +3763,7 @@ export function paginate(
     : 0;
 
   return {
-    pages,
+    pages: options.overflowPages === false ? pages : addOverflowPages(pages, fullWidth, contentLeft, unitsPerInch(structure.unit) * 0.005),
     page: structure.page,
     content: { left: contentLeft, width: fullWidth },
     unit: structure.unit,
@@ -3773,6 +3771,60 @@ export function paginate(
     recordsPerPage,
     problems,
   };
+}
+
+/**
+ * The pages DevExpress adds for what runs past the right margin (parity row
+ * 64), each after the page it continues, the pages renumbered.
+ *
+ * Printed in s7, s10 and s47a to s47e, built in DevExpress 20.1: the area
+ * across the page between the margins is one column, and a control whose box
+ * reaches past it into column k, by any amount, gives its page a page for
+ * column k, on which the bands print shifted left by k columns and clipped to
+ * the margins, as page 1 is clipped at the right one. Only the columns some
+ * control on that page reaches get a page: in s47b a label two columns out
+ * made one page, not two, and in s47e a report header label past the margin
+ * gave page 1 a page and page 2, with nothing past it, none. Page numbers
+ * count every page: s47c printed "Page 1 of 4" and "Page 3 of 4".
+ *
+ * A control must reach more than `slack` past a column's edge to reach the
+ * next: in s48 one ending 0.33 hundredths of an inch past A4's margin, and
+ * 0.5 past Letter's, printed on one page, and one ending 0.53 and 1.0 past
+ * made two. A control wholly in a later column prints only on that column's
+ * page, as in s47b, where page 1 held nothing two columns out.
+ */
+export function addOverflowPages(pages: PreviewPage[], width: number, left: number, slack = 0): PreviewPage[] {
+  if (!(width > 0)) return pages;
+  // Where a control's box falls across the content, from the left margin.
+  const span = (pb: PlacedBand, pc: PlacedControl) => {
+    const x = pb.left - left + pc.control.x + pc.control.offsetX;
+    return [x, x + pc.control.width] as const;
+  };
+  // Whether a control prints in column k: it starts before the column ends
+  // and, past the first, reaches into it by more than the slack.
+  const inColumn = (pb: PlacedBand, pc: PlacedControl, k: number) => {
+    const [x0, x1] = span(pb, pc);
+    return x0 < (k + 1) * width && (k === 0 || x1 > k * width + slack);
+  };
+  const out: PreviewPage[] = [];
+  let added = false;
+  for (const page of pages) {
+    const columns = new Set<number>();
+    for (const pb of page.bands) for (const pc of pb.controls) {
+      if (!pc.control.visible || !(pc.control.width > 0)) continue;
+      const [x0, x1] = span(pb, pc);
+      for (let k = Math.max(1, Math.floor(x0 / width)); x1 > k * width + slack; k++) columns.add(k);
+    }
+    if (!columns.size) { out.push(page); continue; }
+    added = true;
+    const column = (k: number): PlacedBand[] => page.bands
+      .map((pb) => ({ ...pb, left: pb.left - k * width, controls: pb.controls.filter((pc) => inColumn(pb, pc, k)) }))
+      .filter((pb) => pb.controls.length);
+    // The page itself keeps what starts within it; bands keep their place.
+    out.push({ ...page, bands: page.bands.map((pb) => ({ ...pb, controls: pb.controls.filter((pc) => inColumn(pb, pc, 0)) })) });
+    for (const k of [...columns].sort((a, b) => a - b)) out.push({ number: 0, bands: column(k) });
+  }
+  return added ? out.map((p, i) => ({ ...p, number: i + 1 })) : pages;
 }
 
 /**

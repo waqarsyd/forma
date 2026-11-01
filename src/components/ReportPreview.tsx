@@ -1036,15 +1036,17 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                     width: unitsToPx(placed.width, report.unit),
                     // This placement's height: grown, or one part of a split.
                     height: unitsToPx(placed.height, report.unit),
-                    // Clip at the right margin and nowhere else, as DevExpress
-                    // does: not at a column's edge (an over-wide control in a
-                    // column prints over the next one, measured by render-cols),
-                    // and not vertically. The inset is negative for a column,
-                    // reaching out to the printable area's right edge.
+                    // Clip at the margins and nowhere else, as DevExpress does:
+                    // not at a column's edge (an over-wide control in a column
+                    // prints over the next one, measured by render-cols), and not
+                    // vertically. The right inset is negative for a column,
+                    // reaching out to the printable area's right edge. Only a band
+                    // shifted left a column, on a page for what ran past the right
+                    // margin, is clipped at the left one as well (parity row 64).
                     clipPath: `inset(-100000px ${unitsToPx(
                       placed.left + placed.width - (report.content.left + report.content.width),
                       report.unit,
-                    )}px -100000px -100000px)`,
+                    )}px -100000px ${placed.left < report.content.left ? unitsToPx(report.content.left - placed.left, report.unit) : -100000}px)`,
                     background: showBands ? BAND_TINT[placed.band.kind] ?? 'transparent' : 'transparent',
                   }}
                 >

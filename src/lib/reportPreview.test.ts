@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseReportStructure,
   paginate,
+  addOverflowPages,
   activeColumns,
   pageInfoText,
   cssColor,
@@ -1397,13 +1398,43 @@ describe('side margins and the printable width, as DevExpress prints them', () =
     expect(activeColumns(decl('UseColumnCount', 3), 750)).toEqual({ count: 3, width: (750 - 40) / 3, spacing: 20, layout: 'AcrossThenDown' });
   });
 
-  it('says when a control runs past the right margin, which DevExpress prints on an extra page', () => {
+  it('prints what runs past the right margin on an extra page, as DevExpress does (s10, row 64)', () => {
     const past = withMargins('60, 40, 50, 50', '', '<Item1 Ref="10" ControlType="XRLabel" Name="intoMargin" Text="x" LocationFloat="700,30" SizeF="80,20" />');
-    const problems = paginate(parseReportStructure(past), 1).problems;
-    expect(problems.some((p) => p.includes('intoMargin') && p.includes('extra page'))).toBe(true);
+    const report = paginate(parseReportStructure(past), 1);
+    expect(report.pages.map((p) => p.number)).toEqual([1, 2]);
+    // The extra page holds that label alone, its band shifted left a column
+    // of 750, so it starts at 60 + 700 - 750 = 10 and the margin clips the rest.
+    const extra = report.pages[1].bands;
+    expect(extra.flatMap((b) => b.controls.map((pc) => pc.control.name))).toEqual(['intoMargin']);
+    expect(extra[0].left + 700).toBe(10);
     // To the edge and no further printed on one page.
     const toEdge = withMargins('60, 40, 50, 50', '', '<Item1 Ref="10" ControlType="XRLabel" Name="toEdge" Text="x" LocationFloat="550,60" SizeF="200,20" />');
-    expect(paginate(parseReportStructure(toEdge), 1).problems.some((p) => p.includes('right margin'))).toBe(false);
+    expect(paginate(parseReportStructure(toEdge), 1).pages).toHaveLength(1);
+    // The exports lay a report out as one page, and hold each control once.
+    expect(paginate(parseReportStructure(past), 1, { overflowPages: false }).pages).toHaveLength(1);
+  });
+
+  // s47b and s47e: a column nothing reaches gets no page, and a page with
+  // nothing past the margin gets none; the pages after are renumbered.
+  it('adds a page only for the columns a page\'s controls reach (s47b, s47e)', () => {
+    const page = (controls: { x: number; w: number }[]) => ({
+      number: 0,
+      bands: [{ left: 50, top: 0, width: 750, height: 30, record: null, band: {} as never,
+        controls: controls.map((c, i) => ({ control: { name: `c${i}`, x: c.x, offsetX: 0, width: c.w, visible: true }, y: 0 } as unknown as PlacedControl)) }],
+    });
+    const twoOut = addOverflowPages([page([{ x: 0, w: 100 }, { x: 1600, w: 100 }])], 750, 50);
+    expect(twoOut).toHaveLength(2);
+    expect(twoOut[1].bands[0].left).toBe(50 - 2 * 750);
+    // Page 1 keeps only what starts on it.
+    expect(twoOut[0].bands[0].controls.map((pc) => pc.control.name)).toEqual(['c0']);
+    // s48: half a hundredth past the margin stays on the page; more does not.
+    expect(addOverflowPages([page([{ x: 650.5, w: 100 }])], 750, 50, 0.5)).toHaveLength(1);
+    expect(addOverflowPages([page([{ x: 650.6, w: 100 }])], 750, 50, 0.5)).toHaveLength(2);
+    const headerOnly = addOverflowPages([page([{ x: 700, w: 200 }]), page([{ x: 0, w: 100 }])], 750, 50);
+    expect(headerOnly.map((p) => p.number)).toEqual([1, 2, 3]);
+    expect(headerOnly[1].bands[0].controls.map((pc) => pc.control.name)).toEqual(['c0']);
+    // A box ending exactly at the margin reaches no further.
+    expect(addOverflowPages([page([{ x: 550, w: 200 }])], 750, 50)).toHaveLength(1);
   });
 });
 
