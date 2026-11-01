@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,078 tests in 101 files** — under the `node` environment
+`npm test` runs Vitest over **2,082 tests in 101 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -127,7 +127,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
 | `lib/reportGeometry` | 41 |  |
-| `lib/reportPreview` | 286 | 24 from six loops, the fifth an `it.each` over the four table-of-contents placements and the sixth over two drill-down cases: parity cases c05 to c05e page for page, the seven s19 nesting variants, the four one-field-per-kind cross-tabs' CSVs, and s29a and s29b; a chart's points over test data against DevExpress's, and its pie shares (row 32); drill-down collapsed (s56a, s56d) label for label, expanded as none, one group toggled, and the CSVs byte for byte (row 69) |
+| `lib/reportPreview` | 290 | 28 from seven loops, the fifth an `it.each` over the four table-of-contents placements, the sixth over two drill-down cases and the seventh over four s57 page feet: parity cases c05 to c05e page for page, the seven s19 nesting variants, the four one-field-per-kind cross-tabs' CSVs, and s29a and s29b; a chart's points over test data against DevExpress's, and its pie shares (row 32); drill-down collapsed (s56a, s56d) label for label, expanded as none, one group toggled, and the CSVs byte for byte (row 69); a one-line record at the foot of the page kept while its line fits and moved whole once it does not, with a page footer and without, against DevExpress's PDFs (s57) |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
 | `lib/repxAudit` | 94 |  |
@@ -178,7 +178,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,078 in 101 files** — and that total is the arithmetic sum of the column above
+**Total: 2,082 in 101 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -192,7 +192,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,977** against a real 2,078 and will talk you into
+A grep for `\bit(` answers **1,977** against a real 2,082 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

@@ -3776,8 +3776,9 @@ const S56D_DX: string[] = ["pages 1","1|50|50|Sales report","1|50|90|North","1|7
   });
 
   it('prints an expanded drill-down exactly as no drill-down, as DevExpress printed s56b and s56c', () => {
-    // DevExpress's two prints were identical, label for label. (Both also show the
-    // last record of page 1 moved whole where Forma keeps its line: parity row 70.)
+    // DevExpress's two prints were identical, label for label. (Their render.json
+    // left out the record crossing the foot of page 1, which both PDFs print: see
+    // "The brick dump can miss what prints" in devexpress-parity.md, and s57 below.)
     expect(labels(S56B)).toEqual(labels(S56B.replace(/ DrillDownControl="#Ref-\d+"/, '')));
   });
 
@@ -3802,5 +3803,47 @@ const S56D_DX: string[] = ["pages 1","1|50|50|Sales report","1|50|90|North","1|7
     expect(reportToCsv(parseReportStructure(S56D), ROWS.length, { rows: ROWS })).toBe(
       'Sales report,\r\nNorth,\r\n,End of region\r\nSouth,\r\n,End of region\r\nWest,\r\n,End of region\r\nTotals,\r\n',
     );
+  });
+});
+
+/*
+ * A one-line record across the foot of the page (2026-11-01), against DevExpress
+ * 20.1's PDFs of s57: a 25-unit record whose line still fits above the cut
+ * printed there and carried the rest, so the next page began that much lower
+ * (crossing by 5); one whose line did not fit moved whole (crossing by 10).
+ * The same with a page footer as without one: the rule s51 measured, which
+ * Forma already followed, confirmed where nothing but the margin is below.
+ * Measured from the PDFs, since render.json leaves out a brick that crosses
+ * the foot of the page.
+ */
+describe('a one-line record across the foot of the page, as DevExpress printed it (cases s57)', () => {
+// The cases as written, and records 36 to 41 in DevExpress's PDFs as page|top|text.
+const S57_NF_5 = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"rs57nf5\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"30\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Customers\" SizeF=\"300,20\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"5\" ControlType=\"XRLabel\" Name=\"customer\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"6\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"7\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S57_NF_5_DX = ["1|955|Customer 36","1|980|Customer 37","1|1005|Customer 38","1|1030|Customer 39","2|55|Customer 40","2|80|Customer 41"];
+const S57_NF_10 = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"rs57nf10\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"35\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Customers\" SizeF=\"300,20\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"5\" ControlType=\"XRLabel\" Name=\"customer\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"6\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"7\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S57_NF_10_DX = ["1|960|Customer 36","1|985|Customer 37","1|1010|Customer 38","2|50|Customer 39","2|75|Customer 40","2|100|Customer 41"];
+const S57_PF_5 = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"rs57pf5\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"25\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Customers\" SizeF=\"300,20\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"5\" ControlType=\"XRLabel\" Name=\"customer\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"6\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"7\" ControlType=\"PageFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"8\" ControlType=\"XRLabel\" Name=\"pageNote\" Text=\"Page footer\" SizeF=\"300,20\" LocationFloat=\"0,5\" /></Controls></Item4><Item5 Ref=\"9\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S57_PF_5_DX = ["1|950|Customer 36","1|975|Customer 37","1|1000|Customer 38","2|55|Customer 39","2|80|Customer 40","2|105|Customer 41"];
+const S57_PF_10 = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"rs57pf10\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"30\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Customers\" SizeF=\"300,20\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"5\" ControlType=\"XRLabel\" Name=\"customer\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"6\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"7\" ControlType=\"PageFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"8\" ControlType=\"XRLabel\" Name=\"pageNote\" Text=\"Page footer\" SizeF=\"300,20\" LocationFloat=\"0,5\" /></Controls></Item4><Item5 Ref=\"9\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S57_PF_10_DX = ["1|955|Customer 36","1|980|Customer 37","2|50|Customer 38","2|75|Customer 39","2|100|Customer 40","2|125|Customer 41"];
+  const ROWS = Array.from({ length: 60 }, (_, k) => ({ Customer: `Customer ${String(k + 1).padStart(2, '0')}` }));
+  const tops = (repx: string) => {
+    const report = paginate(parseReportStructure(repx), ROWS.length, { rows: ROWS });
+    return report.pages.slice(0, 2).flatMap((page, p) =>
+      page.bands.flatMap((band) =>
+        band.controls
+          .filter((pc) => /^Customer (3[6-9]|4[01])$/.test(pc.text ?? ''))
+          .map((pc) => `${p + 1}|${Math.round((band.top + pc.y) * 10) / 10}|${pc.text}`),
+      ),
+    );
+  };
+
+  it.each([
+    ['crossing by 5, no page footer', () => S57_NF_5, () => S57_NF_5_DX],
+    ['crossing by 10, no page footer', () => S57_NF_10, () => S57_NF_10_DX],
+    ['crossing by 5 into a page footer', () => S57_PF_5, () => S57_PF_5_DX],
+    ['crossing by 10 into a page footer', () => S57_PF_10, () => S57_PF_10_DX],
+  ])('keeps a line that fits and moves one that does not (%s)', (_name, repx, dx) => {
+    expect(tops(repx())).toEqual(dx());
   });
 });
