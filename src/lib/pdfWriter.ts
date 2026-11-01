@@ -88,7 +88,7 @@ export type PdfOp =
   | { kind: 'fill'; x: number; y: number; w: number; h: number; colour: Rgb }
   | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; width: number; colour: Rgb; dash?: number[] }
   /** `y` is the baseline; `scale` stretches the line horizontally, 1 for none. */
-  | { kind: 'text'; x: number; y: number; size: number; font: StandardFont; colour: Rgb; text: string; scale: number }
+  | { kind: 'text'; x: number; y: number; size: number; font: StandardFont; colour: Rgb; text: string; scale: number; /** The CSS font it was drawn in, for a renderer that has it. */ css?: string }
   | { kind: 'image'; x: number; y: number; w: number; h: number; image: number }
   | { kind: 'clip'; x: number; y: number; w: number; h: number }
   | { kind: 'restore' }

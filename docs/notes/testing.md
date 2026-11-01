@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,026 tests in 96 files** — under the `node` environment
+`npm test` runs Vitest over **2,030 tests in 97 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -100,6 +100,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/datetime` | 12 |  |
 | `lib/designerBridge` | 38 | 8 from one loop |
 | `lib/embedStore` | 20 |  |
+| `lib/exportItems` | 4 | the RTF, DOCX and HTML exports read back against DevExpress's of s54a: every frame's page and twips, a section per page, every HTML cell's place in the grid; and RTF text escaping |
 | `lib/expressions` | 8 | the expression reference and the check a generated one is held to, including that an aggregate in a column prints blank |
 | `lib/fidelity` | 18 | the benchmark's scorer; the runner under `scripts/fidelity/` is not in the suite |
 | `lib/firebaseClient` | 4 | the auth and Firestore halves of the loader against mocks, and the imports that would undo the split against the source |
@@ -173,7 +174,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,026 in 96 files** — and that total is the arithmetic sum of the column above
+**Total: 2,030 in 97 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -187,7 +188,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,931** against a real 2,026 and will talk you into
+A grep for `\bit(` answers **1,935** against a real 2,030 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

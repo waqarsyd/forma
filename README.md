@@ -376,6 +376,10 @@ src/
                        browser's print path so that it can carry the
                        report's bookmarks as an outline -- the outline the
                        same as DevExpress's, entry for entry),
+                       exportItems with docxExport, rtfExport and htmlExport
+                       (Word and RTF page by page as positioned frames, HTML
+                       as one continuous table, each frame and cell where
+                       DevExpress's own export put it),
                        textMeasure (how many lines a text breaks into and how
                        tall that prints, so the Preview grows controls and
                        breaks pages where DevExpress does),

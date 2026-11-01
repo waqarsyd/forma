@@ -132,7 +132,7 @@ function textLines(node: Text): { text: string; left: number; top: number; right
 }
 
 /** The drawing operations of one page element, in points from its top left corner. */
-async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<PdfOp[]> {
+export async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<PdfOp[]> {
   const origin = page.getBoundingClientRect();
   const ops: PdfOp[] = [];
   const box = (r: DOMRect) => ({
@@ -197,7 +197,8 @@ async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<PdfOp[]> 
         const sizePx = Number.parseFloat(style.fontSize);
         const colour = colourOf(style.color)?.rgb ?? [0, 0, 0];
         const c = context();
-        c.font = `${style.fontStyle} ${style.fontWeight} ${sizePx}px ${style.fontFamily}`;
+        const css = `${style.fontStyle} ${style.fontWeight} ${sizePx}px ${style.fontFamily}`;
+        c.font = css;
         const ascent = c.measureText('Hg').fontBoundingBoxAscent;
         c.font = `${style.fontStyle} ${style.fontWeight} ${sizePx}px "${metricFamily}"`;
         for (const line of textLines(child)) {
@@ -213,6 +214,7 @@ async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<PdfOp[]> 
             colour,
             text: line.text,
             scale,
+            css,
           });
         }
       }

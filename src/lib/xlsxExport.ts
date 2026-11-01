@@ -24,117 +24,14 @@
  */
 import { buildZip } from './zip';
 import { NetDecimal } from './netDecimal';
-import type { Value } from './criteria';
 import { unitsPerInch } from './reportGeometry';
-import { layoutContinuous, placedControls } from './csvExport';
-import { cssColor, fontDecoration, pageInfoText, type Appearance, type PaginateOptions, type PreviewControl, type ReportStructure } from './reportPreview';
+import { layoutContinuous } from './csvExport';
+import { argb, reportItems, type ExportItem } from './exportItems';
+import type { PaginateOptions, ReportStructure } from './reportPreview';
 
-/** Controls that print no text of their own make no cell. */
-const TEXTLESS = new Set(['XRLine', 'XRShape', 'XRPictureBox', 'XRBarCode', 'XRChart', 'XRCrossTab', 'XRGauge', 'XRSparkline', 'XRPanel', 'XRRichText', 'XRSubreport']);
-
-interface Item {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-  text: string;
-  value: Value | null | undefined;
-  format: string | null;
-  font: { name: string; size: number; bold: boolean; italic: boolean; underline: boolean; color: string };
-  fill: string | null;
-  h: 'left' | 'center' | 'right';
-  v: 'top' | 'center' | 'bottom';
-  url: string | null;
-  /** A page-info control, which DevExpress wrote as text. */
-  pageNumber?: boolean;
-}
+type Item = ExportItem;
 
 const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-/** `#RRGGBB` or `rgb(r, g, b)` as Excel's `FFRRGGBB`. */
-function argb(css: string | undefined | null, fallback: string): string {
-  if (!css) return fallback;
-  const hex = /^#([0-9a-f]{6})$/i.exec(css);
-  if (hex) return `FF${hex[1].toUpperCase()}`;
-  const rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(css);
-  if (rgb) return 'FF' + [rgb[1], rgb[2], rgb[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('').toUpperCase();
-  return fallback;
-}
-
-function fontOf(c: { fontFamily: string | null; fontSize: number | null; bold: boolean; italic: boolean }, look: Appearance) {
-  return {
-    name: c.fontFamily ?? 'Times New Roman',
-    // DevExpress wrote the default 9.75pt as 9: whole points only.
-    size: Math.trunc(c.fontSize ?? 9.75),
-    bold: c.bold,
-    italic: c.italic,
-    underline: (fontDecoration(look.Font) ?? '').includes('underline'),
-    color: argb(cssColor(look.ForeColor), 'FF000000'),
-  };
-}
-
-const horizontal = (a: string): Item['h'] => (a === 'center' ? 'center' : a === 'right' ? 'right' : 'left');
-const vertical = (a: string): Item['v'] => (a === 'middle' ? 'center' : a === 'bottom' ? 'bottom' : 'top');
-
-function itemsOf(structure: ReportStructure, recordCount: number, options: PaginateOptions): Item[] {
-  const report = layoutContinuous(structure, recordCount, options);
-  const out: Item[] = [];
-  for (const { page, bandLeft, bandTop, pc } of placedControls(report)) {
-    const c: PreviewControl = pc.control;
-    const left = bandLeft + c.x + c.offsetX;
-    const top = bandTop + pc.y;
-    // A cross-tab's grid, in DevExpress's default appearance: s25 printed none
-    // of the cross-tab's own reaching its cells, and wrote values typed.
-    if (pc.crossTab) {
-      for (const cell of pc.crossTab.cells) {
-        out.push({
-          left: left + cell.x, top: top + cell.y, right: left + cell.x + cell.width, bottom: top + cell.y + cell.height,
-          text: cell.text, value: cell.value, format: null,
-          font: fontOf({ fontFamily: null, fontSize: null, bold: false, italic: false }, {}),
-          fill: null, h: 'left', v: 'top', url: null,
-        });
-      }
-      continue;
-    }
-    if (TEXTLESS.has(c.type)) continue;
-    if (c.type === 'XRTable') {
-      const heights = pc.rowHeights ?? c.rows.map(() => c.height / Math.max(1, c.rows.length));
-      let y = top;
-      heights.forEach((h, r) => {
-        const row = c.rows[pc.rowStart + r];
-        if (!row) return;
-        const total = row.cells.reduce((s, cell) => s + cell.weight, 0) || 1;
-        let x = left;
-        row.cells.forEach((cell, i) => {
-          const w = (c.width * cell.weight) / total;
-          out.push({
-            left: x, top: y, right: x + w, bottom: y + h,
-            text: pc.cellTexts?.[pc.rowStart + r]?.[i] ?? cell.text,
-            value: pc.cellValues?.[pc.rowStart + r]?.[i],
-            format: cell.data.format,
-            font: fontOf(cell, cell.appearance),
-            fill: cssColor(cell.appearance.BackColor) ?? null,
-            h: horizontal(cell.align), v: vertical(cell.vAlign), url: null,
-          });
-          x += w;
-        });
-        y += h;
-      });
-      continue;
-    }
-    out.push({
-      left, top, right: left + c.width, bottom: top + pc.height,
-      text: c.pageInfo ? pageInfoText(c.pageInfo, page.number, report.pages.length) : pc.text ?? c.text,
-      value: c.pageInfo ? undefined : pc.value,
-      format: c.data.format,
-      font: fontOf(c, c.appearance),
-      fill: cssColor(c.appearance.BackColor) ?? null,
-      h: horizontal(c.align), v: vertical(c.vAlign), url: pc.url ?? null,
-      pageNumber: !!c.pageInfo,
-    });
-  }
-  return out;
-}
 
 // ------------------------------------------------------------- formats
 
@@ -216,7 +113,8 @@ const columnName = (n: number) => {
 
 /** Lay the report out on one continuous page and write it as an .xlsx workbook. */
 export function reportToXlsx(structure: ReportStructure, recordCount: number, options: PaginateOptions = {}): Uint8Array {
-  const items = itemsOf(structure, recordCount, options);
+  // Whole points only: DevExpress wrote the default 9.75pt as 9.
+  const items = reportItems(layoutContinuous(structure, recordCount, options)).map((i) => ({ ...i, font: { ...i.font, size: Math.trunc(i.font.size) } }));
   const perInch = unitsPerInch(structure.unit);
   const px = (u: number) => Math.round((u / perInch) * 96);
   const key = (n: number) => Math.round(n * 100) / 100;

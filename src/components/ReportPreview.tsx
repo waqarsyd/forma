@@ -52,7 +52,7 @@ import { parseParameters } from '../lib/repxParameters';
 import { readBoundFields } from '../lib/repxBindingPlan';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
 import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt } from '../lib/textMeasure';
-import { exportFileName, reportToCsv } from '../lib/csvExport';
+import { exportFileName, layoutContinuous, reportToCsv } from '../lib/csvExport';
 import { reportToXlsx } from '../lib/xlsxExport';
 import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
 import type { ReportLayout } from '../lib/reportTypes';
@@ -872,7 +872,6 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   const parameters = useMemo(() => parseParameters(repxContent), [repxContent]);
 
   const pageW = unitsToPx(report.page.width, report.unit);
-  const pageH = unitsToPx(report.page.height, report.unit);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -1065,6 +1064,62 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   }, [structure, records, layout, paramValues, measure, download]);
 
   /*
+   * Word, RTF, HTML and image, as DevExpress exports them (parity row 21).
+   * Word and RTF go page by page, as frames where the page printed each item;
+   * HTML and the image are the continuous layout CSV and XLSX use, a table
+   * whose grid is the layout and one picture of the whole report. The text
+   * comes from the layout, as for XLSX; the charts, and the image, from the
+   * pages drawn at true size into a hidden host, as for the PDF. Each writer
+   * is loaded only when it is chosen.
+   */
+  type ExportKind = 'docx' | 'rtf' | 'html' | 'png';
+  const [exportKind, setExportKind] = useState<ExportKind | null>(null);
+  const exportHostRef = useRef<HTMLDivElement>(null);
+  const continuous = useMemo(() => {
+    if (exportKind !== 'html' && exportKind !== 'png') return null;
+    const count = records?.length ? records.length : recordCountFromLayout(layout);
+    return layoutContinuous(structure, count, { rows: records ?? null, parameters: paramValues, measure });
+  }, [exportKind, structure, records, layout, paramValues, measure]);
+  useEffect(() => {
+    if (!exportKind) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await document.fonts?.ready;
+        await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+        const host = exportHostRef.current;
+        if (!host || cancelled) return;
+        const pages = [...host.querySelectorAll<HTMLElement>('.rp-page')];
+        const laid = continuous ?? report;
+        const dom = await import('../lib/exportFromDom');
+        if (exportKind === 'png') {
+          if (!cancelled) download(await dom.pageToPng(pages[0]), 'image/png', 'png');
+          return;
+        }
+        const pictures = await dom.picturesOf(pages, unitsPerInch(laid.unit) / 96);
+        if (cancelled) return;
+        if (exportKind === 'html') {
+          const { reportToHtml } = await import('../lib/htmlExport');
+          download(reportToHtml(laid, structure, title || 'Report', pictures), 'text/html;charset=utf-8', 'html');
+        } else if (exportKind === 'rtf') {
+          const { reportToRtf } = await import('../lib/rtfExport');
+          download(reportToRtf(laid, structure, pictures), 'application/rtf', 'rtf');
+        } else {
+          const { reportToDocx } = await import('../lib/docxExport');
+          download(reportToDocx(laid, structure, pictures) as BlobPart, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx');
+        }
+      } catch (err) {
+        console.error('Forma could not write the export.', err);
+      } finally {
+        if (!cancelled) setExportKind(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [exportKind, continuous, report, structure, title, download]);
+
+  /*
    * A PDF of Forma's own writing, with the report's bookmarks as its outline
    * (parity row 18). Printing cannot add an outline, so this reads the pages
    * drawn at true size into a hidden host, as the printed copy is, and writes
@@ -1147,7 +1202,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * targets and selection outlines have no business existing. `windowed` is
    * true for the pane only: the printed copy needs every page.
    */
-  const renderPages = (zoom: number, editing: boolean, windowed: boolean) => (
+  const renderPages = (zoom: number, editing: boolean, windowed: boolean, laid: PaginatedReport = report) => {
+    // Another layout of the same report, for an export (the continuous one for
+    // HTML and PNG), is drawn with its own page size.
+    const report = laid;
+    const pageW = unitsToPx(report.page.width, report.unit);
+    const pageH = unitsToPx(report.page.height, report.unit);
+    return (
     <div className="rp-pages" ref={windowed ? pagesRef : undefined}>
       {report.pages.map((page, pageIndex) => (
         <div className="rp-page-wrap" key={page.number}>
@@ -1354,6 +1415,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       ))}
     </div>
   );
+  };
 
   return (
     <div className="rp-root">
@@ -1569,6 +1631,22 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         <button type="button" className="wb-pill wb-pill--outline" onClick={exportCsv} disabled={!report.pages.length}>
           Export CSV
         </button>
+        <select
+          className="wb-pill wb-pill--outline"
+          aria-label="Export in another format"
+          value=""
+          disabled={!report.pages.length || !!exportKind}
+          onChange={(e) => {
+            const kind = e.target.value as ExportKind | '';
+            if (kind) setExportKind(kind);
+          }}
+        >
+          <option value="">{exportKind ? 'Exporting…' : 'More exports'}</option>
+          <option value="docx">Word (DOCX)</option>
+          <option value="rtf">RTF</option>
+          <option value="html">HTML</option>
+          <option value="png">Image (PNG)</option>
+        </select>
       </div>
 
       {/* Parameters are asked BEFORE the report prints, so they belong above
@@ -1617,6 +1695,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
 
       {/* True size, outside the workspace tree, only while printing. */}
       {printing && createPortal(<div className="rp-print-host">{renderPages(1, false, false)}</div>, document.body)}
+      {/* The same, for the other exports: the continuous layout for HTML and the image. */}
+      {exportKind && createPortal(
+        <div ref={exportHostRef} aria-hidden style={{ position: 'fixed', left: -100000, top: 0, pointerEvents: 'none' }}>
+          {renderPages(1, false, false, continuous ?? report)}
+        </div>,
+        document.body,
+      )}
       {/* True size again, off screen but laid out, for the PDF writer to read. */}
       {writingPdf && createPortal(
         <div ref={pdfHostRef} aria-hidden style={{ position: 'fixed', left: -100000, top: 0, pointerEvents: 'none' }}>
