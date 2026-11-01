@@ -12,10 +12,10 @@
  */
 import type { Value } from './criteria';
 import { placedControls } from './csvExport';
-import { cssColor, fontDecoration, pageInfoText, type Appearance, type PaginatedReport, type PreviewControl } from './reportPreview';
+import { cssColor, fontDecoration, pageInfoText, tocCells, type Appearance, type PaginatedReport, type PreviewControl } from './reportPreview';
 
 /** Controls that print no text of their own make no item. */
-export const TEXTLESS = new Set(['XRLine', 'XRShape', 'XRPictureBox', 'XRBarCode', 'XRChart', 'XRCrossTab', 'XRGauge', 'XRSparkline', 'XRPanel', 'XRRichText', 'XRSubreport']);
+export const TEXTLESS = new Set(['XRLine', 'XRShape', 'XRPictureBox', 'XRBarCode', 'XRChart', 'XRCrossTab', 'XRGauge', 'XRSparkline', 'XRPanel', 'XRRichText', 'XRSubreport', 'XRPageBreak']);
 
 export interface ExportItem {
   /** The page it prints on, 0-based; 0 throughout a continuous layout. */
@@ -81,6 +81,21 @@ export function reportItems(report: PaginatedReport): ExportItem[] {
           text: cell.text, lines: null, value: cell.value, format: null,
           font: fontOf({ fontFamily: null, fontSize: null, bold: false, italic: false }, {}),
           fill: null, h: 'left', v: 'top', url: null,
+        });
+      }
+      continue;
+    }
+    // A table of contents: its heading and rows, each title and its page
+    // number in boxes of their own, as DevExpress's RTF and HTML of s55c had them.
+    if (pc.toc && c.toc) {
+      for (const cell of tocCells(pc, left, top, report.unit)) {
+        const f = cell.heading ? c.toc.titleFont : c.toc.rowFont;
+        out.push({
+          page: index,
+          left: cell.x, top: cell.y, right: cell.x + cell.w, bottom: cell.y + cell.h,
+          text: cell.text, lines: null, value: undefined, format: null,
+          font: fontOf({ fontFamily: f.family, fontSize: f.size, bold: f.bold, italic: f.italic }, c.appearance),
+          fill: null, h: cell.align, v: cell.heading ? 'top' : 'bottom', url: null,
         });
       }
       continue;

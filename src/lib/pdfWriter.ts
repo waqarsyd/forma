@@ -16,7 +16,7 @@
  * pure, so it runs under Node for the tests.
  */
 import { unitsPerInch } from './reportGeometry';
-import type { PaginatedReport } from './reportPreview';
+import { bookmarkMarks, type PaginatedReport } from './reportPreview';
 
 /** One entry of the outline: its title, the page it opens (0-based) and how far down it, in points. */
 export interface OutlineEntry {
@@ -43,35 +43,15 @@ export interface OutlineEntry {
  */
 export function reportOutline(report: PaginatedReport, rootTitle: string): OutlineEntry {
   const toPoints = (units: number) => (units / unitsPerInch(report.unit)) * 72;
-  const marks: { title: string; ref: string; parent: string | null; page: number; y: number; x: number; key: string }[] = [];
-  report.pages.forEach((page, p) => {
-    for (const band of page.bands) {
-      for (const pc of band.controls) {
-        if (!pc.bookmark) continue;
-        marks.push({
-          ...pc.bookmark,
-          page: p,
-          y: band.top + pc.y,
-          x: band.left + pc.control.x + pc.control.offsetX,
-          key: `${pc.bookmark.ref}\u0000${band.band.kind}\u0000${band.record ?? ''}\u0000${pc.bookmark.title}`,
-        });
-      }
-    }
-  });
-  marks.sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
   const root: OutlineEntry = { title: rootTitle, page: 0, y: 0, children: [] };
   const latest = new Map<string, OutlineEntry>();
-  const seen = new Set<string>();
-  for (const mark of marks) {
-    if (seen.has(mark.key)) continue;
-    seen.add(mark.key);
+  for (const mark of bookmarkMarks(report)) {
     const entry: OutlineEntry = { title: mark.title, page: mark.page, y: toPoints(mark.y), children: [] };
     ((mark.parent && latest.get(mark.parent)) || root).children.push(entry);
     if (mark.ref) latest.set(mark.ref, entry);
   }
   return root;
 }
-
 export type StandardFont =
   | 'Helvetica' | 'Helvetica-Bold' | 'Helvetica-Oblique' | 'Helvetica-BoldOblique'
   | 'Times-Roman' | 'Times-Bold' | 'Times-Italic' | 'Times-BoldItalic'

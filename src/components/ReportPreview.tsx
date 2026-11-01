@@ -585,6 +585,46 @@ function ControlBox({
    * bound to the wrong field looks identical to a correct one either way. A
    * With test data a chart plots it instead (parity row 32), below.
    */
+  /*
+   * A table of contents (queue 6, s55): its heading, then a row per bookmark,
+   * indented by its depth, its title and a leader of dots to its page number
+   * at the right edge, the text sitting on the row's bottom as DevExpress set
+   * it. `rowStart` says which rows this part of it prints when it ran across
+   * a page.
+   */
+  if (control.type === 'XRTableOfContents' && control.toc && placed.toc && placed.rowHeights) {
+    const toc = control.toc;
+    const face = (f: typeof toc.rowFont): React.CSSProperties => ({
+      fontSize: `${f.size ?? 9.75}pt`,
+      ...(f.family ? cssFace({ family: f.family, bold: f.bold, italic: f.italic }) : { fontFamily: '"Times New Roman", serif', fontWeight: f.bold ? 700 : 400, fontStyle: f.italic ? 'italic' : 'normal' }),
+      color: cssColor(look.ForeColor) ?? '#000',
+      whiteSpace: 'nowrap',
+      lineHeight: 'normal',
+    });
+    let top = 0;
+    return (
+      <div style={{ ...frame, display: 'block' }}>
+        {placed.rowHeights.map((h, i) => {
+          const row = placed.rowStart + i;
+          const y = top;
+          top += h;
+          if (row === 0) {
+            return <div key={i} style={{ position: 'absolute', left: 0, top: u(y), width: '100%', height: u(h), overflow: 'hidden', ...face(toc.titleFont) }}>{toc.title}</div>;
+          }
+          const entry = placed.toc![row - 1];
+          if (!entry) return null;
+          return (
+            <div key={i} style={{ position: 'absolute', left: u((entry.level - 1) * toc.indent), right: 0, top: u(y), height: u(h), display: 'flex', alignItems: 'flex-end', overflow: 'hidden', ...face(toc.rowFont) }}>
+              <span>{entry.title}&nbsp;</span>
+              <span aria-hidden style={{ flex: 1, overflow: 'hidden' }}>{'.'.repeat(400)}</span>
+              <span>{entry.page || ''}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   if (control.type === 'XRChart' && placed.chart) {
     return (
       <div style={{ ...frame, display: 'block' }}>

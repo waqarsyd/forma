@@ -20,6 +20,7 @@
 import {
   pageInfoText,
   paginate,
+  tocCells,
   type PaginatedReport,
   type PaginateOptions,
   type PlacedBand,
@@ -34,7 +35,7 @@ import {
  * text is its inner report's, reached through `placedControls`; DevExpress's
  * CSV and workbook of s22b held those lines and no edge for the box itself.
  */
-const TEXTLESS = new Set(['XRLine', 'XRShape', 'XRPictureBox', 'XRBarCode', 'XRChart', 'XRCrossTab', 'XRGauge', 'XRSparkline', 'XRPanel', 'XRRichText', 'XRSubreport']);
+const TEXTLESS = new Set(['XRLine', 'XRShape', 'XRPictureBox', 'XRBarCode', 'XRChart', 'XRCrossTab', 'XRGauge', 'XRSparkline', 'XRPanel', 'XRRichText', 'XRSubreport', 'XRPageBreak']);
 
 const quote = (field: string) => (/[",\r\n]/.test(field) ? `"${field.replace(/"/g, '""')}"` : field);
 const key = (n: number) => Math.round(n * 100) / 100;
@@ -68,6 +69,11 @@ function cellsOf(report: PaginatedReport): { x: number; y: number; text: string 
     // A cross-tab drawn over test data exports its grid, as DevExpress's did.
     if (pc.crossTab) {
       for (const cell of pc.crossTab.cells) out.push({ x: left + cell.x, y: top + cell.y, text: cell.text });
+      continue;
+    }
+    // A table of contents exports its heading and rows, as DevExpress's did (s55c).
+    if (pc.toc) {
+      for (const cell of tocCells(pc, left, top, report.unit)) out.push({ x: cell.x, y: cell.y, text: cell.text });
       continue;
     }
     if (TEXTLESS.has(c.type)) continue;

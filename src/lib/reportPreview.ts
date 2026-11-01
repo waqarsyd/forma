@@ -190,6 +190,30 @@ export interface PreviewSeries {
   view: string;
 }
 
+/**
+ * A table of contents (queue 6, s55), as the file declares it: `LevelTitle`
+ * for its heading and `LevelDefault` for its rows, each with an optional font
+ * and height, and `MaxNestingLevel`. Sizes are in the report's unit.
+ */
+export interface PreviewToc {
+  title: string;
+  titleHeight: number;
+  rowHeight: number;
+  /** How far each level past the first is indented. */
+  indent: number;
+  /** The deepest level listed; 0 lists every level. */
+  maxLevel: number;
+  titleFont: { family: string | null; size: number | null; bold: boolean; italic: boolean };
+  rowFont: { family: string | null; size: number | null; bold: boolean; italic: boolean };
+}
+
+/** One row of a table of contents: a bookmark, its depth under the report's own, and its page. */
+export interface TocEntry {
+  title: string;
+  level: number;
+  page: number;
+}
+
 /** A cross-tab's three field collections, each item `FieldName` and no type. */
 export interface PreviewCrossTab {
   rows: string[];
@@ -324,6 +348,8 @@ export interface PreviewControl {
    * its `BookmarkParent` points at (parity row 18). Absent when it has none.
    */
   bookmark?: { literal: string | null; expression: string | null; ref: string; parent: string | null } | null;
+  /** For an `XRTableOfContents`: its heading and rows as the file declares them. */
+  toc?: PreviewToc | null;
   /** The formatting rules linked to this control, by `Ref`, in link order. */
   rules: string[];
   /** Its expression bindings on anything but the text; see `AppearanceBinding`. */
@@ -948,6 +974,32 @@ function parseFont(value: string | null) {
     size: size !== null && Number.isFinite(size) ? size : null,
     bold: /style=[^"]*bold/.test(styles),
     italic: /style=[^"]*italic/.test(styles),
+  };
+}
+
+/**
+ * A table of contents' heading and rows, from its own part of the file. With
+ * no height written, both are 23 hundredths of an inch, which is what s55
+ * printed; with no font, the control's own, Times New Roman 9.75pt there.
+ * The second level was indented 60 hundredths.
+ */
+function parseToc(attrs: string, own: string, dpiScale: number, targetDpi: number, font: ReturnType<typeof parseFont>): PreviewToc {
+  const level = (name: string) => (new RegExp(`<${name}\\b([^>]*?)\\/?>`).exec(own) ?? [])[1] ?? '';
+  const title = level('LevelTitle');
+  const rows = level('LevelDefault');
+  const height = (a: string) => {
+    const h = numAttr(a, 'Height', Number.NaN);
+    return Number.isFinite(h) && h > 0 ? h * dpiScale : (23 * targetDpi) / 100;
+  };
+  const fontOf = (a: string) => (attrOf(a, 'Font') ? parseFont(attrOf(a, 'Font')) : font);
+  return {
+    title: decodeXmlText(attrOf(title, 'Text') ?? ''),
+    titleHeight: height(title),
+    rowHeight: height(rows),
+    indent: (60 * targetDpi) / 100,
+    maxLevel: Math.max(0, numAttr(attrs, 'MaxNestingLevel', 0)),
+    titleFont: fontOf(title),
+    rowFont: fontOf(rows),
   };
 }
 
@@ -1652,6 +1704,7 @@ function parseControls(
       data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
       link: parseLink(item.attrs, inner.slice(item.start, extent)),
       bookmark: parseBookmark(item.attrs, inner.slice(item.start, extent)),
+      toc: type === 'XRTableOfContents' ? parseToc(item.attrs, inner.slice(item.start, extent), dpiScale, targetDpi, font) : null,
       rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
       ...boundProperties(ownPart(inner.slice(item.start, extent))),
       ...repeatsOf(item.attrs),
@@ -1939,6 +1992,18 @@ export function parseReportStructure(
     (a, b) => BAND_ORDER.indexOf(a.kind) - BAND_ORDER.indexOf(b.kind),
   );
 
+  // A table of contents writes no SizeF: it is as wide as the band from where
+  // it starts, and designed as its heading and one row, 46 hundredths in s55,
+  // which is what the content below it was spaced from.
+  const contentWidth = structure.page.width - structure.margins.left - structure.margins.right;
+  for (const band of structure.bands) {
+    for (const c of band.controls) {
+      if (!c.toc) continue;
+      if (!(c.width > 0)) c.width = Math.max(0, contentWidth - c.x);
+      if (!(c.height > 0)) c.height = c.toc.titleHeight + c.toc.rowHeight;
+    }
+  }
+
   return structure;
 }
 
@@ -2002,6 +2067,10 @@ export interface PlacedControl {
   chart?: ChartModel | null;
   /** Its bookmark in this instance, for the PDF outline (parity row 18); null when it has none. */
   bookmark?: { title: string; ref: string; parent: string | null } | null;
+  /** For a table of contents: the rows it lists, after its heading, in `rowHeights`'s order. */
+  toc?: TocEntry[] | null;
+  /** The break after a table of contents, which opens no page for nothing (s55d). */
+  tocEnd?: true;
 }
 
 /** One printed occurrence of a band: a record's Detail, a page's header, a split part. */
@@ -2028,6 +2097,8 @@ interface LayoutContext {
   source?: readonly TypedRow[] | null;
   /** The band's printable width, which a cross-tab's grid must fit inside. */
   contentWidth?: number;
+  /** The rows a table of contents lists, on a paged layout; absent where it lists none. */
+  toc?: readonly TocEntry[];
 }
 
 /** What the rules linked by `refs` set for this record: later links win, property by property. */
@@ -2481,10 +2552,18 @@ export function layoutBand(
       let rowHeights: number[] | null = null;
       let inner: PlacedBand[] | null = null;
       let crossTab: CrossTabGrid | null = null;
+      let toc: TocEntry[] | null = null;
       const chart = hiddenBy ? null : chartModel(control, ctx.source);
       const texts = textsOf(control, values, ctx, scope);
       if (hiddenBy) {
         // Prints nothing, so it neither grows nor shrinks to its text.
+      } else if (control.toc && ctx.toc) {
+        // A table of contents grows to its heading and a row per bookmark (s55),
+        // which split between pages as a table's rows do.
+        const maxLevel = control.toc.maxLevel;
+        toc = ctx.toc.filter((e) => !maxLevel || e.level <= maxLevel);
+        rowHeights = [control.toc.titleHeight, ...toc.map(() => control.toc!.rowHeight)];
+        height = rowHeights.reduce((s, h) => s + h, 0);
       } else if (control.crossTab && (crossTab = crossTabGrid(control, ctx))) {
         // A cross-tab grows by whole cells to hold its grid, as s23 printed.
         if (crossTab.height > height) height = crossTab.height;
@@ -2518,7 +2597,7 @@ export function layoutBand(
         });
         height = rowHeights.reduce((sum, h) => sum + h, 0);
       }
-      return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, crossTab, chart, shift: 0, hidden: !!hiddenBy, ...texts };
+      return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, crossTab, chart, toc, shift: 0, hidden: !!hiddenBy, ...texts };
     })
     .sort((a, b) => a.top - b.top);
   type Item = (typeof items)[number];
@@ -2604,7 +2683,14 @@ export function layoutBand(
       crossTab: it.crossTab,
       chart: it.chart,
       bookmark: it.bookmark,
-    })),
+      toc: it.toc,
+    })).flatMap((pc) => {
+      // A table of contents prints on pages of its own: a break before it,
+      // which does nothing at the top of a page, and one after it (s55a, s55c).
+      if (!pc.toc) return [pc];
+      const brk = (y: number): PlacedControl => ({ control: { ...pc.control, type: 'XRPageBreak', toc: null }, index: pc.index, y, height: 0, lines: null, rowStart: 0, rowHeights: null, text: null, cellTexts: null });
+      return [brk(pc.y), pc, { ...brk(pc.y + pc.height), tocEnd: true as const }];
+    }),
   };
 }
 
@@ -3056,6 +3142,8 @@ export interface PaginateOptions {
    * hold each control once.
    */
   overflowPages?: boolean;
+  /** The rows a table of contents lists; set by paginate itself, between its passes. */
+  toc?: readonly TocEntry[];
 }
 
 /**
@@ -3090,6 +3178,106 @@ export function paginate(
   recordCount: number,
   options: PaginateOptions = {},
 ): PaginatedReport {
+  /*
+   * A table of contents lists the pages its bookmarks print on, and its own
+   * rows move those pages (queue 6, s55). So a report with one is laid out
+   * three times: without rows, to learn which bookmarks print; with a row for
+   * each, so every page after them falls where it will; and again with each
+   * row's page, which moves nothing. On one continuous page, as the exports
+   * lay out, it lists every row without a number, as DevExpress's HTML and
+   * CSV of s55c did, since there are no pages to count.
+   */
+  if (options.toc || !structure.bands.some((b) => b.controls.some((c) => c.toc))) {
+    return paginateOnce(structure, recordCount, options);
+  }
+  const titles = tocEntries(paginateOnce(structure, recordCount, { ...options, toc: [] }));
+  // One continuous page, as the exports lay out: the rows without numbers.
+  if ((options.maxPages ?? Number.POSITIVE_INFINITY) <= 1) {
+    return paginateOnce(structure, recordCount, { ...options, toc: titles.map((e) => ({ ...e, page: 0 })) });
+  }
+  const placed = paginateOnce(structure, recordCount, { ...options, toc: titles });
+  return paginateOnce(structure, recordCount, { ...options, toc: tocEntries(placed) });
+}
+
+/**
+ * Every bookmark a laid-out report prints, in print order, as DevExpress
+ * lists them (s54): by page, then down it, then across; a control cut across
+ * two pages once, at its first part.
+ */
+export function bookmarkMarks(report: PaginatedReport) {
+  const marks: { title: string; ref: string; parent: string | null; page: number; y: number; x: number; key: string }[] = [];
+  report.pages.forEach((page, p) => {
+    for (const band of page.bands) {
+      for (const pc of band.controls) {
+        if (!pc.bookmark) continue;
+        marks.push({
+          ...pc.bookmark,
+          page: p,
+          y: band.top + pc.y,
+          x: band.left + pc.control.x + pc.control.offsetX,
+          key: `${pc.bookmark.ref}\u0000${band.band.kind}\u0000${band.record ?? ''}\u0000${pc.bookmark.title}`,
+        });
+      }
+    }
+  });
+  marks.sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
+  const seen = new Set<string>();
+  return marks.filter((m) => !seen.has(m.key) && seen.add(m.key));
+}
+
+/**
+ * The rows a table of contents lists: each bookmark under the report's own,
+ * at its depth by `BookmarkParent`, with its page counted from 1 (s55).
+ */
+export function tocEntries(report: PaginatedReport): TocEntry[] {
+  const depth = new Map<string, number>();
+  return bookmarkMarks(report).map((m) => {
+    const level = (m.parent && depth.get(m.parent)) ? depth.get(m.parent)! + 1 : 1;
+    if (m.ref) depth.set(m.ref, level);
+    return { title: m.title, level, page: m.page + 1 };
+  });
+}
+
+/**
+ * A placed table of contents as the boxes DevExpress exports it in (s55c):
+ * its heading across its width, then for each row the title, indented by its
+ * depth, and its page number in a box of its own at the right edge, as wide
+ * as the number (7.29 hundredths a digit at 9.75pt). On one continuous page
+ * the rows keep their titles and the numbers are empty, as DevExpress's HTML
+ * and CSV had them. `left` and `top` are where the control is placed.
+ */
+export function tocCells(pc: PlacedControl, left: number, top: number, unit: string) {
+  const toc = pc.control.toc;
+  if (!toc || !pc.toc || !pc.rowHeights) return [];
+  const digit = (7.29 / 100) * unitsPerInch(unit) * ((toc.rowFont.size ?? 9.75) / 9.75);
+  const right = left + pc.control.width;
+  const out: { x: number; y: number; w: number; h: number; text: string; align: 'left' | 'right'; heading: boolean }[] = [];
+  let y = top;
+  pc.rowHeights.forEach((h, i) => {
+    const row = pc.rowStart + i;
+    if (row === 0) {
+      out.push({ x: left, y, w: pc.control.width, h, text: toc.title, align: 'left', heading: true });
+    } else {
+      const entry = pc.toc![row - 1];
+      if (entry) {
+        const number = entry.page ? String(entry.page) : '';
+        const w = digit * Math.max(1, number.length);
+        const x = left + (entry.level - 1) * toc.indent;
+        out.push({ x, y, w: Math.max(0, right - w - x), h, text: `${entry.title} `, align: 'left', heading: false });
+        out.push({ x: right - w, y, w, h, text: number, align: 'right', heading: false });
+      }
+    }
+    y += h;
+  });
+  return out;
+}
+
+function paginateOnce(
+  structure: ReportStructure,
+  recordCount: number,
+  options: PaginateOptions = {},
+): PaginatedReport {
+
   /*
    * No cap unless a caller asks for one (parity row 16). The Preview stopped at
    * 50 pages until 2026-10-30, so c09's 10,000 records showed 50 of DevExpress's
@@ -3173,6 +3361,7 @@ export function paginate(
       ? ReportData.from(options.rows, options.rows.length, structure.calculatedFields, structure.parameters, options.parameters).records
       : null,
     contentWidth: structure.page.width - structure.margins.left - structure.margins.right,
+    ...(options.toc ? { toc: options.toc } : {}),
   };
   const rowFor = (i: number) =>
     options.rows?.length ? options.rows[(order ? order[i] : i) % options.rows.length] : null;
@@ -3498,6 +3687,13 @@ export function paginate(
     for (let breakAt = firstBreak(part); part && breakAt !== null; breakAt = part ? firstBreak(part) : null) {
       const [above, below]: [BandInstance | null, BandInstance | null] = breakAt > EPS ? splitInstance(part, breakAt, ctx.unit) : [null, part];
       if (above) flow(above);
+      // After a table of contents, what follows starts a new page; with nothing
+      // left in the band that is the next band, or no page at all (s55d).
+      const closesToc = part.controls.some((pc) => pc.tocEnd && pc.y === breakAt);
+      if (closesToc && !(below?.controls.some((pc) => pc.control.type !== 'XRPageBreak'))) {
+        breakPending = true;
+        return;
+      }
       if (!current || cursor > pageContentTop + EPS) startPage(true);
       // A break at the very top cuts nothing; drop it so it is not met again.
       part = above ? below : below && { ...below, controls: below.controls.filter((pc) => !(pc.control.type === 'XRPageBreak' && pc.y === breakAt)) };
@@ -3531,6 +3727,12 @@ export function paginate(
       pageBottom = footerTop;
     }
     pageContentTop = cursor;
+    // A table of contents ended the report header: what follows starts a page
+    // of its own (s55a, s55b), and with nothing following, no page opens.
+    if (breakPending && (records > 0 || reportFooter)) {
+      startPage();
+      breakPending = false;
+    }
   }
 
   let placedRecords = 0;

@@ -21,6 +21,7 @@ import {
   marginsOf,
   activeColumns,
   pieShare,
+  tocEntries,
   valueTicks,
   pageInfoText,
   cssColor,
@@ -3665,5 +3666,71 @@ describe('each band and control at its own Dpi, as DevExpress printed it (cases 
     expect(sub.unit).toBe('TenthsOfAMillimeter');
     expect(sub.bands[0]).toMatchObject({ height: 76.2, dpiScale: 2.54 });
     expect(sub.bands[0].controls[0]).toMatchObject({ width: 254, height: 50.8 });
+  });
+});
+
+/*
+ * A table of contents (queue 6), against DevExpress 20.1's own of s54's
+ * bookmarks in four placements, read from its PDFs: under the report
+ * header's title (s55a), with MaxNestingLevel 1 (s55b), alone at the top of
+ * the report header (s55c), and in the report footer (s55d).
+ */
+describe('a table of contents, as DevExpress printed it (cases s55a to s55d)', () => {
+// s55a to s55d as the serializer wrote them, and DevExpress's contents for each, read from its
+// PDFs: its page count, then each row as page|left|top|title|number in hundredths of an inch.
+const S55A = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s55a-toc\" Bookmark=\"Sales by region\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"86\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" Bookmark=\"Title\" SizeF=\"400,30\" LocationFloat=\"0,0\" /><Item2 Ref=\"4\" ControlType=\"XRTableOfContents\" Name=\"toc\" LocationFloat=\"0,40\"><LevelTitle Ref=\"5\" Text=\"Contents\" Padding=\"0,0,0,0,100\" /><LevelDefault Ref=\"6\" Padding=\"0,0,0,0,100\" /></Item2></Controls></Item2><Item3 Ref=\"7\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"8\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"9\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"10\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /><Item2 Ref=\"11\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"12\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"13\" ControlType=\"XRLabel\" Name=\"customer\" BookmarkParent=\"#Ref-9\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"14\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /><Item2 Ref=\"15\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"16\" ControlType=\"ReportFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"17\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" Bookmark=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /></Controls></Item5><Item6 Ref=\"18\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S55A_DX: string[] = ["pages 5","2|50|50|Contents|","2|50|73|Title|1","2|50|96|North|4","2|110|119|Customer 01|4","2|110|142|Customer 04|4","2|110|165|Customer 07|4","2|110|188|Customer 10|4","2|110|211|Customer 13|4","2|110|234|Customer 16|4","2|110|257|Customer 19|4","2|110|280|Customer 22|4","2|110|303|Customer 25|4","2|110|326|Customer 28|4","2|110|349|Customer 31|4","2|110|372|Customer 34|4","2|110|395|Customer 37|4","2|110|418|Customer 40|4","2|110|441|Customer 43|4","2|50|464|South|4","2|110|487|Customer 02|4","2|110|510|Customer 05|4","2|110|533|Customer 08|4","2|110|556|Customer 11|4","2|110|579|Customer 14|4","2|110|602|Customer 17|4","2|110|625|Customer 20|4","2|110|648|Customer 23|4","2|110|671|Customer 26|4","2|110|694|Customer 29|4","2|110|717|Customer 32|4","2|110|740|Customer 35|4","2|110|763|Customer 38|4","2|110|786|Customer 41|4","2|110|809|Customer 44|4","2|50|832|West|4","2|110|855|Customer 03|4","2|110|878|Customer 06|4","2|110|901|Customer 09|4","2|110|924|Customer 12|4","2|110|947|Customer 15|4","2|110|970|Customer 18|4","2|110|993|Customer 21|5","2|110|1016|Customer 24|5","3|110|50|Customer 27|5","3|110|73|Customer 30|5","3|110|96|Customer 33|5","3|110|119|Customer 36|5","3|110|142|Customer 39|5","3|110|165|Customer 42|5","3|110|188|Customer 45|5","3|50|211|Totals|5"];
+const S55B = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s55b-toc-level1\" Bookmark=\"Sales by region\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"86\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" Bookmark=\"Title\" SizeF=\"400,30\" LocationFloat=\"0,0\" /><Item2 Ref=\"4\" ControlType=\"XRTableOfContents\" Name=\"toc\" MaxNestingLevel=\"1\" LocationFloat=\"0,40\"><LevelTitle Ref=\"5\" Text=\"Contents\" Padding=\"0,0,0,0,100\" /><LevelDefault Ref=\"6\" Padding=\"0,0,0,0,100\" /></Item2></Controls></Item2><Item3 Ref=\"7\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"8\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"9\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"10\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /><Item2 Ref=\"11\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"12\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"13\" ControlType=\"XRLabel\" Name=\"customer\" BookmarkParent=\"#Ref-9\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"14\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /><Item2 Ref=\"15\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"16\" ControlType=\"ReportFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"17\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" Bookmark=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /></Controls></Item5><Item6 Ref=\"18\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S55B_DX: string[] = ["pages 4","2|50|50|Contents|","2|50|73|Title|1","2|50|96|North|3","2|50|119|South|3","2|50|142|West|3","2|50|165|Totals|4"];
+const S55C = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s55c-toc-top\" Bookmark=\"Sales by region\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"80\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" Bookmark=\"Title\" SizeF=\"400,30\" LocationFloat=\"0,50\" /><Item2 Ref=\"4\" ControlType=\"XRTableOfContents\" Name=\"toc\" MaxNestingLevel=\"1\" LocationFloat=\"0,0\"><LevelTitle Ref=\"5\" Text=\"Contents\" Padding=\"0,0,0,0,100\" /><LevelDefault Ref=\"6\" Padding=\"0,0,0,0,100\" /></Item2></Controls></Item2><Item3 Ref=\"7\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"8\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"9\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"10\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /><Item2 Ref=\"11\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"12\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"13\" ControlType=\"XRLabel\" Name=\"customer\" BookmarkParent=\"#Ref-9\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"14\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /><Item2 Ref=\"15\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"16\" ControlType=\"ReportFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"17\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" Bookmark=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /></Controls></Item5><Item6 Ref=\"18\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S55C_DX: string[] = ["pages 3","1|50|50|Contents|","1|50|73|Title|2","1|50|96|North|2","1|50|119|South|2","1|50|142|West|2","1|50|165|Totals|3"];
+const S55D = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s55d-toc-footer\" Bookmark=\"Sales by region\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"80\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" Bookmark=\"Title\" SizeF=\"400,30\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"5\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"6\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"7\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /><Item2 Ref=\"8\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"9\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"10\" ControlType=\"XRLabel\" Name=\"customer\" BookmarkParent=\"#Ref-6\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"11\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /><Item2 Ref=\"12\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"13\" ControlType=\"ReportFooterBand\" HeightF=\"76\"><Controls><Item1 Ref=\"14\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" Bookmark=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /><Item2 Ref=\"15\" ControlType=\"XRTableOfContents\" Name=\"toc\" MaxNestingLevel=\"1\" LocationFloat=\"0,30\"><LevelTitle Ref=\"16\" Text=\"Contents\" Padding=\"0,0,0,0,100\" /><LevelDefault Ref=\"17\" Padding=\"0,0,0,0,100\" /></Item2></Controls></Item5><Item6 Ref=\"18\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S55D_DX: string[] = ["pages 3","3|50|50|Contents|","3|50|73|Title|1","3|50|96|North|1","3|50|119|South|1","3|50|142|West|1","3|50|165|Totals|2"];
+  const S55C_CSV = "Contents,,\r\nTitle ,,\r\nNorth ,,\r\nSouth ,,\r\nWest ,,\r\nTotals ,,\r\nSales report,,\r\nNorth,,\r\n,Customer 01,\r\n,Customer 04,\r\n,Customer 07,\r\n,Customer 10,\r\n,Customer 13,\r\n,Customer 16,\r\n,Customer 19,\r\n,Customer 22,\r\n,Customer 25,\r\n,Customer 28,\r\n,Customer 31,\r\n,Customer 34,\r\n,Customer 37,\r\n,Customer 40,\r\n,Customer 43,\r\nSouth,,\r\n,Customer 02,\r\n,Customer 05,\r\n,Customer 08,\r\n,Customer 11,\r\n,Customer 14,\r\n,Customer 17,\r\n,Customer 20,\r\n,Customer 23,\r\n,Customer 26,\r\n,Customer 29,\r\n,Customer 32,\r\n,Customer 35,\r\n,Customer 38,\r\n,Customer 41,\r\n,Customer 44,\r\nWest,,\r\n,Customer 03,\r\n,Customer 06,\r\n,Customer 09,\r\n,Customer 12,\r\n,Customer 15,\r\n,Customer 18,\r\n,Customer 21,\r\n,Customer 24,\r\n,Customer 27,\r\n,Customer 30,\r\n,Customer 33,\r\n,Customer 36,\r\n,Customer 39,\r\n,Customer 42,\r\n,Customer 45,\r\nTotals,,\r\n";
+  const ROWS = Array.from({ length: 45 }, (_, k) => ({
+    Region: ['North', 'South', 'West'][k % 3],
+    Customer: `Customer ${String(k + 1).padStart(2, '0')}`,
+    Amount: String((k + 1) * 10),
+  }));
+  /** The contents as DevExpress's lines are written: page count, then page|left|top|title|number. */
+  const contents = (repx: string) => {
+    const report = paginate(parseReportStructure(repx), ROWS.length, { rows: ROWS });
+    const out = [`pages ${report.pages.length}`];
+    report.pages.forEach((page, p) => {
+      for (const band of page.bands) for (const pc of band.controls) {
+        if (!pc.toc || !pc.rowHeights) continue;
+        let y = band.top + pc.y;
+        pc.rowHeights.forEach((h, i) => {
+          const row = pc.rowStart + i;
+          const left = band.left + pc.control.x;
+          if (row === 0) out.push(`${p + 1}|${left}|${Math.round(y)}|${pc.control.toc!.title}|`);
+          else {
+            const e = pc.toc![row - 1];
+            out.push(`${p + 1}|${left + (e.level - 1) * pc.control.toc!.indent}|${Math.round(y)}|${e.title}|${e.page}`);
+          }
+          y += h;
+        });
+      }
+    });
+    return out.sort();
+  };
+
+  it.each([
+    ['s55a', () => S55A, () => S55A_DX],
+    ['s55b', () => S55B, () => S55B_DX],
+    ['s55c', () => S55C, () => S55C_DX],
+    ['s55d', () => S55D, () => S55D_DX],
+  ])('lists every bookmark on the page and at the place DevExpress did (%s)', (_name, repx, dx) => {
+    expect(contents(repx())).toEqual([...dx()].sort());
+  });
+
+  it('exports its rows without page numbers on one continuous page, as DevExpress\'s CSV of s55c', () => {
+    expect(reportToCsv(parseReportStructure(S55C), ROWS.length, { rows: ROWS })).toBe(S55C_CSV);
+  });
+
+  it('nests each bookmark under its parent by depth', () => {
+    const report = paginate(parseReportStructure(S55A), ROWS.length, { rows: ROWS });
+    const levels = tocEntries(report).slice(0, 4).map((e) => `${e.title}:${e.level}`);
+    expect(levels).toEqual(['Title:1', 'North:1', 'Customer 01:2', 'Customer 04:2']);
   });
 });
