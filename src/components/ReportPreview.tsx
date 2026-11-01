@@ -53,7 +53,8 @@ import { readBoundFields } from '../lib/repxBindingPlan';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
 import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt } from '../lib/textMeasure';
 import { exportFileName, layoutContinuous, reportToCsv } from '../lib/csvExport';
-import { reportToXlsx } from '../lib/xlsxExport';
+import { reportToXlsxFiles, xlsxOptionsOf } from '../lib/xlsxExport';
+import { buildZip } from '../lib/zip';
 import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
 import type { ReportLayout } from '../lib/reportTypes';
 
@@ -1106,7 +1107,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   const exportCsv = useCallback(() => {
     const count = records?.length ? records.length : recordCountFromLayout(layout);
     download(reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues, drillToggled }), 'text/csv;charset=utf-8', 'csv');
-  }, [structure, records, layout, paramValues, download]);
+  }, [structure, records, layout, paramValues, drillToggled, download]);
 
   /*
    * An Excel workbook as DevExpress exports one (parity row 19): the layout as
@@ -1117,9 +1118,20 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    */
   const exportXlsx = useCallback(() => {
     const count = records?.length ? records.length : recordCountFromLayout(layout);
-    const bytes = reportToXlsx(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled });
-    download(bytes as BlobPart, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
-  }, [structure, records, layout, paramValues, measure, download]);
+    // The file's own Excel options (row 74): one sheet, a sheet per page, or a
+    // workbook per page, which goes as one .zip since a page cannot hand over
+    // several files at once.
+    const xlsx = xlsxOptionsOf(repxContent);
+    const files = reportToXlsxFiles(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled }, xlsx);
+    if (files.length === 1) {
+      download(files[0].bytes as BlobPart, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
+      return;
+    }
+    // Numbered as DevExpress numbered its files: report1.xlsx, report2.xlsx.
+    const base = exportFileName(title, 'xlsx').replace(/\.xlsx$/, '');
+    const zip = buildZip(files.map((x) => ({ name: `${base}${x.number}.xlsx`, content: x.bytes })), new Date(), { keepPaths: true });
+    if (zip.bytes) download(zip.bytes as BlobPart, 'application/zip', 'zip');
+  }, [structure, records, layout, paramValues, measure, drillToggled, repxContent, title, download]);
 
   /*
    * Word, RTF, HTML and image, as DevExpress exports them (parity row 21).
@@ -1137,7 +1149,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     if (exportKind !== 'html' && exportKind !== 'png') return null;
     const count = records?.length ? records.length : recordCountFromLayout(layout);
     return layoutContinuous(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled });
-  }, [exportKind, structure, records, layout, paramValues, measure]);
+  }, [exportKind, structure, records, layout, paramValues, measure, drillToggled]);
   useEffect(() => {
     if (!exportKind) return;
     let cancelled = false;
