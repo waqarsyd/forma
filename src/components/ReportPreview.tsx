@@ -125,6 +125,8 @@ type Gesture = {
   originH: number;
   /** The control's `dpiScale`: what the file's numbers were multiplied by to reach report units. */
   dpiScale: number;
+  /** Drawn mirrored by a right-to-left layout (s63a): `originX` is the file's own, and moves go the other way. */
+  mirrored: boolean;
 } | null;
 
 /** Bands the reader should be able to tell apart on screen. */
@@ -298,8 +300,11 @@ function ControlBox({
   // Resolved appearance: style, StylePriority, own attribute, then parent.
   const look = control.appearance;
   const edge = borderLine(look);
-  const justify =
-    control.align === 'right' ? 'flex-end' : control.align === 'center' ? 'center' : 'flex-start';
+  // Right to left (s63), the box runs its text that way, and flex-start is then
+  // its right edge: the physical alignment is kept by naming the other end.
+  const justify = control.rtl
+    ? control.align === 'right' ? 'flex-start' : control.align === 'center' ? 'center' : 'flex-end'
+    : control.align === 'right' ? 'flex-end' : control.align === 'center' ? 'center' : 'flex-start';
   const alignItems =
     control.vAlign === 'bottom' ? 'flex-end' : control.vAlign === 'middle' ? 'center' : 'flex-start';
 
@@ -316,6 +321,7 @@ function ControlBox({
     display: 'flex',
     alignItems,
     justifyContent: justify,
+    ...(control.rtl ? { direction: 'rtl' as const } : {}),
     // Font size is in points in the file and `pt` is a real CSS unit, so this
     // is correct on screen and on paper without a conversion of our own. The
     // values are already resolved through styles and inheritance, so these
@@ -734,7 +740,10 @@ function ControlBox({
           // row's width in the same proportion DevExpress does, and lets the
           // browser do the division.
           return (
-            <div key={r} style={{ display: 'flex', height: rowHeight, alignItems: 'stretch' }}>
+            // Left to right whatever the report's direction: the cells are
+            // already in the order they print, mirrored or not (s63), and a
+            // row inheriting rtl would lay them out reversed again.
+            <div key={r} style={{ display: 'flex', height: rowHeight, alignItems: 'stretch', direction: 'ltr' }}>
               {row.cells.map((cell, c) => (
                 <div
                   key={c}
@@ -749,8 +758,11 @@ function ControlBox({
                     // default is the top.
                     alignItems:
                       cell.vAlign === 'bottom' ? 'flex-end' : cell.vAlign === 'middle' ? 'center' : 'flex-start',
-                    justifyContent:
-                      cell.align === 'right' ? 'flex-end' : cell.align === 'center' ? 'center' : 'flex-start',
+                    // Right to left (s63), flex-start is the cell's right edge.
+                    justifyContent: cell.rtl
+                      ? cell.align === 'right' ? 'flex-start' : cell.align === 'center' ? 'center' : 'flex-end'
+                      : cell.align === 'right' ? 'flex-end' : cell.align === 'center' ? 'center' : 'flex-start',
+                    ...(cell.rtl ? { direction: 'rtl' as const } : {}),
                     fontSize: cell.fontSize ? `${cell.fontSize}pt` : undefined,
                     ...(cell.fontFamily ? cssFace({ family: cell.fontFamily, bold: cell.bold, italic: cell.italic }) : { fontWeight: cell.bold ? 700 : 400, fontStyle: cell.italic ? 'italic' : 'normal' }),
                     textDecoration: fontDecoration(cell.appearance.Font),
@@ -972,7 +984,10 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       baseXml: repxContent,
       fromX: event.clientX,
       fromY: event.clientY,
-      originX: control.x,
+      // The file's own x: a mirrored right-to-left layout (s63a) draws the
+      // control elsewhere, and a drag there moves it the other way in the file.
+      originX: control.fileX ?? control.x,
+      mirrored: control.fileX !== undefined,
       originY: control.y,
       originW: control.width,
       originH: control.height,
@@ -991,10 +1006,18 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       // Back into the file's own numbers, which a control with no Dpi in a
       // millimetre report holds at a 2.54th of what prints (parity row 35).
       const s = g.dpiScale;
-      const result =
+      // Mirrored, the screen's right is the file's left: a move goes the other
+      // way, and a resize from the right-hand handle moves the file's x by
+      // what the width gains, so the box grows the way it is dragged.
+      const fileDx = g.mirrored ? -dx : dx;
+      let result =
         g.mode === 'move'
-          ? moveControl(g.baseXml, g.ref, (g.originX + dx) / s, (g.originY + dy) / s)
+          ? moveControl(g.baseXml, g.ref, (g.originX + fileDx) / s, (g.originY + dy) / s)
           : resizeControl(g.baseXml, g.ref, (g.originW + dx) / s, (g.originH + dy) / s);
+      if (g.mode === 'resize' && g.mirrored && result.applied) {
+        const moved = moveControl(result.xml, g.ref, (g.originX - dx) / s, g.originY / s);
+        if (moved.applied) result = { ...moved, reason: result.reason };
+      }
       if (result.applied) onEdit(result.xml, result.reason);
     };
     const onUp = () => { gesture.current = null; };
@@ -1030,8 +1053,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       // numbers, so they stay whole whatever the control's Dpi.
       event.preventDefault();
       const s = selectedControl.dpiScale ?? 1;
+      // Mirrored (s63a), the left arrow moves the control left on the page,
+      // which is right in the file.
+      const mirrored = selectedControl.fileX !== undefined;
       commit(
-        moveControl(repxContent, selected, selectedControl.x / s + delta[0], selectedControl.y / s + delta[1]),
+        moveControl(repxContent, selected, (selectedControl.fileX ?? selectedControl.x) / s + (mirrored ? -delta[0] : delta[0]), selectedControl.y / s + delta[1]),
         repxContent,
       );
     };

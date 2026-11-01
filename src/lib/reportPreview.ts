@@ -134,6 +134,8 @@ export interface PreviewCell {
   italic: boolean;
   align: 'left' | 'center' | 'right';
   vAlign: 'top' | 'middle' | 'bottom';
+  /** Under a right-to-left report (s63): its text runs right to left, its alignment already flipped. */
+  rtl?: true;
   /**
    * The sides this cell actually draws, after DevExpress's sharing rule: a
    * shared edge is drawn once, by the cell on the left or above. See
@@ -293,6 +295,14 @@ export interface PreviewControl {
   name: string;
   /** Its `Ref`, which a band's `DrillDownControl` names it by; absent when none was written. */
   ref?: string;
+  /** Under a right-to-left report (s63): its text runs right to left, its alignment already flipped. */
+  rtl?: true;
+  /**
+   * The file's own `x`, kept when a right-to-left layout has mirrored `x`
+   * across the printable width (s63a), so that an edit writes the file's
+   * number rather than the mirrored one.
+   */
+  fileX?: number;
   /** Band-relative, in report units. */
   x: number;
   y: number;
@@ -2023,7 +2033,50 @@ export function parseReportStructure(
     }
   }
 
+  applyRightToLeft(structure, rootAttrs);
   return structure;
+}
+
+/**
+ * Right to left (queue 6, 2026-11-01), as DevExpress 20.1 printed s63a to
+ * s63d. `RightToLeft="Yes"` on the report flips every control's and cell's
+ * horizontal alignment, left for right, and runs its text right to left;
+ * nothing moves. `RightToLeftLayout="Yes"` with it also mirrors every control
+ * across the printable width, x to width - x - w, and a table's cells with
+ * it, the first cell rightmost. `RightToLeftLayout` alone printed exactly as
+ * neither. Read from the PDFs: render.json gives the layout before it is
+ * mirrored.
+ */
+function applyRightToLeft(structure: ReportStructure, rootAttrs: string): void {
+  if ((attrOf(rootAttrs, 'RightToLeft') ?? '') !== 'Yes') return;
+  const mirror = (attrOf(rootAttrs, 'RightToLeftLayout') ?? '') === 'Yes';
+  const width = structure.page.width - structure.margins.left - structure.margins.right;
+  const flip = (a: 'left' | 'center' | 'right') => (a === 'left' ? 'right' : a === 'right' ? 'left' : a);
+  const visit = (bands: PreviewBand[]) => {
+    for (const band of bands) {
+      for (const c of band.controls) {
+        c.align = flip(c.align);
+        c.rtl = true;
+        for (const row of c.rows ?? []) {
+          for (const cell of row.cells) {
+            cell.align = flip(cell.align);
+            cell.rtl = true;
+          }
+          if (mirror) {
+            row.cells.reverse();
+            for (const cell of row.cells) cell.borders = { ...cell.borders, left: cell.borders.right, right: cell.borders.left };
+          }
+        }
+        if (mirror) {
+          // The printed left edge, x plus any panel's, is what mirrors.
+          c.fileX = c.x;
+          c.x = width - (c.x + c.offsetX) - c.width - c.offsetX;
+        }
+      }
+      if (band.sub) visit(band.sub.bands);
+    }
+  };
+  visit(structure.bands);
 }
 
 // -------------------------------------------------------------- band layout

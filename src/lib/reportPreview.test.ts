@@ -3872,3 +3872,66 @@ const S58_ROWS = [{"Region":"West","Customer":"Kilo","Amount":"10"},{"Region":"N
     expect(customers(S58B)).toEqual(S58B_DX);
   });
 });
+
+/*
+ * Right to left (queue 6), against DevExpress 20.1's PDFs of s63: two header
+ * labels (a left-aligned one at 0 of 200, a right-aligned one at 200 of
+ * 150), a three-cell table at 0 of 450 and a Detail label at 0 of 250, on a
+ * Letter page with 50 margins. Each text's aligned edge, in hundredths from
+ * the page's left, as the PDF placed it: the right end of right-aligned text,
+ * the left end of left-aligned text. render.json gives the layout before it
+ * is mirrored, so the PDF is the measurement.
+ */
+describe('right to left, as DevExpress printed it (cases s63)', () => {
+const S63A = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"rs63artlboth\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" RightToLeft=\"Yes\" RightToLeftLayout=\"Yes\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"PageHeaderBand\" HeightF=\"60\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"capLeft\" Text=\"Name العميل\" SizeF=\"200,25\" LocationFloat=\"0,0\" /><Item2 Ref=\"4\" ControlType=\"XRLabel\" Name=\"capRight\" Text=\"Total\" TextAlignment=\"TopRight\" SizeF=\"150,25\" LocationFloat=\"200,0\" /><Item3 Ref=\"5\" ControlType=\"XRTable\" Name=\"grid\" SizeF=\"450,25\" LocationFloat=\"0,30\"><Rows><Item1 Ref=\"6\" ControlType=\"XRTableRow\" Name=\"row1\" Weight=\"11.5\"><Cells><Item1 Ref=\"7\" ControlType=\"XRTableCell\" Name=\"cell1\" Weight=\"0.33333333333333331\" Text=\"C1\" /><Item2 Ref=\"8\" ControlType=\"XRTableCell\" Name=\"cell2\" Weight=\"0.33333333333333331\" Text=\"C2\" /><Item3 Ref=\"9\" ControlType=\"XRTableCell\" Name=\"cell3\" Weight=\"0.33333333333333331\" Text=\"C3\" /></Cells></Item1></Rows></Item3></Controls></Item2><Item3 Ref=\"10\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"11\" ControlType=\"XRLabel\" Name=\"item\" SizeF=\"250,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"12\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Item]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"13\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S63B = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"rs63brtltext\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" RightToLeft=\"Yes\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"PageHeaderBand\" HeightF=\"60\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"capLeft\" Text=\"Name العميل\" SizeF=\"200,25\" LocationFloat=\"0,0\" /><Item2 Ref=\"4\" ControlType=\"XRLabel\" Name=\"capRight\" Text=\"Total\" TextAlignment=\"TopRight\" SizeF=\"150,25\" LocationFloat=\"200,0\" /><Item3 Ref=\"5\" ControlType=\"XRTable\" Name=\"grid\" SizeF=\"450,25\" LocationFloat=\"0,30\"><Rows><Item1 Ref=\"6\" ControlType=\"XRTableRow\" Name=\"row1\" Weight=\"11.5\"><Cells><Item1 Ref=\"7\" ControlType=\"XRTableCell\" Name=\"cell1\" Weight=\"0.33333333333333331\" Text=\"C1\" /><Item2 Ref=\"8\" ControlType=\"XRTableCell\" Name=\"cell2\" Weight=\"0.33333333333333331\" Text=\"C2\" /><Item3 Ref=\"9\" ControlType=\"XRTableCell\" Name=\"cell3\" Weight=\"0.33333333333333331\" Text=\"C3\" /></Cells></Item1></Rows></Item3></Controls></Item2><Item3 Ref=\"10\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"11\" ControlType=\"XRLabel\" Name=\"item\" SizeF=\"250,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"12\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Item]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"13\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S63C = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"rs63crtllayout\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" RightToLeftLayout=\"Yes\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"PageHeaderBand\" HeightF=\"60\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"capLeft\" Text=\"Name العميل\" SizeF=\"200,25\" LocationFloat=\"0,0\" /><Item2 Ref=\"4\" ControlType=\"XRLabel\" Name=\"capRight\" Text=\"Total\" TextAlignment=\"TopRight\" SizeF=\"150,25\" LocationFloat=\"200,0\" /><Item3 Ref=\"5\" ControlType=\"XRTable\" Name=\"grid\" SizeF=\"450,25\" LocationFloat=\"0,30\"><Rows><Item1 Ref=\"6\" ControlType=\"XRTableRow\" Name=\"row1\" Weight=\"11.5\"><Cells><Item1 Ref=\"7\" ControlType=\"XRTableCell\" Name=\"cell1\" Weight=\"0.33333333333333331\" Text=\"C1\" /><Item2 Ref=\"8\" ControlType=\"XRTableCell\" Name=\"cell2\" Weight=\"0.33333333333333331\" Text=\"C2\" /><Item3 Ref=\"9\" ControlType=\"XRTableCell\" Name=\"cell3\" Weight=\"0.33333333333333331\" Text=\"C3\" /></Cells></Item1></Rows></Item3></Controls></Item2><Item3 Ref=\"10\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"11\" ControlType=\"XRLabel\" Name=\"item\" SizeF=\"250,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"12\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Item]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"13\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S63D = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"rs63drtlnone\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"PageHeaderBand\" HeightF=\"60\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"capLeft\" Text=\"Name العميل\" SizeF=\"200,25\" LocationFloat=\"0,0\" /><Item2 Ref=\"4\" ControlType=\"XRLabel\" Name=\"capRight\" Text=\"Total\" TextAlignment=\"TopRight\" SizeF=\"150,25\" LocationFloat=\"200,0\" /><Item3 Ref=\"5\" ControlType=\"XRTable\" Name=\"grid\" SizeF=\"450,25\" LocationFloat=\"0,30\"><Rows><Item1 Ref=\"6\" ControlType=\"XRTableRow\" Name=\"row1\" Weight=\"11.5\"><Cells><Item1 Ref=\"7\" ControlType=\"XRTableCell\" Name=\"cell1\" Weight=\"0.33333333333333331\" Text=\"C1\" /><Item2 Ref=\"8\" ControlType=\"XRTableCell\" Name=\"cell2\" Weight=\"0.33333333333333331\" Text=\"C2\" /><Item3 Ref=\"9\" ControlType=\"XRTableCell\" Name=\"cell3\" Weight=\"0.33333333333333331\" Text=\"C3\" /></Cells></Item1></Rows></Item3></Controls></Item2><Item3 Ref=\"10\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"11\" ControlType=\"XRLabel\" Name=\"item\" SizeF=\"250,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"12\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Item]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"13\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+  const ROWS = Array.from({ length: 5 }, (_, k) => ({ Item: `Record ${k + 1}` }));
+  /** Each label's and cell's aligned edge on page 1, by name: 'r800' ends at 800, 'l450' starts at 450. */
+  const edges = (repx: string) => {
+    const report = paginate(parseReportStructure(repx), ROWS.length, { rows: ROWS });
+    const out: Record<string, string> = {};
+    const edge = (align: string, left: number, width: number) => (align === 'right' ? `r${Math.round(left + width)}` : align === 'left' ? `l${Math.round(left)}` : `c${Math.round(left + width / 2)}`);
+    for (const band of report.pages[0].bands) {
+      for (const pc of band.controls) {
+        const c = pc.control;
+        const left = band.left + c.x + c.offsetX;
+        if (c.type === 'XRTable') {
+          const total = c.rows[0].cells.reduce((s, cell) => s + cell.weight, 0);
+          let x = left;
+          for (const cell of c.rows[0].cells) {
+            const w = (cell.weight / total) * c.width;
+            out[cell.text] = edge(cell.align, x, w);
+            x += w;
+          }
+        } else if (!(c.name in out)) {
+          out[c.name] = edge(c.align, left, c.width);
+        }
+      }
+    }
+    return out;
+  };
+
+  it.each([
+    // RightToLeft and RightToLeftLayout: mirrored, every alignment flipped.
+    ['s63a', (): string => S63A, { capLeft: 'r800', capRight: 'l450', item: 'r800', C1: 'r800', C2: 'r650', C3: 'r500' }],
+    // RightToLeft alone: nothing moves, every alignment flipped.
+    ['s63b', (): string => S63B, { capLeft: 'r250', capRight: 'l250', item: 'r300', C1: 'r200', C2: 'r350', C3: 'r500' }],
+    // RightToLeftLayout alone, and neither: as written.
+    ['s63c', (): string => S63C, { capLeft: 'l50', capRight: 'r400', item: 'l50', C1: 'l50', C2: 'l200', C3: 'l350' }],
+    ['s63d', (): string => S63D, { capLeft: 'l50', capRight: 'r400', item: 'l50', C1: 'l50', C2: 'l200', C3: 'l350' }],
+  ] as const)('places each text where DevExpress did (%s)', (_name, repx, dx) => {
+    expect(edges(repx())).toEqual(dx);
+  });
+
+  it('runs a right-to-left report\'s text right to left, and keeps the file\'s own x for edits', () => {
+    const header = (repx: string) => parseReportStructure(repx).bands.find((b) => b.kind === 'PageHeader')!.controls;
+    const [label] = header(S63A);
+    expect(label.rtl).toBe(true);
+    expect([label.fileX, label.x]).toEqual([0, 550]);
+    expect(header(S63B)[0]).toMatchObject({ rtl: true, x: 0 });
+    expect(header(S63B)[0].fileX).toBeUndefined();
+    expect(header(S63C)[0].rtl).toBeUndefined();
+  });
+});
