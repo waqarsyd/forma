@@ -129,12 +129,13 @@ function geometryWarnings(doc: Document): string[] {
   const pageHeight = num(root.getAttribute('PageHeight'));
   if (pageWidth === null || pageHeight === null) return warnings;
 
-  // DevExpress writes Margins as "Left, Right, Top, Bottom".
+  // DevExpress writes Margins as "Left, Right, Top, Bottom", and prints 100 on
+  // every side where they are missing or are not four numbers (parity row 65).
   const margins = (root.getAttribute('Margins') || '')
     .split(',')
     .map((n) => Number(n.trim()));
   const [ml, mr, mt, mb] =
-    margins.length === 4 && margins.every(Number.isFinite) ? margins : [0, 0, 0, 0];
+    margins.length === 4 && margins.every(Number.isFinite) ? margins : [100, 100, 100, 100];
 
   const printableWidth = pageWidth - ml - mr;
   const printableHeight = pageHeight - mt - mb;

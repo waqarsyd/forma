@@ -863,6 +863,19 @@ function dpiOf(attrs: string): number {
   return Number.isFinite(dpi) && dpi > 0 ? dpi : 100;
 }
 
+/**
+ * A report's `Margins`, left, right, top, bottom, in the root's own Dpi.
+ * Missing, or not four numbers, DevExpress prints 100 on every side (parity
+ * row 65, s49): one inch in hundredths of an inch, and in a millimetre report
+ * written without a Dpi; 100 pixels at a Dpi of 96; and "30, 40" printed as
+ * though nothing were written. Its serializer leaves the attribute out of a
+ * report saved at those default margins, so this is every such report.
+ */
+export function marginsOf(value: string | null | undefined): number[] {
+  const parts = (value ?? '').split(',').map((p) => Number.parseFloat(p.trim()));
+  return parts.length >= 4 && parts.slice(0, 4).every(Number.isFinite) ? parts.slice(0, 4) : [100, 100, 100, 100];
+}
+
 function pairAttr(attrs: string, name: string): { a: number; b: number } {
   const raw = attrOf(attrs, name);
   if (!raw) return { a: 0, b: 0 };
@@ -1743,10 +1756,7 @@ export function parseReportStructure(
   // Margins="left, right, top, bottom" -- DevExpress writes them in that order,
   // which is not the CSS order and is the kind of thing that renders a
   // plausible page with the wrong gap at the top.
-  const marginRaw = (attrOf(rootAttrs, 'Margins') || '')
-    .split(',')
-    .map((p) => Number.parseFloat(p.trim()))
-    .map((n) => (Number.isFinite(n) ? n : 0));
+  const marginRaw = marginsOf(attrOf(rootAttrs, 'Margins'));
 
   /*
    * Every band and control is read at its own Dpi, 100 when absent, whatever

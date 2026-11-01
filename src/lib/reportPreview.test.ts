@@ -18,6 +18,7 @@ import {
   parseReportStructure,
   paginate,
   addOverflowPages,
+  marginsOf,
   activeColumns,
   pageInfoText,
   cssColor,
@@ -956,7 +957,7 @@ it('reads an absent Layout as DownThenAcross, which is the default', () => {
 
   it('paginates an unlabelled multi-column band down the first column', () => {
     const structure = parseReportStructure(
-      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="900" PageHeight="1000">' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="900" PageHeight="1000" Margins="0, 0, 0, 0">' +
       '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100">' +
       '<MultiColumn Ref="2" ColumnCount="2" ColumnSpacing="20" Mode="UseColumnCount" />' +
       '<Controls><Item1 Ref="3" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" LocationFloat="0,0" /></Controls>' +
@@ -989,9 +990,10 @@ it('reads an absent Layout as DownThenAcross, which is the default', () => {
 describe('paginating into columns', () => {
   // A 900 by 1000 page needs PaperKind="Custom": without it DevExpress prints
   // Letter whatever the size written, and so does the Preview (parity row 44).
+  // And margins of 0 written out: left out, they are 100 a side (row 65).
   const build = (count: number, layout: string, detailHeight: number, extra = '') =>
     parseReportStructure(
-      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="900" PageHeight="1000">' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="900" PageHeight="1000" Margins="0, 0, 0, 0">' +
       '<Bands>' +
       extra +
       `<Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="${detailHeight}">` +
@@ -1049,7 +1051,7 @@ describe('paginating into columns', () => {
     // The regression that matters: everything without <MultiColumn> must be
     // untouched by this code path.
     const plain = parseReportStructure(
-      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="900" PageHeight="1000">' +
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PaperKind="Custom" PageWidth="900" PageHeight="1000" Margins="0, 0, 0, 0">' +
       '<Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls><Item1 Ref="2" ControlType="XRLabel" Name="l" Text="x" SizeF="100,20" /></Controls></Item1></Bands></XtraReportsLayoutSerializer>'
     );
     const placed = details(paginate(plain, 3));
@@ -1412,6 +1414,27 @@ describe('side margins and the printable width, as DevExpress prints them', () =
     expect(paginate(parseReportStructure(toEdge), 1).pages).toHaveLength(1);
     // The exports lay a report out as one page, and hold each control once.
     expect(paginate(parseReportStructure(past), 1, { overflowPages: false }).pages).toHaveLength(1);
+  });
+
+  // Parity row 65, s49: DevExpress's serializer leaves Margins out of a report
+  // saved at its default margins, which are 100 a side in the root's own Dpi.
+  it('reads missing margins as 100 a side, in the root\'s Dpi (s49)', () => {
+    expect(marginsOf(undefined)).toEqual([100, 100, 100, 100]);
+    expect(marginsOf('30, 40')).toEqual([100, 100, 100, 100]);
+    expect(marginsOf('0, 0, 0, 0')).toEqual([0, 0, 0, 0]);
+    expect(marginsOf('60, 40, 50, 50')).toEqual([60, 40, 50, 50]);
+    const root = (attrs: string) => parseReportStructure(`<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" ${attrs}><Bands /></XtraReportsLayoutSerializer>`).margins;
+    // One inch in hundredths, and in a millimetre report written without a Dpi.
+    expect(root('ReportUnit="HundredthsOfAnInch"')).toEqual({ top: 100, bottom: 100, left: 100, right: 100 });
+    expect(root('ReportUnit="TenthsOfAMillimeter"').left).toBeCloseTo(254, 6);
+    // 100 pixels at a Dpi of 96, and 100 tenths of a millimetre at 254.
+    expect(root('ReportUnit="Pixels" Dpi="96"').left).toBeCloseTo(100, 6);
+    expect(root('ReportUnit="TenthsOfAMillimeter" Dpi="254"').left).toBeCloseTo(100, 6);
+    // A table 750 wide no longer fits, and prints its rest on a page of its own (s1).
+    const s1 = parseReportStructure('<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" PageWidth="850" PageHeight="1100"><Bands>' +
+      '<Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="50"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="wide" Text="x" SizeF="750,20" LocationFloat="0,0" /></Controls></Item1>' +
+      '</Bands></XtraReportsLayoutSerializer>');
+    expect(paginate(s1, 1).pages).toHaveLength(2);
   });
 
   // s47b and s47e: a column nothing reaches gets no page, and a page with
