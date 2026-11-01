@@ -14,9 +14,9 @@
  * - **A line's width is Windows GDI's, kerned as GDI kerns it**, though the
  *   page draws it unkerned (parity row 59, s43a to s43l): boxes stepping a
  *   thousandth of a unit at a time wrapped exactly where GDI's width of the
- *   text left the box, in ten fonts, four styles and five sizes. GDI kerns
- *   every face measured but Tahoma and Segoe UI's italics, which the browser
- *   kerns all the same.
+ *   text left the box, in ten fonts, four styles and five sizes. GDI leaves
+ *   56 installed families and Segoe UI's italics unkerned, Tahoma among them,
+ *   which the browser kerns all the same (row 61).
  * - **One line is short only when it fits unkerned**: a line that fits its
  *   box kerned but not unkerned printed at the full line spacing (s39b, s43).
  * - **A synthesized bold is its regular, widened**: a family with no bold face,
@@ -204,18 +204,46 @@ export function cssFont(font: FontSpec): string {
  */
 const MEASURE_PX = 2048;
 
+/*
+ * Families Windows GDI does not kern in any style, though the browser kerns
+ * them (parity rows 59 and 61): every family on the measuring machine whose
+ * text GDI laid out at its plain advances while Chrome kerned it, 151 faces
+ * in all. Tahoma was measured in s43a; Century and Franklin Gothic Book
+ * Bold in s44a; and in s45a Arial Narrow, Garamond, Gill Sans MT, Bodoni MT,
+ * Goudy Old Style, Leelawadee UI, Franklin Gothic Book, Rockwell and Tw Cen
+ * MT, regular, bold, italic and bold italic among them, each wrapped until its
+ * box reached its unkerned width, to a hundredth of a unit.
+ */
+const GDI_UNKERNED = new Set([
+  'arial narrow', 'bell mt', 'bernard mt condensed', 'bodoni mt', 'bodoni mt black',
+  'bodoni mt condensed', 'broadway', 'brush script mt', 'buxton sketch', 'calisto mt',
+  'castellar', 'centaur', 'century', 'colonna mt', 'cooper black',
+  'copperplate gothic light', 'curlz mt', 'engravers mt', 'felix titling',
+  'footlight mt light', 'forte', 'franklin gothic book', 'franklin gothic heavy',
+  'french script mt', 'garamond', 'gill sans mt', 'gill sans mt condensed',
+  'goudy old style', 'juice itc', 'leelawadee ui', 'maiandra gd', 'malgun gothic',
+  'matura mt script capitals', 'microsoft himalaya', 'microsoft jhenghei',
+  'microsoft jhenghei ui', 'microsoft yahei', 'microsoft yahei light', 'microsoft yahei ui',
+  'microsoft yahei ui light', 'mongolian baiti', 'ms reference sans serif',
+  'old english text mt', 'onyx', 'perpetua', 'perpetua titling mt', 'rockwell',
+  'rockwell condensed', 'segoe marker', 'segoe ui emoji', 'segoe ui historic',
+  'segoe ui symbol', 'snap itc', 'tahoma', 'tw cen mt', 'tw cen mt condensed',
+]);
+
+/* Families GDI kerns upright and not in italic. */
+const GDI_UNKERNED_ITALIC = new Set(['segoe ui', 'segoe ui light', 'segoe ui semibold']);
+
 /**
  * Whether Windows GDI kerns a face, which DevExpress breaks lines by. It
- * kerned every face measured in s43 but these, which the browser kerns:
- * Tahoma, upright or italic (bold has nothing to kern either way), and Segoe
- * UI's italic and bold italic. In s43k Segoe UI Italic's line wrapped until
- * its box reached 286.14, its unkerned width, where Chrome kerns it to 272.90.
+ * kerned every face measured but those listed above, which the browser
+ * kerns: in s43k Segoe UI Italic's line wrapped until its box reached 286.14,
+ * its unkerned width, where Chrome kerns it to 272.90. A family the machine
+ * did not have is taken to be kerned, as most measured families are.
  */
 export function gdiKerns(font: FontSpec): boolean {
   const family = font.family.trim().toLowerCase();
-  if (family === 'tahoma') return false;
-  if (family === 'segoe ui' && font.italic) return false;
-  return true;
+  if (GDI_UNKERNED.has(family)) return false;
+  return !(font.italic && GDI_UNKERNED_ITALIC.has(family));
 }
 
 /*

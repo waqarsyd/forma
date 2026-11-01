@@ -139,6 +139,23 @@ describe('the canvas measurer', () => {
     expect(face('Some Font')).toBe(true);
   });
 
+  it('leaves unkerned the families GDI does not kern in any style (row 61)', () => {
+    const face = (family: string, bold = false, italic = false) => gdiKerns({ family, sizePt: 20, bold, italic });
+    // s45a: each wrapped until its box reached its unkerned width.
+    for (const family of ['Arial Narrow', 'Garamond', 'Gill Sans MT', 'Bodoni MT', 'Goudy Old Style', 'Leelawadee UI',
+      'Franklin Gothic Book', 'Rockwell', 'Tw Cen MT', 'Century']) {
+      expect(face(family)).toBe(false);
+      expect(face(family, true)).toBe(false);
+      expect(face(family, false, true)).toBe(false);
+      expect(face(family, true, true)).toBe(false);
+    }
+    // Segoe UI's lighter and heavier families follow it: kerned upright only.
+    for (const family of ['Segoe UI Light', 'Segoe UI Semibold']) {
+      expect(face(family)).toBe(true);
+      expect(face(family, false, true)).toBe(false);
+    }
+  });
+
   it('knows which families have no bold face, whose bold is synthesized (row 60)', () => {
     const bold = (family: string, isBold = true) => synthesizedBold({ family, sizePt: 20, bold: isBold, italic: false });
     for (const family of ['Microsoft Sans Serif', 'Lucida Console', 'Impact', 'Century', 'Sylfaen', 'Cambria Math', ' microsoft SANS serif ', 'Imprint MT S\u0068adow']) {
