@@ -291,6 +291,8 @@ export interface PreviewControl {
   /** The DevExpress ControlType verbatim, e.g. `XRLabel`. */
   type: string;
   name: string;
+  /** Its `Ref`, which a band's `DrillDownControl` names it by; absent when none was written. */
+  ref?: string;
   /** Band-relative, in report units. */
   x: number;
   y: number;
@@ -565,6 +567,15 @@ export interface PreviewBand {
   /** `PrintAtBottom="true"` on a report footer: printed at the foot of its page. */
   printAtBottom: boolean;
   /**
+   * `DrillDownControl` and `DrillDownExpanded` on a Detail band (2026-11-01,
+   * s56): `control` is the `Ref` of the control that toggles the band, a label
+   * in a group header above it. Collapsed, DevExpress printed the group
+   * headers and footers with no records between them, in the document and in
+   * every export; expanded, the default and not written, printed as if there
+   * were no drill-down. It refused one on a group header ("not valid").
+   */
+  drillDown?: { control: string; expanded: boolean } | null;
+  /**
    * `<GroupFields>` on a group header, `<SortFields>` on Detail, in file order.
    * Printed: groups came out in ascending order of their field whatever order
    * the data arrived in, and a descending `SortFields` on Detail sorted the
@@ -612,6 +623,12 @@ export interface BandField {
 }
 
 /** A band's `<GroupFields>` or `<SortFields>`, from its own part of the file. */
+/** A band's drill-down, as `#Ref-6` names its control; collapsed only when `DrillDownExpanded="false"`. */
+function drillDownOf(attrs: string): { control: string; expanded: boolean } | null {
+  const m = /^#Ref-(\d+)$/.exec(attrOf(attrs, 'DrillDownControl') ?? '');
+  return m ? { control: m[1], expanded: (attrOf(attrs, 'DrillDownExpanded') ?? '').toLowerCase() !== 'false' } : null;
+}
+
 function parseBandFields(bandText: string, tag: 'GroupFields' | 'SortFields'): BandField[] {
   const head = bandText.split(/<(?:Controls|Bands|SubBands)\b/)[0];
   const block = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(head);
@@ -1704,6 +1721,7 @@ function parseControls(
       data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
       link: parseLink(item.attrs, inner.slice(item.start, extent)),
       bookmark: parseBookmark(item.attrs, inner.slice(item.start, extent)),
+      ...(attrOf(item.attrs, 'Ref') ? { ref: attrOf(item.attrs, 'Ref')! } : {}),
       toc: type === 'XRTableOfContents' ? parseToc(item.attrs, inner.slice(item.start, extent), dpiScale, targetDpi, font) : null,
       rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
       ...boundProperties(ownPart(inner.slice(item.start, extent))),
@@ -1948,6 +1966,7 @@ export function parseReportStructure(
         keepTogether: (attrOf(item.attrs, 'KeepTogether') ?? '').toLowerCase() === 'true',
         printOn: attrOf(item.attrs, 'PrintOn') || 'AllPages',
         printAtBottom: (attrOf(item.attrs, 'PrintAtBottom') ?? '').toLowerCase() === 'true',
+        drillDown: kind === 'Detail' ? drillDownOf(item.attrs) : null,
         fields: bandSpan && kind !== 'DetailReport' ? parseBandFields(bandSpan.text, kind === 'Detail' ? 'SortFields' : 'GroupFields') : [],
         level: numAttr(item.attrs, 'Level', 0),
         repeatEveryPage: (attrOf(item.attrs, 'RepeatEveryPage') ?? '').toLowerCase() === 'true',
@@ -2081,6 +2100,14 @@ export interface BandInstance {
   controls: PlacedControl[];
   /** The records its text read, when there is test data; kept to reprint it once its page is known. */
   scope?: TextScope | null;
+  /** On a group header that holds a drill-down control: which group, and whether its records show. */
+  drill?: DrillState;
+}
+
+/** A group's drill-down: `key` names it for `PaginateOptions.drillToggled`. */
+export interface DrillState {
+  key: string;
+  expanded: boolean;
 }
 
 interface LayoutContext {
@@ -3053,7 +3080,7 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string, s
    */
   const keptBottom = Math.max(...first.map((pc) => pc.y + pc.height));
   const height = keptBottom >= avail - EPS ? avail : Math.min(avail, Math.max(movedTop, keptBottom));
-  return [{ band: inst.band, record: inst.record, scope: inst.scope, height, controls: first }, continues];
+  return [{ band: inst.band, record: inst.record, scope: inst.scope, height, controls: first, ...(inst.drill ? { drill: inst.drill } : {}) }, continues];
 }
 
 // --------------------------------------------------------------- pagination
@@ -3089,6 +3116,8 @@ export interface PlacedBand {
   record: number | null;
   /** As on `BandInstance`. */
   scope?: TextScope | null;
+  /** As on `BandInstance`: the pane draws the toggle from it. */
+  drill?: DrillState;
 }
 
 export interface PreviewPage {
@@ -3130,6 +3159,12 @@ export interface PaginateOptions {
   rows?: RecordValues[] | null;
   /** Parameter values the reader entered, by name; each wins over the file's default. */
   parameters?: Readonly<Record<string, string>>;
+  /**
+   * The drill-down groups the reader has toggled, by `DrillState.key`: each
+   * prints the other way from the file's `DrillDownExpanded`, as a click on
+   * the control does in DevExpress's viewer.
+   */
+  drillToggled?: ReadonlySet<string>;
   /**
    * A detail report's rows for one master record: given its `DataMember` (a
    * relation path) and the master's row. Absent, every master has none.
@@ -3519,6 +3554,7 @@ function paginateOnce(
   const at = (inst: BandInstance, top: number): PlacedBand => ({
     band: inst.band, height: inst.height, controls: inst.controls.filter((pc) => pc.control.type !== 'XRPageBreak'),
     top, left: contentLeft, width: fullWidth, record: inst.record, scope: inst.scope,
+    ...(inst.drill ? { drill: inst.drill } : {}),
   });
   /**
    * Where an instance's first `XRPageBreak` sits, or null (parity row 47). On
@@ -3736,6 +3772,8 @@ function paginateOnce(
   }
 
   let placedRecords = 0;
+  /** Records a collapsed drill-down hides: not placed, and not missing either. */
+  let hiddenRecords = 0;
   if (detail && records > 0) {
     const usable = ordinaryPageBottom - topMargin - (pageHeader ? heldHeight(pageHeader) : 0);
     const tall = heldHeight(detail);
@@ -3851,10 +3889,23 @@ function paginateOnce(
       );
     }
     const runAt = levelRuns.map(() => 0);
+    /*
+     * Drill-down (s56): the group level whose header holds the control that
+     * toggles Detail, and whether the group being printed shows its records.
+     * Each group is toggled on its own, keyed by its level and its place.
+     */
+    const drill = detail?.drillDown ?? null;
+    const drillLevel = drill ? groupHeaders.findIndex((h) => h.controls.some((c) => c.ref === drill.control)) : -1;
+    const drillState = (k: number): DrillState => {
+      const key = `${k}:${runAt[k]}`;
+      return { key, expanded: drill!.expanded !== (options.drillToggled?.has(key) ?? false) };
+    };
     const openStep = (k: number) => {
       const runs = levelRuns[k];
       const run = runs[runAt[k]] ?? [];
-      steps.push({ inst: instance(groupHeaders[k], null, run.length ? rowFor(run[0]) : null, run), role: 'header', level: k, first: runAt[k] === 0, last: runAt[k] === runs.length - 1 });
+      const inst = instance(groupHeaders[k], null, run.length ? rowFor(run[0]) : null, run);
+      if (k === drillLevel) inst.drill = drillState(k);
+      steps.push({ inst, role: 'header', level: k, first: runAt[k] === 0, last: runAt[k] === runs.length - 1 });
     };
     const closeStep = (k: number) => {
       const runs = levelRuns[k];
@@ -3878,7 +3929,9 @@ function paginateOnce(
     } else if (records > 0) {
       for (let i = 0; i < records; i++) {
         for (let k = 0; k < groupHeaders.length; k++) if (levelRuns[k][runAt[k]]?.[0] === i) openStep(k);
-        if (detail) steps.push({ inst: instance(detail, i + 1, rowFor(i)), role: 'detail', level: groupHeaders.length, first: i === 0, last: i === records - 1 });
+        // A collapsed group's records print nothing, and count as shown.
+        if (drillLevel >= 0 && !drillState(drillLevel).expanded) hiddenRecords++;
+        else steps.push({ inst: instance(detail, i + 1, rowFor(i)), role: 'detail', level: groupHeaders.length, first: i === 0, last: i === records - 1 });
         steps.push(...subSteps(i));
         for (let k = groupHeaders.length - 1; k >= 0; k--) {
           const run = levelRuns[k][runAt[k]];
@@ -4111,9 +4164,9 @@ function paginateOnce(
 
   // Only a report with a Detail band places records; one without prints its
   // report bands once, which is not a page cap (parity row 39).
-  if (detail && placedRecords < records) {
+  if (detail && placedRecords + hiddenRecords < records) {
     problems.push(
-      `Preview stopped at ${maxPages} pages; ${records - placedRecords} of ${records} records are not shown.`,
+      `Preview stopped at ${maxPages} pages; ${records - placedRecords - hiddenRecords} of ${records} records are not shown.`,
     );
   }
 

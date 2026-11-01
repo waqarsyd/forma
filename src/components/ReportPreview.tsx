@@ -889,6 +889,22 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * value typed once survives a refinement that keeps the parameter.
    */
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
+  /*
+   * The drill-down groups the reader has opened or closed (s56), by key. The
+   * toggle beside a group's label flips one, as a click on the label does in
+   * DevExpress's viewer, and every export prints what the pane shows. Kept
+   * while a report is edited; another report, or another toggle, starts over.
+   */
+  const [drillToggled, setDrillToggled] = useState<ReadonlySet<string>>(() => new Set());
+  const drillIdentity = `${title ?? ''}|${/DrillDownControl="[^"]*"/.exec(repxContent ?? '')?.[0] ?? ''}`;
+  useEffect(() => setDrillToggled(new Set()), [drillIdentity]);
+  const toggleDrill = useCallback((key: string) => {
+    setDrillToggled((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }, []);
   const { structure, report } = useMemo(() => {
     const parsed = parseReportStructure(repxContent);
     // With sample rows the record count is theirs; otherwise it is the number
@@ -897,12 +913,14 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     // The rows themselves too, now: a record's values decide how tall it grows.
     return {
       structure: parsed,
-      report: paginate(parsed, count, { measure, rows: records ?? null, parameters: paramValues }) as PaginatedReport,
+      report: paginate(parsed, count, { measure, rows: records ?? null, parameters: paramValues, drillToggled }) as PaginatedReport,
     };
-  }, [repxContent, layout, records, measure, paramValues]);
+  }, [repxContent, layout, records, measure, paramValues, drillToggled]);
 
   const boundFields = useMemo(() => readBoundFields(repxContent), [repxContent]);
   const structureBands = structure.bands;
+  /** The `Ref` of the control that toggles Detail, when it has a drill-down. */
+  const drillRef = structureBands.find((b) => b.kind === 'Detail')?.drillDown?.control;
   const watermark = structure.watermark;
   // The columns DevExpress actually prints, which a declared count with no Mode
   // is not; in practice only Detail ever declares any.
@@ -1087,7 +1105,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   }, [title]);
   const exportCsv = useCallback(() => {
     const count = records?.length ? records.length : recordCountFromLayout(layout);
-    download(reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues }), 'text/csv;charset=utf-8', 'csv');
+    download(reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues, drillToggled }), 'text/csv;charset=utf-8', 'csv');
   }, [structure, records, layout, paramValues, download]);
 
   /*
@@ -1099,7 +1117,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    */
   const exportXlsx = useCallback(() => {
     const count = records?.length ? records.length : recordCountFromLayout(layout);
-    const bytes = reportToXlsx(structure, count, { rows: records ?? null, parameters: paramValues, measure });
+    const bytes = reportToXlsx(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled });
     download(bytes as BlobPart, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
   }, [structure, records, layout, paramValues, measure, download]);
 
@@ -1118,7 +1136,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   const continuous = useMemo(() => {
     if (exportKind !== 'html' && exportKind !== 'png') return null;
     const count = records?.length ? records.length : recordCountFromLayout(layout);
-    return layoutContinuous(structure, count, { rows: records ?? null, parameters: paramValues, measure });
+    return layoutContinuous(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled });
   }, [exportKind, structure, records, layout, paramValues, measure]);
   useEffect(() => {
     if (!exportKind) return;
@@ -1359,6 +1377,23 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                           pageCount={report.pages.length}
                           record={placed.record !== null && records?.length ? records[(placed.record - 1) % records.length] : null}
                         />
+                        {placed.drill && control.ref !== undefined && control.ref === drillRef && (
+                          <button
+                            type="button"
+                            className="rp-drill"
+                            aria-expanded={placed.drill.expanded}
+                            aria-label={`${placed.drill.expanded ? 'Collapse' : 'Expand'} ${pc.text || control.name}`}
+                            title={placed.drill.expanded ? "Hide this group's records" : "Show this group's records"}
+                            style={{
+                              left: unitsToPx(control.x + control.offsetX, report.unit) - 15,
+                              top: unitsToPx(pc.y, report.unit) + 2,
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={() => toggleDrill(placed.drill!.key)}
+                          >
+                            {placed.drill.expanded ? '−' : '+'}
+                          </button>
+                        )}
                         {/* A detail report's bands are not in the top-level list
                             edits address, so they are drawn but not editable. */}
                         {editing && bandIndex >= 0 && (
@@ -1506,6 +1541,17 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           background: #e8590c; border: 1px solid #fff; border-radius: 1px;
           cursor: nwse-resize;
         }
+        /* Drill-down (s56): the toggle beside a group's label, in the margin as
+           DevExpress's viewer draws it. Viewer chrome, so no export or print
+           carries it: pdfFromDom and exportFromDom skip it by class. */
+        .rp-drill {
+          position: absolute; z-index: 3; width: 11px; height: 11px; padding: 0;
+          display: grid; place-items: center; box-sizing: border-box;
+          border: 1px solid #8a94a3; border-radius: 2px; background: #fff; color: #39424e;
+          font: 600 10px/1 var(--font-code, monospace); cursor: pointer;
+        }
+        .rp-drill:hover, .rp-drill:focus-visible { border-color: #e8590c; color: #e8590c; outline: none; }
+        @media print { .rp-drill { display: none; } }
         .rp-textedit {
           position: absolute; z-index: 2; box-sizing: border-box;
           border: 1.5px solid #e8590c; background: #fff; color: #111418;

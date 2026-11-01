@@ -103,7 +103,7 @@ export async function pageToPng(page: HTMLElement): Promise<Blob> {
   const images: PdfImage[] = [];
   const ops = await pageOps(page, images);
   const origin = page.getBoundingClientRect();
-  const controls = [...page.querySelectorAll<HTMLElement>('.rp-band > *:not(.rp-band-label):not(.rp-band-rule)')].map((el) => el.getBoundingClientRect());
+  const controls = [...page.querySelectorAll<HTMLElement>('.rp-band > *:not(.rp-band-label):not(.rp-band-rule):not(.rp-drill)')].map((el) => el.getBoundingClientRect());
   const measure = document.createElement('canvas').getContext('2d')!;
   const boxes: [number, number, number, number][] = controls.length
     ? controls.map((r) => [r.left - origin.left, r.top - origin.top, r.right - origin.left, r.bottom - origin.top].map((v) => Math.round(v) / PX_PER_PT) as [number, number, number, number])

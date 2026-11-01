@@ -25,7 +25,8 @@ import type { PaginatedReport } from './reportPreview';
 
 const PT_PER_PX = 0.75;
 /** What the print stylesheet hides: captions and band labels are the pane's, not the report's. */
-const SKIPPED = ['rp-caption', 'rp-band-label', 'rp-band-rule'];
+// The drill-down toggle is the viewer's, never the report's (s56).
+const SKIPPED = ['rp-caption', 'rp-band-label', 'rp-band-rule', 'rp-drill'];
 
 /** A CSS colour as RGB and its alpha, or null when it draws nothing. */
 function colourOf(css: string): { rgb: Rgb; alpha: number } | null {

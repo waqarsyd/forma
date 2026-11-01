@@ -3734,3 +3734,73 @@ const S55D_DX: string[] = ["pages 3","3|50|50|Contents|","3|50|73|Title|1","3|50
     expect(levels).toEqual(['Title:1', 'North:1', 'Customer 01:2', 'Customer 04:2']);
   });
 });
+
+/*
+ * Drill-down (queue 6), against DevExpress 20.1's own print of s56: a Detail
+ * band of customers whose drill-down control is the region label in the
+ * group header above it, collapsed (s56a), expanded (s56b), and collapsed
+ * with a group footer (s56d), over 45 records. Collapsed, DevExpress printed
+ * the headers and footers with no records between them, on one page, and its
+ * CSV, HTML, XLSX and PDF held the same; expanded printed as if there were no
+ * drill-down at all.
+ */
+describe('drill-down, as DevExpress printed it (cases s56a to s56d)', () => {
+// The cases as the serializer wrote them, and DevExpress's labels for each from
+// its render: page count, then page|left|top|text in hundredths of an inch.
+const S56A = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s56a-drill-collapsed\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"40\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" SizeF=\"400,30\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"5\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"6\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"7\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"8\" ControlType=\"DetailBand\" DrillDownExpanded=\"false\" DrillDownControl=\"#Ref-6\" HeightF=\"25\"><Controls><Item1 Ref=\"9\" ControlType=\"XRLabel\" Name=\"customer\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"10\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"11\" ControlType=\"ReportFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"12\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /></Controls></Item5><Item6 Ref=\"13\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S56A_DX: string[] = ["pages 1","1|50|50|Sales report","1|50|90|North","1|50|120|South","1|50|150|West","1|50|180|Totals"];
+const S56B = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s56b-drill-expanded\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"40\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" SizeF=\"400,30\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"5\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"6\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"7\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"8\" ControlType=\"DetailBand\" DrillDownControl=\"#Ref-6\" HeightF=\"25\"><Controls><Item1 Ref=\"9\" ControlType=\"XRLabel\" Name=\"customer\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"10\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"11\" ControlType=\"ReportFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"12\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /></Controls></Item5><Item6 Ref=\"13\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S56D = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s56d-drill-collapsed-footer\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"40\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" SizeF=\"400,30\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"5\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"6\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"7\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"8\" ControlType=\"DetailBand\" DrillDownExpanded=\"false\" DrillDownControl=\"#Ref-6\" HeightF=\"25\"><Controls><Item1 Ref=\"9\" ControlType=\"XRLabel\" Name=\"customer\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"10\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"11\" ControlType=\"GroupFooterBand\" HeightF=\"25\"><Controls><Item1 Ref=\"12\" ControlType=\"XRLabel\" Name=\"regionTotal\" Text=\"End of region\" SizeF=\"300,25\" LocationFloat=\"20,0\" /></Controls></Item5><Item6 Ref=\"13\" ControlType=\"ReportFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"14\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /></Controls></Item6><Item7 Ref=\"15\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+const S56D_DX: string[] = ["pages 1","1|50|50|Sales report","1|50|90|North","1|70|120|End of region","1|50|145|South","1|70|175|End of region","1|50|200|West","1|70|230|End of region","1|50|255|Totals"];
+  const ROWS = Array.from({ length: 45 }, (_, k) => ({
+    Region: ['North', 'South', 'West'][k % 3],
+    Customer: `Customer ${String(k + 1).padStart(2, '0')}`,
+    Amount: String((k + 1) * 10),
+  }));
+  const labels = (repx: string, drillToggled?: ReadonlySet<string>) => {
+    const report = paginate(parseReportStructure(repx), ROWS.length, { rows: ROWS, drillToggled });
+    const out = [`pages ${report.pages.length}`];
+    report.pages.forEach((page, p) => {
+      for (const band of page.bands) for (const pc of band.controls) {
+        if (pc.control.type === 'XRLabel' && pc.text) out.push(`${p + 1}|${Math.round(band.left + pc.control.x)}|${Math.round(band.top + pc.y)}|${pc.text}`);
+      }
+    });
+    return out;
+  };
+
+  it.each([
+    ['s56a', () => S56A, () => S56A_DX],
+    ['s56d', () => S56D, () => S56D_DX],
+  ])('prints every label on the page and at the place DevExpress did (%s)', (_name, repx, dx) => {
+    expect(labels(repx()).sort()).toEqual([...dx()].sort());
+  });
+
+  it('prints an expanded drill-down exactly as no drill-down, as DevExpress printed s56b and s56c', () => {
+    // DevExpress's two prints were identical, label for label. (Both also show the
+    // last record of page 1 moved whole where Forma keeps its line: parity row 70.)
+    expect(labels(S56B)).toEqual(labels(S56B.replace(/ DrillDownControl="#Ref-\d+"/, '')));
+  });
+
+  it('reads the drill-down from the Detail band, collapsed only when DrillDownExpanded says so', () => {
+    const detail = (repx: string) => parseReportStructure(repx).bands.find((b) => b.kind === 'Detail')!;
+    expect(detail(S56A).drillDown).toEqual({ control: expect.any(String), expanded: false });
+    expect(detail(S56B).drillDown).toMatchObject({ expanded: true });
+  });
+
+  it('toggles one group at a time, as a click on its label does in the viewer', () => {
+    const report = paginate(parseReportStructure(S56A), ROWS.length, { rows: ROWS, drillToggled: new Set(['0:1']) });
+    const drills = report.pages.flatMap((p) => p.bands.filter((b) => b.drill).map((b) => `${b.drill!.key}:${b.drill!.expanded}`));
+    expect(drills).toEqual(['0:0:false', '0:1:true', '0:2:false']);
+    const shown = labels(S56A, new Set(['0:1'])).filter((l) => l.includes('Customer'));
+    // South holds every third customer from the second.
+    expect(shown.map((l) => l.split('|')[3])).toEqual(Array.from({ length: 15 }, (_, k) => `Customer ${String(k * 3 + 2).padStart(2, '0')}`));
+    expect(report.problems).toEqual([]);
+  });
+
+  it('exports what is shown, as DevExpress\'s CSVs of s56a and s56d', () => {
+    expect(reportToCsv(parseReportStructure(S56A), ROWS.length, { rows: ROWS })).toBe('Sales report\r\nNorth\r\nSouth\r\nWest\r\nTotals\r\n');
+    expect(reportToCsv(parseReportStructure(S56D), ROWS.length, { rows: ROWS })).toBe(
+      'Sales report,\r\nNorth,\r\n,End of region\r\nSouth,\r\n,End of region\r\nWest,\r\n,End of region\r\nTotals,\r\n',
+    );
+  });
+});

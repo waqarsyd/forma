@@ -317,3 +317,31 @@ describe('Export CSV', () => {
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   });
 });
+
+/*
+ * Drill-down (2026-11-01, s56): a toggle beside each group's label, as
+ * DevExpress's viewer has, opening or closing that group's records. s56a as
+ * the serializer wrote it: collapsed, so DevExpress printed no customer.
+ */
+describe('a drill-down group in the pane', () => {
+  const S56A = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s56a-drill-collapsed\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"40\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" SizeF=\"400,30\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"5\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"6\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"7\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"8\" ControlType=\"DetailBand\" DrillDownExpanded=\"false\" DrillDownControl=\"#Ref-6\" HeightF=\"25\"><Controls><Item1 Ref=\"9\" ControlType=\"XRLabel\" Name=\"customer\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"10\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"11\" ControlType=\"ReportFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"12\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /></Controls></Item5><Item6 Ref=\"13\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+  const ROWS = Array.from({ length: 45 }, (_, k) => ({
+    Region: ['North', 'South', 'West'][k % 3],
+    Customer: `Customer ${String(k + 1).padStart(2, '0')}`,
+    Amount: String((k + 1) * 10),
+  }));
+
+  it('starts as the file says, and opens and closes one group at a time', () => {
+    render(<ReportPreview repxContent={S56A} records={ROWS} />);
+    const customers = () => screen.queryAllByText(/^Customer \d+$/).length;
+    expect(customers()).toBe(0);
+    const south = screen.getByRole('button', { name: 'Expand South' });
+    expect(south.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getAllByRole('button', { name: /^Expand (North|South|West)$/ })).toHaveLength(3);
+    fireEvent.click(south);
+    expect(customers()).toBe(15);
+    expect(screen.getByRole('button', { name: 'Collapse South' }).getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse South' }));
+    expect(customers()).toBe(0);
+  });
+});
