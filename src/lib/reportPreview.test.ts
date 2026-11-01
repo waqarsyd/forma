@@ -20,6 +20,8 @@ import {
   addOverflowPages,
   marginsOf,
   activeColumns,
+  pieShare,
+  valueTicks,
   pageInfoText,
   cssColor,
   cssPadding,
@@ -3483,6 +3485,65 @@ describe('embedded subreports, as DevExpress printed them (case s22b)', () => {
  * and each with one collection missing, beside a label the grid pushes down.
  * Each cross-tab is written as Forma repairs one.
  */
+/*
+ * Charts over test data (parity row 32). s23-gen's two charts as the
+ * serializer wrote them, its cross-tab left out, over its twelve records, and
+ * the points DevExpress 20.1 plotted, read from the chart by RepxProbe render.
+ */
+describe('charts over test data, as DevExpress plotted them (case s23)', () => {
+  const S23_CHARTS = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"DataControls\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\" Font=\"Arial, 8pt\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"800\"><Controls><Item1 Ref=\"3\" ControlType=\"XRChart\" Name=\"chartSales\" SizeF=\"600,300\" LocationFloat=\"0,0\" BorderColor=\"Black\" Borders=\"None\"><Chart Ref=\"4\"><DataContainer Ref=\"5\" ValidateDataMembers=\"true\"><SeriesSerializable><Item1 Ref=\"6\" Name=\"Sales\" ArgumentDataMember=\"Region\" ValueDataMembersSerializable=\"Amount\" /><Item2 Ref=\"7\" Name=\"Trend\" ArgumentDataMember=\"Region\" ValueDataMembersSerializable=\"Target\"><View Ref=\"8\" TypeNameSerializable=\"LineSeriesView\" /></Item2></SeriesSerializable></DataContainer><OptionsPrint Ref=\"9\" ImageFormat=\"Metafile\" /><Diagram Ref=\"10\" TypeNameSerializable=\"XYDiagram\"><AxisX Ref=\"11\" VisibleInPanesSerializable=\"-1\" /><AxisY Ref=\"12\" VisibleInPanesSerializable=\"-1\" /></Diagram></Chart></Item1><Item3 Ref=\"34\" ControlType=\"XRChart\" Name=\"chartMix\" SizeF=\"400,250\" LocationFloat=\"0,540\" BorderColor=\"Black\" Borders=\"None\"><Chart Ref=\"35\"><DataContainer Ref=\"36\" ValidateDataMembers=\"true\"><SeriesSerializable><Item1 Ref=\"37\" Name=\"Mix\" ArgumentDataMember=\"Category\" ValueDataMembersSerializable=\"Amount\"><View Ref=\"38\" TypeNameSerializable=\"PieSeriesView\" /></Item1></SeriesSerializable></DataContainer><OptionsPrint Ref=\"39\" ImageFormat=\"Metafile\" /></Chart></Item3></Controls></Item2><Item3 Ref=\"40\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"0\" /><Item4 Ref=\"41\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
+  const S23_ROWS: Record<string, string>[] = [{"Region":"North","Category":"A","Amount":"100","Target":"1010"},{"Region":"South","Category":"A","Amount":"205","Target":"1020"},{"Region":"West","Category":"B","Amount":"300","Target":"1030"},{"Region":"North","Category":"A","Amount":"400","Target":"1040"},{"Region":"South","Category":"A","Amount":"505","Target":"1050"},{"Region":"West","Category":"B","Amount":"600","Target":"1060"},{"Region":"North","Category":"A","Amount":"700","Target":"1070"},{"Region":"South","Category":"A","Amount":"805","Target":"1080"},{"Region":"West","Category":"B","Amount":"900","Target":"1090"},{"Region":"North","Category":"A","Amount":"1000","Target":"1100"},{"Region":"South","Category":"A","Amount":"1105","Target":"1110"},{"Region":"West","Category":"B","Amount":"1200","Target":"1120"}];
+  const DX_POINTS: Record<string, string> = {
+    'chartSales/Sales': 'North=100,South=205,West=300,North=400,South=505,West=600,North=700,South=805,West=900,North=1000,South=1105,West=1200',
+    'chartSales/Trend': 'North=1010,South=1020,West=1030,North=1040,South=1050,West=1060,North=1070,South=1080,West=1090,North=1100,South=1110,West=1120',
+    'chartMix/Mix': 'A=100,A=205,B=300,A=400,A=505,B=600,A=700,A=805,B=900,A=1000,A=1105,B=1200',
+  };
+  const charts = (rows: Record<string, string>[] | null) =>
+    paginate(parseReportStructure(S23_CHARTS), rows?.length ?? 1, { rows: rows ?? undefined }).pages[0].bands
+      .flatMap((b) => b.controls)
+      .filter((pc) => pc.control.type === 'XRChart');
+
+  it('plots one point per record, in record order and unaggregated, as DevExpress did', () => {
+    const plotted: Record<string, string> = {};
+    for (const pc of charts(S23_ROWS)) {
+      for (const s of pc.chart!.series) plotted[`${pc.control.name}/${s.name}`] = s.points.map((p) => `${p.argument}=${p.value}`).join(',');
+    }
+    expect(plotted).toEqual(DX_POINTS);
+  });
+
+  it('puts each distinct argument on the category axis once, in the order the records give it', () => {
+    const [sales, mix] = charts(S23_ROWS);
+    expect(sales.chart!.arguments).toEqual(['North', 'South', 'West']);
+    // A pie has no category axis.
+    expect(mix.chart!.arguments).toEqual([]);
+  });
+
+  it('runs the value axis from 0 in steps of 200 to the largest value, as s23 drew it', () => {
+    expect(charts(S23_ROWS)[0].chart!.ticks).toEqual([0, 200, 400, 600, 800, 1000, 1200]);
+    // Elsewhere only the shape is held: evenly spaced, covering the range, in at most seven steps.
+    for (const [low, high] of [[0, 7], [-30, 90], [0, 0.42], [0, 98765]]) {
+      const ticks = valueTicks(low, high);
+      const step = ticks[1] - ticks[0];
+      expect(ticks[0]).toBeLessThanOrEqual(low);
+      expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(high);
+      expect(ticks.length - 1).toBeLessThanOrEqual(8);
+      ticks.forEach((t, i) => expect(t).toBeCloseTo(ticks[0] + i * step, 9));
+    }
+  });
+
+  it('labels each pie slice with its share of the total to two places, as DevExpress did', () => {
+    const mix = charts(S23_ROWS)[1].chart!.series[0];
+    // s23's legend, in record order.
+    expect(mix.points.map((p) => pieShare(p.value!, mix.points))).toEqual([
+      '1.28%', '2.62%', '3.84%', '5.12%', '6.46%', '7.67%', '8.95%', '10.29%', '11.51%', '12.79%', '14.13%', '15.35%',
+    ]);
+  });
+
+  it('keeps drawing the structure without test data', () => {
+    expect(charts(null).every((pc) => !pc.chart)).toBe(true);
+  });
+});
+
 describe('cross-tabs over test data, as DevExpress printed them (cases s25 and ct)', () => {
   const S25 = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"s25\" ReportUnit=\"HundredthsOfAnInch\" PageWidth=\"850\" PageHeight=\"1100\" Margins=\"50, 50, 50, 50\" Version=\"20.1\" DataMember=\"Items\" Font=\"Arial, 8pt\"><Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" Name=\"TopMargin\" HeightF=\"50\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"600\"><Controls><Item1 Ref=\"4\" ControlType=\"XRCrossTab\" Name=\"plain\" LocationFloat=\"0,0\" SizeF=\"300,75\"><LayoutOptions Ref=\"140\" /><PrintOptions Ref=\"141\" /><RowFields><Item1 Ref=\"142\" FieldName=\"Region\" /></RowFields><ColumnFields><Item1 Ref=\"143\" FieldName=\"Quarter\" /></ColumnFields><DataFields><Item1 Ref=\"144\" FieldName=\"Amount\" /></DataFields><ColumnDefinitions><Item1 Ref=\"164\" /><Item2 Ref=\"165\" /><Item3 Ref=\"166\" /></ColumnDefinitions><RowDefinitions><Item1 Ref=\"167\" Height=\"25\" /><Item2 Ref=\"168\" Height=\"25\" /><Item3 Ref=\"169\" Height=\"25\" /></RowDefinitions><Cells><Item1 Ref=\"155\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"0\" RowIndex=\"0\" Text=\"Region\" /><Item2 Ref=\"156\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"1\" RowIndex=\"0\" /><Item3 Ref=\"157\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"2\" RowIndex=\"0\" Text=\"Grand Total\" /><Item4 Ref=\"158\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"0\" RowIndex=\"1\" /><Item5 Ref=\"159\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"0\" RowIndex=\"2\" Text=\"Grand Total\" /><Item6 Ref=\"160\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"1\" RowIndex=\"1\" /><Item7 Ref=\"161\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"2\" RowIndex=\"1\" /><Item8 Ref=\"162\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"1\" RowIndex=\"2\" /><Item9 Ref=\"163\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"2\" RowIndex=\"2\" /></Cells></Item1><Item2 Ref=\"5\" ControlType=\"XRCrossTab\" Name=\"styled\" LocationFloat=\"0,320\" SizeF=\"300,75\" Font=\"Arial, 8pt, style=Bold\" ForeColor=\"Red\" BackColor=\"LightYellow\" Borders=\"All\" Padding=\"4,4,2,2,100\" TextAlignment=\"MiddleCenter\"><LayoutOptions Ref=\"150\" /><PrintOptions Ref=\"151\" /><RowFields><Item1 Ref=\"152\" FieldName=\"Region\" /></RowFields><ColumnFields><Item1 Ref=\"153\" FieldName=\"Quarter\" /></ColumnFields><DataFields><Item1 Ref=\"154\" FieldName=\"Amount\" /></DataFields><ColumnDefinitions><Item1 Ref=\"179\" /><Item2 Ref=\"180\" /><Item3 Ref=\"181\" /></ColumnDefinitions><RowDefinitions><Item1 Ref=\"182\" Height=\"25\" /><Item2 Ref=\"183\" Height=\"25\" /><Item3 Ref=\"184\" Height=\"25\" /></RowDefinitions><Cells><Item1 Ref=\"170\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"0\" RowIndex=\"0\" Text=\"Region\" /><Item2 Ref=\"171\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"1\" RowIndex=\"0\" /><Item3 Ref=\"172\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"2\" RowIndex=\"0\" Text=\"Grand Total\" /><Item4 Ref=\"173\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"0\" RowIndex=\"1\" /><Item5 Ref=\"174\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"0\" RowIndex=\"2\" Text=\"Grand Total\" /><Item6 Ref=\"175\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"1\" RowIndex=\"1\" /><Item7 Ref=\"176\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"2\" RowIndex=\"1\" /><Item8 Ref=\"177\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"1\" RowIndex=\"2\" /><Item9 Ref=\"178\" ControlType=\"XRCrossTabCell\" ColumnIndex=\"2\" RowIndex=\"2\" /></Cells></Item2></Controls></Item2><Item3 Ref=\"6\" ControlType=\"DetailBand\" Name=\"Detail\" HeightF=\"0\" /><Item4 Ref=\"7\" ControlType=\"BottomMarginBand\" Name=\"BottomMargin\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
   const S25_ROWS: Record<string, string>[] = [{"Region":"b","Quarter":"10","Amount":"1.5"},{"Region":"B","Quarter":"2","Amount":"0.25"},{"Region":"a","Quarter":"1","Amount":"100"},{"Region":"Z","Quarter":"2","Amount":"3"},{"Region":"apple","Quarter":"1","Amount":"2.1"},{"Region":"Apple","Quarter":"10","Amount":"4"},{"Region":"b","Quarter":"10","Amount":"0.75"},{"Region":"","Quarter":"1","Amount":"7"},{"Region":"Z","Quarter":"1","Amount":""}];

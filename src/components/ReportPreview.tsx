@@ -40,7 +40,9 @@ import {
   cssPadding,
   fontDecoration,
   recordCountFromLayout,
+  pieShare,
   type Appearance,
+  type ChartModel,
   type PlacedControl,
   type RecordValues,
   type PreviewControl,
@@ -127,6 +129,138 @@ type Gesture = {
 /** Bands the reader should be able to tell apart on screen. */
 /** A report this short draws every page; a longer one only those near the viewport. */
 const DRAW_EVERY_PAGE_UP_TO = 12;
+
+/*
+ * A chart over test data (parity row 32), drawn as DevExpress 20.1 draws its
+ * default picture, in the colours sampled from its PNG of s23: a series bar
+ * #60B5CC and the next series #E66C7D; a pie's slices in its legend's twelve
+ * colours. Bars stand on a category axis, one slot per distinct argument, a
+ * record's bar over the record before it as s23's four bars per region did;
+ * a line runs through its points in record order; every point carries its
+ * value, and a pie slice its share, as DevExpress labels them by default.
+ * The picture is the Preview's own drawing of what DevExpress plots, matched
+ * to its points and not to its pixels.
+ */
+const SERIES_COLOURS = ['#60B5CC', '#E66C7D'];
+const PIE_COLOURS = ['#3EA5C1', '#DA253E', '#53AC56', '#D89C00', '#E1621E', '#B93A39', '#B2DBE6', '#F0A8B2', '#BADEBB', '#FFD770', '#F3C0A5', '#E4A9A8'];
+const CHART_FONT = 'Tahoma, sans-serif';
+
+function ChartPicture({ model, width, height }: { model: ChartModel; width: number; height: number }) {
+  const label = 10.5; // 8pt at 96 dpi
+  const pie = model.series.find((s) => s.view === 'PieSeriesView');
+  const text = (x: number, y: number, s: string, anchor: 'start' | 'middle' | 'end', fill = '#3c3c3c') => (
+    <text x={x} y={y} fontSize={label} fontFamily={CHART_FONT} textAnchor={anchor} dominantBaseline="middle" fill={fill}>{s}</text>
+  );
+  if (pie) {
+    const slices = pie.points.filter((p) => p.value !== null && p.value > 0);
+    const shares = slices.map((p) => pieShare(p.value!, pie.points));
+    const legendWidth = Math.min(width * 0.4, 30 + Math.max(...shares.map((s) => s.length)) * 6.5);
+    const r = Math.max(4, Math.min((width - legendWidth) / 2 - 40, height / 2 - 24));
+    const cx = (width - legendWidth) / 2;
+    const cy = height / 2;
+    const total = slices.reduce((sum, p) => sum + p.value!, 0);
+    let start = 0;
+    return (
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Pie chart of ${pie.name}`}>
+        {slices.map((p, i) => {
+          // Counter-clockwise from three o'clock, as s23's pie ran.
+          const sweep = (p.value! / total) * Math.PI * 2;
+          const a0 = start;
+          const a1 = (start += sweep);
+          const point = (a: number, rr = r) => `${cx + rr * Math.cos(a)},${cy - rr * Math.sin(a)}`;
+          const mid = (a0 + a1) / 2;
+          const d = sweep >= Math.PI * 2 - 1e-9
+            ? `M${cx - r},${cy}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0`
+            : `M${cx},${cy}L${point(a0)}A${r},${r} 0 ${sweep > Math.PI ? 1 : 0},0 ${point(a1)}Z`;
+          const [lx, ly] = point(mid, r + 16).split(',').map(Number);
+          return (
+            <g key={i}>
+              <path d={d} fill={PIE_COLOURS[i % PIE_COLOURS.length]} />
+              {text(lx, ly, shares[i], Math.cos(mid) >= 0 ? 'start' : 'end', PIE_COLOURS[i % PIE_COLOURS.length])}
+            </g>
+          );
+        })}
+        <g transform={`translate(${width - legendWidth + 4},6)`}>
+          {shares.map((s, i) => (
+            <g key={i} transform={`translate(0,${i * 18})`}>
+              <rect width={12} height={12} y={-6} fill={PIE_COLOURS[i % PIE_COLOURS.length]} />
+              {text(18, 0, s, 'start')}
+            </g>
+          ))}
+        </g>
+      </svg>
+    );
+  }
+
+  const xy = model.series.filter((s) => s.view !== 'PieSeriesView');
+  const ticks = model.ticks.length ? model.ticks : [0, 1];
+  // The plot runs a tenth of the range past the last tick: s23's top was at
+  // about 1317 against a last tick of 1200, so its tallest bar did not meet
+  // the frame.
+  const low = ticks[0] < 0 ? ticks[0] - (ticks[ticks.length - 1] - ticks[0]) * 0.1 : ticks[0];
+  const high = ticks[ticks.length - 1] + (ticks[ticks.length - 1] - ticks[0]) * 0.1;
+  const legendWidth = Math.min(width * 0.3, 36 + Math.max(...xy.map((s) => s.name.length)) * 6.5);
+  const left = 12 + Math.max(...ticks.map((t) => String(t).length)) * 6.5;
+  const plot = { x: left, y: 10, w: Math.max(10, width - left - legendWidth - 16), h: Math.max(10, height - 34) };
+  const yOf = (v: number) => plot.y + plot.h - ((v - low) / (high - low || 1)) * plot.h;
+  const slot = plot.w / Math.max(1, model.arguments.length);
+  const xOf = (argument: string) => plot.x + slot * (model.arguments.indexOf(argument) + 0.5);
+  const bars = xy.filter((s) => !/Line|Spline|Point|Area/.test(s.view));
+  const barWidth = (slot * 0.6) / Math.max(1, bars.length);
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Chart of ${xy.map((s) => s.name).join(', ')}`}>
+      <rect x={plot.x} y={plot.y} width={plot.w} height={plot.h} fill="none" stroke="#c8c8c8" />
+      {ticks.map((t) => (
+        <g key={t}>
+          <line x1={plot.x} x2={plot.x + plot.w} y1={yOf(t)} y2={yOf(t)} stroke="#e6e6e6" />
+          {text(plot.x - 6, yOf(t), String(t), 'end')}
+        </g>
+      ))}
+      {model.arguments.map((a) => text(xOf(a), plot.y + plot.h + 12, a, 'middle'))}
+      {xy.map((s, si) => {
+        const colour = SERIES_COLOURS[si] ?? PIE_COLOURS[si % PIE_COLOURS.length];
+        const points = s.points.filter((p) => p.value !== null);
+        if (bars.includes(s)) {
+          const offset = (bars.indexOf(s) - (bars.length - 1) / 2) * barWidth;
+          return (
+            <g key={si}>
+              {points.map((p, i) => {
+                const x = xOf(p.argument) + offset - barWidth / 2;
+                const top = Math.min(yOf(p.value!), yOf(0));
+                return <rect key={i} x={x} y={top} width={barWidth} height={Math.abs(yOf(0) - yOf(p.value!))} fill={colour} />;
+              })}
+              {points.map((p, i) => <g key={`l${i}`}>{text(xOf(p.argument) + offset, yOf(p.value!) + 9, String(p.value), 'middle', '#ffffff')}</g>)}
+            </g>
+          );
+        }
+        // A line runs along the axis: each argument's points in record order,
+        // then the next argument's, as s23's Trend rose at each region before
+        // falling to the next.
+        const along = [...points].sort((a, b) => model.arguments.indexOf(a.argument) - model.arguments.indexOf(b.argument));
+        return (
+          <g key={si}>
+            <polyline points={along.map((p) => `${xOf(p.argument)},${yOf(p.value!)}`).join(' ')} fill="none" stroke={colour} strokeWidth={2} />
+            {points.map((p, i) => <circle key={i} cx={xOf(p.argument)} cy={yOf(p.value!)} r={4} fill={colour} />)}
+            {points.map((p, i) => <g key={`l${i}`}>{text(xOf(p.argument) + 8, yOf(p.value!) - 8, String(p.value), 'start', colour)}</g>)}
+          </g>
+        );
+      })}
+      <g transform={`translate(${plot.x + plot.w + 12},${plot.y + 8})`}>
+        {xy.map((s, si) => {
+          const colour = SERIES_COLOURS[si] ?? PIE_COLOURS[si % PIE_COLOURS.length];
+          return (
+            <g key={si} transform={`translate(0,${si * 18})`}>
+              {bars.includes(s) ? <rect width={14} height={12} y={-6} fill={colour} /> : (
+                <g><line x1={0} x2={14} y1={0} y2={0} stroke={colour} strokeWidth={2} /><circle cx={7} cy={0} r={4} fill={colour} /></g>
+              )}
+              {text(20, 0, s.name, 'start')}
+            </g>
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
 
 const BAND_TINT: Record<string, string> = {
   ReportHeader: 'rgba(226, 89, 12, .05)',
@@ -449,9 +583,15 @@ function ControlBox({
    * knowable from the file is the shape and the binding -- a bar chart of
    * Amount by Region -- and that is the thing worth confirming, because a chart
    * bound to the wrong field looks identical to a correct one either way. A
-   * chart stays this way with test data too: DevExpress prints it as one
-   * picture, which no export can be checked against (parity row 32).
+   * With test data a chart plots it instead (parity row 32), below.
    */
+  if (control.type === 'XRChart' && placed.chart) {
+    return (
+      <div style={{ ...frame, display: 'block' }}>
+        <ChartPicture model={placed.chart} width={u(control.width)} height={u(placed.height)} />
+      </div>
+    );
+  }
   if (control.type === 'XRChart') {
     const pie = control.series.some((s) => s.view === 'PieSeriesView');
     const line = control.series.some((s) => s.view === 'LineSeriesView');

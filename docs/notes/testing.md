@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,016 tests in 95 files** — under the `node` environment
+`npm test` runs Vitest over **2,021 tests in 95 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -121,7 +121,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
 | `lib/reportGeometry` | 37 |  |
-| `lib/reportPreview` | 269 | 18 from four loops: parity cases c05 to c05e page for page, the seven s19 nesting variants, the four one-field-per-kind cross-tabs' CSVs, and s29a and s29b |
+| `lib/reportPreview` | 274 | 18 from four loops: parity cases c05 to c05e page for page, the seven s19 nesting variants, the four one-field-per-kind cross-tabs' CSVs, and s29a and s29b; a chart's points over test data against DevExpress's, and its pie shares (row 32) |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
 | `lib/repxAudit` | 94 |  |
@@ -172,7 +172,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,016 in 95 files** — and that total is the arithmetic sum of the column above
+**Total: 2,021 in 95 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -186,7 +186,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,921** against a real 2,016 and will talk you into
+A grep for `\bit(` answers **1,926** against a real 2,021 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
@@ -195,7 +195,7 @@ device names, `attachmentParts` six of its fourteen over malformed data URLs,
 from **two** `it(` sharing one loop over the four conditions that must block a send,
 `analysisResponse` four of its sixteen from **two** `it(` sharing one loop over stop
 reasons — the shape `Composer` now also has — `reportData` seven of its 23 from one
-`it(` over the bands of parity case s17, `reportPreview` eighteen of its 269 from four
+`it(` over the bands of parity case s17, `reportPreview` eighteen of its 274 from four
 `it(`, one over the five c05 cases, one over the seven s19 nesting variants, one over four cross-tabs and one over s29a and s29b,
 `repxCrossTabs` twenty-four of its 37 from one `it(` over the field shapes DevExpress generated, and `textMeasure` twenty-four of its 45 from one `it.each` over DevExpress's synthesized-bold measurements, which the grep does not count at all because it is not spelled `it(`.
 

@@ -1966,6 +1966,8 @@ export interface PlacedControl {
   inner?: PlacedBand[] | null;
   /** For a cross-tab over test data: the grid it prints; null where its structure is drawn. */
   crossTab?: CrossTabGrid | null;
+  /** For a chart over test data: what it plots (parity row 32); null where its structure is drawn. */
+  chart?: ChartModel | null;
 }
 
 /** One printed occurrence of a band: a record's Detail, a page's header, a split part. */
@@ -2430,6 +2432,7 @@ export function layoutBand(
       let rowHeights: number[] | null = null;
       let inner: PlacedBand[] | null = null;
       let crossTab: CrossTabGrid | null = null;
+      const chart = hiddenBy ? null : chartModel(control, ctx.source);
       const texts = textsOf(control, values, ctx, scope);
       if (hiddenBy) {
         // Prints nothing, so it neither grows nor shrinks to its text.
@@ -2466,7 +2469,7 @@ export function layoutBand(
         });
         height = rowHeights.reduce((sum, h) => sum + h, 0);
       }
-      return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, crossTab, shift: 0, hidden: !!hiddenBy, ...texts };
+      return { control, index, top, designHeight: control.height, height, lines, rowHeights, inner, crossTab, chart, shift: 0, hidden: !!hiddenBy, ...texts };
     })
     .sort((a, b) => a.top - b.top);
   type Item = (typeof items)[number];
@@ -2550,8 +2553,99 @@ export function layoutBand(
       cellValues: it.cellValues ?? null,
       inner: it.inner,
       crossTab: it.crossTab,
+      chart: it.chart,
     })),
   };
+}
+
+/** One point a chart series plots: its argument as printed and its value, or null where the record has none. */
+export interface ChartPoint {
+  argument: string;
+  value: number | null;
+}
+
+/** A series as plotted over the test rows. */
+export interface ChartSeriesModel {
+  name: string;
+  /** `PieSeriesView`, `LineSeriesView`, … or '' for the bar default. */
+  view: string;
+  points: ChartPoint[];
+}
+
+/** A chart over test data: what it plots, and the axis an XY chart draws its values against. */
+export interface ChartModel {
+  series: ChartSeriesModel[];
+  /** The argument axis: each distinct argument, in the order the records first give it. */
+  arguments: string[];
+  /** The value axis's ticks, from the lowest to the highest, evenly spaced. */
+  ticks: number[];
+}
+
+/**
+ * A chart over the test rows (parity row 32), or null where it keeps drawing
+ * its structure: no test data, no series, or no series with a value to plot.
+ *
+ * Printed in s23, read from DevExpress's chart rather than its picture: each
+ * series plots one point per record, in record order, as the data holds them
+ * and not aggregated. The bar series over Region had twelve points for three
+ * regions, and drew them on a category axis of North, South and West in the
+ * order the records first gave them, the four bars of one region over each
+ * other. The value axis ran from 0 with a tick every 200 to 1200, the largest
+ * value. A pie labels each slice with its share of the series' total to two
+ * places, 1.28% for 100 of 7,820.
+ */
+export function chartModel(control: PreviewControl, rows: readonly TypedRow[] | null | undefined): ChartModel | null {
+  if (control.type !== 'XRChart' || !rows?.length || !control.series.length) return null;
+  const number = (v: Value | undefined): number | null => {
+    if (v === null || v === undefined) return null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (typeof v === 'bigint') return Number(v);
+    if (v instanceof NetDecimal) return Number(v.toString());
+    return null;
+  };
+  const series = control.series.map((s): ChartSeriesModel => {
+    // Several value members belong to views that plot ranges; the first is the value.
+    const valueField = s.value.split(',')[0]?.trim() ?? '';
+    return {
+      name: s.name,
+      view: s.view,
+      points: rows.map((row) => {
+        const argument = s.argument ? row[s.argument] ?? null : null;
+        return { argument: argument === null ? '' : valueText(argument), value: valueField ? number(row[valueField]) : null };
+      }),
+    };
+  });
+  if (!series.some((s) => s.points.some((p) => p.value !== null))) return null;
+  const args: string[] = [];
+  for (const s of series) {
+    if (s.view === 'PieSeriesView') continue;
+    for (const p of s.points) if (!args.includes(p.argument)) args.push(p.argument);
+  }
+  const values = series.filter((s) => s.view !== 'PieSeriesView').flatMap((s) => s.points.map((p) => p.value).filter((v): v is number => v !== null));
+  return { series, arguments: args, ticks: values.length ? valueTicks(Math.min(0, ...values), Math.max(0, ...values)) : [] };
+}
+
+/**
+ * Ticks for a value axis from `low` to `high`: the smallest step of 1, 2 or 5
+ * times a power of ten that takes no more than seven steps, the last at or
+ * above `high`. s23's values to 1200 drew ticks every 200, which is the one
+ * axis measured; the rule is the simplest that gives it, not DevExpress's.
+ */
+export function valueTicks(low: number, high: number): number[] {
+  if (high <= low) return [low, low + 1];
+  const rough = (high - low) / 7;
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const step = [1, 2, 5, 10].map((m) => m * power).find((s) => s >= rough) ?? 10 * power;
+  const first = Math.floor(low / step) * step;
+  const ticks: number[] = [];
+  for (let t = first; t < high + step - step * 1e-9; t += step) ticks.push(Math.round(t / step) * step);
+  return ticks;
+}
+
+/** A pie slice's share of its series' total as DevExpress labels it, to two places. */
+export function pieShare(value: number, points: readonly ChartPoint[]): string {
+  const total = points.reduce((sum, p) => sum + (p.value !== null && p.value > 0 ? p.value : 0), 0);
+  return total > 0 ? `${((value / total) * 100).toFixed(2)}%` : '';
 }
 
 const crossTabCache = new WeakMap<PreviewCrossTab, WeakMap<readonly TypedRow[], CrossTabGrid | null>>();
