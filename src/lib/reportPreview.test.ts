@@ -1765,6 +1765,20 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
   const grown = (lines: number) => ((linesHeightPt(lines, 'Arial', 10) + 1.5) / 72) * 100;
   const by = (inst: { controls: { control: { name: string } }[] }, name: string) => inst.controls.find((pc) => pc.control.name === name) as PlacedControl;
 
+  // Parity row 59, s39b and s43: one line of Arial that fits its box only
+  // kerned prints at the full line spacing, not row 51's shorter one.
+  it('gives one line the full spacing when it fits its box only kerned (s39b)', () => {
+    const height = (fitsUnkerned?: () => boolean) => {
+      const measure = Object.assign((text: string) => byL(text), fitsUnkerned ? { fitsUnkerned } : {});
+      return by(layoutBand(band(label(1, 'a', 'L', 0, 5)), 1, null, { measure, unit: 'HundredthsOfAnInch' }), 'a').height;
+    };
+    expect(height(() => true)).toBeCloseTo(grown(1), 6);
+    expect(height(() => false)).toBeCloseTo(((linesHeightPt(1, 'Arial', 10, false) + 1.5) / 72) * 100, 6);
+    expect(height(() => false) - height(() => true)).toBeCloseTo(((67 / 2048) * 10 / 72) * 100, 6);
+    // A measurer that cannot tell keeps the shorter line, as before the row.
+    expect(height()).toBeCloseTo(grown(1), 6);
+  });
+
   it('cascades push-down through a chain of growing controls', () => {
     const inst = layoutBand(band(label(1, 'a', 'LLL', 0) + label(2, 'b', 'LL', 25) + label(3, 'c', 'x', 50)), 1, null, ctx);
     const growthA = grown(3) - 20;

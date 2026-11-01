@@ -2332,8 +2332,11 @@ function textHeight(
   };
   const area = toPt(widthUnits) - inset.left - inset.right;
   const lines = wordWrap ? ctx.measure!(text, spec, area) : text ? [text.replace(/\r?\n/g, ' ')] : [];
-  // One line at its own height, more at the spacing each (row 51).
-  const body = linesHeightPt(lines.length, spec.family, spec.sizePt) + inset.top + inset.bottom;
+  // One line at its own height, more at the spacing each (row 51); one line
+  // that fits only kerned, or not at all, at the spacing too (row 59), which
+  // s43l printed alike with WordWrap on and off.
+  const short = lines.length !== 1 || (ctx.measure?.fitsUnkerned?.(lines[0], spec, area) ?? true);
+  const body = linesHeightPt(lines.length, spec.family, spec.sizePt, short) + inset.top + inset.bottom;
   return { lines, needUnits: lines.length ? toUnits(body + GROW_EXTRA_PT) : 0 };
 }
 

@@ -6,7 +6,7 @@
  * identical lines; these cases pin the rules that made that true.
  */
 import { describe, it, expect } from 'vitest';
-import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, GROW_EXTRA_PT } from './textMeasure';
+import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, gdiKerns, GROW_EXTRA_PT } from './textMeasure';
 
 /** Every character one point wide, so widths are character counts. */
 const mono = (s: string) => s.length;
@@ -16,11 +16,16 @@ describe('wrapText', () => {
     expect(wrapText('the quick brown fox jumps', mono, 12)).toEqual(['the quick', 'brown fox', 'jumps']);
   });
 
-  it('does not fit a line exactly as wide as the area, as DevExpress did not', () => {
-    // 36 Courier characters were exactly the 216pt area, and DevExpress broke
-    // before the last word.
-    expect(wrapText('abcde fghij', mono, 11)).toEqual(['abcde', 'fghij']);
-    expect(wrapText('abcde fghij', mono, 11.01)).toEqual(['abcde fghij']);
+  it('fits a line up to 22.5 millionths wider than the area, as DevExpress did (row 59)', () => {
+    // s43: Courier New 10pt's 166.6938-unit line wrapped in a 166.69 box,
+    // 22.8 millionths over; texts with nothing to kern all agreed on 22.3 to
+    // 22.8. And 36 Courier New characters at 10pt, 216.035pt, did not fit a
+    // 216pt area, while Arial's 215.97pt line did (row 7).
+    expect(wrapText('abcde fghij', mono, 11)).toEqual(['abcde fghij']);
+    expect(wrapText('abcde fghij', mono, 11 / (1 + 22e-6))).toEqual(['abcde fghij']);
+    expect(wrapText('abcde fghij', mono, 11 / (1 + 23e-6))).toEqual(['abcde', 'fghij']);
+    const courier = (s: string) => s.length * 6.0009722; // 1229/2048 of 10pt
+    expect(wrapText(`${'a'.repeat(31)} bcde`, courier, 216)).toEqual(['a'.repeat(31), 'bcde']);
   });
 
   it('breaks after a hyphen inside a word, as DevExpress printed "cut-" / "off,"', () => {
@@ -30,9 +35,9 @@ describe('wrapText', () => {
   });
 
   it('breaks a word wider than the whole line between characters', () => {
-    // Three characters per line, since four exactly fill the area; "j xy" is
+    // Three characters per line where four are a little too wide; "j xy" is
     // four wide, so it does not fit either.
-    expect(wrapText('abcdefghij xy', mono, 4)).toEqual(['abc', 'def', 'ghi', 'j', 'xy']);
+    expect(wrapText('abcdefghij xy', mono, 3.99)).toEqual(['abc', 'def', 'ghi', 'j', 'xy']);
     expect(wrapText('abcdefghij xy', mono, 4.5)).toEqual(['abcd', 'efgh', 'ij', 'xy']);
   });
 
@@ -83,6 +88,17 @@ describe('lineSpacingPt and linesHeightPt', () => {
     expect(linesHeightPt(0, 'Arial', 10)).toBe(0);
   });
 
+  it('prints one line that fits only kerned at the full spacing (row 59)', () => {
+    // s43a: one line of Arial 20pt, wider unkerned than its box, printed 34.03
+    // units tall, 24.5pt, where one that fitted printed 33.12.
+    expect(linesHeightPt(1, 'Arial', 20, false) + 1.5).toBeCloseTo((34.025 / 100) * 72, 2);
+    expect(linesHeightPt(1, 'Arial', 20) + 1.5).toBeCloseTo((33.116 / 100) * 72, 2);
+    expect(linesHeightPt(1, 'Times New Roman', 20, false)).toBeCloseTo(lineSpacingPt('Times New Roman', 20), 6);
+    // Fonts with no shorter line, and several lines, are the same either way.
+    expect(linesHeightPt(1, 'Verdana', 20, false)).toBeCloseTo(linesHeightPt(1, 'Verdana', 20), 6);
+    expect(linesHeightPt(2, 'Arial', 20, false)).toBeCloseTo(linesHeightPt(2, 'Arial', 20), 6);
+  });
+
   it('ignores case, and gives an unmeasured font Arial\'s ratio', () => {
     expect(lineSpacingPt('ARIAL', 10)).toBeCloseTo(11.499, 3);
     expect(lineSpacingPt('Some Font', 10)).toBeCloseTo(11.499, 3);
@@ -103,5 +119,23 @@ describe('the canvas measurer', () => {
 
   it('is absent where there is no browser canvas', () => {
     expect(canvasMeasurer()).toBeNull();
+  });
+
+  it('kerns every face GDI kerns, which is all measured but Tahoma and Segoe UI italic (row 59)', () => {
+    const face = (family: string, bold = false, italic = false) => gdiKerns({ family, sizePt: 20, bold, italic });
+    for (const family of ['Arial', 'Times New Roman', 'Verdana', 'Calibri', 'Georgia', 'Courier New', 'Microsoft Sans Serif', 'Trebuchet MS']) {
+      expect(face(family)).toBe(true);
+      expect(face(family, true, true)).toBe(true);
+    }
+    expect(face('Segoe UI')).toBe(true);
+    expect(face('Segoe UI', true)).toBe(true);
+    // s43k: Segoe UI Italic wrapped until its box reached its unkerned 286.14.
+    expect(face('Segoe UI', false, true)).toBe(false);
+    expect(face('Segoe UI', true, true)).toBe(false);
+    // s43a: Tahoma wrapped until 295.25, its unkerned width; kerned it is 282.5.
+    expect(face('Tahoma')).toBe(false);
+    expect(face(' TAHOMA ', false, true)).toBe(false);
+    // An unmeasured face is kerned, as every measured face but these is.
+    expect(face('Some Font')).toBe(true);
   });
 });

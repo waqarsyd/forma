@@ -11,6 +11,14 @@
  * - **Lines break greedily at spaces** against the text area's width: a 216pt
  *   wide Arial 9pt label broke "...two vehicles because" at 203.1pt and fitted
  *   "...and the customer" at exactly 216.0pt.
+ * - **A line's width is Windows GDI's, kerned as GDI kerns it**, though the
+ *   page draws it unkerned (parity row 59, s43a to s43l): boxes stepping a
+ *   thousandth of a unit at a time wrapped exactly where GDI's width of the
+ *   text left the box, in ten fonts, four styles and five sizes. GDI kerns
+ *   every face measured but Tahoma and Segoe UI's italics, which the browser
+ *   kerns all the same.
+ * - **One line is short only when it fits unkerned**: a line that fits its
+ *   box kerned but not unkerned printed at the full line spacing (s39b, s43).
  * - **The line spacing is a fixed ratio of the font size, per font**: Arial
  *   and Times New Roman 1.1499, Verdana 1.2153, Tahoma 1.207, Segoe UI
  *   1.3301, Calibri 1.2207, Georgia 1.1362, Courier New 1.1328, Microsoft
@@ -39,7 +47,15 @@ export interface FontSpec {
 }
 
 /** Lines a text breaks into at a width, in points. */
-export type MeasureText = (text: string, font: FontSpec, widthPt: number) => string[];
+export interface MeasureText {
+  (text: string, font: FontSpec, widthPt: number): string[];
+  /**
+   * Whether a line is no wider than `widthPt` unkerned, which decides whether
+   * one line of Arial or Times New Roman prints at its shorter height (row
+   * 59). Absent, every line counts as fitting, as before that row.
+   */
+  fitsUnkerned?(text: string, font: FontSpec, widthPt: number): boolean;
+}
 
 /** Added to the lines of a control that grows or shrinks. Measured: 1.5pt at every font and size. */
 export const GROW_EXTRA_PT = 1.5;
@@ -70,7 +86,10 @@ const LINE_SPACING: Record<string, number> = {
  * several: without the gap the font sets between lines (s37). Arial 14pt
  * printed 17.14pt where 1.15 gives 17.6 (s31e). Two lines were twice the
  * line spacing, not one of these and one of it. Every other font measured
- * has no such gap, so its one line is its spacing.
+ * has no such gap, so its one line is its spacing. A line that fits its box
+ * only kerned prints at the full spacing all the same (row 59): in s43 Arial
+ * 20pt "AVATAR Wave To LT Yo" was one line from 293.342 units wide, its
+ * kerned width, and short only from 311.822, its unkerned one.
  */
 const ONE_LINE: Record<string, number> = {
   'arial': 2288 / 2048,
@@ -90,11 +109,25 @@ export function lineSpacingPt(family: string | null | undefined, sizePt: number)
 /**
  * How tall `count` lines print, in points, before the 1.5pt a grown control
  * adds: one line at its own height, more at the line spacing each (row 51).
+ * `short` false is one line that fits its box only kerned, which takes the
+ * full spacing (row 59).
  */
-export function linesHeightPt(count: number, family: string | null | undefined, sizePt: number): number {
+export function linesHeightPt(count: number, family: string | null | undefined, sizePt: number, short = true): number {
   const key = fontKey(family);
-  return count === 1 ? (ONE_LINE[key] ?? LINE_SPACING[key]) * sizePt : count * LINE_SPACING[key] * sizePt;
+  return count === 1 && short ? (ONE_LINE[key] ?? LINE_SPACING[key]) * sizePt : count * LINE_SPACING[key] * sizePt;
 }
+
+/*
+ * How far past its box a line may reach and still fit, as a fraction of the
+ * box. Texts with nothing to kern pin it, in every font, size and style of
+ * s43 (row 59): 111 labels within a ten-thousandth of their box agreed on
+ * between 22.3 and 22.8 millionths, Courier New 10pt's 166.6938-unit line
+ * wrapping in a 166.69 box. Kerned texts scatter around it by a few
+ * millionths, DevExpress's kerning rounding a little differently from the
+ * browser's: Calibri 9pt's 111.853 fitted 111.85, and Arial 20pt's 293.349
+ * fitted 293.342 but not 293.341 (s43j, a thousandth of a unit at a time).
+ */
+const FIT_SLACK = 1 + 22.5e-6;
 
 /**
  * Break text into lines no wider than `maxPt`, greedily at spaces.
@@ -106,15 +139,14 @@ export function linesHeightPt(count: number, family: string | null | undefined, 
 export function wrapText(text: string, widthOf: (s: string) => number, maxPt: number): string[] {
   if (!text) return [];
   /*
-   * Strictly narrower than the area, with one part in ten thousand to spare.
-   * DevExpress measures unrounded glyph advances: 36 Courier New characters at
-   * 10pt are 216.035pt, so they did not fit a 216pt area, while the browser,
-   * which snaps that font's advances to whole pixels, made them exactly 216.
-   * The margin absorbs that rounding; Arial's line that fitted at 215.97pt
-   * still fits. Measured over 18 texts in 9 fonts against DevExpress's PDFs:
-   * all 18 break identically with it, 17 without.
+   * No wider than the area, give or take FIT_SLACK. DevExpress measures
+   * unrounded glyph advances: 36 Courier New characters at 10pt are
+   * 216.035pt, so they did not fit a 216pt area, while Arial's line of
+   * 215.97pt did. Until row 59 this asked for a line strictly narrower by one
+   * part in ten thousand, which absorbed the browser rounding the font size
+   * at 10pt (see canvasMeasurer) and wrapped a line that fitted by less.
    */
-  const fits = (s: string) => widthOf(s) * 1.0001 < maxPt;
+  const fits = (s: string) => widthOf(s) <= maxPt * FIT_SLACK;
   const lines: string[] = [];
   for (const paragraph of text.replace(/\r\n?/g, '\n').split('\n')) {
     /*
@@ -158,6 +190,36 @@ export function cssFont(font: FontSpec): string {
   return `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${font.sizePt}pt "${font.family}"`;
 }
 
+/*
+ * The font size the canvas measures at, in pixels, scaled down after. A whole
+ * number of pixels because the browser rounds a fractional font size down to
+ * a hundredth of a pixel: 10pt is 13.333px and measured as 13.33, a quarter
+ * of a thousandth short, which at 20pt is 0.08 units on a 300-unit line and
+ * was enough to fit Trebuchet MS's 267.022-unit line in a 267.0 box. At 2048px
+ * every advance of a 2048-unit font is a whole pixel, and in Chrome every
+ * width of s43 came out within a thousandth of a unit of GDI's.
+ */
+const MEASURE_PX = 2048;
+
+/**
+ * Whether Windows GDI kerns a face, which DevExpress breaks lines by. It
+ * kerned every face measured in s43 but these, which the browser kerns:
+ * Tahoma, upright or italic (bold has nothing to kern either way), and Segoe
+ * UI's italic and bold italic. In s43k Segoe UI Italic's line wrapped until
+ * its box reached 286.14, its unkerned width, where Chrome kerns it to 272.90.
+ */
+export function gdiKerns(font: FontSpec): boolean {
+  const family = font.family.trim().toLowerCase();
+  if (family === 'tahoma') return false;
+  if (family === 'segoe ui' && font.italic) return false;
+  return true;
+}
+
+/** The CSS font string a measuring canvas uses: MEASURE_PX pixels. */
+function measureFont(font: FontSpec): string {
+  return `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${MEASURE_PX}px "${font.family}"`;
+}
+
 /**
  * A measurer backed by a canvas, or null where there is none.
  *
@@ -165,31 +227,39 @@ export function cssFont(font: FontSpec): string {
  * that logs an error and measures nothing; the Preview then lays text out at
  * its designed size, which is what it did before rows 7 and 8.
  *
- * It measures kerned, as a canvas does by default, though DevExpress draws
- * unkerned (row 53). DevExpress does not break lines by its drawn widths:
- * in s39b six fonts kept a line wider unkerned than its box, and the kerned
- * widths here predicted six of those seven breaks and all 18 of row 7's.
- * What DevExpress does break by is a proposed row of its own.
+ * It breaks lines by widths kerned as GDI kerns, though DevExpress draws
+ * unkerned (row 53), and answers `fitsUnkerned` from the unkerned widths it
+ * draws at (row 59). Both are measured at MEASURE_PX and scaled to the size.
  */
 export function canvasMeasurer(): MeasureText | null {
   const context = canvasContext();
   if (!context) return null;
   const cache = new Map<string, number>();
-  return (text, font, widthPt) => {
-    const css = cssFont(font);
-    const widthOf = (s: string) => {
-      const key = `${css}\u0000${s}`;
-      let width = cache.get(key);
-      if (width === undefined) {
-        context.font = css;
-        // Canvas measures in CSS pixels; a point is three quarters of one.
-        width = context.measureText(s).width * 0.75;
-        cache.set(key, width);
-      }
-      return width;
-    };
-    return wrapText(text, widthOf, widthPt);
+  // A width in points: at MEASURE_PX pixels an em is MEASURE_PX wide, and at
+  // the font's size it is that many points.
+  const widthPt = (s: string, font: FontSpec, kerned: boolean) => {
+    const css = measureFont(font);
+    const key = `${css}\u0000${kerned ? 'k' : 'u'}\u0000${s}`;
+    let width = cache.get(key);
+    if (width === undefined) {
+      context.font = css;
+      if ('fontKerning' in context) context.fontKerning = kerned ? 'normal' : 'none';
+      width = context.measureText(s).width;
+      cache.set(key, width);
+    }
+    return (width * font.sizePt) / MEASURE_PX;
   };
+  const measure: MeasureText = (text, font, maxPt) => {
+    const kerned = gdiKerns(font);
+    return wrapText(text, (s) => widthPt(s, font, kerned), maxPt);
+  };
+  /*
+   * Exact, with no slack: in s43j Arial's 311.822-unit line was short in a
+   * 311.822 box and not in 311.821, and Times New Roman's 307.020-unit line
+   * in a 307.021 box and not in 307.020.
+   */
+  measure.fitsUnkerned = (text, font, maxPt) => widthPt(text, font, false) <= maxPt * (1 + 1e-9);
+  return measure;
 }
 
 /** A canvas to measure on, or null under Node and jsdom, as for `canvasMeasurer`. */
