@@ -380,6 +380,9 @@ src/
                        browser's print path so that it can carry the
                        report's bookmarks as an outline -- the outline the
                        same as DevExpress's, entry for entry),
+                       pdfCrypto (that PDF encrypted under the report's own
+                       passwords, AES-128, RC4 or AES-256 as DevExpress
+                       encrypts its export, opened by pdf.js to check),
                        exportItems with docxExport, rtfExport and htmlExport
                        (Word and RTF page by page as positioned frames, HTML
                        as one continuous table, each frame and cell where

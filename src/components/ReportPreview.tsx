@@ -1198,7 +1198,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         if (!host || cancelled) return;
         const { pagesToPdf } = await import('../lib/pdfFromDom');
         const pages = [...host.querySelectorAll<HTMLElement>('.rp-page')];
-        const blob = await pagesToPdf(pages, report, title || 'Report', structure.outlineTitle || title || 'Report');
+        // The report's own PDF passwords, which DevExpress encrypts its export with (row 73).
+      const { pdfSecurityOf } = await import('../lib/pdfCrypto');
+      const blob = await pagesToPdf(pages, report, title || 'Report', structure.outlineTitle || title || 'Report', pdfSecurityOf(repxContent));
         if (!cancelled) download(blob, 'application/pdf', 'pdf');
       } catch (err) {
         console.error('Forma could not write the PDF.', err);

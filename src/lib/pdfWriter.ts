@@ -17,6 +17,7 @@
  */
 import { unitsPerInch } from './reportGeometry';
 import { bookmarkMarks, type PaginatedReport } from './reportPreview';
+import { pdfEncryption, type PdfSecurity } from './pdfCrypto';
 
 /** One entry of the outline: its title, the page it opens (0-based) and how far down it, in points. */
 export interface OutlineEntry {
@@ -95,6 +96,10 @@ export interface PdfDocument {
   outline?: OutlineEntry | null;
   /** zlib-compresses a stream; without one, streams are written uncompressed. */
   deflate?: ((bytes: Uint8Array) => Promise<Uint8Array>) | null;
+  /** The report's PDF passwords (row 73); the file is encrypted as DevExpress encrypts its own. */
+  security?: PdfSecurity | null;
+  /** Random bytes for the encryption's identifier, keys and salts; the platform's unless a test fixes them. */
+  random?: (n: number) => Uint8Array;
 }
 
 /** Windows-1252's characters from 0x80 to 0x9F; the rest of the range below 0x100 is Latin-1. */
@@ -116,12 +121,19 @@ export function winAnsiHex(text: string): string {
   return `<${hex}>`;
 }
 
-/** A text as a PDF hex string in UTF-16BE with its byte-order mark, as titles may be anything. */
-function utf16Hex(text: string): string {
-  let hex = 'feff';
-  for (let i = 0; i < text.length; i++) hex += text.charCodeAt(i).toString(16).padStart(4, '0');
-  return `<${hex}>`;
+/** A text in UTF-16BE with its byte-order mark, as titles may be anything. */
+function utf16Bytes(text: string): Uint8Array {
+  const out = new Uint8Array(2 + text.length * 2);
+  out[0] = 0xfe;
+  out[1] = 0xff;
+  for (let i = 0; i < text.length; i++) {
+    out[2 + i * 2] = text.charCodeAt(i) >> 8;
+    out[3 + i * 2] = text.charCodeAt(i) & 0xff;
+  }
+  return out;
 }
+const hexOf = (bytes: Uint8Array) => `<${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}>`;
+const latin1Bytes = (text: string) => new Uint8Array([...text].map((c) => c.charCodeAt(0) & 0xff));
 
 const num = (n: number) => (Math.abs(n) < 1e-6 ? '0' : String(Number(n.toFixed(3))));
 const rgb = (c: Rgb) => c.map((v) => num(Math.min(1, Math.max(0, v)))).join(' ');
@@ -162,19 +174,28 @@ function contentOf(page: PdfPage, fontIndex: (f: StandardFont) => number) {
 
 const encoder = new TextEncoder();
 
-/** The document as PDF 1.4 bytes. */
+/**
+ * The document as PDF bytes: 1.4, or encrypted as `doc.security` asks, 1.6
+ * or 1.7 as DevExpress wrote the same level (s61). Encrypted, every string
+ * and stream is under its object's key, and only the encryption dictionary
+ * and the trailer are not.
+ */
 export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
   const deflate = doc.deflate ?? null;
+  const enc = doc.security ? await pdfEncryption(doc.security, doc.random) : null;
   const objects: (Uint8Array[] | null)[] = [null]; // 1-based object numbers
   const reserve = () => objects.push(null) - 1;
   const set = (n: number, ...parts: (string | Uint8Array)[]) => {
     objects[n] = parts.map((p) => (typeof p === 'string' ? encoder.encode(p) : p));
   };
-  const stream = async (dict: string, data: Uint8Array): Promise<(string | Uint8Array)[]> => {
-    const packed = deflate ? await deflate(data) : data;
+  const stream = async (n: number, dict: string, data: Uint8Array): Promise<(string | Uint8Array)[]> => {
+    const compressed = deflate ? await deflate(data) : data;
+    const packed = enc ? enc.encrypt(n, compressed) : compressed;
     const filter = deflate ? ' /Filter /FlateDecode' : '';
     return [`<< ${dict}${filter} /Length ${packed.length} >>\nstream\n`, packed, '\nendstream'];
   };
+  /** A string of object `n`: encrypted and in hex, or as written unencrypted. */
+  const str = (n: number, bytes: Uint8Array, plain: string) => (enc ? hexOf(enc.encrypt(n, bytes)) : plain);
 
   const catalog = reserve();
   const pagesNode = reserve();
@@ -196,11 +217,11 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
     let smask = '';
     if (image.alpha) {
       const m = reserve();
-      set(m, ...(await stream(`/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceGray /BitsPerComponent 8`, image.alpha)));
+      set(m, ...(await stream(m, `/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceGray /BitsPerComponent 8`, image.alpha)));
       smask = ` /SMask ${m} 0 R`;
     }
     const n = reserve();
-    set(n, ...(await stream(`/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8${smask}`, image.rgb)));
+    set(n, ...(await stream(n, `/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8${smask}`, image.rgb)));
     imageObjects.push(n);
   }
 
@@ -210,13 +231,13 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
     const page = doc.pages[i];
     const { stream: body, images } = contents[i];
     const content = reserve();
-    set(content, ...(await stream('', encoder.encode(body))));
+    set(content, ...(await stream(content, '', encoder.encode(body))));
     const annots: number[] = [];
     for (const op of page.ops) {
       if (op.kind !== 'link') continue;
       const a = reserve();
-      const uri = op.uri.replace(/[\\()]/g, (c) => `\\${c}`);
-      set(a, `<< /Type /Annot /Subtype /Link /Rect [${num(op.x)} ${num(page.height - op.y - op.h)} ${num(op.x + op.w)} ${num(page.height - op.y)}] /Border [0 0 0] /A << /S /URI /URI (${uri}) >> >>`);
+      const uri = str(a, latin1Bytes(op.uri), `(${op.uri.replace(/[\\()]/g, (c) => `\\${c}`)})`);
+      set(a, `<< /Type /Annot /Subtype /Link /Rect [${num(op.x)} ${num(page.height - op.y - op.h)} ${num(op.x + op.w)} ${num(page.height - op.y)}] /Border [0 0 0] /A << /S /URI /URI ${uri} >> >>`);
       annots.push(a);
     }
     const xobjects = [...images].map((k) => `/Im${k} ${imageObjects[k]} 0 R`).join(' ');
@@ -247,7 +268,7 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
         const kids = e.children.length ? place(e.children, refs[i]) : [];
         set(
           refs[i],
-          `<< /Title ${utf16Hex(e.title)} /Parent ${parent} 0 R /Dest ${dest(e)}` +
+          `<< /Title ${str(refs[i], utf16Bytes(e.title), hexOf(utf16Bytes(e.title)))} /Parent ${parent} 0 R /Dest ${dest(e)}` +
             (i > 0 ? ` /Prev ${refs[i - 1]} 0 R` : '') +
             (i < refs.length - 1 ? ` /Next ${refs[i + 1]} 0 R` : '') +
             (kids.length ? ` /First ${kids[0]} 0 R /Last ${kids[kids.length - 1]} 0 R /Count ${count(e)}` : '') +
@@ -262,10 +283,13 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
   }
   set(catalog, `<< /Type /Catalog /Pages ${pagesNode} 0 R${outlinesRef} >>`);
   const info = reserve();
-  set(info, `<< /Title ${utf16Hex(doc.title)} /Producer (Forma) >>`);
+  set(info, `<< /Title ${str(info, utf16Bytes(doc.title), hexOf(utf16Bytes(doc.title)))} /Producer ${str(info, latin1Bytes('Forma'), '(Forma)')} >>`);
+  // The encryption dictionary is an object of its own, never itself encrypted.
+  const encrypt = enc ? reserve() : 0;
+  if (enc) set(encrypt, enc.dictionary);
 
   // Serialize, recording each object's offset for the cross-reference table.
-  const chunks: Uint8Array[] = [encoder.encode('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n')];
+  const chunks: Uint8Array[] = [encoder.encode(`%PDF-${enc ? enc.version : '1.4'}\n%\xe2\xe3\xcf\xd3\n`)];
   let offset = chunks[0].length;
   const offsets: number[] = [0];
   for (let n = 1; n < objects.length; n++) {
@@ -277,7 +301,8 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
     }
   }
   const xref = [`xref\n0 ${objects.length}\n0000000000 65535 f \n`, ...offsets.slice(1).map((o) => `${String(o).padStart(10, '0')} 00000 n \n`)].join('');
-  chunks.push(encoder.encode(`${xref}trailer\n<< /Size ${objects.length} /Root ${catalog} 0 R /Info ${info} 0 R >>\nstartxref\n${offset}\n%%EOF\n`));
+  const secured = enc ? ` /Encrypt ${encrypt} 0 R /ID [${hexOf(enc.id)} ${hexOf(enc.id)}]` : '';
+  chunks.push(encoder.encode(`${xref}trailer\n<< /Size ${objects.length} /Root ${catalog} 0 R /Info ${info} 0 R${secured} >>\nstartxref\n${offset}\n%%EOF\n`));
   const total = chunks.reduce((s, c) => s + c.length, 0);
   const bytes = new Uint8Array(total);
   let at = 0;

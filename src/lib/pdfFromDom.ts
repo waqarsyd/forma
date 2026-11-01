@@ -22,6 +22,7 @@
  */
 import { platformDeflate, reportOutline, writePdf, type PdfImage, type PdfOp, type Rgb, type StandardFont } from './pdfWriter';
 import type { PaginatedReport } from './reportPreview';
+import type { PdfSecurity } from './pdfCrypto';
 
 const PT_PER_PX = 0.75;
 /** What the print stylesheet hides: captions and band labels are the pane's, not the report's. */
@@ -230,9 +231,10 @@ export async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<Pd
 /**
  * The PDF of `pages`, the Preview's `.rp-page` elements drawn at true size,
  * with `report`'s bookmarks as its outline under `rootTitle`. No outline when
- * the report has no bookmarks, as DevExpress writes none then.
+ * the report has no bookmarks, as DevExpress writes none then. Encrypted under
+ * the report's own passwords when it has any (row 73).
  */
-export async function pagesToPdf(pages: HTMLElement[], report: PaginatedReport, title: string, rootTitle: string): Promise<Blob> {
+export async function pagesToPdf(pages: HTMLElement[], report: PaginatedReport, title: string, rootTitle: string, security: PdfSecurity | null = null): Promise<Blob> {
   const images: PdfImage[] = [];
   const pdfPages = [];
   for (const page of pages) {
@@ -246,6 +248,7 @@ export async function pagesToPdf(pages: HTMLElement[], report: PaginatedReport, 
     images,
     outline: outline.children.length ? outline : null,
     deflate: platformDeflate(),
+    security,
   });
   return new Blob([bytes], { type: 'application/pdf' });
 }
