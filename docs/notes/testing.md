@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,021 tests in 95 files** — under the `node` environment
+`npm test` runs Vitest over **2,026 tests in 96 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -115,6 +115,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/netFormat` | 15 | .NET composite, date and number formatting in en-US; every cell of parity case s15's format table is a string DevExpress drew |
 | `lib/panelSize` | 13 |  |
 | `lib/pdf` | 5 |  |
+| `lib/pdfWriter` | 5 | the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
 | `lib/promptSections` | 48 |  |
 | `lib/promptToReport` | 9 | the pure half of Prompt-to-Report |
 | `lib/reportBands` | 15 |  |
@@ -172,7 +173,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,021 in 95 files** — and that total is the arithmetic sum of the column above
+**Total: 2,026 in 96 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -186,7 +187,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,926** against a real 2,021 and will talk you into
+A grep for `\bit(` answers **1,931** against a real 2,026 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

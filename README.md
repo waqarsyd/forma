@@ -372,6 +372,10 @@ src/
                        layout as a grid of merged cells, numbers and dates
                        kept as values, format strings converted -- cell for
                        cell the same as DevExpress's own workbooks),
+                       pdfWriter (Forma's own PDF, written beside the
+                       browser's print path so that it can carry the
+                       report's bookmarks as an outline -- the outline the
+                       same as DevExpress's, entry for entry),
                        textMeasure (how many lines a text breaks into and how
                        tall that prints, so the Preview grows controls and
                        breaks pages where DevExpress does),

@@ -1065,6 +1065,40 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   }, [structure, records, layout, paramValues, measure, download]);
 
   /*
+   * A PDF of Forma's own writing, with the report's bookmarks as its outline
+   * (parity row 18). Printing cannot add an outline, so this reads the pages
+   * drawn at true size into a hidden host, as the printed copy is, and writes
+   * them with lib/pdfFromDom, loaded only now. It sits beside Export PDF
+   * rather than replacing it: printing keeps the Preview's own fonts, and this
+   * uses the PDF standard ones.
+   */
+  const [writingPdf, setWritingPdf] = useState(false);
+  const pdfHostRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!writingPdf) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await document.fonts?.ready;
+        await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+        const host = pdfHostRef.current;
+        if (!host || cancelled) return;
+        const { pagesToPdf } = await import('../lib/pdfFromDom');
+        const pages = [...host.querySelectorAll<HTMLElement>('.rp-page')];
+        const blob = await pagesToPdf(pages, report, title || 'Report', structure.outlineTitle || title || 'Report');
+        if (!cancelled) download(blob, 'application/pdf', 'pdf');
+      } catch (err) {
+        console.error('Forma could not write the PDF.', err);
+      } finally {
+        if (!cancelled) setWritingPdf(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [writingPdf, report, structure, title, download]);
+
+  /*
    * Only the pages near the viewport are filled in (parity row 16). Every page
    * keeps its frame at full size, so the scroll height and each page's place
    * are exact, but a page's bands are drawn only within a few pages of what is
@@ -1520,6 +1554,15 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         >
           Export PDF
         </button>
+        <button
+          type="button"
+          className="wb-pill wb-pill--outline"
+          onClick={() => setWritingPdf(true)}
+          disabled={!report.pages.length || writingPdf}
+          title="A PDF Forma writes itself, with the report's bookmarks as its outline. Text is in the PDF standard fonts."
+        >
+          {writingPdf ? 'Writing PDF…' : 'PDF with outline'}
+        </button>
         <button type="button" className="wb-pill wb-pill--outline" onClick={exportXlsx} disabled={!report.pages.length}>
           Export XLSX
         </button>
@@ -1574,6 +1617,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
 
       {/* True size, outside the workspace tree, only while printing. */}
       {printing && createPortal(<div className="rp-print-host">{renderPages(1, false, false)}</div>, document.body)}
+      {/* True size again, off screen but laid out, for the PDF writer to read. */}
+      {writingPdf && createPortal(
+        <div ref={pdfHostRef} aria-hidden style={{ position: 'fixed', left: -100000, top: 0, pointerEvents: 'none' }}>
+          {renderPages(1, false, false)}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

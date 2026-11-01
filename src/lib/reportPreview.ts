@@ -319,6 +319,11 @@ export interface PreviewControl {
   data: TextData;
   /** `NavigateUrl`: written on the control, or bound to an expression. Null when it has none. */
   link: { literal: string | null; expression: string | null } | null;
+  /**
+   * `Bookmark`, written or bound, with the control's own `Ref` and the `Ref`
+   * its `BookmarkParent` points at (parity row 18). Absent when it has none.
+   */
+  bookmark?: { literal: string | null; expression: string | null; ref: string; parent: string | null } | null;
   /** The formatting rules linked to this control, by `Ref`, in link order. */
   rules: string[];
   /** Its expression bindings on anything but the text; see `AppearanceBinding`. */
@@ -625,6 +630,8 @@ export interface ReportStructure {
   rules: Record<string, FormattingRule>;
   /** `<CrossBandControls>`: lines and boxes drawn from one band to another (parity row 48). */
   crossBands?: CrossBandControl[];
+  /** The PDF outline's root: the report's Bookmark, else its Name (parity row 18). */
+  outlineTitle?: string;
   /** Non-fatal parse complaints, for the UI to surface rather than swallow. */
   problems: string[];
 }
@@ -1338,6 +1345,28 @@ function parseLink(attrs: string, slice: string): { literal: string | null; expr
   return { literal: literal === null ? null : decodeXmlText(literal), expression: item ? decodeXmlText(item[1]) : null };
 }
 
+/**
+ * `Bookmark` as an attribute or as an expression binding, from the control's
+ * own part, and where it sits in the outline: its own `Ref` and its
+ * `BookmarkParent`, which the serializer writes as `#Ref-N` (measured in
+ * `RepxProbe emit-bookmarks`, and again in s54).
+ */
+function parseBookmark(attrs: string, slice: string): PreviewControl['bookmark'] {
+  const own = ownPart(slice);
+  const item =
+    /<Item\d+\b[^>]*\sPropertyName="Bookmark"[^>]*\sExpression="([^"]*)"/.exec(own) ??
+    /<Item\d+\b[^>]*\sExpression="([^"]*)"[^>]*\sPropertyName="Bookmark"/.exec(own);
+  const literal = attrOf(attrs, 'Bookmark');
+  if (!item && literal === null) return null;
+  const parent = /#Ref-(\d+)/.exec(attrOf(attrs, 'BookmarkParent') ?? '');
+  return {
+    literal: literal === null ? null : decodeXmlText(literal),
+    expression: item ? decodeXmlText(item[1]) : null,
+    ref: attrOf(attrs, 'Ref') ?? '',
+    parent: parent ? parent[1] : null,
+  };
+}
+
 function parseTextBinding(slice: string): string | null {
   const item =
     /<Item\d+\b[^>]*\sPropertyName="Text"[^>]*\sExpression="([^"]*)"/.exec(slice) ??
@@ -1622,6 +1651,7 @@ function parseControls(
       ...((attrOf(item.attrs, 'Multiline') ?? '').toLowerCase() === 'true' ? { multiline: true as const } : {}),
       data: type === 'XRTable' ? { expression: null, running: null, format: null } : parseTextData(item.attrs, inner.slice(item.start, extent)),
       link: parseLink(item.attrs, inner.slice(item.start, extent)),
+      bookmark: parseBookmark(item.attrs, inner.slice(item.start, extent)),
       rules: parseRuleLinks(ownPart(inner.slice(item.start, extent))),
       ...boundProperties(ownPart(inner.slice(item.start, extent))),
       ...repeatsOf(item.attrs),
@@ -1795,6 +1825,8 @@ export function parseReportStructure(
     filterString: attrOf(rootAttrs, 'FilterString') ? decodeXmlText(attrOf(rootAttrs, 'FilterString')!) : null,
     rules: parseRuleSheet(text),
     ...crossBandsOf(text, targetDpi),
+    // The outline's root: the report's own Bookmark, else its Name (s54b).
+    outlineTitle: decodeXmlText(attrOf(rootAttrs, 'Bookmark') || attrOf(rootAttrs, 'Name') || ''),
     problems,
   };
 
@@ -1968,6 +2000,8 @@ export interface PlacedControl {
   crossTab?: CrossTabGrid | null;
   /** For a chart over test data: what it plots (parity row 32); null where its structure is drawn. */
   chart?: ChartModel | null;
+  /** Its bookmark in this instance, for the PDF outline (parity row 18); null when it has none. */
+  bookmark?: { title: string; ref: string; parent: string | null } | null;
 }
 
 /** One printed occurrence of a band: a record's Detail, a page's header, a split part. */
@@ -2287,7 +2321,22 @@ function textsOf(control: PreviewControl, values: RecordValues | null, ctx: Layo
     cellTexts: null,
     url: linkFor(control, ctx, scope),
     value: valueOf(control.data),
+    bookmark: bookmarkFor(control, ctx, scope),
   };
+}
+
+/**
+ * A control's bookmark in one instance: its expression evaluated over the test
+ * data, or its literal (parity row 18). Null without one, or when it is bound
+ * and there is no data to bind, or when it comes out empty.
+ */
+function bookmarkFor(control: PreviewControl, ctx: LayoutContext, scope: TextScope | null): PlacedControl['bookmark'] {
+  const mark = control.bookmark;
+  if (!mark) return null;
+  const title = mark.expression
+    ? (ctx.data && scope ? ctx.data.text({ expression: mark.expression, running: null, format: null }, scope) : null)
+    : mark.literal;
+  return title ? { title, ref: mark.ref, parent: mark.parent } : null;
 }
 
 /** A control's `NavigateUrl` in one instance: its expression evaluated over the test data, or its literal. */
@@ -2554,6 +2603,7 @@ export function layoutBand(
       inner: it.inner,
       crossTab: it.crossTab,
       chart: it.chart,
+      bookmark: it.bookmark,
     })),
   };
 }

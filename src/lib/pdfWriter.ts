@@ -1,0 +1,315 @@
+/**
+ * Forma's own PDF writer (parity row 18), beside the browser's print path.
+ *
+ * Printing is still the PDF export that looks exactly like the Preview,
+ * because the browser draws it with the fonts the Preview uses. What printing
+ * cannot add is an outline, the bookmark pane a PDF reader shows, which is how
+ * DevExpress exports a report's bookmarks. This module writes a PDF that has
+ * one: `reportOutline` builds it from the paginated report, as DevExpress
+ * built it in s54, and `writePdf` serializes pages of drawing operations,
+ * which `pdfFromDom` reads off the Preview's own pages.
+ *
+ * The fonts are the PDF standard ones, which every reader has and nothing
+ * needs embedding for: Helvetica, Times and Courier, which Arial, Times New
+ * Roman and Courier New are drawn to the metrics of. Text is encoded as
+ * Windows-1252, so a character outside it prints as "?". Everything here is
+ * pure, so it runs under Node for the tests.
+ */
+import { unitsPerInch } from './reportGeometry';
+import type { PaginatedReport } from './reportPreview';
+
+/** One entry of the outline: its title, the page it opens (0-based) and how far down it, in points. */
+export interface OutlineEntry {
+  title: string;
+  page: number;
+  y: number;
+  children: OutlineEntry[];
+}
+
+/**
+ * The outline DevExpress exports for a report's bookmarks, measured in s54a
+ * to s54c:
+ *
+ * - The root is the report's own `Bookmark`, or its `Name` without one, and
+ *   opens the top of the first page.
+ * - Under it, every bookmark the report prints, in the order it prints them,
+ *   each opening its page at the control's top.
+ * - A bookmark whose `BookmarkParent` names another control sits under the
+ *   last printed instance of that control's bookmark: each customer under
+ *   the region printed above it. Without a parent, or a parent that printed
+ *   none, it sits under the root.
+ *
+ * A control cut across two pages is listed once, at its first part.
+ */
+export function reportOutline(report: PaginatedReport, rootTitle: string): OutlineEntry {
+  const toPoints = (units: number) => (units / unitsPerInch(report.unit)) * 72;
+  const marks: { title: string; ref: string; parent: string | null; page: number; y: number; x: number; key: string }[] = [];
+  report.pages.forEach((page, p) => {
+    for (const band of page.bands) {
+      for (const pc of band.controls) {
+        if (!pc.bookmark) continue;
+        marks.push({
+          ...pc.bookmark,
+          page: p,
+          y: band.top + pc.y,
+          x: band.left + pc.control.x + pc.control.offsetX,
+          key: `${pc.bookmark.ref}\u0000${band.band.kind}\u0000${band.record ?? ''}\u0000${pc.bookmark.title}`,
+        });
+      }
+    }
+  });
+  marks.sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
+  const root: OutlineEntry = { title: rootTitle, page: 0, y: 0, children: [] };
+  const latest = new Map<string, OutlineEntry>();
+  const seen = new Set<string>();
+  for (const mark of marks) {
+    if (seen.has(mark.key)) continue;
+    seen.add(mark.key);
+    const entry: OutlineEntry = { title: mark.title, page: mark.page, y: toPoints(mark.y), children: [] };
+    ((mark.parent && latest.get(mark.parent)) || root).children.push(entry);
+    if (mark.ref) latest.set(mark.ref, entry);
+  }
+  return root;
+}
+
+export type StandardFont =
+  | 'Helvetica' | 'Helvetica-Bold' | 'Helvetica-Oblique' | 'Helvetica-BoldOblique'
+  | 'Times-Roman' | 'Times-Bold' | 'Times-Italic' | 'Times-BoldItalic'
+  | 'Courier' | 'Courier-Bold' | 'Courier-Oblique' | 'Courier-BoldOblique';
+
+/** An RGB colour, each 0 to 1. */
+export type Rgb = [number, number, number];
+
+/**
+ * What a page draws, in points from its top left corner. A clip applies to
+ * everything after it until the matching restore.
+ */
+export type PdfOp =
+  | { kind: 'fill'; x: number; y: number; w: number; h: number; colour: Rgb }
+  | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; width: number; colour: Rgb; dash?: number[] }
+  /** `y` is the baseline; `scale` stretches the line horizontally, 1 for none. */
+  | { kind: 'text'; x: number; y: number; size: number; font: StandardFont; colour: Rgb; text: string; scale: number }
+  | { kind: 'image'; x: number; y: number; w: number; h: number; image: number }
+  | { kind: 'clip'; x: number; y: number; w: number; h: number }
+  | { kind: 'restore' }
+  | { kind: 'link'; x: number; y: number; w: number; h: number; uri: string };
+
+/** An image's pixels: 8-bit RGB, and an optional 8-bit alpha. */
+export interface PdfImage {
+  width: number;
+  height: number;
+  rgb: Uint8Array;
+  alpha?: Uint8Array;
+}
+
+export interface PdfPage {
+  width: number;
+  height: number;
+  ops: PdfOp[];
+}
+
+export interface PdfDocument {
+  title: string;
+  pages: PdfPage[];
+  images?: PdfImage[];
+  outline?: OutlineEntry | null;
+  /** zlib-compresses a stream; without one, streams are written uncompressed. */
+  deflate?: ((bytes: Uint8Array) => Promise<Uint8Array>) | null;
+}
+
+/** Windows-1252's characters from 0x80 to 0x9F; the rest of the range below 0x100 is Latin-1. */
+const CP1252_HIGH = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ';
+
+/** A text as a PDF hex string in Windows-1252; "?" for what it cannot hold. */
+export function winAnsiHex(text: string): string {
+  let hex = '';
+  for (const ch of text) {
+    const code = ch.codePointAt(0)!;
+    let byte: number;
+    if (code < 0x80 || (code >= 0xa0 && code <= 0xff)) byte = code;
+    else {
+      const high = CP1252_HIGH.indexOf(ch);
+      byte = high >= 0 ? 0x80 + high : 0x3f;
+    }
+    hex += byte.toString(16).padStart(2, '0');
+  }
+  return `<${hex}>`;
+}
+
+/** A text as a PDF hex string in UTF-16BE with its byte-order mark, as titles may be anything. */
+function utf16Hex(text: string): string {
+  let hex = 'feff';
+  for (let i = 0; i < text.length; i++) hex += text.charCodeAt(i).toString(16).padStart(4, '0');
+  return `<${hex}>`;
+}
+
+const num = (n: number) => (Math.abs(n) < 1e-6 ? '0' : String(Number(n.toFixed(3))));
+const rgb = (c: Rgb) => c.map((v) => num(Math.min(1, Math.max(0, v)))).join(' ');
+
+/** One page's content stream, and the fonts and images it uses. */
+function contentOf(page: PdfPage, fontIndex: (f: StandardFont) => number) {
+  const H = page.height;
+  const out: string[] = [];
+  const images = new Set<number>();
+  for (const op of page.ops) {
+    switch (op.kind) {
+      case 'fill':
+        out.push(`${rgb(op.colour)} rg ${num(op.x)} ${num(H - op.y - op.h)} ${num(op.w)} ${num(op.h)} re f`);
+        break;
+      case 'line':
+        out.push(`${rgb(op.colour)} RG ${num(op.width)} w [${(op.dash ?? []).map(num).join(' ')}] 0 d ${num(op.x1)} ${num(H - op.y1)} m ${num(op.x2)} ${num(H - op.y2)} l S`);
+        break;
+      case 'text':
+        if (!op.text) break;
+        out.push(`BT /F${fontIndex(op.font)} ${num(op.size)} Tf ${num(op.scale * 100)} Tz ${rgb(op.colour)} rg 1 0 0 1 ${num(op.x)} ${num(H - op.y)} Tm ${winAnsiHex(op.text)} Tj ET`);
+        break;
+      case 'image':
+        images.add(op.image);
+        out.push(`q ${num(op.w)} 0 0 ${num(op.h)} ${num(op.x)} ${num(H - op.y - op.h)} cm /Im${op.image} Do Q`);
+        break;
+      case 'clip':
+        out.push(`q ${num(op.x)} ${num(H - op.y - op.h)} ${num(op.w)} ${num(op.h)} re W n`);
+        break;
+      case 'restore':
+        out.push('Q');
+        break;
+      case 'link':
+        break;
+    }
+  }
+  return { stream: out.join('\n'), images };
+}
+
+const encoder = new TextEncoder();
+
+/** The document as PDF 1.4 bytes. */
+export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
+  const deflate = doc.deflate ?? null;
+  const objects: (Uint8Array[] | null)[] = [null]; // 1-based object numbers
+  const reserve = () => objects.push(null) - 1;
+  const set = (n: number, ...parts: (string | Uint8Array)[]) => {
+    objects[n] = parts.map((p) => (typeof p === 'string' ? encoder.encode(p) : p));
+  };
+  const stream = async (dict: string, data: Uint8Array): Promise<(string | Uint8Array)[]> => {
+    const packed = deflate ? await deflate(data) : data;
+    const filter = deflate ? ' /Filter /FlateDecode' : '';
+    return [`<< ${dict}${filter} /Length ${packed.length} >>\nstream\n`, packed, '\nendstream'];
+  };
+
+  const catalog = reserve();
+  const pagesNode = reserve();
+  const fonts: StandardFont[] = [];
+  const fontIndex = (f: StandardFont) => {
+    let i = fonts.indexOf(f);
+    if (i < 0) i = fonts.push(f) - 1;
+    return i;
+  };
+  const contents = doc.pages.map((page) => contentOf(page, fontIndex));
+  const fontObjects = fonts.map((name) => {
+    const n = reserve();
+    set(n, `<< /Type /Font /Subtype /Type1 /BaseFont /${name}${name.startsWith('Symbol') ? '' : ' /Encoding /WinAnsiEncoding'} >>`);
+    return n;
+  });
+
+  const imageObjects: number[] = [];
+  for (const image of doc.images ?? []) {
+    let smask = '';
+    if (image.alpha) {
+      const m = reserve();
+      set(m, ...(await stream(`/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceGray /BitsPerComponent 8`, image.alpha)));
+      smask = ` /SMask ${m} 0 R`;
+    }
+    const n = reserve();
+    set(n, ...(await stream(`/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8${smask}`, image.rgb)));
+    imageObjects.push(n);
+  }
+
+  const fontDict = `<< ${fontObjects.map((n, i) => `/F${i} ${n} 0 R`).join(' ')} >>`;
+  const pageObjects: number[] = [];
+  for (let i = 0; i < doc.pages.length; i++) {
+    const page = doc.pages[i];
+    const { stream: body, images } = contents[i];
+    const content = reserve();
+    set(content, ...(await stream('', encoder.encode(body))));
+    const annots: number[] = [];
+    for (const op of page.ops) {
+      if (op.kind !== 'link') continue;
+      const a = reserve();
+      const uri = op.uri.replace(/[\\()]/g, (c) => `\\${c}`);
+      set(a, `<< /Type /Annot /Subtype /Link /Rect [${num(op.x)} ${num(page.height - op.y - op.h)} ${num(op.x + op.w)} ${num(page.height - op.y)}] /Border [0 0 0] /A << /S /URI /URI (${uri}) >> >>`);
+      annots.push(a);
+    }
+    const xobjects = [...images].map((k) => `/Im${k} ${imageObjects[k]} 0 R`).join(' ');
+    const n = reserve();
+    set(
+      n,
+      `<< /Type /Page /Parent ${pagesNode} 0 R /MediaBox [0 0 ${num(page.width)} ${num(page.height)}]` +
+        ` /Resources << /Font ${fontDict}${xobjects ? ` /XObject << ${xobjects} >>` : ''} >>` +
+        ` /Contents ${content} 0 R${annots.length ? ` /Annots [${annots.map((a) => `${a} 0 R`).join(' ')}]` : ''} >>`,
+    );
+    pageObjects.push(n);
+  }
+  set(pagesNode, `<< /Type /Pages /Kids [${pageObjects.map((n) => `${n} 0 R`).join(' ')}] /Count ${pageObjects.length} >>`);
+
+  // The outline: the root is an entry of its own under the outline
+  // dictionary, as DevExpress writes it, with the bookmarks beneath it.
+  let outlinesRef = '';
+  if (doc.outline && pageObjects.length) {
+    const outlines = reserve();
+    const dest = (e: OutlineEntry) => {
+      const page = Math.min(e.page, pageObjects.length - 1);
+      return `[${pageObjects[page]} 0 R /XYZ 0 ${num(doc.pages[page].height - e.y)} null]`;
+    };
+    const count = (e: OutlineEntry): number => e.children.reduce((s, c) => s + 1 + count(c), 0);
+    const place = (entries: OutlineEntry[], parent: number): number[] => {
+      const refs = entries.map(() => reserve());
+      entries.forEach((e, i) => {
+        const kids = e.children.length ? place(e.children, refs[i]) : [];
+        set(
+          refs[i],
+          `<< /Title ${utf16Hex(e.title)} /Parent ${parent} 0 R /Dest ${dest(e)}` +
+            (i > 0 ? ` /Prev ${refs[i - 1]} 0 R` : '') +
+            (i < refs.length - 1 ? ` /Next ${refs[i + 1]} 0 R` : '') +
+            (kids.length ? ` /First ${kids[0]} 0 R /Last ${kids[kids.length - 1]} 0 R /Count ${count(e)}` : '') +
+            ' >>',
+        );
+      });
+      return refs;
+    };
+    const [top] = place([doc.outline], outlines);
+    set(outlines, `<< /Type /Outlines /First ${top} 0 R /Last ${top} 0 R /Count ${1 + count(doc.outline)} >>`);
+    outlinesRef = ` /Outlines ${outlines} 0 R /PageMode /UseOutlines`;
+  }
+  set(catalog, `<< /Type /Catalog /Pages ${pagesNode} 0 R${outlinesRef} >>`);
+  const info = reserve();
+  set(info, `<< /Title ${utf16Hex(doc.title)} /Producer (Forma) >>`);
+
+  // Serialize, recording each object's offset for the cross-reference table.
+  const chunks: Uint8Array[] = [encoder.encode('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n')];
+  let offset = chunks[0].length;
+  const offsets: number[] = [0];
+  for (let n = 1; n < objects.length; n++) {
+    offsets[n] = offset;
+    const parts = [encoder.encode(`${n} 0 obj\n`), ...(objects[n] ?? [encoder.encode('null')]), encoder.encode('\nendobj\n')];
+    for (const p of parts) {
+      chunks.push(p);
+      offset += p.length;
+    }
+  }
+  const xref = [`xref\n0 ${objects.length}\n0000000000 65535 f \n`, ...offsets.slice(1).map((o) => `${String(o).padStart(10, '0')} 00000 n \n`)].join('');
+  chunks.push(encoder.encode(`${xref}trailer\n<< /Size ${objects.length} /Root ${catalog} 0 R /Info ${info} 0 R >>\nstartxref\n${offset}\n%%EOF\n`));
+  const total = chunks.reduce((s, c) => s + c.length, 0);
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    bytes.set(c, at);
+    at += c.length;
+  }
+  return bytes;
+}
+
+/** zlib compression where the platform has it, for `PdfDocument.deflate`. */
+export function platformDeflate(): ((bytes: Uint8Array) => Promise<Uint8Array>) | null {
+  if (typeof CompressionStream === 'undefined') return null;
+  return async (bytes) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+}
