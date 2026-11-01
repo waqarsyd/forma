@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,036 tests in 97 files** — under the `node` environment
+`npm test` runs Vitest over **2,054 tests in 100 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -114,6 +114,9 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/modelCatalog` | 24 |  |
 | `lib/netDecimal` | 8 | .NET's decimal: scale, exact sums, 28-place division, both roundings |
 | `lib/netFormat` | 15 | .NET composite, date and number formatting in en-US; every cell of parity case s15's format table is a string DevExpress drew |
+| `lib/ocr` | 3 | Tesseract's blocks read as words and lines with boxes and confidence, enlarged boxes divided back |
+| `lib/ocrLayout` | 8 | OCR to layout: a label at its text, a line split at a gap wider than it is tall, aligned rows as a table, low-confidence words flagged, picture readings set aside, margins fitted to the content, a screenshot fitted to the printable width, the font from the ink |
+| `lib/ocrRepx` | 4 | jsdom; a detected layout written as a .repx: the app's own checks pass, every label and cell where the layout put it, a page break per page, Dpi and paper by the repair passes, flagged text named or left out |
 | `lib/panelSize` | 13 |  |
 | `lib/pdf` | 5 |  |
 | `lib/pdfWriter` | 5 | the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
@@ -122,7 +125,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/reportBands` | 15 |  |
 | `lib/reportConfigStore` | 15 |  |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
-| `lib/reportGeometry` | 37 |  |
+| `lib/reportGeometry` | 40 |  |
 | `lib/reportPreview` | 280 | 22 from five loops, the fifth an `it.each` over the four table-of-contents placements: parity cases c05 to c05e page for page, the seven s19 nesting variants, the four one-field-per-kind cross-tabs' CSVs, and s29a and s29b; a chart's points over test data against DevExpress's, and its pie shares (row 32) |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
@@ -174,7 +177,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,036 in 97 files** — and that total is the arithmetic sum of the column above
+**Total: 2,054 in 100 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -188,7 +191,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,937** against a real 2,036 and will talk you into
+A grep for `\bit(` answers **1,955** against a real 2,054 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

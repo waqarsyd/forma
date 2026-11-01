@@ -1,10 +1,51 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import {defineConfig} from 'vite';
+import {defineConfig, type Plugin} from 'vite';
+import {createReadStream, readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+
+/**
+ * OCR's runtime, served from this site rather than a CDN (2026-11-01). The
+ * owner approved Tesseract.js in the browser so that nothing an upload holds
+ * leaves it; fetching the engine from jsDelivr, its default, would put a
+ * third party back in front of every OCR run and need a new origin in the
+ * CSP. So the worker, the three LSTM-only core builds tesseract.js picks
+ * between by the browser's SIMD support, and the English data are served at
+ * `/ocr/` straight from `node_modules` in development and copied into
+ * `dist/ocr/` at build. Nothing is committed: they come with `npm ci`. Each
+ * browser downloads one core build, and only when OCR first runs.
+ */
+const OCR_ASSETS: Record<string, string> = {
+  'worker.min.js': 'tesseract.js/dist/worker.min.js',
+  'tesseract-core-relaxedsimd-lstm.wasm.js': 'tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js',
+  'tesseract-core-simd-lstm.wasm.js': 'tesseract.js-core/tesseract-core-simd-lstm.wasm.js',
+  'tesseract-core-lstm.wasm.js': 'tesseract.js-core/tesseract-core-lstm.wasm.js',
+  'eng.traineddata.gz': '@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz',
+};
+const ocrSource = (name: string) => resolve('node_modules', OCR_ASSETS[name]);
+
+function ocrAssets(): Plugin {
+  return {
+    name: 'forma-ocr-assets',
+    configureServer(server) {
+      server.middlewares.use('/ocr', (req, res, next) => {
+        const name = (req.url ?? '').replace(/^\//, '').split('?')[0];
+        if (!(name in OCR_ASSETS)) return next();
+        res.setHeader('Content-Type', name.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
+        createReadStream(ocrSource(name)).on('error', () => next()).pipe(res);
+      });
+    },
+    generateBundle() {
+      for (const name of Object.keys(OCR_ASSETS)) {
+        this.emitFile({ type: 'asset', fileName: `ocr/${name}`, source: readFileSync(ocrSource(name)) });
+      }
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), ocrAssets()],
     // Only VITE_* reaches the client. GEMINI_* was previously allowlisted here,
     // which inlined GEMINI_API_KEY into the shipped bundle — Google's secret
     // scanner found that key and revoked it (403 "reported as leaked").

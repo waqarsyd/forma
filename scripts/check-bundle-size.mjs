@@ -281,6 +281,17 @@ const BUDGETS = [
    * and nothing else. See src/fonts/README.md for how to refresh them.
    */
   { prefix: '', ext: '.woff2', max: 90_000, note: 'a single self-hosted font subset' },
+  /*
+   * OCR's runtime under dist/ocr/ (2026-11-01; see ocrAssets in vite.config.ts):
+   * vendored from tesseract.js 7.0.0, tesseract.js-core 7.0.0 and
+   * @tesseract.js-data/eng 1.0.0, copied at build, never committed. Each budget
+   * sits at about 94%, as the other vendored caps do; nothing routine moves
+   * them, only an upgrade of one of those packages. A browser downloads the
+   * worker, the data and ONE of the three core builds, the first time OCR runs.
+   */
+  { prefix: 'tesseract-core-', ext: '-lstm.wasm.js', max: 4_150_000, note: 'one OCR core build per browser, lazy' },
+  { prefix: 'worker.min', ext: '.js', max: 118_000, note: 'the OCR worker, lazy' },
+  { prefix: 'eng.traineddata', ext: '.gz', max: 3_140_000, note: 'English OCR data, best_int, lazy' },
 ];
 
 /**
@@ -375,7 +386,18 @@ const walk = (dir) => {
 };
 
 const files = walk(DIST);
-const total = files.reduce((a, f) => a + f.size, 0);
+/*
+ * dist/ocr/ is counted apart from everything else. Its 14.8 MB (2026-11-01) is
+ * the OCR engine the owner approved running in the browser, fetched only by
+ * someone who runs OCR, one of its three core builds at that. Folded into the
+ * total above it would have needed a cap nearly four times as large, and a cap
+ * that large guards the app's own code from nothing.
+ */
+const OCR_DIR = join(DIST, 'ocr');
+const isOcr = (f) => f.path.startsWith(OCR_DIR);
+const total = files.filter((f) => !isOcr(f)).reduce((a, f) => a + f.size, 0);
+const ocrTotal = files.filter(isOcr).reduce((a, f) => a + f.size, 0);
+const OCR_TOTAL_MAX = 15_700_000;
 
 const rows = [];
 const breaches = [];
@@ -404,7 +426,11 @@ for (const budget of BUDGETS) {
   }
 }
 
-rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed' });
+rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr' });
+rows.push({ name: 'dist/ocr/ total', size: ocrTotal, max: OCR_TOTAL_MAX, pct: ((ocrTotal / OCR_TOTAL_MAX) * 100).toFixed(1), note: 'the OCR engine, lazy' });
+if (ocrTotal > OCR_TOTAL_MAX) {
+  breaches.push(`OVER     dist/ocr/ total — ${ocrTotal.toLocaleString()} B exceeds the ${OCR_TOTAL_MAX.toLocaleString()} B budget`);
+}
 if (total > TOTAL_MAX) {
   breaches.push(
     `OVER     dist/ total — ${total.toLocaleString()} B exceeds the ${TOTAL_MAX.toLocaleString()} B budget`,

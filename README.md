@@ -380,6 +380,10 @@ src/
                        (Word and RTF page by page as positioned frames, HTML
                        as one continuous table, each frame and cell where
                        DevExpress's own export put it),
+                       ocr, ocrLayout and ocrRepx (an image or a scan read
+                       in the browser with Tesseract.js: every word with its
+                       box and confidence, aligned rows as an XRTable and the
+                       rest as XRLabels, low-confidence text flagged),
                        textMeasure (how many lines a text breaks into and how
                        tall that prints, so the Preview grows controls and
                        breaks pages where DevExpress does),

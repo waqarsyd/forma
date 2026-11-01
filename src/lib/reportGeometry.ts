@@ -209,3 +209,70 @@ export function pageSizeInUnits(pageSize?: string, reportUnit?: string): PageSiz
   const per = unitsPerInch(reportUnit);
   return { width: Math.round(inches.w * per), height: Math.round(inches.h * per) };
 }
+
+/** A box in a page image, in its pixels: left, top, right and bottom. */
+export interface PixelBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * Where a page image's pixels fall on the report's page (OCR, 2026-11-01):
+ * report units to a pixel, and where the image's top-left corner lands, in
+ * page coordinates.
+ */
+export interface ImagePlacement {
+  unitsPerPixel: number;
+  left: number;
+  top: number;
+}
+
+/**
+ * Place a page image on a report page.
+ *
+ * Two cases, because the two sources say different things about their size:
+ *
+ * - **A rendered PDF page knows its resolution.** It is the whole page drawn
+ *   at `dpi`, so a pixel is `1/dpi` of an inch and the image's corner is the
+ *   page's: a word 360 pixels from the left of a page rendered at 180 dpi is
+ *   two inches in, margins included.
+ * - **A screenshot does not.** Its pixels are whatever the screen was, so its
+ *   width is fitted to the page's printable width and its corner put at the
+ *   margins: the screenshot is taken to be the report's content, which is
+ *   what a user photographs or captures.
+ */
+export function placeImage(
+  image: { width: number; height: number; dpi: number | null },
+  page: { width: number; margins: { left: number; right: number; top: number } },
+  reportUnit?: string,
+): ImagePlacement {
+  if (image.dpi && image.dpi > 0) return { unitsPerPixel: unitsPerInch(reportUnit) / image.dpi, left: 0, top: 0 };
+  const printable = Math.max(1, page.width - page.margins.left - page.margins.right);
+  return { unitsPerPixel: printable / Math.max(1, image.width), left: page.margins.left, top: page.margins.top };
+}
+
+/** A pixel box on the page, in report units: its left, top, width and height. */
+export function pixelBoxToUnits(box: PixelBox, at: ImagePlacement): { x: number; y: number; w: number; h: number } {
+  return {
+    x: at.left + box.x0 * at.unitsPerPixel,
+    y: at.top + box.y0 * at.unitsPerPixel,
+    w: (box.x1 - box.x0) * at.unitsPerPixel,
+    h: (box.y1 - box.y0) * at.unitsPerPixel,
+  };
+}
+
+/**
+ * The page an image is a picture of, in report units: a rendered PDF page's
+ * own size from its pixels and resolution; for a screenshot, Letter, turned
+ * when the image is wider than it is tall.
+ */
+export function pageForImage(image: { width: number; height: number; dpi: number | null }, reportUnit?: string): PageSize {
+  if (image.dpi && image.dpi > 0) {
+    const per = unitsPerInch(reportUnit) / image.dpi;
+    return { width: Math.round(image.width * per), height: Math.round(image.height * per) };
+  }
+  const letter = pageSizeInUnits('Letter', reportUnit);
+  return image.width > image.height ? { width: letter.height, height: letter.width } : letter;
+}

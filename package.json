@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
+    "@tesseract.js-data/eng": "^1.0.0",
     "compression": "^1.8.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
@@ -37,7 +38,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "tesseract.js": "^7.0.0"
   },
   "comment:overrides": "qs: two Dependabot advisories (array-limit bypass, DoS via attacker-controlled isBuffer) are fixed in 6.16.0, and four consumers declare ranges that still admit an affected version. The one that settles it is this project's own express@4: 4.22.2 asks for ~6.15.1, which can only resolve to an affected version. express@5 (^6.14.0, via @modelcontextprotocol/sdk), exegesis (^6.6.0) and googleapis-common (^6.7.0, both via firebase-tools) merely allow one. `npm audit fix` cannot lift them without a breaking change, so the override pins every copy instead. Every qs in the tree was already 6.x, so this is a patch-level lift, not a major. body-parser 2.4.0 asks for ^6.16.1, a floor above this override's, but 6.16.1 is what resolves, so nothing is lowered in practice. Remove this entry once no consumer's own range admits a version below 6.16.0. `npm explain qs` is the check: it prints each consumer as overridden ... (was <its own range>). `npm ls qs --all` cannot answer it, because it shows versions after the override has been applied.",
   "comment:not-overridden": "@grpc/grpc-js, uuid and @opentelemetry/core carry open Dependabot advisories and are deliberately NOT overridden. @grpc/grpc-js (two highs, fixed in 1.13.6) is pinned ~1.9.0 by @firebase/firestore, in 4.14.0 and still in 4.17.2, so no firebase release in range fixes it, and an override would push another package's internals four minors past the range it asked for. It is Firestore's Node.js transport -- the browser entry never imports it -- so here it runs only in the rules tests, against the local emulator. It is also the whole reason firebase, both Firestore packages and @firebase/rules-unit-testing are flagged high. uuid (9.0.1 via gaxios -> 11.1.1) and @opentelemetry/core (1.30.1 via @google-cloud/pubsub -> 2.8.0) live inside firebase-tools, already the latest published version (15.34.1 as of 2026-10-24), so the fix has to come from upstream. That is how csv-parse and stream-json closed: they were listed here until 15.34.1 bumped them itself. Forcing a major into firebase-tools is a different proposition from the patch-level qs lift above, because it runs the Firestore emulator that `npm run test:rules` depends on, and breaking it takes 70 security-rule tests with it. Leave the alerts OPEN rather than dismissing them: an open alert closes itself when upstream bumps its dependencies, a dismissed one stays silent forever. Re-check with `npm ls @grpc/grpc-js uuid @opentelemetry/core --all` before acting on this.",
@@ -64,12 +66,13 @@
     "vite": "^6.2.0",
     "vitest": "^4.1.10"
   },
-  "comment:allowScripts": "npm 11.19 warns on every install about dependencies whose install scripts nobody has reviewed. These five were reviewed and approved on 2026-10-24, and all of them had already been running on every install. re2 is the only one doing real work: node-gyp compiles its native binding, an optional dependency of superstatic inside firebase-tools. esbuild (0.28.2 directly, 0.25.12 via vite) verifies its platform binary. protobufjs only prints a version-scheme warning, and @firebase/util only acts when FIREBASE_WEBAPP_CONFIG is set, which App Hosting uses and this project does not. Entries are pinned to versions, npm's default, so a script whose code changes gets reviewed again. After an update, `npm install-scripts ls` names what needs approving and `npm install-scripts prune` drops entries no longer installed. Its --dry-run flag wrote this block anyway on npm 11.19.0, so do not rely on it to preview.",
+  "comment:allowScripts": "npm 11.19 warns on every install about dependencies whose install scripts nobody has reviewed. These five were reviewed and approved on 2026-10-24, and all of them had already been running on every install. re2 is the only one doing real work: node-gyp compiles its native binding, an optional dependency of superstatic inside firebase-tools. esbuild (0.28.2 directly, 0.25.12 via vite) verifies its platform binary. protobufjs only prints a version-scheme warning, and @firebase/util only acts when FIREBASE_WEBAPP_CONFIG is set, which App Hosting uses and this project does not. Entries are pinned to versions, npm's default, so a script whose code changes gets reviewed again. After an update, `npm install-scripts ls` names what needs approving and `npm install-scripts prune` drops entries no longer installed. Its --dry-run flag wrote this block anyway on npm 11.19.0, so do not rely on it to preview. tesseract.js (OCR, 2026-11-01) is reviewed and DENIED, for every version: its postinstall is opencollective-postinstall, which only prints a funding message, and nothing it does is needed; the engine's files are copied at build by vite.config.ts instead.",
   "allowScripts": {
     "@firebase/util@1.15.0": true,
     "esbuild@0.28.2": true,
     "esbuild@0.25.12": true,
     "protobufjs@7.6.6": true,
-    "re2@1.26.1": true
+    "re2@1.26.1": true,
+    "tesseract.js": false
   }
 }

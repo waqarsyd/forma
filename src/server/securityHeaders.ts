@@ -132,10 +132,18 @@ function directives(development: boolean): Record<string, string[]> {
      * This is the narrowest origin that fixes it. It is a script source, so it
      * is a real widening of the policy -- but it is Google's own auth helper on
      * a fixed path, and the alternative is having no Google sign-in.
+     *
+     * `'wasm-unsafe-eval'` (2026-11-01) is for OCR, which the owner approved
+     * running in the browser with Tesseract.js so that an upload never leaves
+     * it. The engine is WebAssembly, and compiling WebAssembly is what this
+     * keyword allows -- nothing else: it does not allow `eval`, `new Function`
+     * or inline script, and the engine's files are this site's own, served
+     * from `/ocr/`. No origin is added anywhere, and `connect-src` is
+     * untouched: the language data is fetched from this site too.
      */
     'script-src': development
-      ? ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://apis.google.com']
-      : ["'self'", THEME_SCRIPT_HASH, 'https://apis.google.com'],
+      ? ["'self'", "'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'", 'https://apis.google.com']
+      : ["'self'", THEME_SCRIPT_HASH, "'wasm-unsafe-eval'", 'https://apis.google.com'],
     // No fonts.googleapis.com and no fonts.gstatic.com: the three families are
     // self-hosted as of 2026-08-30 (see the typefaces block in src/index.css),
     // so both origins came out of the policy. Putting either back means a

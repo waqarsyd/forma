@@ -17,6 +17,9 @@ import {
   SUPPORTED_PAGE_SIZES,
   DEFAULT_UNIT,
   DEFAULT_PAGE_SIZE,
+  placeImage,
+  pixelBoxToUnits,
+  pageForImage,
 } from './reportGeometry';
 
 /**
@@ -333,5 +336,34 @@ describe('the status bar reads the unit table rather than restating it', () => {
           `a literal is right for one unit and silently wrong for the rest.`
       ).not.toMatch(new RegExp(`\\b${perInch}\\s*/\\s*in`));
     }
+  });
+});
+
+/*
+ * OCR's page images (2026-11-01). A rendered PDF page knows its resolution
+ * and is the whole page; a screenshot does not, and is fitted to the
+ * printable width at the margins.
+ */
+describe('placing a page image on the report page', () => {
+  const margins = { left: 50, right: 50, top: 50, bottom: 50 };
+
+  it('reads a rendered PDF page at its resolution, from the page corner', () => {
+    const at = placeImage({ width: 1530, height: 1980, dpi: 180 }, { width: 850, margins }, 'HundredthsOfAnInch');
+    expect(at).toEqual({ unitsPerPixel: 100 / 180, left: 0, top: 0 });
+    // Two inches in is two inches in, margins included.
+    expect(pixelBoxToUnits({ x0: 360, y0: 180, x1: 540, y1: 216 }, at)).toEqual({ x: 200, y: 100, w: 100, h: 20 });
+    expect(placeImage({ width: 10, height: 10, dpi: 254 }, { width: 2159, margins }, 'TenthsOfAMillimeter').unitsPerPixel).toBe(1);
+  });
+
+  it('fits a screenshot to the printable width, from the margins', () => {
+    const at = placeImage({ width: 1500, height: 900, dpi: null }, { width: 850, margins }, 'HundredthsOfAnInch');
+    expect(at).toEqual({ unitsPerPixel: 0.5, left: 50, top: 50 });
+    expect(pixelBoxToUnits({ x0: 0, y0: 0, x1: 1500, y1: 20 }, at)).toEqual({ x: 50, y: 50, w: 750, h: 10 });
+  });
+
+  it('takes a rendered page\'s own size, and Letter for a screenshot, turned when it is wide', () => {
+    expect(pageForImage({ width: 1530, height: 1980, dpi: 180 }, 'HundredthsOfAnInch')).toEqual({ width: 850, height: 1100 });
+    expect(pageForImage({ width: 800, height: 1200, dpi: null }, 'HundredthsOfAnInch')).toEqual({ width: 850, height: 1100 });
+    expect(pageForImage({ width: 1600, height: 900, dpi: null }, 'HundredthsOfAnInch')).toEqual({ width: 1100, height: 850 });
   });
 });
