@@ -19,6 +19,9 @@
  *   kerns all the same.
  * - **One line is short only when it fits unkerned**: a line that fits its
  *   box kerned but not unkerned printed at the full line spacing (s39b, s43).
+ * - **A synthesized bold is its regular, widened**: a family with no bold face,
+ *   such as Microsoft Sans Serif, broke its bold at its regular width plus
+ *   41/2048 of an em for every character but a space (row 60, s44a).
  * - **The line spacing is a fixed ratio of the font size, per font**: Arial
  *   and Times New Roman 1.1499, Verdana 1.2153, Tahoma 1.207, Segoe UI
  *   1.3301, Calibri 1.2207, Georgia 1.1362, Courier New 1.1328, Microsoft
@@ -215,6 +218,62 @@ export function gdiKerns(font: FontSpec): boolean {
   return true;
 }
 
+/*
+ * Families with no bold face, whose bold Windows synthesizes (parity row 60):
+ * every family on the Windows Server 2019 machine DevExpress was measured on
+ * whose bold GDI+ widened every character by the same share of the em, which
+ * a drawn bold face never does. Not the Chinese, Japanese and Korean ones,
+ * such as MS Gothic and SimSun, whose bold DevExpress widened by about a
+ * sixth of that in s44b. The browser cannot tell these apart itself: given a
+ * bold of Cambria Math it measures another face's bold, and it widens no
+ * synthesized bold at all.
+ */
+const SYNTHESIZED_BOLD = new Set([
+  '3 of 9 barcode', 'algerian', 'arial unicode ms', 'baskerville old face', 'bauhaus 93',
+  'bernard mt condensed', 'blackadder itc', 'bradley hand itc', 'broadway', 'buxton sketch',
+  'cambria math', 'castellar', 'centaur', 'century', 'chiller', 'code39azaleanarrow1',
+  'code39azaleanarrow2', 'code39azaleanarrow3', 'code39azalearegular1',
+  'code39azalearegular2', 'code39azalearegular3', 'code39azaleawide1', 'code39azaleawide2',
+  'code39azaleawide3', 'colonna mt', 'curlz mt', 'edwardian script itc', 'elephant',
+  'engravers mt', 'felix titling', 'forte', 'franklin gothic book', 'freestyle script',
+  'french script mt', 'gabriola', 'gigi', 'gill sans mt condensed',
+  'gloucester mt extra condensed', 'goudy stout', 'haettenschweiler', 'harrington',
+  // Imprint MT's shadowed face, its last word escaped: Tailwind's scan of the
+  // source took the word for its utility class of that name and generated
+  // 244 bytes of CSS that nothing uses, caught by check:size.
+  'high tower text', 'impact', 'imprint mt s\u0068adow', 'informal roman', 'ink free',
+  'javanese text', 'jokerman', 'juice itc', 'kristen itc', 'kunstler script',
+  'lucida console', 'lucida sans unicode', 'maiandra gd', 'matura mt script capitals',
+  'microsoft himalaya', 'microsoft sans serif', 'microsoft yi baiti', 'mistral',
+  'modern no. 20', 'mongolian baiti', 'ms outlook', 'ms reference sans serif',
+  'ms reference specialty', 'mv boli', 'niagara engraved', 'niagara solid',
+  'ocr a extended', 'old english text mt', 'onyx', 'papyrus', 'parchment', 'playbill',
+  'poor richard', 'pristina', 'ravie', 'segoe marker', 'segoe mdl2 assets',
+  'segoe ui emoji', 'segoe ui historic', 'segoe ui symbol', 'showcard gothic',
+  'sketchflow print', 'snap itc', 'stencil', 'sylfaen', 'symbol', 'tempus sans itc',
+  'viner hand itc', 'vladimir script', 'webdings', 'wide latin', 'wingdings', 'wingdings 2',
+  'wingdings 3',
+]);
+
+/*
+ * How far a synthesized bold widens each character but a space, as a share of
+ * the em: 41/2048, GDI+'s at every size from 8 to 20pt (row 60). A space is
+ * not widened. A font designed on 1000 units widens by 20 of them, which is
+ * within a thousandth of this.
+ */
+const SYNTHESIZED_BOLD_EM = 41 / 2048;
+
+/** Whether a font's bold is synthesized, so measured as its regular widened. */
+export function synthesizedBold(font: FontSpec): boolean {
+  return font.bold && SYNTHESIZED_BOLD.has(font.family.trim().toLowerCase());
+}
+
+/** Points a synthesized bold adds to a text's regular width; 0 for any other font. */
+export function boldWideningPt(text: string, font: FontSpec): number {
+  if (!synthesizedBold(font)) return 0;
+  return [...text].filter((ch) => ch !== ' ').length * SYNTHESIZED_BOLD_EM * font.sizePt;
+}
+
 /** The CSS font string a measuring canvas uses: MEASURE_PX pixels. */
 function measureFont(font: FontSpec): string {
   return `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${MEASURE_PX}px "${font.family}"`;
@@ -230,6 +289,8 @@ function measureFont(font: FontSpec): string {
  * It breaks lines by widths kerned as GDI kerns, though DevExpress draws
  * unkerned (row 53), and answers `fitsUnkerned` from the unkerned widths it
  * draws at (row 59). Both are measured at MEASURE_PX and scaled to the size.
+ * A synthesized bold is its regular widened (row 60): in s44a Impact Bold's
+ * line fitted from 246.92 units, GDI's kerned regular plus the widening.
  */
 export function canvasMeasurer(): MeasureText | null {
   const context = canvasContext();
@@ -238,7 +299,8 @@ export function canvasMeasurer(): MeasureText | null {
   // A width in points: at MEASURE_PX pixels an em is MEASURE_PX wide, and at
   // the font's size it is that many points.
   const widthPt = (s: string, font: FontSpec, kerned: boolean) => {
-    const css = measureFont(font);
+    const synthesized = synthesizedBold(font);
+    const css = measureFont(synthesized ? { ...font, bold: false } : font);
     const key = `${css}\u0000${kerned ? 'k' : 'u'}\u0000${s}`;
     let width = cache.get(key);
     if (width === undefined) {
@@ -247,7 +309,7 @@ export function canvasMeasurer(): MeasureText | null {
       width = context.measureText(s).width;
       cache.set(key, width);
     }
-    return (width * font.sizePt) / MEASURE_PX;
+    return (width * font.sizePt) / MEASURE_PX + boldWideningPt(s, font);
   };
   const measure: MeasureText = (text, font, maxPt) => {
     const kerned = gdiKerns(font);

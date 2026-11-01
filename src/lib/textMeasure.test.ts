@@ -6,7 +6,7 @@
  * identical lines; these cases pin the rules that made that true.
  */
 import { describe, it, expect } from 'vitest';
-import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, gdiKerns, GROW_EXTRA_PT } from './textMeasure';
+import { wrapText, lineSpacingPt, linesHeightPt, cssFont, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, GROW_EXTRA_PT } from './textMeasure';
 
 /** Every character one point wide, so widths are character counts. */
 const mono = (s: string) => s.length;
@@ -137,5 +137,35 @@ describe('the canvas measurer', () => {
     expect(face(' TAHOMA ', false, true)).toBe(false);
     // An unmeasured face is kerned, as every measured face but these is.
     expect(face('Some Font')).toBe(true);
+  });
+
+  it('knows which families have no bold face, whose bold is synthesized (row 60)', () => {
+    const bold = (family: string, isBold = true) => synthesizedBold({ family, sizePt: 20, bold: isBold, italic: false });
+    for (const family of ['Microsoft Sans Serif', 'Lucida Console', 'Impact', 'Century', 'Sylfaen', 'Cambria Math', ' microsoft SANS serif ', 'Imprint MT S\u0068adow']) {
+      expect(bold(family)).toBe(true);
+    }
+    // Regular is never synthesized; real bold faces are not on the list.
+    expect(bold('Microsoft Sans Serif', false)).toBe(false);
+    for (const family of ['Arial', 'Times New Roman', 'Verdana', 'Tahoma', 'Segoe UI', 'Calibri', 'Georgia', 'Courier New', 'Trebuchet MS', 'Consolas']) {
+      expect(bold(family)).toBe(false);
+    }
+    // s44b: MS Gothic and SimSun's bold measured otherwise, so they are left out.
+    expect(bold('MS Gothic')).toBe(false);
+    expect(bold('SimSun')).toBe(false);
+  });
+
+  it('widens a synthesized bold by 41/2048 of an em for every character but a space (row 60)', () => {
+    const mss = (sizePt: number, bold = true) => ({ family: 'Microsoft Sans Serif', sizePt, bold, italic: false });
+    const hundredths = (pt: number) => (pt / 72) * 100;
+    // GDI+ widened "AVATAR Wave To LT Yo", 16 characters and 4 spaces, by
+    // 8.8976 hundredths of an inch at 20pt and 4.0039 at 9pt.
+    expect(hundredths(boldWideningPt('AVATAR Wave To LT Yo', mss(20)))).toBeCloseTo(8.8976, 4);
+    expect(hundredths(boldWideningPt('AVATAR Wave To LT Yo', mss(9)))).toBeCloseTo(4.0039, 4);
+    // ...and "A B C D E F" by 1.3346 at 8pt: six letters, five spaces.
+    expect(hundredths(boldWideningPt('A B C D E F', mss(8)))).toBeCloseTo(1.3346, 4);
+    expect(boldWideningPt('     ', mss(20))).toBe(0);
+    // Nothing for a regular weight, or for a family with a bold face.
+    expect(boldWideningPt('AVATAR', mss(20, false))).toBe(0);
+    expect(boldWideningPt('AVATAR', { family: 'Arial', sizePt: 20, bold: true, italic: false })).toBe(0);
   });
 });
