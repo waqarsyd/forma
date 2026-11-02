@@ -33,6 +33,7 @@ import {
   MissingApiKeyError,
   MODEL_PREFERENCE,
 } from './geminiService';
+import { cacheModel, DAILY_TTL_MS, keyTag, lightModel, readDailyModel } from '../lib/modelCache';
 
 const KEY = 'test-key-not-a-real-one';
 const CATALOGUE_URL = 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200';
@@ -96,7 +97,7 @@ const probedModels = (mock: ReturnType<typeof stubNetwork>): string[] =>
 
 beforeEach(() => {
   clearCachedModel();
-  try { sessionStorage.clear(); } catch { /* jsdom always has it */ }
+  try { sessionStorage.clear(); localStorage.clear(); } catch { /* jsdom always has it */ }
 });
 
 afterEach(() => {
@@ -403,5 +404,36 @@ describe('a hung probe does not gate the others', () => {
     }));
 
     await expect(resolveModel(KEY, controller.signal)).rejects.toThrow();
+  });
+});
+
+describe('fewer requests out of a free key (2026-11-02)', () => {
+  it('probes only the curated list when one of it answers, and never reads the catalogue', async () => {
+    const mock = stubNetwork();
+    await resolveModel(KEY);
+    expect(mock.mock.calls.some(([url]) => url === CATALOGUE_URL)).toBe(false);
+    expect([...probedModels(mock)].sort()).toEqual([...MODEL_PREFERENCE].sort());
+  });
+
+  it('remembers the choice for a day, for the same key only, across tabs', async () => {
+    stubNetwork();
+    const chosen = await resolveModel(KEY);
+    sessionStorage.clear();
+    expect(readDailyModel(KEY)).toBe(chosen);
+    expect(readDailyModel('another-key')).toBeNull();
+    expect(readDailyModel(KEY, Date.now() + DAILY_TTL_MS + 1000)).toBeNull();
+    expect(localStorage.getItem('geminiModel:day')).not.toContain(KEY);
+    clearCachedModel();
+    expect(readDailyModel(KEY)).toBeNull();
+  });
+
+  it('sends the small calls to a Flash-Lite the key can call, and to the main model when there is none', () => {
+    cacheModel('gemini-flash-latest', ['gemini-flash-latest', 'gemini-flash-lite-latest']);
+    expect(lightModel('gemini-flash-latest')).toBe('gemini-flash-lite-latest');
+    cacheModel('gemini-flash-latest', ['gemini-flash-latest', 'gemini-2.0-flash']);
+    expect(lightModel('gemini-flash-latest')).toBe('gemini-flash-latest');
+    expect(keyTag(KEY)).toMatch(/^[0-9a-f]{8}$/);
+    expect(keyTag(KEY)).toBe(keyTag(KEY));
+    expect(keyTag(`${KEY}x`)).not.toBe(keyTag(KEY));
   });
 });

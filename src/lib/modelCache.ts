@@ -92,9 +92,65 @@ export function clearCachedModel(): void {
   try {
     sessionStorage.removeItem(MODEL_CACHE_KEY);
     sessionStorage.removeItem(MODEL_SET_CACHE_KEY);
+    localStorage.removeItem(DAILY_KEY);
   } catch {
     /* nothing to clear */
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * A day's choice, across tabs (2026-11-02)
+ *
+ * The session cache above made every new tab probe every model again, a
+ * request on each out of the per-model daily allowances a free key lives on.
+ * The choice now also lasts a day in localStorage, for the same key only: it
+ * is stored with a 32-bit fingerprint of the key (FNV-1a), which tells two
+ * keys apart and cannot give the key back. Clearing the cache clears it too.
+ * ------------------------------------------------------------------ */
+
+const DAILY_KEY = 'geminiModel:day';
+export const DAILY_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** A key's fingerprint: FNV-1a over its characters, as eight hex digits. */
+export function keyTag(apiKey: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < apiKey.length; i++) {
+    h ^= apiKey.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+export function cacheDailyModel(apiKey: string, model: string, usable: string[], now: number = Date.now()): void {
+  try {
+    localStorage.setItem(DAILY_KEY, JSON.stringify({ tag: keyTag(apiKey.trim()), model, usable, at: now }));
+  } catch {
+    /* storage disabled: the session cache still applies */
+  }
+}
+
+/** The model chosen for this key in the last day, made this page's choice too; null otherwise. */
+export function readDailyModel(apiKey: string, now: number = Date.now()): string | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DAILY_KEY) || 'null') as { tag?: string; model?: string; usable?: unknown; at?: number } | null;
+    if (!saved || saved.tag !== keyTag(apiKey.trim()) || typeof saved.model !== 'string' || typeof saved.at !== 'number' || now - saved.at > DAILY_TTL_MS) return null;
+    const usable = Array.isArray(saved.usable) && saved.usable.every((m) => typeof m === 'string') ? (saved.usable as string[]) : [saved.model];
+    cacheModel(saved.model, usable);
+    return saved.model;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The model for a small call (the chat turn, a clarification, an expression,
+ * test data): a Flash-Lite this key can call, when the probe found one, else
+ * `fallback` (2026-11-02). Each model has its own free daily allowance, so the
+ * small calls drawing on Flash-Lite's leaves the main model's for reports.
+ */
+export function lightModel(fallback: string): string {
+  const set = readCachedModelSet();
+  return set?.find((m) => /flash-lite/i.test(m)) ?? fallback;
 }
 
 /* ------------------------------------------------------------------ *

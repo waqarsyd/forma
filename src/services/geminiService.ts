@@ -1,12 +1,15 @@
 import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
-import { classifyGeminiError, isQuotaExhausted, parseRetryDelayMs } from "../lib/geminiErrors";
+import { classifyGeminiError, isQuotaExhausted, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
 import { parseAnalysisResponse } from "../lib/analysisResponse";
 import {
   cacheModel,
+  cacheDailyModel,
   readCachedModel,
   readCachedModelSet,
+  readDailyModel,
   clearCachedModel,
+  lightModel,
   noteModelOverloaded,
   startingModel,
 } from "../lib/modelCache";
@@ -566,11 +569,12 @@ async function probeModel(model: string, apiKey: string, signal?: AbortSignal): 
 }
 
 /**
- * Pick a model this key can actually call. Cached per session, so the probing
- * cost is paid once rather than per generation.
+ * Pick a model this key can actually call. Cached per session, and since
+ * 2026-11-02 for a day across tabs for the same key (`readDailyModel`), so the
+ * probing cost is paid once a day rather than once a tab.
  */
 export async function resolveModel(apiKey: string, signal?: AbortSignal): Promise<string> {
-  const cached = readCachedModel();
+  const cached = readCachedModel() ?? readDailyModel(apiKey);
   if (cached) return cached;
   if (signal?.aborted) throw abortError();
 
@@ -582,22 +586,23 @@ export async function resolveModel(apiKey: string, signal?: AbortSignal): Promis
   // matters, and preference order is still honoured when reading the results.
   const started = Date.now();
 
-  // Catalogue first, so a key that can reach nothing on the curated list still
-  // has somewhere to go. It runs before the probes rather than beside them
-  // because its results decide what to probe; it is one request and it can only
-  // add candidates, never remove them.
-  const discovered = await discoverModels(apiKey, signal);
-  const candidates = mergeCandidates(MODEL_PREFERENCE, discovered);
-  if (candidates.length > MODEL_PREFERENCE.length) {
-    console.debug(
-      `Catalogue added ${candidates.length - MODEL_PREFERENCE.length} model(s) the curated list does not know: ` +
-      candidates.slice(MODEL_PREFERENCE.length).join(", ")
-    );
+  // The curated list first, and the catalogue only when none of it answers
+  // (2026-11-02). Probing every model the catalogue named spent a request on
+  // each, every new tab, out of the per-model daily allowances a free key
+  // lives on, and the owner's key ran out before a report could be tested.
+  // The catalogue still gives a key that can reach nothing curated somewhere
+  // to go; it can only add candidates, never remove them.
+  let candidates = [...MODEL_PREFERENCE];
+  let verdicts = await Promise.all(candidates.map((candidate) => probeModel(candidate, apiKey, signal)));
+  if (!verdicts.includes("ok")) {
+    const discovered = await discoverModels(apiKey, signal);
+    const extra = mergeCandidates(MODEL_PREFERENCE, discovered).slice(MODEL_PREFERENCE.length);
+    if (extra.length) {
+      console.debug(`Catalogue added ${extra.length} model(s) the curated list does not know: ${extra.join(", ")}`);
+      verdicts = [...verdicts, ...(await Promise.all(extra.map((candidate) => probeModel(candidate, apiKey, signal))))];
+      candidates = [...candidates, ...extra];
+    }
   }
-
-  const verdicts = await Promise.all(
-    candidates.map((candidate) => probeModel(candidate, apiKey, signal))
-  );
   console.debug(`Model probing finished in ${Date.now() - started}ms (${candidates.length} candidates).`);
 
   const usable = candidates.filter((_, i) => verdicts[i] === "ok");
@@ -608,6 +613,7 @@ export async function resolveModel(apiKey: string, signal?: AbortSignal): Promis
       (usable.length > 1 ? ` (${usable.length - 1} more available as fallbacks: ${usable.slice(1).join(", ")})` : "")
     );
     cacheModel(winner, usable);
+    cacheDailyModel(apiKey, winner, usable);
     return winner;
   }
 
@@ -941,7 +947,10 @@ export async function chatReply(
    * the fallback is skipped entirely in that case.
    */
   const pinnedModel = Boolean(config?.modelName?.trim());
-  let activeModel = config?.modelName?.trim() || (await resolveModel(currentApiKey, signal));
+  // A Flash-Lite when this key has one (2026-11-02): the chat turn is a short
+  // reply and a yes or no, and its own model's free allowance spares the one
+  // reports are generated on.
+  let activeModel = config?.modelName?.trim() || lightModel(await resolveModel(currentApiKey, signal));
   // Skip a model that was refused for capacity moments ago. Without this every
   // turn during an outage re-discovers the same 503 at the cost of two retries
   // and ~6s of backoff before falling back — which is what the console showed.
@@ -1093,8 +1102,9 @@ ${transcript}`,
        * same thing. Observed on a free-tier key at five requests per minute,
        * where three "Try again" clicks bought three more 429s.
        */
-      if (isQuotaExhausted(err) && !pinnedModel) {
-        noteModelOverloaded(activeModel, Date.now(), parseRetryDelayMs(err) ?? undefined);
+      const quota = isQuotaExhausted(err) && !pinnedModel;
+      if (quota) {
+        noteModelOverloaded(activeModel, Date.now(), quotaWaitMs(err));
       }
 
       /*
@@ -1111,11 +1121,13 @@ ${transcript}`,
        * Bounded by construction: each exhausted model is recorded, `find`
        * skips them, and the turn throws once nothing is left.
        */
-      if (isOverloaded(err) && !pinnedModel) {
+      // A spent quota moves on too (2026-11-02), as the generation path's does:
+      // each model's free allowance is its own.
+      if ((isOverloaded(err) || quota) && !pinnedModel) {
         overloadedModels.push(activeModel);
         // Remembered across turns, briefly, so the next message does not start
         // by rediscovering this. See the cooldown note in `modelCache.ts`.
-        noteModelOverloaded(activeModel);
+        if (!quota) noteModelOverloaded(activeModel);
         // The probed set when there is one. A turn that resolved its model
         // before the set was cached falls back to the raw preference list,
         // exactly as the generation path does.
@@ -1410,7 +1422,7 @@ export async function clarifyReportRequest(
   if (!currentApiKey) throw new MissingApiKeyError();
 
   try {
-    const model = config?.modelName?.trim() || startingModel(await resolveModel(currentApiKey, signal), readCachedModelSet());
+    const model = config?.modelName?.trim() || startingModel(lightModel(await resolveModel(currentApiKey, signal)), readCachedModelSet());
     const { Type } = await loadGenAI();
     const ai = await clientFor(config, currentApiKey);
 
@@ -1508,7 +1520,7 @@ export async function promptToExpression(
   const currentApiKey = config?.customApiKey?.trim();
   if (!currentApiKey) throw new MissingApiKeyError();
 
-  const model = config?.modelName?.trim() || startingModel(await resolveModel(currentApiKey, signal), readCachedModelSet());
+  const model = config?.modelName?.trim() || startingModel(lightModel(await resolveModel(currentApiKey, signal)), readCachedModelSet());
   const { Type } = await loadGenAI();
   const ai = await clientFor(config, currentApiKey);
 
@@ -1600,7 +1612,7 @@ export async function generateTestData(
   const currentApiKey = config?.customApiKey?.trim();
   if (!currentApiKey) throw new MissingApiKeyError();
 
-  const model = config?.modelName?.trim() || startingModel(await resolveModel(currentApiKey, signal), readCachedModelSet());
+  const model = config?.modelName?.trim() || startingModel(lightModel(await resolveModel(currentApiKey, signal)), readCachedModelSet());
   const { Type } = await loadGenAI();
   const ai = await clientFor(config, currentApiKey);
 
@@ -1671,7 +1683,16 @@ export interface GenerationOptions {
    * is added and the prompt is as it was.
    */
   remembered?: string;
+  /** Set on the one repeat of a request cut off by its thinking, so it is not repeated again. */
+  thinkingCapped?: boolean;
 }
+
+/** A generation's output limit, which thinking shares (Gemini 2.5). */
+const GENERATION_OUTPUT_LIMIT = 65536;
+/** Thinking past this share of the limit, on a cut-off answer, is what the capped repeat is for. */
+const CUT_OFF_THINKING_SHARE = 0.5;
+/** The cap on that repeat: a quarter of the limit, leaving the rest to the answer. */
+export const CAPPED_THINKING_BUDGET = 16384;
 
 export async function analyzeReportDesign(
   prompt: string,
@@ -2333,19 +2354,23 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       // for exactly that long so the next request starts elsewhere rather than
       // spending one to be told again — see the chat path for the free-tier
       // arithmetic that makes a wasted request expensive.
-      if (isQuotaExhausted(error) && !pinnedModel) {
-        noteModelOverloaded(selectedModel, Date.now(), parseRetryDelayMs(error) ?? undefined);
+      const quota = isQuotaExhausted(error) && !pinnedModel;
+      if (quota) {
+        noteModelOverloaded(selectedModel, Date.now(), quotaWaitMs(error));
       }
 
       // A model that loops on this page after its retries is treated like one
       // that stays overloaded: the next model this key can call is a different
-      // model, and the loop is a property of this one on this input.
-      if (isOverloaded(error) || runaway) {
+      // model, and the loop is a property of this one on this input. So, since
+      // 2026-11-02, is one whose quota is spent: each Gemini model has its own
+      // free allowance, and the owner's key ran out on gemini-2.5-flash while
+      // the others it could call had theirs untouched.
+      if (isOverloaded(error) || runaway || quota) {
         overloadedModels.push(selectedModel);
         // Also remembered briefly across requests, so the next generation does
         // not open by spending its retries on a model already known to be full.
-        // A loop is not capacity, so it is not remembered.
-        if (!runaway) noteModelOverloaded(selectedModel);
+        // A loop is not capacity, so it is not remembered; a quota already was.
+        if (!runaway && !quota) noteModelOverloaded(selectedModel);
         // The probed set when we have it. A tab that resolved its model before
         // this set was cached falls back to the raw preference list; if that
         // picks something the key cannot call, the 404 branch below re-detects
@@ -2358,8 +2383,10 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
             runaway
               ? `Model "${selectedModel}" kept repeating itself after ${MAX_OUTPUT_RETRIES} retries. ` +
                 `Falling back to "${next}" for this request.`
-              : `Model "${selectedModel}" stayed overloaded after ${MAX_OVERLOAD_RETRIES} retries. ` +
-                `Falling back to "${next}" for this request.`
+              : quota
+                ? `Model "${selectedModel}" is out of quota (${quotaKind(error)}). Falling back to "${next}", whose allowance is its own.`
+                : `Model "${selectedModel}" stayed overloaded after ${MAX_OVERLOAD_RETRIES} retries. ` +
+                  `Falling back to "${next}" for this request.`
           );
           selectedModel = next;
           overloadAttempts = 0;
@@ -2375,6 +2402,9 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
             `describing the report, or try a simpler source image.`
           );
         }
+
+        // Every model this key can use is out of quota: say which limit, and when.
+        if (quota) throw classifyGeminiError(error);
 
         // Every model this key can use is busy. Say so, and name them — "try
         // again" reads very differently when the user can see it was not one
@@ -2829,6 +2859,28 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       // benchmark runner writes it beside the run, and 120 characters of a
       // 51,813-character failure was not enough to see where it went wrong.
       if (e instanceof Error) (e as Error & { rawResponse?: string }).rawResponse = rawText;
+    }
+    /*
+     * Cut off because thinking took the output limit (2026-11-02). Measured on
+     * the owner's bilingual certificate: 51,930 tokens of thinking and 13,490
+     * of answer, 65,420 of the 65,536 allowed, and the layout ended mid-element.
+     * Asking again unchanged would think as long again. So once, and only when
+     * thinking took more than half the limit and the user set no budget of
+     * their own, the request is repeated with thinking capped, which leaves the
+     * answer the room it ran out of. A run that finished is never touched, so
+     * this changes nothing the fidelity benchmark measures on its cases.
+     */
+    const thought = response.usage?.thinking ?? 0;
+    if (
+      response.finishReason === 'MAX_TOKENS' &&
+      thought > CUT_OFF_THINKING_SHARE * GENERATION_OUTPUT_LIMIT &&
+      !options?.thinkingCapped &&
+      typeof config?.thinkingBudget !== 'number' &&
+      !compatEndpoint(config) &&
+      !signal?.aborted
+    ) {
+      console.warn(`The report was cut off after ${thought} tokens of thinking; asking once more with thinking capped at ${CAPPED_THINKING_BUDGET}.`);
+      return analyzeReportDesign(prompt, imageParts, { ...config!, thinkingBudget: CAPPED_THINKING_BUDGET }, previousState, signal, onProgress, { ...options, thinkingCapped: true });
     }
     throw e;
   }

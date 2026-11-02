@@ -267,14 +267,25 @@ Checked in the owner's Chrome, with no key:
 Its first layout used the dialog's note style without the icon its grid
 expects, and every word wrapped onto its own line. Each note now carries
 one.
+## Gemini quota savings (milestone 5, 2026-11-02)
+
+A free Gemini key now goes further. The five changes are recorded in
+gemini.md, under *A generation can spend its whole output limit thinking*:
+- the curated models are probed before the catalogue;
+- the choice is remembered a day for the same key;
+- a spent quota moves on to the next model, with a message that says it was
+  the daily allowance and when it resets;
+- the small calls go to Flash-Lite;
+- a plain build request skips the chat turn.
+An answer cut off by its own thinking, the owner's certificate, is asked
+once more with thinking capped. All of it is covered by the generation and
+model-resolution tests against a stubbed network. None of it has been run
+against the owner's key, whose quota was spent for the day.
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded
 here as it is built:
 
-1. **Gemini quota savings.** Change model on a quota error, Flash-Lite for the
-   small calls, remember the chosen model across tabs, skip the chat turn for
-   a plain build request, and cap thinking.
-2. **A neural model, later.** Rendered images of the reports paired with their
+1. **A neural model, later.** Rendered images of the reports paired with their
    skeletons, for fine-tuning a small open vision model on free GPU time,
    which needs an account only the owner can create.

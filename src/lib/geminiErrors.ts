@@ -101,6 +101,36 @@ export function parseRetryDelayMs(error: any): number | null {
 }
 
 /**
+ * Which limit a 429 is (2026-11-02): the day's allowance or the minute's, by
+ * the quota Google names in it ("GenerateRequestsPerDayPerProjectPerModel").
+ * Until then every quota error said "per minute", which on a spent daily
+ * allowance sent the owner back to try again a minute later, and again.
+ */
+export function quotaKind(error: any): 'daily' | 'per-minute' | 'unknown' {
+  const text = `${error?.message || ''} ${JSON.stringify(error?.details ?? '')}`;
+  if (/PerDay|per day|requests?_per_day|\bdaily\b/i.test(text)) return 'daily';
+  if (/PerMinute|per minute|requests?_per_minute/i.test(text)) return 'per-minute';
+  return parseRetryDelayMs(error) ? 'per-minute' : 'unknown';
+}
+
+/** Milliseconds until midnight Pacific time, when Google resets daily quotas. */
+export function msUntilPacificMidnight(now: Date = new Date()): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour12: false, hour: 'numeric', minute: 'numeric', second: 'numeric' })
+      .formatToParts(now)
+      .map((p) => [p.type, Number(p.value)]),
+  ) as Record<string, number>;
+  const elapsed = ((parts.hour % 24) * 3600 + parts.minute * 60 + parts.second) * 1000;
+  return 24 * 3600 * 1000 - elapsed;
+}
+
+/** How long a model whose quota is spent should be left alone: Google's stated wait, or until the daily reset. */
+export function quotaWaitMs(error: any, now: Date = new Date()): number | undefined {
+  if (quotaKind(error) === 'daily') return msUntilPacificMidnight(now);
+  return parseRetryDelayMs(error) ?? undefined;
+}
+
+/**
  * Map an SDK error onto a user-facing one.
  *
  * Cancellation is **not** handled here — an aborted request is not a failure,
@@ -122,6 +152,15 @@ export function classifyGeminiError(error: any): Error {
      * distinguishing from a spent billing allowance: the free tier is five
      * requests a minute, which one chat turn with retries can reach on its own.
      */
+    if (quotaKind(error) === 'daily') {
+      const hours = Math.max(1, Math.round(msUntilPacificMidnight() / 3600000));
+      const model = /model:\s*([\w.-]+)/i.exec(message)?.[1];
+      return new Error(
+        `This key's free daily allowance${model ? ` for ${model}` : ''} is used up, and Forma tried the other models it can use. ` +
+          `It resets at midnight Pacific time, in about ${hours} hour${hours === 1 ? '' : 's'}. ` +
+          "Meanwhile Forma Offline designs from your words and builds from images with no key: choose it in Settings.",
+      );
+    }
     const waitMs = parseRetryDelayMs(error);
     const when = waitMs ? ` Try again in about ${Math.max(1, Math.ceil(waitMs / 1000))}s.` : '';
     return new Error(

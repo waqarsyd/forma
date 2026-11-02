@@ -600,6 +600,8 @@ function formatElapsed(ms: number): string {
  */
 const MAX_IMAGE_EDGE = 2048;
 const JPEG_QUALITY = 0.92;
+/** A message that plainly asks for a report to be built, which needs no chat turn to tell. */
+const PLAIN_BUILD = /^\s*(please\s+)?(create|build|make|design|generate|produce|draft|prepare)\s+(me\s+)?(a|an|the|my|our)?\s*[\p{L}\p{N} ]{0,40}?\b(report|list|register|invoice|statement|ledger|summary|payslips?|labels?|catalogue)\b/iu;
 /** A message asking Forma to remember something; the full rule is REMEMBER in lib/memory.ts, which this mirrors. */
 const REMEMBER_WORDS = /^\s*(please\s+)?(remember|always|from now on|never|i\s+(always\s+)?prefer|by default|note that)\b/i;
 /** Below this, re-encoding is not worth the quality risk. */
@@ -3676,6 +3678,13 @@ export default function App() {
     // unambiguous request to build something, so it skips the chat turn.
     /** A report asked for in words, with no attachment and no report yet: Prompt-to-Report. */
     let fromDescription = false;
+    // A plain "create a … report" with no report open skips the chat turn
+    // (2026-11-02): it is a report request in any reading, and the turn spent
+    // one request of the key's free allowance saying so.
+    if (!result && !isGenerationTurn(currentPreviews.length, currentTexts.length) && PLAIN_BUILD.test(currentPrompt)) {
+      await describeFromChat(currentPrompt);
+      return;
+    }
     if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
       setIsChatting(true);
       setStreamingReply('');

@@ -12,7 +12,7 @@
  * No fake timers: neither path backs off, because the server was not busy.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { analyzeReportDesign, type ReportConfig } from './geminiService';
+import { analyzeReportDesign, CAPPED_THINKING_BUDGET, type ReportConfig } from './geminiService';
 import { resetGenAIForTests } from '../lib/genai';
 import { cacheModel, clearCachedModel } from '../lib/modelCache';
 import { RUNAWAY_WINDOW } from '../lib/runawayOutput';
@@ -183,5 +183,53 @@ describe('what the generation prompt says about text read by OCR', () => {
     expect(body).toContain('Text READ BY OCR is a third kind');
     expect(body).toContain('write one XRTable with those columns and rows');
     expect(body).toContain('A string marked LOW CONFIDENCE may be misread');
+  });
+});
+
+/** Gemini's own 429 for a spent daily allowance, as it names the quota. */
+const dailyQuota = (model: string) => () =>
+  failure(429, `Quota exceeded for quota metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', limit: 20, model: ${model}`);
+
+/** An answer cut off because thinking took the output limit: the owner's certificate, 2026-11-02. */
+const thoughtOut = () =>
+  streamOf(
+    `data: ${JSON.stringify({
+      candidates: [{ content: { parts: [{ text: '{"markdown":"# Cert' }], role: 'model' }, finishReason: 'MAX_TOKENS' }],
+      usageMetadata: { promptTokenCount: 16341, candidatesTokenCount: 13490, thoughtsTokenCount: 51930, totalTokenCount: 81761 },
+    })}\r\n\r\n`,
+  );
+
+describe('a generation whose model is out of its free daily allowance (2026-11-02)', () => {
+  it('moves to the next model the key can call, whose allowance is its own', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+    const fetchMock = stubSequence(dailyQuota('model-a'), good);
+    const result = await analyzeReportDesign('', parts, config);
+    expect(result.layout.title).toBe('Recovered');
+    const urls = urlsOf(fetchMock);
+    expect(urls[0]).toContain('model-a');
+    expect(urls[1]).toContain('model-b');
+  });
+
+  it('says it is the daily allowance, when it resets, and what works meanwhile, once every model is out', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+    stubSequence(dailyQuota('model-a'), dailyQuota('model-b'));
+    await expect(analyzeReportDesign('', parts, config)).rejects.toThrow(/daily allowance.*midnight Pacific.*Forma Offline/s);
+  });
+});
+
+describe('a generation cut off because thinking took the output limit (2026-11-02)', () => {
+  it('is asked once more with thinking capped, and succeeds', async () => {
+    const fetchMock = stubSequence(thoughtOut, good);
+    const result = await analyzeReportDesign('', parts, config);
+    expect(result.layout.title).toBe('Recovered');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const second = String((fetchMock.mock.calls[1][1] as RequestInit | undefined)?.body ?? '');
+    expect(second).toContain(`"thinkingBudget":${CAPPED_THINKING_BUDGET}`);
+  });
+
+  it('is not repeated when the user set a thinking budget of their own', async () => {
+    const fetchMock = stubSequence(thoughtOut, good);
+    await expect(analyzeReportDesign('', parts, { ...config, thinkingBudget: 2048 })).rejects.toThrow(/cut off/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

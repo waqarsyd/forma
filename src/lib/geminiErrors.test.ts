@@ -18,7 +18,7 @@
  * a working key with another working key, and hits the same wall.
  */
 import { describe, it, expect } from 'vitest';
-import { classifyGeminiError, isQuotaExhausted, parseRetryDelayMs } from './geminiErrors';
+import { classifyGeminiError, isQuotaExhausted, parseRetryDelayMs , quotaKind, quotaWaitMs, msUntilPacificMidnight } from './geminiErrors';
 
 /** Shaped like what @google/genai throws. */
 const sdkError = (status: number | string | undefined, message: string) =>
@@ -187,5 +187,29 @@ describe('classifyGeminiError', () => {
         expect(classifyGeminiError(e).message.trim().length).toBeGreaterThan(0);
       }
     });
+  });
+});
+
+describe('which quota a 429 is (2026-11-02)', () => {
+  it('tells the daily allowance from the per-minute limit by the quota Google names', () => {
+    expect(quotaKind({ status: 429, message: "Quota exceeded for quota metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier'" })).toBe('daily');
+    expect(quotaKind({ status: 429, message: 'Quota exceeded: GenerateRequestsPerMinutePerProjectPerModel-FreeTier' })).toBe('per-minute');
+    expect(quotaKind({ status: 429, message: 'Please retry in 21s.' })).toBe('per-minute');
+    expect(quotaKind({ status: 429, message: 'Resource exhausted' })).toBe('unknown');
+  });
+
+  it('counts to midnight Pacific time, when daily quotas reset', () => {
+    // 2026-11-02 is in Pacific standard time, UTC-8.
+    expect(msUntilPacificMidnight(new Date('2026-11-02T08:00:00Z'))).toBe(24 * 3600 * 1000);
+    expect(msUntilPacificMidnight(new Date('2026-11-02T20:30:00Z'))).toBe(11.5 * 3600 * 1000);
+    expect(quotaWaitMs({ status: 429, message: 'PerDay' }, new Date('2026-11-02T20:30:00Z'))).toBe(11.5 * 3600 * 1000);
+    expect(quotaWaitMs({ status: 429, message: 'Please retry in 2s.' })).toBe(2000);
+  });
+
+  it('says a spent daily allowance is daily, and what works meanwhile', () => {
+    const e = classifyGeminiError({ status: 429, message: "Quota exceeded for quota metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', model: gemini-2.5-flash" });
+    expect(e.message).toMatch(/daily allowance for gemini-2\.5-flash is used up/);
+    expect(e.message).toMatch(/midnight Pacific time, in about \d+ hours?/);
+    expect(e.message).toContain('Forma Offline');
   });
 });
