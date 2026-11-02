@@ -13,6 +13,7 @@
  * offers, and a model that reads images is listed first.
  */
 import { useState } from 'react';
+import { IconAlert, IconCheck } from './landing/icons';
 import { aiReady, DEFAULT_LOCAL_URL, OPENROUTER_URL, PROVIDER_NAMES, PROVIDERS, type AiProvider } from '../lib/aiProvider';
 import type { ReportConfig } from '../services/geminiService';
 
@@ -150,12 +151,15 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
       )}
 
       {note && (
-        <p className="wb-note-line" role="status">
+        <div className="wb-note-line" role="status"><span className="wb-ic"><IconAlert size={13} /></span><span>
           {note}
-        </p>
+        </span></div>
       )}
       {(provider === 'local' || provider === 'openrouter') && (
-        <p className="wb-note-line">{aiReady(config) ? `${PROVIDER_NAMES[provider]} is ready.` : `${PROVIDER_NAMES[provider]} needs ${provider === 'openrouter' && !config.openRouterKey?.trim() ? 'a key and ' : ''}a model.`}</p>
+        <div className={`wb-note-line ${aiReady(config) ? 'wb-ok' : 'wb-warn'}`}>
+          <span className="wb-ic">{aiReady(config) ? <IconCheck size={13} /> : <IconAlert size={13} />}</span>
+          <span>{aiReady(config) ? `${PROVIDER_NAMES[provider]} is ready.` : `${PROVIDER_NAMES[provider]} needs ${provider === 'openrouter' && !config.openRouterKey?.trim() ? 'a key and ' : ''}a model.`}</span>
+        </div>
       )}
     </div>
   );

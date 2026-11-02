@@ -227,17 +227,54 @@ Covered by tests only:
 
 Not checked against a real local model or an OpenRouter key: neither was
 available on this machine.
+## Memory (milestone 4, 2026-11-02)
+
+Forma remembers how its user works, local-first and free, after Hermes
+Agent's persistent memory (`src/lib/memory.ts`). It learns two ways:
+
+- **What the user says.** A message that starts "remember", "always", "from
+  now on", "never", "I prefer" or "by default" is kept as a memory, never
+  designed or sent to a model. That works with or without a key. Its words
+  are read for hints Forma's own model can apply: a paper, an orientation, a
+  face, and the size of titles, captions, values or totals ("titles 14pt").
+  The reply says what will be applied.
+- **What the user's reports show.** Each report kept, by Export .repx or
+  Save, leaves its style and no word of it: paper, orientation, face, and
+  the size of each role. That is the skeleton's rule applied to the user's
+  own reports. The newest 30 are kept, and a style is learned from two.
+
+Both are used on the next report:
+- Forma's own model takes the paper, orientation, face and sizes as its
+  preferences. What the user said wins over what their reports show, and
+  newer over older.
+- An AI provider is told them as the user's standing preferences
+  (`instructionsOf`), as a block of their own placed just before the
+  request's instructions, so the request wins. With nothing remembered,
+  nothing is added and the prompt is exactly as before.
+
+Settings has a Memory section (`MemorySettings.tsx`, loaded with the
+dialog). It shows each memory, to switch off, change or forget; a box to
+add one; what the kept reports have taught; a switch to stop learning from
+them; and "Forget everything". It all lives in this browser's
+localStorage, under `forma.memory`.
+
+Checked in the owner's Chrome, with no key:
+- "Remember: always use A4 landscape and Tahoma" was kept, and the reply
+  said A4 paper, landscape and Tahoma would be applied;
+- the next request, "Create a stock register grouped by warehouse with
+  totals", came out on A4 landscape (11.69 × 8.27 in);
+- the Memory section showed the memory with its switch and Forget.
+Its first layout used the dialog's note style without the icon its grid
+expects, and every word wrapped onto its own line. Each note now carries
+one.
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded
 here as it is built:
 
-1. **Memory.** Preferences remembered from the chat and from edits, a
-   personal model learned from the reports a user keeps (the same
-   `learnModel`), and a panel to read, change and forget them.
-2. **Gemini quota savings.** Change model on a quota error, Flash-Lite for the
+1. **Gemini quota savings.** Change model on a quota error, Flash-Lite for the
    small calls, remember the chosen model across tabs, skip the chat turn for
    a plain build request, and cap thinking.
-3. **A neural model, later.** Rendered images of the reports paired with their
+2. **A neural model, later.** Rendered images of the reports paired with their
    skeletons, for fine-tuning a small open vision model on free GPU time,
    which needs an account only the owner can create.

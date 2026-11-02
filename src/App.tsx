@@ -148,6 +148,8 @@ const LibraryPanel = lazy(() => import('./components/LibraryPanel'));
 const OcrDialog = lazy(() => import('./components/OcrDialog'));
 // The AI provider choice (2026-11-02), in the settings dialog only.
 const ProviderSettings = lazy(() => import('./components/ProviderSettings'));
+// What Forma remembers (2026-11-02), in the settings dialog only.
+const MemorySettings = lazy(() => import('./components/MemorySettings'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -598,6 +600,8 @@ function formatElapsed(ms: number): string {
  */
 const MAX_IMAGE_EDGE = 2048;
 const JPEG_QUALITY = 0.92;
+/** A message asking Forma to remember something; the full rule is REMEMBER in lib/memory.ts, which this mirrors. */
+const REMEMBER_WORDS = /^\s*(please\s+)?(remember|always|from now on|never|i\s+(always\s+)?prefer|by default|note that)\b/i;
 /** Below this, re-encoding is not worth the quality risk. */
 const REENCODE_THRESHOLD_BYTES = 1_200_000;
 
@@ -2932,8 +2936,18 @@ export default function App() {
    */
   const revealSaveFailure = () => setRailPanel('review');
 
+  /** A report the user keeps teaches the memory its style, never its words (lib/memory.ts). */
+  const rememberKept = (repx: string | undefined) => {
+    if (!repx) return;
+    void import('./lib/memory').then(m => {
+      const style = m.keptStyleOf(repx);
+      if (style) m.writeMemory(m.rememberKept(m.readMemory(), style));
+    }).catch(() => undefined);
+  };
+
   const handleSaveReport = async () => {
     if (!result && messages.length === 0) return;
+    rememberKept(result?.repxContent);
     const reportId = Date.now().toString();
     const ts = Date.now();
     // Saving makes this the open project, so the list marks the row it just
@@ -3285,6 +3299,9 @@ export default function App() {
         }
       }
 
+      // The user's remembered preferences (lib/memory.ts), as their own block
+      // ahead of the request, never mixed into the words they typed.
+      const remembered = await import('./lib/memory').then(m => m.instructionsOf(m.readMemory())).catch(() => '');
       let response = await analyzeReportDesign(
         // Passed through empty when the user typed nothing. It used to become
         // "Generate a professional DevExpress report layout based on these
@@ -3296,7 +3313,7 @@ export default function App() {
         result ? { layout: result.layout, repxContent: result.repxContent, houseStyle } : undefined,
         signal,
         handleStreamProgress,
-        describeRequest ? { description: describeRequest } : undefined,
+        { ...(describeRequest ? { description: describeRequest } : {}), remembered },
       );
 
       if (signal.aborted) {
@@ -3531,7 +3548,9 @@ export default function App() {
       const fields = request.dataSchema
         ? parseDataSource(request.dataSchema).fields.map(f => ({ name: f.name, type: f.type === 'string' ? ('text' as const) : f.type }))
         : undefined;
-      const design = offline.generateOffline(await loadFormaModel(), { description: request.description || message, fields });
+      // What the user asked Forma to remember, and what their kept reports show.
+      const { readMemory, preferencesOf } = await import('./lib/memory');
+      const design = offline.generateOffline(await loadFormaModel(), { description: request.description || message, fields, preferences: preferencesOf(readMemory()) });
       const newResult: DesignResult = {
         content: design.markdown,
         timestamp: new Date(),
@@ -3577,6 +3596,19 @@ export default function App() {
 
     if (previews.length === 0 && attachmentTexts.length === 0 && !promptText) {
       setError('Please provide at least an image, PDF, or a text description.');
+      return;
+    }
+
+    // "Remember: always use A4" is kept, not designed or sent (2026-11-02,
+    // lib/memory.ts), whichever AI answers and with none.
+    if (previews.length === 0 && attachmentTexts.length === 0 && REMEMBER_WORDS.test(promptText)) {
+      setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: promptText }]);
+      setPrompt('');
+      const memory = await import('./lib/memory');
+      const kept = memory.memoryFrom(promptText);
+      const state = memory.readMemory();
+      memory.writeMemory({ ...state, memories: [...state.memories, kept] });
+      setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: memory.rememberedReply(kept) }]);
       return;
     }
 
@@ -3929,6 +3961,7 @@ export default function App() {
   const downloadDesign = () => {
     if (!result) return;
     if (blockedByInvalidRepx()) return;
+    rememberKept(result.repxContent);
     const element = document.createElement("a");
     const file = new Blob([result.repxContent || result.content], { type: result.repxContent ? 'application/xml' : 'text/plain' });
     element.href = URL.createObjectURL(file);
@@ -5227,6 +5260,7 @@ export default function App() {
               <div className="wb-modal-col">
               <Suspense fallback={null}>
                 <ProviderSettings config={config} onChange={(changes) => setConfig(prev => ({ ...prev, ...changes }))} />
+                <MemorySettings />
               </Suspense>
               <div className="wb-fset">
                 <div className="wb-eyebrow"><b>key</b>Your Gemini key<span className="wb-fade" /></div>

@@ -43,7 +43,7 @@ export interface OfflineRequest {
   /** A pasted schema's fields, which win over any the words list. */
   fields?: OfflineField[];
   /** Remembered preferences (the memory feature): these win over the pattern. */
-  preferences?: { paper?: string; landscape?: boolean; fontFamily?: string };
+  preferences?: { paper?: string; landscape?: boolean; fontFamily?: string; sizes?: Partial<Record<'title' | 'caption' | 'value' | 'total', number>> };
 }
 
 export interface OfflineDesign {
@@ -220,11 +220,15 @@ interface Style {
   page: { size: number; bold: boolean };
 }
 
-function styleOf(model: FormaModel, family?: string): Style {
+function styleOf(model: FormaModel, prefs?: OfflineRequest['preferences']): Style {
   const r = model.style.roles;
-  const role = (k: keyof typeof r, size: number, bold: boolean) => ({ size: r[k]?.size ?? size, bold: r[k] ? r[k]!.bold >= 0.5 : bold });
+  // A remembered size (memory.ts) wins over the house style's.
+  const role = (k: keyof typeof r, size: number, bold: boolean) => ({
+    size: prefs?.sizes?.[k as 'title'] ?? r[k]?.size ?? size,
+    bold: r[k] ? r[k]!.bold >= 0.5 : bold,
+  });
   return {
-    family: family || r.value?.family || model.style.fonts[0]?.family || 'Arial',
+    family: prefs?.fontFamily || r.value?.family || model.style.fonts[0]?.family || 'Arial',
     title: role('title', 14, true),
     caption: role('caption', 9, true),
     value: role('value', 8, false),
@@ -287,7 +291,7 @@ export function generateOffline(model: FormaModel, request: OfflineRequest): Off
     label: reading.label || undefined,
     columns: lineFields.length,
   })[0];
-  const style = styleOf(model, request.preferences?.fontFamily);
+  const style = styleOf(model, request.preferences);
   const paper = request.preferences?.paper ?? archetype.skeleton.paper;
   const landscape = request.preferences?.landscape ?? reading.landscape ?? (lineFields.length > 7 ? true : archetype.skeleton.landscape);
   const page = pageOf(paper, landscape, { width: archetype.skeleton.width, height: archetype.skeleton.height });

@@ -95,7 +95,20 @@ const BUDGETS = [
   // 655_000 puts it at 93.7%. Every landing-page visitor pays for this chunk,
   // so the next real cut belongs here: the audit, or the Preview engine
   // behind it, deferred the way geminiService was.
-  { prefix: 'index-', ext: '.js', max: 655_000, note: 'eager entry chunk + the genai chunk' },
+  //
+  // Raised to 696_000 on 2026-11-02, at 654,018 B (99.9%) without tripping,
+  // for Forma's own model and what came with it (docs/proposals/own-model.md):
+  // 649,394 -> 654,018, +4,624 B over the day.
+  //   +1,682  the chat box's offline branch, designOffline, which has to be
+  //           in App.tsx because it is the send handler's
+  //   +1,713  the provider gate (aiReady), its settings kept and read at
+  //           start-up, and the lazy settings panels registered
+  //   +1,229  memory: a "remember" message kept, kept reports' style
+  //           recorded, remembered preferences passed to a generation
+  // Each feature's body (the generator, the model, the adapter, the panels,
+  // memory) is in lazy chunks; these are the call sites. 696_000 is 94.0%,
+  // the band this file keeps, and the cut named above is still owed.
+  { prefix: 'index-', ext: '.js', max: 696_000, note: 'eager entry chunk + the genai chunk' },
   /*
    * The generation service, lazy as of 2026-09-04.
    *
@@ -383,8 +396,17 @@ const BUDGETS = [
  * in the build are not covered at all. A loose total would leave 164 kB guarded by
  * nothing. If moving this number every few days becomes tiresome, the fix is
  * per-chunk budgets for the route chunks, not more headroom here.
+ *
+ * Raised to 5,680,000 on 2026-11-02, at 5,336,452 B (99.7%) without tripping:
+ * +335,067 since the 5,001,385 measured on 2026-09-06, across eight weeks of the
+ * parity programme's exporters and the OCR glue, not attributed here, and on
+ * this day the lazy chunks of Forma's own model (the offline generator, the
+ * provider adapter and the Settings panels, memory) and the PDF/A writer, plus
+ * the entry chunk's +4,624 itemised on its own cap above. The fonts and the
+ * model themselves are budgeted apart, below. 5,680,000 is 94.0%; per-chunk
+ * caps for the route chunks are still the better fix this paragraph names.
  */
-const TOTAL_MAX = 5_350_000;
+const TOTAL_MAX = 5_680_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);

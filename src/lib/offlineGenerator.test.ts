@@ -95,6 +95,10 @@ describe('generateOffline', () => {
     expect(remembered.repx).not.toMatch(/PaperKind=/);
     expect(remembered.repx).toMatch(/Landscape="true"/);
     expect(remembered.repx).toMatch(/PageWidth="1100" PageHeight="850"/);
+    // Remembered sizes (memory.ts) win over the house style's.
+    const sized = generateOffline(model, { description: 'a stock register', preferences: { fontFamily: 'Tahoma', sizes: { title: 16, value: 9 } } });
+    expect(sized.repx).toContain('Font="Tahoma, 16pt');
+    expect(sized.repx).toContain('Font="Tahoma, 9pt"');
   });
 
   it('starts a named kind of report from its usual columns, joined by what the words add', () => {

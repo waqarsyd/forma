@@ -1665,6 +1665,12 @@ Return exactly ${wanted} rows. Each row is an array of ${names.length} values IN
  */
 export interface GenerationOptions {
   description?: ReportDescriptionRequest;
+  /**
+   * The user's remembered preferences (2026-11-02, lib/memory.ts), placed just
+   * before their instructions so that what they ask now wins. Empty, nothing
+   * is added and the prompt is as it was.
+   */
+  remembered?: string;
 }
 
 export async function analyzeReportDesign(
@@ -2131,7 +2137,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
           - LOCATIONS AND SIZES: Make **absolute sure** that components do not overlap incorrectly. Calculate the X and Y bounds correctly. LocationFloat expects X,Y and SizeF expects Width,Height. Do NOT add spaces after the comma.
           - PREVIEW MOCKUP ACCURACY: In the JSON \`layout\`, represent every grid as ONE \`"table"\` element with a populated \`rows\`/\`cells\` array, as described under "TABLES / GRIDS IN THE LAYOUT" above. (Earlier revisions asked for grids to be decomposed into one \`"label"\` per cell because the preview could not draw real tables. It can now, so emit the real structure — it is both more accurate and far less error-prone than hand-computing every cell coordinate.)
 
-          ${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent), fromDescription: Boolean(description) })}` },
+          ${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent), fromDescription: Boolean(description) })}` },
           ...imageParts,
         ],
       },

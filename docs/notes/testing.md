@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,161 tests in 107 files** — under the `node` environment
+`npm test` runs Vitest over **2,168 tests in 108 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -111,6 +111,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/generationProgress` | 22 |  |
 | `lib/houseStyle` | 18 |  |
 | `lib/libraryDb` | 12 | record mapping only; no IndexedDB in jsdom |
+| `lib/memory` | 7 | jsdom (storage); Forma's memory: a message asking to remember known from a request, its words kept with the paper, orientation, face and sizes it names; a kept report's style kept with none of its words; the newest 30 kept, a style learned from two; the user's words winning over their reports and a switched-off memory skipped; what an AI is told; read back from this browser |
 | `lib/mockupRows` | 12 |  |
 | `lib/modelCache` | 17 |  |
 | `lib/modelCatalog` | 24 |  |
@@ -184,7 +185,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,161 in 107 files** — and that total is the arithmetic sum of the column above
+**Total: 2,168 in 108 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -198,7 +199,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2,043** against a real 2,161 and will talk you into
+A grep for `\bit(` answers **2,050** against a real 2,168 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
