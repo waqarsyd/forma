@@ -16,28 +16,47 @@ import {resolve} from 'node:path';
  * browser downloads one core build, and only when OCR first runs.
  */
 const OCR_ASSETS: Record<string, string> = {
-  'worker.min.js': 'tesseract.js/dist/worker.min.js',
-  'tesseract-core-relaxedsimd-lstm.wasm.js': 'tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js',
-  'tesseract-core-simd-lstm.wasm.js': 'tesseract.js-core/tesseract-core-simd-lstm.wasm.js',
-  'tesseract-core-lstm.wasm.js': 'tesseract.js-core/tesseract-core-lstm.wasm.js',
-  'eng.traineddata.gz': '@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz',
+  'worker.min.js': 'node_modules/tesseract.js/dist/worker.min.js',
+  'tesseract-core-relaxedsimd-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js',
+  'tesseract-core-simd-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js',
+  'tesseract-core-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-lstm.wasm.js',
+  'eng.traineddata.gz': 'node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz',
 };
-const ocrSource = (name: string) => resolve('node_modules', OCR_ASSETS[name]);
 
-function ocrAssets(): Plugin {
+/**
+ * The fonts a PDF/A file embeds (parity row 72, 2026-11-02): Liberation Sans,
+ * Serif and Mono 2.1.5, committed unmodified under assets/pdf-fonts with
+ * their SIL OFL licence, served at `/pdf-fonts/` and fetched only when a
+ * PDF/A file is written. assets/pdf-fonts/README.md has where they came from.
+ */
+const PDF_FONT_ASSETS: Record<string, string> = Object.fromEntries([
+  ...['Sans', 'Serif', 'Mono'].flatMap((family) =>
+    ['Regular', 'Bold', 'Italic', 'BoldItalic'].map((style) => {
+      const file = `Liberation${family}-${style}.ttf`;
+      return [file, `assets/pdf-fonts/${file}`];
+    }),
+  ),
+  ['LICENSE', 'assets/pdf-fonts/LICENSE'],
+]);
+
+const CONTENT_TYPES: Record<string, string> = { '.js': 'text/javascript', '.ttf': 'font/ttf' };
+
+/** Files served at `/<dir>/` from their sources in development and copied into `dist/<dir>/` at build. */
+function servedAssets(dir: string, files: Record<string, string>): Plugin {
   return {
-    name: 'forma-ocr-assets',
+    name: `forma-${dir}-assets`,
     configureServer(server) {
-      server.middlewares.use('/ocr', (req, res, next) => {
+      server.middlewares.use(`/${dir}`, (req, res, next) => {
         const name = (req.url ?? '').replace(/^\//, '').split('?')[0];
-        if (!(name in OCR_ASSETS)) return next();
-        res.setHeader('Content-Type', name.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
-        createReadStream(ocrSource(name)).on('error', () => next()).pipe(res);
+        if (!(name in files)) return next();
+        const ext = /\.[a-z]+$/.exec(name)?.[0] ?? '';
+        res.setHeader('Content-Type', CONTENT_TYPES[ext] ?? (name === 'LICENSE' ? 'text/plain' : 'application/octet-stream'));
+        createReadStream(resolve(files[name])).on('error', () => next()).pipe(res);
       });
     },
     generateBundle() {
-      for (const name of Object.keys(OCR_ASSETS)) {
-        this.emitFile({ type: 'asset', fileName: `ocr/${name}`, source: readFileSync(ocrSource(name)) });
+      for (const [name, source] of Object.entries(files)) {
+        this.emitFile({ type: 'asset', fileName: `${dir}/${name}`, source: readFileSync(resolve(source)) });
       }
     },
   };
@@ -45,7 +64,7 @@ function ocrAssets(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), ocrAssets()],
+    plugins: [react(), tailwindcss(), servedAssets('ocr', OCR_ASSETS), servedAssets('pdf-fonts', PDF_FONT_ASSETS)],
     // Only VITE_* reaches the client. GEMINI_* was previously allowlisted here,
     // which inlined GEMINI_API_KEY into the shipped bundle — Google's secret
     // scanner found that key and revoked it (403 "reported as leaked").

@@ -12,12 +12,17 @@
  * The fonts are the PDF standard ones, which every reader has and nothing
  * needs embedding for: Helvetica, Times and Courier, which Arial, Times New
  * Roman and Courier New are drawn to the metrics of. Text is encoded as
- * Windows-1252, so a character outside it prints as "?". Everything here is
- * pure, so it runs under Node for the tests.
+ * Windows-1252, so a character outside it prints as "?". A report that asks
+ * for PDF/A (row 72, `doc.pdfa`) gets the Liberation faces embedded instead,
+ * which also print Latin Extended, Greek and Cyrillic; see pdfA.ts and
+ * pdfFonts.ts. Everything here is pure, so it runs under Node for the tests.
  */
 import { unitsPerInch } from './reportGeometry';
 import { bookmarkMarks, type PaginatedReport } from './reportPreview';
-import { pdfEncryption, type PdfSecurity } from './pdfCrypto';
+import { md5, pdfEncryption, type PdfSecurity } from './pdfCrypto';
+import { cidSet, descriptorFlags, descriptorMetrics, glyphRun, subsetTag, toUnicodeCMap, widthsArray } from './pdfFonts';
+import { subsetTrueType, type TrueTypeFont } from './trueType';
+import { flattenOnWhite, PDFA_WITH_PASSWORD, pdfDate, srgbIccProfile, SRGB_CONDITION, xmpPacket, type PdfAPart } from './pdfA';
 
 /** One entry of the outline: its title, the page it opens (0-based) and how far down it, in points. */
 export interface OutlineEntry {
@@ -100,6 +105,13 @@ export interface PdfDocument {
   security?: PdfSecurity | null;
   /** Random bytes for the encryption's identifier, keys and salts; the platform's unless a test fixes them. */
   random?: (n: number) => Uint8Array;
+  /**
+   * PDF/A (row 72): the part the report asks for, the embedded face for each
+   * standard font the pages use (see pdfFonts.ts), and the moment written,
+   * which the information dictionary and the XMP both carry; now unless a
+   * test fixes it. A PDF/A file is never encrypted.
+   */
+  pdfa?: { part: PdfAPart; fonts: Partial<Record<StandardFont, TrueTypeFont>>; date?: Date } | null;
 }
 
 /** Windows-1252's characters from 0x80 to 0x9F; the rest of the range below 0x100 is Latin-1. */
@@ -139,7 +151,7 @@ const num = (n: number) => (Math.abs(n) < 1e-6 ? '0' : String(Number(n.toFixed(3
 const rgb = (c: Rgb) => c.map((v) => num(Math.min(1, Math.max(0, v)))).join(' ');
 
 /** One page's content stream, and the fonts and images it uses. */
-function contentOf(page: PdfPage, fontIndex: (f: StandardFont) => number) {
+function contentOf(page: PdfPage, fontIndex: (f: StandardFont) => number, showText: (op: Extract<PdfOp, { kind: 'text' }>) => string) {
   const H = page.height;
   const out: string[] = [];
   const images = new Set<number>();
@@ -153,7 +165,7 @@ function contentOf(page: PdfPage, fontIndex: (f: StandardFont) => number) {
         break;
       case 'text':
         if (!op.text) break;
-        out.push(`BT /F${fontIndex(op.font)} ${num(op.size)} Tf ${num(op.scale * 100)} Tz ${rgb(op.colour)} rg 1 0 0 1 ${num(op.x)} ${num(H - op.y)} Tm ${winAnsiHex(op.text)} Tj ET`);
+        out.push(`BT /F${fontIndex(op.font)} ${num(op.size)} Tf ${num(op.scale * 100)} Tz ${rgb(op.colour)} rg 1 0 0 1 ${num(op.x)} ${num(H - op.y)} Tm ${showText(op)} Tj ET`);
         break;
       case 'image':
         images.add(op.image);
@@ -181,6 +193,10 @@ const encoder = new TextEncoder();
  * and the trailer are not.
  */
 export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
+  const pdfa = doc.pdfa ?? null;
+  // DevExpress refuses PDF/A with a password and writes nothing (s62a, s62b).
+  if (pdfa && doc.security) throw new Error(PDFA_WITH_PASSWORD);
+  const written = pdfa?.date ?? new Date();
   const deflate = doc.deflate ?? null;
   const enc = doc.security ? await pdfEncryption(doc.security, doc.random) : null;
   const objects: (Uint8Array[] | null)[] = [null]; // 1-based object numbers
@@ -205,23 +221,68 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
     if (i < 0) i = fonts.push(f) - 1;
     return i;
   };
-  const contents = doc.pages.map((page) => contentOf(page, fontIndex));
-  const fontObjects = fonts.map((name) => {
+  /** For PDF/A, the glyphs each font's text used and the character each stands for. */
+  const used = new Map<StandardFont, Map<number, number>>();
+  const showText = (op: Extract<PdfOp, { kind: 'text' }>) => {
+    if (!pdfa) return winAnsiHex(op.text);
+    const face = pdfa.fonts[op.font];
+    if (!face) throw new Error(`No embedded face was supplied for ${op.font}.`);
+    const run = glyphRun(face, op.text);
+    let glyphs = used.get(op.font);
+    if (!glyphs) used.set(op.font, (glyphs = new Map()));
+    for (const [g, cp] of run.glyphs) if (!glyphs.has(g)) glyphs.set(g, cp);
+    return run.hex;
+  };
+  const contents = doc.pages.map((page) => contentOf(page, fontIndex, showText));
+  const fontObjects: number[] = [];
+  for (const name of fonts) {
     const n = reserve();
-    set(n, `<< /Type /Font /Subtype /Type1 /BaseFont /${name}${name.startsWith('Symbol') ? '' : ' /Encoding /WinAnsiEncoding'} >>`);
-    return n;
-  });
+    fontObjects.push(n);
+    if (!pdfa) {
+      set(n, `<< /Type /Font /Subtype /Type1 /BaseFont /${name}${name.startsWith('Symbol') ? '' : ' /Encoding /WinAnsiEncoding'} >>`);
+      continue;
+    }
+    // Embedded as DevExpress embeds its PDF/A fonts (s60b): Type 0 over a
+    // CIDFontType2, glyph ids as codes, the subset, its CIDSet and a Unicode map.
+    const face = pdfa.fonts[name]!;
+    const glyphMap = used.get(name) ?? new Map<number, number>();
+    const glyphs = [...glyphMap.keys()];
+    const base = `${subsetTag(face.postscriptName, glyphs)}+${face.postscriptName}`;
+    const program = subsetTrueType(face, glyphs);
+    const file = reserve();
+    set(file, ...(await stream(file, `/Length1 ${program.length}`, program)));
+    const slots = reserve();
+    set(slots, ...(await stream(slots, '', cidSet(face.numGlyphs))));
+    const descriptor = reserve();
+    set(
+      descriptor,
+      `<< /Type /FontDescriptor /FontName /${base} /Flags ${descriptorFlags(face, name.startsWith('Times'))} ${descriptorMetrics(face)}` +
+        ` /CIDSet ${slots} 0 R /FontFile2 ${file} 0 R >>`,
+    );
+    const cid = reserve();
+    set(
+      cid,
+      `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${base} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >>` +
+        ` /FontDescriptor ${descriptor} 0 R /DW 1000 /W ${widthsArray(face, glyphs)} /CIDToGIDMap /Identity >>`,
+    );
+    const unicode = reserve();
+    set(unicode, ...(await stream(unicode, '', encoder.encode(toUnicodeCMap(glyphMap)))));
+    set(n, `<< /Type /Font /Subtype /Type0 /BaseFont /${base} /Encoding /Identity-H /DescendantFonts [${cid} 0 R] /ToUnicode ${unicode} 0 R >>`);
+  }
 
   const imageObjects: number[] = [];
   for (const image of doc.images ?? []) {
+    // PDF/A-1 forbids transparency: the picture is flattened, as DevExpress's is (s62d).
+    const flatten = pdfa?.part === 1 && image.alpha;
     let smask = '';
-    if (image.alpha) {
+    if (image.alpha && !flatten) {
       const m = reserve();
       set(m, ...(await stream(m, `/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceGray /BitsPerComponent 8`, image.alpha)));
       smask = ` /SMask ${m} 0 R`;
     }
     const n = reserve();
-    set(n, ...(await stream(n, `/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8${smask}`, image.rgb)));
+    const pixels = flatten ? flattenOnWhite(image.rgb, image.alpha!) : image.rgb;
+    set(n, ...(await stream(n, `/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8${smask}`, pixels)));
     imageObjects.push(n);
   }
 
@@ -237,7 +298,8 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
       if (op.kind !== 'link') continue;
       const a = reserve();
       const uri = str(a, latin1Bytes(op.uri), `(${op.uri.replace(/[\\()]/g, (c) => `\\${c}`)})`);
-      set(a, `<< /Type /Annot /Subtype /Link /Rect [${num(op.x)} ${num(page.height - op.y - op.h)} ${num(op.x + op.w)} ${num(page.height - op.y)}] /Border [0 0 0] /A << /S /URI /URI ${uri} >> >>`);
+      // PDF/A asks every annotation to print (flag 4).
+      set(a, `<< /Type /Annot /Subtype /Link /Rect [${num(op.x)} ${num(page.height - op.y - op.h)} ${num(op.x + op.w)} ${num(page.height - op.y)}] /Border [0 0 0]${pdfa ? ' /F 4' : ''} /A << /S /URI /URI ${uri} >> >>`);
       annots.push(a);
     }
     const xobjects = [...images].map((k) => `/Im${k} ${imageObjects[k]} 0 R`).join(' ');
@@ -281,9 +343,23 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
     set(outlines, `<< /Type /Outlines /First ${top} 0 R /Last ${top} 0 R /Count ${1 + count(doc.outline)} >>`);
     outlinesRef = ` /Outlines ${outlines} 0 R /PageMode /UseOutlines`;
   }
-  set(catalog, `<< /Type /Catalog /Pages ${pagesNode} 0 R${outlinesRef} >>`);
+  // PDF/A's XMP, never compressed so that it reads without a PDF parser, and
+  // the sRGB output intent DevExpress's exports carry (s60).
+  let pdfaRefs = '';
+  if (pdfa) {
+    const meta = reserve();
+    const xmp = encoder.encode(xmpPacket({ part: pdfa.part, title: doc.title, producer: 'Forma', date: written }));
+    set(meta, `<< /Type /Metadata /Subtype /XML /Length ${xmp.length} >>\nstream\n`, xmp, '\nendstream');
+    const icc = reserve();
+    set(icc, ...(await stream(icc, '/N 3', srgbIccProfile())));
+    pdfaRefs =
+      ` /Metadata ${meta} 0 R /OutputIntents [<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (${SRGB_CONDITION})` +
+      ` /Info (${SRGB_CONDITION}) /DestOutputProfile ${icc} 0 R >>]`;
+  }
+  set(catalog, `<< /Type /Catalog /Pages ${pagesNode} 0 R${outlinesRef}${pdfaRefs} >>`);
   const info = reserve();
-  set(info, `<< /Title ${str(info, utf16Bytes(doc.title), hexOf(utf16Bytes(doc.title)))} /Producer ${str(info, latin1Bytes('Forma'), '(Forma)')} >>`);
+  const dates = pdfa ? ` /CreationDate (${pdfDate(written)}) /ModDate (${pdfDate(written)})` : '';
+  set(info, `<< /Title ${str(info, utf16Bytes(doc.title), hexOf(utf16Bytes(doc.title)))} /Producer ${str(info, latin1Bytes('Forma'), '(Forma)')}${dates} >>`);
   // The encryption dictionary is an object of its own, never itself encrypted.
   const encrypt = enc ? reserve() : 0;
   if (enc) set(encrypt, enc.dictionary);
@@ -301,7 +377,13 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
     }
   }
   const xref = [`xref\n0 ${objects.length}\n0000000000 65535 f \n`, ...offsets.slice(1).map((o) => `${String(o).padStart(10, '0')} 00000 n \n`)].join('');
-  const secured = enc ? ` /Encrypt ${encrypt} 0 R /ID [${hexOf(enc.id)} ${hexOf(enc.id)}]` : '';
+  // PDF/A asks for a file identifier; one derived from the content is stable for a test.
+  const fileId = pdfa ? md5(encoder.encode(`${doc.title}\n${written.toISOString()}\n${offset}`)) : null;
+  const secured = enc
+    ? ` /Encrypt ${encrypt} 0 R /ID [${hexOf(enc.id)} ${hexOf(enc.id)}]`
+    : fileId
+      ? ` /ID [${hexOf(fileId)} ${hexOf(fileId)}]`
+      : '';
   chunks.push(encoder.encode(`${xref}trailer\n<< /Size ${objects.length} /Root ${catalog} 0 R /Info ${info} 0 R${secured} >>\nstartxref\n${offset}\n%%EOF\n`));
   const total = chunks.reduce((s, c) => s + c.length, 0);
   const bytes = new Uint8Array(total);

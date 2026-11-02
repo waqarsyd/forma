@@ -282,7 +282,7 @@ const BUDGETS = [
    */
   { prefix: '', ext: '.woff2', max: 90_000, note: 'a single self-hosted font subset' },
   /*
-   * OCR's runtime under dist/ocr/ (2026-11-01; see ocrAssets in vite.config.ts):
+   * OCR's runtime under dist/ocr/ (2026-11-01; see servedAssets('ocr', ...) in vite.config.ts):
    * vendored from tesseract.js 7.0.0, tesseract.js-core 7.0.0 and
    * @tesseract.js-data/eng 1.0.0, copied at build, never committed. Each budget
    * sits at about 94%, as the other vendored caps do; nothing routine moves
@@ -292,6 +292,15 @@ const BUDGETS = [
   { prefix: 'tesseract-core-', ext: '-lstm.wasm.js', max: 4_150_000, note: 'one OCR core build per browser, lazy' },
   { prefix: 'worker.min', ext: '.js', max: 118_000, note: 'the OCR worker, lazy' },
   { prefix: 'eng.traineddata', ext: '.gz', max: 3_140_000, note: 'English OCR data, best_int, lazy' },
+  /*
+   * The twelve Liberation faces a PDF/A file embeds (2026-11-02, parity row
+   * 72; see PDF_FONT_ASSETS in vite.config.ts and assets/pdf-fonts/README.md),
+   * committed unmodified from the 2.1.5 release. The largest is
+   * LiberationSans-Italic at 415,816 B, so this sits at 94% as the vendored
+   * caps above do. Nothing routine moves them: only a different release would,
+   * and that is a change to the README's checksums too.
+   */
+  { prefix: 'Liberation', ext: '.ttf', max: 442_000, note: 'one PDF/A font face, lazy' },
 ];
 
 /**
@@ -395,9 +404,19 @@ const files = walk(DIST);
  */
 const OCR_DIR = join(DIST, 'ocr');
 const isOcr = (f) => f.path.startsWith(OCR_DIR);
-const total = files.filter((f) => !isOcr(f)).reduce((a, f) => a + f.size, 0);
+/*
+ * dist/pdf-fonts/ likewise (2026-11-02): 4,359,164 B of fonts plus their
+ * licence, fetched a face at a time and only by someone writing a PDF/A file.
+ * Counted in the total it would have nearly doubled that cap's headroom for
+ * bytes almost nobody downloads.
+ */
+const FONT_DIR = join(DIST, 'pdf-fonts');
+const isPdfFont = (f) => f.path.startsWith(FONT_DIR);
+const total = files.filter((f) => !isOcr(f) && !isPdfFont(f)).reduce((a, f) => a + f.size, 0);
 const ocrTotal = files.filter(isOcr).reduce((a, f) => a + f.size, 0);
 const OCR_TOTAL_MAX = 15_700_000;
+const fontTotal = files.filter(isPdfFont).reduce((a, f) => a + f.size, 0);
+const FONT_TOTAL_MAX = 4_640_000;
 
 const rows = [];
 const breaches = [];
@@ -426,10 +445,14 @@ for (const budget of BUDGETS) {
   }
 }
 
-rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr' });
+rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr and dist/pdf-fonts' });
 rows.push({ name: 'dist/ocr/ total', size: ocrTotal, max: OCR_TOTAL_MAX, pct: ((ocrTotal / OCR_TOTAL_MAX) * 100).toFixed(1), note: 'the OCR engine, lazy' });
+rows.push({ name: 'dist/pdf-fonts/ total', size: fontTotal, max: FONT_TOTAL_MAX, pct: ((fontTotal / FONT_TOTAL_MAX) * 100).toFixed(1), note: 'PDF/A fonts, lazy' });
 if (ocrTotal > OCR_TOTAL_MAX) {
   breaches.push(`OVER     dist/ocr/ total — ${ocrTotal.toLocaleString()} B exceeds the ${OCR_TOTAL_MAX.toLocaleString()} B budget`);
+}
+if (fontTotal > FONT_TOTAL_MAX) {
+  breaches.push(`OVER     dist/pdf-fonts/ total — ${fontTotal.toLocaleString()} B exceeds the ${FONT_TOTAL_MAX.toLocaleString()} B budget`);
 }
 if (total > TOTAL_MAX) {
   breaches.push(

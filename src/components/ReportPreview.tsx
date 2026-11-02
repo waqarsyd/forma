@@ -1224,24 +1224,36 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * uses the PDF standard ones.
    */
   const [writingPdf, setWritingPdf] = useState(false);
+  /** Why the last PDF was not written, shown under the buttons rather than only in the console. */
+  const [pdfNote, setPdfNote] = useState<string | null>(null);
   const pdfHostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!writingPdf) return;
     let cancelled = false;
+    setPdfNote(null);
     (async () => {
       try {
         await document.fonts?.ready;
         await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
         const host = pdfHostRef.current;
         if (!host || cancelled) return;
-        const { pagesToPdf } = await import('../lib/pdfFromDom');
+        const [{ pagesToPdf }, { pdfSecurityOf }, { pdfaPartOf }] = await Promise.all([
+          import('../lib/pdfFromDom'),
+          import('../lib/pdfCrypto'),
+          import('../lib/pdfA'),
+        ]);
         const pages = [...host.querySelectorAll<HTMLElement>('.rp-page')];
-        // The report's own PDF passwords, which DevExpress encrypts its export with (row 73).
-      const { pdfSecurityOf } = await import('../lib/pdfCrypto');
-      const blob = await pagesToPdf(pages, report, title || 'Report', structure.outlineTitle || title || 'Report', pdfSecurityOf(repxContent));
+        // The report's own PDF passwords, which DevExpress encrypts its export
+        // with (row 73), and its PDF/A part (row 72); asking for both is
+        // refused, as DevExpress refuses it.
+        const blob = await pagesToPdf(pages, report, title || 'Report', structure.outlineTitle || title || 'Report', {
+          security: pdfSecurityOf(repxContent),
+          pdfa: pdfaPartOf(repxContent),
+        });
         if (!cancelled) download(blob, 'application/pdf', 'pdf');
       } catch (err) {
         console.error('Forma could not write the PDF.', err);
+        if (!cancelled) setPdfNote(err instanceof Error && err.message ? err.message : 'Forma could not write the PDF.');
       } finally {
         if (!cancelled) setWritingPdf(false);
       }
@@ -1249,7 +1261,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     return () => {
       cancelled = true;
     };
-  }, [writingPdf, report, structure, title, download]);
+  }, [writingPdf, report, structure, title, download, repxContent]);
 
   /*
    * Only the pages near the viewport are filled in (parity row 16). Every page
@@ -1747,7 +1759,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           className="wb-pill wb-pill--outline"
           onClick={() => setWritingPdf(true)}
           disabled={!report.pages.length || writingPdf}
-          title="A PDF Forma writes itself, with the report's bookmarks as its outline. Text is in the PDF standard fonts."
+          title="A PDF Forma writes itself, with the report's bookmarks as its outline. Text is in the PDF standard fonts, or in embedded Liberation fonts when the report asks for PDF/A."
         >
           {writingPdf ? 'Writing PDF…' : 'PDF with outline'}
         </button>
@@ -1804,6 +1816,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
               </span>
             ),
           )}
+        </div>
+      )}
+
+      {pdfNote && (
+        <div className="rp-problems" role="status">
+          <p>{pdfNote}</p>
         </div>
       )}
 

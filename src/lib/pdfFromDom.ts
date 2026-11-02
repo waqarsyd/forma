@@ -17,12 +17,16 @@
  * - a box that clips its content, as a clip; and a link, as a link.
  *
  * What it does not: turned text prints level, at its box, and a character
- * outside Windows-1252 prints as "?". The browser's print path keeps doing
- * both exactly.
+ * outside Windows-1252 prints as "?" (in a PDF/A file, a character outside
+ * the Liberation faces: they also hold Latin Extended, Greek and Cyrillic).
+ * The browser's print path keeps doing both exactly.
  */
 import { platformDeflate, reportOutline, writePdf, type PdfImage, type PdfOp, type Rgb, type StandardFont } from './pdfWriter';
 import type { PaginatedReport } from './reportPreview';
 import type { PdfSecurity } from './pdfCrypto';
+import { PDFA_WITH_PASSWORD, type PdfAPart } from './pdfA';
+import { LIBERATION_FACE, PDF_FONT_PATH } from './pdfFonts';
+import { parseTrueType, type TrueTypeFont } from './trueType';
 
 const PT_PER_PX = 0.75;
 /** What the print stylesheet hides: captions and band labels are the pane's, not the report's. */
@@ -228,18 +232,51 @@ export async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<Pd
   return ops;
 }
 
+/** The Liberation faces fetched so far this session, by file. */
+const faces = new Map<string, Promise<TrueTypeFont>>();
+
+/** A Liberation face from the site's own /pdf-fonts/, fetched once. */
+function loadFace(file: string): Promise<TrueTypeFont> {
+  let face = faces.get(file);
+  if (!face) {
+    face = fetch(`${PDF_FONT_PATH}${file}`).then(async (r) => {
+      if (!r.ok) throw new Error(`The font ${file} could not be fetched (${r.status}).`);
+      return parseTrueType(new Uint8Array(await r.arrayBuffer()));
+    });
+    face.catch(() => faces.delete(file));
+    faces.set(file, face);
+  }
+  return face;
+}
+
 /**
  * The PDF of `pages`, the Preview's `.rp-page` elements drawn at true size,
  * with `report`'s bookmarks as its outline under `rootTitle`. No outline when
  * the report has no bookmarks, as DevExpress writes none then. Encrypted under
- * the report's own passwords when it has any (row 73).
+ * the report's own passwords when it has any (row 73). PDF/A when the report
+ * asks for it (row 72), with the Liberation faces its text uses embedded; a
+ * report asking for PDF/A and a password is refused, as DevExpress refuses it.
  */
-export async function pagesToPdf(pages: HTMLElement[], report: PaginatedReport, title: string, rootTitle: string, security: PdfSecurity | null = null): Promise<Blob> {
+export async function pagesToPdf(
+  pages: HTMLElement[],
+  report: PaginatedReport,
+  title: string,
+  rootTitle: string,
+  options: { security?: PdfSecurity | null; pdfa?: PdfAPart | null } = {},
+): Promise<Blob> {
+  const { security = null, pdfa = null } = options;
+  if (pdfa && security) throw new Error(PDFA_WITH_PASSWORD);
   const images: PdfImage[] = [];
   const pdfPages = [];
   for (const page of pages) {
     const r = page.getBoundingClientRect();
     pdfPages.push({ width: r.width * PT_PER_PX, height: r.height * PT_PER_PX, ops: await pageOps(page, images) });
+  }
+  let embedded: Partial<Record<StandardFont, TrueTypeFont>> = {};
+  if (pdfa) {
+    const used = new Set<StandardFont>();
+    for (const page of pdfPages) for (const op of page.ops) if (op.kind === 'text' && op.text) used.add(op.font);
+    embedded = Object.fromEntries(await Promise.all([...used].map(async (font) => [font, await loadFace(LIBERATION_FACE[font])] as const)));
   }
   const outline = reportOutline(report, rootTitle);
   const bytes = await writePdf({
@@ -249,6 +286,7 @@ export async function pagesToPdf(pages: HTMLElement[], report: PaginatedReport, 
     outline: outline.children.length ? outline : null,
     deflate: platformDeflate(),
     security,
+    pdfa: pdfa ? { part: pdfa, fonts: embedded } : null,
   });
   return new Blob([bytes], { type: 'application/pdf' });
 }

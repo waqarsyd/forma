@@ -8,7 +8,7 @@
  * improve on. OCR is for what has only pixels: screenshots, photos, scans.
  *
  * The engine is loaded on first use, like `pdf.ts` and `genai.ts`, and from
- * this site's own `/ocr/` (see `ocrAssets` in vite.config.ts): the worker,
+ * this site's own `/ocr/` (see `servedAssets('ocr', …)` in vite.config.ts): the worker,
  * the core build for the browser's SIMD support, and the English LSTM data,
  * about 7 MB the first time and cached by the browser after.
  */
