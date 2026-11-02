@@ -74,6 +74,7 @@ import type {
   ChatTurn,
 } from './services/geminiService';
 import { loadGemini, isMissingApiKey } from './lib/geminiClient';
+import { aiReady, readProviderSettings, writeProviderSettings } from './lib/aiProvider';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
 import { clearCachedModel } from './lib/modelCache';
 import {
@@ -145,6 +146,8 @@ const RevisionsPanel = lazy(() => import('./components/RevisionsPanel'));
 const LibraryPanel = lazy(() => import('./components/LibraryPanel'));
 /* OCR's dialog, and the engine it loads, are fetched only when someone opens it. */
 const OcrDialog = lazy(() => import('./components/OcrDialog'));
+// The AI provider choice (2026-11-02), in the settings dialog only.
+const ProviderSettings = lazy(() => import('./components/ProviderSettings'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -1984,7 +1987,9 @@ export default function App() {
     let stored: string | null = null;
     try { stored = localStorage.getItem(CONFIG_STORAGE_KEY); } catch { /* storage disabled */ }
 
-    return { ...mergeStoredConfig(defaults, stored), customApiKey: storedKey };
+    // The AI provider and its settings (2026-11-02, lib/aiProvider.ts): the
+    // choice in localStorage, the OpenRouter key in sessionStorage like this one.
+    return { ...mergeStoredConfig(defaults, stored), customApiKey: storedKey, ...readProviderSettings() };
   });
 
   /**
@@ -2002,12 +2007,20 @@ export default function App() {
     }
   }, [config]);
 
+  useEffect(() => {
+    writeProviderSettings(config);
+  }, [config.provider, config.localUrl, config.localModel, config.openRouterModel, config.openRouterKey]);
+
   /**
-   * The single gate for the whole workspace. Nothing here can call Google
-   * without the user's own key, so chat, generation and refinement all check
-   * this before doing anything at all.
+   * Whether an AI model is set up to answer: Gemini with a key, a local AI with
+   * a model, or OpenRouter with a key and a model (lib/aiProvider.ts). Chat,
+   * generation and refinement check it; without one, the chat box hands words
+   * to Forma's own model and images to OCR. Until 2026-11-02 it was the Gemini
+   * key alone, and the whole workspace's gate.
    */
-  const hasApiKey = Boolean(config.customApiKey?.trim());
+  const hasApiKey = aiReady(config);
+  /** The Gemini key field's own state, whichever provider answers. */
+  const hasGeminiKey = Boolean(config.customApiKey?.trim());
 
   /** A short conversational turn is in flight (not a report generation). */
   const [isChatting, setIsChatting] = useState(false);
@@ -5212,6 +5225,9 @@ export default function App() {
               </div>
 
               <div className="wb-modal-col">
+              <Suspense fallback={null}>
+                <ProviderSettings config={config} onChange={(changes) => setConfig(prev => ({ ...prev, ...changes }))} />
+              </Suspense>
               <div className="wb-fset">
                 <div className="wb-eyebrow"><b>key</b>Your Gemini key<span className="wb-fade" /></div>
                 <div>
@@ -5270,7 +5286,7 @@ export default function App() {
                     >
                       {vaultBusy ? 'Checking…' : 'Check key'}
                     </button>
-                    {hasApiKey && (
+                    {hasGeminiKey && (
                       <button className="wb-pill" onClick={handleClearKeyFromSession} title="Clear the key from this tab">
                         Clear
                       </button>

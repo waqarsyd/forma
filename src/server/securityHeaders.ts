@@ -73,6 +73,18 @@ export const THEME_SCRIPT_HASH = "'sha256-RswoUqjMy7el2m555ElIwd42BKWUQv8ssqXpJL
  *                       cross-origin fetch from a page served elsewhere, so it
  *                       needs naming explicitly or "Open in designer" silently
  *                       stops working. This is the one everybody forgets.
+ *   localhost:11434,    the AI providers the owner chose on 2026-11-02 (lib/
+ *   localhost:1234,     aiProvider.ts): Ollama's and LM Studio's OpenAI-
+ *   127.0.0.1 of each   compatible endpoints on the user's own computer, both
+ *                       spellings of loopback, plain http as the companion's is;
+ *   openrouter.ai       and OpenRouter's free models. Each is where a request
+ *                       goes only when the user has chosen that provider, and
+ *                       the OpenRouter key goes to openrouter.ai alone, as the
+ *                       Gemini key goes to Google alone. A local server on
+ *                       another port or machine is NOT reachable: naming
+ *                       "http:" or "*" here would hand an injected script
+ *                       anywhere to send a stolen key, which this list exists
+ *                       to prevent.
  */
 const CONNECT_SRC = [
   "'self'",
@@ -83,6 +95,11 @@ const CONNECT_SRC = [
   'https://www.googleapis.com',
   'https://formsubmit.co',
   'http://127.0.0.1:7317',
+  'http://localhost:11434',
+  'http://127.0.0.1:11434',
+  'http://localhost:1234',
+  'http://127.0.0.1:1234',
+  'https://openrouter.ai',
 ];
 
 /**

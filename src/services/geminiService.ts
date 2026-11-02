@@ -57,6 +57,7 @@ export type {
   AttachmentPart,
 } from "../lib/reportTypes";
 import type { AnalysisResponse, ReportLayout, AttachmentPart } from "../lib/reportTypes";
+import type { CompatEndpoint } from "./compatClient";
 
 export interface ReportConfig {
   version: string;
@@ -88,6 +89,54 @@ export interface ReportConfig {
    * assumed.
    */
   thinkingBudget?: number;
+  /**
+   * Which AI answers (2026-11-02, lib/aiProvider.ts). Absent or `auto` is
+   * Gemini with a key and Forma Offline without; `offline` never reaches this
+   * file. `local` and `openrouter` go through an OpenAI-compatible endpoint
+   * (compatClient.ts) with their own model, and need no Gemini key.
+   */
+  provider?: 'auto' | 'offline' | 'gemini' | 'local' | 'openrouter';
+  localUrl?: string;
+  localModel?: string;
+  openRouterModel?: string;
+  /** Like `customApiKey`: sessionStorage only, never persisted with the document settings. */
+  openRouterKey?: string;
+}
+
+/** The OpenAI-compatible endpoint a config names, or null for Gemini. */
+export function compatEndpoint(config?: ReportConfig): CompatEndpoint | null {
+  if (config?.provider === 'local' && config.localModel?.trim()) {
+    return { kind: 'local', baseUrl: (config.localUrl?.trim() || 'http://localhost:11434/v1').replace(/\/+$/, ''), model: config.localModel.trim() };
+  }
+  if (config?.provider === 'openrouter' && config.openRouterModel?.trim()) {
+    return { kind: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: config.openRouterKey?.trim(), model: config.openRouterModel.trim() };
+  }
+  return null;
+}
+
+/**
+ * The config as the Gemini paths below expect it, for any provider. An
+ * OpenAI-compatible provider names its own model, so `modelName` pins it and
+ * the detection and probing, which are Gemini's, never run; and its key stands
+ * in for `customApiKey`, a local endpoint needing none.
+ */
+function withProvider(config?: ReportConfig): ReportConfig | undefined {
+  const endpoint = compatEndpoint(config);
+  if (!config || !endpoint) return config;
+  return { ...config, customApiKey: endpoint.apiKey || 'local', modelName: endpoint.model };
+}
+
+/** The client a request goes through: Gemini's SDK, or the OpenAI-compatible adapter with the same shape. */
+async function clientFor(config: ReportConfig | undefined, apiKey: string): Promise<Pick<GenAIClient, 'models'>> {
+  const endpoint = compatEndpoint(config);
+  if (endpoint) {
+    const { compatClient } = await import('./compatClient');
+    // The adapter answers the two calls this file makes, generateContent and
+    // generateContentStream, in their shapes; not the SDK's other twenty-odd.
+    return compatClient(endpoint) as unknown as Pick<GenAIClient, 'models'>;
+  }
+  const { GoogleGenAI } = await loadGenAI();
+  return new GoogleGenAI({ apiKey });
 }
 
 /**
@@ -855,6 +904,7 @@ export async function chatReply(
 ): Promise<ChatOutcome> {
   if (signal?.aborted) throw abortError();
 
+  config = withProvider(config);
   const currentApiKey = config?.customApiKey?.trim();
 
   // Mock mode has to cover this path too. It only guarded analyzeReportDesign,
@@ -882,8 +932,8 @@ export async function chatReply(
   // Loaded here, not imported at the top: the SDK is only reachable from this
   // function and chatReply, and both refuse above if there is no key. See
   // src/lib/genai.ts.
-  const { GoogleGenAI, Type } = await loadGenAI();
-  const ai = new GoogleGenAI({ apiKey: currentApiKey });
+  const { Type } = await loadGenAI();
+  const ai = await clientFor(config, currentApiKey);
   /*
    * Reassignable, because a model that stays overloaded is swapped out below.
    * `pinnedModel` is the user having chosen one in config: answering on a
@@ -1355,13 +1405,14 @@ export async function clarifyReportRequest(
   if (signal?.aborted) throw abortError();
   if (isMockMode(viteEnv.VITE_FORMA_MOCK)) return ready;
 
+  config = withProvider(config);
   const currentApiKey = config?.customApiKey?.trim();
   if (!currentApiKey) throw new MissingApiKeyError();
 
   try {
     const model = config?.modelName?.trim() || startingModel(await resolveModel(currentApiKey, signal), readCachedModelSet());
-    const { GoogleGenAI, Type } = await loadGenAI();
-    const ai = new GoogleGenAI({ apiKey: currentApiKey });
+    const { Type } = await loadGenAI();
+    const ai = await clientFor(config, currentApiKey);
 
     const response = await generateSmall(ai, {
       model,
@@ -1453,12 +1504,13 @@ export async function promptToExpression(
     return { expression, explanation: "Mock mode: the first field.", problems: checkExpression(expression, fields).problems };
   }
 
+  config = withProvider(config);
   const currentApiKey = config?.customApiKey?.trim();
   if (!currentApiKey) throw new MissingApiKeyError();
 
   const model = config?.modelName?.trim() || startingModel(await resolveModel(currentApiKey, signal), readCachedModelSet());
-  const { GoogleGenAI, Type } = await loadGenAI();
-  const ai = new GoogleGenAI({ apiKey: currentApiKey });
+  const { Type } = await loadGenAI();
+  const ai = await clientFor(config, currentApiKey);
 
   const response = await generateSmall(ai, {
     model,
@@ -1544,12 +1596,13 @@ export async function generateTestData(
     );
   }
 
+  config = withProvider(config);
   const currentApiKey = config?.customApiKey?.trim();
   if (!currentApiKey) throw new MissingApiKeyError();
 
   const model = config?.modelName?.trim() || startingModel(await resolveModel(currentApiKey, signal), readCachedModelSet());
-  const { GoogleGenAI, Type } = await loadGenAI();
-  const ai = new GoogleGenAI({ apiKey: currentApiKey });
+  const { Type } = await loadGenAI();
+  const ai = await clientFor(config, currentApiKey);
 
   const response = await generateSmall(ai, {
     model,
@@ -1628,6 +1681,7 @@ export async function analyzeReportDesign(
 
   const description = options?.description;
 
+  config = withProvider(config);
   const currentApiKey = config?.customApiKey?.trim();
 
   // Mock mode is now opt-in via VITE_FORMA_MOCK=true, for exercising loaders
@@ -1822,8 +1876,8 @@ ${houseStyleContext}
   // Loaded here, not imported at the top: the SDK is only reachable from this
   // function and chatReply, and both refuse above if there is no key. See
   // src/lib/genai.ts.
-  const { GoogleGenAI, Type } = await loadGenAI();
-  const ai = new GoogleGenAI({ apiKey: currentApiKey });
+  const { Type } = await loadGenAI();
+  const ai = await clientFor(config, currentApiKey);
 
   console.debug(`Initializing Gemini model with API key...`);
   console.log(`Sending request to AI model: ${selectedModel}`);

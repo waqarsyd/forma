@@ -127,6 +127,13 @@ describe('buildContentSecurityPolicy', () => {
       'https://www.googleapis.com',
       'https://formsubmit.co',
       'http://127.0.0.1:7317',
+      // The AI providers the owner chose on 2026-11-02: Ollama and LM Studio on
+      // loopback, and OpenRouter. Each is where data goes only when chosen.
+      'http://localhost:11434',
+      'http://127.0.0.1:11434',
+      'http://localhost:1234',
+      'http://127.0.0.1:1234',
+      'https://openrouter.ai',
     ]);
   });
 

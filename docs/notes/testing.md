@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,147 tests in 105 files** — under the `node` environment
+`npm test` runs Vitest over **2,161 tests in 107 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -87,6 +87,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/ReportPreview` | 17 | jsdom; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
+| `lib/aiProvider` | 5 | jsdom (storage); which AI answers: Automatic as Gemini with a key and Forma Offline without, ready only with what each provider needs, the choice kept in localStorage and the OpenRouter key only in this tab's sessionStorage, an unknown provider ignored |
 | `lib/announcements` | 7 |  |
 | `lib/attachmentBudget` | 12 |  |
 | `lib/attachmentParts` | 14 | 6 from one loop |
@@ -172,6 +173,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `server/securityHeaders` | 27 |  |
 | `server/staticCache` | 10 |  |
 | `services/chatRetry` | 10 |  |
+| `services/compatClient` | 9 | local AI and OpenRouter in the shape of Gemini's SDK, against a fake OpenAI-compatible server: text and images as chat messages, the response schema as a JSON Schema, the answer read back in Gemini's words (`length` as `MAX_TOKENS`), a server refusing the schema asked for a JSON object then plain text, a streamed answer, a 429 keeping its status, the models offered (OpenRouter's free ones, image readers first), and `compatEndpoint` |
 | `services/embeddings` | 20 | SDK mocked, as `geminiService` is |
 | `services/generationRetry` | 8 | the generation path's runaway and truncated-stream retries, against a stubbed stream |
 | `services/geminiService` | 38 | 7 of these come from one loop; since 2026-11-02 also the chat turn's instructions taking a written description as enough, and `generateSmall` turning thinking off for the small calls, asking a refusing model again with room, and not mistaking a rejected key for a refusal |
@@ -182,7 +184,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,147 in 105 files** — and that total is the arithmetic sum of the column above
+**Total: 2,161 in 107 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -196,7 +198,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2,029** against a real 2,147 and will talk you into
+A grep for `\bit(` answers **2,043** against a real 2,161 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

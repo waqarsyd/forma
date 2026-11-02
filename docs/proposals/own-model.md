@@ -169,21 +169,75 @@ What it does not do yet:
 - use the archetype's own control placement. It takes the pattern's
   structure and style, not its exact layout, because a skeleton keeps no
   captions to put back.
+## Provider setup (milestone 3, 2026-11-02)
+
+The settings dialog now asks which AI answers, in a panel of its own
+(`ProviderSettings.tsx`, loaded with the dialog). The choices:
+
+- **Automatic** (the default): Gemini when a key is in, Forma Offline
+  otherwise, which is how milestone 2 behaved.
+- **Forma Offline**: the model of Forma's own and OCR, whatever key is in.
+- **Gemini**, with the user's key, as before.
+- **Local AI**: Ollama or LM Studio on the user's own computer. The panel
+  has its address (Ollama's `http://localhost:11434/v1` by default) and a
+  model, and "Find models" lists what the server has, image readers first.
+  A server that cannot be reached is told about plainly: Ollama needs
+  `OLLAMA_ORIGINS` set to the site's address, and LM Studio needs CORS on.
+- **OpenRouter**: a key of the user's own and one of its free models, which
+  "Find free models" lists (ids ending `:free`).
+
+`lib/aiProvider.ts` keeps the choice and decides `aiReady`, which replaced
+the Gemini key as the workspace's AI gate. The choice, the address and the
+models are preferences in localStorage. The OpenRouter key is not: it is
+kept like the Gemini key, in this tab's sessionStorage, never on disk.
+
+**One path for every provider.** `compatClient.ts` answers the two calls
+geminiService.ts makes of Gemini's SDK, `generateContent` and
+`generateContentStream`, over the OpenAI-compatible `/chat/completions`
+that all three speak. So the retries, the runaway check, the repairs and
+the audit run unchanged for any provider:
+- `withProvider` gives such a provider's model as the pinned model, so
+  Gemini's model detection and probing never run for it;
+- `clientFor` hands the adapter in place of the SDK;
+- the response schema goes as a JSON Schema, and a server that refuses it is
+  asked for a JSON object, then for plain text;
+- a 429 keeps its status, so it is still a quota.
+A second generation path was not written: the chat and generation paths have
+drifted apart three times already (gemini.md).
+
+**The security policy grew, on purpose.** `connect-src` now names:
+- Ollama's and LM Studio's ports on loopback, both `localhost` and
+  `127.0.0.1`;
+- `https://openrouter.ai`.
+`firebase.json` restates them for both hosting sites. A server on another
+port or machine is not reachable: allowing `http:` or `*` would let an
+injected script send a stolen key anywhere, which the list exists to
+prevent.
+
+Checked in the owner's Chrome:
+- the panel lists the five choices with Automatic chosen;
+- Local AI shows Ollama's address;
+- "Find models" with no Ollama running gives the guidance above;
+- the choice is kept without its key.
+
+Covered by tests only:
+- Forma Offline chosen with a Gemini key keeps the box offline
+  (`aiProvider.test.ts`).
+- The adapter, which is tested against a fake server.
+
+Not checked against a real local model or an OpenRouter key: neither was
+available on this machine.
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded
 here as it is built:
 
-1. **Provider setup.** Forma Offline, Gemini, local AI through an
-   OpenAI-compatible endpoint (Ollama, LM Studio), and OpenRouter's free
-   models. Each online endpoint is an addition to `connect-src`, and so a
-   change to the app's central security claim.
-2. **Memory.** Preferences remembered from the chat and from edits, a
+1. **Memory.** Preferences remembered from the chat and from edits, a
    personal model learned from the reports a user keeps (the same
    `learnModel`), and a panel to read, change and forget them.
-3. **Gemini quota savings.** Change model on a quota error, Flash-Lite for the
+2. **Gemini quota savings.** Change model on a quota error, Flash-Lite for the
    small calls, remember the chosen model across tabs, skip the chat turn for
    a plain build request, and cap thinking.
-4. **A neural model, later.** Rendered images of the reports paired with their
+3. **A neural model, later.** Rendered images of the reports paired with their
    skeletons, for fine-tuning a small open vision model on free GPU time,
    which needs an account only the owner can create.
