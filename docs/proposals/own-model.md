@@ -281,11 +281,101 @@ An answer cut off by its own thinking, the owner's certificate, is asked
 once more with thinking capped. All of it is covered by the generation and
 model-resolution tests against a stubbed network. None of it has been run
 against the owner's key, whose quota was spent for the day.
+## A vision model (milestone 6, started 2026-11-03)
+
+A small open vision model, fine-tuned to look at a picture of a report page
+and write its skeleton. Forma then builds the report from the skeleton.
+
+### What the owner decided
+
+The owner answered two questions on 2026-11-03. Training runs on free GPU
+time on the owner's own Kaggle account (about 30 hours a week), since the
+machine that learned milestone 1 has no GPU.
+
+| Question | Answer |
+|---|---|
+| What may be uploaded to Kaggle, as a private dataset, to train on? | **The skeletons, drawn.** The 359 structure-only skeletons, each drawn as page images with placeholder text. Not the reports themselves. |
+| Where does the trained model run for users? | **Local AI first.** It is exported as GGUF for Ollama and LM Studio, behind the Local AI provider of milestone 3. The browser comes later, if at all. |
+
+The answer to the second question needs one new piece in Forma: a converter
+from a skeleton to a report. Until 2026-11-03 a skeleton only went one way,
+from a report to its structure.
+
+### The training set (built 2026-11-03)
+
+- **The format the model writes** is `src/lib/skeletonText.ts`: one line per
+  band, control and table row, in fixed positions and whole hundredths of an
+  inch. As JSON a skeleton averages 11 kB. As text the median is 1,370
+  characters, the 90th percentile 6,714 and the largest 11,799. The same
+  module reads a model's answer back, skipping and naming any line it cannot
+  read.
+- **`npm run model:dataset`** packs the skeletons
+  (`scripts/model/dataset.ts`). It reads only the `skeletons/` folder, never
+  `index.json`, which names the report files.
+  - **Fonts:** a font family is the one string in a skeleton that a report
+    chose, so every family outside `PUBLIC_FONTS` becomes Arial. On the
+    owner's set that was 45 places in four rare families. DIN Pro is on the
+    list: 103 reports use it, and the shipped model already names it.
+  - **Leak check:** `strayWords` then checks every target, and the script
+    writes nothing if a single stray word is left.
+  - **Band heights:** each band is written as tall as it prints, because a
+    picture shows the printed height. One Detail band was drawn 3.7 high
+    under labels 17.5 high, and DevExpress prints it 17.5 high.
+  - **Split:** 319 examples to train on and 40 held out for evaluation, the
+    same 40 on every run.
+- **`python scripts/model/render.py <dataset>`** draws each skeleton four
+  times at 100 dpi, in the Liberation faces of `assets/pdf-fonts`. Every word
+  is a placeholder.
+  - **What a version varies:** the words, how many records the Detail band
+    repeats for (so a page of twenty rows is still one Detail band), and a
+    little print noise on three of the four.
+  - **Columns:** each column keeps one kind of value (dates, amounts or
+    codes), as a real report's would.
+  - **Output:** 1,436 images, 60 MB, in the dataset folder outside the
+    repository, with `train.jsonl`, `eval.jsonl` and `dataset-metadata.json`.
+  - **Upload:** `kaggle datasets create -p <dataset>`, which is private
+    unless `--public` is given. Set the owner in `dataset-metadata.json`
+    first.
+
+### The model and the toolchain (researched 2026-11-03, not yet run)
+
+These are from published sources, not yet measured here:
+- **The model:** Qwen3.5-2B, Apache-2.0, the strongest of the permissively
+  licensed small models on document benchmarks (OCRBench 84.5 on its model
+  card). Excluded:
+  - Qwen2.5-VL-3B, whose licence is non-commercial;
+  - Gemma 3, which is gated;
+  - LFM2.5-VL, which has a licence of its own.
+- **Training:** Unsloth's Qwen3.5 vision notebook, a 16-bit LoRA in fp16 on
+  **one T4**.
+  - Unsloth needs compute capability 7.0, so Kaggle's P100 (6.0) is out.
+    Kaggle also said in September 2026 that the P100 is being retired.
+  - The sequence length has to rise to about 6,144: the largest target plus
+    the image.
+- **Export:** merge in 16-bit, then convert with llama.cpp's own
+  `convert_hf_to_gguf.py` into the model and its `--mmproj` vision projector.
+  Then `llama-quantize` to Q8_0, with the projector kept at F16. A direct
+  quantized export from Unsloth garbled a Qwen-VL model's output (unsloth
+  #3899).
+- **The risk to test first:** LM Studio and llama.cpp run this architecture
+  with vision. Importing a separate projector into Ollama for Qwen3.5 failed
+  through 2026 (ollama #14575). Import the BASE model's GGUF into Ollama and
+  check that `ollama show` lists vision before spending GPU hours. If it does
+  not, the fallback is SmolVLM2-2.2B (Apache-2.0, weaker on documents),
+  trained with plain TRL.
+
+### Still to build
+
+1. The Kaggle notebook, kept in the repository: a run on about 20 examples
+   first, then the full set, writing the GGUF files as its output.
+2. The evaluation on the 40 held-out skeletons: bands and controls found,
+   their places, against today's offline model.
+3. Forma's half: a skeleton to a report, its texts filled in by OCR. Then
+   the model behind the Local AI provider.
+
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded
 here as it is built:
 
-1. **A neural model, later.** Rendered images of the reports paired with their
-   skeletons, for fine-tuning a small open vision model on free GPU time,
-   which needs an account only the owner can create.
+1. **The vision model of milestone 6**, above, to its end.

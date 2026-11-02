@@ -448,6 +448,10 @@ src/
                        out, the house style and kinds of report learned from
                        a set of skeletons, and the check that a model holds
                        no word outside its vocabulary),
+                       skeletonText (a skeleton as the compact text the vision
+                       model learns to write, read back tolerantly from its
+                       answer, and the check that no word but a public
+                       font's leaves the machine),
                        offlineGenerator (a report designed by that model with
                        no AI service: the words read for kind, columns,
                        grouping and totals, the pattern chosen, the house
@@ -611,7 +615,10 @@ docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
                        the documented checks run without prompting
 scripts/               five helpers: dev + build, and the encoding, doc-pointer
                        and bundle-size checks that three of the seven commands
-                       call
+                       call; fidelity/, the benchmark's runner and cases; and
+                       model/, which learns Forma's own model and packs and
+                       draws the vision model's training set (render.py needs
+                       Python 3 and Pillow)
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
 firebase.json          the rules path, databaseId, and the emulator port
@@ -645,6 +652,7 @@ firebase-applet-config.json
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
 | `npm run bench:fidelity` | The fidelity benchmark: generates every case under `scripts/fidelity/cases` through the real pipeline with your own key (`FORMA_BENCH_KEY`) and scores the result. A benchmark, not a check — it spends quota, so it is not in CI |
 | `npm run model:train` | Learns Forma's own model (`assets/model/formaModel.json`) from a folder of `.repx` reports, from their structure only, and refuses to write it if any word of theirs would reach it. Takes `--reports` and `--data` (a folder outside the repository); see `docs/proposals/own-model.md` |
+| `npm run model:dataset` | Packs those skeletons as a private Kaggle dataset for the vision model: every rare font made Arial, every target checked for stray words, nothing written if one is left. Takes `--data` and `--out` (outside the repository). Then `python scripts/model/render.py <out>` draws each skeleton as page images with placeholder text |
 | `npm run clean` | Remove `dist/` |
 
 <sup>Two other files list these: [`CONTRIBUTING.md`](CONTRIBUTING.md)'s table of checks and [`CLAUDE.md`](CLAUDE.md)'s *Commands* block. Adding or renaming a script is a change to all three — this table is the one users read, so it lists every script rather than only the checks.</sup>
