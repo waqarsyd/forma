@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,106 tests in 101 files** — under the `node` environment
+`npm test` runs Vitest over **2,111 tests in 101 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -170,7 +170,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/chatRetry` | 10 |  |
 | `services/embeddings` | 20 | SDK mocked, as `geminiService` is |
 | `services/generationRetry` | 8 | the generation path's runaway and truncated-stream retries, against a stubbed stream |
-| `services/geminiService` | 33 | 7 of these come from one loop |
+| `services/geminiService` | 38 | 7 of these come from one loop; since 2026-11-02 also the chat turn's instructions taking a written description as enough, and `generateSmall` turning thinking off for the small calls, asking a refusing model again with room, and not mistaking a rejected key for a refusal |
 | `services/keyVault` | 21 | jsdom |
 | `services/library` | 15 | storage and embedding injected |
 | `services/modelResolution` | 32 | jsdom |
@@ -178,7 +178,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,106 in 101 files** — and that total is the arithmetic sum of the column above
+**Total: 2,111 in 101 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -192,7 +192,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **1,986** against a real 2,106 and will talk you into
+A grep for `\bit(` answers **1,991** against a real 2,111 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

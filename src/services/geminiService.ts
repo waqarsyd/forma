@@ -631,6 +631,25 @@ export interface ChatOutcome {
 }
 
 /**
+ * What the chat turn is told before the conversation. Since 2026-11-01 the
+ * chat box is also the Describe-a-report wizard: a report asked for in words
+ * goes on to Prompt-to-Report, which asks its own questions about whatever the
+ * words leave open. Until 2026-11-02 this still described Forma as turning an
+ * uploaded design into a report, and told the model to ask for an image or a
+ * layout when there was none, so with a real key "Build a report listing our
+ * orders, grouped by region, with a total per region" was answered with a
+ * request for an image and never designed. The offline mock says yes to any
+ * build request, which is why only a real key showed it.
+ */
+export const CHAT_INSTRUCTIONS = `You are the assistant inside Forma, which designs DevExpress reports and writes them as downloadable .repx files. Forma designs a report from an uploaded design (an image, a PDF or a .repx), from a written description alone, or from both.
+
+Answer the user's message briefly and helpfully — two or three sentences at most. You can explain what Forma does, how to use it, what DevExpress reports are, and what file types are supported.
+
+Set "wantsReport" to true when the user is asking for a report to be built or changed right now: they say what a new report should show (what it lists, how it is grouped or sorted, what it totals, or its columns), or they ask for a change to a report that already exists. A written description is enough on its own: do NOT ask for an image, a PDF or a layout first. Forma asks its own follow-up questions about anything the description leaves open, so a short request such as "a report of our orders grouped by region with a total per region" is a report request. When "wantsReport" is true, reply in one short sentence that you are designing it, and ask nothing in the reply: Forma asks its own questions next.
+
+Set "wantsReport" to false for greetings, questions about Forma or DevExpress, thanks, and requests that say nothing about what the report should contain (for example "make me a report"). For those, answer, and when they want a report but gave no content, ask what it should list, or invite them to attach an image or a PDF of one.`;
+
+/**
  * Canned chat turn for VITE_FORMA_MOCK. The classification is keyword-based
  * rather than random so the mock behaves the same way twice — a build request
  * still falls through to generation, and small talk still does not.
@@ -654,6 +673,55 @@ function buildMockChatReply(userText: string): ChatOutcome {
  * discovered rather than assumed — once per model per session.
  */
 const thinkingUnsupportedForModel = new Set<string>();
+
+/**
+ * A 400 that means "this model will not take `thinkingBudget: 0`". A rejected
+ * key also arrives as a 400, and without the narrowing it was read as this: a
+ * second request that failed identically, a warning naming the wrong cause,
+ * and the model marked thinking-unsupported for the rest of the session on
+ * the strength of an auth failure. Narrowed rather than replaced, because some
+ * models really do return a bare 400 with no useful message for the thinking
+ * parameter, which is what the fallback was written for.
+ */
+function isThinkingRejection(err: any): boolean {
+  const message = `${err?.message || ""}`;
+  const invalidArgument = err?.status === 400 || message.includes("INVALID_ARGUMENT") || message.includes("invalid argument");
+  const authFailure = /api[ _-]?key|unauthenticated|permission|unauthori[sz]ed/i.test(message);
+  return invalidArgument && !authFailure;
+}
+
+/** Room a model that insists on thinking gets on a small call, since its thinking counts against the same limit. */
+export const SMALL_CALL_THINKING_ROOM = 8192;
+
+type GenAIClient = InstanceType<typeof import("@google/genai").GoogleGenAI>;
+type GenerateRequest = Parameters<GenAIClient["models"]["generateContent"]>[0];
+
+/**
+ * One of the small schema-constrained calls (the clarification, an expression,
+ * test data) with thinking off.
+ *
+ * Gemini 2.5 thinks by default, and its thinking is counted against
+ * `maxOutputTokens`. These calls had limits of 512 and 4,096 and never turned
+ * thinking off, though the clarification's own comment said "no thinking";
+ * found with a real key on 2026-11-02, when a clarification came back cut off
+ * 40 characters in, so every described report skipped its questions. A model
+ * that refuses `thinkingBudget: 0` is asked again with room to think, and
+ * remembered, as the chat turn does.
+ */
+export async function generateSmall(ai: Pick<GenAIClient, "models">, request: GenerateRequest, signal?: AbortSignal) {
+  const model = request.model;
+  if (!thinkingUnsupportedForModel.has(model)) {
+    try {
+      return await ai.models.generateContent({ ...request, config: { ...request.config, thinkingConfig: { thinkingBudget: 0 } } });
+    } catch (err) {
+      if (signal?.aborted || !isThinkingRejection(err)) throw err;
+      thinkingUnsupportedForModel.add(model);
+      console.warn(`Model "${model}" rejected thinkingBudget:0 — asking again with room to think.`);
+    }
+  }
+  const limit = request.config?.maxOutputTokens ?? 512;
+  return ai.models.generateContent({ ...request, config: { ...request.config, maxOutputTokens: limit + SMALL_CALL_THINKING_ROOM } });
+}
 
 /**
  * Turn a provider error into something worth showing a person.
@@ -843,13 +911,7 @@ export async function chatReply(
       {
         parts: [
           {
-            text: `You are the assistant inside Forma, a tool that turns an uploaded design (image, PDF or .repx) into a DevExpress report layout and a downloadable .repx file.
-
-Answer the user's message briefly and helpfully — two or three sentences at most. You can explain what Forma does, how to use it, what DevExpress reports are, and what file types are supported.
-
-Set "wantsReport" to true ONLY when the user is genuinely asking you to build or modify a report right now, and has given enough to work from — either they describe a report they want created, or they are asking for a change to a report that already exists. Greetings, questions, thanks, and vague statements are NOT report requests.
-
-If they clearly want a report but have not supplied a design or a description, set "wantsReport" to false and ask them to attach an image or PDF, or describe the layout they want.
+            text: `${CHAT_INSTRUCTIONS}
 
 Never claim to have generated anything. You do not generate reports — you only reply and decide.
 
@@ -921,24 +983,7 @@ ${transcript}`,
       try {
         stream = await ai.models.generateContentStream(buildChatRequest(attemptWithoutThinking));
       } catch (err: any) {
-        const message = `${err?.message || ""}`;
-        const invalidArgument =
-          err?.status === 400 ||
-          message.includes("INVALID_ARGUMENT") ||
-          message.includes("invalid argument");
-
-        /*
-         * A rejected key also arrives as a 400, and without this it was read as
-         * "this model rejects thinkingBudget:0": a second request that fails
-         * identically, a warning naming the wrong cause, and the model marked
-         * thinking-unsupported for the rest of the session on the strength of
-         * an auth failure. Narrowed rather than replaced, because some models
-         * really do return a bare 400 with no useful message for the thinking
-         * parameter, which is what the fallback was written for.
-         */
-        const authFailure = /api[ _-]?key|unauthenticated|permission|unauthori[sz]ed/i.test(message);
-
-        if (attemptWithoutThinking && invalidArgument && !authFailure && !signal?.aborted) {
+        if (attemptWithoutThinking && isThinkingRejection(err) && !signal?.aborted) {
           // Remember for the rest of the session so this costs one failed request
           // per model, not one per message.
           thinkingUnsupportedForModel.add(activeModel);
@@ -1318,7 +1363,7 @@ export async function clarifyReportRequest(
     const { GoogleGenAI, Type } = await loadGenAI();
     const ai = new GoogleGenAI({ apiKey: currentApiKey });
 
-    const response = await ai.models.generateContent({
+    const response = await generateSmall(ai, {
       model,
       contents: [
         {
@@ -1358,7 +1403,7 @@ ${buildDescriptionBrief(request)}`,
           required: ["ready", "questions"],
         },
       },
-    });
+    }, signal);
 
     const parsed = JSON.parse(response.text ?? "{}") as Partial<ClarificationOutcome>;
     const questions = (parsed.questions ?? [])
@@ -1415,7 +1460,7 @@ export async function promptToExpression(
   const { GoogleGenAI, Type } = await loadGenAI();
   const ai = new GoogleGenAI({ apiKey: currentApiKey });
 
-  const response = await ai.models.generateContent({
+  const response = await generateSmall(ai, {
     model,
     contents: [
       {
@@ -1445,7 +1490,7 @@ Answer with the expression and one sentence saying what it computes.`,
         required: ["expression", "explanation"],
       },
     },
-  });
+  }, signal);
 
   const parsed = JSON.parse(response.text ?? "{}") as Partial<ExpressionOutcome>;
   const expression = (parsed.expression ?? "").trim();
@@ -1506,7 +1551,7 @@ export async function generateTestData(
   const { GoogleGenAI, Type } = await loadGenAI();
   const ai = new GoogleGenAI({ apiKey: currentApiKey });
 
-  const response = await ai.models.generateContent({
+  const response = await generateSmall(ai, {
     model,
     contents: [
       {
@@ -1542,7 +1587,7 @@ Return exactly ${wanted} rows. Each row is an array of ${names.length} values IN
         required: ["rows"],
       },
     },
-  });
+  }, signal);
 
   const parsed = JSON.parse(response.text ?? "{}") as { rows?: { values?: unknown[] }[] };
   const rows = (parsed.rows ?? []).slice(0, wanted).map((row) => {

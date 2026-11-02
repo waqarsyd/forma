@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   extractPartialReply,
   asReadableError,
@@ -8,6 +8,9 @@ import {
   misorderMockHeaders,
   MOCK_MISORDERED,
   MOCK_INVOICE_RESPONSE,
+  CHAT_INSTRUCTIONS,
+  generateSmall,
+  SMALL_CALL_THINKING_ROOM,
 } from './geminiService';
 import { auditRepx } from '../lib/repxAudit';
 import { liftReportMargins } from '../lib/repxMargins';
@@ -293,5 +296,61 @@ describe('the deliberately misordered mock fixture', () => {
     // Not a boolean-ish coercion: an unrecognised value leaves mock mode off,
     // so a typo calls Gemini rather than silently returning a fake report.
     expect(isMockMode('yes')).toBe(false);
+  });
+});
+
+/**
+ * The chat turn decides whether a typed message goes on to be designed. With
+ * a real key it answered a described report with a request for an image until
+ * 2026-11-02, because its instructions still said Forma only converts uploaded
+ * designs; the mock says yes to any build request and hid it.
+ */
+describe('the chat turn instructions', () => {
+  it('take a written description as enough, and leave the open questions to Prompt-to-Report', () => {
+    expect(CHAT_INSTRUCTIONS).toMatch(/written description alone/);
+    expect(CHAT_INSTRUCTIONS).toMatch(/do NOT ask for an image, a PDF or a layout first/);
+    expect(CHAT_INSTRUCTIONS).toMatch(/asks its own follow-up questions/);
+    expect(CHAT_INSTRUCTIONS).not.toMatch(/turns an uploaded design/);
+  });
+
+  it('still keep small talk and a request with no content out of generation', () => {
+    expect(CHAT_INSTRUCTIONS).toMatch(/"wantsReport" to false for greetings/);
+    expect(CHAT_INSTRUCTIONS).toMatch(/say nothing about what the report should contain/);
+  });
+});
+
+/**
+ * Gemini 2.5 counts its thinking against maxOutputTokens, and the small calls
+ * (clarification 512, expression 512, test data 4,096) never turned it off: a
+ * clarification came back cut off 40 characters in with a real key on
+ * 2026-11-02, so no described report was ever asked its questions.
+ */
+describe('generateSmall', () => {
+  const request = (model: string) => ({ model, contents: [{ parts: [{ text: 'q' }] }], config: { temperature: 0, maxOutputTokens: 512 } });
+
+  it('turns thinking off and keeps the limit', async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: '{}' });
+    await generateSmall({ models: { generateContent } } as never, request('small-a'));
+    expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(generateContent.mock.calls[0][0].config).toMatchObject({ temperature: 0, maxOutputTokens: 512, thinkingConfig: { thinkingBudget: 0 } });
+  });
+
+  it('asks a model that refuses a zero budget again with room to think, and remembers it', async () => {
+    const generateContent = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('INVALID_ARGUMENT: thinking budget'), { status: 400 }))
+      .mockResolvedValue({ text: '{}' });
+    await generateSmall({ models: { generateContent } } as never, request('small-b'));
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(generateContent.mock.calls[1][0].config.thinkingConfig).toBeUndefined();
+    expect(generateContent.mock.calls[1][0].config.maxOutputTokens).toBe(512 + SMALL_CALL_THINKING_ROOM);
+    await generateSmall({ models: { generateContent } } as never, request('small-b'));
+    expect(generateContent).toHaveBeenCalledTimes(3);
+    expect(generateContent.mock.calls[2][0].config.thinkingConfig).toBeUndefined();
+  });
+
+  it('does not take a rejected key for a thinking refusal', async () => {
+    const generateContent = vi.fn().mockRejectedValue(Object.assign(new Error('API key not valid. INVALID_ARGUMENT'), { status: 400 }));
+    await expect(generateSmall({ models: { generateContent } } as never, request('small-c'))).rejects.toThrow(/API key/);
+    expect(generateContent).toHaveBeenCalledTimes(1);
   });
 });
