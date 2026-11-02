@@ -130,7 +130,9 @@ export default function Composer({
   // Reading an image's text holds the send, as an upload in flight does in
   // any chat: the text goes with the message, so the message waits for it.
   const reading = Object.values(ocrStatus ?? {}).some((s) => s.state === 'reading');
-  const canSend = hasApiKey && !isAnalyzing && !isChatting && !isIngesting && !reading;
+  // With no key the box still sends (2026-11-02): Forma's own model designs
+  // from words and OCR builds from images, so the key unlocks AI, not the box.
+  const canSend = !isAnalyzing && !isChatting && !isIngesting && !reading;
 
   /*
    * Sending puts the caret back in the field, and this is not a nicety.
@@ -265,7 +267,7 @@ export default function Composer({
         </div>
       )}
 
-      <div className={`wb-box${hasApiKey ? '' : ' wb-is-locked'}`}>
+      <div className="wb-box">
         <button
           className="wb-tool"
           aria-label="Attach a file"
@@ -307,8 +309,7 @@ export default function Composer({
               onPasteFiles(files);
             }
           }}
-          disabled={!hasApiKey}
-          placeholder={hasApiKey ? 'Describe a report, attach or paste an image, or ask anything…' : 'Add your API key to start'}
+          placeholder={hasApiKey ? 'Describe a report, attach or paste an image, or ask anything…' : 'Describe a report or attach an image: Forma’s own model, no key needed'}
           aria-label="Message"
         />
         <button
@@ -329,8 +330,8 @@ export default function Composer({
         <button className="wb-gate" onClick={onAddKey}>
           <span className="wb-badge-ic"><IconAlert size={12} /></span>
           <span className="wb-txt">
-            <b>Add your Gemini API key</b>
-            <span>Forma ships no key of its own</span>
+            <b>Working offline, with Forma’s own model</b>
+            <span>Add a free Gemini key for AI designs</span>
           </span>
           {/* Inline rather than an icon component: the artifact drew a
               right-chevron here, and icons.tsx has only the down one.

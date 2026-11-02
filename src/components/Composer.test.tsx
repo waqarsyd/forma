@@ -133,7 +133,6 @@ describe('Enter respects the same conditions as the button', () => {
     ['a generation is running', { isAnalyzing: true }],
     ['a chat turn is running', { isChatting: true }],
     ['an upload is still being read', { isIngesting: true }],
-    ['there is no key', { hasApiKey: false }],
   ];
 
   for (const [what, props] of cases) {
@@ -163,11 +162,16 @@ describe('when sending is not possible', () => {
     expect(send().disabled).toBe(true);
   });
 
-  it('refuses with no key, and says so in the placeholder', () => {
-    draw({ hasApiKey: false });
-    expect(send().disabled).toBe(true);
-    expect(field().disabled).toBe(true);
-    expect(field().placeholder).toBe('Add your API key to start');
+  // Since 2026-11-02 a missing key no longer locks the box: Forma's own model
+  // designs from words with no key, so only work in flight holds the send.
+  it("sends with no key, to Forma's own model, and says so in the placeholder", () => {
+    const onSend = vi.fn();
+    draw({ hasApiKey: false, onSend });
+    expect(send().disabled).toBe(false);
+    expect(field().disabled).toBe(false);
+    expect(field().placeholder).toBe('Describe a report or attach an image: Forma’s own model, no key needed');
+    fireEvent.keyDown(field(), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 
   it('is ready when a key is present and nothing is in flight', () => {
@@ -179,23 +183,23 @@ describe('when sending is not possible', () => {
 });
 
 describe('the key gate', () => {
-  it('offers the way in when there is no key', () => {
+  it('says it is working offline when there is no key, and offers the key', () => {
     draw({ hasApiKey: false });
-    expect(screen.getByText('Add your Gemini API key')).toBeTruthy();
-    expect(document.querySelector('.wb-box')!.className).toContain('wb-is-locked');
+    expect(screen.getByText('Working offline, with Forma’s own model')).toBeTruthy();
+    expect(screen.getByText('Add a free Gemini key for AI designs')).toBeTruthy();
+    expect(document.querySelector('.wb-box')!.className).not.toContain('wb-is-locked');
   });
 
   it('opens the config dialog when asked', () => {
     const onAddKey = vi.fn();
     draw({ hasApiKey: false, onAddKey });
-    fireEvent.click(screen.getByText('Add your Gemini API key').closest('button')!);
+    fireEvent.click(screen.getByText('Working offline, with Forma’s own model').closest('button')!);
     expect(onAddKey).toHaveBeenCalledTimes(1);
   });
 
   it('stays out of the way once a key is present', () => {
     draw();
-    expect(screen.queryByText('Add your Gemini API key')).toBeNull();
-    expect(document.querySelector('.wb-box')!.className).not.toContain('wb-is-locked');
+    expect(screen.queryByText('Working offline, with Forma’s own model')).toBeNull();
   });
 
   // Whoever is about to paste a key is exactly who needs to know it is not

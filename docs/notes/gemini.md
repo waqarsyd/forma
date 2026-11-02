@@ -1039,6 +1039,8 @@ that, and that is a thing only someone at the machine can do.
 
 ## The API key gates the entire workspace
 
+**Since 2026-11-02 it gates the AI, not the workspace.** The owner made Forma work with no key, as a free app should, so the composer is open without one and `handleGenerate` hands the message to `designOffline` instead of stopping. An image is built from the text OCR read, with no model, through `buildFromRead` in `ocrAttach.ts`, which is what the OCR review's Build .repx builds. Words that ask for a report (`OFFLINE_REQUEST`) are designed by Forma's own model (`offlineGenerator.ts`, docs/proposals/own-model.md). Anything else, a question, or a PDF's text or a `.repx` to read, gets `OFFLINE_HELP`, which says what works offline and how a free key adds the rest. The banner under the composer now reads "Working offline, with Forma's own model". Everything below still holds for what needs a model: Resume, Test data, Prompt-to-Expression and the chat turn itself check `hasApiKey` exactly as described.
+
 `hasApiKey` in `App.tsx` is the single derived gate. `handleGenerate` and `handleResume` both check it and open the config modal rather than relying on `MissingApiKeyError` to surface later — so nothing enters the transcript and no loader appears before a request is known to be possible. The composer input is disabled, the send button is disabled, and a click-through banner sits above the composer explaining why. Keep every new workspace action behind this same check.
 
 ## Chat and report generation are separate paths

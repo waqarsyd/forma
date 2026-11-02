@@ -39,6 +39,27 @@ export const CATEGORY_WORDS: Record<string, string[]> = {
   catalogue: ['catalog', 'catalogue', 'price list'],
 };
 
+/** Where the browser fetches the shipped model from (see MODEL_ASSETS in vite.config.ts). */
+export const MODEL_URL = '/model/formaModel.json';
+
+let loading: Promise<FormaModel> | null = null;
+
+/** The shipped model, fetched once per session; a failed fetch is tried again next time. */
+export function loadFormaModel(): Promise<FormaModel> {
+  if (!loading) {
+    loading = fetch(MODEL_URL).then(async (r) => {
+      if (!r.ok) throw new Error(`Forma's own model could not be loaded (HTTP ${r.status}).`);
+      const model = (await r.json()) as FormaModel;
+      if (model.version !== 1 || !model.archetypes?.length) throw new Error("Forma's own model is not one this version can read.");
+      return model;
+    });
+    loading.catch(() => {
+      loading = null;
+    });
+  }
+  return loading;
+}
+
 /** The category a folder path or a request names, by the first category word it contains, or null. */
 export function categoryOf(text: string): string | null {
   const t = text.toLowerCase();

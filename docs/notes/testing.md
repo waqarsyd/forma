@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,142 tests in 104 files** — under the `node` environment
+`npm test` runs Vitest over **2,147 tests in 105 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -79,7 +79,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/AccountDialog` | 23 | jsdom |
 | `components/BatchPanel` | 11 | jsdom |
 | `components/ChatThread` | 30 | jsdom; since 2026-11-01 also the predefined descriptions an empty conversation starts from, and a description's questions asked as a form holding their suggestions |
-| `components/Composer` | 36 | jsdom, 8 from one loop; the one chat box (2026-11-01): no separate Describe or OCR button, each image's reading on its chip with the send held until it is read, a pasted image attached |
+| `components/Composer` | 34 | jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box: one test now sends with no key, to Forma's own model); the one chat box (2026-11-01): no separate Describe or OCR button, each image's reading on its chip with the send held until it is read, a pasted image attached |
 | `components/DataBinding` | 18 | jsdom |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
@@ -118,11 +118,12 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/ocr` | 3 | Tesseract's blocks read as words and lines with boxes and confidence, enlarged boxes divided back |
 | `lib/ocrLayout` | 13 | OCR to layout: a label at its text, a line split at a gap wider than it is tall, aligned rows as a table and a row that does not line up kept out of it, a table sized by its cells' widths when their boxes take in the borders, the text for the model, low-confidence words flagged, picture readings set aside, margins fitted to the content, a screenshot fitted to the printable width, the font from the ink |
 | `lib/ocrRepx` | 6 | jsdom; a detected layout written as a .repx: the app's own checks pass, every label and cell where the layout put it on the report header, a page break per page, labels as wide as Arial prints them, the Mockup's layout and the spec from the same controls, Dpi and paper by the repair passes, flagged text named or left out |
+| `lib/offlineGenerator` | 7 | jsdom (`checkRepx`); reports designed by Forma's own model over the shipped model: the words read for category, columns, grouping, totals and page; field names, captions, types and titles; a grouped payroll report that opens, passes the audit and prints its records, group totals and grand total; a pasted schema and a given title winning; the house style and a remembered paper; a named kind of report starting from its usual columns; the category's pattern chosen |
 | `lib/panelSize` | 13 |  |
 | `lib/pdf` | 5 |  |
 | `lib/pdfA` | 15 | PDF/A (row 72) against s60 and s62: the root's `PdfACompatibility` read, dates and XMP that agree, the sRGB ICC 2.1 profile's header, tags and curve, pictures flattened over white; the embedded fonts' `?` for a missing character, widths, Unicode map in blocks of a hundred and beyond the BMP, CIDSet, subset tag; a written PDF/A file (1.4, output intent, uncompressed XMP, Type 0 over CIDFontType2, CIDSet, `Length1`, identifier, dates, link print flag, no SMask for part 1), read back as text by pdf.js; PDF/A with a password refused; a report not asking for it unchanged. The same writer's files passed veraPDF 1.30.3 as 1b, 2b and 3b |
 | `lib/pdfCrypto` | 8 | 3 from one loop; MD5, RC4 and AES-128/256 against their published vectors; the file's `PasswordSecurityOptions` as DevExpress wrote them (s61); Forma's encrypted PDF opened by pdf.js at AES-128, RC4 and AES-256 with either password, its text, title, link and outline read, and refused without; the permissions under each password (row 73) |
-| `lib/pdfWriter` | 5 | the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
+| `lib/pdfWriter` | 5 | pdfjs warmed in a `beforeAll` since 2026-11-02, when its cold import timed the first case out in a full run; the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
 | `lib/promptSections` | 48 |  |
 | `lib/promptToReport` | 12 | the pure half of Prompt-to-Report; a description typed into the chat box, its fenced or CREATE TABLE schema taken as the data source |
 | `lib/reportBands` | 15 |  |
@@ -181,7 +182,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 7 | description-mode framing, the overlap repair and the clarification call, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,142 in 104 files** — and that total is the arithmetic sum of the column above
+**Total: 2,147 in 105 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -195,7 +196,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2,022** against a real 2,142 and will talk you into
+A grep for `\bit(` answers **2,029** against a real 2,147 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

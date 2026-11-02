@@ -27,7 +27,7 @@ import { useFocusTrap } from './useFocusTrap';
 import type { PreviewMeta } from '../lib/attachments';
 import { recognizePage, type OcrPage } from '../lib/ocr';
 import { detectLayout, placementFor, type DetectedLayout, type DetectedText } from '../lib/ocrLayout';
-import { layoutToRepx, layoutToReport, ocrSummary, validateOcrRepx } from '../lib/ocrRepx';
+import { layoutToRepx, layoutToReport, ocrSummary, reportNameFor, validateOcrRepx } from '../lib/ocrRepx';
 import { imageDpi, pageForImage } from '../lib/reportGeometry';
 import type { ReportLayout } from '../lib/reportTypes';
 
@@ -75,11 +75,8 @@ function stageLabel(stage: string): string {
 
 const pageName = (meta: PreviewMeta) => (meta.page ? `${meta.file}, page ${meta.page}` : meta.file);
 
-/** A report Name DevExpress accepts: letters, digits and underscores, not starting with a digit. */
-export function reportNameFor(file: string): string {
-  const base = file.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_]+/g, '');
-  return /^[A-Za-z_]/.test(base) ? base : `Ocr${base}`;
-}
+/** Moved to lib/ocrRepx.ts on 2026-11-02, so the chat box's offline build names a report the same way; re-exported for this dialog's callers. */
+export { reportNameFor };
 
 export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, preread }: OcrDialogProps) {
   const initialRuns = (): PageRun[] => pages.map((_, i) => (preread?.[i] ? { status: 'done', ocr: preread[i]! } : { status: 'waiting' }));

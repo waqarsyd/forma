@@ -3464,6 +3464,79 @@ export default function App() {
   };
 
   /**
+   * The chat box with no key (2026-11-02, docs/proposals/own-model.md).
+   * Forma's own model designs a report from words, and an image is built from
+   * the text OCR read, both with no AI service, so the workspace works for
+   * anyone. A PDF's text layer and an attached .repx still need a model, and
+   * the reply says so rather than pretending.
+   */
+  const designOffline = async (message: string) => {
+    const staged = [...previews];
+    const stagedForOcr = ocrPages;
+    const texts = attachmentTexts;
+    setMessages(prev => [...prev, {
+      id: nextMessageId(),
+      role: 'user',
+      text: message,
+      images: staged.length > 0 ? staged : undefined,
+      imageMeta: staged.length > 0 ? previewMeta : undefined,
+    }]);
+    setPrompt('');
+    setPreviews([]);
+    setPreviewMeta([]);
+    setAttachmentTexts([]);
+    setUploadNotices([]);
+    setError(null);
+    const say = (text: string, attached?: DesignResult) =>
+      setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text, ...(attached ? { result: attached } : {}) }]);
+    try {
+      const read = stagedForOcr.flatMap(({ meta }) => {
+        const run = ocrRuns[ocrKey(meta)];
+        return run?.state === 'done' ? [{ meta, read: run.read }] : [];
+      });
+      if (read.length) {
+        const { buildFromRead } = await import('./lib/ocrAttach');
+        const built = buildFromRead(read, config.unit, config.pageSize);
+        if (built) {
+          handleOcrBuild(built);
+          return;
+        }
+      }
+      // The words, the replies and the generator are one lazy module, so the
+      // entry chunk carries none of them.
+      const offline = await import('./lib/offlineGenerator');
+      if (staged.length || texts.length) {
+        say(offline.OFFLINE_NEEDS_MODEL);
+        return;
+      }
+      const request = describedRequest(message);
+      if (!request.dataSchema && !offline.isOfflineRequest(message)) {
+        say(offline.OFFLINE_HELP);
+        return;
+      }
+      const [{ loadFormaModel }, { parseDataSource }] = await Promise.all([import('./lib/formaModel'), import('./lib/dataSource')]);
+      const fields = request.dataSchema
+        ? parseDataSource(request.dataSchema).fields.map(f => ({ name: f.name, type: f.type === 'string' ? ('text' as const) : f.type }))
+        : undefined;
+      const design = offline.generateOffline(await loadFormaModel(), { description: request.description || message, fields });
+      const newResult: DesignResult = {
+        content: design.markdown,
+        timestamp: new Date(),
+        title: design.title,
+        layout: design.layout,
+        repxContent: design.repx,
+        usage: null,
+      };
+      setResult(newResult);
+      recordRevision("Forma's own model", newResult);
+      setActiveTab('ui');
+      say(offline.designedReply(design), newResult);
+    } catch (err: any) {
+      say(err?.message || "Forma's own model could not design this report.");
+    }
+  };
+
+  /**
    * `overridePrompt` exists for the retry affordance on a failed message, which
    * re-sends that message's own text rather than whatever is in the composer.
    * Every call site passes it explicitly — never wire this straight to onClick,
@@ -3494,12 +3567,10 @@ export default function App() {
       return;
     }
 
-    // The API key gates everything in the workspace. Checked here rather than
-    // relying on analyzeReportDesign to throw, so nothing is added to the
-    // transcript and no loader appears before we know a request is possible.
+    // With no key, Forma's own model and OCR answer instead of Gemini
+    // (2026-11-02). Until then the key gated the whole workspace here.
     if (!hasApiKey) {
-      setError('Add your Gemini API key to use the workspace.');
-      setIsConfigOpen(true);
+      await designOffline(promptText);
       return;
     }
 

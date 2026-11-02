@@ -90,6 +90,7 @@ The claim is enforced, not just intended: the server sends a Content-Security-Po
 Each of these is a shipped code path, not a plan.
 
 - **Image, PDF and `.repx` intake.** Drop a mockup, a scan, a photo, or an existing report. PDFs are rasterised *and* have their text layer extracted, so exact strings survive rather than being read back out of pixels ([`src/App.tsx`](src/App.tsx), [`src/lib/pdf.ts`](src/lib/pdf.ts)).
+- **Works with no key, on Forma's own model.** Forma learned the house style and the kinds of report from the structure of 359 real DevExpress reports (never their words), and with no AI key it designs a report from a request such as "a stock register grouped by warehouse with totals" with that model, offline and with no quota, and builds one from an image's text read by OCR. A free Gemini key adds AI designs on top ([`src/lib/offlineGenerator.ts`](src/lib/offlineGenerator.ts), [`docs/proposals/own-model.md`](docs/proposals/own-model.md)).
 - **One chat box for everything.** Attach or paste an image, a scan, a PDF or a `.repx`, describe the report you want, or both, and the box works out what to do: an image's text is read with OCR in the browser as it is attached (Tesseract.js; nothing leaves the browser), its chip opening a review of what was found over the source from which a `.repx` can be built with no model; a description with no attachment gets a question or two in the thread when it leaves something open, then a report designed from it; words and an attachment together go to one generation ([`src/components/Composer.tsx`](src/components/Composer.tsx), [`src/lib/ocrAttach.ts`](src/lib/ocrAttach.ts), [`src/lib/promptToReport.ts`](src/lib/promptToReport.ts)).
 - **Three artifacts in one structured response** — spec, `layout`, and `repxContent` — guaranteed parseable by a Gemini `responseSchema` rather than by hoping the model returns valid JSON ([`src/services/geminiService.ts`](src/services/geminiService.ts)).
 - **Targets your DevExpress version** — eight of them, 26.1 back to 20.1, written into the file's `SerializerVersion` so it drops into the codebase you already have. Worth knowing that the tag is a *label rather than a gate*: a newer `.repx` still opens in an older designer, which was measured with `RepxProbe inspect` and then confirmed through the product — a 23.2 file opened correctly in a real 20.1 designer, and the designer rewrote the tag on save. So pick the version you build against; nothing is lost if you pick wrong.
@@ -443,6 +444,10 @@ src/
                        out, the house style and kinds of report learned from
                        a set of skeletons, and the check that a model holds
                        no word outside its vocabulary),
+                       offlineGenerator (a report designed by that model with
+                       no AI service: the words read for kind, columns,
+                       grouping and totals, the pattern chosen, the house
+                       style applied, a .repx the audit passes),
                        expressions (the DevExpress expression reference the
                        model is shown for Prompt-to-Expression, and the check
                        a generated expression is held to -- balance, not SQL,

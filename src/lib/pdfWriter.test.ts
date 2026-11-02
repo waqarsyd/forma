@@ -8,7 +8,7 @@
  * checked by reading what it writes back with pdfjs, the library the app
  * already reads PDFs with.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { deflateSync } from 'node:zlib';
 import { paginate, parseReportStructure } from './reportPreview';
 import { reportOutline, winAnsiHex, writePdf, type OutlineEntry } from './pdfWriter';
@@ -58,6 +58,13 @@ describe('the PDF outline, as DevExpress exports it (s54)', () => {
 });
 
 describe('the PDF writer', () => {
+  // pdfjs's cold import can outlast a test's own five seconds when the whole
+  // suite loads in parallel; paid here instead (see testing.md). Seen failing
+  // the first case on 2026-11-02.
+  beforeAll(async () => {
+    await import('pdfjs-dist/legacy/build/pdf.mjs');
+  }, 60_000);
+
   it('encodes text in Windows-1252, with "?" for what it cannot hold', () => {
     expect(winAnsiHex('Aé€')).toBe('<41e980>');
     expect(winAnsiHex('中')).toBe('<3f>');

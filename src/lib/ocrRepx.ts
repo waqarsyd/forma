@@ -38,6 +38,12 @@ const attr = (s: string) =>
 const n = (v: number) => String(Math.round(v * 100) / 100);
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
+/** A report Name DevExpress accepts: letters, digits and underscores, not starting with a digit. */
+export function reportNameFor(file: string): string {
+  const base = file.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_]+/g, '');
+  return /^[A-Za-z_]/.test(base) ? base : `Ocr${base}`;
+}
+
 export interface OcrRepxOptions {
   /** The report's name. */
   name?: string;

@@ -10,7 +10,9 @@
 import type { PreviewMeta } from './attachments';
 import { recognizePage, type OcrPage } from './ocr';
 import { detectLayout, layoutText } from './ocrLayout';
+import { layoutToRepx, layoutToReport, ocrSummary, reportNameFor, validateOcrRepx } from './ocrRepx';
 import { imageDpi, pageForImage } from './reportGeometry';
+import type { ReportLayout } from './reportTypes';
 
 /** A page read: the OCR, and how many of its texts hold a word read without confidence. */
 export interface ReadPage {
@@ -36,6 +38,33 @@ export async function readPage(
   const ocr = { ...read, dpi: meta.pagePoints ? imageDpi(read.width, meta.pagePoints.width) : null };
   const layout = detectLayout([{ ocr, page: pageForImage(ocr, unit, paper) }], { unit });
   return { ocr, flagged: layout.flagged, lines: ocr.lines.length };
+}
+
+/**
+ * A report built from pages already read, with no model, as the review's
+ * Build .repx builds one (2026-11-02): what the chat box does with an image
+ * when there is no key. Null when nothing was read; `problems` lists what the
+ * app's own checks found, and the report is built regardless, as the review's
+ * "Build anyway" does.
+ */
+export function buildFromRead(
+  pages: readonly { meta: PreviewMeta; read: ReadPage }[],
+  unit: string,
+  paper: string,
+): { title: string; repxContent: string; layout: ReportLayout; markdown: string; flagged: number; problems: string[] } | null {
+  if (!pages.length) return null;
+  const layout = detectLayout(pages.map(({ read }) => ({ ocr: read.ocr, page: pageForImage(read.ocr, unit, paper) })), { unit });
+  const file = pages[0].meta.file;
+  const title = file.replace(/\.[^.]+$/, '') || 'Report read by OCR';
+  const repxContent = layoutToRepx(layout, { name: reportNameFor(file) });
+  return {
+    title,
+    repxContent,
+    layout: layoutToReport(layout, { title }),
+    markdown: ocrSummary(layout, { title }),
+    flagged: layout.flagged,
+    problems: validateOcrRepx(repxContent).problems,
+  };
 }
 
 /**

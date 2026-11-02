@@ -115,25 +115,75 @@ npm run model:train -- --reports <the reports folder> --data <a folder OUTSIDE t
 file. Keep it outside the repository, since its folder names can name a
 client; the script refuses a path inside it.
 
+## The offline generator (milestone 2, 2026-11-02)
+
+With no key, the chat box no longer stops: `designOffline` in `App.tsx`
+answers instead of Gemini.
+
+**Words that ask for a report** go to `generateOffline` in
+`src/lib/offlineGenerator.ts`, with the model fetched once from `/model/`:
+
+1. **Reading the words** (`readRequest`). It takes:
+   - the category they name;
+   - the columns they list, or a pasted schema's fields, which win;
+   - what they group by, whether they total, and whether the page turns.
+
+   A list's subject that is itself a kind of report ("a stock register") is
+   not a column. That kind's usual columns are used, joined by the group
+   field and the measures the words mention, so "a stock register grouped by
+   warehouse with totals" gives Item, Warehouse, Opening, Received, Issued
+   and Balance, grouped by Warehouse, with the last three totalled.
+2. **Choosing the pattern.** The best-ranked archetype gives the paper and
+   orientation, whether the heading is ruled, and whether the page footer
+   carries the date.
+3. **Writing the report.** A title, a heading row of captions, a record row
+   of bound values with number and date formats, and when asked a group
+   header, a group total and a grand total, with `Running` set as
+   `repxSummaries.ts` measured. Faces, sizes and bold come from the house
+   style, the margins from the paper's median, and the columns share the
+   width by what they hold. The same passes as any written report follow:
+   unique `Ref`s, `Dpi`, `PaperKind`.
+
+The design fills every pane: the `.repx`, the Mockup's layout, and a spec
+naming the pattern used. Its tests read each design back as the app reads any
+report: it parses, the audit finds no error, and over records it prints the
+values, each group's total and the grand total.
+
+**An image** is built from the text OCR read, by `buildFromRead` in
+`ocrAttach.ts`, the build the OCR review's Build .repx makes, now shared.
+The owner's bilingual certificate, which Gemini could not finish because
+thinking took its whole output limit, built this way with no model.
+
+**Anything else** gets `OFFLINE_HELP`: a question, or a PDF's text or a
+`.repx` that needs a model to read. The reply says what works offline and
+how a free key adds the rest.
+
+The composer's lock went with it. The box and the send button are live with
+no key, and the banner under them reads "Working offline, with Forma's own
+model". Resume, Test data, Prompt-to-Expression and the chat turn still need
+a key.
+
+What it does not do yet:
+- read a picture's design (borders, fills, logos), which OCR cannot see;
+- change an open report from words;
+- use the archetype's own control placement. It takes the pattern's
+  structure and style, not its exact layout, because a skeleton keeps no
+  captions to put back.
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded
 here as it is built:
 
-1. **The offline generator** ("Forma Offline"). A request with no key and no
-   quota: the archetype its words and fields point to, its skeleton filled
-   with the request's title, captions and bound fields in the house style,
-   written as a `.repx`. The OCR path's reports take the house style too.
-2. **Provider setup.** Forma Offline, Gemini, local AI through an
+1. **Provider setup.** Forma Offline, Gemini, local AI through an
    OpenAI-compatible endpoint (Ollama, LM Studio), and OpenRouter's free
    models. Each online endpoint is an addition to `connect-src`, and so a
    change to the app's central security claim.
-3. **Memory.** Preferences remembered from the chat and from edits, a
+2. **Memory.** Preferences remembered from the chat and from edits, a
    personal model learned from the reports a user keeps (the same
    `learnModel`), and a panel to read, change and forget them.
-4. **Gemini quota savings.** Change model on a quota error, Flash-Lite for the
+3. **Gemini quota savings.** Change model on a quota error, Flash-Lite for the
    small calls, remember the chosen model across tabs, skip the chat turn for
    a plain build request, and cap thinking.
-5. **A neural model, later.** Rendered images of the reports paired with their
+4. **A neural model, later.** Rendered images of the reports paired with their
    skeletons, for fine-tuning a small open vision model on free GPU time,
    which needs an account only the owner can create.
