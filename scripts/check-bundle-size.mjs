@@ -301,6 +301,13 @@ const BUDGETS = [
    * and that is a change to the README's checksums too.
    */
   { prefix: 'Liberation', ext: '.ttf', max: 442_000, note: 'one PDF/A font face, lazy' },
+  /*
+   * Forma's own model (2026-11-02; see MODEL_ASSETS in vite.config.ts), learned
+   * from the structure of the owner's 359 reports: 186,783 B as first learned,
+   * so 94% as the vendored caps sit. Retraining on more reports moves it, and
+   * that is a reason to read the archetype count before raising this.
+   */
+  { prefix: 'formaModel', ext: '.json', max: 198_000, note: 'the offline model, lazy' },
 ];
 
 /**
@@ -412,7 +419,10 @@ const isOcr = (f) => f.path.startsWith(OCR_DIR);
  */
 const FONT_DIR = join(DIST, 'pdf-fonts');
 const isPdfFont = (f) => f.path.startsWith(FONT_DIR);
-const total = files.filter((f) => !isOcr(f) && !isPdfFont(f)).reduce((a, f) => a + f.size, 0);
+// And dist/model/ (2026-11-02), the offline model, fetched only when it is used; its own budget is above.
+const MODEL_DIR = join(DIST, 'model');
+const isModel = (f) => f.path.startsWith(MODEL_DIR);
+const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f)).reduce((a, f) => a + f.size, 0);
 const ocrTotal = files.filter(isOcr).reduce((a, f) => a + f.size, 0);
 const OCR_TOTAL_MAX = 15_700_000;
 const fontTotal = files.filter(isPdfFont).reduce((a, f) => a + f.size, 0);
@@ -445,7 +455,7 @@ for (const budget of BUDGETS) {
   }
 }
 
-rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr and dist/pdf-fonts' });
+rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr, dist/pdf-fonts and dist/model' });
 rows.push({ name: 'dist/ocr/ total', size: ocrTotal, max: OCR_TOTAL_MAX, pct: ((ocrTotal / OCR_TOTAL_MAX) * 100).toFixed(1), note: 'the OCR engine, lazy' });
 rows.push({ name: 'dist/pdf-fonts/ total', size: fontTotal, max: FONT_TOTAL_MAX, pct: ((fontTotal / FONT_TOTAL_MAX) * 100).toFixed(1), note: 'PDF/A fonts, lazy' });
 if (ocrTotal > OCR_TOTAL_MAX) {

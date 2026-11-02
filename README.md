@@ -438,6 +438,11 @@ src/
                        margins and the audit out of a generation and compares
                        them with a case's expectations; the runner that spends
                        quota is scripts/fidelity/run.ts),
+                       reportSkeleton and formaModel (Forma's own model: a
+                       report reduced to its structure with every word taken
+                       out, the house style and kinds of report learned from
+                       a set of skeletons, and the check that a model holds
+                       no word outside its vocabulary),
                        expressions (the DevExpress expression reference the
                        model is shown for Prompt-to-Expression, and the check
                        a generated expression is held to -- balance, not SQL,
@@ -569,6 +574,9 @@ assets/source/         og-card.html, the page public/og-card.png is rendered
                        from (not deployed). The full-resolution logo masters
                        lived here until 2026-08-29; they are gitignored now —
                        2.8 MB backing 256px files already in public/
+assets/model/          formaModel.json, Forma's own model, learned by
+                       scripts/model/train.ts from the structure of the
+                       owner's reports (never their words); served at /model/
 assets/pdf-fonts/      the twelve Liberation 2.1.5 faces a PDF/A file embeds
                        and their SIL OFL licence, unmodified; served at
                        /pdf-fonts/ and copied into dist/ at build (README
@@ -621,6 +629,7 @@ firebase-applet-config.json
 | `npm run test:coverage` | Coverage over `lib/` and `services/` — see the note in `vitest.config.ts` about what is deliberately excluded |
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
 | `npm run bench:fidelity` | The fidelity benchmark: generates every case under `scripts/fidelity/cases` through the real pipeline with your own key (`FORMA_BENCH_KEY`) and scores the result. A benchmark, not a check — it spends quota, so it is not in CI |
+| `npm run model:train` | Learns Forma's own model (`assets/model/formaModel.json`) from a folder of `.repx` reports, from their structure only, and refuses to write it if any word of theirs would reach it. Takes `--reports` and `--data` (a folder outside the repository); see `docs/proposals/own-model.md` |
 | `npm run clean` | Remove `dist/` |
 
 <sup>Two other files list these: [`CONTRIBUTING.md`](CONTRIBUTING.md)'s table of checks and [`CLAUDE.md`](CLAUDE.md)'s *Commands* block. Adding or renaming a script is a change to all three — this table is the one users read, so it lists every script rather than only the checks.</sup>

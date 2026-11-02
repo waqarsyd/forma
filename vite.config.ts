@@ -39,7 +39,14 @@ const PDF_FONT_ASSETS: Record<string, string> = Object.fromEntries([
   ['LICENSE', 'assets/pdf-fonts/LICENSE'],
 ]);
 
-const CONTENT_TYPES: Record<string, string> = { '.js': 'text/javascript', '.ttf': 'font/ttf' };
+/**
+ * Forma's own model (2026-11-02): learned by scripts/model/train.ts from the
+ * structure of the owner's reports, never their words, and fetched only when
+ * the offline generator first runs. docs/proposals/own-model.md has the rest.
+ */
+const MODEL_ASSETS: Record<string, string> = { 'formaModel.json': 'assets/model/formaModel.json' };
+
+const CONTENT_TYPES: Record<string, string> = { '.js': 'text/javascript', '.ttf': 'font/ttf', '.json': 'application/json' };
 
 /** Files served at `/<dir>/` from their sources in development and copied into `dist/<dir>/` at build. */
 function servedAssets(dir: string, files: Record<string, string>): Plugin {
@@ -64,7 +71,7 @@ function servedAssets(dir: string, files: Record<string, string>): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), servedAssets('ocr', OCR_ASSETS), servedAssets('pdf-fonts', PDF_FONT_ASSETS)],
+    plugins: [react(), tailwindcss(), servedAssets('ocr', OCR_ASSETS), servedAssets('pdf-fonts', PDF_FONT_ASSETS), servedAssets('model', MODEL_ASSETS)],
     // Only VITE_* reaches the client. GEMINI_* was previously allowlisted here,
     // which inlined GEMINI_API_KEY into the shipped bundle — Google's secret
     // scanner found that key and revoked it (403 "reported as leaked").
