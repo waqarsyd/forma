@@ -9,8 +9,10 @@ in the text of src/lib/skeletonText.ts.
 In a Kaggle notebook:
 - Settings: Accelerator "GPU T4 x2" (only one is used), Internet on. Not the
   P100: Unsloth needs compute capability 7.0 and the P100 is 6.0.
-- Input: your private dataset "Forma report skeletons", the zip that
-  `npm run model:dataset` and `python scripts/model/render.py` produce.
+- Input: your private dataset "Forma report skeletons". It can be just the
+  examples.jsonl that `npm run model:dataset` writes, 4.7 MB of skeletons,
+  and the pages are then drawn here. Or it can be the folder after
+  `python scripts/model/render.py` has drawn them, zipped or not.
 
     !wget -q -O train_vision.py https://raw.githubusercontent.com/waqarsyd/forma/main/scripts/model/kaggle/train_vision.py
     !python train_vision.py --setup     # installs Unsloth, once per session
@@ -39,6 +41,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -68,19 +71,36 @@ def setup():
 
 
 def dataset_dir():
-    """The folder holding train.jsonl under /kaggle/input, unzipping the upload if Kaggle kept it zipped."""
+    """
+    The folder holding train.jsonl and the page images. The dataset may hold
+    them already, drawn on the owner's machine; or a zip of them; or only
+    examples.jsonl, the skeletons, which are then drawn here with the same
+    render.py and Liberation faces, fetched from the public repository. Drawn
+    pages go to /tmp, so a saved version's output is not filled with 60 MB of
+    pictures.
+    """
     hits = glob.glob('/kaggle/input/**/train.jsonl', recursive=True)
     if hits:
         return os.path.dirname(hits[0])
+    out = '/tmp/forma-data'
+    if os.path.exists(os.path.join(out, 'train.jsonl')):
+        return out
     zips = glob.glob('/kaggle/input/**/*.zip', recursive=True)
     if zips:
-        out = os.path.join(WORK, 'data')
-        if not os.path.exists(os.path.join(out, 'train.jsonl')):
-            print('Unzipping %s' % zips[0], flush=True)
-            with zipfile.ZipFile(zips[0]) as z:
-                z.extractall(out)
+        print('Unzipping %s' % zips[0], flush=True)
+        with zipfile.ZipFile(zips[0]) as z:
+            z.extractall(out)
         return out
-    sys.exit('No train.jsonl under /kaggle/input. Add the "Forma report skeletons" dataset as input.')
+    examples = glob.glob('/kaggle/input/**/examples.jsonl', recursive=True)
+    if examples:
+        os.makedirs(out, exist_ok=True)
+        shutil.copy(examples[0], os.path.join(out, 'examples.jsonl'))
+        repo = '/tmp/forma'
+        if not os.path.isdir(repo):
+            sh('git clone -q --depth 1 https://github.com/waqarsyd/forma %s' % repo)
+        sh('python %s/scripts/model/render.py %s --variants 4' % (repo, out))
+        return out
+    sys.exit('No examples.jsonl or train.jsonl under /kaggle/input. Add the "Forma report skeletons" dataset as input.')
 
 
 def rows(split, max_chars, limit=0):
