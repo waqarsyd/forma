@@ -214,6 +214,70 @@ export function skeletonOf(s: ReportStructure): ReportSkeleton {
   };
 }
 
+/** A layout read by another engine, before it is checked: what `scripts/model/crystal.ps1` writes. */
+export interface ForeignLayout {
+  width: number;
+  height: number;
+  margins: { top: number; bottom: number; left: number; right: number };
+  bands: { kind: string; height: number; groupFields?: number; controls: Partial<Record<keyof SkeletonControl, unknown>>[] }[];
+}
+
+const BAND_KINDS: readonly BandKind[] = ['TopMargin', 'ReportHeader', 'PageHeader', 'GroupHeader', 'Detail', 'DetailReport', 'GroupFooter', 'ReportFooter', 'PageFooter', 'BottomMargin', 'Unknown'];
+const CONTROL_KINDS = new Set<string>(Object.values(KINDS).concat('other'));
+const ROLES = new Set<string>(['title', 'caption', 'value', 'total', 'pageInfo', 'decoration']);
+
+/**
+ * A layout another report engine was read for, as a skeleton (2026-11-03): the
+ * owner's Crystal Reports, through `scripts/model/crystal.ps1`. What came from
+ * outside is held to the skeleton's vocabulary:
+ * - a band of a kind Forma does not know is left out;
+ * - a control of an unknown kind becomes "other", an unknown role "decoration";
+ * - a number that is not finite drops its control.
+ * The margins are added as bands, as a .repx has them. The paper is named and
+ * the title found as for a report Forma parsed itself.
+ */
+export function skeletonFromLayout(l: ForeignLayout): ReportSkeleton {
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? round(v) : null);
+  const font = (v: unknown): SkeletonFont | null => {
+    const f = v as Partial<SkeletonFont> | null;
+    const size = num(f?.size);
+    return f && typeof f.family === 'string' && size ? { family: f.family, size, bold: !!f.bold, italic: !!f.italic } : null;
+  };
+  const control = (c: ForeignLayout['bands'][number]['controls'][number]): SkeletonControl[] => {
+    const [x, y, w, h] = [num(c.x), num(c.y), num(c.w), num(c.h)];
+    if (x === null || y === null || w === null || h === null) return [];
+    const kind = (CONTROL_KINDS.has(String(c.kind)) ? c.kind : 'other') as SkeletonKind;
+    const role = (ROLES.has(String(c.role)) ? c.role : 'decoration') as SkeletonRole;
+    const align = c.align === 'center' || c.align === 'right' ? c.align : 'left';
+    const borders = typeof c.borders === 'number' ? c.borders & 15 : 0;
+    const chars = typeof c.chars === 'number' ? Math.max(0, Math.min(200, Math.round(c.chars))) : 0;
+    return [{ kind, role, x, y, w, h, font: font(c.font), align, borders, chars, ...(kind === 'table' ? { rows: [] } : {}) }];
+  };
+  const margins = { top: num(l.margins.top) ?? 0, bottom: num(l.margins.bottom) ?? 0, left: num(l.margins.left) ?? 0, right: num(l.margins.right) ?? 0 };
+  const inner: SkeletonBand[] = l.bands
+    .filter((b) => BAND_KINDS.includes(b.kind as BandKind) && b.kind !== 'TopMargin' && b.kind !== 'BottomMargin' && b.kind !== 'Unknown')
+    .map((b) => ({
+      kind: b.kind as BandKind,
+      height: num(b.height) ?? 0,
+      groupFields: b.kind === 'GroupHeader' ? Math.max(1, Math.round(Number(b.groupFields) || 1)) : 0,
+      controls: b.controls.flatMap(control),
+    }));
+  markTitle(inner);
+  const { paper, landscape } = paperName(l.width, l.height);
+  return {
+    paper,
+    landscape,
+    width: round(l.width),
+    height: round(l.height),
+    margins,
+    bands: [
+      { kind: 'TopMargin', height: margins.top, groupFields: 0, controls: [] },
+      ...inner,
+      { kind: 'BottomMargin', height: margins.bottom, groupFields: 0, controls: [] },
+    ],
+  };
+}
+
 /** Every text-bearing place in a skeleton: its labels and its table cells, with the band each sits in. */
 export function skeletonTexts(k: ReportSkeleton): { band: BandKind; role: SkeletonRole; font: SkeletonFont | null; h: number }[] {
   const out: { band: BandKind; role: SkeletonRole; font: SkeletonFont | null; h: number }[] = [];

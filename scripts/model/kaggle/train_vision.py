@@ -334,8 +334,28 @@ def check(args):
                 break
             except Exception:
                 time.sleep(1)
+        # Ollama needs the chat template of the model's family. With none, the
+        # first check (2026-11-03) imported the model with vision listed and got
+        # empty answers. The template, renderer, parser and parameters are copied
+        # from Ollama's own qwen3.5:2b, as Unsloth's guide says to.
+        sh('ollama pull qwen3.5:2b > /dev/null 2>&1', optional=True)
+        base = subprocess.run(['ollama', 'show', '--modelfile', 'qwen3.5:2b'], capture_output=True, text=True).stdout
+        kept, block = [], None
+        for line in base.splitlines():
+            if block is not None:
+                block.append(line)
+                if line.rstrip().endswith('"""'):
+                    kept.extend(block)
+                    block = None
+                continue
+            word = line.split(' ', 1)[0]
+            if word == 'TEMPLATE' and line.count('"""') == 1:
+                block = [line]
+            elif word in ('TEMPLATE', 'PARAMETER', 'RENDERER', 'PARSER'):
+                kept.append(line)
+        report.append('template copied from qwen3.5:2b: %d lines' % len(kept))
         with open('/tmp/Modelfile', 'w') as fh:
-            fh.write('FROM %s\nFROM %s\nPARAMETER temperature 0\n' % (model, mmproj))
+            fh.write('FROM %s\nFROM %s\n%s\nPARAMETER temperature 0\n' % (model, mmproj, '\n'.join(kept)))
         created = subprocess.run(['ollama', 'create', 'forma-vision', '-f', '/tmp/Modelfile'], capture_output=True, text=True)
         shown = subprocess.run(['ollama', 'show', 'forma-vision'], capture_output=True, text=True)
         vision = 'vision' in shown.stdout.lower()
@@ -350,10 +370,16 @@ def check(args):
                 req = urllib.request.Request('http://127.0.0.1:11434/v1/chat/completions', data=body.encode('utf-8'),
                                              headers={'Content-Type': 'application/json'})
                 try:
-                    answer = json.load(urllib.request.urlopen(req, timeout=900))['choices'][0]['message']['content']
+                    reply = json.load(urllib.request.urlopen(req, timeout=900))
+                    message = reply['choices'][0]['message']
+                    answer = message.get('content') or ''
                     first = next((l for l in answer.splitlines() if l.startswith('page ')), '')
-                    report.append('ollama (as Forma asks) %s: %s, %d lines, first: %s' % (
-                        r['image'], 'ANSWERED' if first else 'NO PAGE LINE', len(answer.splitlines()), first or answer[:200]))
+                    # An empty answer says nothing; what the reply did hold says why.
+                    seen = '' if first else ' (finish %s; message keys %s; reasoning starts %r)' % (
+                        reply['choices'][0].get('finish_reason'), sorted(message.keys()),
+                        (message.get('reasoning') or message.get('reasoning_content') or '')[:120])
+                    report.append('ollama (as Forma asks) %s: %s, %d lines, first: %s%s' % (
+                        r['image'], 'ANSWERED' if first else 'NO PAGE LINE', len(answer.splitlines()), first or answer[:200], seen))
                 except Exception as err:
                     report.append('ollama (as Forma asks) %s: FAILED: %s' % (r['image'], err))
     finally:

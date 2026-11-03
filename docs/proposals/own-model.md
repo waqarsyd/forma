@@ -38,9 +38,10 @@ read, changed or forgotten.
 
 The owner's folder held 6,818 files. Of those, 359 were `.repx`, 358 of them
 DevExpress 20.1, Forma's own target, and every one parses with Forma's parser:
-11,558 controls. The 6,399 Crystal Reports `.rpt` files cannot be read
-without the Crystal runtime, which this machine does not have; they are the
-largest source left for a later round.
+11,558 controls. The 6,399 Crystal Reports `.rpt` files were set aside as
+unreadable without the Crystal runtime. That was wrong: the runtime is
+installed (CrystalDecisions 13.0.2000.0 in the GAC). Since 2026-11-03 they are
+read for their structure; see *More data* under milestone 6.
 
 The reports carry no connection strings or passwords. They do carry client
 material: client names in their folder names, 91 database queries and 92
@@ -522,19 +523,95 @@ exactly and the script looked for "mmproj". The projector is now written
 as `mmproj-forma-vision-f16.gguf`, the name LM Studio pairs by, and the
 check accepts the first export's name too.
 
+### The deployment check (2026-11-03)
+
+Version 2's export, run on the CPU from its merged model:
+- **The files:** `forma-vision-Q8_0.gguf` at 2,077 MB, and
+  `mmproj-forma-vision-f16.gguf` at 668 MB.
+- **llama.cpp** answered both held-out pages with skeleton text through its
+  multimodal CLI. That is the engine LM Studio runs.
+- **Ollama** imported the model and its projector and listed vision among
+  its capabilities, which is the import the research had flagged as failing
+  through 2026. But asked through its OpenAI-compatible endpoint, as Forma
+  asks, it answered empty. The Modelfile had no chat template. The check
+  now copies the template, renderer, parser and parameters from Ollama's
+  own `qwen3.5:2b`, and records what an empty reply held.
+
+### More data: SUNFACET, and the Crystal reports (2026-11-03)
+
+The owner added a second product's report folder, SUNFACET: 22,623 files,
+4.43 GB. It was copied beside the training data, outside the repository.
+- **Its 546 `.repx`** became skeletons with a clean leak check. The shipped
+  model was not touched: `--out` pointed into the data folder. They added
+  only **19 new layouts**, since 905 skeletons across both products hold
+  218 distinct texts. The two products share templates.
+  `npm run model:dataset` now takes `--data` more than once. The first set
+  keeps its ids, so its held-out layouts stay the ones scored before.
+- **The Crystal reports are where the variety is.**
+  - **Counts:** 21,776 in SUNFACET and 6,399 in SBS.JMS, which by content
+    are 4,691 unique files. Twenty of them gave 20 distinct layouts in 15
+    groups.
+  - **`scripts/model/crystal.ps1`** opens each unique file with the
+    installed runtime. One band is written per area, with its sections
+    stacked. It writes only structure: kinds, places in hundredths of an
+    inch (twips / 14.4), fonts, alignment, borders, and each text's role
+    and length. No text, formula, field name or path is written, and the
+    console prints counts only.
+  - **Engine crashes:** some reports crash the Crystal engine itself, which
+    ends the process with nothing to catch. Every shard of the first run
+    died within about 80 files. A marker is now written before each file
+    is opened, a supervisor reruns the shard, and the rerun skips that
+    file.
+  - **The TypeScript half:** `scripts/model/crystal.ts` numbers the layouts
+    into `skeletons/` through `skeletonFromLayout` (`reportSkeleton.ts`).
+    That function holds them to the skeleton's vocabulary, names the
+    paper and finds the title, as for a parsed report.
+  - **The run:** 16 processes took about 25 minutes. They wrote 4,155
+    layouts from SUNFACET and 3,503 from SBS.JMS. About 300 files crashed
+    the engine or failed to open, and were skipped. One SBS.JMS layout
+    could not be converted, and none came out empty.
+
+### Version 4's dataset (2026-11-03)
+
+`npm run model:dataset` over all four sets (SBS.JMS `.repx`, SUNFACET
+`.repx`, and both Crystal sets) gives:
+- **8,562 skeletons and 4,235 distinct layouts.** No stray words; 378 rare
+  fonts became Arial.
+- **2,030 groups of near-copies,** against version 2's 82. That count is
+  the variety the model lacked.
+- **What was packed:** the GPU time is for about 3,000 pages, so
+  `--max-train 2600 --max-eval 40 --augment 0`. That means 2,600 layouts
+  from 1,620 groups and no variants, since real variety now replaces
+  them. The 40 held-out pages from 32 groups include **all 20 that
+  version 2 was scored on**, so the two compare directly.
+- **Size:** targets have a median of 4,306 characters and a 90th
+  percentile of 9,614, longer than SBS.JMS's. The zip is 4.93 MB.
+
+Three things in the packer had to change before those numbers were right:
+- **Speed:** grouping compared every pair, which is hours at this size.
+  A pair is now scored only when it could reach four fifths. That bound
+  is exact, because controls match only within bands of the same kind.
+- **Which pages are held out:** the groups came out the same, but joining
+  pairs as they were found moved 7 of version 2's 20 held-out layouts
+  into training. A group is held out by its first layout's number, and
+  that first layout depends on join order. The pairs are now joined in
+  the old loop's order.
+- **Ids across sets:** a layout repeated across sets took the later
+  set's id. Within a set the last copy still stands for a layout, as
+  version 2 chose; across sets, the earlier set keeps it.
+
 ### Still to build
 
-1. The deployment check, llama.cpp and Ollama, on Version 2's export.
-2. Enough layouts for placement to be learned. Variants of 199 are not
-   enough. Layouts drawn from the archetypes and house style of milestone 1
-   could make thousands of new, structure-only ones, with no client
-   material. Or the model could be given OCR's boxes with the picture and
-   asked only for what OCR cannot tell: bands, roles and kinds. Those
-   Version 2 already gets mostly right, 97% of roles among the controls it
-   found. Either is a decision for the owner before more GPU hours.
-2. A comparison on the same held-out pages against today's path for a
+1. Train version 4 on Kaggle and score it on the same 20 pages, plus the 20 new
+   ones.
+2. The Ollama check again, with the chat template.
+3. If version 4 still places poorly, give the model OCR's boxes with the
+   picture and ask only for what OCR cannot tell: bands, roles and kinds.
+   Version 2 already gets most of those right: 97% of roles among the
+   controls it found.
+4. A comparison on the same held-out pages against today's path for a
    picture, the OCR build.
-3. More than one page per picture, and the model's answer streamed as it
+5. More than one page per picture, and the model's answer streamed as it
    is written.
 
 ## What comes next

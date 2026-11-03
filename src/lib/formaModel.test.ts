@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parseReportStructure } from './reportPreview';
-import { FEATURE_NAMES, paperName, skeletonFeatures, skeletonOf, type ReportSkeleton } from './reportSkeleton';
+import { FEATURE_NAMES, paperName, skeletonFeatures, skeletonFromLayout, skeletonOf, type ReportSkeleton } from './reportSkeleton';
 import { categoryOf, kMedoids, learnModel, rankArchetypes, unexpectedStrings, type FormaModel, type TrainingReport } from './formaModel';
 
 const ROOT = 'SerializerVersion="20.1.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a" Version="20.1"';
@@ -69,6 +69,58 @@ describe('skeletonOf', () => {
     expect(by.groupHeaders).toBeCloseTo(Math.log1p(1));
     expect(by.detailValues).toBeCloseTo(Math.log1p(5));
     expect(by.totals).toBeCloseTo(Math.log1p(1));
+  });
+});
+
+describe('skeletonFromLayout', () => {
+  /** What scripts/model/crystal.ps1 writes for a Crystal report: hundredths of an inch, no words. */
+  const layout = {
+    width: 826.81,
+    height: 1169.31,
+    margins: { top: 30, bottom: 20, left: 40, right: 27.01 },
+    bands: [
+      {
+        kind: 'ReportHeader',
+        height: 60,
+        groupFields: 0,
+        controls: [
+          { kind: 'label', role: 'caption', x: 0, y: 5, w: 400, h: 30, font: { family: 'Arial', size: 16, bold: true, italic: false }, align: 'center', borders: 0, chars: 18 },
+          { kind: 'label', role: 'caption', x: 0, y: 40, w: 100, h: 15, font: { family: 'Arial', size: 8, bold: false, italic: false }, align: 'left', borders: 4, chars: 6 },
+        ],
+      },
+      { kind: 'GroupHeader', height: 20, groupFields: 1, controls: [{ kind: 'label', role: 'value', x: 0, y: 0, w: 200, h: 20, font: { family: 'Arial', size: 9, bold: true, italic: false }, align: 'left', borders: 0, chars: 0 }] },
+      {
+        kind: 'Detail',
+        height: 15,
+        groupFields: 0,
+        controls: [
+          { kind: 'label', role: 'value', x: 600, y: 0, w: 120, h: 15, font: { family: 'Arial', size: 8, bold: false, italic: false }, align: 'right', borders: 0, chars: 0 },
+          { kind: 'line', role: 'decoration', x: 0, y: 14, w: 750, h: 1, font: null, align: 'left', borders: 0, chars: 0 },
+          { kind: 'gauge', role: 'mystery', x: 1, y: 1, w: 5, h: 5, font: null, align: 'middle', borders: 99, chars: 900 },
+          { kind: 'label', role: 'value', x: Number.NaN, y: 0, w: 10, h: 10, font: null, align: 'left', borders: 0, chars: 0 },
+        ],
+      },
+      { kind: 'Unknown', height: 10, controls: [] },
+      { kind: 'PageFooter', height: 19, groupFields: 0, controls: [{ kind: 'pageInfo', role: 'pageInfo', x: 600, y: 2, w: 150, h: 15, font: { family: 'Arial', size: 7, bold: false, italic: false }, align: 'right', borders: 0, chars: 0 }] },
+    ],
+  };
+
+  it('names the paper, adds the margins as bands and finds the title, as for a report Forma parsed', () => {
+    const k = skeletonFromLayout(layout);
+    expect(k.paper).toBe('A4');
+    expect(k.landscape).toBe(false);
+    expect(k.bands.map((b) => b.kind)).toEqual(['TopMargin', 'ReportHeader', 'GroupHeader', 'Detail', 'PageFooter', 'BottomMargin']);
+    expect(k.bands[0].height).toBe(30);
+    expect(k.bands.at(-1)!.height).toBe(20);
+    expect(k.bands[1].controls[0].role).toBe('title');
+    expect(k.bands[1].controls[1].role).toBe('caption');
+    expect(k.bands[2].groupFields).toBe(1);
+  });
+
+  it('holds what came from outside to the vocabulary: unknown kinds and roles, impossible numbers', () => {
+    const detail = skeletonFromLayout(layout).bands[3].controls;
+    expect(detail).toHaveLength(3);
+    expect(detail[2]).toEqual({ kind: 'other', role: 'decoration', x: 1, y: 1, w: 5, h: 5, font: null, align: 'left', borders: 3, chars: 200 });
   });
 });
 
