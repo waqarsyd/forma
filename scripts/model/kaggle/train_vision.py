@@ -17,9 +17,9 @@ In a Kaggle notebook:
     !wget -q -O train_vision.py https://raw.githubusercontent.com/waqarsyd/forma/main/scripts/model/kaggle/train_vision.py
     !python train_vision.py --setup     # installs Unsloth, once per session
     !python train_vision.py --smoke     # 40 images and 20 steps: proves every step works
-    !python train_vision.py --train     # the full run; best as "Save Version", Run All
-    !python train_vision.py --export    # GGUF and vision projector for Ollama and LM Studio
-    !python train_vision.py --check     # in a CPU session with that version as input: llama.cpp and Ollama run it
+    !python train_vision.py --train --merge   # the full run, then the merged model; best as "Save Version", Run All
+    !python train_vision.py --export --check  # in a CPU session with that version as input: the GGUF and
+                                              # projector, then llama.cpp and Ollama run them, no GPU hours
 
 Everything is written to /kaggle/working, which is kept with a saved
 version:
@@ -49,6 +49,7 @@ import zipfile
 
 WORK = '/kaggle/working'
 BASE_MODEL = 'unsloth/Qwen3.5-2B'
+DRAW_VARIANTS = 2  # set by --draw-variants
 INSTRUCTION = ('This is one page of a printed business report. Write its structure as Forma skeleton text: '
                'the page line, then each band and the controls in it, one per line.')
 
@@ -91,15 +92,17 @@ def dataset_dir():
         print('Unzipping %s' % zips[0], flush=True)
         with zipfile.ZipFile(zips[0]) as z:
             z.extractall(out)
-        return out
-    examples = glob.glob('/kaggle/input/**/examples.jsonl', recursive=True)
+        if os.path.exists(os.path.join(out, 'train.jsonl')):
+            return out
+    examples = glob.glob('/kaggle/input/**/examples.jsonl', recursive=True) + glob.glob(os.path.join(out, 'examples.jsonl'))
     if examples:
         os.makedirs(out, exist_ok=True)
-        shutil.copy(examples[0], os.path.join(out, 'examples.jsonl'))
+        if os.path.abspath(examples[0]) != os.path.abspath(os.path.join(out, 'examples.jsonl')):
+            shutil.copy(examples[0], os.path.join(out, 'examples.jsonl'))
         repo = '/tmp/forma'
         if not os.path.isdir(repo):
             sh('git clone -q --depth 1 https://github.com/waqarsyd/forma %s' % repo)
-        sh('python %s/scripts/model/render.py %s --variants 4' % (repo, out))
+        sh('python %s/scripts/model/render.py %s --variants %d' % (repo, out, DRAW_VARIANTS))
         return out
     sys.exit('No examples.jsonl or train.jsonl under /kaggle/input. Add the "Forma report skeletons" dataset as input.')
 
@@ -219,22 +222,42 @@ def train(args, smoke):
     print('Done. predictions.jsonl holds the answers.' + (' Next: --train.' if smoke else ' Next: --export.'))
 
 
-def export(args):
+def merged_model():
+    """
+    The merged 16-bit model: one a saved version already wrote, added as
+    input, which a CPU session can convert without spending GPU hours; or
+    one merged here from the adapter, which needs the GPU.
+    """
+    for config in [os.path.join(WORK, 'merged', 'config.json')] + glob.glob('/kaggle/input/**/merged/config.json', recursive=True):
+        if os.path.exists(config):
+            return os.path.dirname(config), False
+    lora = next((os.path.dirname(c) for c in [os.path.join(WORK, 'lora', 'adapter_config.json')] +
+                 glob.glob('/kaggle/input/**/lora/adapter_config.json', recursive=True) if os.path.exists(c)), None)
+    if not lora:
+        sys.exit('No merged model and no adapter. Run --train first, or add the version that ran it as input.')
     one_gpu()
     from unsloth import FastVisionModel
-    lora = os.path.join(WORK, 'lora')
-    if not os.path.isdir(lora):
-        sys.exit('No adapter at %s. Run --train first, in this session or as an input from a saved version.' % lora)
     model, tokenizer = FastVisionModel.from_pretrained(lora, load_in_4bit=False)
     merged = os.path.join(WORK, 'merged')
     model.save_pretrained_merged(merged, tokenizer)
+    return merged, True
+
+
+def export(args):
+    merged, made_here = merged_model()
 
     # Convert with llama.cpp's own scripts: a direct quantized export from Unsloth garbled
     # a Qwen-VL model's output (unsloth #3899), while F16 then llama-quantize did not.
-    llama = os.path.join(WORK, 'llama.cpp')
+    # Install only its gguf package. Its requirements file pins an older transformers,
+    # which cannot read what transformers 5.2 saved: Version 1 (2026-11-03) failed with
+    # "Tokenizer class TokenizersBackend does not exist" after installing it.
+    llama = '/tmp/llama.cpp'
     if not os.path.isdir(llama):
-        sh('git clone --depth 1 https://github.com/ggml-org/llama.cpp %s' % llama)
-    sh('pip install -qqq -r %s/requirements/requirements-convert_hf_to_gguf.txt' % llama, optional=True)
+        sh('git clone -q --depth 1 https://github.com/ggml-org/llama.cpp %s' % llama)
+    sh('pip install -qqq --no-deps %s/gguf-py' % llama)
+    code = subprocess.call([sys.executable, '-c', 'import sys, transformers; sys.exit(0 if transformers.__version__.startswith("5") else 1)'])
+    if code:
+        sh('pip install -qqq "transformers==5.2.0" "tokenizers>=0.22.0,<=0.23.0"')
     gguf = os.path.join(WORK, 'gguf')
     os.makedirs(gguf, exist_ok=True)
     f16 = os.path.join(gguf, 'forma-vision-f16.gguf')
@@ -247,7 +270,8 @@ def export(args):
     sh('%s/build/bin/llama-quantize %s %s Q8_0' % (llama, f16, q8))
     if not args.keep:
         os.remove(f16)
-        sh('rm -rf %s %s' % (merged, os.path.join(llama, 'build')))
+        if made_here:
+            sh('rm -rf %s' % merged)
     for p in sorted(glob.glob(os.path.join(gguf, '*.gguf'))):
         print('%8.0f MB  %s' % (os.path.getsize(p) / 1e6, p))
     print('Download the Q8_0 model and the mmproj file from this version\'s Output tab.')
@@ -347,18 +371,24 @@ def main():
     ap.add_argument('--max-new-tokens', type=int, default=4096)
     ap.add_argument('--predict', type=int, default=10, help='held-out pages to answer after the full run')
     ap.add_argument('--keep', action='store_true', help='keep the merged model and the F16 GGUF')
+    ap.add_argument('--merge', action='store_true', help='merge the adapter into the model (GPU), for a CPU session to export')
     ap.add_argument('--check', action='store_true', help='run the exported model in llama.cpp and Ollama, on the CPU')
     ap.add_argument('--check-tokens', type=int, default=1500, help='how much each check answer may write')
+    ap.add_argument('--draw-variants', type=int, default=2, help='pictures drawn of each skeleton when the dataset holds skeletons only')
     args = ap.parse_args()
+    global DRAW_VARIANTS
+    DRAW_VARIANTS = args.draw_variants
     if args.setup:
         setup()
     if args.smoke or args.train:
         train(args, smoke=args.smoke)
+    if args.merge:
+        merged_model()
     if args.export:
         export(args)
     if args.check:
         check(args)
-    if not (args.setup or args.smoke or args.train or args.export or args.check):
+    if not (args.setup or args.smoke or args.train or args.merge or args.export or args.check):
         ap.print_help()
 
 

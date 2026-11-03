@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ReportSkeleton } from './reportSkeleton';
-import { VISION_INSTRUCTION, fontToken, publicFontsOnly, scoreSkeleton, skeletonToText, strayWords, textToSkeleton, withPrintedHeights } from './skeletonText';
+import { VISION_INSTRUCTION, fontToken, perturbSkeleton, publicFontsOnly, scoreSkeleton, skeletonToText, strayWords, textToSkeleton, withPrintedHeights } from './skeletonText';
+
+/** A seeded generator, so a variant is the same on every run. */
+const seeded = (seed: number) => () => {
+  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+  return seed / 2 ** 32;
+};
 
 const arial = (size: number, bold = false, italic = false) => ({ family: 'Arial', size, bold, italic });
 
@@ -127,6 +133,42 @@ describe('withPrintedHeights', () => {
       ],
     };
     expect(withPrintedHeights(k).bands.map((b) => b.height)).toEqual([17.53, 120, 50]);
+  });
+});
+
+describe('perturbSkeleton', () => {
+  const variants = Array.from({ length: 20 }, (_, i) => perturbSkeleton(skeleton, seeded(i + 1)));
+
+  it('keeps the structure: the same paper and bands, with no control added', () => {
+    for (const v of variants) {
+      expect(v.paper).toBe(skeleton.paper);
+      expect(v.bands.map((b) => b.kind)).toEqual(skeleton.bands.map((b) => b.kind));
+      v.bands.forEach((b, i) => expect(b.controls.length).toBeLessThanOrEqual(skeleton.bands[i].controls.length));
+    }
+  });
+
+  it('moves things, so its text differs from the original and from other variants', () => {
+    const texts = new Set(variants.map(skeletonToText));
+    expect(texts.has(skeletonToText(skeleton))).toBe(false);
+    expect(texts.size).toBe(variants.length);
+  });
+
+  it('keeps every control inside its band and the printable width, and adds no word', () => {
+    for (const v of variants) {
+      const printable = v.width - v.margins.left - v.margins.right;
+      for (const b of v.bands) {
+        for (const c of b.controls) {
+          expect(c.x).toBeGreaterThanOrEqual(0);
+          expect(c.x + c.w).toBeLessThanOrEqual(printable);
+          expect(c.y + c.h).toBeLessThanOrEqual(b.height);
+        }
+      }
+      expect(strayWords(skeletonToText(v))).toEqual([]);
+    }
+  });
+
+  it('is the same for the same seed', () => {
+    expect(perturbSkeleton(skeleton, seeded(7))).toEqual(perturbSkeleton(skeleton, seeded(7)));
   });
 });
 

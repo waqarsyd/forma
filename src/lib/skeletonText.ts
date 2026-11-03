@@ -195,6 +195,53 @@ export function withPrintedHeights(k: ReportSkeleton): ReportSkeleton {
   return { ...k, bands: k.bands.map((b) => ({ ...b, height: Math.max(b.height, ...b.controls.map((c) => c.y + c.h)) })) };
 }
 
+/**
+ * A variant of a skeleton with the same structure in slightly different
+ * places, so that the right text can only be read off the picture.
+ *
+ * Version 1 of the vision model (2026-11-03) wrote the same skeleton for
+ * every page. The 359 skeletons hold only 199 different texts, and one
+ * layout is 53 of them, so always writing that layout was the cheapest way
+ * to lower the loss. A variant changes:
+ * - every margin, by up to 20 hundredths of an inch;
+ * - every control's place, by up to 12 across and 4 down;
+ * - every control's width, by up to 15%;
+ * - every band's height, by up to 10;
+ * - and, one time in seven, it leaves a control other than a table out.
+ * Everything stays inside its band and the printable width. Nothing is
+ * added, so the variant holds no word the original did not. `random` is
+ * the caller's, so a dataset is the same on every run.
+ */
+export function perturbSkeleton(k: ReportSkeleton, random: () => number): ReportSkeleton {
+  const r = (a: number, b: number) => a + (b - a) * random();
+  const whole = (v: number) => Math.round(v);
+  const margin = (v: number) => Math.max(5, whole(v + r(-20, 20)));
+  // A margin band can print a control, a page number say; its margin holds it.
+  const held = (kind: BandKind) => k.bands.filter((b) => b.kind === kind).reduce((s, b) => b.controls.reduce((t, c) => Math.max(t, c.y + c.h), s), 0);
+  const margins = {
+    top: Math.max(margin(k.margins.top), Math.ceil(held('TopMargin'))),
+    bottom: Math.max(margin(k.margins.bottom), Math.ceil(held('BottomMargin'))),
+    left: margin(k.margins.left),
+    right: margin(k.margins.right),
+  };
+  const printable = Math.max(50, k.width - margins.left - margins.right);
+  const bands = k.bands.map((b) => {
+    if (b.kind === 'TopMargin') return { ...b, height: margins.top, controls: b.controls };
+    if (b.kind === 'BottomMargin') return { ...b, height: margins.bottom, controls: b.controls };
+    const controls = b.controls
+      .filter((c) => c.kind === 'table' || b.controls.length < 2 || random() >= 1 / 7)
+      .map((c) => {
+        const w = Math.max(4, Math.min(printable, whole(c.w * r(0.85, 1.15))));
+        const x = Math.max(0, Math.min(printable - w, whole(c.x + r(-12, 12))));
+        const y = Math.max(0, whole(c.y + r(-4, 4)));
+        return { ...c, x, y, w };
+      });
+    const bottom = controls.reduce((s, c) => Math.max(s, c.y + c.h), 0);
+    return { ...b, height: Math.max(bottom, whole(b.height + r(-5, 10)), 1), controls };
+  });
+  return { ...k, margins, bands };
+}
+
 /** The skeleton with every font outside `PUBLIC_FONTS` replaced by Arial, and how many were. */
 export function publicFontsOnly(k: ReportSkeleton): { skeleton: ReportSkeleton; replaced: number } {
   const allowed = new Set(PUBLIC_FONTS.map((f) => f.toLowerCase()));

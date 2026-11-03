@@ -13,8 +13,19 @@
  * --owner  the Kaggle username the dataset's id goes under. Without it the
  *          id says your-kaggle-username; edit dataset-metadata.json before
  *          uploading.
- * --eval   the percentage held out for evaluation (default 10). An example's
- *          share is decided by its number, so it is the same on every run.
+ * --eval   the percentage of layouts held out for evaluation (default 10),
+ *          decided by number, so it is the same on every run.
+ * --augment  how many variants of each trained layout (default 6).
+ *
+ * Version 1 of the vision model learned to write one layout for every page:
+ * - the 359 skeletons hold only 199 different texts;
+ * - one layout is 53 of them;
+ * - 28 of the 40 held-out pages had an exact copy in training.
+ * So each layout is packed once. Near-copies are grouped and held out
+ * together: the same paper, with four fifths of the controls in the same
+ * places. Each trained layout comes with variants (`perturbSkeleton`) that
+ * move its margins and controls, so the right answer can only be read off
+ * the picture.
  *
  * Writes examples.jsonl, one skeleton per line with its id, category, split
  * and `target` (the text the model learns to write, src/lib/skeletonText.ts),
@@ -33,7 +44,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { CATEGORY_WORDS } from '../../src/lib/formaModel';
 import type { ReportSkeleton } from '../../src/lib/reportSkeleton';
-import { publicFontsOnly, skeletonToText, strayWords, withPrintedHeights } from '../../src/lib/skeletonText';
+import { perturbSkeleton, publicFontsOnly, scoreSkeleton, skeletonToText, strayWords, withPrintedHeights } from '../../src/lib/skeletonText';
 
 function arg(name: string, fallback?: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -57,27 +68,76 @@ if (!within.startsWith('..') && !isAbsolute(within)) {
   process.exit(2);
 }
 
+const augment = Number(arg('augment', '6'));
+
 /** About `evalPercent` of the numbers, spread evenly, the same ones on every run. */
 const held = (n: number) => (Math.imul(n, 2654435761) >>> 0) % 100 < evalPercent;
 const categories = new Set(Object.keys(CATEGORY_WORDS));
+/** A seeded generator, so the variants are the same on every run. */
+const seeded = (seed: number) => () => {
+  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+  return seed / 2 ** 32;
+};
 
+interface Report {
+  n: number;
+  category: string | null;
+  skeleton: ReportSkeleton;
+  target: string;
+}
+
+// Every skeleton, as tall as it prints and in public fonts.
 const files = readdirSync(join(dataDir, 'skeletons')).filter((f) => /^\d+\.json$/.test(f));
-const examples: string[] = [];
 let replaced = 0;
+const reports: Report[] = files
+  .sort((a, b) => parseInt(a) - parseInt(b))
+  .map((file) => {
+    const read = JSON.parse(readFileSync(join(dataDir, 'skeletons', file), 'utf8')) as { category: string | null; skeleton: ReportSkeleton };
+    const fixed = publicFontsOnly(withPrintedHeights(read.skeleton));
+    replaced += fixed.replaced;
+    const category = read.category && categories.has(read.category) ? read.category : null;
+    return { n: parseInt(file), category, skeleton: fixed.skeleton, target: skeletonToText(fixed.skeleton) };
+  });
+
+// Each layout once. Version 1 trained on all 359, of which 199 differ, and one
+// layout is 53 of them; it learned to write that layout for every page.
+const distinct = [...new Map(reports.map((r) => [r.target, r])).values()];
+
+// Near-copies together, so none is held out while its twin is trained on: the
+// same paper, and at least four fifths of the controls in the same places.
+const parent = distinct.map((_, i) => i);
+const root = (i: number): number => (parent[i] === i ? i : (parent[i] = root(parent[i])));
+for (let i = 0; i < distinct.length; i++) {
+  for (let j = i + 1; j < distinct.length; j++) {
+    const a = distinct[i].skeleton;
+    const b = distinct[j].skeleton;
+    if (a.paper !== b.paper || a.landscape !== b.landscape) continue;
+    const s = scoreSkeleton(b, a);
+    const f1 = s.controls.predicted + s.controls.expected ? (2 * s.controls.matched) / (s.controls.predicted + s.controls.expected) : 1;
+    if (f1 >= 0.8) parent[root(j)] = root(i);
+  }
+}
+const groups = new Set(distinct.map((_, i) => root(i)));
+
+// The held-out layouts once each, as they are; every trained layout as it is
+// and in `augment` variants, so the right answer can only be read off the picture.
+const examples: string[] = [];
 let strays = 0;
 let evalCount = 0;
-for (const file of files.sort((a, b) => parseInt(a) - parseInt(b))) {
-  const n = parseInt(file);
-  const read = JSON.parse(readFileSync(join(dataDir, 'skeletons', file), 'utf8')) as { category: string | null; skeleton: ReportSkeleton };
-  const fixed = publicFontsOnly(withPrintedHeights(read.skeleton));
-  replaced += fixed.replaced;
-  const target = skeletonToText(fixed.skeleton);
+const push = (r: Report, id: string, skeleton: ReportSkeleton, split: 'train' | 'eval') => {
+  const target = skeletonToText(skeleton);
   strays += strayWords(target).length;
-  const category = read.category && categories.has(read.category) ? read.category : null;
-  const split = held(n) ? 'eval' : 'train';
   if (split === 'eval') evalCount++;
-  examples.push(JSON.stringify({ id: `r${n}`, category, split, skeleton: fixed.skeleton, target }));
-}
+  examples.push(JSON.stringify({ id, category: r.category, split, skeleton, target }));
+};
+let evalGroups = 0;
+distinct.forEach((r, i) => {
+  const out = held(distinct[root(i)].n);
+  if (out && root(i) === i) evalGroups++;
+  push(r, `r${r.n}`, r.skeleton, out ? 'eval' : 'train');
+  if (out) return;
+  for (let v = 1; v <= augment; v++) push(r, `r${r.n}v${v}`, perturbSkeleton(r.skeleton, seeded(r.n * 1000 + v)), 'train');
+});
 
 if (strays) {
   console.error(`Refusing to write the dataset: ${strays} word(s) in the targets that the format did not put there.`);
@@ -105,7 +165,9 @@ writeFileSync(
 );
 
 const sizes = examples.map((e) => (JSON.parse(e) as { target: string }).target.length).sort((a, b) => a - b);
-console.log(`examples ${examples.length}: train ${examples.length - evalCount}, eval ${evalCount}`);
+const groupSizes = [...groups].map((g) => distinct.filter((_, i) => root(i) === g).length).sort((a, b) => b - a);
+console.log(`skeletons ${reports.length}, distinct ${distinct.length}, in ${groups.size} groups of near-copies (${evalGroups} held out); largest groups ${groupSizes.slice(0, 6).join(', ')}`);
+console.log(`examples ${examples.length}: train ${examples.length - evalCount} (each layout and ${augment} variants), eval ${evalCount}`);
 console.log(`fonts replaced by Arial: ${replaced}; stray words: 0`);
 console.log(`target length in characters: median ${sizes[Math.floor(sizes.length / 2)]}, 90th percentile ${sizes[Math.floor(sizes.length * 0.9)]}, largest ${sizes.at(-1)}`);
 console.log(`written: ${join(outDir, 'examples.jsonl')} and dataset-metadata.json`);

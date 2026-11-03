@@ -450,10 +450,49 @@ version on the T4.
     through Ollama's OpenAI-compatible endpoint exactly as Forma asks. This
     is the import that failed for Qwen3.5 through 2026.
 
+### Version 1 wrote one layout for every page (2026-11-03)
+
+The full run trained on 1,192 page images in 46 minutes, with an average
+loss of 0.232.
+- **The answers:** all five held-out answers were the same text, word for
+  word. The model had learned to write the most common layout whatever the
+  picture showed.
+- **The score misleads:** three of the five pages have exactly that layout,
+  so `evaluate.ts` scored the three distinct pages at an F1 of 81%. On the
+  one page that differs, it found 9 of 20 controls.
+- **The cause is the data, not the training:**
+  - the 359 skeletons hold only 199 different texts;
+  - one layout is 53 of them;
+  - 28 of the 40 held-out pages had an exact copy in training.
+  Writing the commonest layout was the cheapest way to lower the loss, and
+  the held-out pages could not show it.
+
+Version 2's dataset answers this (`npm run model:dataset`, 2026-11-03):
+- **Each layout once:** the 199 distinct texts, not the 359 copies.
+- **Near-copies held out together:** the same paper, with four fifths of the
+  controls in the same places. That makes 82 groups. 20% of them are held
+  out, 12 groups and 20 layouts, none with a twin in training.
+- **Variants:** each trained layout as it is and in six variants by
+  `perturbSkeleton`. Margins move by up to 20, controls by up to 12 across
+  and 4 down, widths by up to 15% and band heights by up to 10, and one
+  control in seven is left out. The right answer can then only be read off
+  the picture: 1,253 skeletons, each drawn twice.
+- **Size:** packed, it is 17 MB of text and a 0.8 MB zip, which goes
+  through the browser.
+
+**Version 1's export failed**, and that was a fault in the script.
+- **What happened:** installing llama.cpp's converter requirements
+  downgraded `transformers`. The older version could not read what 5.2 had
+  saved: "Tokenizer class TokenizersBackend does not exist".
+- **The fix:** the export now installs only the converter's `gguf` package.
+- **Where it runs:** merging the adapter needs the GPU (`--merge`), and
+  converting does not. So a CPU session with the training version as input
+  runs `--export --check`, without spending GPU hours.
+
 ### Still to build
 
-1. The full run's measurements: `evaluate.ts` on its `predictions.jsonl`, and
-   `--check` on its export.
+1. Version 2's measurements: `evaluate.ts` on its `predictions.jsonl`, and
+   `--export --check` on its merged model.
 2. A comparison on the same held-out pages against today's path for a
    picture, the OCR build.
 3. More than one page per picture, and the model's answer streamed as it
