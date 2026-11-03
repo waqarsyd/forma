@@ -614,6 +614,45 @@ Three things in the packer had to change before those numbers were right:
 5. More than one page per picture, and the model's answer streamed as it
    is written.
 
+## Forma's team: every part in its role (2026-11-03)
+
+The owner's request, while version 4 was being built: merge the AI's report
+creation, OCR and Forma's own model, so that "all will help each other and
+play their role to create the requested report". Until then a request took
+one path:
+- the AI, with OCR's words beside the picture;
+- OCR alone, or Forma's own model for words, with no key;
+- the vision model alone, on Local AI.
+
+Now one AI generation brings the rest along (`lib/formaTeam.ts`, and
+`prepareTeam` in `App.tsx`):
+
+| Part | Role |
+|---|---|
+| OCR | reads the words and where they sit |
+| Forma's vision model | reads the layout, when named as a helper beside any AI |
+| Forma's own model | gives the house style, for a report described in words |
+| Memory | the user's remembered preferences, as before |
+| The AI | designs the report, told the above as hints it may overrule |
+| Repairs and audit | check the result, as before |
+| Forma's own draft | stands in when the AI cannot answer |
+
+Three decisions in it:
+- **Hints, not instructions.** Version 2 places 11.6% of controls
+  correctly, and an AI told to obey its draft would copy the mistakes.
+  The draft says the image wins, and both briefs come before the user's
+  preferences and words.
+- **The house style only for words.** A picture shows its own style.
+- **The draft replaces an error, never a report.** It stands in only when
+  the AI fails, and is recorded as a revision like any other result.
+
+Its effect on a generation is unmeasured until `bench:fidelity` runs with
+the owner's key. The stand-ins were checked in the owner's Chrome with
+Local AI pointed at a closed port. The vision brief needs a vision model
+running, and waits for version 4's export. The rest is recorded under
+*One request, every part of Forma in its role* in
+`docs/notes/app-shell.md`.
+
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded

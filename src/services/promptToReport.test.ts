@@ -123,6 +123,27 @@ describe('a generation from a description', () => {
     expect(promptOf(mock).text).toContain('EXACT PIXEL-PERFECT UI MATCH');
     expect(promptOf(mock).text).not.toContain('THE REPORT TO DESIGN');
   });
+
+  // Forma's team (2026-11-03, lib/formaTeam.ts): the rest of Forma's brief is
+  // a hint, so the preferences and the user's own words come after it and win.
+  it("puts Forma's brief ahead of the remembered preferences and the user's words, and nothing when it is empty", async () => {
+    const mock = stubFetch(() => streamOf(sse(GOOD, 'STOP')));
+    await analyzeReportDesign('make the title red', image, config, undefined, undefined, undefined, {
+      formaBrief: "FORMA'S OWN DRAFT OF THIS PAGE. A draft.",
+      remembered: "THE USER'S REMEMBERED PREFERENCES (apply them unless this request says otherwise):\n- Always A4",
+    });
+    const text = promptOf(mock).text;
+    const brief = text.indexOf("FORMA'S OWN DRAFT OF THIS PAGE");
+    const remembered = text.indexOf("THE USER'S REMEMBERED PREFERENCES");
+    const words = text.indexOf('make the title red');
+    expect(brief).toBeGreaterThan(-1);
+    expect(brief).toBeLessThan(remembered);
+    expect(remembered).toBeLessThan(words);
+
+    const plain = stubFetch(() => streamOf(sse(GOOD, 'STOP')));
+    await analyzeReportDesign('', image, config, undefined, undefined, undefined, { formaBrief: '  ' });
+    expect(promptOf(plain).text).not.toContain("FORMA'S OWN DRAFT");
+  });
 });
 
 describe('clarifyReportRequest', () => {

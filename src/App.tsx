@@ -74,7 +74,8 @@ import type {
   ChatTurn,
 } from './services/geminiService';
 import { loadGemini, isMissingApiKey } from './lib/geminiClient';
-import { aiReady, readProviderSettings, writeProviderSettings } from './lib/aiProvider';
+import { aiReady, effectiveProvider, isVisionOnly, PROVIDER_NAMES, readProviderSettings, visionModelOf, writeProviderSettings } from './lib/aiProvider';
+import type { DraftSource, TeamMember } from './lib/formaTeam';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
 import { clearCachedModel } from './lib/modelCache';
 import {
@@ -1443,6 +1444,30 @@ const DESCRIBE_RUN: RunCopy = {
     "I've designed the report from your description. You can view the UI preview and specifications on the right, and the status bar says what the audit still found.",
 };
 
+/**
+ * What the rest of Forma's team has for a run (2026-11-03, lib/formaTeam.ts),
+ * captured when the run starts so a resume has it too. Absent on a turn
+ * that only refines the open report in words: there is no page to read and
+ * no draft worth handing over in its place.
+ */
+type TeamInput = {
+  /** The staged pages OCR finished reading. */
+  read: { meta: PreviewMeta; read: ReadPage }[];
+  /** The first page, for Forma's vision model, when it is an image. */
+  firstImage?: { src: string; meta: PreviewMeta };
+  /** A report described in words: the house style is told, and Forma's own model drafts. */
+  described?: ReportDescriptionRequest;
+};
+
+/** What the team brought to a run: the brief the AI is told, who took part, and the draft that stands in if the AI fails. */
+type TeamPlan = {
+  brief: string;
+  members: TeamMember[];
+  draft: (() => Promise<{ result: DesignResult; source: DraftSource } | null>) | null;
+};
+
+const NO_TEAM: TeamPlan = { brief: '', members: [], draft: null };
+
 const RESUMED_RUN: RunCopy = {
   start: 'Resuming report generation process.',
   request: 'Requesting Gemini API on resume...',
@@ -1891,6 +1916,8 @@ export default function App() {
   const pendingClarifyRef = useRef<{ request: ReportDescriptionRequest; messageId: string } | null>(null);
   /** The description a run was started from, so Resume re-issues the same request. */
   const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
+  /** The run's team input (lib/formaTeam.ts), kept for a resume like the rest. */
+  const activeTeamRef = useRef<TeamInput | undefined>(undefined);
   /**
    * AI-generated sample rows for the Preview, keyed by bound field. Null is
    * the one-placeholder-record preview. Cleared whenever the set of bound
@@ -2015,7 +2042,7 @@ export default function App() {
 
   useEffect(() => {
     writeProviderSettings(config);
-  }, [config.provider, config.localUrl, config.localModel, config.openRouterModel, config.openRouterKey]);
+  }, [config.provider, config.localUrl, config.localModel, config.openRouterModel, config.openRouterKey, config.visionModel]);
 
   /**
    * Whether an AI model is set up to answer: Gemini with a key, a local AI with
@@ -3245,6 +3272,103 @@ export default function App() {
    * user message and may take a chat turn first, and the resume carries the
    * progress bar's current step across instead of starting from zero.
    */
+  /** A report Forma's own model designs from a description, with no AI: the chat box with no key, and the stand-in when the AI fails. */
+  const offlineDesign = async (request: ReportDescriptionRequest, message: string) => {
+    const [offline, { loadFormaModel }, { parseDataSource }, { readMemory, preferencesOf }] = await Promise.all([
+      import('./lib/offlineGenerator'),
+      import('./lib/formaModel'),
+      import('./lib/dataSource'),
+      import('./lib/memory'),
+    ]);
+    const fields = request.dataSchema
+      ? parseDataSource(request.dataSchema).fields.map(f => ({ name: f.name, type: f.type === 'string' ? ('text' as const) : f.type }))
+      : undefined;
+    const design = offline.generateOffline(await loadFormaModel(), { description: request.description || message, fields, preferences: preferencesOf(readMemory()) });
+    const newResult: DesignResult = {
+      content: design.markdown,
+      timestamp: new Date(),
+      title: design.title,
+      layout: design.layout,
+      repxContent: design.repx,
+      usage: null,
+    };
+    return { design, result: newResult, reply: offline.designedReply(design) };
+  };
+
+  /**
+   * Everything Forma's own parts bring to a run before the AI is asked
+   * (2026-11-03, lib/formaTeam.ts). Each part is optional and none can fail
+   * the run: a vision model that is off, or a model file that will not load,
+   * leaves that part out with a warning in the console.
+   * - A picture: Forma's vision model, when one is set up, reads the first
+   *   page, and OCR's words go into its boxes. That draft is the brief, and
+   *   the stand-in. With no vision model, OCR's own build is the stand-in.
+   * - A description: the house style Forma's own model learned is the brief,
+   *   and that model's own design is the stand-in.
+   */
+  const prepareTeam = async (input: TeamInput | undefined, signal: AbortSignal): Promise<TeamPlan> => {
+    if (!input) return NO_TEAM;
+    const members: TeamMember[] = [];
+    let brief = '';
+    let draft: TeamPlan['draft'] = null;
+    if (input.read.length) members.push('ocr');
+
+    const vision = input.firstImage ? visionModelOf(config) : null;
+    if (vision && input.firstImage) {
+      try {
+        const [{ readSkeleton }, { skeletonToDesign, pageTextsOf }, { detectLayout }, { pageForImage }, { draftBrief }] = await Promise.all([
+          import('./services/formaVision'),
+          import('./lib/skeletonRepx'),
+          import('./lib/ocrLayout'),
+          import('./lib/reportGeometry'),
+          import('./lib/formaTeam'),
+        ]);
+        const first = input.firstImage.meta;
+        const reading = await readSkeleton(vision, input.firstImage.src, signal);
+        if (!reading.skeleton) throw new Error('its answer had no page line');
+        const paper = reading.skeleton.paper === 'Custom' ? config.pageSize : reading.skeleton.paper;
+        const page = input.read.find(({ meta }) => meta.uploadId === first.uploadId && (meta.page ?? 0) === (first.page ?? 0));
+        const texts = page
+          ? pageTextsOf(detectLayout([{ ocr: page.read.ocr, page: pageForImage(page.read.ocr, 'HundredthsOfAnInch', paper) }], { unit: 'HundredthsOfAnInch' }))
+          : [];
+        const design = skeletonToDesign(reading.skeleton, { texts, title: first.file.replace(/\.[^.]+$/, '') });
+        brief = draftBrief(reading.skeleton, design.layout, config.unit);
+        members.push('vision');
+        const visionResult: DesignResult = { content: design.markdown, timestamp: new Date(), title: design.title, layout: design.layout, repxContent: design.repx, usage: null };
+        draft = async () => ({ result: visionResult, source: 'vision' });
+      } catch (err) {
+        if (signal.aborted) throw err;
+        console.warn("Forma's vision model could not read the page; the AI designs without its draft.", err);
+      }
+    }
+    if (!draft && input.read.length) {
+      const read = input.read;
+      draft = async () => {
+        const { buildFromRead } = await import('./lib/ocrAttach');
+        const built = buildFromRead(read, config.unit, config.pageSize);
+        if (!built) return null;
+        return {
+          result: { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null },
+          source: 'ocr',
+        };
+      };
+    }
+
+    const described = input.described;
+    if (described) {
+      try {
+        const [{ loadFormaModel }, { houseStyleBrief }] = await Promise.all([import('./lib/formaModel'), import('./lib/formaTeam')]);
+        const model = await loadFormaModel();
+        brief = houseStyleBrief(model.style, model.reports, config.unit);
+        if (brief) members.push('house');
+      } catch (err) {
+        console.warn("Forma's own model could not be loaded; the AI designs without its house style.", err);
+      }
+      draft = async () => ({ result: (await offlineDesign(described, described.description)).result, source: 'offline' });
+    }
+    return { brief, members, draft };
+  };
+
   const runGeneration = async (
     currentPrompt: string,
     currentPreviews: readonly string[],
@@ -3252,6 +3376,8 @@ export default function App() {
     copy: RunCopy,
     /** Set for a Prompt-to-Report run: no attachments, the description is the source. */
     describeRequest?: ReportDescriptionRequest,
+    /** What Forma's own parts bring (lib/formaTeam.ts); absent on a refinement in words. */
+    teamInput?: TeamInput,
   ) => {
     loadingIntervalRef.current = setInterval(() => setProgress(tickSimulated), STEP_INTERVAL_MS);
 
@@ -3260,8 +3386,13 @@ export default function App() {
 
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
+    /** The AI chosen in the settings, by name, for the replies. */
+    const aiName = PROVIDER_NAMES[effectiveProvider(config)];
+    let team: TeamPlan = NO_TEAM;
 
     try {
+      team = await prepareTeam(teamInput, signal);
+      if (signal.aborted) return;
       // Text before images, and malformed previews dropped rather than thrown
       // on — see src/lib/attachmentParts.ts.
       const attachmentParts = toAttachmentParts(currentPreviews, currentTexts);
@@ -3304,6 +3435,7 @@ export default function App() {
       // The user's remembered preferences (lib/memory.ts), as their own block
       // ahead of the request, never mixed into the words they typed.
       const remembered = await import('./lib/memory').then(m => m.instructionsOf(m.readMemory())).catch(() => '');
+      if (remembered && team.members.length) team.members.push('memory');
       let response = await analyzeReportDesign(
         // Passed through empty when the user typed nothing. It used to become
         // "Generate a professional DevExpress report layout based on these
@@ -3315,7 +3447,7 @@ export default function App() {
         result ? { layout: result.layout, repxContent: result.repxContent, houseStyle } : undefined,
         signal,
         handleStreamProgress,
-        { ...(describeRequest ? { description: describeRequest } : {}), remembered },
+        { ...(describeRequest ? { description: describeRequest } : {}), remembered, formaBrief: team.brief },
       );
 
       if (signal.aborted) {
@@ -3386,11 +3518,14 @@ export default function App() {
       recordRevision(result ? 'Refined' : 'Generated', newResult);
       setActiveTab('ui');
 
-      // Add assistant message
+      // Add assistant message, with who took part when more than the AI did.
+      const credits = team.members.length
+        ? await import('./lib/formaTeam').then(m => m.teamLine([...team.members, 'ai', 'checks'], aiName)).catch(() => '')
+        : '';
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
         role: 'assistant',
-        text: copy.assistant(Boolean(currentPrompt)),
+        text: credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)),
         result: newResult
       };
       setMessages(prev => [...prev, newAssistantMsg]);
@@ -3416,6 +3551,29 @@ export default function App() {
         friendlyMessage = 'Your Gemini API key has hit its quota. Check your plan and billing in Google AI Studio.';
       } else if (friendlyMessage.includes('Failed to fetch')) {
         friendlyMessage = 'Network error. Please check your internet connection.';
+      }
+
+      // Forma's own draft stands in for the AI that could not answer
+      // (lib/formaTeam.ts), rather than the request ending in an error.
+      if (team.draft) {
+        try {
+          const made = await team.draft();
+          if (made && !signal.aborted) {
+            const { fallbackReply } = await import('./lib/formaTeam');
+            setResult(made.result);
+            recordRevision("Forma's own draft", made.result);
+            setActiveTab('ui');
+            setMessages(prev => [...prev, {
+              id: nextMessageId(),
+              role: 'assistant',
+              text: fallbackReply(aiName, err?.message || friendlyMessage, made.source),
+              result: made.result,
+            }]);
+            return;
+          }
+        } catch (draftError) {
+          console.warn("Forma's own draft could not be made either.", draftError);
+        }
       }
       setError(friendlyMessage);
     } finally {
@@ -3456,6 +3614,7 @@ export default function App() {
       activeTextsRef.current,
       RESUMED_RUN,
       activeDescribeRef.current,
+      activeTeamRef.current,
     );
   };
 
@@ -3546,34 +3705,23 @@ export default function App() {
         say(offline.OFFLINE_HELP);
         return;
       }
-      const [{ loadFormaModel }, { parseDataSource }] = await Promise.all([import('./lib/formaModel'), import('./lib/dataSource')]);
-      const fields = request.dataSchema
-        ? parseDataSource(request.dataSchema).fields.map(f => ({ name: f.name, type: f.type === 'string' ? ('text' as const) : f.type }))
-        : undefined;
-      // What the user asked Forma to remember, and what their kept reports show.
-      const { readMemory, preferencesOf } = await import('./lib/memory');
-      const design = offline.generateOffline(await loadFormaModel(), { description: request.description || message, fields, preferences: preferencesOf(readMemory()) });
-      const newResult: DesignResult = {
-        content: design.markdown,
-        timestamp: new Date(),
-        title: design.title,
-        layout: design.layout,
-        repxContent: design.repx,
-        usage: null,
-      };
+      // With what the user asked Forma to remember, and what their kept reports show.
+      const { result: newResult, reply } = await offlineDesign(request, message);
       setResult(newResult);
       recordRevision("Forma's own model", newResult);
       setActiveTab('ui');
-      say(offline.designedReply(design), newResult);
+      say(reply, newResult);
     } catch (err: any) {
       say(err?.message || "Forma's own model could not design this report.");
     }
   };
 
   /**
-   * A picture read by Forma's vision model (2026-11-03, milestone 6 of
-   * docs/proposals/own-model.md). This path runs when the Local AI model was
-   * imported as "forma-vision":
+   * A picture read by Forma's vision model alone (2026-11-03, milestone 6 of
+   * docs/proposals/own-model.md). This path runs when no other AI designs:
+   * the Local AI model is itself "forma-vision", or there is no AI and the
+   * vision model is set up as a helper (`visionModelOf`). With an AI, the
+   * same reading is that AI's brief instead (`prepareTeam`).
    * - the model writes the first page's skeleton;
    * - OCR's reading of the same page gives its words;
    * - skeletonRepx.ts builds the report.
@@ -3605,7 +3753,9 @@ export default function App() {
         import('./lib/ocrLayout'),
         import('./lib/reportGeometry'),
       ]);
-      const reading = await readSkeleton({ baseUrl: config.localUrl ?? '', model: config.localModel ?? '' }, staged[0]);
+      const vision = visionModelOf(config);
+      if (!vision) throw new Error('no vision model is set up');
+      const reading = await readSkeleton(vision, staged[0]);
       if (!reading.skeleton) throw new Error('its answer had no page line');
       // The words OCR read on the same page, in the skeleton's unit and on its paper.
       const first = stagedMeta[0];
@@ -3695,12 +3845,11 @@ export default function App() {
       return;
     }
 
-    // A picture for Forma's own vision model (2026-11-03). The Local AI model
-    // imported as "forma-vision" is asked the one question it was trained on,
-    // not the mega-prompt. This is the same test as isFormaVisionModel in
-    // services/formaVision.ts, written out so the entry chunk does not load
-    // that module.
-    if (previews.length > 0 && config.provider === 'local' && /forma-vision/i.test(config.localModel ?? '')) {
+    // A picture for Forma's own vision model alone (2026-11-03): the Local AI
+    // model is itself "forma-vision", which is asked the one question it was
+    // trained on and not the mega-prompt; or no AI is set up and the vision
+    // model is, as a helper. With an AI it helps that AI instead (prepareTeam).
+    if (previews.length > 0 && (isVisionOnly(config) || (!hasApiKey && visionModelOf(config)))) {
       await designFromVision(promptText);
       return;
     }
@@ -3717,6 +3866,19 @@ export default function App() {
     // The staged pages whose text is read in the browser, captured before the
     // composer is cleared below; their text joins the attachments after.
     const stagedForOcr = ocrPages;
+    // What Forma's own parts need for a picture (lib/formaTeam.ts), captured
+    // before the composer is cleared: the pages OCR read, and the first page
+    // for the vision model when it is an image rather than a PDF.
+    const stagedMeta = [...previewMeta];
+    const teamInput: TeamInput | undefined = currentPreviews.length > 0
+      ? {
+          read: stagedForOcr.flatMap(({ meta }) => {
+            const run = ocrRuns[ocrKey(meta)];
+            return run?.state === 'done' ? [{ meta, read: run.read }] : [];
+          }),
+          firstImage: currentPreviews[0]?.startsWith('data:image/') && stagedMeta[0] ? { src: currentPreviews[0], meta: stagedMeta[0] } : undefined,
+        }
+      : undefined;
 
     // Add user message
     const newUserMsg: ChatMessage = {
@@ -3838,7 +4000,8 @@ export default function App() {
     setError(null);
 
     activeDescribeRef.current = undefined;
-    await runGeneration(currentPrompt, currentPreviews, currentTexts, INITIAL_RUN);
+    activeTeamRef.current = teamInput;
+    await runGeneration(currentPrompt, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput);
   };
 
   /* ---------------------------------------------------------------- *
@@ -3858,9 +4021,12 @@ export default function App() {
     activePreviewsRef.current = [];
     activeTextsRef.current = [];
     activeDescribeRef.current = request;
+    // The house style is the brief, and Forma's own model the stand-in (lib/formaTeam.ts).
+    const teamInput: TeamInput = { read: [], described: request };
+    activeTeamRef.current = teamInput;
     setProgress(startProgress());
     setError(null);
-    await runGeneration('', [], [], DESCRIBE_RUN, request);
+    await runGeneration('', [], [], DESCRIBE_RUN, request, teamInput);
   };
 
   /*

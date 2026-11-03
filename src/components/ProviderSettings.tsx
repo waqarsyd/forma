@@ -10,11 +10,13 @@
  * - Local AI: Ollama or LM Studio on this computer.
  * - OpenRouter: its free models, with a key of the user's own.
  * For a local server or OpenRouter, "Find models" asks the server what it
- * offers, and a model that reads images is listed first.
+ * offers, and a model that reads images is listed first. Below them,
+ * Forma's vision model can be named as a helper to any of them
+ * (2026-11-03, lib/formaTeam.ts).
  */
 import { useState } from 'react';
 import { IconAlert, IconCheck } from './landing/icons';
-import { aiReady, DEFAULT_LOCAL_URL, OPENROUTER_URL, PROVIDER_NAMES, PROVIDERS, type AiProvider } from '../lib/aiProvider';
+import { aiReady, DEFAULT_LOCAL_URL, isVisionOnly, OPENROUTER_URL, PROVIDER_NAMES, PROVIDERS, type AiProvider } from '../lib/aiProvider';
 import type { ReportConfig } from '../services/geminiService';
 
 const NOTES: Record<AiProvider, string> = {
@@ -160,6 +162,44 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
           <span className="wb-ic">{aiReady(config) ? <IconCheck size={13} /> : <IconAlert size={13} />}</span>
           <span>{aiReady(config) ? `${PROVIDER_NAMES[provider]} is ready.` : `${PROVIDER_NAMES[provider]} needs ${provider === 'openrouter' && !config.openRouterKey?.trim() ? 'a key and ' : ''}a model.`}</span>
         </div>
+      )}
+
+      {/* Forma's team (2026-11-03, lib/formaTeam.ts): the vision model as a
+          helper beside whichever AI designs. Hidden when the AI chosen above
+          is the vision model itself, which then works alone. */}
+      {!isVisionOnly(config) && (
+        <>
+          <div className="wb-eyebrow" style={{ marginTop: 14 }}>
+            <b>team</b>Forma&apos;s vision model<span className="wb-fade" />
+          </div>
+          <p style={{ margin: 0, opacity: 0.75, fontSize: '0.92em' }}>
+            Optional. Forma&apos;s own vision model, on Ollama or LM Studio on this computer, reads a picture&apos;s layout and OCR places its words in it. The AI above
+            designs from that draft, and if it cannot answer, the draft is your report.
+          </p>
+          {provider !== 'local' && (
+            <div>
+              <label className="wb-lbl" htmlFor="cfg-vision-url">
+                Server address
+              </label>
+              <input className="wb-ctl" id="cfg-vision-url" type="text" value={config.localUrl || DEFAULT_LOCAL_URL} onChange={(e) => onChange({ localUrl: e.target.value })} autoComplete="off" spellCheck={false} />
+            </div>
+          )}
+          <div>
+            <label className="wb-lbl" htmlFor="cfg-vision-model">
+              Vision model
+            </label>
+            <input
+              className="wb-ctl"
+              id="cfg-vision-model"
+              type="text"
+              placeholder="e.g. forma-vision (empty: none)"
+              value={config.visionModel || ''}
+              onChange={(e) => onChange({ visionModel: e.target.value })}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+        </>
       )}
     </div>
   );

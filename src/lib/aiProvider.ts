@@ -35,6 +35,11 @@ export interface ProviderSettings {
   localModel: string;
   openRouterModel: string;
   openRouterKey: string;
+  /**
+   * Forma's vision model on the Local AI server, as a helper beside whichever
+   * AI designs (2026-11-03, lib/formaTeam.ts). Empty, no helper.
+   */
+  visionModel: string;
 }
 
 /** The kept settings, with the defaults for anything missing or unreadable. */
@@ -57,6 +62,7 @@ export function readProviderSettings(): ProviderSettings {
     localModel: typeof stored.localModel === 'string' ? stored.localModel : '',
     openRouterModel: typeof stored.openRouterModel === 'string' ? stored.openRouterModel : '',
     openRouterKey: key,
+    visionModel: typeof stored.visionModel === 'string' ? stored.visionModel : '',
   };
 }
 
@@ -65,7 +71,13 @@ export function writeProviderSettings(s: Partial<ProviderSettings>): void {
   try {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ provider: s.provider ?? 'auto', localUrl: s.localUrl ?? DEFAULT_LOCAL_URL, localModel: s.localModel ?? '', openRouterModel: s.openRouterModel ?? '' }),
+      JSON.stringify({
+        provider: s.provider ?? 'auto',
+        localUrl: s.localUrl ?? DEFAULT_LOCAL_URL,
+        localModel: s.localModel ?? '',
+        openRouterModel: s.openRouterModel ?? '',
+        visionModel: s.visionModel ?? '',
+      }),
     );
     if (s.openRouterKey) sessionStorage.setItem(OPENROUTER_KEY_SESSION, s.openRouterKey);
     else sessionStorage.removeItem(OPENROUTER_KEY_SESSION);
@@ -97,6 +109,31 @@ export function aiReady(config: ReportConfig): boolean {
     default:
       return false;
   }
+}
+
+/** A Local AI model imported as Forma's vision model (milestone 6): "forma-vision", any tag. */
+export const isFormaVisionName = (model: string | undefined) => /forma-vision/i.test(model ?? '');
+
+/**
+ * Whether the AI that designs is itself Forma's vision model on Local AI.
+ * Then nothing else designs: a picture goes to the vision model and OCR
+ * alone, since the model was trained on one question, not the mega-prompt.
+ */
+export function isVisionOnly(config: Pick<ReportConfig, 'provider' | 'localModel'>): boolean {
+  return config.provider === 'local' && isFormaVisionName(config.localModel);
+}
+
+/**
+ * Where Forma's vision model answers, when one is set up: the helper named in
+ * the settings, on the Local AI server, or the Local AI model itself when that
+ * is the vision model. Null when there is none.
+ */
+export function visionModelOf(config: Pick<ReportConfig, 'provider' | 'localUrl' | 'localModel' | 'visionModel'>): { baseUrl: string; model: string } | null {
+  const baseUrl = config.localUrl?.trim() || DEFAULT_LOCAL_URL;
+  const helper = config.visionModel?.trim();
+  if (helper) return { baseUrl, model: helper };
+  if (isVisionOnly(config)) return { baseUrl, model: config.localModel!.trim() };
+  return null;
 }
 
 /** A provider's name as the settings and the thread say it. */

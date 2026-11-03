@@ -104,6 +104,8 @@ export interface ReportConfig {
   openRouterModel?: string;
   /** Like `customApiKey`: sessionStorage only, never persisted with the document settings. */
   openRouterKey?: string;
+  /** Forma's vision model on the Local AI server, as a helper (lib/formaTeam.ts). Empty, none. */
+  visionModel?: string;
 }
 
 /** The OpenAI-compatible endpoint a config names, or null for Gemini. */
@@ -1683,6 +1685,13 @@ export interface GenerationOptions {
    * is added and the prompt is as it was.
    */
   remembered?: string;
+  /**
+   * What the rest of Forma's team brings (2026-11-03, lib/formaTeam.ts):
+   * Forma's own draft of the page, or the house style for a description.
+   * Placed before the remembered preferences and the user's words, so both
+   * of those win. Empty, nothing is added.
+   */
+  formaBrief?: string;
   /** Set on the one repeat of a request cut off by its thinking, so it is not repeated again. */
   thinkingCapped?: boolean;
 }
@@ -2158,7 +2167,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
           - LOCATIONS AND SIZES: Make **absolute sure** that components do not overlap incorrectly. Calculate the X and Y bounds correctly. LocationFloat expects X,Y and SizeF expects Width,Height. Do NOT add spaces after the comma.
           - PREVIEW MOCKUP ACCURACY: In the JSON \`layout\`, represent every grid as ONE \`"table"\` element with a populated \`rows\`/\`cells\` array, as described under "TABLES / GRIDS IN THE LAYOUT" above. (Earlier revisions asked for grids to be decomposed into one \`"label"\` per cell because the preview could not draw real tables. It can now, so emit the real structure — it is both more accurate and far less error-prone than hand-computing every cell coordinate.)
 
-          ${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent), fromDescription: Boolean(description) })}` },
+          ${options?.formaBrief?.trim() ? `${options.formaBrief.trim()}\n\n` : ''}${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent), fromDescription: Boolean(description) })}` },
           ...imageParts,
         ],
       },
