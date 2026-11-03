@@ -30,7 +30,7 @@
  * nothing. Its console output is counts only.
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { CATEGORY_WORDS } from '../../src/lib/formaModel';
 import type { ReportSkeleton } from '../../src/lib/reportSkeleton';
 import { publicFontsOnly, skeletonToText, strayWords, withPrintedHeights } from '../../src/lib/skeletonText';
@@ -49,8 +49,10 @@ const dataDir = resolve(arg('data'));
 const outDir = resolve(arg('out'));
 const owner = arg('owner', 'your-kaggle-username');
 const evalPercent = Number(arg('eval', '10'));
-const repo = resolve('.');
-if (outDir.toLowerCase().startsWith(repo.toLowerCase())) {
+// Inside means the repository or a folder under it. A name test is not enough:
+// a sibling such as ../forma-model-data begins with the repository's own path.
+const within = relative(resolve('.'), outDir);
+if (!within.startsWith('..') && !isAbsolute(within)) {
   console.error('--out is inside the repository. Keep the dataset outside it.');
   process.exit(2);
 }

@@ -23,7 +23,7 @@
  * so no report's words reach a terminal or a log.
  */
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { parseReportStructure } from '../../src/lib/reportPreview';
 import { skeletonOf } from '../../src/lib/reportSkeleton';
 import { categoryOf, learnModel, unexpectedStrings, type TrainingReport } from '../../src/lib/formaModel';
@@ -43,7 +43,10 @@ const dataDir = resolve(arg('data'));
 const out = resolve(arg('out', 'assets/model/formaModel.json'));
 const k = Number(arg('k', '10'));
 const repo = resolve('.');
-if (dataDir.toLowerCase().startsWith(repo.toLowerCase())) {
+// Inside means the repository or a folder under it. A name test is not enough:
+// a sibling such as ../forma-model-data begins with the repository's own path.
+const within = relative(repo, dataDir);
+if (!within.startsWith('..') && !isAbsolute(within)) {
   console.error('--data is inside the repository. Keep the training set outside it.');
   process.exit(2);
 }
