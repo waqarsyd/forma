@@ -97,6 +97,33 @@ function bordersAttr(mask: number): string {
   return ` Borders="${sides.join(', ')}"`;
 }
 
+/** The order DevExpress prints a report's band kinds in, top to bottom. */
+const PRINT_ORDER: readonly BandKind[] = ['TopMargin', 'ReportHeader', 'PageHeader', 'GroupHeader', 'Detail', 'DetailReport', 'GroupFooter', 'ReportFooter', 'PageFooter', 'BottomMargin'];
+
+/**
+ * One report's skeleton from the skeletons of several of its pages
+ * (2026-11-04). The vision model reads one page at a time, and a report's
+ * pages show different parts of it: the first its report header, the last
+ * its group and report footers and the totals in them. So the first page's
+ * skeleton stands, with its paper, margins and bands, and a band of a kind it
+ * does not show is taken from the first later page that does, in the place
+ * DevExpress prints that kind. A kind the first page shows is never replaced:
+ * the page header and the records repeat on every page, and the first
+ * page's are the ones its words are read from.
+ */
+export function mergePageSkeletons(first: ReportSkeleton, ...later: readonly ReportSkeleton[]): ReportSkeleton {
+  const bands = [...first.bands];
+  for (const page of later) {
+    for (const band of page.bands) {
+      if (bands.some((b) => b.kind === band.kind)) continue;
+      const rank = PRINT_ORDER.indexOf(band.kind);
+      const at = bands.findIndex((b) => PRINT_ORDER.indexOf(b.kind) > rank);
+      bands.splice(at < 0 ? bands.length : at, 0, band);
+    }
+  }
+  return { ...first, bands };
+}
+
 /** Every text read on the page, labels and table cells alike, where its ink was seen. */
 export function pageTextsOf(layout: DetectedLayout, page = 0): PageText[] {
   const p = layout.pages[page];

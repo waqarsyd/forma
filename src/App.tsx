@@ -1496,6 +1496,8 @@ type TeamInput = {
   read: { meta: PreviewMeta; read: ReadPage }[];
   /** The first page, for Forma's vision model, when it is an image. */
   firstImage?: { src: string; meta: PreviewMeta };
+  /** The same upload's last page, when it has more than one (2026-11-04): its footers and totals. */
+  lastImage?: { src: string; meta: PreviewMeta };
   /** A report described in words: the house style is told, and Forma's own model drafts. */
   described?: ReportDescriptionRequest;
 };
@@ -1508,6 +1510,21 @@ type TeamPlan = {
 };
 
 const NO_TEAM: TeamPlan = { brief: '', members: [], draft: null };
+
+/**
+ * The staged pages Forma's vision model reads, by index (2026-11-04): the
+ * first, when it is an image, and the same upload's last page when it has
+ * more than one, since a report's last page holds the footers and totals its
+ * first does not. Empty when the first is not an image (a PDF read as one).
+ */
+function visionPages(images: readonly string[], metas: readonly PreviewMeta[]): number[] {
+  if (!images[0]?.startsWith('data:image/') || !metas[0]) return [];
+  let last = 0;
+  metas.forEach((m, i) => {
+    if (i > 0 && m.uploadId === metas[0].uploadId && images[i]?.startsWith('data:image/')) last = i;
+  });
+  return last > 0 ? [0, last] : [0];
+}
 
 // RESUMED_RUN, the copy for resuming a paused run, went with pause and resume
 // on 2026-11-04: the chat shows working dots and a Stop, as other chat apps do.
@@ -3331,7 +3348,7 @@ export default function App() {
     const vision = input.firstImage ? visionModelOf(config) : null;
     if (vision && input.firstImage) {
       try {
-        const [{ readSkeleton }, { skeletonToDesign, pageTextsOf }, { detectLayout }, { pageForImage }, { draftBrief }] = await Promise.all([
+        const [{ readSkeleton }, { skeletonToDesign, pageTextsOf, mergePageSkeletons }, { detectLayout }, { pageForImage }, { draftBrief }] = await Promise.all([
           import('./services/formaVision'),
           import('./lib/skeletonRepx'),
           import('./lib/ocrLayout'),
@@ -3340,8 +3357,15 @@ export default function App() {
         ]);
         const first = input.firstImage.meta;
         setTeamStage("Forma's vision model is reading the layout");
-        const reading = await readSkeleton(vision, input.firstImage.src, signal).finally(() => setTeamStage(null));
-        if (!reading.skeleton) throw new Error('its answer had no page line');
+        // The first page, and the upload's last when it has more (2026-11-04),
+        // whose footers and totals the first does not show.
+        const [firstReading, lastReading] = await (async () => {
+          const one = await readSkeleton(vision, input.firstImage!.src, signal);
+          const two = input.lastImage ? await readSkeleton(vision, input.lastImage.src, signal).catch(() => null) : null;
+          return [one, two] as const;
+        })().finally(() => setTeamStage(null));
+        if (!firstReading.skeleton) throw new Error('its answer had no page line');
+        const reading = { skeleton: mergePageSkeletons(firstReading.skeleton, ...(lastReading?.skeleton ? [lastReading.skeleton] : [])) };
         const paper = reading.skeleton.paper === 'Custom' ? config.pageSize : reading.skeleton.paper;
         const page = input.read.find(({ meta }) => meta.uploadId === first.uploadId && (meta.page ?? 0) === (first.page ?? 0));
         const texts = page
@@ -3732,20 +3756,31 @@ export default function App() {
         import('./lib/reportGeometry'),
       ]);
       const vision = visionModelOf(config);
-      // The page's layout and its text are read at the same time, behind the
+      // The pages' layout and their text are read at the same time, behind the
       // scenes, the message already in the thread (2026-11-03). The model's
-      // answer is settled into a value so that a failure while the text is
-      // still being read is not an unhandled rejection.
+      // answers are settled into a value so that a failure while the text is
+      // still being read is not an unhandled rejection. It reads the upload's
+      // first page and, when it has more, its last (2026-11-04), whose footers
+      // and totals the first does not show; mergePageSkeletons joins them.
+      const pagesToRead = visionPages(staged, stagedMeta);
       const looking = vision
-        ? readSkeleton(vision, staged[0]).then((r) => ({ reading: r }), (e: unknown) => ({ failed: e }))
+        ? (async () => {
+            const readings = [];
+            for (const i of pagesToRead) readings.push(await readSkeleton(vision, staged[i]));
+            return readings;
+          })().then((readings) => ({ readings }), (e: unknown) => ({ failed: e }))
         : Promise.resolve({ failed: new Error('no vision model is set up') });
       read = await readSentPages(stagedForOcr);
       setIsChatting(true);
-      setStreamingReply("Forma's vision model is reading the layout…");
       const looked = await looking;
       if ('failed' in looked) throw looked.failed;
-      const reading = looked.reading;
-      if (!reading.skeleton) throw new Error('its answer had no page line');
+      const [firstReading, ...laterReadings] = looked.readings;
+      if (!firstReading?.skeleton) throw new Error('its answer had no page line');
+      const { mergePageSkeletons } = await import('./lib/skeletonRepx');
+      const reading = {
+        skeleton: mergePageSkeletons(firstReading.skeleton, ...laterReadings.flatMap((r) => (r.skeleton ? [r.skeleton] : []))),
+        problems: looked.readings.flatMap((r) => r.problems),
+      };
       // The words OCR read on the same page, in the skeleton's unit and on its paper.
       const first = stagedMeta[0];
       const page = read.find(({ meta }) => meta.uploadId === first?.uploadId && (meta.page ?? 0) === (first?.page ?? 0));
@@ -3768,7 +3803,11 @@ export default function App() {
       const skipped = reading.problems.length
         ? ` ${reading.problems.length} ${reading.problems.length === 1 ? 'line of its answer could not be read and was' : 'lines of its answer could not be read and were'} left out.`
         : '';
-      const more = staged.length > 1 ? ` Only the first of the ${staged.length} pages was read.` : '';
+      const more = staged.length > pagesToRead.length
+        ? pagesToRead.length > 1
+          ? ` Its first and last pages were read, of ${staged.length}.`
+          : ` Only the first of the ${staged.length} pages was read.`
+        : '';
       say(
         `Read "${design.title}" with Forma's vision model: ${design.read} of ${design.read + design.placeholders} titles and captions took their words from the page.${skipped}${more}`,
         newResult,
@@ -3861,7 +3900,9 @@ export default function App() {
     // when it is an image rather than a PDF. The pages OCR reads join it
     // once they are read, after the message is in the thread.
     const stagedMeta = [...previewMeta];
-    const firstImage = currentPreviews[0]?.startsWith('data:image/') && stagedMeta[0] ? { src: currentPreviews[0], meta: stagedMeta[0] } : undefined;
+    const [firstAt, lastAt] = visionPages(currentPreviews, stagedMeta);
+    const firstImage = firstAt !== undefined ? { src: currentPreviews[firstAt], meta: stagedMeta[firstAt] } : undefined;
+    const lastImage = lastAt !== undefined ? { src: currentPreviews[lastAt], meta: stagedMeta[lastAt] } : undefined;
 
     // Add user message
     const newUserMsg: ChatMessage = {
@@ -3886,7 +3927,7 @@ export default function App() {
     const readByOcr = await ocrAttachments(read);
     const currentTexts = [...attachmentTexts, ...readByOcr];
     if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
-    const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage } : undefined;
+    const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage, lastImage } : undefined;
 
     /*
      * A reply to the questions a description is waiting on. Typed into the

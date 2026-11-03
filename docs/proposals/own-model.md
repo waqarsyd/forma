@@ -644,8 +644,13 @@ whole page (`paperOfImage`, `placeImage`); see the OCR bullets in
    picture and ask only for what OCR cannot tell: bands, roles and kinds.
    Version 2 already gets most of those right: 97% of roles among the
    controls it found.
-4. More than one page per picture, and the model's answer streamed as it
-   is written.
+4. ~~More than one page per picture~~: done 2026-11-04. The vision model
+   reads an upload's first page and, when there are more, its last, and
+   `mergePageSkeletons` (`skeletonRepx.ts`) keeps the first page's bands
+   and adds the kinds only the last shows: group and report footers and
+   their totals. Streaming the model's answer as it is written is no
+   longer wanted, since the minimal chat (2026-11-04) shows working dots
+   and not the answer's text.
 
 ## Forma's team: every part in its role (2026-11-03)
 

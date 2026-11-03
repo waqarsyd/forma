@@ -8,7 +8,7 @@ import { checkRepx } from './repx';
 import { auditRepx } from './repxAudit';
 import { parseReportStructure } from './reportPreview';
 import { skeletonOf, type ReportSkeleton, type SkeletonControl } from './reportSkeleton';
-import { fieldFromCaption, skeletonToDesign, type PageText } from './skeletonRepx';
+import { fieldFromCaption, mergePageSkeletons, skeletonToDesign, type PageText } from './skeletonRepx';
 
 const font = (size: number, bold = false) => ({ family: 'Arial', size, bold, italic: false });
 const label = (over: Partial<SkeletonControl>): SkeletonControl => ({
@@ -163,6 +163,41 @@ describe('skeletonToDesign', () => {
     expect(design.layout.sections.map((s) => s.name)).toEqual(['Report header', 'Page header', 'Group header', 'Detail', 'Group footer', 'Report footer', 'Page footer']);
     expect(design.layout.sections[1].elements[0].rows?.[0].cells.map((c) => c.content)).toEqual(['Item', 'Quantity']);
     expect(design.markdown).toContain('3 of 4 titles and captions');
+  });
+});
+
+describe('mergePageSkeletons', () => {
+  const band = (kind: ReportSkeleton['bands'][number]['kind'], height: number) => ({ kind, height, groupFields: kind === 'GroupHeader' ? 1 : 0, controls: [] });
+  const page = (kinds: [ReportSkeleton['bands'][number]['kind'], number][], paper: ReportSkeleton['paper'] = 'A4'): ReportSkeleton => ({
+    paper,
+    landscape: false,
+    width: 827,
+    height: 1169,
+    margins: { top: 40, bottom: 40, left: 40, right: 40 },
+    bands: kinds.map(([k, h]) => band(k, h)),
+  });
+
+  it("keeps the first page's bands and adds the kinds only a later page shows, where DevExpress prints them", () => {
+    const first = page([['TopMargin', 40], ['ReportHeader', 80], ['PageHeader', 25], ['Detail', 20], ['PageFooter', 20], ['BottomMargin', 40]]);
+    const last = page([['TopMargin', 40], ['PageHeader', 30], ['Detail', 22], ['GroupFooter', 25], ['ReportFooter', 30], ['PageFooter', 20], ['BottomMargin', 40]], 'Letter');
+    const merged = mergePageSkeletons(first, last);
+    expect(merged.bands.map((b) => `${b.kind} ${b.height}`)).toEqual([
+      'TopMargin 40',
+      'ReportHeader 80',
+      // The first page's, not the last's: the repeating bands are read where the words were.
+      'PageHeader 25',
+      'Detail 20',
+      'GroupFooter 25',
+      'ReportFooter 30',
+      'PageFooter 20',
+      'BottomMargin 40',
+    ]);
+    expect(merged.paper).toBe('A4');
+  });
+
+  it('is the first page itself when there is no other', () => {
+    const only = page([['PageHeader', 25], ['Detail', 20]]);
+    expect(mergePageSkeletons(only)).toEqual(only);
   });
 });
 
