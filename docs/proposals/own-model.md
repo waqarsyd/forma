@@ -659,6 +659,13 @@ reading.
 - **The Forma side:** `src/lib/boxText.ts` holds the question (a test keeps
   it word for word with render.py's), reads an answer, makes it a skeleton
   on the boxes' places, and scores it box by box.
+- **Its length:** measured on 300 of version 4's layouts. The median page
+  has 91 boxes (90th percentile 274, most 547). Question and answer
+  together run a median 2,390 characters, against the skeleton text's
+  2,784, so a run costs about what version 4's did. Only 3 of the 300 are
+  over the 8,000-character limit, against 23 skeletons. The limit now
+  counts the question as well as the answer, because in this design the
+  question carries every box.
 
 ### Still to build
 

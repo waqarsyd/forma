@@ -117,7 +117,8 @@ def rows(split, max_chars, limit=0):
     d = dataset_dir()
     with open(os.path.join(d, split + '.jsonl'), encoding='utf-8') as fh:
         out = [json.loads(line) for line in fh if line.strip()]
-    kept = [r for r in out if len(r['target']) <= max_chars]
+    # The boxes design's question holds every box on the page, so it counts too.
+    kept = [r for r in out if len(r.get('prompt', '')) + len(r['target']) <= max_chars]
     if len(kept) < len(out):
         print('%s: left out %d of %d pages whose text is over %d characters' % (split, len(out) - len(kept), len(out), max_chars))
     if limit:
