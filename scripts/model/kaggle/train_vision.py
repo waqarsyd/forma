@@ -262,8 +262,11 @@ def export(args):
     os.makedirs(gguf, exist_ok=True)
     f16 = os.path.join(gguf, 'forma-vision-f16.gguf')
     sh('python %s/convert_hf_to_gguf.py %s --outtype f16 --outfile %s' % (llama, merged, f16))
+    # The projector's name must say mmproj: LM Studio pairs it with the model by
+    # that word, and with --outfile the converter writes exactly the name given
+    # (the first CPU export, 2026-11-03, wrote "forma-vision.gguf").
     sh('python %s/convert_hf_to_gguf.py %s --mmproj --outtype f16 --outfile %s' % (
-        llama, merged, os.path.join(gguf, 'forma-vision.gguf')))
+        llama, merged, os.path.join(gguf, 'mmproj-forma-vision-f16.gguf')))
     sh('cmake -S %s -B %s/build -DGGML_CUDA=OFF -DLLAMA_CURL=OFF > /dev/null' % (llama, llama))
     sh('cmake --build %s/build --target llama-quantize -j 4 > /dev/null' % llama)
     q8 = os.path.join(gguf, 'forma-vision-Q8_0.gguf')
@@ -281,7 +284,9 @@ def find_gguf():
     """The exported model and its projector, from this session or from a version added as input."""
     files = glob.glob(os.path.join(WORK, 'gguf', '*.gguf')) + glob.glob('/kaggle/input/**/gguf/*.gguf', recursive=True)
     model = next((f for f in files if f.endswith('Q8_0.gguf')), None)
-    mmproj = next((f for f in files if os.path.basename(f).startswith('mmproj')), None)
+    # mmproj-*.gguf, or forma-vision.gguf as the first export named it.
+    mmproj = next((f for f in files if 'mmproj' in os.path.basename(f)), None) or \
+        next((f for f in files if os.path.basename(f) == 'forma-vision.gguf'), None)
     return model, mmproj
 
 

@@ -489,10 +489,49 @@ Version 2's dataset answers this (`npm run model:dataset`, 2026-11-03):
   converting does not. So a CPU session with the training version as input
   runs `--export --check`, without spending GPU hours.
 
+### Version 2 reads each picture, and places little (2026-11-03)
+
+Version 2 trained on dataset v2: 2,346 page images, after the length cap
+left out 160, in 85 minutes, with a loss of 0.411. It answered all 20
+held-out layouts, none with a twin in training. The scorer gave:
+
+| Measure | Version 2 |
+|---|---|
+| Different answers for different pages | 20 of 20 (Version 1: one answer for every page) |
+| An answer with a page line | 100% |
+| The paper and orientation right | 65% |
+| Bands found | 57.5%, and 60.5% of those written were right |
+| Controls at half overlap within their band | recall 10.0%, precision 13.7%, F1 11.6% |
+| Of those found, the right kind and the right role | 46.8% and 97.2% |
+
+**Collapse is fixed:** every page gets its own answer, valid and parsed.
+
+**Placement is not usable yet:** about one control in ten lands where the
+page has it. OCR's own build places every text it reads where the page
+printed it, so for placing controls the OCR path is still the better one.
+The likely cause is too little to learn from. There are 199 distinct
+layouts in 82 families, and the variants move them but add no new ones.
+Answer length also wanders: 174 lines for a page of 14, and 27 for one of
+136.
+
+**The deployment path works.** The first CPU export, of Version 1's merged
+model, wrote `forma-vision-Q8_0.gguf` (2,077 MB, 8.5 bits per weight) and
+its projector (668 MB) with llama.cpp's own converter and quantizer. The
+check after it found no projector, because `--outfile` names the file
+exactly and the script looked for "mmproj". The projector is now written
+as `mmproj-forma-vision-f16.gguf`, the name LM Studio pairs by, and the
+check accepts the first export's name too.
+
 ### Still to build
 
-1. Version 2's measurements: `evaluate.ts` on its `predictions.jsonl`, and
-   `--export --check` on its merged model.
+1. The deployment check, llama.cpp and Ollama, on Version 2's export.
+2. Enough layouts for placement to be learned. Variants of 199 are not
+   enough. Layouts drawn from the archetypes and house style of milestone 1
+   could make thousands of new, structure-only ones, with no client
+   material. Or the model could be given OCR's boxes with the picture and
+   asked only for what OCR cannot tell: bands, roles and kinds. Those
+   Version 2 already gets mostly right, 97% of roles among the controls it
+   found. Either is a decision for the owner before more GPU hours.
 2. A comparison on the same held-out pages against today's path for a
    picture, the OCR build.
 3. More than one page per picture, and the model's answer streamed as it
