@@ -635,15 +635,40 @@ carries its own margins, came out pushed in and shrunk.
 whole page (`paperOfImage`, `placeImage`); see the OCR bullets in
 `docs/notes/app-shell.md`.
 
+### The boxes design (built 2026-11-04, not yet trained)
+
+The owner approved one more training run if version 4 still places worse
+than OCR, for this design. Version 2 found 11% of a page's text where it
+prints, OCR 55%: placing things is what OCR already does. So the model is
+given the page and the text read on it, as numbered boxes, and asked only
+for what OCR cannot tell:
+- the bands, each where it first prints, with its top and height;
+- under each band, the number and role of each box printed there.
+
+A box in a repeated record is not listed, because it is the same control
+printing again. The places come from the boxes, so they are as good as the
+reading.
+
+- **Training pairs:** `render.py --boxes` records each text's ink box as it
+  draws, with the band, the band's appearance and the role. Recording
+  draws nothing from the random generator, so the pages are the same as
+  without it; the image hash was checked. Training pages get boxes a pixel
+  or two off and 3% missed, as OCR reads; held-out pages keep exact ones.
+- **Training:** `train_vision.py --boxes` asks each page its own question,
+  in training, prediction and the deployment check.
+- **The Forma side:** `src/lib/boxText.ts` holds the question (a test keeps
+  it word for word with render.py's), reads an answer, makes it a skeleton
+  on the boxes' places, and scores it box by box.
+
 ### Still to build
 
 1. Train version 4 on Kaggle and score it on the same 20 pages, plus the 20 new
    ones, band by band and on the page beside OCR.
-2. The Ollama check again, with the chat template.
-3. If version 4 still places poorly, give the model OCR's boxes with the
-   picture and ask only for what OCR cannot tell: bands, roles and kinds.
-   Version 2 already gets most of those right: 97% of roles among the
-   controls it found.
+2. If it still places worse than OCR, train the boxes design once and
+   score it the same way; then ask Forma's vision path the boxes question
+   with OCR's boxes. Version 2 already got roles right for 97% of the
+   controls it found, which is the part this design keeps.
+3. The Ollama check again, with the chat template.
 4. ~~More than one page per picture~~: done 2026-11-04. The vision model
    reads an upload's first page and, when there are more, its last, and
    `mergePageSkeletons` (`skeletonRepx.ts`) keeps the first page's bands

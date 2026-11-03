@@ -50,8 +50,14 @@ import zipfile
 WORK = '/kaggle/working'
 BASE_MODEL = 'unsloth/Qwen3.5-2B'
 DRAW_VARIANTS = 2  # set by --draw-variants
+BOXES = False  # set by --boxes: the boxes design, each row carrying its own prompt
 INSTRUCTION = ('This is one page of a printed business report. Write its structure as Forma skeleton text: '
                'the page line, then each band and the controls in it, one per line.')
+
+
+def prompt_of(row):
+    """The question asked of a page: its own, with the text boxes, in the boxes design; else the one instruction."""
+    return row.get('prompt') or INSTRUCTION
 
 
 def sh(cmd, optional=False):
@@ -102,7 +108,7 @@ def dataset_dir():
         repo = '/tmp/forma'
         if not os.path.isdir(repo):
             sh('git clone -q --depth 1 https://github.com/waqarsyd/forma %s' % repo)
-        sh('python %s/scripts/model/render.py %s --variants %d' % (repo, out, DRAW_VARIANTS))
+        sh('python %s/scripts/model/render.py %s --variants %d%s' % (repo, out, DRAW_VARIANTS, ' --boxes' if BOXES else ''))
         return out
     sys.exit('No examples.jsonl or train.jsonl under /kaggle/input. Add the "Forma report skeletons" dataset as input.')
 
@@ -136,7 +142,7 @@ def one_gpu():
 
 def conversation(row, image):
     return {'messages': [
-        {'role': 'user', 'content': [{'type': 'image', 'image': image}, {'type': 'text', 'text': INSTRUCTION}]},
+        {'role': 'user', 'content': [{'type': 'image', 'image': image}, {'type': 'text', 'text': prompt_of(row)}]},
         {'role': 'assistant', 'content': [{'type': 'text', 'text': row['target']}]},
     ]}
 
@@ -149,15 +155,17 @@ def load_image(path):
 def predict(model, tokenizer, pages, max_new_tokens, out_path):
     from unsloth import FastVisionModel
     FastVisionModel.for_inference(model)
-    messages = [{'role': 'user', 'content': [{'type': 'image'}, {'type': 'text', 'text': INSTRUCTION}]}]
-    prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
     with open(out_path, 'w', encoding='utf-8', newline='\n') as fh:
         for i, r in enumerate(pages):
+            messages = [{'role': 'user', 'content': [{'type': 'image'}, {'type': 'text', 'text': prompt_of(r)}]}]
+            prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
             inputs = tokenizer(load_image(r['path']), prompt, add_special_tokens=False, return_tensors='pt').to('cuda')
             out = model.generate(**inputs, max_new_tokens=max_new_tokens, use_cache=True, do_sample=False)
             text = tokenizer.decode(out[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
             text = re.sub(r'<think>.*?</think>', '', text, flags=re.S).strip()
-            fh.write(json.dumps({'id': r['id'], 'image': r['image'], 'target': r['target'], 'prediction': text}) + '\n')
+            # The boxes design keeps the prompt and the skeleton, which scoring on the page needs.
+            extra = {k: r[k] for k in ('prompt', 'truth') if k in r}
+            fh.write(json.dumps(dict({'id': r['id'], 'image': r['image'], 'target': r['target'], 'prediction': text}, **extra)) + '\n')
             fh.flush()
             print('predicted %d/%d (%s): %d lines, the right answer has %d' % (
                 i + 1, len(pages), r['image'], len(text.splitlines()), len(r['target'].splitlines())), flush=True)
@@ -317,7 +325,7 @@ def check(args):
     sh('cmake --build %s/build --target llama-mtmd-cli -j 4 > /dev/null' % llama)
     for r in pages:
         out = subprocess.run([os.path.join(llama, 'build', 'bin', 'llama-mtmd-cli'), '-m', model, '--mmproj', mmproj,
-                              '--image', r['path'], '-p', INSTRUCTION, '-n', str(args.check_tokens), '--temp', '0'],
+                              '--image', r['path'], '-p', prompt_of(r), '-n', str(args.check_tokens), '--temp', '0'],
                              capture_output=True, text=True)
         answer = out.stdout.strip()
         first = next((l for l in answer.splitlines() if l.startswith('page ')), '')
@@ -366,7 +374,7 @@ def check(args):
                 with open(r['path'], 'rb') as fh:
                     url = 'data:image/png;base64,' + base64.b64encode(fh.read()).decode('ascii')
                 body = json.dumps({'model': 'forma-vision', 'temperature': 0, 'max_tokens': args.check_tokens, 'messages': [
-                    {'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': url}}, {'type': 'text', 'text': INSTRUCTION}]}]})
+                    {'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': url}}, {'type': 'text', 'text': prompt_of(r)}]}]})
                 req = urllib.request.Request('http://127.0.0.1:11434/v1/chat/completions', data=body.encode('utf-8'),
                                              headers={'Content-Type': 'application/json'})
                 try:
@@ -406,9 +414,11 @@ def main():
     ap.add_argument('--check', action='store_true', help='run the exported model in llama.cpp and Ollama, on the CPU')
     ap.add_argument('--check-tokens', type=int, default=1500, help='how much each check answer may write')
     ap.add_argument('--draw-variants', type=int, default=2, help='pictures drawn of each skeleton when the dataset holds skeletons only')
+    ap.add_argument('--boxes', action='store_true', help='the boxes design (2026-11-04): pages drawn with their text boxes, each row its own prompt')
     args = ap.parse_args()
-    global DRAW_VARIANTS
+    global DRAW_VARIANTS, BOXES
     DRAW_VARIANTS = args.draw_variants
+    BOXES = args.boxes
     if args.setup:
         setup()
     if args.smoke or args.train:

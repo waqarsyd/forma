@@ -455,6 +455,9 @@ src/
                        model learns to write, read back tolerantly from its
                        answer, scored against the right one, and the check
                        that no word but a public font's leaves the machine),
+                       boxText (the boxes design: the vision model given the
+                       text read on a page as numbered boxes, and asked only
+                       for its bands and each box's band and role),
                        skeletonRepx (the report a skeleton describes, its
                        words from what OCR read in each box, its values bound
                        to fields named after their column's caption),

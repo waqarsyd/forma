@@ -2,7 +2,12 @@
 Draw each skeleton of a Forma dataset as page images (2026-11-03, milestone 6
 of docs/proposals/own-model.md).
 
-    python scripts/model/render.py <dataset-dir> [--variants 4] [--seed 1] [--limit N]
+    python scripts/model/render.py <dataset-dir> [--variants 4] [--seed 1] [--limit N] [--boxes]
+
+--boxes (2026-11-04) writes the boxes design instead: each row's `prompt`
+holds the text boxes drawn on the page, numbered, and its `target` the
+bands and each box's band and role (see box_example); `truth` keeps the
+skeleton text, for scoring on the page.
 
 Reads <dataset-dir>/examples.jsonl, written by `npm run model:dataset`, and
 writes into the same folder one PNG per skeleton per variant (r12-0.png,
@@ -151,6 +156,16 @@ def fit(draw, text, font, width):
     return text.rstrip()
 
 
+# Where text was drawn, for the boxes design (--boxes, 2026-11-04): each
+# text's ink box, with the band, the band's appearance on the page and the
+# role it was drawn for. Set by render() and the drawing functions, read by
+# main(); recording draws nothing from the random generator, so a page comes
+# out the same with it or without it.
+_drawn = []
+_bands = []
+_where = {'band': None, 'instance': 0, 'role': 'decoration'}
+
+
 def put_text(draw, text, font, x, y, w, h, align):
     text = fit(draw, text, font, w)
     if not text:
@@ -166,6 +181,9 @@ def put_text(draw, text, font, x, y, w, h, align):
         tx = x + 2
     ty = y + (h - line_h) / 2.0 if h < 2 * line_h else y + 2
     draw.text((tx, ty), text, font=font, fill=0)
+    x0, y0, x1, y1 = draw.textbbox((tx, ty), text, font=font)
+    _drawn.append({'box': [int(round(x0)), int(round(y0)), int(round(x1 - x0)), int(round(y1 - y0))],
+                   'band': _where['band'], 'instance': _where['instance'], 'role': _where['role']})
 
 
 def put_paragraph(draw, rng, font, x, y, w, h):
@@ -207,6 +225,7 @@ def control_text(rng, role, align, chars, ctx, column):
 def draw_control(draw, rng, c, ox, oy, ctx):
     x, y, w, h = ox + c['x'], oy + c['y'], c['w'], c['h']
     kind = c['kind']
+    _where['role'] = 'caption' if kind == 'checkbox' else c['role']
     if kind == 'table':
         rows = c.get('rows') or []
         if rows:
@@ -217,6 +236,7 @@ def draw_control(draw, rng, c, ox, oy, ctx):
                 for ci, cell in enumerate(row):
                     cw = w * max(0.01, cell['weight']) / total
                     f = font_for(cell['font'] or c['font'])
+                    _where['role'] = cell['role']
                     text = control_text(rng, cell['role'], cell['align'], cell['chars'], ctx, (id(c), ri, ci))
                     put_text(draw, text, f, cx, y + ri * rh, cw, rh, cell['align'])
                     if c['borders']:
@@ -291,6 +311,9 @@ def draw_control(draw, rng, c, ox, oy, ctx):
 
 
 def draw_band(draw, rng, band, left, top, ctx):
+    instance = sum(1 for b in _bands if b['kind'] == band['kind'])
+    _bands.append({'kind': band['kind'], 'instance': instance, 'top': int(round(top)), 'height': int(round(printed_height(band)))})
+    _where['band'], _where['instance'] = band['kind'], instance
     for c in band['controls']:
         draw_control(draw, rng, c, left, top, ctx)
 
@@ -316,6 +339,8 @@ class Cursor(object):
 
 
 def render(skeleton, category, rng, noise):
+    del _drawn[:]
+    del _bands[:]
     W, H = int(round(skeleton['width'])), int(round(skeleton['height']))
     m = skeleton['margins']
     img = Image.new('L', (max(W, 8), max(H, 8)), 255)
@@ -369,12 +394,48 @@ def render(skeleton, category, rng, noise):
     return img
 
 
+# The boxes design (2026-11-04): the model is given the page and the text read
+# on it, as numbered boxes, and asked only for what OCR cannot tell: the bands,
+# where each first prints, and which band and role each box belongs to. The
+# places come from the boxes, so they are as good as the reading. Mirrored by
+# BOX_INSTRUCTION in src/lib/boxText.ts, which a test keeps word for word.
+BOX_INSTRUCTION = ('This is one page of a printed business report and the text boxes read on it, numbered, '
+                   'each x y w h in hundredths of an inch from the top left of the page. Write its structure '
+                   'as Forma box text: the page line, then each band where it first prints, with its top and '
+                   'height, and under it the number and role of each box printed there.')
+
+
+def box_example(skeleton_target, rng, exact):
+    """The prompt and the answer for the page just drawn, from _drawn and _bands."""
+    drawn = sorted(_drawn, key=lambda d: (d['box'][1], d['box'][0]))
+    if not exact:
+        # As OCR reads a page: each box a pixel or two off, and now and then one missed.
+        kept = []
+        for d in drawn:
+            if rng.random() < 0.03:
+                continue
+            x, y, w, h = d['box']
+            kept.append(dict(d, box=[x + rng.randint(-2, 2), y + rng.randint(-2, 2), max(1, w + rng.randint(-2, 2)), max(1, h + rng.randint(-1, 1))]))
+        drawn = kept
+    lines = [BOX_INSTRUCTION]
+    for n, d in enumerate(drawn, 1):
+        lines.append('%d %d %d %d %d' % (n, d['box'][0], d['box'][1], d['box'][2], d['box'][3]))
+    answer = [skeleton_target.split('\n', 1)[0]]
+    for b in sorted((b for b in _bands if b['instance'] == 0), key=lambda b: (b['top'], ORDER.index(b['kind']) if b['kind'] in ORDER else 99)):
+        answer.append('band %s %d %d' % (b['kind'], b['top'], b['height']))
+        for n, d in enumerate(drawn, 1):
+            if d['band'] == b['kind'] and d['instance'] == 0:
+                answer.append('%d %s' % (n, d['role']))
+    return '\n'.join(lines), '\n'.join(answer)
+
+
 def main():
     ap = argparse.ArgumentParser(description='Draw a Forma skeleton dataset as page images.')
     ap.add_argument('dataset')
     ap.add_argument('--variants', type=int, default=4)
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--limit', type=int, default=0, help='draw only the first N examples (for a quick look)')
+    ap.add_argument('--boxes', action='store_true', help='the boxes design: each row a prompt with the text boxes and their answer')
     args = ap.parse_args()
 
     src = os.path.join(args.dataset, 'examples.jsonl')
@@ -392,7 +453,13 @@ def main():
             img = render(ex['skeleton'], ex['category'], rng, noise=v > 0)
             name = '%s-%d.png' % (ex['id'], v)
             img.save(os.path.join(args.dataset, name), optimize=True)
-            out[ex['split']].append({'image': name, 'id': ex['id'], 'category': ex['category'], 'target': ex['target']})
+            row = {'image': name, 'id': ex['id'], 'category': ex['category'], 'target': ex['target']}
+            if args.boxes:
+                # Its own generator, so the page drawn is the same as without --boxes.
+                box_rng = random.Random('boxes-%d-%s-%d' % (args.seed, ex['id'], v))
+                prompt, answer = box_example(ex['target'], box_rng, exact=ex['split'] == 'eval')
+                row.update({'prompt': prompt, 'target': answer, 'truth': ex['target']})
+            out[ex['split']].append(row)
     for split, rows in out.items():
         with open(os.path.join(args.dataset, split + '.jsonl'), 'w', encoding='utf-8', newline='\n') as fh:
             for r in rows:
