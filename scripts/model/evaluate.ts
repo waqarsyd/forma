@@ -1,23 +1,46 @@
 /**
  * Score Forma's vision model on the pages it was not trained on (2026-11-03,
- * milestone 6 of docs/proposals/own-model.md).
+ * milestone 6 of docs/proposals/own-model.md), and set it beside OCR.
  *
- *   npx tsx scripts/model/evaluate.ts <predictions.jsonl>
+ *   npx tsx scripts/model/evaluate.ts <predictions.jsonl> [--pages <dir>]
+ *   npx tsx scripts/model/evaluate.ts --pages <dir>
  *
- * The input is what scripts/model/kaggle/train_vision.py writes to its
+ * The predictions are what scripts/model/kaggle/train_vision.py writes to its
  * output: one held-out page per line, with the right skeleton text
  * (`target`) and the model's (`prediction`). Each is read with
  * textToSkeleton and the pair scored with scoreSkeleton
- * (src/lib/skeletonText.ts). The script prints the totals, then one line per
- * page. Both texts are structure only, so nothing printed here is a report's
- * words.
+ * (src/lib/skeletonText.ts), band by band.
+ *
+ * --pages  a folder of the same held-out pages drawn here, with
+ *   `python scripts/model/render.py <dir> --variants 1` over an examples.jsonl
+ *   that holds only the held-out rows. Then each page is also read by OCR
+ *   the way the app reads an attached image: enlarged twice when it is
+ *   narrower than 1,600 pixels, Tesseract with the app's own language data,
+ *   then `ocrPageFrom` and `detectLayout`. Today's path for a picture, the
+ *   OCR build, is that reading. Both readings, and the vision model's when
+ *   predictions are given, are scored on the page (`fixedPlaces` and
+ *   `scorePlaces`). Only the bands at fixed places (margins, report and page
+ *   headers, page footer) are compared, since the Detail band repeats a
+ *   random number of times on a drawn page. OCR runs once per page, and
+ *   ocr-cache.json in the folder keeps the readings for the next run.
+ *
+ * Both skeleton texts are structure only, and a drawn page holds only
+ * placeholder words, so nothing printed here is a report's words.
  */
-import { readFileSync } from 'node:fs';
-import { scoreSkeleton, textToSkeleton } from '../../src/lib/skeletonText';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { join, resolve } from 'node:path';
+import { fixedPlaces, scorePlaces, scoreSkeleton, textToSkeleton, type PagePlace, type PageScore } from '../../src/lib/skeletonText';
+import { ocrPageFrom, type OcrPage } from '../../src/lib/ocr';
+import { detectLayout } from '../../src/lib/ocrLayout';
+import { pageForImage } from '../../src/lib/reportGeometry';
 
-const file = process.argv[2];
-if (!file) {
-  console.error('Usage: npx tsx scripts/model/evaluate.ts <predictions.jsonl>');
+const argv = process.argv.slice(2);
+const pagesAt = argv.indexOf('--pages');
+const pagesDir = pagesAt >= 0 ? argv[pagesAt + 1] : undefined;
+const file = argv.find((a, i) => !a.startsWith('--') && argv[i - 1] !== '--pages');
+if (!file && !pagesDir) {
+  console.error('Usage: npx tsx scripts/model/evaluate.ts <predictions.jsonl> [--pages <dir>], or --pages <dir> alone.');
   process.exit(2);
 }
 
@@ -27,47 +50,142 @@ interface Row {
   target: string;
   prediction: string;
 }
-const rows: Row[] = readFileSync(file, 'utf8')
-  .split(/\r?\n/)
-  .filter((l) => l.trim())
-  .map((l) => JSON.parse(l) as Row);
+const readJsonl = <T>(path: string): T[] =>
+  readFileSync(path, 'utf8')
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l) as T);
 
 const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(1)}%` : 'n/a');
-const lines = (t: string) => t.split(/\r?\n/).filter((l) => l.trim()).length;
-let parsed = 0;
-let paper = 0;
-let skipped = 0;
-const bands = { predicted: 0, expected: 0, matched: 0 };
-const controls = { predicted: 0, expected: 0, matched: 0, kind: 0, role: 0 };
-const perPage: string[] = [];
+const rows: Row[] = file ? readJsonl<Row>(file) : [];
 
-for (const r of rows) {
-  const expected = textToSkeleton(r.target).skeleton;
-  if (!expected) continue;
-  const reading = textToSkeleton(r.prediction);
-  const s = scoreSkeleton(reading.skeleton, expected);
-  if (s.parsed) parsed++;
-  if (s.paper) paper++;
-  skipped += reading.problems.length;
-  for (const k of ['predicted', 'expected', 'matched'] as const) bands[k] += s.bands[k];
-  for (const k of ['predicted', 'expected', 'matched', 'kind', 'role'] as const) controls[k] += s.controls[k];
-  perPage.push(
-    `${r.image.padEnd(12)} lines ${String(lines(r.prediction)).padStart(4)} of ${String(lines(r.target)).padEnd(4)} ` +
-      `bands ${s.bands.matched}/${s.bands.expected} (wrote ${s.bands.predicted})  ` +
-      `controls found ${s.controls.matched}/${s.controls.expected} (wrote ${s.controls.predicted})${s.paper ? '' : '  paper wrong'}${s.parsed ? '' : '  NO PAGE LINE'}`,
+if (rows.length) {
+  const lines = (t: string) => t.split(/\r?\n/).filter((l) => l.trim()).length;
+  let parsed = 0;
+  let paper = 0;
+  let skipped = 0;
+  const bands = { predicted: 0, expected: 0, matched: 0 };
+  const controls = { predicted: 0, expected: 0, matched: 0, kind: 0, role: 0 };
+  const perPage: string[] = [];
+  for (const r of rows) {
+    const expected = textToSkeleton(r.target).skeleton;
+    if (!expected) continue;
+    const reading = textToSkeleton(r.prediction);
+    const s = scoreSkeleton(reading.skeleton, expected);
+    if (s.parsed) parsed++;
+    if (s.paper) paper++;
+    skipped += reading.problems.length;
+    for (const k of ['predicted', 'expected', 'matched'] as const) bands[k] += s.bands[k];
+    for (const k of ['predicted', 'expected', 'matched', 'kind', 'role'] as const) controls[k] += s.controls[k];
+    perPage.push(
+      `${r.image.padEnd(14)} lines ${String(lines(r.prediction)).padStart(4)} of ${String(lines(r.target)).padEnd(4)} ` +
+        `bands ${s.bands.matched}/${s.bands.expected} (wrote ${s.bands.predicted})  ` +
+        `controls found ${s.controls.matched}/${s.controls.expected} (wrote ${s.controls.predicted})${s.paper ? '' : '  paper wrong'}${s.parsed ? '' : '  NO PAGE LINE'}`,
+    );
+  }
+  const precision = controls.predicted ? controls.matched / controls.predicted : 0;
+  const recall = controls.expected ? controls.matched / controls.expected : 0;
+  const f1 = precision + recall ? (2 * precision * recall) / (precision + recall) : 0;
+  console.log(`pages scored: ${perPage.length}`);
+  console.log(`answers with a page line: ${pct(parsed, perPage.length)}; paper and orientation right: ${pct(paper, perPage.length)}`);
+  console.log(`lines of an answer that could not be read: ${skipped}`);
+  console.log(`bands: ${pct(bands.matched, bands.expected)} of the right ones found, ${pct(bands.matched, bands.predicted)} of those written were right`);
+  console.log(
+    `controls (paired at half overlap within a band): recall ${pct(controls.matched, controls.expected)}, precision ${pct(controls.matched, controls.predicted)}, F1 ${(f1 * 100).toFixed(1)}%`,
   );
+  console.log(`of the controls found, right kind ${pct(controls.kind, controls.matched)}, right role ${pct(controls.role, controls.matched)}`);
+  console.log('');
+  for (const line of perPage) console.log(line);
 }
 
-const precision = controls.predicted ? controls.matched / controls.predicted : 0;
-const recall = controls.expected ? controls.matched / controls.expected : 0;
-const f1 = precision + recall ? (2 * precision * recall) / (precision + recall) : 0;
-console.log(`pages scored: ${perPage.length}`);
-console.log(`answers with a page line: ${pct(parsed, perPage.length)}; paper and orientation right: ${pct(paper, perPage.length)}`);
-console.log(`lines of an answer that could not be read: ${skipped}`);
-console.log(`bands: ${pct(bands.matched, bands.expected)} of the right ones found, ${pct(bands.matched, bands.predicted)} of those written were right`);
-console.log(
-  `controls (paired at half overlap within a band): recall ${pct(controls.matched, controls.expected)}, precision ${pct(controls.matched, controls.predicted)}, F1 ${(f1 * 100).toFixed(1)}%`,
-);
-console.log(`of the controls found, right kind ${pct(controls.kind, controls.matched)}, right role ${pct(controls.role, controls.matched)}`);
-console.log('');
-for (const line of perPage) console.log(line);
+if (pagesDir) await comparePages(resolve(pagesDir));
+
+async function comparePages(dir: string) {
+  /** The app's threshold: a page narrower than this is read at twice its size (lib/ocr.ts). */
+  const ENLARGE_BELOW = 1600;
+  const pages = readJsonl<{ image: string; id: string; target: string }>(join(dir, 'eval.jsonl'));
+  const cachePath = join(dir, 'ocr-cache.json');
+  const cache: Record<string, OcrPage> = existsSync(cachePath) ? JSON.parse(readFileSync(cachePath, 'utf8')) : {};
+  const missing = pages.filter((p) => !cache[p.image]);
+  if (missing.length) {
+    // Enlarged copies, drawn as the app's canvas draws them, by Pillow, which render.py needs anyway.
+    const big = join(dir, 'x2');
+    mkdirSync(big, { recursive: true });
+    const enlarge =
+      'import sys, os\nfrom PIL import Image\nsrc, dst = sys.argv[1], sys.argv[2]\n' +
+      'for name in sys.argv[3:]:\n    im = Image.open(os.path.join(src, name))\n' +
+      '    im.resize((im.width * 2, im.height * 2), Image.BILINEAR).save(os.path.join(dst, name))\n';
+    execFileSync('python', ['-c', enlarge, dir, big, ...missing.map((p) => p.image)], { stdio: 'inherit' });
+    const { createWorker, OEM } = await import('tesseract.js');
+    const worker = await createWorker('eng', OEM.LSTM_ONLY, {
+      langPath: resolve('node_modules/@tesseract.js-data/eng/4.0.0_best_int'),
+      gzip: true,
+      cachePath: join(dir, '.tesseract'),
+    });
+    let n = 0;
+    for (const p of missing) {
+      const size = execFileSync('python', ['-c', 'import sys\nfrom PIL import Image\nim = Image.open(sys.argv[1])\nprint(im.width, im.height)', join(dir, p.image)], { encoding: 'utf8' })
+        .trim()
+        .split(' ')
+        .map(Number);
+      const scale = size[0] < ENLARGE_BELOW ? 2 : 1;
+      const result = await worker.recognize(join(scale === 2 ? big : dir, p.image), {}, { blocks: true });
+      cache[p.image] = ocrPageFrom(result.data.blocks as never, { width: size[0], height: size[1], dpi: null }, scale);
+      writeFileSync(cachePath, JSON.stringify(cache));
+      console.error(`OCR ${++n}/${missing.length}: ${p.image}`);
+    }
+    await worker.terminate();
+  }
+
+  const predictions = new Map(rows.map((r) => [r.image, r.prediction]));
+  // The app reads a screenshot on the configured paper, which is Letter until someone changes it.
+  const systems = ['OCR, scale known (100 dpi)', 'OCR, screenshot, paper Letter (default)', ...(predictions.size ? ["Forma's vision model"] : [])];
+  // Totals for every page, and for version 2's pages alone (the first set's ids, r12), which every later version is also scored on.
+  const zero = () => systems.map(() => ({ expected: 0, predicted: 0, matched: 0, found: 0 }));
+  const totals = zero();
+  const firstSet = zero();
+  const perPage: string[] = [];
+  let firstSetPages = 0;
+  const add = (i: number, s: PageScore, first: boolean) => {
+    for (const k of ['expected', 'predicted', 'matched', 'found'] as const) {
+      totals[i][k] += s[k];
+      if (first) firstSet[i][k] += s[k];
+    }
+  };
+  const ocrPlaces = (ocr: OcrPage, dpi: number | null, paper: string): PagePlace[] => {
+    const read = { ...ocr, dpi };
+    const page = detectLayout([{ ocr: read, page: pageForImage(read, 'HundredthsOfAnInch', paper) }], { unit: 'HundredthsOfAnInch' }).pages[0];
+    const cells = page.tables.flatMap((t) => t.rows.flatMap((r) => r.cells.filter((c): c is NonNullable<typeof c> => !!c)));
+    return [...page.labels, ...cells].map((t) => ({ x: t.x, y: t.y, w: t.w, h: t.h, text: true }));
+  };
+  for (const p of pages) {
+    const expected = textToSkeleton(p.target).skeleton;
+    if (!expected) continue;
+    const truth = fixedPlaces(expected);
+    const paper = expected.paper === 'Custom' ? 'Letter' : expected.paper;
+    const scores = [scorePlaces(ocrPlaces(cache[p.image], 100, paper), truth.places, truth.regions), scorePlaces(ocrPlaces(cache[p.image], null, 'Letter'), truth.places, truth.regions)];
+    if (predictions.size) {
+      const k = textToSkeleton(predictions.get(p.image) ?? '').skeleton;
+      scores.push(scorePlaces(k ? fixedPlaces(k).places : [], truth.places, truth.regions));
+    }
+    const first = /^r\d+-/.test(p.image);
+    if (first) firstSetPages++;
+    scores.forEach((s, i) => add(i, s, first));
+    perPage.push(`${p.image.padEnd(14)} text places ${String(scores[0].expected).padStart(3)}: ` + scores.map((s) => `found ${s.found} boxed ${s.matched} (read ${s.predicted})`).join(' | '));
+  }
+  const summary = (label: string, sums: ReturnType<typeof zero>, n: number) => {
+    console.log('');
+    console.log(`On the page, at the fixed bands only, ${label} (${n} pages):`);
+    systems.forEach((name, i) => {
+      const t = sums[i];
+      console.log(
+        `${name.padEnd(36)} text found where it prints ${pct(t.found, t.expected)}; box right (half overlap) recall ${pct(t.matched, t.expected)}, precision ${pct(t.matched, t.predicted)}`,
+      );
+    });
+  };
+  summary('every page', totals, perPage.length);
+  if (firstSetPages && firstSetPages < perPage.length) summary("version 2's pages", firstSet, firstSetPages);
+  console.log('');
+  console.log(`per page: ${systems.join(' | ')}`);
+  for (const line of perPage) console.log(line);
+}

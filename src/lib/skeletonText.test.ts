@@ -1,7 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ReportSkeleton } from './reportSkeleton';
-import { VISION_INSTRUCTION, fontToken, perturbSkeleton, publicFontsOnly, scoreSkeleton, skeletonToText, strayWords, textToSkeleton, withPrintedHeights } from './skeletonText';
+import {
+  VISION_INSTRUCTION,
+  fixedPlaces,
+  fontToken,
+  perturbSkeleton,
+  publicFontsOnly,
+  scorePlaces,
+  scoreSkeleton,
+  skeletonToText,
+  strayWords,
+  textToSkeleton,
+  withPrintedHeights,
+} from './skeletonText';
 
 /** A seeded generator, so a variant is the same on every run. */
 const seeded = (seed: number) => () => {
@@ -208,6 +220,74 @@ describe('scoreSkeleton', () => {
 
   it('scores an answer with no page line as nothing found', () => {
     expect(scoreSkeleton(null, skeleton)).toMatchObject({ parsed: false, controls: { predicted: 0, expected: 5, matched: 0 } });
+  });
+});
+
+describe('fixedPlaces and scorePlaces', () => {
+  /** A title and a heading row at the top, a record, page information at the foot. */
+  const page: ReportSkeleton = {
+    paper: 'A4',
+    landscape: false,
+    width: 827,
+    height: 1169,
+    margins: { top: 50, bottom: 40, left: 40, right: 40 },
+    bands: [
+      { kind: 'TopMargin', height: 50, groupFields: 0, controls: [] },
+      { kind: 'ReportHeader', height: 60, groupFields: 0, controls: [{ kind: 'label', role: 'title', x: 0, y: 10, w: 400, h: 30, font: arial(14, true), align: 'left', borders: 0, chars: 10 }] },
+      {
+        kind: 'PageHeader',
+        height: 20,
+        groupFields: 0,
+        controls: [
+          {
+            kind: 'table',
+            role: 'caption',
+            x: 0,
+            y: 0,
+            w: 600,
+            h: 20,
+            font: arial(9, true),
+            align: 'left',
+            borders: 0,
+            chars: 0,
+            rows: [
+              [
+                { weight: 1, role: 'caption', align: 'left', chars: 5, font: null },
+                { weight: 2, role: 'caption', align: 'left', chars: 0, font: null },
+              ],
+            ],
+          },
+        ],
+      },
+      { kind: 'Detail', height: 20, groupFields: 0, controls: [{ kind: 'label', role: 'value', x: 0, y: 0, w: 200, h: 20, font: arial(8), align: 'left', borders: 0, chars: 0 }] },
+      { kind: 'PageFooter', height: 20, groupFields: 0, controls: [{ kind: 'pageInfo', role: 'pageInfo', x: 500, y: 0, w: 200, h: 20, font: arial(7), align: 'right', borders: 0, chars: 0 }] },
+      { kind: 'BottomMargin', height: 40, groupFields: 0, controls: [] },
+    ],
+  };
+
+  it("lays out the bands at fixed places as render.py draws them, and leaves out the records", () => {
+    const { places, regions } = fixedPlaces(page);
+    expect(places).toEqual([
+      { x: 40, y: 60, w: 400, h: 30, text: true },
+      { x: 40, y: 110, w: 200, h: 20, text: true },
+      // A caption with no characters prints nothing.
+      { x: 240, y: 110, w: 400, h: 20, text: false },
+      // The page footer sits on the bottom margin: 1169 - 40 - 20.
+      { x: 540, y: 1109, w: 200, h: 20, text: true },
+    ]);
+    expect(regions).toEqual([
+      { top: 0, bottom: 130 },
+      { top: 1109, bottom: 1169 },
+    ]);
+  });
+
+  it('counts a box right at half overlap, text found where something was read inside it, and ignores readings among the records', () => {
+    const { places, regions } = fixedPlaces(page);
+    expect(scorePlaces(places, places, regions)).toEqual({ expected: 3, predicted: 3, matched: 3, found: 3 });
+    // OCR boxes the ink: inside each place, far smaller than it.
+    const ink = places.filter((p) => p.text).map((p) => ({ x: p.x + 4, y: p.y + 6, w: 40, h: 8, text: true }));
+    const inDetail = { x: 40, y: 600, w: 200, h: 20, text: true };
+    expect(scorePlaces([...ink, inDetail], places, regions)).toEqual({ expected: 3, predicted: 3, matched: 0, found: 3 });
   });
 });
 

@@ -261,20 +261,22 @@ function tableFrom(rows: DetectedText[][], cols: [number, number][], unit: strin
 
 /**
  * Where a page image lands on its report page: a rendered PDF page by its
- * resolution, a screenshot fitted to the printable width inside half-inch
- * margins. `detectLayout` places every text by it, and the preview draws the
- * image by it, so the two always agree.
+ * resolution, a screenshot with its page's shape across the whole page
+ * (2026-11-03), any other screenshot fitted to the printable width inside
+ * half-inch margins. `detectLayout` places every text by it, and the preview
+ * draws the image by it, so the two always agree.
  */
-export function placementFor(ocr: OcrPage, page: { width: number }, unit: string): ImagePlacement {
+export function placementFor(ocr: OcrPage, page: { width: number; height?: number }, unit: string): ImagePlacement {
   const half = unitsPerInch(unit) / 2;
-  return placeImage(ocr, { width: page.width, margins: { left: half, right: half, top: half } }, unit);
+  return placeImage(ocr, { width: page.width, height: page.height, margins: { left: half, right: half, top: half } }, unit);
 }
 
 /**
  * The layout of OCR'd pages: tables and labels in page coordinates, with the
  * margins chosen so that nothing lies outside them. A rendered PDF page keeps
- * its own size; a screenshot is put on Letter with half-inch margins and fitted
- * to the printable width.
+ * its own size; a screenshot with a paper's shape is that whole page, and any
+ * other is put on the configured paper with half-inch margins and fitted to
+ * the printable width (`pageForImage` and `placeImage` in reportGeometry.ts).
  */
 export function detectLayout(sources: readonly LayoutSource[], options: LayoutOptions = {}): DetectedLayout {
   const unit = options.unit ?? 'HundredthsOfAnInch';

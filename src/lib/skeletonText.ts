@@ -335,6 +335,122 @@ export function scoreSkeleton(predicted: ReportSkeleton | null, expected: Report
   };
 }
 
+/** A place on a printed page, in hundredths of an inch from its top left corner. */
+export interface PagePlace {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Text prints here: a title, a caption that has characters, a value, a total or page information. */
+  text: boolean;
+}
+
+/** The roles whose places print text in a drawn page (render.py's control_text). */
+const printsText = (role: SkeletonRole, chars: number) => role === 'title' || role === 'value' || role === 'total' || role === 'pageInfo' || (role === 'caption' && chars > 0);
+
+/**
+ * The places a skeleton prints at fixed positions on its first page, laid out
+ * as scripts/model/render.py draws them (2026-11-03), and the two regions
+ * those bands cover:
+ * - the top margin at the page's top;
+ * - the report and page headers down from the top margin, each as tall as it
+ *   prints;
+ * - the page footer up from the bottom margin;
+ * - the bottom margin.
+ * A band whose place depends on how many records print (groups, Detail, the
+ * report footer) is left out. That makes a reading of the whole page
+ * comparable with a skeleton band by band, whatever read it: the vision
+ * model, or OCR, which knows no bands.
+ */
+export function fixedPlaces(k: ReportSkeleton): { places: PagePlace[]; regions: { top: number; bottom: number }[] } {
+  const m = k.margins;
+  const printed = (b: SkeletonBand) => Math.max(b.height, ...b.controls.map((c) => c.y + c.h));
+  const of = (kind: BandKind) => k.bands.filter((b) => b.kind === kind);
+  const footerH = of('PageFooter').reduce((s, b) => s + printed(b), 0);
+  const limit = k.height - m.bottom - footerH;
+  const places: PagePlace[] = [];
+  const draw = (b: SkeletonBand, ox: number, oy: number) => {
+    for (const c of b.controls) {
+      const x = ox + c.x;
+      const y = oy + c.y;
+      if (c.kind === 'table') {
+        const rows = c.rows ?? [];
+        rows.forEach((row, ri) => {
+          const rh = c.h / rows.length;
+          const total = row.reduce((s, cell) => s + Math.max(0.01, cell.weight), 0) || 1;
+          let cx = x;
+          for (const cell of row) {
+            const cw = (c.w * Math.max(0.01, cell.weight)) / total;
+            places.push({ x: cx, y: y + ri * rh, w: cw, h: rh, text: printsText(cell.role, cell.chars) });
+            cx += cw;
+          }
+        });
+        continue;
+      }
+      places.push({ x, y, w: c.w, h: c.h, text: (c.kind === 'label' || c.kind === 'pageInfo') && printsText(c.role, c.chars) });
+    }
+  };
+  for (const b of of('TopMargin')) draw(b, m.left, 0);
+  let y = m.top;
+  for (const b of [...of('ReportHeader'), ...of('PageHeader')]) {
+    const h = printed(b);
+    if (h <= 0 || y + h > limit + 0.5) continue;
+    draw(b, m.left, y);
+    y += h;
+  }
+  let fy = limit;
+  for (const b of of('PageFooter')) {
+    draw(b, m.left, fy);
+    fy += printed(b);
+  }
+  for (const b of of('BottomMargin')) draw(b, m.left, k.height - m.bottom);
+  return { places, regions: [{ top: 0, bottom: y }, { top: limit, bottom: k.height }] };
+}
+
+/** How well one reading of a page finds the text places of the right one, inside the regions both are compared in. */
+export interface PageScore {
+  /** Text places expected, and those predicted whose centre lies inside a region. */
+  expected: number;
+  predicted: number;
+  /** Paired one to one at an overlap of half or more: the box is right. */
+  matched: number;
+  /** Expected places with a predicted centre inside them: the text is found where it prints. */
+  found: number;
+}
+
+const placeIou = (a: PagePlace, b: PagePlace) => {
+  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  if (w <= 0 || h <= 0) return 0;
+  return (w * h) / (a.w * a.h + b.w * b.h - w * h);
+};
+
+/**
+ * A reading of a page against the right text places (2026-11-03): the
+ * comparison between Forma's vision model and OCR. Two measures, because
+ * OCR boxes the ink and a skeleton boxes the control:
+ * - **matched:** the box itself, at half overlap;
+ * - **found:** whether something was read where the text prints.
+ */
+export function scorePlaces(predicted: readonly PagePlace[], expected: readonly PagePlace[], regions: readonly { top: number; bottom: number }[]): PageScore {
+  const inRegion = (p: PagePlace) => regions.some((r) => p.y + p.h / 2 >= r.top && p.y + p.h / 2 <= r.bottom);
+  const exp = expected.filter((p) => p.text);
+  const pred = predicted.filter((p) => p.text && inRegion(p));
+  const pairs = exp
+    .flatMap((e, ei) => pred.map((p, pi) => ({ ei, pi, o: placeIou(e, p) })))
+    .filter((x) => x.o >= 0.5)
+    .sort((a, b) => b.o - a.o);
+  const usedE = new Set<number>();
+  const usedP = new Set<number>();
+  for (const x of pairs) {
+    if (usedE.has(x.ei) || usedP.has(x.pi)) continue;
+    usedE.add(x.ei);
+    usedP.add(x.pi);
+  }
+  const found = exp.filter((e) => pred.some((p) => p.x + p.w / 2 >= e.x && p.x + p.w / 2 <= e.x + e.w && p.y + p.h / 2 >= e.y && p.y + p.h / 2 <= e.y + e.h)).length;
+  return { expected: exp.length, predicted: pred.length, matched: usedE.size, found };
+}
+
 /**
  * Every word in a skeleton's text that is not a number, a word of the format,
  * a font token for a public font, or a kind, role, band or paper. Empty for

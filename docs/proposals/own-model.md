@@ -600,18 +600,51 @@ Three things in the packer had to change before those numbers were right:
   set's id. Within a set the last copy still stands for a layout, as
   version 2 chose; across sets, the earlier set keeps it.
 
+### The model beside OCR, on the page (2026-11-03)
+
+`scoreSkeleton` pairs controls within bands, which OCR cannot be scored by:
+it knows no bands. So `npx tsx scripts/model/evaluate.ts --pages <dir>`
+also scores on the page:
+- **The pages:** the held-out pages, drawn here by `render.py` from the
+  same seed as on Kaggle.
+- **Only the fixed bands:** the margins, report and page headers, and
+  page footer (`fixedPlaces` in `skeletonText.ts`). On a drawn page the
+  Detail band repeats a random number of times.
+- **The OCR side:** Forma's own OCR code, run in Node with the app's
+  language data.
+- **Two measures** (`scorePlaces`), because OCR boxes the ink and a
+  skeleton boxes the control: whether a text was found where it prints,
+  and whether its box is right at half overlap.
+
+On version 4's 40 held-out pages:
+
+| Reader | Text found where it prints | Box right (recall) |
+|---|---|---|
+| OCR, scale known | 55.7% | 10.9% |
+| OCR, as the app read a screenshot until this change | 21.8% | 1.1% |
+| OCR, as the app reads one now | 51.5% | 9.4% |
+
+On version 2's 20 of them, version 2 found **11.0%** of texts where they
+print, and OCR 54.8% with the scale known. So version 2 places worse than
+OCR does. Version 4 is scored the same way when it finishes.
+
+The middle row was a defect in the app, not in OCR. A screenshot was
+always fitted inside the page's margins, so a full-page picture, which
+carries its own margins, came out pushed in and shrunk.
+`reportGeometry.ts` now knows a picture with a paper's shape as that
+whole page (`paperOfImage`, `placeImage`); see the OCR bullets in
+`docs/notes/app-shell.md`.
+
 ### Still to build
 
 1. Train version 4 on Kaggle and score it on the same 20 pages, plus the 20 new
-   ones.
+   ones, band by band and on the page beside OCR.
 2. The Ollama check again, with the chat template.
 3. If version 4 still places poorly, give the model OCR's boxes with the
    picture and ask only for what OCR cannot tell: bands, roles and kinds.
    Version 2 already gets most of those right: 97% of roles among the
    controls it found.
-4. A comparison on the same held-out pages against today's path for a
-   picture, the OCR build.
-5. More than one page per picture, and the model's answer streamed as it
+4. More than one page per picture, and the model's answer streamed as it
    is written.
 
 ## Forma's team: every part in its role (2026-11-03)
