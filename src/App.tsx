@@ -3571,6 +3571,87 @@ export default function App() {
   };
 
   /**
+   * A picture read by Forma's vision model (2026-11-03, milestone 6 of
+   * docs/proposals/own-model.md). This path runs when the Local AI model was
+   * imported as "forma-vision":
+   * - the model writes the first page's skeleton;
+   * - OCR's reading of the same page gives its words;
+   * - skeletonRepx.ts builds the report.
+   * The mega-prompt is not sent, because the model was trained on one
+   * question. When the model cannot be reached, or its answer has no page
+   * line, the report is built from OCR alone and the reply says why.
+   */
+  const designFromVision = async (message: string) => {
+    const staged = [...previews];
+    const stagedMeta = [...previewMeta];
+    const read = ocrPages.flatMap(({ meta }) => {
+      const run = ocrRuns[ocrKey(meta)];
+      return run?.state === 'done' ? [{ meta, read: run.read }] : [];
+    });
+    setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: message, images: staged, imageMeta: stagedMeta }]);
+    setPrompt('');
+    setPreviews([]);
+    setPreviewMeta([]);
+    setAttachmentTexts([]);
+    setUploadNotices([]);
+    setError(null);
+    const say = (text: string, attached?: DesignResult) =>
+      setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text, ...(attached ? { result: attached } : {}) }]);
+    setIsChatting(true);
+    try {
+      const [{ readSkeleton }, { skeletonToDesign, pageTextsOf }, { detectLayout }, { pageForImage }] = await Promise.all([
+        import('./services/formaVision'),
+        import('./lib/skeletonRepx'),
+        import('./lib/ocrLayout'),
+        import('./lib/reportGeometry'),
+      ]);
+      const reading = await readSkeleton({ baseUrl: config.localUrl ?? '', model: config.localModel ?? '' }, staged[0]);
+      if (!reading.skeleton) throw new Error('its answer had no page line');
+      // The words OCR read on the same page, in the skeleton's unit and on its paper.
+      const first = stagedMeta[0];
+      const page = read.find(({ meta }) => meta.uploadId === first?.uploadId && (meta.page ?? 0) === (first?.page ?? 0));
+      const paper = reading.skeleton.paper === 'Custom' ? config.pageSize : reading.skeleton.paper;
+      const texts = page
+        ? pageTextsOf(detectLayout([{ ocr: page.read.ocr, page: pageForImage(page.read.ocr, 'HundredthsOfAnInch', paper) }], { unit: 'HundredthsOfAnInch' }))
+        : [];
+      const design = skeletonToDesign(reading.skeleton, { texts, title: first?.file.replace(/\.[^.]+$/, '') });
+      const newResult: DesignResult = {
+        content: design.markdown,
+        timestamp: new Date(),
+        title: design.title,
+        layout: design.layout,
+        repxContent: design.repx,
+        usage: null,
+      };
+      setResult(newResult);
+      recordRevision("Forma's vision model", newResult);
+      setActiveTab('ui');
+      const skipped = reading.problems.length
+        ? ` ${reading.problems.length} ${reading.problems.length === 1 ? 'line of its answer could not be read and was' : 'lines of its answer could not be read and were'} left out.`
+        : '';
+      const more = staged.length > 1 ? ` Only the first of the ${staged.length} pages was read.` : '';
+      say(
+        `Read "${design.title}" with Forma's vision model: ${design.read} of ${design.read + design.placeholders} titles and captions took their words from the page.${skipped}${more}`,
+        newResult,
+      );
+    } catch (err: any) {
+      const why = err?.message || 'it did not answer';
+      if (read.length) {
+        const { buildFromRead } = await import('./lib/ocrAttach');
+        const built = buildFromRead(read, config.unit, config.pageSize);
+        if (built) {
+          say(`Forma's vision model could not read the page (${why}), so the report was built from the text OCR read.`);
+          handleOcrBuild(built);
+          return;
+        }
+      }
+      say(`Forma's vision model could not read the page: ${why}.`);
+    } finally {
+      setIsChatting(false);
+    }
+  };
+
+  /**
    * `overridePrompt` exists for the retry affordance on a failed message, which
    * re-sends that message's own text rather than whatever is in the composer.
    * Every call site passes it explicitly — never wire this straight to onClick,
@@ -3611,6 +3692,16 @@ export default function App() {
       const state = memory.readMemory();
       memory.writeMemory({ ...state, memories: [...state.memories, kept] });
       setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: memory.rememberedReply(kept) }]);
+      return;
+    }
+
+    // A picture for Forma's own vision model (2026-11-03). The Local AI model
+    // imported as "forma-vision" is asked the one question it was trained on,
+    // not the mega-prompt. This is the same test as isFormaVisionModel in
+    // services/formaVision.ts, written out so the entry chunk does not load
+    // that module.
+    if (previews.length > 0 && config.provider === 'local' && /forma-vision/i.test(config.localModel ?? '')) {
+      await designFromVision(promptText);
       return;
     }
 

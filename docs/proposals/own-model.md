@@ -382,13 +382,82 @@ of this first run, so they fit the 6,144-token sequence with their image:
 model's answer for each held-out page beside the right one, in
 `predictions.jsonl`, for the Forma side to score with `textToSkeleton`.
 
+### The dataset is the skeletons, drawn on Kaggle (2026-11-03)
+
+The dataset was uploaded from the owner's browser through the Chrome
+extension, which takes files of up to 10 MB. The drawn dataset is a 48.5 MB
+zip, while the skeletons alone, `examples.jsonl`, are 4.7 MB. So the private
+dataset `waqarsayyed/forma-report-skeletons` holds the skeletons. The
+script draws the pages on Kaggle with the same `render.py` and faces, cloned
+from the public repository into `/tmp`.
+
+### The smoke run (2026-11-03)
+
+The first run on Kaggle, with `--setup` then `--smoke`, worked end to end in
+24 minutes.
+- **The GPU:** Kaggle now offers only "GPU T4 x2" and TPU, with no P100, as
+  the research said.
+- **Setup:** Unsloth's installs took about 12 minutes.
+- **Drawing:** 1,436 pages were drawn on Kaggle.
+- **Training:** 20 steps on 40 images, 19 seconds a step, with 23.1 million
+  of 2.24 billion parameters trained. The loss went from 1.19 to 0.38.
+- **The answers:** all three held-out answers were valid skeleton text, a
+  page line, then bands, then controls with their fonts. Their lengths were
+  wrong: 159 lines, 7 and 149, where the right answers have 31, 31 and 27.
+  After 40 images the model has learned the format, not when to stop, which
+  is what the full run is for.
+
+The full run, Version 1 of the notebook `forma-vision-train`, started the
+same day: `--setup`, `--train --predict 5`, then `--export`, as a saved
+version on the T4.
+
+### Forma's half (built 2026-11-03)
+
+- **`src/lib/skeletonRepx.ts`** makes a skeleton a report again: the .repx,
+  the Mockup's layout and the spec.
+  - **Words:** titles and captions take the words OCR read inside their
+    boxes. That is only possible in the bands whose place on the page does
+    not depend on the records: the margins, the headers above the first
+    record, the first record and the page footer. A caption with nothing
+    read keeps a placeholder, "Total" in a footer and "Caption" elsewhere.
+  - **Fields:** values are bound to fields named after the caption over
+    their column. Totals sum that field, running over their band.
+  - **The test:** read back through the Preview's parser, the report gives
+    the skeleton it was written from. The only differences are caption
+    lengths and A4's exact size, which `repairPaper` writes as DevExpress
+    does.
+- **`src/services/formaVision.ts`** asks the model through the Local AI
+  endpoint the one question it was trained on: the picture, then
+  `VISION_INSTRUCTION`, at temperature 0.
+  - **A drift check:** that sentence is held to the training script's copy
+    by a test that reads the script.
+  - **Which model:** a model counts as Forma's by its name, which must
+    contain "forma-vision".
+- **The chat box** routes a picture there when the Local AI model is
+  "forma-vision". When the model cannot be reached, or answers with no page
+  line, the report is built from OCR alone and the reply says why. Only the
+  first page is read.
+- **`scripts/model/evaluate.ts`** scores `predictions.jsonl` with
+  `scoreSkeleton`:
+  - bands are paired by kind;
+  - controls are paired by place within a band, at half overlap;
+  - it reports recall, precision, and the kind and role of what it found.
+- **`train_vision.py --check`** runs the exported model as users will. It
+  needs no GPU hours: it runs in a CPU session with the exporting version as
+  input.
+  - **llama.cpp:** the engine LM Studio runs, through its multimodal CLI.
+  - **Ollama:** the model and its projector are imported, then asked
+    through Ollama's OpenAI-compatible endpoint exactly as Forma asks. This
+    is the import that failed for Qwen3.5 through 2026.
+
 ### Still to build
 
-1. The first Kaggle runs, smoke then full, and what they measure.
-2. The evaluation on the held-out pages: bands and controls found, and their
-   places, against today's offline model.
-3. Forma's half: a skeleton to a report, its texts filled in by OCR. Then
-   the model behind the Local AI provider.
+1. The full run's measurements: `evaluate.ts` on its `predictions.jsonl`, and
+   `--check` on its export.
+2. A comparison on the same held-out pages against today's path for a
+   picture, the OCR build.
+3. More than one page per picture, and the model's answer streamed as it
+   is written.
 
 ## What comes next
 

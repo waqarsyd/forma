@@ -450,8 +450,11 @@ src/
                        no word outside its vocabulary),
                        skeletonText (a skeleton as the compact text the vision
                        model learns to write, read back tolerantly from its
-                       answer, and the check that no word but a public
-                       font's leaves the machine),
+                       answer, scored against the right one, and the check
+                       that no word but a public font's leaves the machine),
+                       skeletonRepx (the report a skeleton describes, its
+                       words from what OCR read in each box, its values bound
+                       to fields named after their column's caption),
                        offlineGenerator (a report designed by that model with
                        no AI service: the words read for kind, columns,
                        grouping and totals, the pattern chosen, the house
@@ -569,7 +572,10 @@ src/
                        (+ tests; the vault's storage rules are covered by
                        tests/ as well), and the report library's two:
                        embeddings (the embedding call, on the user's own key)
-                       and library (import, remove and retrieve), each + tests
+                       and library (import, remove and retrieve), each + tests;
+                       compatClient (local AI and OpenRouter in the shape of
+                       Gemini's SDK) and formaVision (Forma's vision model
+                       asked through the local endpoint), each + tests
   server/              securityHeaders, bindHost and staticCache (+ tests) —
                        what server.ts sends, where it listens, and how long
                        dist/ is cached for. Under src/ but never bundled
@@ -619,7 +625,8 @@ scripts/               five helpers: dev + build, and the encoding, doc-pointer
                        model/, which learns Forma's own model and packs and
                        draws the vision model's training set (render.py needs
                        Python 3 and Pillow), with kaggle/train_vision.py, the
-                       fine-tune that runs on Kaggle's free GPU
+                       fine-tune that runs on Kaggle's free GPU, and
+                       evaluate.ts, which scores its answers
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
 firebase.json          the rules path, databaseId, and the emulator port

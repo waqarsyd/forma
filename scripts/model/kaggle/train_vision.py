@@ -19,6 +19,7 @@ In a Kaggle notebook:
     !python train_vision.py --smoke     # 40 images and 20 steps: proves every step works
     !python train_vision.py --train     # the full run; best as "Save Version", Run All
     !python train_vision.py --export    # GGUF and vision projector for Ollama and LM Studio
+    !python train_vision.py --check     # in a CPU session with that version as input: llama.cpp and Ollama run it
 
 Everything is written to /kaggle/working, which is kept with a saved
 version:
@@ -252,6 +253,88 @@ def export(args):
     print('Download the Q8_0 model and the mmproj file from this version\'s Output tab.')
 
 
+def find_gguf():
+    """The exported model and its projector, from this session or from a version added as input."""
+    files = glob.glob(os.path.join(WORK, 'gguf', '*.gguf')) + glob.glob('/kaggle/input/**/gguf/*.gguf', recursive=True)
+    model = next((f for f in files if f.endswith('Q8_0.gguf')), None)
+    mmproj = next((f for f in files if os.path.basename(f).startswith('mmproj')), None)
+    return model, mmproj
+
+
+def check(args):
+    """
+    Run the exported model as users will, on this machine's CPU, so a CPU-only
+    session can do it without spending GPU hours:
+    - llama.cpp's multimodal CLI, the engine LM Studio runs;
+    - Ollama, importing the model and its projector, then asked through its
+      OpenAI-compatible endpoint exactly as Forma asks (services/formaVision.ts).
+    Writes check.txt and prints what each answered.
+    """
+    import base64
+    import time
+    import urllib.request
+
+    model, mmproj = find_gguf()
+    if not (model and mmproj):
+        sys.exit('No forma-vision-Q8_0.gguf and mmproj under /kaggle/working/gguf or /kaggle/input. '
+                 'Add the version that ran --export as input.')
+    pages = [r for r in rows('eval', args.max_chars) if r['image'].endswith('-0.png')][:2]
+    report = ['model: %s' % model, 'projector: %s' % mmproj]
+
+    llama = '/tmp/llama.cpp'
+    if not os.path.isdir(llama):
+        sh('git clone -q --depth 1 https://github.com/ggml-org/llama.cpp %s' % llama)
+    sh('cmake -S %s -B %s/build -DGGML_CUDA=OFF -DLLAMA_CURL=OFF > /dev/null' % (llama, llama))
+    sh('cmake --build %s/build --target llama-mtmd-cli -j 4 > /dev/null' % llama)
+    for r in pages:
+        out = subprocess.run([os.path.join(llama, 'build', 'bin', 'llama-mtmd-cli'), '-m', model, '--mmproj', mmproj,
+                              '--image', r['path'], '-p', INSTRUCTION, '-n', str(args.check_tokens), '--temp', '0'],
+                             capture_output=True, text=True)
+        answer = out.stdout.strip()
+        first = next((l for l in answer.splitlines() if l.startswith('page ')), '')
+        report.append('llama.cpp %s: %s, %d lines, first: %s' % (
+            r['image'], 'ANSWERED' if first else 'NO PAGE LINE (exit %d)' % out.returncode, len(answer.splitlines()), first or out.stderr[-300:]))
+
+    sh('apt-get install -y -qq zstd > /dev/null', optional=True)
+    sh('curl -fsSL https://ollama.com/install.sh | sh > /tmp/ollama-install.log 2>&1', optional=True)
+    server = subprocess.Popen(['ollama', 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(30):
+            try:
+                urllib.request.urlopen('http://127.0.0.1:11434/api/version', timeout=2)
+                break
+            except Exception:
+                time.sleep(1)
+        with open('/tmp/Modelfile', 'w') as fh:
+            fh.write('FROM %s\nFROM %s\nPARAMETER temperature 0\n' % (model, mmproj))
+        created = subprocess.run(['ollama', 'create', 'forma-vision', '-f', '/tmp/Modelfile'], capture_output=True, text=True)
+        shown = subprocess.run(['ollama', 'show', 'forma-vision'], capture_output=True, text=True)
+        vision = 'vision' in shown.stdout.lower()
+        report.append('ollama create: %s; capabilities list vision: %s' % (
+            'OK' if created.returncode == 0 else 'FAILED: ' + (created.stderr or created.stdout)[-300:], vision))
+        if created.returncode == 0:
+            for r in pages:
+                with open(r['path'], 'rb') as fh:
+                    url = 'data:image/png;base64,' + base64.b64encode(fh.read()).decode('ascii')
+                body = json.dumps({'model': 'forma-vision', 'temperature': 0, 'max_tokens': args.check_tokens, 'messages': [
+                    {'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': url}}, {'type': 'text', 'text': INSTRUCTION}]}]})
+                req = urllib.request.Request('http://127.0.0.1:11434/v1/chat/completions', data=body.encode('utf-8'),
+                                             headers={'Content-Type': 'application/json'})
+                try:
+                    answer = json.load(urllib.request.urlopen(req, timeout=900))['choices'][0]['message']['content']
+                    first = next((l for l in answer.splitlines() if l.startswith('page ')), '')
+                    report.append('ollama (as Forma asks) %s: %s, %d lines, first: %s' % (
+                        r['image'], 'ANSWERED' if first else 'NO PAGE LINE', len(answer.splitlines()), first or answer[:200]))
+                except Exception as err:
+                    report.append('ollama (as Forma asks) %s: FAILED: %s' % (r['image'], err))
+    finally:
+        server.terminate()
+
+    with open(os.path.join(WORK, 'check.txt'), 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write('\n'.join(report) + '\n')
+    print('\n'.join(report))
+
+
 def main():
     ap = argparse.ArgumentParser(description="Fine-tune Forma's vision model on Kaggle.")
     ap.add_argument('--setup', action='store_true', help='install Unsloth (once per session)')
@@ -264,6 +347,8 @@ def main():
     ap.add_argument('--max-new-tokens', type=int, default=4096)
     ap.add_argument('--predict', type=int, default=10, help='held-out pages to answer after the full run')
     ap.add_argument('--keep', action='store_true', help='keep the merged model and the F16 GGUF')
+    ap.add_argument('--check', action='store_true', help='run the exported model in llama.cpp and Ollama, on the CPU')
+    ap.add_argument('--check-tokens', type=int, default=1500, help='how much each check answer may write')
     args = ap.parse_args()
     if args.setup:
         setup()
@@ -271,7 +356,9 @@ def main():
         train(args, smoke=args.smoke)
     if args.export:
         export(args)
-    if not (args.setup or args.smoke or args.train or args.export):
+    if args.check:
+        check(args)
+    if not (args.setup or args.smoke or args.train or args.export or args.check):
         ap.print_help()
 
 

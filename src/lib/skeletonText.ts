@@ -63,6 +63,15 @@ export const PUBLIC_FONTS: readonly string[] = [
   'Rockwell', 'Segoe UI', 'Tahoma', 'Times', 'Times New Roman', 'Trebuchet MS', 'Verdana',
 ];
 
+/**
+ * What Forma's vision model is asked, word for word as it was trained
+ * (INSTRUCTION in scripts/model/kaggle/train_vision.py). To a fine-tuned
+ * model a different sentence is a different question, so the test reads the
+ * script's copy and holds the two together.
+ */
+export const VISION_INSTRUCTION =
+  'This is one page of a printed business report. Write its structure as Forma skeleton text: the page line, then each band and the controls in it, one per line.';
+
 const num = (v: number) => String(Math.round(v * 100) / 100);
 const whole = (v: number) => String(Math.round(v));
 
@@ -204,6 +213,79 @@ export function publicFontsOnly(k: ReportSkeleton): { skeleton: ReportSkeleton; 
     })),
   }));
   return { skeleton: { ...k, bands }, replaced };
+}
+
+/** How close a skeleton the model wrote is to the right one, page by page. */
+export interface SkeletonScore {
+  /** The answer had a page line. */
+  parsed: boolean;
+  /** The paper and its orientation. */
+  paper: boolean;
+  /** Band kinds as a multiset: how many were written, expected and both. */
+  bands: { predicted: number; expected: number; matched: number };
+  /** Controls paired by place within the same band; of the pairs, how many have the right kind and role. */
+  controls: { predicted: number; expected: number; matched: number; kind: number; role: number };
+}
+
+const iou = (a: SkeletonControl, b: SkeletonControl) => {
+  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  if (w <= 0 || h <= 0) return 0;
+  const inter = w * h;
+  return inter / (a.w * a.h + b.w * b.h - inter);
+};
+
+/**
+ * The model's skeleton against the right one. Bands pair by kind in order:
+ * the first group header with the first. Controls pair within a band pair,
+ * best overlap first, and count as found at an overlap of half or more.
+ * Positions inside a band are what count, so a page whose bands the model
+ * stacked differently is not punished twice.
+ */
+export function scoreSkeleton(predicted: ReportSkeleton | null, expected: ReportSkeleton): SkeletonScore {
+  const expectedControls = expected.bands.reduce((s, b) => s + b.controls.length, 0);
+  if (!predicted) {
+    return { parsed: false, paper: false, bands: { predicted: 0, expected: expected.bands.length, matched: 0 }, controls: { predicted: 0, expected: expectedControls, matched: 0, kind: 0, role: 0 } };
+  }
+  const byKind = (k: ReportSkeleton) => {
+    const out = new Map<BandKind, SkeletonBand[]>();
+    for (const b of k.bands) out.set(b.kind, [...(out.get(b.kind) ?? []), b]);
+    return out;
+  };
+  const p = byKind(predicted);
+  const e = byKind(expected);
+  let bandMatches = 0;
+  let matched = 0;
+  let kind = 0;
+  let role = 0;
+  for (const [k, expBands] of e) {
+    const predBands = p.get(k) ?? [];
+    bandMatches += Math.min(expBands.length, predBands.length);
+    expBands.forEach((eb, i) => {
+      const pb = predBands[i];
+      if (!pb) return;
+      const pairs = eb.controls
+        .flatMap((ec, ei) => pb.controls.map((pc, pi) => ({ ei, pi, o: iou(ec, pc) })))
+        .filter((x) => x.o >= 0.5)
+        .sort((a, b) => b.o - a.o);
+      const usedE = new Set<number>();
+      const usedP = new Set<number>();
+      for (const x of pairs) {
+        if (usedE.has(x.ei) || usedP.has(x.pi)) continue;
+        usedE.add(x.ei);
+        usedP.add(x.pi);
+        matched++;
+        if (eb.controls[x.ei].kind === pb.controls[x.pi].kind) kind++;
+        if (eb.controls[x.ei].role === pb.controls[x.pi].role) role++;
+      }
+    });
+  }
+  return {
+    parsed: true,
+    paper: predicted.paper === expected.paper && predicted.landscape === expected.landscape,
+    bands: { predicted: predicted.bands.length, expected: expected.bands.length, matched: bandMatches },
+    controls: { predicted: predicted.bands.reduce((s, b) => s + b.controls.length, 0), expected: expectedControls, matched, kind, role },
+  };
 }
 
 /**

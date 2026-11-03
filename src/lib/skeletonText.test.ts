@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ReportSkeleton } from './reportSkeleton';
-import { fontToken, publicFontsOnly, skeletonToText, strayWords, textToSkeleton, withPrintedHeights } from './skeletonText';
+import { VISION_INSTRUCTION, fontToken, publicFontsOnly, scoreSkeleton, skeletonToText, strayWords, textToSkeleton, withPrintedHeights } from './skeletonText';
 
 const arial = (size: number, bold = false, italic = false) => ({ family: 'Arial', size, bold, italic });
 
@@ -126,6 +127,45 @@ describe('withPrintedHeights', () => {
       ],
     };
     expect(withPrintedHeights(k).bands.map((b) => b.height)).toEqual([17.53, 120, 50]);
+  });
+});
+
+describe('VISION_INSTRUCTION', () => {
+  it('is the sentence the training script asks the model, word for word', () => {
+    const script = readFileSync('scripts/model/kaggle/train_vision.py', 'utf8');
+    const literal = /^INSTRUCTION = \(([\s\S]*?)\)$/m.exec(script)![1];
+    const asked = [...literal.matchAll(/'([^']*)'/g)].map((m) => m[1]).join('');
+    expect(asked).toBe(VISION_INSTRUCTION);
+  });
+});
+
+describe('scoreSkeleton', () => {
+  it('scores the right answer as perfect', () => {
+    expect(scoreSkeleton(skeleton, skeleton)).toEqual({
+      parsed: true,
+      paper: true,
+      bands: { predicted: 4, expected: 4, matched: 4 },
+      controls: { predicted: 5, expected: 5, matched: 5, kind: 5, role: 5 },
+    });
+  });
+
+  it('pairs controls by place within a band, and counts a wrong kind or role among the pairs', () => {
+    const moved: ReportSkeleton = {
+      ...skeleton,
+      paper: 'Letter',
+      bands: skeleton.bands.map((b) =>
+        b.kind === 'PageHeader'
+          ? { ...b, controls: [{ ...b.controls[0], role: 'caption' }, { ...b.controls[1], kind: 'shape' }, { ...b.controls[2], y: 400 }] }
+          : b,
+      ),
+    };
+    const score = scoreSkeleton(moved, skeleton);
+    expect(score.paper).toBe(false);
+    expect(score.controls).toEqual({ predicted: 5, expected: 5, matched: 4, kind: 3, role: 3 });
+  });
+
+  it('scores an answer with no page line as nothing found', () => {
+    expect(scoreSkeleton(null, skeleton)).toMatchObject({ parsed: false, controls: { predicted: 0, expected: 5, matched: 0 } });
   });
 });
 
