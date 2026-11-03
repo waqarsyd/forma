@@ -364,12 +364,29 @@ These are from published sources, not yet measured here:
   not, the fallback is SmolVLM2-2.2B (Apache-2.0, weaker on documents),
   trained with plain TRL.
 
+### The training script (built 2026-11-03, not yet run)
+
+`scripts/model/kaggle/train_vision.py` is the whole Kaggle side. A notebook
+downloads it from GitHub and runs it in four steps. The script's doc comment
+has the commands and the notebook settings.
+1. **`--setup`** installs what Unsloth's own Qwen3.5 notebook installs.
+2. **`--smoke`** trains 20 steps on 40 images and answers 3 held-out pages,
+   which proves every step for minutes of quota.
+3. **`--train`** is the full run, one epoch.
+4. **`--export`** writes the GGUF and the projector through llama.cpp.
+
+It refuses a GPU below compute capability 7.0 by name, and uses one GPU even
+when Kaggle gives two. Pages whose text is over 8,000 characters are left out
+of this first run, so they fit the 6,144-token sequence with their image:
+84 of the 1,276 training images and 16 of the 160 held out. It writes the
+model's answer for each held-out page beside the right one, in
+`predictions.jsonl`, for the Forma side to score with `textToSkeleton`.
+
 ### Still to build
 
-1. The Kaggle notebook, kept in the repository: a run on about 20 examples
-   first, then the full set, writing the GGUF files as its output.
-2. The evaluation on the 40 held-out skeletons: bands and controls found,
-   their places, against today's offline model.
+1. The first Kaggle runs, smoke then full, and what they measure.
+2. The evaluation on the held-out pages: bands and controls found, and their
+   places, against today's offline model.
 3. Forma's half: a skeleton to a report, its texts filled in by OCR. Then
    the model behind the Local AI provider.
 

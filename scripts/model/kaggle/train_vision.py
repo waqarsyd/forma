@@ -1,0 +1,259 @@
+"""
+Fine-tune Forma's vision model on Kaggle's free GPU (2026-11-03, milestone 6
+of docs/proposals/own-model.md).
+
+The model is Qwen3.5-2B (Apache-2.0), with a 16-bit LoRA through Unsloth.
+It learns to look at a picture of a report page and write the page's skeleton
+in the text of src/lib/skeletonText.ts.
+
+In a Kaggle notebook:
+- Settings: Accelerator "GPU T4 x2" (only one is used), Internet on. Not the
+  P100: Unsloth needs compute capability 7.0 and the P100 is 6.0.
+- Input: your private dataset "Forma report skeletons", the zip that
+  `npm run model:dataset` and `python scripts/model/render.py` produce.
+
+    !wget -q -O train_vision.py https://raw.githubusercontent.com/waqarsyd/forma/main/scripts/model/kaggle/train_vision.py
+    !python train_vision.py --setup     # installs Unsloth, once per session
+    !python train_vision.py --smoke     # 40 images and 20 steps: proves every step works
+    !python train_vision.py --train     # the full run; best as "Save Version", Run All
+    !python train_vision.py --export    # GGUF and vision projector for Ollama and LM Studio
+
+Everything is written to /kaggle/working, which is kept with a saved
+version:
+- lora/              the adapter;
+- predictions.jsonl  the model's answer for held-out pages, next to the
+                     right one, for scripts on the Forma side to score;
+- gguf/              after --export: forma-vision-Q8_0.gguf and the
+                     vision projector, mmproj-*.gguf, kept at F16.
+
+The installation follows Unsloth's own Qwen3.5 (2B) Vision notebook as it
+stood on 2026-11-03. If a step fails, its command is printed above the
+error.
+
+Pure ASCII, like scripts/model/render.py, for the PowerShell 5.1 reason in
+CLAUDE.md.
+"""
+
+import argparse
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+import zipfile
+
+WORK = '/kaggle/working'
+BASE_MODEL = 'unsloth/Qwen3.5-2B'
+INSTRUCTION = ('This is one page of a printed business report. Write its structure as Forma skeleton text: '
+               'the page line, then each band and the controls in it, one per line.')
+
+
+def sh(cmd, optional=False):
+    print('+ ' + cmd, flush=True)
+    code = subprocess.call(cmd, shell=True)
+    if code and not optional:
+        sys.exit('Failed (exit %d): %s' % (code, cmd))
+
+
+def setup():
+    """Unsloth's notebook installs, on an image that already has torch (Kaggle's does)."""
+    sh('pip install --upgrade -qqq uv')
+    sh('uv pip install --system -qqq unsloth')
+    sh('uv pip install --system -qqq --upgrade --no-deps "tokenizers>=0.22.0,<=0.23.0" "trl==0.22.2" unsloth unsloth_zoo')
+    sh('uv pip install --system -qqq "transformers==5.2.0"')
+    sh('unsloth install-kernels', optional=True)
+    sh('uv pip install --system -qqq --no-deps --upgrade "torchao>=0.16.0"')
+    print('Setup done. Next: python train_vision.py --smoke')
+
+
+def dataset_dir():
+    """The folder holding train.jsonl under /kaggle/input, unzipping the upload if Kaggle kept it zipped."""
+    hits = glob.glob('/kaggle/input/**/train.jsonl', recursive=True)
+    if hits:
+        return os.path.dirname(hits[0])
+    zips = glob.glob('/kaggle/input/**/*.zip', recursive=True)
+    if zips:
+        out = os.path.join(WORK, 'data')
+        if not os.path.exists(os.path.join(out, 'train.jsonl')):
+            print('Unzipping %s' % zips[0], flush=True)
+            with zipfile.ZipFile(zips[0]) as z:
+                z.extractall(out)
+        return out
+    sys.exit('No train.jsonl under /kaggle/input. Add the "Forma report skeletons" dataset as input.')
+
+
+def rows(split, max_chars, limit=0):
+    d = dataset_dir()
+    with open(os.path.join(d, split + '.jsonl'), encoding='utf-8') as fh:
+        out = [json.loads(line) for line in fh if line.strip()]
+    kept = [r for r in out if len(r['target']) <= max_chars]
+    if len(kept) < len(out):
+        print('%s: left out %d of %d pages whose text is over %d characters' % (split, len(out) - len(kept), len(out), max_chars))
+    if limit:
+        kept = kept[:limit]
+    for r in kept:
+        r['path'] = os.path.join(d, r['image'])
+    return kept
+
+
+def one_gpu():
+    """Use one T4 even when the accelerator is "T4 x2": two need accelerate, and one is enough for 2B."""
+    os.environ.setdefault('CUDA_VISIBLE_DEVICES', '0')
+    import torch
+    if not torch.cuda.is_available():
+        sys.exit('No GPU. In the notebook settings choose Accelerator: GPU T4 x2, then restart.')
+    cap = torch.cuda.get_device_capability(0)
+    name = torch.cuda.get_device_name(0)
+    if cap < (7, 0):
+        sys.exit('%s has compute capability %d.%d; Unsloth needs 7.0. Choose GPU T4 x2, not P100.' % (name, cap[0], cap[1]))
+    print('GPU: %s' % name, flush=True)
+
+
+def conversation(row, image):
+    return {'messages': [
+        {'role': 'user', 'content': [{'type': 'image', 'image': image}, {'type': 'text', 'text': INSTRUCTION}]},
+        {'role': 'assistant', 'content': [{'type': 'text', 'text': row['target']}]},
+    ]}
+
+
+def load_image(path):
+    from PIL import Image
+    return Image.open(path).convert('RGB')
+
+
+def predict(model, tokenizer, pages, max_new_tokens, out_path):
+    from unsloth import FastVisionModel
+    FastVisionModel.for_inference(model)
+    messages = [{'role': 'user', 'content': [{'type': 'image'}, {'type': 'text', 'text': INSTRUCTION}]}]
+    prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
+    with open(out_path, 'w', encoding='utf-8', newline='\n') as fh:
+        for i, r in enumerate(pages):
+            inputs = tokenizer(load_image(r['path']), prompt, add_special_tokens=False, return_tensors='pt').to('cuda')
+            out = model.generate(**inputs, max_new_tokens=max_new_tokens, use_cache=True, do_sample=False)
+            text = tokenizer.decode(out[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+            text = re.sub(r'<think>.*?</think>', '', text, flags=re.S).strip()
+            fh.write(json.dumps({'id': r['id'], 'image': r['image'], 'target': r['target'], 'prediction': text}) + '\n')
+            fh.flush()
+            print('predicted %d/%d (%s): %d lines, the right answer has %d' % (
+                i + 1, len(pages), r['image'], len(text.splitlines()), len(r['target'].splitlines())), flush=True)
+            if i == 0:
+                print('\n'.join(text.splitlines()[:8]), flush=True)
+
+
+def train(args, smoke):
+    one_gpu()
+    from unsloth import FastVisionModel, is_bf16_supported
+    from unsloth.trainer import UnslothVisionDataCollator
+    from trl import SFTConfig, SFTTrainer
+
+    train_rows = rows('train', args.max_chars, limit=40 if smoke else 0)
+    eval_rows = [r for r in rows('eval', args.max_chars) if r['image'].endswith('-0.png')]
+    eval_rows = eval_rows[:3 if smoke else args.predict]
+    print('training on %d page images, predicting %d held-out pages' % (len(train_rows), len(eval_rows)), flush=True)
+
+    model, tokenizer = FastVisionModel.from_pretrained(BASE_MODEL, load_in_4bit=False, use_gradient_checkpointing='unsloth')
+    model = FastVisionModel.get_peft_model(
+        model, finetune_vision_layers=True, finetune_language_layers=True, finetune_attention_modules=True,
+        finetune_mlp_modules=True, r=16, lora_alpha=16, lora_dropout=0, bias='none', random_state=3407,
+        use_rslora=False, loftq_config=None)
+
+    data = [conversation(r, load_image(r['path'])) for r in train_rows]
+    FastVisionModel.for_training(model)
+    bf16 = is_bf16_supported()
+    config = SFTConfig(
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=4,
+        warmup_steps=5,
+        max_steps=20 if smoke else -1,
+        num_train_epochs=args.epochs,
+        learning_rate=2e-4,
+        logging_steps=1 if smoke else 10,
+        optim='adamw_8bit',
+        weight_decay=0.001,
+        lr_scheduler_type='linear',
+        seed=3407,
+        output_dir=os.path.join(WORK, 'outputs'),
+        save_strategy='no' if smoke else 'steps',
+        save_steps=100,
+        save_total_limit=1,
+        report_to='none',
+        fp16=not bf16,
+        bf16=bf16,
+        remove_unused_columns=False,
+        dataset_text_field='',
+        dataset_kwargs={'skip_prepare_dataset': True},
+        max_length=args.max_length,
+    )
+    trainer = SFTTrainer(model=model, tokenizer=tokenizer, data_collator=UnslothVisionDataCollator(model, tokenizer),
+                         train_dataset=data, args=config)
+    stats = trainer.train()
+    print('trained: %s' % stats.metrics, flush=True)
+
+    lora = os.path.join(WORK, 'lora')
+    model.save_pretrained(lora)
+    tokenizer.save_pretrained(lora)
+    print('adapter saved to %s' % lora, flush=True)
+    predict(model, tokenizer, eval_rows, args.max_new_tokens, os.path.join(WORK, 'predictions.jsonl'))
+    print('Done. predictions.jsonl holds the answers.' + (' Next: --train.' if smoke else ' Next: --export.'))
+
+
+def export(args):
+    one_gpu()
+    from unsloth import FastVisionModel
+    lora = os.path.join(WORK, 'lora')
+    if not os.path.isdir(lora):
+        sys.exit('No adapter at %s. Run --train first, in this session or as an input from a saved version.' % lora)
+    model, tokenizer = FastVisionModel.from_pretrained(lora, load_in_4bit=False)
+    merged = os.path.join(WORK, 'merged')
+    model.save_pretrained_merged(merged, tokenizer)
+
+    # Convert with llama.cpp's own scripts: a direct quantized export from Unsloth garbled
+    # a Qwen-VL model's output (unsloth #3899), while F16 then llama-quantize did not.
+    llama = os.path.join(WORK, 'llama.cpp')
+    if not os.path.isdir(llama):
+        sh('git clone --depth 1 https://github.com/ggml-org/llama.cpp %s' % llama)
+    sh('pip install -qqq -r %s/requirements/requirements-convert_hf_to_gguf.txt' % llama, optional=True)
+    gguf = os.path.join(WORK, 'gguf')
+    os.makedirs(gguf, exist_ok=True)
+    f16 = os.path.join(gguf, 'forma-vision-f16.gguf')
+    sh('python %s/convert_hf_to_gguf.py %s --outtype f16 --outfile %s' % (llama, merged, f16))
+    sh('python %s/convert_hf_to_gguf.py %s --mmproj --outtype f16 --outfile %s' % (
+        llama, merged, os.path.join(gguf, 'forma-vision.gguf')))
+    sh('cmake -S %s -B %s/build -DGGML_CUDA=OFF -DLLAMA_CURL=OFF > /dev/null' % (llama, llama))
+    sh('cmake --build %s/build --target llama-quantize -j 4 > /dev/null' % llama)
+    q8 = os.path.join(gguf, 'forma-vision-Q8_0.gguf')
+    sh('%s/build/bin/llama-quantize %s %s Q8_0' % (llama, f16, q8))
+    if not args.keep:
+        os.remove(f16)
+        sh('rm -rf %s %s' % (merged, os.path.join(llama, 'build')))
+    for p in sorted(glob.glob(os.path.join(gguf, '*.gguf'))):
+        print('%8.0f MB  %s' % (os.path.getsize(p) / 1e6, p))
+    print('Download the Q8_0 model and the mmproj file from this version\'s Output tab.')
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Fine-tune Forma's vision model on Kaggle.")
+    ap.add_argument('--setup', action='store_true', help='install Unsloth (once per session)')
+    ap.add_argument('--smoke', action='store_true', help='a short run that proves every step works')
+    ap.add_argument('--train', action='store_true', help='the full run')
+    ap.add_argument('--export', action='store_true', help='GGUF and vision projector from the adapter')
+    ap.add_argument('--epochs', type=float, default=1)
+    ap.add_argument('--max-length', type=int, default=6144, help='tokens per example, image included')
+    ap.add_argument('--max-chars', type=int, default=8000, help='pages whose text is longer are left out')
+    ap.add_argument('--max-new-tokens', type=int, default=4096)
+    ap.add_argument('--predict', type=int, default=10, help='held-out pages to answer after the full run')
+    ap.add_argument('--keep', action='store_true', help='keep the merged model and the F16 GGUF')
+    args = ap.parse_args()
+    if args.setup:
+        setup()
+    if args.smoke or args.train:
+        train(args, smoke=args.smoke)
+    if args.export:
+        export(args)
+    if not (args.setup or args.smoke or args.train or args.export):
+        ap.print_help()
+
+
+if __name__ == '__main__':
+    main()

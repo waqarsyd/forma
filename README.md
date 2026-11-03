@@ -618,7 +618,8 @@ scripts/               five helpers: dev + build, and the encoding, doc-pointer
                        call; fidelity/, the benchmark's runner and cases; and
                        model/, which learns Forma's own model and packs and
                        draws the vision model's training set (render.py needs
-                       Python 3 and Pillow)
+                       Python 3 and Pillow), with kaggle/train_vision.py, the
+                       fine-tune that runs on Kaggle's free GPU
 server.ts              Express server, used in development and production
 firestore.rules        the actual security boundary
 firebase.json          the rules path, databaseId, and the emulator port
