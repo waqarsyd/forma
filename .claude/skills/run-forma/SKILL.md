@@ -1,6 +1,6 @@
 ---
 name: run-forma
-description: Launch Forma and drive it end to end — dev server, headless Edge over CDP, attach a file, generate a report, send a chat turn, screenshot, and read back what the status bar and the REPX audit actually say. Use for running the app, confirming a change works in the real UI, or capturing screenshots. Covers the Windows-specific launch and teardown that make this work here.
+description: Launch Forma and drive it end to end — dev server, the owner's Chrome through the extension or headless Edge over CDP, attach a file, generate a report, send a chat turn, screenshot, and read back what the REPX audit actually says. Use for running the app, confirming a change works in the real UI, or capturing screenshots. Covers the Windows-specific launch and teardown that make this work here.
 ---
 
 # Running Forma
@@ -56,11 +56,18 @@ Start-Sleep -Seconds 8
 Invoke-WebRequest http://127.0.0.1:9222/json/version -UseBasicParsing   # must answer
 ```
 
-**Edge, not the Claude-in-Chrome extension.** The extension cannot reach this
-machine's localhost — every navigation to `localhost:3000` returns *"Frame with ID
-0 is showing error page"* while the same URL is fine from PowerShell and from the
-user's own browser. Site permissions, a fresh tab and re-selecting the browser all
-fail. Do not re-diagnose it.
+**Prefer the owner's own browser when the Claude-in-Chrome extension is
+connected.** Until 2026-10-31 the extension could not reach this machine's
+localhost: every navigation to `localhost:3000` returned *"Frame with ID 0 is
+showing error page"*. Since the owner logged the extension in on this server it
+does, and the owner asked for browser work to happen in their own Chrome or Edge
+rather than in a headless one started from the shell. So with the extension
+connected, open `localhost:3000/workspace` in a tab of it and drive it there:
+`find` for a control, `file_upload` to attach (paths in the session's scratchpad,
+10 MB a call), `javascript_tool` to read state. Its screenshots can stall on a
+heavy pane, such as the REPX source; reading the DOM answers anyway. Headless Edge
+and the driver below are for a machine without the extension, or a run nobody is
+watching.
 
 **`Start-Process`, never the `&` call operator.** `msedge.exe` is a GUI-subsystem
 binary, so PowerShell does not block on it and sets no `$LASTEXITCODE`. With `&`
@@ -92,7 +99,7 @@ node .claude/skills/run-forma/drive.mjs --out $sp `
 | `--prompt <text>` | text sent with the generation — workspace only |
 | `--say <text>` | a chat turn after the report; repeatable — workspace only |
 | `--pane <name>` | open a pane at the end: `Mockup`, `Preview`, `Data`, `Spec` or `REPX` — workspace only |
-| `--no-key` | remove the key, to see the locked state |
+| `--no-key` | remove the key, to see Forma's own model answer |
 | `--wait <s>` | generation timeout, default 60 |
 | `--port <n>` | the CDP port to attach to, default 9222 — only needed if Edge was started on another one |
 
@@ -109,12 +116,12 @@ foreach ($r in '/','/features','/docs','/contact','/terms','/privacy','/nope') {
 }
 ```
 
-It prints the document title, the rendered character count and `h1`, whether the
-composer unlocked, how long the generation took, and — on the workspace — **the
-status bar text and the REPX audit**, chip plus the full findings out of its
-`title` attribute, or `clean` when there is no chip. It exits non-zero when a
-step cannot complete, so it works as a check and not only as a demo. Every
-screenshot is numbered in order.
+It prints the document title, the rendered character count and `h1`, whether an
+AI or Forma's own model will answer, how long the generation took, and — on the
+workspace, once a report exists — **the report's title and the REPX audit**, read
+from the REPX pane's audit box with every finding, or `clean` when there is no
+box. It exits non-zero when a step cannot complete, so it works as a check and
+not only as a demo. Every screenshot is numbered in order.
 
 The character count is there because **a rendered element is not a rendered
 page**: every wait in this script would pass on a blank frame, so it measures the
@@ -128,10 +135,12 @@ the driver against the same Edge instance reuses the same tab: `sessionStorage`
 persists, and a `Page.addScriptToEvaluateOnNewDocument` registered by an earlier
 run keeps firing on every navigation with no identifier a later process could use
 to unregister it. So `--no-key` *removes* the key rather than merely not seeding
-one, and the driver **asserts** the resulting state instead of printing it — an
-unlocked composer under `--no-key` throws, because every step after that would be
+one, and the driver **asserts** the resulting state instead of printing it — a key
+surviving under `--no-key` throws, because every step after that would be
 testing the wrong thing. Skipping the seed was the first implementation, and it
 cheerfully reported `composer enabled` on a run that had asked for the opposite.
+Since 2026-11-02 a missing key no longer locks the composer, so the state is read
+from its placeholder, which ends "no key needed" when Forma's own model answers.
 
 `docs/media/screenshot.png` is a convenient thing to attach: it is committed, it
 is a real image, and it is large enough to exercise the upload optimiser.
@@ -208,11 +217,13 @@ Finish by confirming port 3000 has no listener and `git status` is clean.
 **Look at the screenshots.** A blank frame is a failed launch, and the driver
 cannot tell you that — every wait it does would still have passed.
 
-The status bar is the app's own summary of the file it would export: `Idle`, the
-DevExpress version, `units N/in`, the band count, and — only when something is
-structurally wrong — a `N REPX warning` chip whose tooltip carries every finding.
-Silence there is the good case. See `src/lib/repxAudit.ts` for what it checks and
-why each check exists.
+The REPX pane is the app's own summary of the file it would export: `units N/in`
+and the token usage beside the source, and — only when something is structurally
+wrong — an `N REPX warning` box listing every finding. Silence there is the good
+case. See `src/lib/repxAudit.ts` for what it checks and why each check exists.
+Until 2026-11-04 these sat in a status bar at the foot of the workspace, which
+went with the owner's request for a workspace as clean as the chat apps people
+know.
 
 ## Selectors worth knowing
 
@@ -231,8 +242,10 @@ They live in one block at the top of `drive.mjs`; these are the ones that surpri
   That exact-equality is also why a `Specs & REPX` tab in an older shell cannot
   be hit by asking for `REPX`. This bullet used to warn that it could; a
   substring match would, and the driver has never used one.
-- The status bar is `.wb-status`; the audit chip is `.wb-warn` / `.wb-bad`
-  inside it; the note count is `.wb-kicker`.
+- The composer is `[aria-label="Message"]`. Work in flight is `.wb-dots` (or the
+  generation's `[role=progressbar]`); a report exists once the result pane's
+  `[role=tablist][aria-label=View]` does; the notes are the thread's `.wb-note`s
+  bar the opening one; the audit is `[data-audit]` in the REPX pane.
 
 ## Two CDP traps this cost a session to learn
 

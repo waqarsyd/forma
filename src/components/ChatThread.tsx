@@ -61,15 +61,25 @@ export interface ChatThreadProps<R> {
    */
   suggestions?: readonly { id: string; title: string; text: string }[];
   onSuggest?: (text: string) => void;
-  /**
-   * Opens the review of what OCR read in one upload (2026-11-03), from a reply
-   * built from that text (`ChatMessage.reviewText`). Only the uploads in
-   * `reviewable` are offered: the pages of a reloaded conversation are gone.
-   */
-  onReviewText?: (uploadId: string) => void;
-  reviewable?: ReadonlySet<string>;
-  /** The generation progress card, rendered after the transcript. */
+  /** Forma's working line during a generation, rendered after the transcript. */
   children?: ReactNode;
+}
+
+/**
+ * Three dots that say Forma is working, and nothing else (2026-11-04). The
+ * owner asked for the chat to look like the chat apps people know: the
+ * attach button, the messages and the answers, with every step behind the
+ * scenes. So no step names, percentages or timers are drawn in the thread;
+ * the wrapper says what is happening to a screen reader.
+ */
+export function WorkingDots() {
+  return (
+    <span className="wb-dots" aria-hidden="true">
+      <i />
+      <i />
+      <i />
+    </span>
+  );
 }
 
 export interface ClarifyAnswer {
@@ -140,17 +150,12 @@ const ChatNote = memo(function ChatNote<R>({
   onRetry,
   onOpenAttachment,
   onAnswer,
-  review,
-  onReviewText,
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
-  /** The uploads this reply can open the review of, one per line: a string, so the memo holds. */
-  review?: string;
-  onReviewText?: (uploadId: string) => void;
 }) {
   return (
     <article className={`wb-note${message.role === 'user' ? ' wb-note--me' : ''}`}>
@@ -160,21 +165,6 @@ const ChatNote = memo(function ChatNote<R>({
         {message.text && <p>{message.text}</p>}
         {message.clarify && !message.clarify.answered && onAnswer && (
           <ClarifyForm id={message.id} questions={message.clarify.questions} disabled={retryDisabled} onAnswer={onAnswer} />
-        )}
-        {review && onReviewText && (
-          <div className="wb-chips">
-            {review.split('\n').map((uploadId, i, all) => (
-              <button
-                key={uploadId}
-                type="button"
-                className="wb-pill wb-pill--outline"
-                onClick={() => onReviewText(uploadId)}
-                title="See what was read, over the image, and build a report from it with no model"
-              >
-                {all.length > 1 ? `Review the text read (${i + 1})` : 'Review the text read'}
-              </button>
-            ))}
-          </div>
         )}
 
         {message.images && message.images.length > 0 && (
@@ -226,8 +216,6 @@ const ChatNote = memo(function ChatNote<R>({
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
-  review?: string;
-  onReviewText?: (uploadId: string) => void;
 }) => React.ReactElement;
 
 export default function ChatThread<R>({
@@ -240,8 +228,6 @@ export default function ChatThread<R>({
   onAnswer,
   suggestions,
   onSuggest,
-  onReviewText,
-  reviewable,
   children,
 }: ChatThreadProps<R>) {
   /*
@@ -254,15 +240,14 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onReviewText });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onReviewText };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer });
+  latest.current = { onRetry, onOpenAttachment, onAnswer };
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
   const openAttachment = useCallback(
     (view: AttachmentView) => latest.current.onOpenAttachment(view),
     []
   );
   const answer = useCallback((id: string, answers: ClarifyAnswer[]) => latest.current.onAnswer?.(id, answers), []);
-  const reviewText = useCallback((uploadId: string) => latest.current.onReviewText?.(uploadId), []);
 
   const retryDisabled = isChatting || isAnalyzing;
 
@@ -335,8 +320,6 @@ export default function ChatThread<R>({
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}
-          review={msg.reviewText?.filter((id) => reviewable?.has(id)).join('\n') || undefined}
-          onReviewText={onReviewText ? reviewText : undefined}
         />
       ))}
 
@@ -349,7 +332,14 @@ export default function ChatThread<R>({
           <span className="wb-spine" />
           <div>
             <div className="wb-who">Forma</div>
-            <p>{streamingReply || 'Thinking…'}</p>
+            {/* The answer as it streams; until the first word, the dots. */}
+            {streamingReply ? (
+              <p>{streamingReply}</p>
+            ) : (
+              <p role="status" aria-label="Forma is working">
+                <WorkingDots />
+              </p>
+            )}
           </div>
         </article>
       )}

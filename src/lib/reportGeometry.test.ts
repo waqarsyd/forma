@@ -298,8 +298,11 @@ describe('resolveReportUnit / resolvePageSize', () => {
  * disk the way `legalDisclosure.test.ts` reads `ContactPage.tsx` — the claim is
  * about the *source*, so the source is what gets asserted, and no component
  * tree has to render.
+ *
+ * The status bar went on 2026-11-04, and the readout with it moved to the REPX
+ * pane (`data-readout="units"` in `RepxViewer`), so the guard moved too.
  */
-describe('the status bar reads the unit table rather than restating it', () => {
+describe('the units readout reads the unit table rather than restating it', () => {
   const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   /**
@@ -315,26 +318,26 @@ describe('the status bar reads the unit table rather than restating it', () => {
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/\/\/[^\n]*/g, '');
 
-  const start = app.indexOf('className="wb-status"');
-  const statusBar = codeOnly(app.slice(start, start + 1600));
+  const start = app.indexOf('data-readout="units"');
+  const readout = codeOnly(app.slice(start, start + 400));
 
-  it('finds the status bar at all', () => {
-    // Guards the two assertions below: if the class is renamed, the slice above
+  it('finds the readout at all', () => {
+    // Guards the two assertions below: if the marker is renamed, the slice above
     // is empty and everything here passes vacuously.
-    expect(app).toContain('className="wb-status"');
-    expect(statusBar).toMatch(/units/);
+    expect(app).toContain('data-readout="units"');
+    expect(readout).toMatch(/units/);
   });
 
   it('derives the units-per-inch figure from unitsPerInch()', () => {
-    expect(statusBar).toMatch(/unitsPerInch\(/);
+    expect(readout).toMatch(/unitsPerInch\(/);
     expect(app).toMatch(/import\s*\{[^}]*\bunitsPerInch\b[^}]*\}\s*from\s*'\.\/lib\/reportGeometry'/);
   });
 
   it('states no units-per-inch figure as a literal', () => {
     for (const perInch of SUPPORTED_UNITS.map((u) => unitsPerInch(u))) {
       expect(
-        statusBar,
-        `The status bar hardcodes "${perInch}/in". It must read unitsPerInch(config.unit) — ` +
+        readout,
+        `The units readout hardcodes "${perInch}/in". It must read unitsPerInch(unit) — ` +
           `a literal is right for one unit and silently wrong for the rest.`
       ).not.toMatch(new RegExp(`\\b${perInch}\\s*/\\s*in`));
     }

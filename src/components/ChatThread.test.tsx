@@ -258,15 +258,17 @@ describe('memoised rows still call the current callbacks', () => {
 });
 
 describe('the reply being written', () => {
-  it('says it is thinking before the first token arrives', () => {
+  // Three dots and no words before the first token (2026-11-04): the chat shows
+  // that Forma is working, not what it is doing behind the scenes.
+  it('shows working dots before the first token arrives, named for a screen reader', () => {
     draw({ isChatting: true });
-    expect(screen.getByText('Thinking…')).toBeTruthy();
+    expect(screen.getByRole('status', { name: 'Forma is working' }).querySelectorAll('.wb-dots i')).toHaveLength(3);
   });
 
   it('shows the text streamed so far once there is some', () => {
     draw({ isChatting: true, streamingReply: 'Forma supports PNG, JPG' });
     expect(screen.getByText('Forma supports PNG, JPG')).toBeTruthy();
-    expect(screen.queryByText('Thinking…')).toBeNull();
+    expect(document.querySelector('.wb-dots')).toBeNull();
   });
 
   it('announces itself politely', () => {
@@ -284,7 +286,7 @@ describe('the reply being written', () => {
   it('gets out of the way once generation starts', () => {
     draw({ isChatting: true, isAnalyzing: true, streamingReply: 'building' });
     expect(screen.queryByText('building')).toBeNull();
-    expect(screen.queryByText('Thinking…')).toBeNull();
+    expect(document.querySelector('.wb-dots')).toBeNull();
   });
 
   it('shows nothing when idle', () => {
@@ -455,25 +457,14 @@ describe('a report described in the chat', () => {
 });
 
 /*
- * The reading behind the scenes (2026-11-03): an image's text is read after
- * the message is sent, the placeholder saying so, and a reply built from that
- * text offers its review, which the attachment's chip offered until then.
+ * The chat holds the messages and the answers and nothing else (2026-11-04):
+ * a reply carries no buttons of its own beyond a failed turn's retry and a
+ * description's questions.
  */
-describe('the text read behind the scenes', () => {
-  it('says what it is reading in the reply placeholder', () => {
-    draw({ isChatting: true, streamingReply: 'Reading the text on your page… 40%' });
-    expect(screen.getByText('Reading the text on your page… 40%')).toBeTruthy();
-  });
-
-  it('offers the review of what was read from the reply built from it, for the pages still in hand', () => {
-    const onReviewText = vi.fn();
-    const built = msg({ id: 'b', role: 'assistant', text: 'Built "scan" from the text OCR read.', reviewText: ['u1', 'u2'] });
-    draw({ messages: [built], onReviewText, reviewable: new Set(['u1']) });
-    fireEvent.click(screen.getByText('Review the text read'));
-    expect(onReviewText).toHaveBeenCalledWith('u1');
-    cleanup();
-    // A reloaded conversation keeps the reply, not the pages: nothing to review.
-    draw({ messages: [built], onReviewText, reviewable: new Set() });
-    expect(screen.queryByText(/Review the text read/)).toBeNull();
+describe('a clean chat', () => {
+  it('draws a reply as its words and its report, with no buttons', () => {
+    draw({ messages: [msg({ id: 'b', role: 'assistant', text: 'Built "scan" from the text OCR read.' })] });
+    expect(screen.getByText('Built "scan" from the text OCR read.')).toBeTruthy();
+    expect(document.querySelectorAll('.wb-note button')).toHaveLength(0);
   });
 });

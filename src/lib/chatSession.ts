@@ -74,13 +74,6 @@ export interface ChatMessage<R = unknown, M = unknown> {
    * once the reader has replied, by the form or by typing.
    */
   clarify?: { questions: { id: string; question: string; suggestion?: string }[]; answered: boolean };
-  /**
-   * The uploads whose text OCR read for a reply built from that text
-   * (2026-11-03). The reply offers to review what was read, over the image,
-   * which the attachment's chip offered until the reading moved behind the
-   * scenes, after the message is sent.
-   */
-  reviewText?: string[];
 }
 
 /**

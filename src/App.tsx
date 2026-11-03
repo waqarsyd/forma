@@ -45,8 +45,6 @@ import {
   IconLogin,
   IconLogout,
   IconPanelLeft,
-  IconPause,
-  IconPlay,
   IconPlus,
   IconSave,
   IconTrash,
@@ -205,7 +203,7 @@ import {
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
-import { auditRepx } from './lib/repxAudit';
+import { auditRepx, type RepxAudit } from './lib/repxAudit';
 import {
   describedRequest,
   fixInstruction,
@@ -232,8 +230,11 @@ import {
 import { formatSessionStamp } from './lib/datetime';
 import { unitsToPx, pointsToUnits, pdfTopFromBaseline, unitsPerInch } from './lib/reportGeometry';
 import { repeatedHeadingTables } from './lib/mockupRows';
-import LogoPulse from './components/LogoPulse';
-import ChatThread from './components/ChatThread';
+// LogoPulse, the progress ring of the generation card, went with the card on
+// 2026-11-04 (the minimal workspace). Find that commit with
+// git log --diff-filter=D -- src/components/LogoPulse.tsx, and recover the file
+// with git show <it>~1:src/components/LogoPulse.tsx.
+import ChatThread, { WorkingDots } from './components/ChatThread';
 import Composer from './components/Composer';
 import type { OcrBuiltReport } from './components/OcrDialog';
 import type { ReadPage } from './lib/ocrAttach';
@@ -557,15 +558,6 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
   return out;
 }
 
-/** Elapsed wall-clock for the progress card: "12.4s" under a minute, then "1:23". */
-function formatElapsed(ms: number): string {
-  const totalSeconds = ms / 1000;
-  if (totalSeconds < 60) return `${totalSeconds.toFixed(1)}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = Math.floor(totalSeconds % 60);
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
 /**
  * Longest edge of an uploaded image, in pixels.
  *
@@ -718,7 +710,26 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-const RepxViewer = ({ xml }: { xml: string }) => {
+/**
+ * `unit` and `audit` arrived here on 2026-11-04 with the status bar's removal:
+ * the owner asked for a workspace as clean as the chat apps people know, so
+ * the bar's readouts went, and the two worth keeping moved to the pane about
+ * the file they describe: the scale it is built at, and what the REPX audit
+ * still finds wrong (lib/repxAudit.ts), listed in full rather than as a count
+ * with its findings in a tooltip.
+ */
+const RepxViewer = ({
+  xml,
+  unit,
+  audit,
+  usage,
+}: {
+  xml: string;
+  unit?: string;
+  audit?: RepxAudit | null;
+  /** What the generation cost, when the model said (lib/tokenUsage.ts): a short line and its parts. */
+  usage?: { short: string; long: string | null } | null;
+}) => {
   const [copied, setCopied] = useState(false);
 
   const formatted = useMemo(() => formatXml(xml || ''), [xml]);
@@ -766,9 +777,18 @@ const RepxViewer = ({ xml }: { xml: string }) => {
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-[11px] text-on-surface-variant font-mono">
-            {lines.length} lines · {xml.length.toLocaleString()} chars
+          {/* Read from the same table the pipeline converts with, never
+              written out here: a literal "100/in" is right for the default
+              unit and silently wrong at 254 or 96. It lived in the status bar
+              until 2026-11-04; reportGeometry.test.ts guards it here. */}
+          <span className="text-[11px] text-on-surface-variant font-mono" data-readout="units">
+            {lines.length} lines · {xml.length.toLocaleString()} chars · units {unitsPerInch(unit)}/in
           </span>
+          {usage && (
+            <span className="text-[11px] text-on-surface-variant font-mono" title={usage.long ?? undefined}>
+              {usage.short}
+            </span>
+          )}
           <button
             onClick={handleCopy}
             className="u-tap u-transition-fast u-press u-focus-ring flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest text-[11px] font-semibold text-on-surface-variant rounded-full cursor-pointer"
@@ -791,6 +811,28 @@ const RepxViewer = ({ xml }: { xml: string }) => {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* What the REPX audit still finds after the repairs: silent when there
+          is nothing, which is the common case. */}
+      {audit && !audit.ok && (
+        <details className="wb-audit rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3" data-audit>
+          <summary className={`text-[11.5px] font-semibold cursor-pointer ${audit.errors ? 'text-[color:var(--bad-ink)]' : 'text-on-surface-variant'}`}>
+            {audit.errors > 0 && `${audit.errors} REPX error${audit.errors > 1 ? 's' : ''}`}
+            {audit.errors > 0 && audit.warnings > 0 && ', '}
+            {audit.warnings > 0 && `${audit.warnings} REPX warning${audit.warnings > 1 ? 's' : ''}`}
+          </summary>
+          <ul className="flex flex-col gap-1.5 mt-2">
+            {audit.findings.map((f, i) => (
+              <li key={i} className="flex gap-2 text-[11.5px] leading-[1.5] text-on-surface-variant">
+                <span className={`mt-[3px] shrink-0 ${f.severity === 'error' ? 'text-[color:var(--bad-ink)]' : 'text-[color:var(--ink-faint)]'}`}>
+                  <IconAlert size={12} />
+                </span>
+                <span>{f.message}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {/* Source */}
@@ -1467,15 +1509,8 @@ type TeamPlan = {
 
 const NO_TEAM: TeamPlan = { brief: '', members: [], draft: null };
 
-const RESUMED_RUN: RunCopy = {
-  start: 'Resuming report generation process.',
-  request: 'Requesting Gemini API on resume...',
-  done: 'Report layout updated successfully on resume.',
-  assistant: (fromPrompt) =>
-    fromPrompt
-      ? "I've resumed and completed the report layout based on your instructions. You can view the UI preview and specifications on the right."
-      : "I've resumed and completed the report layout based on your provided images. You can view the UI preview and specifications on the right.",
-};
+// RESUMED_RUN, the copy for resuming a paused run, went with pause and resume
+// on 2026-11-04: the chat shows working dots and a Stop, as other chat apps do.
 
 export default function App() {
   const [showWorkspace, setShowWorkspace] = useState(false);
@@ -1504,16 +1539,12 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   /**
    * Save confirmation. This used to be a native `alert()` — modal, unstyled, and
-   * the only thing in the app that broke out of its own visual language. It sits
-   * beside the composer with the other notices and clears itself.
+   * the only thing in the app that broke out of its own visual language. It
+   * shows beside Save in the bench's bar and clears itself; until 2026-11-04 it
+   * also sat under the composer, which now holds problems only.
    */
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const activePromptRef = useRef<string>('');
-  const activePreviewsRef = useRef<string[]>([]);
-  /** Text attachments for the in-flight run, so pause/resume re-sends them too. */
-  const activeTextsRef = useRef<TextAttachment[]>([]);
   /**
    * The whole progress bar, as one value.
    *
@@ -1913,10 +1944,8 @@ export default function App() {
    * them. Answered by that message's form or by the next message typed.
    */
   const pendingClarifyRef = useRef<{ request: ReportDescriptionRequest; messageId: string } | null>(null);
-  /** The description a run was started from, so Resume re-issues the same request. */
+  /** The description the last run was started from, which Test data describes the report by. */
   const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
-  /** The run's team input (lib/formaTeam.ts), kept for a resume like the rest. */
-  const activeTeamRef = useRef<TeamInput | undefined>(undefined);
   /** What a part of Forma's team is doing before the AI is asked, for the progress card; null when nothing. */
   const [teamStage, setTeamStage] = useState<string | null>(null);
   /**
@@ -2305,27 +2334,9 @@ export default function App() {
   const isFirstThemeRun = useRef(true);
   /** Set when a circular wipe handled the swap, so the cross-fade stands down. */
   const skipThemeFade = useRef(false);
-  const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const startTimeRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isAnalyzing && !isPaused) {
-      if (!startTimeRef.current) {
-        startTimeRef.current = Date.now();
-      }
-      interval = setInterval(() => {
-        setElapsedTime(Date.now() - (startTimeRef.current || Date.now()));
-      }, 100);
-    } else {
-      if (!isAnalyzing) {
-        startTimeRef.current = null;
-      }
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isAnalyzing, isPaused]);
+  // The elapsed-time clock went with the status bar on 2026-11-04. It set state
+  // every 100 ms of a generation, re-rendering the whole app ten times a second
+  // for a number in the bottom bar.
 
   // Save confirmations are transient — they replace an alert the user had to
   // dismiss, so they must not need dismissing either.
@@ -2792,7 +2803,7 @@ export default function App() {
   const ocrReviewPages = useMemo(() => (ocrReview ? sentPages[ocrReview] ?? [] : []), [sentPages, ocrReview]);
 
   /** A report built from OCR alone: every pane, a revision, and a line in the thread. */
-  const handleOcrBuild = (built: OcrBuiltReport, uploads?: string[]) => {
+  const handleOcrBuild = (built: OcrBuiltReport) => {
     const newResult: DesignResult = {
       content: built.markdown,
       timestamp: new Date(),
@@ -2813,7 +2824,6 @@ export default function App() {
       role: 'assistant',
       text: `Built "${built.title}" from the text OCR read, with no model involved.${unsure}`,
       result: newResult,
-      ...(uploads?.length ? { reviewText: uploads } : {}),
     }]);
     setOcrReview(null);
   };
@@ -3263,21 +3273,6 @@ export default function App() {
     </Suspense>
   ) : null;
 
-  const handlePause = () => {
-    if (isAnalyzing && !isPaused) {
-      setIsPaused(true);
-      // Pause the simulated loading interval
-      if (loadingIntervalRef.current) {
-        clearInterval(loadingIntervalRef.current);
-      }
-      // Abort the active API call
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      console.log('Analysis paused by user at step index:', progress.stepIndex);
-    }
-  };
-
   /**
    * The generation run itself: ticker, request, result, transcript, error
    * handling, teardown.
@@ -3584,13 +3579,11 @@ export default function App() {
             setResult(made.result);
             recordRevision("Forma's own draft", made.result);
             setActiveTab('ui');
-            const uploads = made.source !== 'offline' ? [...new Set((teamInput?.read ?? []).map(({ meta }) => meta.uploadId))] : [];
             setMessages(prev => [...prev, {
               id: nextMessageId(),
               role: 'assistant',
               text: fallbackReply(aiName, err?.message || friendlyMessage, made.source),
               result: made.result,
-              ...(uploads.length ? { reviewText: uploads } : {}),
             }]);
             return;
           }
@@ -3604,7 +3597,6 @@ export default function App() {
         setProgress(finishProgress);
         setTimeout(() => {
           setIsAnalyzing(false);
-          setIsPaused(false);
           setProgress(IDLE_PROGRESS);
         }, 500);
       }
@@ -3612,53 +3604,21 @@ export default function App() {
     }
   };
 
-  const handleResume = async () => {
-    // Same gate as handleGenerate: the key could have been cleared from the
-    // session while the run was paused.
-    if (!hasApiKey) {
-      setError('Add your Gemini API key to use the workspace.');
-      setIsConfigOpen(true);
-      return;
-    }
+  // handleResume went with pause on 2026-11-04 (see RESUMED_RUN above). A
+  // stopped run is sent again by sending the message again.
 
-    setIsPaused(false);
-    setIsAnalyzing(true);
-    setError(null);
-
-    // Resume re-issues the whole request, so previously received output no
-    // longer counts: startProgress clears the character count. The bar itself
-    // stays where it was rather than snapping backwards on an action the user
-    // took deliberately, which is what carrying the current step across does.
-    setProgress((prev) => startProgress(prev.stepIndex));
-
-    await runGeneration(
-      activePromptRef.current,
-      activePreviewsRef.current,
-      activeTextsRef.current,
-      RESUMED_RUN,
-      activeDescribeRef.current,
-      activeTeamRef.current,
-    );
-  };
-
+  /** The composer's Stop, while a generation runs: the run is discarded. */
   const handleStop = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     setIsAnalyzing(false);
-    setIsPaused(false);
-    // Stop discards the run entirely, so the bar goes back to nothing rather
-    // than to a step someone might resume from.
     setProgress(IDLE_PROGRESS);
-    activePromptRef.current = '';
-    activePreviewsRef.current = [];
     if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
-
-    // Add a system message that generation was stopped
     setMessages(prev => [...prev, {
       id: nextMessageId(),
       role: 'assistant',
-      text: 'Generation stopped by user.'
+      text: 'Stopped.'
     }]);
   };
 
@@ -3710,7 +3670,7 @@ export default function App() {
         const { buildFromRead } = await import('./lib/ocrAttach');
         const built = buildFromRead(read, config.unit, config.pageSize);
         if (built) {
-          handleOcrBuild(built, [...new Set(read.map(({ meta }) => meta.uploadId))]);
+          handleOcrBuild(built);
           return;
         }
       }
@@ -3820,7 +3780,7 @@ export default function App() {
         const built = buildFromRead(read, config.unit, config.pageSize);
         if (built) {
           say(`Forma's vision model could not read the page (${why}), so the report was built from the text OCR read.`);
-          handleOcrBuild(built, [...new Set(read.map(({ meta }) => meta.uploadId))]);
+          handleOcrBuild(built);
           return;
         }
       }
@@ -4015,18 +3975,10 @@ export default function App() {
     }
 
     setIsAnalyzing(true);
-    setIsPaused(false);
-
-    // Cache inputs for pause/resume
-    activePromptRef.current = currentPrompt;
-    activePreviewsRef.current = currentPreviews;
-    activeTextsRef.current = currentTexts;
-
     setProgress(startProgress());
     setError(null);
 
     activeDescribeRef.current = undefined;
-    activeTeamRef.current = teamInput;
     await runGeneration(currentPrompt, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput);
   };
 
@@ -4042,14 +3994,9 @@ export default function App() {
    * ---------------------------------------------------------------- */
   const startDescribedGeneration = async (request: ReportDescriptionRequest) => {
     setIsAnalyzing(true);
-    setIsPaused(false);
-    activePromptRef.current = '';
-    activePreviewsRef.current = [];
-    activeTextsRef.current = [];
     activeDescribeRef.current = request;
     // The house style is the brief, and Forma's own model the stand-in (lib/formaTeam.ts).
     const teamInput: TeamInput = { read: [], described: request };
-    activeTeamRef.current = teamInput;
     setProgress(startProgress());
     setError(null);
     await runGeneration('', [], [], DESCRIBE_RUN, request, teamInput);
@@ -4672,7 +4619,7 @@ export default function App() {
           <span className="wb-rail-label">Collapse</span>
         </button>
 
-        {railBtn('review', 'Current report', <IconLayout size={19} />)}
+        {railBtn('review', 'Chat', <IconLayout size={19} />)}
         {railBtn('projects', 'Saved projects', <IconFolder size={19} />)}
         {railBtn('revisions', 'Revisions', <IconRedo size={19} />)}
         {railBtn('batch', 'Batch', <IconStack size={19} />)}
@@ -4803,8 +4750,10 @@ export default function App() {
                 heading margins, so the element renders identically: semantics
                 with no visual change. Only one panel is in the layout at a
                 time; the others are `wb-hidden`, so no reader meets four. */}
-            <h2 className="wb-col-title">Review</h2>
-            <span className="wb-kicker">{noteCountLabel(messages.length)}</span>
+            {/* "Chat", and no count of notes beside it (2026-11-04): the column
+                is the conversation, as in the chat apps people know. It said
+                "Review" with "2 notes" until then. */}
+            <h2 className="wb-col-title">Chat</h2>
           </div>
 
           {/* Unverified means an address nobody has proved they can read. It is
@@ -4840,57 +4789,32 @@ export default function App() {
             onAnswer={handleClarifyAnswers}
             suggestions={PREDEFINED_PROMPTS}
             onSuggest={setPrompt}
-            onReviewText={setOcrReview}
-            reviewable={reviewable}
           >
-            {/* Generation. The ring around the mark *is* the progress bar — same
-                `analyzingProgress`, same guarantee that it only ever reports
-                what has actually arrived. The spinner, the clock and the three
-                shimmering skeleton bars are gone: the status bar at the foot of
-                the workspace already carries state and elapsed time, and this
-                card sits in the middle of a conversation, where five stacked
-                rows of furniture is the loudest thing on screen for a job the
-                user already knows they started. */}
-            {(isAnalyzing || isPaused) && (
-              <div className={`wb-progress${isPaused ? ' wb-is-paused' : ''}`} aria-live="polite">
-                <LogoPulse percent={progress.percent} paused={isPaused} size={56} />
-
-                <b className="wb-state">
-                  {isPaused ? 'Analysis paused' : progress.streamChars > 0 ? 'Writing report' : 'Reading your design'}
-                </b>
-                {/* stepLabel always names a step, so the `||` fallback this
-                    used to carry is gone rather than dead. */}
-                <span className="wb-stage">{teamStage ?? stepLabel(progress)}</span>
-                <span className="wb-metrics">
-                  <b>{Math.round(progress.percent)}%</b>
-                  {progress.streamChars > 0 && (
-                    <span>· {progress.streamChars.toLocaleString()} chars</span>
-                  )}
-                </span>
-
-                <span className="wb-acts">
-                  <button
-                    className="wb-tool"
-                    title={isPaused ? 'Resume' : 'Pause'}
-                    aria-label={isPaused ? 'Resume analysis' : 'Pause analysis'}
-                    onClick={isPaused ? handleResume : handlePause}
+            {/* Generation, as Forma's answer being written: three dots
+                (2026-11-04). Until then a card held a progress ring, the step,
+                a percentage, a character count, pause and stop, and after 20
+                seconds a paragraph about the model thinking. The owner asked
+                for the chat to show the messages and the answers only, with
+                every step behind the scenes; Stop is the composer's button.
+                The progress is still measured honestly, and a screen reader
+                still hears it, from the attributes below. */}
+            {isAnalyzing && (
+              <article className="wb-note" aria-live="polite">
+                <span className="wb-spine" />
+                <div>
+                  <div className="wb-who">Forma</div>
+                  <p
+                    role="progressbar"
+                    aria-label="Forma is designing the report"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(progress.percent)}
+                    aria-valuetext={teamStage ?? stepLabel(progress)}
                   >
-                    {isPaused ? <IconPlay size={15} /> : <IconPause size={15} />}
-                  </button>
-                  <button className="wb-tool" title="Stop &amp; reset" aria-label="Stop analysis" onClick={handleStop}>
-                    <IconClose size={15} />
-                  </button>
-                </span>
-
-                {/* Only once the wait is long enough to be worth explaining. */}
-                {!isPaused && progress.streamChars === 0 && elapsedTime >= 20_000 && (
-                  <p className="wb-why">
-                    The model is still thinking — it can spend most of a run reasoning before
-                    emitting a character. Nothing is streaming yet, so the ring is honestly
-                    pinned rather than pretending to move.
+                    <WorkingDots />
                   </p>
-                )}
-              </div>
+                </div>
+              </article>
             )}
           </ChatThread>
 
@@ -4904,17 +4828,16 @@ export default function App() {
             onRemoveText={removeTextAttachment}
             uploadNotices={uploadNotices}
             error={error}
-            saveNotice={saveNotice}
             prompt={prompt}
             onPromptChange={setPrompt}
             onSend={handleGenerate}
+            onStop={handleStop}
             fileInputRef={fileInputRef}
             onFileChange={handleFileChange}
             hasApiKey={hasApiKey}
             isAnalyzing={isAnalyzing}
             isChatting={isChatting}
             isIngesting={isIngesting}
-            onAddKey={() => setIsConfigOpen(true)}
             onPasteFiles={ingestFiles}
           />
         </div>
@@ -5145,10 +5068,13 @@ export default function App() {
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {/* The notice's own words (2026-11-04), not always "Saved": the
+                composer stopped repeating it, and "Restored the version from
+                10:15" or "8 sample rows generated" are not saves. */}
             {saveNotice && (
-              <span className="wb-saved">
+              <span className="wb-saved" role="status" title={saveNotice}>
                 <IconCheck size={13} />
-                Saved
+                <span className="wb-saved-text">{saveNotice}</span>
               </span>
             )}
             <button
@@ -5290,7 +5216,12 @@ export default function App() {
 
               {plate === 'xml' && (
                 <div className="wb-sheet wb-reg-marks">
-                  <RepxViewer xml={result.repxContent || ''} />
+                  <RepxViewer
+                    xml={result.repxContent || ''}
+                    unit={config.unit}
+                    audit={repxAudit}
+                    usage={summariseUsage(result.usage) ? { short: summariseUsage(result.usage)!, long: describeUsage(result.usage) } : null}
+                  />
                 </div>
               )}
             </>
@@ -5304,9 +5235,9 @@ export default function App() {
                     looks identical. */}
                 <h2 style={{ marginTop: 22 }}>Ready to process</h2>
                 <p>
-                  Upload a design in the review pane — a screenshot, a PDF, or an existing{' '}
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>.repx</span> — and the spec,
-                  mockup and XML land here.
+                  Attach a design in the chat — a screenshot, a PDF, or an existing{' '}
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>.repx</span> — or describe the
+                  report you want, and it lands here.
                 </p>
               </div>
             </div>
@@ -5314,70 +5245,17 @@ export default function App() {
         </div>
       </main>
 
-      {/* ======================================================= status bar */}
-      <div className="wb-status">
-        <span className="wb-live">
-          <span
-            className="wb-pip"
-            style={{ background: isAnalyzing && !isPaused ? 'var(--warn)' : isPaused ? 'var(--ink-faint)' : 'var(--ok-ink)' }}
-          />
-          {isAnalyzing && !isPaused ? 'Processing' : isPaused ? 'Paused' : 'Idle'}
-        </span>
-        <span>{config.version ? `DevExpress v${config.version}` : ''}</span>
-        <span>{isAnalyzing ? formatElapsed(elapsedTime) : ''}</span>
-        <span className="wb-push" />
-        {/* Read from the same table the pipeline converts with, never written
-            out here. This said `units 100/in` as a literal, which is true only
-            for the default: pick TenthsOfAMillimeter and the bar still claimed
-            100 where the report is built at 254, and Pixels at 96. It sits
-            beside the version readout, which *is* derived, so the whole bar
-            reads as live — and it names the scale of the file about to be
-            exported, which is the worst place to be confidently wrong. */}
-        <span>units {unitsPerInch(config.unit)}/in</span>
-        {result?.layout && <span>{result.layout.sections.length} bands</span>}
-        {/* Only when the report actually carries bindings, which now means
-            somebody bound it in the Data tab — generation never binds anything
-            by itself. Derived from repxContent for the same reason as the units
-            readout above: this bar describes the file about to be exported. */}
-        {boundFields.length > 0 && (
-          <span title={`Bound to: ${boundFields.join(', ')}`}>
-            {boundFields.length} bound
-          </span>
-        )}
-        {/* What the generation cost, when the model reported it.
-
-            Absent on the mock path and on any response with no usage metadata,
-            which is why this is conditional rather than showing a zero. The
-            numbers were logged to the console from the day streaming landed and
-            that turned out not to count as having them: checking the effect of a
-            change made to reduce them meant opening devtools and generating
-            again, so in practice nobody did. The parts are in the tooltip because
-            input and output move for different reasons. See lib/tokenUsage.ts. */}
-        {summariseUsage(result?.usage) && (
-          <span title={describeUsage(result?.usage) ?? undefined}>
-            {summariseUsage(result?.usage)}
-          </span>
-        )}
-        {/* Structural problems in the file about to be exported. Silent when
-            there are none, which is the common case. The full text of each
-            finding is in the tooltip and in the console; the bar has room for
-            a count. See lib/repxAudit.ts. */}
-        {repxAudit && !repxAudit.ok && (
-          <span
-            className={repxAudit.errors ? 'wb-bad' : 'wb-warn'}
-            title={repxAudit.findings.map((f) => `${f.severity.toUpperCase()}: ${f.message}`).join('\n\n')}
-          >
-            {repxAudit.errors > 0 && `${repxAudit.errors} REPX error${repxAudit.errors > 1 ? 's' : ''}`}
-            {repxAudit.errors > 0 && repxAudit.warnings > 0 && ', '}
-            {repxAudit.warnings > 0 && `${repxAudit.warnings} REPX warning${repxAudit.warnings > 1 ? 's' : ''}`}
-          </span>
-        )}
-      </div>
+      {/* The status bar went on 2026-11-04, at the owner's request for a workspace
+          as clean as the chat apps people know. Its live state, version, clock,
+          band and binding counts were behind-the-scenes readouts; the units and
+          token usage readouts and the REPX audit moved to the REPX pane, about the
+          file they describe (RepxViewer). */}
 
       {/* =========================================================== modals */}
-      {/* What was read from one sent upload, over its image: opened from a
-          reply built from that text (2026-11-03; from the attachment's chip
-          until then), the pages already read, Build .repx with no model. */}
+      {/* What was read from one sent upload, over its image: opened from the
+          image viewer's "Text read" (2026-11-04; from the attachment's chip
+          until 2026-11-03, then for a day from a reply), the pages already
+          read, Build .repx with no model. */}
       {ocrReview && ocrReviewPages.length > 0 && (
         <Suspense fallback={null}>
           <OcrDialog
@@ -5775,6 +5653,27 @@ export default function App() {
                   <IconChevronDown size={13} className="wb-rot-ccw" />
                 </button>
               )}
+              {/* What OCR read on a sent page, over the image, from which a
+                  .repx can be built with no model (2026-11-04). Here, in the
+                  viewer the page's thumbnail opens, so the chat itself holds
+                  no buttons for it; a reply offered it for a day before. */}
+              {(() => {
+                const shown = fullScreenImage.srcs[fullScreenImage.index];
+                const uploadId = Object.entries(sentPages).find(([, pages]) => pages.some((p) => p.src === shown))?.[0];
+                return uploadId && reviewable.has(uploadId) ? (
+                  <button
+                    type="button"
+                    className="wb-lightbox-text"
+                    onClick={() => {
+                      setFullScreenImage(null);
+                      setOcrReview(uploadId);
+                    }}
+                    title="See the text read on this page, and build a report from it with no model"
+                  >
+                    Text read
+                  </button>
+                ) : null;
+              })()}
               <button
                 type="button"
                 onClick={() => setFullScreenImage(null)}

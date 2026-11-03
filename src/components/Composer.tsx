@@ -28,7 +28,6 @@ import { groupLabel } from '../lib/attachments';
 import {
   IconAlert,
   IconArrowUp,
-  IconCheck,
   IconClose,
   IconDoc,
   IconPaperclip,
@@ -52,22 +51,27 @@ export interface ComposerProps {
   onRemoveFile: (indices: number[], uploadId?: string) => void;
   onRemoveText: (uploadId: string) => void;
 
+  /** Problems with what was attached or sent: the only notes the composer shows. */
   uploadNotices: string[];
   error: string | null;
-  saveNotice: string | null;
 
   prompt: string;
   onPromptChange: (value: string) => void;
   onSend: () => void;
+  /**
+   * Stops the generation in flight (2026-11-04). While one runs the send
+   * button is a Stop button, as in the chat apps people know; there is no
+   * pause, ring or percentage in the chat any more.
+   */
+  onStop?: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onFileChange: ChangeEventHandler<HTMLInputElement>;
-  /** Gates the whole composer. Forma ships no key of its own. */
+  /** Whether an AI is set up: only the placeholder changes. Forma ships no key of its own. */
   hasApiKey: boolean;
   isAnalyzing: boolean;
   /** A chat turn is in flight. Blocks a second send — see `canSend` below. */
   isChatting: boolean;
   isIngesting: boolean;
-  onAddKey: () => void;
   /** Files pasted into the box, as a drop or a pick would bring them. */
   onPasteFiles?: (files: File[]) => void;
 }
@@ -82,17 +86,16 @@ export default function Composer({
   onRemoveText,
   uploadNotices,
   error,
-  saveNotice,
   prompt,
   onPromptChange,
   onSend,
+  onStop,
   fileInputRef,
   onFileChange,
   hasApiKey,
   isAnalyzing,
   isChatting,
   isIngesting,
-  onAddKey,
   onPasteFiles,
 }: ComposerProps) {
   /*
@@ -225,12 +228,6 @@ export default function Composer({
           <span>{error}</span>
         </div>
       )}
-      {saveNotice && (
-        <div className="wb-note-line wb-ok" role="status">
-          <span className="wb-ic"><IconCheck size={13} /></span>
-          <span>{saveNotice}</span>
-        </div>
-      )}
 
       <div className="wb-box">
         <button
@@ -277,52 +274,31 @@ export default function Composer({
           placeholder={hasApiKey ? 'Describe a report, attach or paste an image, or ask anything…' : 'Describe a report or attach an image: Forma’s own model, no key needed'}
           aria-label="Message"
         />
-        <button
-          className="wb-send"
-          aria-label="Send note"
-          /* Wrapped rather than passed bare. `onSend` is `handleGenerate`,
-             whose first parameter is an optional prompt override, so handing
-             it straight to onClick passes the click event as the prompt. */
-          onClick={sendAndKeepFocus}
-          disabled={!canSend}
-        >
-          <IconArrowUp size={15} />
-        </button>
-      </div>
-
-      {!hasApiKey && (
-        <button className="wb-gate" onClick={onAddKey}>
-          <span className="wb-badge-ic"><IconAlert size={12} /></span>
-          <span className="wb-txt">
-            <b>Working offline, with Forma’s own model</b>
-            <span>Add a free Gemini key for AI designs</span>
-          </span>
-          {/* Inline rather than an icon component: the artifact drew a
-              right-chevron here, and icons.tsx has only the down one.
-              Rotating it would need a rule in workspace.css, which is meant
-              to stay byte-identical to the artifact. */}
-          <svg
-            className="wb-chev"
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+        {isAnalyzing && onStop ? (
+          /* While a generation runs, the send button is its Stop (2026-11-04),
+             as in the chat apps people know. */
+          <button className="wb-send wb-send--stop" aria-label="Stop" title="Stop" onClick={onStop}>
+            <span className="wb-stop-square" aria-hidden="true" />
+          </button>
+        ) : (
+          <button
+            className="wb-send"
+            aria-label="Send note"
+            /* Wrapped rather than passed bare. `onSend` is `handleGenerate`,
+               whose first parameter is an optional prompt override, so handing
+               it straight to onClick passes the click event as the prompt. */
+            onClick={sendAndKeepFocus}
+            disabled={!canSend}
           >
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-        </button>
-      )}
-
-      {/* Shown in both states: whoever is about to paste a key is exactly
-          who needs to know it is not being stored. */}
-      <span className="wb-fineprint">
-        <span>Your key clears when this tab closes</span>
-      </span>
+            <IconArrowUp size={15} />
+          </button>
+        )}
+      </div>
+      {/* Nothing under the box (2026-11-04). The "Working offline" banner and
+          the "Your key clears when this tab closes" line lived here; the
+          owner asked for the chat to hold the attach button, the messages and
+          the answers only. Which AI answers, and how the key is kept, are said
+          in Settings, where the key is typed. */}
     </div>
   );
 }

@@ -181,34 +181,34 @@ async function shot(name) {
  * Selectors, in one place because they are the part that rots. Every one is an
  * aria-label or a stable class from App.tsx rather than a DOM path.
  */
+/*
+ * 2026-11-04: the workspace became as clean as the chat apps people know. The
+ * status bar (live state, band count, the REPX audit chip) and the note count
+ * went, so "idle", "has a report", the note count and the audit are read from
+ * what is left: the working dots, the result pane's tabs, the thread's notes
+ * and the REPX pane's audit box. The composer is "Message" since the one chat
+ * box (2026-11-01); this said "Describe a change" and matched nothing.
+ */
 const SEL = {
-  composer: '[aria-label="Describe a change"]',
+  composer: '[aria-label="Message"]',
   send: '[aria-label="Send note"]',
   fileInput: 'input[type=file]',
-  status: '.wb-status',
-  live: '.wb-status .wb-live',
-  audit: '.wb-status .wb-warn, .wb-status .wb-bad',
-  notes: '.wb-kicker',
+  working: '.wb-dots, [role=progressbar]',
+  tabs: '[role=tablist][aria-label=View]',
+  notes: '.wb-thread .wb-note:not(.wb-note--start)',
+  audit: '[data-audit]',
 };
 
-/** The audit chip is silent when the report is clean, which is the good case. */
+/** The audit box, in the REPX pane, is absent when the report is clean, which is the good case. */
 const READ_AUDIT = `(() => {
   const el = document.querySelector(${JSON.stringify(SEL.audit)});
-  return el ? { chip: el.textContent.trim(), findings: el.getAttribute('title') } : null;
+  return el ? { chip: el.querySelector('summary').textContent.trim(), findings: [...el.querySelectorAll('li')].map((li) => li.textContent.trim()).join('\\n\\n') } : null;
 })()`;
 
-/*
- * Every one of these matches case-insensitively, and that is not defensive
- * habit. The status bar is uppercased by CSS text-transform, and innerText
- * returns the *rendered* text -- so `.wb-live` reads "IDLE" through innerText
- * and "Idle" through textContent. Matching /^Idle/ against innerText waits
- * forever on a report that arrived seconds ago, which is exactly how this was
- * found: the bar plainly said 2 BANDS while the driver timed out at 60s.
- */
-const STATUS_TEXT = `(document.querySelector(${JSON.stringify(SEL.status)})?.innerText || '').replace(/\\s+/g, ' ').trim()`;
-const IDLE = `/^\\s*idle/i.test(document.querySelector(${JSON.stringify(SEL.live)})?.innerText || '')`;
-const HAS_REPORT = `/\\d+\\s+bands/i.test(document.querySelector(${JSON.stringify(SEL.status)})?.innerText || '')`;
-const NOTE_COUNT = `(() => { const m = (document.querySelector(${JSON.stringify(SEL.notes)})?.textContent || '').match(/(\\d+)\\s+note/i); return m ? Number(m[1]) : 0; })()`;
+const TITLE_TEXT = `(document.querySelector('.wb-bench h1')?.innerText || '').replace(/\\s+/g, ' ').trim()`;
+const IDLE = `!document.querySelector(${JSON.stringify(SEL.working)})`;
+const HAS_REPORT = `!!document.querySelector(${JSON.stringify(SEL.tabs)})`;
+const NOTE_COUNT = `document.querySelectorAll(${JSON.stringify(SEL.notes)}).length`;
 
 // ------------------------------------------------------------------ the run
 
@@ -267,16 +267,17 @@ if (bodyLen < 50) throw new Error(`the page rendered ${bodyLen} characters -- it
 
 if (isWorkspace) {
   /*
-   * Assert rather than report. An unlocked composer under --no-key is not a
-   * curiosity to print and move past -- it means the key state is not what was
-   * asked for, and every step after this would be testing the wrong thing.
+   * Assert rather than report. A key state that is not what was asked for means
+   * every step after this would be testing the wrong thing. Since 2026-11-02 a
+   * missing key no longer locks the composer (Forma's own model answers), so
+   * the state is read from the placeholder, which says which one will answer.
    */
-  const unlocked = await evalJs(`!document.querySelector(${JSON.stringify(SEL.composer)}).disabled`);
-  console.log('key    ' + (unlocked ? 'present, composer enabled' : 'absent, composer locked'));
-  if (unlocked !== opts.key) {
+  const keyed = await evalJs(`!/no key needed/i.test(document.querySelector(${JSON.stringify(SEL.composer)}).placeholder)`);
+  console.log('key    ' + (keyed ? 'present, an AI answers' : "absent, Forma's own model answers"));
+  if (keyed !== opts.key) {
     throw new Error(opts.key
-      ? 'the seeded key did not take -- the composer is still locked'
-      : '--no-key was asked for but the composer is unlocked; a key survived in this tab');
+      ? 'the seeded key did not take -- the placeholder still says no key is needed'
+      : '--no-key was asked for but a key survived in this tab');
   }
 } else {
   // The key is still seeded, and still irrelevant here: there is nothing on a
@@ -320,31 +321,37 @@ for (const message of opts.say) {
   await shot(shotName('chat'));
 }
 
-if (opts.pane) {
+const openPane = async (name) => {
   const opened = await evalJs(`(() => {
-    const b = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === ${JSON.stringify(opts.pane)});
+    const b = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === ${JSON.stringify(name)});
     if (b) b.click();
     return !!b;
   })()`);
-  if (!opened) throw new Error('no pane button named ' + opts.pane);
+  if (!opened) throw new Error('no pane button named ' + name);
   await sleep(1200);
-  await shot(shotName('pane-' + opts.pane.toLowerCase()));
-}
+};
 
 // --------------------------------------------------------------- what it says
 
-// The status bar and its audit chip belong to the workspace shell. Reporting
-// "audit clean" for a page that has no audit would be a comforting lie.
-if (isWorkspace) {
-  console.log('status ' + (await evalJs(STATUS_TEXT)));
-
+// The audit lives in the REPX pane since 2026-11-04, so it is read there, and
+// only when a report exists. Reporting "audit clean" for a page that has no
+// report would be a comforting lie.
+if (isWorkspace && (await evalJs(HAS_REPORT))) {
+  console.log('report ' + (await evalJs(TITLE_TEXT)));
+  await openPane('REPX');
   const audit = await evalJs(READ_AUDIT);
   if (audit) {
     console.log('audit  ' + audit.chip);
     for (const finding of (audit.findings || '').split('\n\n')) console.log('       ' + finding);
   } else {
-    console.log('audit  clean (no chip in the status bar)');
+    console.log('audit  clean (no audit box in the REPX pane)');
   }
+  if (!opts.pane) await openPane('Mockup');
+}
+
+if (opts.pane) {
+  await openPane(opts.pane);
+  await shot(shotName('pane-' + opts.pane.toLowerCase()));
 }
 
 const noisy = consoleLines.filter((l) => l.startsWith('[error]') || l.startsWith('[exception]'));

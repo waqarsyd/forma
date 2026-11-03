@@ -37,7 +37,6 @@ const draw = (props: Partial<React.ComponentProps<typeof Composer>> = {}) =>
       onRemoveText={vi.fn()}
       uploadNotices={[]}
       error={null}
-      saveNotice={null}
       prompt=""
       onPromptChange={vi.fn()}
       onSend={vi.fn()}
@@ -47,7 +46,6 @@ const draw = (props: Partial<React.ComponentProps<typeof Composer>> = {}) =>
       isAnalyzing={false}
       isChatting={false}
       isIngesting={false}
-      onAddKey={vi.fn()}
       {...props}
     />
   );
@@ -182,34 +180,53 @@ describe('when sending is not possible', () => {
   });
 });
 
-describe('the key gate', () => {
-  it('says it is working offline when there is no key, and offers the key', () => {
-    draw({ hasApiKey: false });
-    expect(screen.getByText('Working offline, with Forma’s own model')).toBeTruthy();
-    expect(screen.getByText('Add a free Gemini key for AI designs')).toBeTruthy();
-    expect(document.querySelector('.wb-box')!.className).not.toContain('wb-is-locked');
+/*
+ * A clean composer (2026-11-04): the attach button, the box and the send,
+ * and nothing under them. The "Working offline" banner and the key line
+ * went, at the owner's request; Settings says both where the key is typed.
+ * While a generation runs, the send is its Stop, as in other chat apps.
+ */
+describe('a clean composer', () => {
+  it('draws nothing under the box, with or without a key', () => {
+    for (const hasApiKey of [true, false]) {
+      const { unmount } = draw({ hasApiKey });
+      expect(screen.queryByText(/Working offline|Your key clears/)).toBeNull();
+      expect(document.querySelector('.wb-box')!.nextElementSibling).toBeNull();
+      unmount();
+    }
   });
 
-  it('opens the config dialog when asked', () => {
-    const onAddKey = vi.fn();
-    draw({ hasApiKey: false, onAddKey });
-    fireEvent.click(screen.getByText('Working offline, with Forma’s own model').closest('button')!);
-    expect(onAddKey).toHaveBeenCalledTimes(1);
-  });
-
-  it('stays out of the way once a key is present', () => {
-    draw();
-    expect(screen.queryByText('Working offline, with Forma’s own model')).toBeNull();
-  });
-
-  // Whoever is about to paste a key is exactly who needs to know it is not
-  // being stored, so this line shows in both states.
-  it('promises the key clears, with or without one', () => {
-    const { unmount } = draw();
-    expect(screen.getByText('Your key clears when this tab closes')).toBeTruthy();
-    unmount();
-    draw({ hasApiKey: false });
-    expect(screen.getByText('Your key clears when this tab closes')).toBeTruthy();
+  it('turns the send into a Stop while a generation runs, and back', () => {
+    const onStop = vi.fn();
+    const { rerender } = draw({ isAnalyzing: true, onStop });
+    expect(screen.queryByLabelText('Send note')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Stop'));
+    expect(onStop).toHaveBeenCalledTimes(1);
+    rerender(
+      <Composer
+        previews={[]}
+        previewGroups={[]}
+        previewMeta={[]}
+        textGroups={[]}
+        onOpenAttachment={vi.fn()}
+        onRemoveFile={vi.fn()}
+        onRemoveText={vi.fn()}
+        uploadNotices={[]}
+        error={null}
+        prompt=""
+        onPromptChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={onStop}
+        fileInputRef={createRef<HTMLInputElement>()}
+        onFileChange={vi.fn()}
+        hasApiKey
+        isAnalyzing={false}
+        isChatting={false}
+        isIngesting={false}
+      />,
+    );
+    expect(screen.queryByLabelText('Stop')).toBeNull();
+    expect(send().disabled).toBe(false);
   });
 });
 
@@ -283,12 +300,6 @@ describe('notices', () => {
   it('reports an error as an alert', () => {
     draw({ error: 'Add your Gemini API key to use the workspace.' });
     expect(screen.getByRole('alert').textContent).toContain('Add your Gemini API key');
-  });
-
-  it('reports a save as a status, not an alert', () => {
-    draw({ saveNotice: 'Saved to your account.' });
-    expect(screen.getByRole('status').textContent).toContain('Saved to your account.');
-    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('shows no notice lines when there is nothing to say', () => {

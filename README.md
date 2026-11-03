@@ -91,7 +91,7 @@ Each of these is a shipped code path, not a plan.
 
 - **Image, PDF and `.repx` intake.** Drop a mockup, a scan, a photo, or an existing report. PDFs are rasterised *and* have their text layer extracted, so exact strings survive rather than being read back out of pixels ([`src/App.tsx`](src/App.tsx), [`src/lib/pdf.ts`](src/lib/pdf.ts)).
 - **Works with no key, on Forma's own model.** Forma learned the house style and the kinds of report from the structure of 359 real DevExpress reports (never their words), and with no AI key it designs a report from a request such as "a stock register grouped by warehouse with totals" with that model, offline and with no quota, and builds one from an image's text read by OCR. A free Gemini key adds AI designs on top, and Settings chooses which AI answers: Forma Offline, Gemini, a local AI on your own computer (Ollama or LM Studio), or OpenRouter's free models. It also remembers how you work: say "remember: always use A4 and Tahoma" and every report after follows it, and the reports you keep teach it your house style, all kept in your browser and listed in Settings ([`src/lib/offlineGenerator.ts`](src/lib/offlineGenerator.ts), [`docs/proposals/own-model.md`](docs/proposals/own-model.md)). With an AI chosen, the parts work together on each request: OCR reads the words, Forma's own vision model (when you run one) reads the layout, Forma's own model brings the house style, the AI designs from all of it, and if the AI cannot answer you get Forma's own draft instead of an error ([`src/lib/formaTeam.ts`](src/lib/formaTeam.ts)).
-- **One chat box for everything.** Attach or paste an image, a scan, a PDF or a `.repx`, describe the report you want, or both, and the box works out what to do: an attachment shows as the file alone, and once you send, its text is read with OCR behind the scenes in the browser (Tesseract.js; nothing leaves the browser), the reply offering a review of what was found over the source from which a `.repx` can be built with no model; a description with no attachment gets a question or two in the thread when it leaves something open, then a report designed from it; words and an attachment together go to one generation ([`src/components/Composer.tsx`](src/components/Composer.tsx), [`src/lib/ocrAttach.ts`](src/lib/ocrAttach.ts), [`src/lib/promptToReport.ts`](src/lib/promptToReport.ts)).
+- **One chat box for everything.** Attach or paste an image, a scan, a PDF or a `.repx`, describe the report you want, or both, and the box works out what to do: an attachment shows as the file alone, and once you send, its text is read with OCR behind the scenes in the browser (Tesseract.js; nothing leaves the browser), the image viewer offering a review of what was found over the source from which a `.repx` can be built with no model; a description with no attachment gets a question or two in the thread when it leaves something open, then a report designed from it; words and an attachment together go to one generation ([`src/components/Composer.tsx`](src/components/Composer.tsx), [`src/lib/ocrAttach.ts`](src/lib/ocrAttach.ts), [`src/lib/promptToReport.ts`](src/lib/promptToReport.ts)).
 - **Three artifacts in one structured response** — spec, `layout`, and `repxContent` — guaranteed parseable by a Gemini `responseSchema` rather than by hoping the model returns valid JSON ([`src/services/geminiService.ts`](src/services/geminiService.ts)).
 - **Targets your DevExpress version** — eight of them, 26.1 back to 20.1, written into the file's `SerializerVersion` so it drops into the codebase you already have. Worth knowing that the tag is a *label rather than a gate*: a newer `.repx` still opens in an older designer, which was measured with `RepxProbe inspect` and then confirmed through the product — a 23.2 file opened correctly in a real 20.1 designer, and the designer rewrote the tag on save. So pick the version you build against; nothing is lost if you pick wrong.
 - **In-browser mockup** drawn from the `layout` JSON, so you can see what the model understood before downloading anything.
@@ -274,9 +274,9 @@ src/
                        PascalCase.tsx / camelCase.ts form, because Vite names it
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
                        LoginPage, LegalPage (/terms and /privacy),
-                       SiteHeader, SiteFooter, MobileNav, Logo, LogoPulse,
+                       SiteHeader, SiteFooter, MobileNav, Logo,
                        AccountDialog, UserAvatar, NotFoundPage,
-                       OcrDialog (the review a chat-box chip opens: the text
+                       OcrDialog (the review the image viewer opens: the text
                        OCR read, its detected layout drawn over the source,
                        and Build .repx with no model),
                        ProviderSettings (which AI answers, in Settings: Forma
@@ -285,8 +285,8 @@ src/
                        change or forget),
                        ChatThread
                        (the review column's transcript, lifted out of App.tsx
-                       once chatSession.ts held its rules — the progress card
-                       passes through as children, because that is generation
+                       once chatSession.ts held its rules — Forma's working
+                       dots pass through as children, because that is generation
                        state and not conversation), Composer (staged
                        attachments, the notice lines and the box you type in;
                        one composer does both jobs, and which one is App.tsx's
@@ -555,11 +555,12 @@ src/
                        request fails), savedReport + accountData (the two
                        storage shapes and the document layout),
                        tokenUsage (what a generation cost, formatted for the
-                       status bar -- the numbers were logged to the console
+                       REPX pane -- the numbers were logged to the console
                        from the day streaming landed, which turned out not to
                        count as having them),
-                       contactSubmit, generationProgress (the progress bar's
-                       whole state machine) and attachmentParts, themeTransition
+                       contactSubmit, generationProgress (the progress's whole
+                       state machine, read by a screen reader since the progress
+                       card became working dots) and attachmentParts, themeTransition
                        (the circular wipe the theme toggle opens from, and its
                        fallbacks), and the routing pair router (real
                        history/location, so not pure) + routes.
