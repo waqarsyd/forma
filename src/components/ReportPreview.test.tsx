@@ -238,6 +238,42 @@ describe('cross-band controls in the Preview', () => {
 });
 
 /*
+ * A picture box draws its image (2026-11-04), as DevExpress 20.1 printed every
+ * Sizing mode (lib/pictureBox.ts): until then the Preview drew a dashed box
+ * saying "image", so no picture reached the page or any export.
+ */
+describe('a picture box in the Preview', () => {
+  // A 2-by-1-pixel PNG at 96 dpi: IHDR only, enough for its header to be read.
+  const png = (() => {
+    const b = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 2, 0, 0, 0, 1, 8, 2, 0, 0, 0, 0, 0, 0, 0];
+    return btoa(String.fromCharCode(...b));
+  })();
+  const pictured = (attrs: string) => `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Pictured" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />
+    <Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="120"><Controls><Item1 Ref="4" ControlType="XRPictureBox" Name="logo" LocationFloat="0,0" SizeF="200,100" ${attrs} /></Controls></Item2>
+    <Item3 Ref="5" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+
+  it('draws a zoomed image fitted in its box, centred, as a picture the exports take', () => {
+    const { container } = render(<ReportPreview repxContent={pictured(`Sizing="ZoomImage" ImageSource="img,${png}"`)} layout={null} title="Pictured" />);
+    const svg = container.querySelector('svg[role="img"][aria-label="logo"]')!;
+    const image = svg.querySelector('image')!;
+    expect(image.getAttribute('href')).toBe(`data:image/png;base64,${png}`);
+    // 2:1 in a 200 by 100 box: the full box, no room either way.
+    expect(Number(image.getAttribute('width'))).toBeCloseTo(Number(svg.getAttribute('width')), 3);
+    expect(Number(image.getAttribute('y'))).toBeCloseTo(0, 3);
+  });
+
+  it('keeps a dashed box naming what it would show when it has no image of its own', () => {
+    render(<ReportPreview repxContent={pictured('ImageUrl="https://example.com/logo.png"')} layout={null} title="Pictured" />);
+    expect(screen.getByText('image from a URL')).toBeTruthy();
+  });
+});
+
+/*
  * A label's Angle turns its text (parity row 49). DevExpress aligned the turned
  * text's bounding box in the label's box by TextAlignment (s35): at 90 degrees
  * a line reads upwards, so its box is a line tall across and its length down.

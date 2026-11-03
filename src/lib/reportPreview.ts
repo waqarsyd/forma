@@ -38,6 +38,7 @@
 
 import { formatComposite, formatDate, toRoman } from './netFormat';
 import { pxToUnits, unitsPerInch } from './reportGeometry';
+import { parsePicture, type PreviewPicture } from './pictureBox';
 import { GROW_EXTRA_PT, lineSpacingPt, linesHeightPt, type FontSpec, type MeasureText } from './textMeasure';
 import { ReportData, aggregate, groupRuns, sortCompare, sortedOrder, valueText, type CalculatedField, type TextData, type TextScope, type TypedRow } from './reportData';
 import { parseParameters, type ReportParameter } from './repxParameters';
@@ -433,6 +434,11 @@ export interface PreviewControl {
    * real answer rather than a missing one.
    */
   shape: string | null;
+  /**
+   * Populated for XRPictureBox only (2026-11-04): its image and how it sits in
+   * the box, measured from DevExpress's own print. See lib/pictureBox.ts.
+   */
+  picture?: PreviewPicture | null;
   offsetX: number;
   offsetY: number;
   /**
@@ -1765,6 +1771,7 @@ function parseControls(
        * as "no shape" would draw nothing where DevExpress draws a circle.
        */
       shape: type === 'XRShape' ? parseShapeName(inner, item.start, extent) : null,
+      ...(type === 'XRPictureBox' ? { picture: parsePicture((name) => attrOf(item.attrs, name)) } : {}),
       meter:
         type === 'XRGauge' || type === 'XRSparkline'
           ? parseMeter(type, item.attrs, inner.slice(item.start, extent))

@@ -51,6 +51,7 @@ import {
 import { parseParameters } from '../lib/repxParameters';
 import { readBoundFields } from '../lib/repxBindingPlan';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
+import { naturalSize, pictureRect } from '../lib/pictureBox';
 import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt } from '../lib/textMeasure';
 import { exportFileName, layoutContinuous, reportToCsv } from '../lib/csvExport';
 import { reportToXlsxFiles, xlsxOptionsOf } from '../lib/xlsxExport';
@@ -356,9 +357,44 @@ function ControlBox({
   }
 
   if (control.type === 'XRPictureBox') {
+    /*
+     * The picture as DevExpress 20.1 prints it (2026-11-04; lib/pictureBox.ts
+     * holds the measured rules). An SVG the size of the box, so an image larger
+     * than it is clipped as the print clips it, and `role="img"` so the PDF,
+     * image, RTF, DOCX and HTML exports take it from the page as they take a
+     * chart. A picture with no image here (one bound to data, one at a URL a
+     * page cannot rely on loading) keeps the dashed box, saying which.
+     */
+    const pic = control.picture;
+    const bound = control.bindings?.find((b) => b.property === 'ImageSource' || b.property === 'ImageUrl');
+    if (!pic?.source) {
+      return (
+        <div style={{ ...frame, border: '1px dashed #999', color: '#777', fontSize: '7pt', justifyContent: 'center' }}>
+          {bound ? bound.expression : pic?.url ? 'image from a URL' : 'image'}
+        </div>
+      );
+    }
+    const natural = naturalSize(pic.source, pic.useImageResolution, unit);
+    const box = { w: control.width, h: placed.height };
+    const r = pictureRect(box, natural, pic.sizing, pic.alignment);
+    const size = pic.sizing === 'AutoSize' && natural ? natural : box;
+    const tileId = `pic-tile-${control.openStart}`;
     return (
-      <div style={{ ...frame, border: '1px dashed #999', color: '#777', fontSize: '7pt', justifyContent: 'center' }}>
-        image
+      <div style={{ ...frame, width: u(size.w), height: u(size.h), display: 'block', padding: 0 }}>
+        <svg role="img" aria-label={control.name || 'picture'} width={u(size.w)} height={u(size.h)} style={{ display: 'block' }}>
+          {r.tile ? (
+            <>
+              <defs>
+                <pattern id={tileId} patternUnits="userSpaceOnUse" width={u(r.w)} height={u(r.h)}>
+                  <image href={pic.source.dataUrl} width={u(r.w)} height={u(r.h)} preserveAspectRatio="none" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill={`url(#${tileId})`} />
+            </>
+          ) : (
+            <image href={pic.source.dataUrl} x={u(r.x)} y={u(r.y)} width={u(r.w)} height={u(r.h)} preserveAspectRatio="none" />
+          )}
+        </svg>
       </div>
     );
   }
