@@ -299,9 +299,10 @@ describe('notices', () => {
 
 /*
  * One box for everything (2026-11-01): the Describe-a-report and OCR buttons
- * went into it. An image's text is read as it is attached, its chip saying
- * how far it has got and opening the review once read; the send waits for
- * the reading, as any chat's waits for an upload; a pasted image is attached.
+ * went into it, and a pasted image is attached. Since 2026-11-03 an attached
+ * image's chip shows the file and nothing else, and the send is never held
+ * for it: its text is read after the message goes, behind the scenes, as the
+ * owner asked for the chat to work like other chat apps.
  */
 describe('one chat box', () => {
   const group = (file: string, i: number): AttachmentGroup => ({ file, indices: [i], pages: 1 });
@@ -314,21 +315,16 @@ describe('one chat box', () => {
     expect(screen.queryByLabelText('Read text with OCR')).toBeNull();
   });
 
-  it('shows each image\'s reading on its chip, and holds the send until it is read', () => {
-    withImage({ ocrStatus: { u1: { state: 'reading', progress: 0.42 } } });
-    expect(screen.getByText('Reading text 42%')).toBeTruthy();
-    expect(send().disabled).toBe(true);
-    expect(send().title).toBe('Reading the text of your image…');
-    cleanup();
-    const onReviewOcr = vi.fn();
-    withImage({ ocrStatus: { u1: { state: 'done', lines: 12, flagged: 2 } }, onReviewOcr });
+  it("shows an attached image as the file alone, and sends it at once", () => {
+    const onSend = vi.fn();
+    withImage({ onSend });
+    const chip = document.querySelector('.wb-attach--file') as HTMLElement;
+    expect(chip.textContent).toBe('scan.png');
+    expect(chip.querySelectorAll('button')).toHaveLength(2);
+    expect(screen.queryByText(/Reading text|Text read|Text not read/)).toBeNull();
     expect(send().disabled).toBe(false);
-    fireEvent.click(screen.getByText('Text read, 2 unsure'));
-    expect(onReviewOcr).toHaveBeenCalledWith('u1');
-    cleanup();
-    withImage({ ocrStatus: { u1: { state: 'failed' } } });
-    expect(send().disabled).toBe(false);
-    expect((screen.getByText('Text not read').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(send());
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 
   it('attaches an image pasted into the box, and leaves pasted text alone', () => {

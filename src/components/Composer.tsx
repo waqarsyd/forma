@@ -32,18 +32,8 @@ import {
   IconClose,
   IconDoc,
   IconPaperclip,
-  IconScan,
   IconWarn,
 } from './landing/icons';
-
-/**
- * Where reading an image's text has got to (OCR, 2026-11-01): it starts the
- * moment a page with only pixels is attached, so the chip says so.
- */
-export type OcrChipState =
-  | { state: 'reading'; progress: number }
-  | { state: 'done'; lines: number; flagged: number }
-  | { state: 'failed' };
 
 /** A staged text-only upload — a `.repx`, or a PDF whose pages did not render. */
 export interface TextAttachmentGroup extends AttachmentGroup {
@@ -80,10 +70,6 @@ export interface ComposerProps {
   onAddKey: () => void;
   /** Files pasted into the box, as a drop or a pick would bring them. */
   onPasteFiles?: (files: File[]) => void;
-  /** Reading each image's text, by upload; absent for uploads with none to read. */
-  ocrStatus?: Readonly<Record<string, OcrChipState>>;
-  /** Opens the review of what was read in one upload, from which a report can be built with no model. */
-  onReviewOcr?: (uploadId: string) => void;
 }
 
 export default function Composer({
@@ -108,8 +94,6 @@ export default function Composer({
   isIngesting,
   onAddKey,
   onPasteFiles,
-  ocrStatus,
-  onReviewOcr,
 }: ComposerProps) {
   /*
    * One condition, read by the button *and* the keyboard.
@@ -127,12 +111,11 @@ export default function Composer({
    * `isChatting` is new here for the same reason: the button never had it, so a
    * chat turn in flight left the control fully live.
    */
-  // Reading an image's text holds the send, as an upload in flight does in
-  // any chat: the text goes with the message, so the message waits for it.
-  const reading = Object.values(ocrStatus ?? {}).some((s) => s.state === 'reading');
   // With no key the box still sends (2026-11-02): Forma's own model designs
   // from words and OCR builds from images, so the key unlocks AI, not the box.
-  const canSend = !isAnalyzing && !isChatting && !isIngesting && !reading;
+  // Nothing about an attachment holds the send (2026-11-03): its text is read
+  // after the message goes, as a step of the run, not while it is written.
+  const canSend = !isAnalyzing && !isChatting && !isIngesting;
 
   /*
    * Sending puts the caret back in the field, and this is not a nicety.
@@ -173,7 +156,11 @@ export default function Composer({
           {/* One chip per file the user dropped. A 5-page PDF is five
               images underneath — the model needs a page each — but showing
               five thumbnails for one upload reads as the product having
-              mangled the file. Pages are reachable inside the viewer. */}
+              mangled the file. Pages are reachable inside the viewer.
+              The chip shows the file and nothing else (2026-11-03): the
+              owner asked for the chat to work as other chat apps do, with
+              every step behind the scenes once the message is sent. Until
+              then it showed OCR reading the page as it was attached. */}
           {previewGroups.map((group) => {
             const label = groupLabel(group);
             const first = group.indices[0];
@@ -191,28 +178,6 @@ export default function Composer({
                   <span className="wb-attach-name">{group.file}</span>
                   {group.pages > 1 && <span className="wb-attach-count">{group.pages} pages</span>}
                 </button>
-                {uploadId && ocrStatus?.[uploadId] && (() => {
-                  const s = ocrStatus[uploadId];
-                  const text =
-                    s.state === 'reading'
-                      ? `Reading text ${Math.round(s.progress * 100)}%`
-                      : s.state === 'done'
-                        ? s.flagged ? `Text read, ${s.flagged} unsure` : 'Text read'
-                        : 'Text not read';
-                  return (
-                    <button
-                      type="button"
-                      className={`wb-attach-ocr${s.state === 'done' && s.flagged ? ' is-unsure' : ''}${s.state === 'failed' ? ' is-failed' : ''}`}
-                      onClick={() => onReviewOcr?.(uploadId)}
-                      disabled={s.state !== 'done' || !onReviewOcr}
-                      title={s.state === 'done' ? 'See what was read, over the image, and build a report from it with no model' : s.state === 'failed' ? 'The text could not be read; the image still goes with your message' : 'Reading the text of this image, in your browser'}
-                      aria-live="polite"
-                    >
-                      <IconScan size={11} />
-                      {text}
-                    </button>
-                  );
-                })()}
                 <button
                   onClick={() => onRemoveFile(group.indices, uploadId)}
                   title={`Remove ${label}`}
@@ -320,7 +285,6 @@ export default function Composer({
              it straight to onClick passes the click event as the prompt. */
           onClick={sendAndKeepFocus}
           disabled={!canSend}
-          title={reading ? 'Reading the text of your image…' : undefined}
         >
           <IconArrowUp size={15} />
         </button>

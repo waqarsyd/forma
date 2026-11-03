@@ -1658,17 +1658,11 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .wb-ocr-scroll { max-width: 100%; overflow-x: auto; }
 
 /* ------------------------------------------------------------ one chat box
-   2026-11-01. Describe-a-report and OCR folded into the composer: an image's
-   text is read as it is attached, its state on its chip; a description's open
-   questions are a form in the thread; an empty thread offers starting points. */
-.wb-attach-ocr {
-  display: inline-flex; align-items: center; gap: 4px; flex: none;
-  padding: 1px 7px; border: 0; border-radius: 999px;
-  background: var(--ok-wash); color: var(--ok-ink); font-size: 9.5px; letter-spacing: .02em; cursor: pointer;
-}
-.wb-attach-ocr:disabled { cursor: default; background: var(--accent-wash); color: var(--ink-2); }
-.wb-attach-ocr.is-unsure { background: var(--bad-wash); color: var(--bad-ink); }
-.wb-attach-ocr.is-failed { background: var(--panel-2); color: var(--ink-faint); }
+   2026-11-01. Describe-a-report and OCR folded into the composer: a
+   description's open questions are a form in the thread; an empty thread
+   offers starting points. An image's text is read after the message is sent
+   (2026-11-03); its reading showed on its chip until then, in the
+   .wb-attach-ocr rules removed that day. */
 .wb-clarify { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .wb-clarify-q { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
 .wb-clarify .wb-pill { align-self: flex-start; }

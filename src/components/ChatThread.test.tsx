@@ -453,3 +453,27 @@ describe('a report described in the chat', () => {
     expect((screen.getByText('Build the report') as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+/*
+ * The reading behind the scenes (2026-11-03): an image's text is read after
+ * the message is sent, the placeholder saying so, and a reply built from that
+ * text offers its review, which the attachment's chip offered until then.
+ */
+describe('the text read behind the scenes', () => {
+  it('says what it is reading in the reply placeholder', () => {
+    draw({ isChatting: true, streamingReply: 'Reading the text on your page… 40%' });
+    expect(screen.getByText('Reading the text on your page… 40%')).toBeTruthy();
+  });
+
+  it('offers the review of what was read from the reply built from it, for the pages still in hand', () => {
+    const onReviewText = vi.fn();
+    const built = msg({ id: 'b', role: 'assistant', text: 'Built "scan" from the text OCR read.', reviewText: ['u1', 'u2'] });
+    draw({ messages: [built], onReviewText, reviewable: new Set(['u1']) });
+    fireEvent.click(screen.getByText('Review the text read'));
+    expect(onReviewText).toHaveBeenCalledWith('u1');
+    cleanup();
+    // A reloaded conversation keeps the reply, not the pages: nothing to review.
+    draw({ messages: [built], onReviewText, reviewable: new Set() });
+    expect(screen.queryByText(/Review the text read/)).toBeNull();
+  });
+});

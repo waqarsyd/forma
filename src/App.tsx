@@ -236,7 +236,6 @@ import LogoPulse from './components/LogoPulse';
 import ChatThread from './components/ChatThread';
 import Composer from './components/Composer';
 import type { OcrBuiltReport } from './components/OcrDialog';
-import type { OcrChipState } from './components/Composer';
 import type { ReadPage } from './lib/ocrAttach';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
@@ -1918,6 +1917,8 @@ export default function App() {
   const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
   /** The run's team input (lib/formaTeam.ts), kept for a resume like the rest. */
   const activeTeamRef = useRef<TeamInput | undefined>(undefined);
+  /** What a part of Forma's team is doing before the AI is asked, for the progress card; null when nothing. */
+  const [teamStage, setTeamStage] = useState<string | null>(null);
   /**
    * AI-generated sample rows for the Preview, keyed by bound field. Null is
    * the one-placeholder-record preview. Cleared whenever the set of bound
@@ -2709,67 +2710,89 @@ export default function App() {
   }, [previews, previewMeta, attachmentTexts]);
 
   /*
-   * Reading starts as a page is attached (2026-11-01), one page at a time,
-   * since the engine is one worker. The owner asked for a chat box that takes
-   * every input as other chat apps do, so there is no OCR button any more: an
-   * image's text is read in the browser while the message is being written,
-   * and goes with it. The engine and its layout code load only now.
+   * An image's text is read after the message is sent (2026-11-03), one page
+   * at a time, since the engine is one worker. The owner asked for the chat to
+   * work as other chat apps do: attaching a file shows the file, and the rest
+   * happens behind the scenes once the message goes. From 2026-11-01 reading
+   * began as a page was attached, its chip showing "Reading text 36%" and
+   * holding the send until it finished. Now it is a step of the run, which the
+   * reply says ("Reading the text on your page…"), still in the browser, so an
+   * upload never leaves it. A page read once is not read again: a retry or a
+   * second message reuses its reading. The engine loads only when needed.
    */
-  type OcrRun = { state: 'reading'; progress: number } | { state: 'done'; read: ReadPage } | { state: 'failed' };
+  type OcrRun = { state: 'done'; read: ReadPage } | { state: 'failed' };
   const [ocrRuns, setOcrRuns] = useState<Record<string, OcrRun>>({});
-  const ocrStarted = useRef(new Set<string>());
-  const ocrQueue = useRef<Promise<void>>(Promise.resolve());
+  /** Each page's reading by key, for this session: null when it could not be read. */
+  const ocrRead = useRef<Record<string, ReadPage | null>>({});
   const ocrKey = (meta: PreviewMeta) => `${meta.uploadId}#${meta.page ?? 0}`;
-  useEffect(() => {
-    for (const { src, meta } of ocrPages) {
+
+  /** Read the pages' text, reporting which page is being read and how far it has got. */
+  const readPages = async (
+    pages: readonly { src: string; meta: PreviewMeta }[],
+    onProgress?: (page: number, of: number, progress: number) => void,
+  ): Promise<{ meta: PreviewMeta; read: ReadPage }[]> => {
+    const out: { meta: PreviewMeta; read: ReadPage }[] = [];
+    for (const [i, { src, meta }] of pages.entries()) {
       const key = ocrKey(meta);
-      if (ocrStarted.current.has(key)) continue;
-      ocrStarted.current.add(key);
-      setOcrRuns((runs) => ({ ...runs, [key]: { state: 'reading', progress: 0 } }));
-      ocrQueue.current = ocrQueue.current.then(async () => {
+      let read = ocrRead.current[key];
+      if (read === undefined) {
         try {
           const { readPage } = await import('./lib/ocrAttach');
-          const read = await readPage(src, meta, config.unit, config.pageSize, (progress) =>
-            setOcrRuns((runs) => (runs[key]?.state === 'reading' ? { ...runs, [key]: { state: 'reading', progress } } : runs)),
-          );
-          setOcrRuns((runs) => ({ ...runs, [key]: { state: 'done', read } }));
+          read = await readPage(src, meta, config.unit, config.pageSize, (progress) => onProgress?.(i, pages.length, progress));
         } catch (err) {
           // The image still goes with the message; only its text does not.
           console.warn(`The text of ${meta.file} could not be read:`, err);
-          setOcrRuns((runs) => ({ ...runs, [key]: { state: 'failed' } }));
+          read = null;
         }
-      });
-    }
-  }, [ocrPages, config.unit, config.pageSize]);
-
-  /** Each staged upload's reading, for its chip: still reading, read, or not read. */
-  const ocrStatus = useMemo(() => {
-    const out: Record<string, OcrChipState> = {};
-    for (const { meta } of ocrPages) {
-      const run = ocrRuns[ocrKey(meta)];
-      if (!run) continue;
-      const prev = out[meta.uploadId];
-      if (run.state === 'reading') {
-        out[meta.uploadId] = { state: 'reading', progress: prev?.state === 'reading' ? Math.min(prev.progress, run.progress) : run.progress };
-      } else if (prev?.state === 'reading') {
-        continue;
-      } else if (run.state === 'done') {
-        out[meta.uploadId] = prev?.state === 'done'
-          ? { state: 'done', lines: prev.lines + run.read.lines, flagged: prev.flagged + run.read.flagged }
-          : { state: 'done', lines: run.read.lines, flagged: run.read.flagged };
-      } else if (!prev) {
-        out[meta.uploadId] = { state: 'failed' };
+        ocrRead.current[key] = read;
+        const settled = read;
+        setOcrRuns((runs) => ({ ...runs, [key]: settled ? { state: 'done', read: settled } : { state: 'failed' } }));
       }
+      if (read) out.push({ meta, read });
     }
     return out;
-  }, [ocrPages, ocrRuns]);
+  };
+
+  /** Pages sent with a message, by upload, so what was read in them can be reviewed from a reply. */
+  const [sentPages, setSentPages] = useState<Record<string, { src: string; meta: PreviewMeta }[]>>({});
+  const reviewable = useMemo(
+    () => new Set(Object.entries(sentPages).filter(([, pages]) => pages.some(({ meta }) => ocrRuns[ocrKey(meta)]?.state === 'done')).map(([id]) => id)),
+    [sentPages, ocrRuns],
+  );
+
+  /** What the reply says while pages are read. */
+  const readingNote = (page: number, of: number, progress: number) =>
+    `Reading the text on your page${of > 1 ? `s (${page + 1} of ${of})` : ''}… ${Math.round(progress * 100)}%`;
+
+  /**
+   * Read the staged pages behind the scenes, after the message is in the
+   * thread: the reply placeholder says how far it has got, and the composer
+   * is held as for any reply. The pages are kept for the review a reply built
+   * from their text offers.
+   */
+  const readSentPages = async (pages: readonly { src: string; meta: PreviewMeta }[]) => {
+    if (!pages.length) return [];
+    setSentPages((prev) => {
+      const next = { ...prev };
+      for (const p of pages) next[p.meta.uploadId] = [...(next[p.meta.uploadId] ?? []).filter((q) => ocrKey(q.meta) !== ocrKey(p.meta)), p];
+      return next;
+    });
+    setIsChatting(true);
+    setStreamingReply(readingNote(0, pages.length, 0));
+    try {
+      return await readPages(pages, (page, of, progress) => setStreamingReply(readingNote(page, of, progress)));
+    } finally {
+      setIsChatting(false);
+      setStreamingReply('');
+    }
+  };
 
   /** The upload whose reading is being reviewed, over its image, with Build .repx. */
   const [ocrReview, setOcrReview] = useState<string | null>(null);
-  const ocrReviewPages = useMemo(() => ocrPages.filter(({ meta }) => meta.uploadId === ocrReview), [ocrPages, ocrReview]);
+  const ocrReviewPages = useMemo(() => (ocrReview ? sentPages[ocrReview] ?? [] : []), [sentPages, ocrReview]);
 
   /** A report built from OCR alone: every pane, a revision, and a line in the thread. */
-  const handleOcrBuild = (built: OcrBuiltReport) => {
+  const handleOcrBuild = (built: OcrBuiltReport, uploads?: string[]) => {
     const newResult: DesignResult = {
       content: built.markdown,
       timestamp: new Date(),
@@ -2790,16 +2813,13 @@ export default function App() {
       role: 'assistant',
       text: `Built "${built.title}" from the text OCR read, with no model involved.${unsure}`,
       result: newResult,
+      ...(uploads?.length ? { reviewText: uploads } : {}),
     }]);
     setOcrReview(null);
   };
 
-  /** The text read from the staged pages, as attachments for the message being sent. */
-  const ocrAttachments = async (pages: readonly { meta: PreviewMeta }[]): Promise<TextAttachment[]> => {
-    const read = pages.flatMap(({ meta }) => {
-      const run = ocrRuns[ocrKey(meta)];
-      return run?.state === 'done' ? [{ meta, read: run.read }] : [];
-    });
+  /** The text read from the sent pages, as attachments for the message. */
+  const ocrAttachments = async (read: readonly { meta: PreviewMeta; read: ReadPage }[]): Promise<TextAttachment[]> => {
     if (!read.length) return [];
     const { ocrTexts } = await import('./lib/ocrAttach');
     const stamp = Date.now();
@@ -3324,7 +3344,8 @@ export default function App() {
           import('./lib/formaTeam'),
         ]);
         const first = input.firstImage.meta;
-        const reading = await readSkeleton(vision, input.firstImage.src, signal);
+        setTeamStage("Forma's vision model is reading the layout");
+        const reading = await readSkeleton(vision, input.firstImage.src, signal).finally(() => setTeamStage(null));
         if (!reading.skeleton) throw new Error('its answer had no page line');
         const paper = reading.skeleton.paper === 'Custom' ? config.pageSize : reading.skeleton.paper;
         const page = input.read.find(({ meta }) => meta.uploadId === first.uploadId && (meta.page ?? 0) === (first.page ?? 0));
@@ -3563,11 +3584,13 @@ export default function App() {
             setResult(made.result);
             recordRevision("Forma's own draft", made.result);
             setActiveTab('ui');
+            const uploads = made.source !== 'offline' ? [...new Set((teamInput?.read ?? []).map(({ meta }) => meta.uploadId))] : [];
             setMessages(prev => [...prev, {
               id: nextMessageId(),
               role: 'assistant',
               text: fallbackReply(aiName, err?.message || friendlyMessage, made.source),
               result: made.result,
+              ...(uploads.length ? { reviewText: uploads } : {}),
             }]);
             return;
           }
@@ -3681,15 +3704,13 @@ export default function App() {
     const say = (text: string, attached?: DesignResult) =>
       setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text, ...(attached ? { result: attached } : {}) }]);
     try {
-      const read = stagedForOcr.flatMap(({ meta }) => {
-        const run = ocrRuns[ocrKey(meta)];
-        return run?.state === 'done' ? [{ meta, read: run.read }] : [];
-      });
+      // Read behind the scenes, with the message already in the thread (2026-11-03).
+      const read = await readSentPages(stagedForOcr);
       if (read.length) {
         const { buildFromRead } = await import('./lib/ocrAttach');
         const built = buildFromRead(read, config.unit, config.pageSize);
         if (built) {
-          handleOcrBuild(built);
+          handleOcrBuild(built, [...new Set(read.map(({ meta }) => meta.uploadId))]);
           return;
         }
       }
@@ -3732,10 +3753,7 @@ export default function App() {
   const designFromVision = async (message: string) => {
     const staged = [...previews];
     const stagedMeta = [...previewMeta];
-    const read = ocrPages.flatMap(({ meta }) => {
-      const run = ocrRuns[ocrKey(meta)];
-      return run?.state === 'done' ? [{ meta, read: run.read }] : [];
-    });
+    const stagedForOcr = ocrPages;
     setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: message, images: staged, imageMeta: stagedMeta }]);
     setPrompt('');
     setPreviews([]);
@@ -3745,7 +3763,7 @@ export default function App() {
     setError(null);
     const say = (text: string, attached?: DesignResult) =>
       setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text, ...(attached ? { result: attached } : {}) }]);
-    setIsChatting(true);
+    let read: { meta: PreviewMeta; read: ReadPage }[] = [];
     try {
       const [{ readSkeleton }, { skeletonToDesign, pageTextsOf }, { detectLayout }, { pageForImage }] = await Promise.all([
         import('./services/formaVision'),
@@ -3754,8 +3772,19 @@ export default function App() {
         import('./lib/reportGeometry'),
       ]);
       const vision = visionModelOf(config);
-      if (!vision) throw new Error('no vision model is set up');
-      const reading = await readSkeleton(vision, staged[0]);
+      // The page's layout and its text are read at the same time, behind the
+      // scenes, the message already in the thread (2026-11-03). The model's
+      // answer is settled into a value so that a failure while the text is
+      // still being read is not an unhandled rejection.
+      const looking = vision
+        ? readSkeleton(vision, staged[0]).then((r) => ({ reading: r }), (e: unknown) => ({ failed: e }))
+        : Promise.resolve({ failed: new Error('no vision model is set up') });
+      read = await readSentPages(stagedForOcr);
+      setIsChatting(true);
+      setStreamingReply("Forma's vision model is reading the layout…");
+      const looked = await looking;
+      if ('failed' in looked) throw looked.failed;
+      const reading = looked.reading;
       if (!reading.skeleton) throw new Error('its answer had no page line');
       // The words OCR read on the same page, in the skeleton's unit and on its paper.
       const first = stagedMeta[0];
@@ -3791,13 +3820,14 @@ export default function App() {
         const built = buildFromRead(read, config.unit, config.pageSize);
         if (built) {
           say(`Forma's vision model could not read the page (${why}), so the report was built from the text OCR read.`);
-          handleOcrBuild(built);
+          handleOcrBuild(built, [...new Set(read.map(({ meta }) => meta.uploadId))]);
           return;
         }
       }
       say(`Forma's vision model could not read the page: ${why}.`);
     } finally {
       setIsChatting(false);
+      setStreamingReply('');
     }
   };
 
@@ -3867,18 +3897,11 @@ export default function App() {
     // composer is cleared below; their text joins the attachments after.
     const stagedForOcr = ocrPages;
     // What Forma's own parts need for a picture (lib/formaTeam.ts), captured
-    // before the composer is cleared: the pages OCR read, and the first page
-    // for the vision model when it is an image rather than a PDF.
+    // before the composer is cleared: the first page for the vision model,
+    // when it is an image rather than a PDF. The pages OCR reads join it
+    // once they are read, after the message is in the thread.
     const stagedMeta = [...previewMeta];
-    const teamInput: TeamInput | undefined = currentPreviews.length > 0
-      ? {
-          read: stagedForOcr.flatMap(({ meta }) => {
-            const run = ocrRuns[ocrKey(meta)];
-            return run?.state === 'done' ? [{ meta, read: run.read }] : [];
-          }),
-          firstImage: currentPreviews[0]?.startsWith('data:image/') && stagedMeta[0] ? { src: currentPreviews[0], meta: stagedMeta[0] } : undefined,
-        }
-      : undefined;
+    const firstImage = currentPreviews[0]?.startsWith('data:image/') && stagedMeta[0] ? { src: currentPreviews[0], meta: stagedMeta[0] } : undefined;
 
     // Add user message
     const newUserMsg: ChatMessage = {
@@ -3896,11 +3919,14 @@ export default function App() {
     setAttachmentTexts([]);
     setUploadNotices([]);
 
-    // What OCR read from the attached images goes with them, as a PDF's text
-    // layer does (2026-11-01). The send waited for the reading to finish.
-    const readByOcr = await ocrAttachments(stagedForOcr);
+    // What OCR reads from the attached images goes with them, as a PDF's text
+    // layer does (2026-11-01). It is read now, behind the scenes, with the
+    // message already in the thread (2026-11-03).
+    const read = await readSentPages(stagedForOcr);
+    const readByOcr = await ocrAttachments(read);
     const currentTexts = [...attachmentTexts, ...readByOcr];
     if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
+    const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage } : undefined;
 
     /*
      * A reply to the questions a description is waiting on. Typed into the
@@ -4814,6 +4840,8 @@ export default function App() {
             onAnswer={handleClarifyAnswers}
             suggestions={PREDEFINED_PROMPTS}
             onSuggest={setPrompt}
+            onReviewText={setOcrReview}
+            reviewable={reviewable}
           >
             {/* Generation. The ring around the mark *is* the progress bar — same
                 `analyzingProgress`, same guarantee that it only ever reports
@@ -4832,7 +4860,7 @@ export default function App() {
                 </b>
                 {/* stepLabel always names a step, so the `||` fallback this
                     used to carry is gone rather than dead. */}
-                <span className="wb-stage">{stepLabel(progress)}</span>
+                <span className="wb-stage">{teamStage ?? stepLabel(progress)}</span>
                 <span className="wb-metrics">
                   <b>{Math.round(progress.percent)}%</b>
                   {progress.streamChars > 0 && (
@@ -4888,8 +4916,6 @@ export default function App() {
             isIngesting={isIngesting}
             onAddKey={() => setIsConfigOpen(true)}
             onPasteFiles={ingestFiles}
-            ocrStatus={ocrStatus}
-            onReviewOcr={setOcrReview}
           />
         </div>
 
@@ -5349,8 +5375,9 @@ export default function App() {
       </div>
 
       {/* =========================================================== modals */}
-      {/* What was read from one attached upload, over its image: opened from
-          the chip, the pages already read, Build .repx with no model. */}
+      {/* What was read from one sent upload, over its image: opened from a
+          reply built from that text (2026-11-03; from the attachment's chip
+          until then), the pages already read, Build .repx with no model. */}
       {ocrReview && ocrReviewPages.length > 0 && (
         <Suspense fallback={null}>
           <OcrDialog

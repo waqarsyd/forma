@@ -61,6 +61,13 @@ export interface ChatThreadProps<R> {
    */
   suggestions?: readonly { id: string; title: string; text: string }[];
   onSuggest?: (text: string) => void;
+  /**
+   * Opens the review of what OCR read in one upload (2026-11-03), from a reply
+   * built from that text (`ChatMessage.reviewText`). Only the uploads in
+   * `reviewable` are offered: the pages of a reloaded conversation are gone.
+   */
+  onReviewText?: (uploadId: string) => void;
+  reviewable?: ReadonlySet<string>;
   /** The generation progress card, rendered after the transcript. */
   children?: ReactNode;
 }
@@ -133,12 +140,17 @@ const ChatNote = memo(function ChatNote<R>({
   onRetry,
   onOpenAttachment,
   onAnswer,
+  review,
+  onReviewText,
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
+  /** The uploads this reply can open the review of, one per line: a string, so the memo holds. */
+  review?: string;
+  onReviewText?: (uploadId: string) => void;
 }) {
   return (
     <article className={`wb-note${message.role === 'user' ? ' wb-note--me' : ''}`}>
@@ -148,6 +160,21 @@ const ChatNote = memo(function ChatNote<R>({
         {message.text && <p>{message.text}</p>}
         {message.clarify && !message.clarify.answered && onAnswer && (
           <ClarifyForm id={message.id} questions={message.clarify.questions} disabled={retryDisabled} onAnswer={onAnswer} />
+        )}
+        {review && onReviewText && (
+          <div className="wb-chips">
+            {review.split('\n').map((uploadId, i, all) => (
+              <button
+                key={uploadId}
+                type="button"
+                className="wb-pill wb-pill--outline"
+                onClick={() => onReviewText(uploadId)}
+                title="See what was read, over the image, and build a report from it with no model"
+              >
+                {all.length > 1 ? `Review the text read (${i + 1})` : 'Review the text read'}
+              </button>
+            ))}
+          </div>
         )}
 
         {message.images && message.images.length > 0 && (
@@ -199,6 +226,8 @@ const ChatNote = memo(function ChatNote<R>({
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
+  review?: string;
+  onReviewText?: (uploadId: string) => void;
 }) => React.ReactElement;
 
 export default function ChatThread<R>({
@@ -211,6 +240,8 @@ export default function ChatThread<R>({
   onAnswer,
   suggestions,
   onSuggest,
+  onReviewText,
+  reviewable,
   children,
 }: ChatThreadProps<R>) {
   /*
@@ -223,14 +254,15 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer });
-  latest.current = { onRetry, onOpenAttachment, onAnswer };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onReviewText });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onReviewText };
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
   const openAttachment = useCallback(
     (view: AttachmentView) => latest.current.onOpenAttachment(view),
     []
   );
   const answer = useCallback((id: string, answers: ClarifyAnswer[]) => latest.current.onAnswer?.(id, answers), []);
+  const reviewText = useCallback((uploadId: string) => latest.current.onReviewText?.(uploadId), []);
 
   const retryDisabled = isChatting || isAnalyzing;
 
@@ -282,8 +314,8 @@ export default function ChatThread<R>({
           <div>
             <div className="wb-who">Forma</div>
             <p>
-              Attach an image, a scan, a PDF or a .repx, describe the report you want, or both. An image's text is
-              read as you attach it, and a description gets a question or two when it leaves something open.
+              Attach an image, a scan, a PDF or a .repx, describe the report you want, or both, and send. The rest
+              happens behind the scenes, and a description gets a question or two when it leaves something open.
             </p>
             <div className="wb-chips" role="group" aria-label="Start from a description">
               {suggestions.map((s) => (
@@ -303,6 +335,8 @@ export default function ChatThread<R>({
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}
+          review={msg.reviewText?.filter((id) => reviewable?.has(id)).join('\n') || undefined}
+          onReviewText={onReviewText ? reviewText : undefined}
         />
       ))}
 

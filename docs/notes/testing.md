@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,227 tests in 112 files** — under the `node` environment
+`npm test` runs Vitest over **2,229 tests in 112 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -78,8 +78,8 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 |---|---:|---|
 | `components/AccountDialog` | 23 | jsdom |
 | `components/BatchPanel` | 11 | jsdom |
-| `components/ChatThread` | 30 | jsdom; since 2026-11-01 also the predefined descriptions an empty conversation starts from, and a description's questions asked as a form holding their suggestions |
-| `components/Composer` | 34 | jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box: one test now sends with no key, to Forma's own model); the one chat box (2026-11-01): no separate Describe or OCR button, each image's reading on its chip with the send held until it is read, a pasted image attached |
+| `components/ChatThread` | 32 | jsdom; since 2026-11-01 also the predefined descriptions an empty conversation starts from, and a description's questions asked as a form holding their suggestions; since 2026-11-03 the placeholder saying what is being read behind the scenes, and a reply built from the text offering its review only for pages still in hand |
+| `components/Composer` | 34 | jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box: one test now sends with no key, to Forma's own model); the one chat box (2026-11-01): no separate Describe or OCR button, an attached image shown as the file alone and sent at once, its text read after the message goes (2026-11-03; until then its reading showed on its chip and held the send), a pasted image attached |
 | `components/DataBinding` | 18 | jsdom |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
@@ -189,7 +189,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,227 in 112 files** — and that total is the arithmetic sum of the column above
+**Total: 2,229 in 112 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -203,7 +203,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2,109** against a real 2,227 and will talk you into
+A grep for `\bit(` answers **2,111** against a real 2,229 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
