@@ -43,6 +43,7 @@ static class Program {
             Console.WriteLine("    emit-group     group bands, GroupFields, group subtotal");
             Console.WriteLine("    emit-params    parameters and the ObjectStorage block");
             Console.WriteLine("    emit-chart     XRChart series and diagram");
+            Console.WriteLine("    emit-chart-titles  a chart's title, axis titles and legend, read back after loading");
             Console.WriteLine("    emit-gauge     XRGauge");
             Console.WriteLine("    emit-comb      checkbox and comb");
             Console.WriteLine("    emit-container panel, subreport, shapes");
@@ -72,6 +73,7 @@ static class Program {
                 case "emit-group": EmitGroup(args[1]); return 0;
                 case "emit-params": EmitParams(args[1]); return 0;
                 case "emit-chart": EmitChart(args[1]); return 0;
+                case "emit-chart-titles": EmitChartTitles(args[1]); return 0;
             case "emit-grow":  EmitGrow(args[1]);  return 0;
             case "emit-marks": EmitMarks(args[1]); return 0;
             case "emit-container": EmitContainer(args[1]); return 0;
@@ -1593,6 +1595,79 @@ static class Program {
         Console.WriteLine("written: " + Path.GetFullPath(outPath));
         Console.WriteLine();
         Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes two charts carrying what a source document's chart shows besides
+    /// its data (2026-11-04, the PRD's "not yet: chart titles, legends and axis
+    /// labels from the source"): a title, the two axis titles and the legend
+    /// on a bar chart; a title and a hidden legend on a pie. Then loads the
+    /// file into a new report and prints what the loader read back, so the
+    /// syntax is the serializer's and proven to round-trip.
+    static void EmitChartTitles(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeChartTitles";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRChart bars = new XRChart();
+        bars.Name = "chartSales";
+        bars.LocationF = new PointF(0, 0);
+        bars.SizeF = new SizeF(600, 300);
+        var sales = new DevExpress.XtraCharts.Series("Sales", DevExpress.XtraCharts.ViewType.Bar);
+        sales.ArgumentDataMember = "Region";
+        sales.ValueDataMembers.AddRange(new string[] { "Amount" });
+        bars.Series.Add(sales);
+        var title = new DevExpress.XtraCharts.ChartTitle();
+        title.Text = "Sales by Region";
+        bars.Titles.Add(title);
+        var diagram = (DevExpress.XtraCharts.XYDiagram)bars.Diagram;
+        diagram.AxisX.Title.Text = "Region";
+        diagram.AxisX.Title.Visibility = DevExpress.Utils.DefaultBoolean.True;
+        diagram.AxisY.Title.Text = "Amount (USD)";
+        diagram.AxisY.Title.Visibility = DevExpress.Utils.DefaultBoolean.True;
+        bars.Legend.Visibility = DevExpress.Utils.DefaultBoolean.True;
+        bars.Legend.AlignmentHorizontal = DevExpress.XtraCharts.LegendAlignmentHorizontal.Center;
+        bars.Legend.AlignmentVertical = DevExpress.XtraCharts.LegendAlignmentVertical.BottomOutside;
+
+        XRChart pie = new XRChart();
+        pie.Name = "chartMix";
+        pie.LocationF = new PointF(0, 320);
+        pie.SizeF = new SizeF(400, 250);
+        var slice = new DevExpress.XtraCharts.Series("Mix", DevExpress.XtraCharts.ViewType.Pie);
+        slice.ArgumentDataMember = "Category";
+        slice.ValueDataMembers.AddRange(new string[] { "Amount" });
+        pie.Series.Add(slice);
+        var pieTitle = new DevExpress.XtraCharts.ChartTitle();
+        pieTitle.Text = "Mix by Category";
+        pie.Titles.Add(pieTitle);
+        pie.Legend.Visibility = DevExpress.Utils.DefaultBoolean.False;
+
+        DetailBand detail = new DetailBand();
+        detail.Name = "Detail";
+        detail.HeightF = 600;
+        detail.Controls.Add(bars);
+        detail.Controls.Add(pie);
+        report.Bands.AddRange(new Band[] { new TopMarginBand(), detail, new BottomMarginBand() });
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+
+        // What the loader reads back from the file just written.
+        XtraReport loaded = new XtraReport();
+        loaded.LoadLayoutFromXml(outPath);
+        Console.WriteLine("read back:");
+        foreach (XRChart chart in loaded.AllControls<XRChart>()) {
+            var titles = new List<string>();
+            foreach (DevExpress.XtraCharts.ChartTitle t in chart.Titles) titles.Add(t.Text);
+            string axes = "";
+            var xy = chart.Diagram as DevExpress.XtraCharts.XYDiagram;
+            if (xy != null) axes = ", axis X title \"" + xy.AxisX.Title.Text + "\" " + xy.AxisX.Title.Visibility + ", axis Y title \"" + xy.AxisY.Title.Text + "\" " + xy.AxisY.Title.Visibility;
+            Console.WriteLine("  " + chart.Name + ": titles [" + string.Join(" | ", titles) + "]" + axes
+                + ", legend " + chart.Legend.Visibility + " " + chart.Legend.AlignmentHorizontal + "/" + chart.Legend.AlignmentVertical);
+        }
     }
 
     // ------------------------------------------------------------- inspect

@@ -632,6 +632,26 @@ Both a designer-written file and a hand-written Forma-shaped one load with the s
 
 **Verified by printing.** Ten cross-tabs written the way the prompt teaches were printed through DevExpress over 24 records, in all three units. They covered one and two fields of each kind and a missing collection of each kind. Unrepaired, every one threw. Repaired, every one printed box for box what DevExpress's own generated layout printed, with the same pages and an identical CSV. The audit's `crosstab-no-layout` error reports a cross-tab that reaches it without the layout. The old `crosstab-missing-fields` warning now fires only for a missing data field, the one shape that printed badly.
 
+**A chart's title, axis titles and legend, measured the same way (2026-11-04).** `RepxProbe emit-chart-titles` writes a bar chart with a title, both axis titles and a legend below it, and a pie with a title and a hidden legend, then loads the file into a new report and prints what came back: every value round-tripped. The serializer writes them as children of `<Chart>` in the order `DataContainer`, `Legend`, `Titles`, `OptionsPrint`, `Diagram`:
+
+```xml
+<Legend Ref="7" Visibility="True" AlignmentHorizontal="Center" AlignmentVertical="BottomOutside" Name="Default Legend" />
+<Titles>
+  <Item1 Ref="8" Text="Sales by Region" />
+</Titles>
+<Diagram Ref="10" TypeNameSerializable="XYDiagram">
+  <AxisX Ref="11" VisibleInPanesSerializable="-1">
+    <Title Ref="12" Visibility="True" Text="Region" />
+  </AxisX>
+</Diagram>
+```
+
+- **A title item carries no `ControlType`**: the fifth collection the pattern above holds for.
+- **An axis title is written only with `Visibility="True"`** when set from code; one with no visibility is DevExpress's default, hidden, and the Preview shows none.
+- **A legend at the right writes no alignment**; the default read back as `RightOutside`/`Top`. A hidden one writes `Visibility="False"`.
+
+The prompt's chart block asks for all three in the source's words, and for none the source does not show; `parseChartText` in `reportPreview.ts` reads them and the Preview's chart draws them. `OptionsPrint ImageFormat="Metafile"` is the serializer's own default and is not asked for.
+
 **`{0:n0}` is deliberately never emitted.** It renders 12345 as "12,345", which is right for a quantity and wrong for an invoice number, order id, product code or year — all columns of bare integers that one sample value cannot distinguish from a count. A format that mangles an identifier is worse than none, because the unformatted column was already correct. Currency and dates only, where the meaning is not in doubt.
 
 ### Auto-sizing: the bug that was not there (2026-09-05)

@@ -224,6 +224,39 @@ describe('choosing the grouping field', () => {
   });
 });
 
+/* A chart's title, axis titles and legend, drawn over test data (2026-11-04). */
+describe('what a chart shows besides its data', () => {
+  const report = (legend: string) => `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Chart" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="320">
+      <Controls>
+        <Item1 Ref="3" ControlType="XRChart" Name="chartSales" SizeF="600,300" LocationFloat="0,0"><Chart Ref="4">
+          <DataContainer Ref="5" ValidateDataMembers="true"><SeriesSerializable><Item1 Ref="6" Name="Sales" ArgumentDataMember="Region" ValueDataMembersSerializable="Amount" /></SeriesSerializable></DataContainer>
+          ${legend}
+          <Titles><Item1 Ref="8" Text="Sales by Region" /></Titles>
+          <Diagram Ref="10" TypeNameSerializable="XYDiagram"><AxisX Ref="11" VisibleInPanesSerializable="-1"><Title Ref="12" Visibility="True" Text="Region" /></AxisX><AxisY Ref="13" VisibleInPanesSerializable="-1"><Title Ref="14" Visibility="True" Text="Amount (USD)" /></AxisY></Diagram>
+        </Chart></Item1>
+      </Controls>
+    </Item1>
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+  const rows = [{ Region: 'North', Amount: '120' }, { Region: 'South', Amount: '80' }];
+  const svgTexts = () => [...document.querySelectorAll('svg text')].map((t) => t.textContent);
+
+  it('draws the title and both axis titles, and names the chart by its title', () => {
+    render(<ReportPreview repxContent={report('<Legend Ref="7" Visibility="True" Name="Default Legend" />')} layout={null} title="Chart" records={rows} />);
+    expect(svgTexts()).toEqual(expect.arrayContaining(['Sales by Region', 'Region', 'Amount (USD)', 'Sales']));
+    expect(screen.getByRole('img', { name: 'Sales by Region' })).toBeTruthy();
+  });
+
+  it('draws no legend where the file hides it', () => {
+    render(<ReportPreview repxContent={report('<Legend Ref="7" Visibility="False" Name="Default Legend" />')} layout={null} title="Chart" records={rows} />);
+    expect(svgTexts()).not.toContain('Sales');
+    expect(svgTexts()).toContain('Sales by Region');
+  });
+});
+
 /* Deleting and adding a control, a table cell retyped, and multi-select (2026-11-04). */
 describe('editing in the pane', () => {
   const editable = `<?xml version="1.0" encoding="utf-8"?>

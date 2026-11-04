@@ -25,6 +25,7 @@ RepxProbe emit-comb <out.repx>   # the same, for a CHARACTER COMB
 RepxProbe emit-pdf <out.repx>    # the same, for XRPdfContent
 RepxProbe render-cols            # what does DevExpress DRAW? bricks from CreateDocument()
 RepxProbe render <case-dir> [out-dir] # what does it PRINT over real data, and what do the exports hold?
+RepxProbe emit-chart-titles <out.repx> # a chart's TITLE, axis titles and legend, read back after loading
 RepxProbe text-lines <case-dir>  # which lines does it lay out in each TURNED label?
 RepxProbe text-lines <spec> <out.tsv> # the same for many boxes: font|pt|length|across|text per line
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?

@@ -44,6 +44,7 @@ import {
   insetsPt,
   type Appearance,
   type ChartModel,
+  type PreviewChartText,
   type PlacedControl,
   type RecordValues,
   type PreviewControl,
@@ -153,23 +154,38 @@ const SERIES_COLOURS = ['#60B5CC', '#E66C7D'];
 const PIE_COLOURS = ['#3EA5C1', '#DA253E', '#53AC56', '#D89C00', '#E1621E', '#B93A39', '#B2DBE6', '#F0A8B2', '#BADEBB', '#FFD770', '#F3C0A5', '#E4A9A8'];
 const CHART_FONT = 'Tahoma, sans-serif';
 
-function ChartPicture({ model, width, height }: { model: ChartModel; width: number; height: number }) {
+function ChartPicture({ model, width, height, extras }: { model: ChartModel; width: number; height: number; extras?: PreviewChartText }) {
   const label = 10.5; // 8pt at 96 dpi
   const pie = model.series.find((s) => s.view === 'PieSeriesView');
   const text = (x: number, y: number, s: string, anchor: 'start' | 'middle' | 'end', fill = '#3c3c3c') => (
     <text x={x} y={y} fontSize={label} fontFamily={CHART_FONT} textAnchor={anchor} dominantBaseline="middle" fill={fill}>{s}</text>
   );
+  /*
+   * What the chart shows besides its data (2026-11-04, `PreviewChartText`):
+   * its title above, its axis titles beside the axes, and its legend where
+   * the file puts it, or none when it is hidden. Sized as a reading aid,
+   * not measured against DevExpress's picture.
+   */
+  const titles = extras?.titles ?? [];
+  const titleH = titles.length * 18;
+  const showLegend = extras?.legend !== false;
+  const legendBelow = /Bottom/.test(extras?.legendVertical ?? '');
+  const titleText = titles.map((t, i) => (
+    <text key={`t${i}`} x={width / 2} y={10 + i * 18} fontSize={13} fontFamily={CHART_FONT} textAnchor="middle" dominantBaseline="middle" fill="#3c3c3c">{t}</text>
+  ));
   if (pie) {
     const slices = pie.points.filter((p) => p.value !== null && p.value > 0);
     const shares = slices.map((p) => pieShare(p.value!, pie.points));
-    const legendWidth = Math.min(width * 0.4, 30 + Math.max(...shares.map((s) => s.length)) * 6.5);
-    const r = Math.max(4, Math.min((width - legendWidth) / 2 - 40, height / 2 - 24));
+    const legendWidth = showLegend && !legendBelow ? Math.min(width * 0.4, 30 + Math.max(...shares.map((s) => s.length)) * 6.5) : 0;
+    const legendH = showLegend && legendBelow ? 18 : 0;
+    const r = Math.max(4, Math.min((width - legendWidth) / 2 - 40, (height - titleH - legendH) / 2 - 24));
     const cx = (width - legendWidth) / 2;
-    const cy = height / 2;
+    const cy = titleH + (height - titleH - legendH) / 2;
     const total = slices.reduce((sum, p) => sum + p.value!, 0);
     let start = 0;
     return (
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Pie chart of ${pie.name}`}>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={titles[0] ?? `Pie chart of ${pie.name}`}>
+        {titleText}
         {slices.map((p, i) => {
           // Counter-clockwise from three o'clock, as s23's pie ran.
           const sweep = (p.value! / total) * Math.PI * 2;
@@ -188,14 +204,26 @@ function ChartPicture({ model, width, height }: { model: ChartModel; width: numb
             </g>
           );
         })}
-        <g transform={`translate(${width - legendWidth + 4},6)`}>
-          {shares.map((s, i) => (
-            <g key={i} transform={`translate(0,${i * 18})`}>
-              <rect width={12} height={12} y={-6} fill={PIE_COLOURS[i % PIE_COLOURS.length]} />
-              {text(18, 0, s, 'start')}
-            </g>
-          ))}
-        </g>
+        {showLegend && !legendBelow && (
+          <g transform={`translate(${width - legendWidth + 4},${titleH + 6})`}>
+            {shares.map((s, i) => (
+              <g key={i} transform={`translate(0,${i * 18})`}>
+                <rect width={12} height={12} y={-6} fill={PIE_COLOURS[i % PIE_COLOURS.length]} />
+                {text(18, 0, s, 'start')}
+              </g>
+            ))}
+          </g>
+        )}
+        {showLegend && legendBelow && (
+          <g transform={`translate(8,${height - 9})`}>
+            {shares.map((s, i) => (
+              <g key={i} transform={`translate(${i * (24 + s.length * 6.5)},0)`}>
+                <rect width={12} height={12} y={-6} fill={PIE_COLOURS[i % PIE_COLOURS.length]} />
+                {text(16, 0, s, 'start')}
+              </g>
+            ))}
+          </g>
+        )}
       </svg>
     );
   }
@@ -207,16 +235,31 @@ function ChartPicture({ model, width, height }: { model: ChartModel; width: numb
   // the frame.
   const low = ticks[0] < 0 ? ticks[0] - (ticks[ticks.length - 1] - ticks[0]) * 0.1 : ticks[0];
   const high = ticks[ticks.length - 1] + (ticks[ticks.length - 1] - ticks[0]) * 0.1;
-  const legendWidth = Math.min(width * 0.3, 36 + Math.max(...xy.map((s) => s.name.length)) * 6.5);
-  const left = 12 + Math.max(...ticks.map((t) => String(t).length)) * 6.5;
-  const plot = { x: left, y: 10, w: Math.max(10, width - left - legendWidth - 16), h: Math.max(10, height - 34) };
+  const legendWidth = showLegend && !legendBelow ? Math.min(width * 0.3, 36 + Math.max(...xy.map((s) => s.name.length)) * 6.5) : 0;
+  const legendH = showLegend && legendBelow ? 18 : 0;
+  const yTitleW = extras?.axisY ? 16 : 0;
+  const xTitleH = extras?.axisX ? 16 : 0;
+  const left = 12 + yTitleW + Math.max(...ticks.map((t) => String(t).length)) * 6.5;
+  const plot = { x: left, y: 10 + titleH, w: Math.max(10, width - left - legendWidth - 16), h: Math.max(10, height - 34 - titleH - xTitleH - legendH) };
   const yOf = (v: number) => plot.y + plot.h - ((v - low) / (high - low || 1)) * plot.h;
   const slot = plot.w / Math.max(1, model.arguments.length);
   const xOf = (argument: string) => plot.x + slot * (model.arguments.indexOf(argument) + 0.5);
   const bars = xy.filter((s) => !/Line|Spline|Point|Area/.test(s.view));
   const barWidth = (slot * 0.6) / Math.max(1, bars.length);
+  const legendItem = (s: (typeof xy)[number], si: number) => {
+    const colour = SERIES_COLOURS[si] ?? PIE_COLOURS[si % PIE_COLOURS.length];
+    return (
+      <>
+        {bars.includes(s) ? <rect width={14} height={12} y={-6} fill={colour} /> : (
+          <g><line x1={0} x2={14} y1={0} y2={0} stroke={colour} strokeWidth={2} /><circle cx={7} cy={0} r={4} fill={colour} /></g>
+        )}
+        {text(20, 0, s.name, 'start')}
+      </>
+    );
+  };
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Chart of ${xy.map((s) => s.name).join(', ')}`}>
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={titles[0] ?? `Chart of ${xy.map((s) => s.name).join(', ')}`}>
+      {titleText}
       <rect x={plot.x} y={plot.y} width={plot.w} height={plot.h} fill="none" stroke="#c8c8c8" />
       {ticks.map((t) => (
         <g key={t}>
@@ -225,6 +268,10 @@ function ChartPicture({ model, width, height }: { model: ChartModel; width: numb
         </g>
       ))}
       {model.arguments.map((a) => text(xOf(a), plot.y + plot.h + 12, a, 'middle'))}
+      {extras?.axisX && text(plot.x + plot.w / 2, plot.y + plot.h + 28, extras.axisX, 'middle')}
+      {extras?.axisY && (
+        <text x={10} y={plot.y + plot.h / 2} fontSize={label} fontFamily={CHART_FONT} textAnchor="middle" dominantBaseline="middle" fill="#3c3c3c" transform={`rotate(-90 10 ${plot.y + plot.h / 2})`}>{extras.axisY}</text>
+      )}
       {xy.map((s, si) => {
         const colour = SERIES_COLOURS[si] ?? PIE_COLOURS[si % PIE_COLOURS.length];
         const points = s.points.filter((p) => p.value !== null);
@@ -253,19 +300,16 @@ function ChartPicture({ model, width, height }: { model: ChartModel; width: numb
           </g>
         );
       })}
-      <g transform={`translate(${plot.x + plot.w + 12},${plot.y + 8})`}>
-        {xy.map((s, si) => {
-          const colour = SERIES_COLOURS[si] ?? PIE_COLOURS[si % PIE_COLOURS.length];
-          return (
-            <g key={si} transform={`translate(0,${si * 18})`}>
-              {bars.includes(s) ? <rect width={14} height={12} y={-6} fill={colour} /> : (
-                <g><line x1={0} x2={14} y1={0} y2={0} stroke={colour} strokeWidth={2} /><circle cx={7} cy={0} r={4} fill={colour} /></g>
-              )}
-              {text(20, 0, s.name, 'start')}
-            </g>
-          );
-        })}
-      </g>
+      {showLegend && !legendBelow && (
+        <g transform={`translate(${plot.x + plot.w + 12},${plot.y + 8})`}>
+          {xy.map((s, si) => <g key={si} transform={`translate(0,${si * 18})`}>{legendItem(s, si)}</g>)}
+        </g>
+      )}
+      {showLegend && legendBelow && (
+        <g transform={`translate(${plot.x},${height - 9})`}>
+          {xy.map((s, si) => <g key={si} transform={`translate(${xy.slice(0, si).reduce((t, o) => t + 30 + o.name.length * 6.5, 0)},0)`}>{legendItem(s, si)}</g>)}
+        </g>
+      )}
     </svg>
   );
 }
@@ -675,7 +719,7 @@ function ControlBox({
   if (control.type === 'XRChart' && placed.chart) {
     return (
       <div style={{ ...frame, display: 'block' }}>
-        <ChartPicture model={placed.chart} width={u(control.width)} height={u(placed.height)} />
+        <ChartPicture model={placed.chart} width={u(control.width)} height={u(placed.height)} extras={control.chartText} />
       </div>
     );
   }
@@ -684,6 +728,10 @@ function ControlBox({
     const line = control.series.some((s) => s.view === 'LineSeriesView');
     return (
       <div style={{ ...frame, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-end', border: '1px solid #b9c2cc', padding: 4, gap: 3 }}>
+        {/* Its title, as the file names it (2026-11-04). */}
+        {control.chartText?.titles.length ? (
+          <div style={{ fontSize: '8pt', textAlign: 'center', color: '#3c3c3c', whiteSpace: 'nowrap', overflow: 'hidden' }}>{control.chartText.titles.join(' · ')}</div>
+        ) : null}
         <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 3, minHeight: 0 }}>
           {pie ? (
             <div style={{
@@ -705,6 +753,8 @@ function ControlBox({
           {control.series.length === 0
             ? 'chart with no series'
             : control.series.map((s) => `${s.value || '?'} by ${s.argument || '?'}`).join(' · ')}
+          {control.chartText && (control.chartText.axisX || control.chartText.axisY) ? ` · axes ${control.chartText.axisX ?? '-'} / ${control.chartText.axisY ?? '-'}` : ''}
+          {control.chartText?.legend === false ? ' · no legend' : ''}
         </div>
       </div>
     );

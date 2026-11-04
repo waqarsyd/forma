@@ -194,6 +194,26 @@ export interface PreviewSeries {
 }
 
 /**
+ * What a chart shows besides its data (2026-11-04), as `RepxProbe
+ * emit-chart-titles` measured the serializer writing it and read back:
+ * `<Titles>` items carrying `Text` and no `ControlType`; an axis's
+ * `<Title Visibility="True" Text="...">` inside `<AxisX>` or `<AxisY>`; and
+ * `<Legend Visibility=... AlignmentHorizontal=... AlignmentVertical=...>`.
+ * An axis title is shown only when its `Visibility` is True, which is what
+ * the designer writes when one is set.
+ */
+export interface PreviewChartText {
+  titles: string[];
+  axisX: string | null;
+  axisY: string | null;
+  /** True or False as written, null when the file writes no legend (DevExpress's default). */
+  legend: boolean | null;
+  /** `BottomOutside` and the rest, '' when not written. */
+  legendVertical: string;
+  legendHorizontal: string;
+}
+
+/**
  * A table of contents (queue 6, s55), as the file declares it: `LevelTitle`
  * for its heading and `LevelDefault` for its rows, each with an optional font
  * and height, and `MaxNestingLevel`. Sizes are in the report's unit.
@@ -401,6 +421,8 @@ export interface PreviewControl {
   rows: PreviewRow[];
   /** Populated for XRChart only. */
   series: PreviewSeries[];
+  /** An XRChart's title, axis titles and legend; absent for anything else. See `parseChartText`. */
+  chartText?: PreviewChartText;
   /** Populated for XRCrossTab only. */
   crossTab: PreviewCrossTab | null;
   /**
@@ -1631,6 +1653,30 @@ function parseSeries(inner: string, controlStart: number, controlEnd: number): P
   return out;
 }
 
+/** An XRChart's title, axis titles and legend, in the same bounded window; see `PreviewChartText`. */
+function parseChartText(inner: string, controlStart: number, controlEnd: number): PreviewChartText {
+  const slice = inner.slice(controlStart, controlEnd);
+  const decode = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const titlesBlock = /<Titles>([\s\S]*?)<\/Titles>/.exec(slice);
+  const titles = titlesBlock ? collectionItems(titlesBlock[1]).map((item) => decode(attrOf(item.attrs, 'Text') ?? '')).filter(Boolean) : [];
+  const axis = (name: string) => {
+    const block = new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)</${name}>`).exec(slice);
+    const title = block && /<Title\b([^>]*)\/?>/.exec(block[1]);
+    if (!title || attrOf(title[1], 'Visibility') !== 'True') return null;
+    return decode(attrOf(title[1], 'Text') ?? '') || null;
+  };
+  const legend = /<Legend\b([^>]*)\/?>/.exec(slice);
+  const visibility = legend ? attrOf(legend[1], 'Visibility') : null;
+  return {
+    titles,
+    axisX: axis('AxisX'),
+    axisY: axis('AxisY'),
+    legend: visibility === 'True' ? true : visibility === 'False' ? false : null,
+    legendVertical: legend ? attrOf(legend[1], 'AlignmentVertical') ?? '' : '',
+    legendHorizontal: legend ? attrOf(legend[1], 'AlignmentHorizontal') ?? '' : '',
+  };
+}
+
 /** The three field collections of an XRCrossTab, in the same bounded window. */
 function parseCrossTab(inner: string, controlStart: number, controlEnd: number): PreviewCrossTab {
   const slice = inner.slice(controlStart, controlEnd);
@@ -1754,6 +1800,7 @@ function parseControls(
         : null,
       rows: type === 'XRTable' ? parseTableRows(inner, item.start, styles, look) : [],
       series: type === 'XRChart' ? parseSeries(inner, item.start, extent) : [],
+      ...(type === 'XRChart' ? { chartText: parseChartText(inner, item.start, extent) } : {}),
       crossTab: type === 'XRCrossTab' ? parseCrossTab(inner, item.start, extent) : null,
       /*
        * Read `CheckBoxState` rather than `Checked`, though DevExpress writes

@@ -102,6 +102,10 @@ export interface ReportElement {
   /** Shape hint for `type: "chart"`, and the bar/point heights to draw. */
   chartType?: 'bar' | 'line' | 'pie' | 'area';
   chartValues?: number[];
+  /** The chart's title and axis titles as the source shows them (2026-11-04). */
+  chartTitle?: string;
+  chartXTitle?: string;
+  chartYTitle?: string;
 
   /**
    * Where this element's artwork sits in the upload, as Gemini's own detection

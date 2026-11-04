@@ -2163,7 +2163,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
 
           Omit "box2d" entirely when the element is not present in any supplied image (for instance a placeholder you were asked to add).
 
-          CHARTS — set "chartType" to "bar", "line", "pie" or "area" to match the source, and put the approximate series values in "chartValues" so the drawn chart has the same shape as the original.
+          CHARTS — set "chartType" to "bar", "line", "pie" or "area" to match the source, and put the approximate series values in "chartValues" so the drawn chart has the same shape as the original. Put the chart's own title in "chartTitle" and its axis titles in "chartXTitle" and "chartYTitle", in the source's words, only when the source shows them; they are the same words the REPX carries in the chart's <Titles> and axis titles.
           - EXACT XML COMPLETENESS: The repxContent MUST be fully comprehensive. Do NOT skip sections, do NOT omit fields, do NOT output generic XML.
           - DEVEXPRESS TABLES: every region identified under "AN ALIGNED, REPEATING REGION IS A TABLE" above MUST be a proper DevExpress \`<XRTable>\` / \`<XRTableRow>\` / \`<XRTableCell>\` in the XML, never a grid of labels. Position and size the \`<XRTable>\` itself with LocationFloat and SizeF so it covers the same box as the source; the rows and cells inside it take neither, only \`Weight\`. Use \`Borders="All"\` on the table when the source rules every cell, and the individual border sides when it does not.
           - LOCATIONS AND SIZES: Make **absolute sure** that components do not overlap incorrectly. Calculate the X and Y bounds correctly. LocationFloat expects X,Y and SizeF expects Width,Height. Do NOT add spaces after the comma.
@@ -2235,6 +2235,9 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
                           borderColor: { type: Type.STRING },
                           chartType: { type: Type.STRING, enum: ["bar", "line", "pie", "area"] },
                           chartValues: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                          chartTitle: { type: Type.STRING },
+                          chartXTitle: { type: Type.STRING },
+                          chartYTitle: { type: Type.STRING },
                           sourceImageIndex: { type: Type.NUMBER },
                           box2d: { type: Type.ARRAY, items: { type: Type.NUMBER } },
                           sourceRect: {

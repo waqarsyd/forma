@@ -1105,8 +1105,28 @@ const MockupTable = ({
   );
 };
 
-/** Draws a chart whose shape follows chartType/chartValues when supplied. */
+/**
+ * A chart with the title and axis titles the source shows (2026-11-04), read
+ * into the layout as the REPX carries them in its `<Titles>` and axes.
+ */
 const MockupChart = ({ el }: { el: ReportElement }) => {
+  if (!el.chartTitle && !el.chartXTitle && !el.chartYTitle) return <MockupChartBody el={el} />;
+  return (
+    <div className="w-full h-full flex flex-col">
+      {el.chartTitle && <div className="text-center truncate" style={{ fontSize: 11 }}>{el.chartTitle}</div>}
+      <div className="flex-1 min-h-0 flex">
+        {el.chartYTitle && (
+          <div className="truncate text-center" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 9 }}>{el.chartYTitle}</div>
+        )}
+        <div className="flex-1 min-w-0"><MockupChartBody el={el} /></div>
+      </div>
+      {el.chartXTitle && <div className="text-center truncate" style={{ fontSize: 9 }}>{el.chartXTitle}</div>}
+    </div>
+  );
+};
+
+/** Draws a chart whose shape follows chartType/chartValues when supplied. */
+const MockupChartBody = ({ el }: { el: ReportElement }) => {
   const values = el.chartValues?.length ? el.chartValues : [40, 70, 45, 90, 65, 80, 50];
   const max = Math.max(...values, 1);
   const pct = values.map((v) => Math.max(2, (v / max) * 100));

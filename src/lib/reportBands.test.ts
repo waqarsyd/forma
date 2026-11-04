@@ -104,6 +104,22 @@ describe('the banded default', () => {
  * itself, and losing that distinction reintroduces the defect the band split
  * exists to fix.
  */
+/* A chart's title, axis titles and legend, from the source (2026-11-04). */
+describe('the chart block', () => {
+  it('asks for the title, axis titles and legend in the serializer\'s own syntax and order', () => {
+    expect(banded).toContain('<Titles>');
+    expect(banded).toContain('<Item1 Ref="12" Text="Sales by Region" />');
+    expect(banded).toContain('<Title Ref="13" Visibility="True" Text="Region" />');
+    expect(banded).toContain('Visibility="False" Name="Default Legend"');
+    // Legend before Titles before Diagram, as the serializer wrote them.
+    expect(banded.indexOf('<Legend Ref="11"')).toBeLessThan(banded.indexOf('<Item1 Ref="12" Text="Sales by Region" />'));
+  });
+
+  it('asks for none the source does not show', () => {
+    expect(banded).toMatch(/Write no title, axis title or legend the source does not show/);
+  });
+});
+
 describe('tableRowsRule', () => {
   it('splits the table across bands', () => {
     const rule = tableRowsRule();

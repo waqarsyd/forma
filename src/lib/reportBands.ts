@@ -130,6 +130,16 @@ const CHARTS_BLOCK = `          - A CHART IN THE SOURCE IS AN XRChart, NOT A PIC
             - **A bar or column chart writes no view type at all** — that is the default. For anything else add \`<View Ref="..." TypeNameSerializable="PieSeriesView" />\` (or \`LineSeriesView\`, \`AreaSeriesView\`, \`ScatterLineSeriesView\`) as a child of the series item.
             - A **pie** chart takes NO \`<Diagram>\` element. Only the XY types do.
             - A chart with no \`<SeriesSerializable>\` is an empty frame on the page and looks exactly like a chart waiting for data, so always emit at least one series.
+            - **What the chart shows besides its data comes from the source too**: its title, its axis titles and its legend, in the source's own words. They are children of \`<Chart>\` in this order — \`<DataContainer>\`, then \`<Legend>\`, then \`<Titles>\`, then \`<Diagram>\` — written as the DevExpress serializer writes them (measured with \`RepxProbe emit-chart-titles\` and loaded back):
+
+                <Legend Ref="11" Visibility="True" AlignmentHorizontal="Center" AlignmentVertical="BottomOutside" Name="Default Legend" />
+                <Titles>
+                  <Item1 Ref="12" Text="Sales by Region" />
+                </Titles>
+
+              and an axis title INSIDE its axis: \`<AxisX Ref="9" VisibleInPanesSerializable="-1"><Title Ref="13" Visibility="True" Text="Region" /></AxisX>\`, the same for \`<AxisY>\`.
+            - A title item carries NO \`ControlType\`. Write no title, axis title or legend the source does not show: a chart with none in the source gets none in the file. A source chart with no legend gets \`<Legend Ref="..." Visibility="False" Name="Default Legend" />\`; a legend at the right needs no alignment attributes, since that is the default; one below the chart is \`AlignmentHorizontal="Center" AlignmentVertical="BottomOutside"\`.
+            - A pie has no axes: a title and a legend only.
 
           - A MATRIX WITH TOTALS DOWN AND ACROSS IS AN XRCrossTab.
             A region-by-quarter grid, a category-by-month grid — anything whose rows and columns are both VALUES with a figure at each intersection — is a cross-tab, not a table. A table has fixed columns; a cross-tab grows a column per distinct value in the data.

@@ -777,7 +777,7 @@ From [`docs/PRD.md`](docs/PRD.md) §6, which is kept current against the code:
 
 - Raise or remove the 8-page PDF cap, and support multi-page `.repx` datasets.
 - ~~Expose the RTL and stored-procedure options in the settings UI.~~ Done 2026-11-04. (`ExpressionBindings` generation was done earlier — it left the settings dialog entirely and became the **Data** tab, because a schema is not a setting: it belongs beside the report it binds, not in a modal shared with the API key.)
-- Render real gauges and barcodes in the mockup, and draw charts *there* with a real charting library rather than the current stylised approximation; chart titles, legends and axis labels are not yet read from the source. (The exported REPX no longer approximates — charts are real `XRChart` elements and value matrices real `XRCrossTab` elements.)
+- Render real gauges and barcodes in the mockup, and draw charts *there* with a real charting library rather than the current stylised approximation. (Chart titles, legends and axis labels are read from the source since 2026-11-04.) (The exported REPX no longer approximates — charts are real `XRChart` elements and value matrices real `XRCrossTab` elements.)
 - Editing: deleting and adding a control, editing a table cell's text, and multi-select. Move, resize, retype, keyboard nudge and per-gesture undo are done.
 - A data source for the preview. It has none today, so it repeats one record's worth of content — it proves the band structure and the pagination, not the data.
 - Batch: dropping a folder onto the panel rather than choosing files through the picker, and running more than one at a time when the key's quota allows.

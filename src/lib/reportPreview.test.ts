@@ -587,6 +587,42 @@ describe('charts and cross-tabs', () => {
     expect(controlOf(chartReport(bare)).series).toEqual([]);
   });
 
+  /*
+   * Its title, axis titles and legend (2026-11-04), from exactly what
+   * `RepxProbe emit-chart-titles` wrote and DevExpress read back.
+   */
+  it('reads the title, the axis titles and the legend as the serializer writes them', () => {
+    const measured =
+      '<Item1 Ref="3" ControlType="XRChart" Name="chartSales" SizeF="600,300" LocationFloat="0,0" BorderColor="Black" Borders="None"><Chart Ref="4">' +
+      '<DataContainer Ref="5" ValidateDataMembers="true"><SeriesSerializable><Item1 Ref="6" Name="Sales" ArgumentDataMember="Region" ValueDataMembersSerializable="Amount" /></SeriesSerializable></DataContainer>' +
+      '<Legend Ref="7" Visibility="True" AlignmentHorizontal="Center" AlignmentVertical="BottomOutside" Name="Default Legend" />' +
+      '<Titles><Item1 Ref="8" Text="Sales by Region" /></Titles><OptionsPrint Ref="9" ImageFormat="Metafile" />' +
+      '<Diagram Ref="10" TypeNameSerializable="XYDiagram"><AxisX Ref="11" VisibleInPanesSerializable="-1"><Title Ref="12" Visibility="True" Text="Region" /></AxisX>' +
+      '<AxisY Ref="13" VisibleInPanesSerializable="-1"><Title Ref="14" Visibility="True" Text="Amount (USD)" /></AxisY></Diagram></Chart></Item1>';
+    expect(controlOf(chartReport(measured)).chartText).toEqual({
+      titles: ['Sales by Region'],
+      axisX: 'Region',
+      axisY: 'Amount (USD)',
+      legend: true,
+      legendVertical: 'BottomOutside',
+      legendHorizontal: 'Center',
+    });
+  });
+
+  it('reads a hidden legend, and no titles where none are written', () => {
+    const pie =
+      '<Item1 Ref="15" ControlType="XRChart" Name="chartMix" SizeF="400,250" LocationFloat="0,320"><Chart Ref="16">' +
+      '<DataContainer Ref="17" ValidateDataMembers="true"><SeriesSerializable><Item1 Ref="18" Name="Mix" ArgumentDataMember="Category" ValueDataMembersSerializable="Amount"><View Ref="19" TypeNameSerializable="PieSeriesView" /></Item1></SeriesSerializable></DataContainer>' +
+      '<Legend Ref="20" Visibility="False" Name="Default Legend" /></Chart></Item1>';
+    expect(controlOf(chartReport(pie)).chartText).toMatchObject({ titles: [], axisX: null, axisY: null, legend: false });
+    expect(controlOf(chartReport(chart('c', series('S', 'R', 'A')))).chartText).toMatchObject({ titles: [], legend: null });
+  });
+
+  it('does not show an axis title DevExpress keeps hidden', () => {
+    const hidden = chart('c', series('S', 'R', 'A')).replace('</Chart>', '<Diagram Ref="20" TypeNameSerializable="XYDiagram"><AxisX Ref="21"><Title Ref="22" Text="Kept but hidden" /></AxisX></Diagram></Chart>');
+    expect(controlOf(chartReport(hidden)).chartText?.axisX).toBeNull();
+  });
+
   it('reads a cross-tab\'s three field collections', () => {
     const cross =
       '<Item1 Ref="3" ControlType="XRCrossTab" Name="x" LocationFloat="0,0" SizeF="600,200">' +

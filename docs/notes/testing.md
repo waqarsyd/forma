@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,351 tests in 121 files** — under the `node` environment
+`npm test` runs Vitest over **2,358 tests in 121 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -86,7 +86,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
 | `components/OcrDialog` | 7 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run, low-confidence text listed and named or left out, a report built after the app's checks, a PDF page read at its resolution, and pages the chat box read already shown without reading them again |
 | `components/OcrSettings` | 3 | jsdom; the OCR languages in Settings, English never offered, and what a choice costs said before it is fetched |
-| `components/ReportPreview` | 27 | jsdom; since 2026-11-04 also Shift+click selection deleted and nudged as one step, Add label, a table cell retyped, a label retyped in one placement of a repeated band, and a declined edit saying why; since 2026-11-04 also the grouping field chosen above the paper, through the undo path and only where the pane edits; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle; a picture box drawn as its image zoomed into its box, and a dashed box naming what it would show when it has no image (2026-11-04) |
+| `components/ReportPreview` | 29 | jsdom; since 2026-11-04 also Shift+click selection deleted and nudged as one step, Add label, a table cell retyped, a label retyped in one placement of a repeated band, and a declined edit saying why; since 2026-11-04 also the grouping field chosen above the paper, through the undo path and only where the pane edits; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle; a picture box drawn as its image zoomed into its box, and a dashed box naming what it would show when it has no image (2026-11-04) |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
 | `lib/aiProvider` | 6 | jsdom (storage); which AI answers: Automatic as Gemini with a key and Forma Offline without, ready only with what each provider needs, Forma's vision model found as a helper beside any AI or as the Local AI model itself and alone only then, the choice kept in localStorage and the OpenRouter key only in this tab's sessionStorage, an unknown provider ignored |
@@ -136,11 +136,11 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/pdfWriter` | 5 | pdfjs warmed in a `beforeAll` since 2026-11-02, when its cold import timed the first case out in a full run; the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
 | `lib/promptSections` | 48 |  |
 | `lib/promptToReport` | 12 | the pure half of Prompt-to-Report; a description typed into the chat box, its fenced or CREATE TABLE schema taken as the data source |
-| `lib/reportBands` | 15 |  |
+| `lib/reportBands` | 17 |  |
 | `lib/reportConfigStore` | 20 | since 2026-11-04 also right to left and the stored procedure, typed and length-checked, and no data schema |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
 | `lib/reportGeometry` | 43 |  |
-| `lib/reportPreview` | 301 | 32 from eight loops, the fifth an `it.each` over the four table-of-contents placements, the sixth over two drill-down cases, the seventh over four s57 page feet and the eighth over four right-to-left cases: parity cases c05 to c05e page for page, the seven s19 nesting variants, the four one-field-per-kind cross-tabs' CSVs, and s29a and s29b; a chart's points over test data against DevExpress's, and its pie shares (row 32); drill-down collapsed (s56a, s56d) label for label, expanded as none, one group toggled, and the CSVs byte for byte (row 69); a one-line record at the foot of the page kept while its line fits and moved whole once it does not, with a page footer and without, against DevExpress's PDFs (s57); interactive sorting leaving the data and `SortFields` orders as DevExpress printed them (s58); right to left, every label's and cell's aligned edge against DevExpress's PDFs of s63a to s63d, and the file's own x kept for edits (row 75) |
+| `lib/reportPreview` | 304 | 32 from eight loops, the fifth an `it.each` over the four table-of-contents placements, the sixth over two drill-down cases, the seventh over four s57 page feet and the eighth over four right-to-left cases: parity cases c05 to c05e page for page, the seven s19 nesting variants, the four one-field-per-kind cross-tabs' CSVs, and s29a and s29b; a chart's points over test data against DevExpress's, and its pie shares (row 32); drill-down collapsed (s56a, s56d) label for label, expanded as none, one group toggled, and the CSVs byte for byte (row 69); a one-line record at the foot of the page kept while its line fits and moved whole once it does not, with a page footer and without, against DevExpress's PDFs (s57); interactive sorting leaving the data and `SortFields` orders as DevExpress printed them (s58); right to left, every label's and cell's aligned edge against DevExpress's PDFs of s63a to s63d, and the file's own x kept for edits (row 75) |
 | `lib/repx` | 24 | jsdom |
 | `lib/repxAccessibility` | 21 | one loop of five control types inside one case |
 | `lib/repxAudit` | 94 |  |
@@ -198,7 +198,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,351 in 121 files** — and that total is the arithmetic sum of the column above
+**Total: 2,358 in 121 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -212,7 +212,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2233** against a real 2,351 and will talk you into
+A grep for `\bit(` answers **2240** against a real 2,358 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
