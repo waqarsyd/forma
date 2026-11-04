@@ -44,6 +44,7 @@ import {
   IconLayout,
   IconLogin,
   IconLogout,
+  IconMenu,
   IconPanelLeft,
   IconPlus,
   IconSave,
@@ -51,6 +52,15 @@ import {
   IconTune,
   IconWarn,
 } from './components/landing/icons';
+import {
+  SIDEBAR_CLOSED_WIDTH,
+  SIDEBAR_OPEN_WIDTH,
+  SIDEBAR_SHORTCUT_ARIA,
+  isSidebarShortcut,
+  isStacked,
+  sidebarShortcutText,
+  sidebarToggleLabel,
+} from './lib/sidebar';
 /* `landing/` is the shared marketing design system, not a private folder — see
    CLAUDE.md. Eyebrow is reused here rather than restating its markup. */
 import { Eyebrow } from './components/landing/sections';
@@ -1449,12 +1459,13 @@ function rememberedReviewWidth(): number {
 /**
  * The rail's two widths.
  *
- * 56px is the artifact's, and the icons are centred in it. Expanded it shows
- * the label beside each icon — wide enough for the longest of them at 12.5px
- * and no wider, because every pixel here comes off the bench.
+ * 56px is the artifact's, and the icons are centred in it. Open, it shows the
+ * label beside each icon at ChatGPT's measured 260px (it was 208 until
+ * 2026-11-04, when the owner asked for the sidebar Gemini and ChatGPT have;
+ * see lib/sidebar.ts for what was measured).
  */
-const RAIL_WIDTH = 56;
-const RAIL_EXPANDED_WIDTH = 208;
+const RAIL_WIDTH = SIDEBAR_CLOSED_WIDTH;
+const RAIL_EXPANDED_WIDTH = SIDEBAR_OPEN_WIDTH;
 
 /**
  * Initials for the rail's account button. Two letters at most — the artifact's
@@ -1654,7 +1665,7 @@ export default function App() {
       return false;
     }
   });
-  const toggleRail = () => {
+  const toggleRail = useCallback(() => {
     setIsRailExpanded((prev) => {
       try {
         localStorage.setItem(RAIL_EXPANDED_KEY, String(!prev));
@@ -1663,7 +1674,7 @@ export default function App() {
       }
       return !prev;
     });
-  };
+  }, []);
 
   const [isResizingReview, setIsResizingReview] = useState(false);
   /* Where the pointer went down, and how wide the column was then. Deltas from
@@ -1683,9 +1694,43 @@ export default function App() {
   /* `panelSize.ts` reserves room for a 56px rail. An expanded one takes its
      extra out of the same window, so the clamp is handed a viewport that has
      already paid for it — otherwise widening the rail and then the column
-     leaves the bench 152px short of the reserve it was promised. */
+     leaves the bench short of the reserve it was promised, by the difference
+     between the two widths. */
   const railWidth = isRailExpanded ? RAIL_EXPANDED_WIDTH : RAIL_WIDTH;
   const layoutWidth = viewportWidth - (railWidth - RAIL_WIDTH);
+
+  /* Stacked, the sidebar is a drawer, as Gemini's is on a phone: a menu button
+     in a top bar opens it over a dimmed page, and it closes on its own X, on
+     the dimmed page, on Escape, or on choosing somewhere to go. Never open on
+     load, whatever the desktop choice is, and closed again if the window
+     widens past the stack. */
+  const isStackedLayout = isStacked(viewportWidth);
+  const [isRailDrawerOpen, setIsRailDrawerOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const railToggleRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!isStackedLayout) setIsRailDrawerOpen(false);
+  }, [isStackedLayout]);
+  /* Into the drawer when it opens, so the keyboard is where the eye is. */
+  useEffect(() => {
+    if (isRailDrawerOpen) railToggleRef.current?.focus();
+  }, [isRailDrawerOpen]);
+  const closeRailDrawer = useCallback(() => {
+    setIsRailDrawerOpen((open) => {
+      // Back to the button that opened it, as a dialog does.
+      if (open) requestAnimationFrame(() => menuButtonRef.current?.focus());
+      return false;
+    });
+  }, []);
+  /* One toggle for both shapes, read from the window at the moment of use so
+     the keyboard shortcut and the button cannot disagree about which it is. */
+  const toggleSidebar = useCallback(() => {
+    if (isStacked(window.innerWidth)) {
+      setIsRailDrawerOpen((open) => !open);
+    } else {
+      toggleRail();
+    }
+  }, [toggleRail]);
   const appliedReviewWidth = clampReviewWidth(reviewWidth, layoutWidth);
 
   const rememberReviewWidth = useCallback((width: number) => {
@@ -1717,7 +1762,27 @@ export default function App() {
     setRailPanel(panel);
     setIsReviewCollapsed(false);
     rememberReviewCollapsed(false);
+    // Choosing somewhere to go closes the drawer, as Gemini's does.
+    setIsRailDrawerOpen(false);
   }, [rememberReviewCollapsed]);
+
+  /* Ctrl+B / Cmd+B opens and closes the sidebar, and Escape closes the drawer.
+     Only while the workspace is what is on screen: a marketing page has no
+     sidebar, and the sign-in sheet over the workspace owns the keyboard. */
+  useEffect(() => {
+    if (!showWorkspace || showLogin) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (isSidebarShortcut(e)) {
+        e.preventDefault();
+        toggleSidebar();
+      } else if (e.key === 'Escape' && isRailDrawerOpen) {
+        e.preventDefault();
+        closeRailDrawer();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showWorkspace, showLogin, isRailDrawerOpen, toggleSidebar, closeRailDrawer]);
 
   const beginReviewResize = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -4777,48 +4842,77 @@ export default function App() {
         '--wb-review-w': isReviewCollapsed ? '0px' : `${appliedReviewWidth}px`,
       } as React.CSSProperties}
       data-resizing={isResizingReview ? 'true' : undefined}
-      data-rail={isRailExpanded ? 'wide' : undefined}
+      /* Stacked, the drawer always shows the labelled column, whatever the
+         desktop choice: it is the open sidebar, on a phone. */
+      data-rail={isRailExpanded || isStackedLayout ? 'wide' : undefined}
+      data-drawer={isStackedLayout && isRailDrawerOpen ? 'open' : undefined}
     >
-      {/* ============================================================== rail */}
-      <nav className="wb-rail" aria-label="Sections">
-        {/* The mark is a home link, as it is in SiteHeader on all five marketing
-            pages. The artifact drew a plain <img> here, which left the workspace
-            with no route back to the site at all — the previous header had this
-            on the logo lockup ("Back to Landing Page").
-
-            A plain <a href>, not an onClick: the delegated handler in this file
-            turns in-app anchors into client-side navigation, so the link stays
-            right-clickable and middle-clickable. */}
-        <a href="/" className="wb-mark" title="Back to the home page" aria-label="Forma — home page">
-          <Logo size={26} />
-          {/* The lockup the five marketing pages carry in `SiteHeader`, at the
-              workspace's own type scale. Hidden with the rest of the labels
-              while the rail is narrow: 56px has never had room for it. */}
-          <span className="wb-wordmark">Forma</span>
-        </a>
-
-        {/* The rail's own expander, directly under the mark because it is about
-            the navigation rather than about anything the navigation reaches.
-            Expanded, every target here gains the label it already carries in
-            `aria-label` — the icons alone are learnable, but only after you have
-            clicked each one once to find out. */}
+      {/* ============================================================ top bar
+          Stacked only (CSS hides it above 880px): the menu button that opens
+          the sidebar as a drawer, and the mark, as Gemini's phone layout has. */}
+      <div className="wb-topbar">
         <button
-          data-toggle-rail
-          title={isRailExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
-          aria-label={isRailExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
-          aria-expanded={isRailExpanded}
-          onClick={toggleRail}
+          ref={menuButtonRef}
+          className="wb-menu-btn"
+          title="Menu"
+          aria-label="Open the menu"
+          aria-expanded={isRailDrawerOpen}
+          aria-controls="wb-rail"
+          onClick={() => setIsRailDrawerOpen(true)}
         >
-          {isRailExpanded ? <IconChevronsLeft size={19} /> : <IconChevronsRight size={19} />}
-          <span className="wb-rail-label">Collapse</span>
+          <IconMenu size={20} />
         </button>
+        <a href="/" className="wb-topbar-mark" title="Back to the home page" aria-label="Forma — home page">
+          <Logo size={22} />
+          <span>Forma</span>
+        </a>
+      </div>
+      {isStackedLayout && isRailDrawerOpen && (
+        <div className="wb-scrim" aria-hidden="true" onClick={closeRailDrawer} />
+      )}
+
+      {/* ============================================================== rail */}
+      <nav id="wb-rail" className="wb-rail" aria-label="Sections">
+        {/* The sidebar's head, as Gemini's and ChatGPT's (2026-11-04, measured;
+            see lib/sidebar.ts). Open, the mark is at the left and the toggle at
+            the right. Closed, the toggle covers the mark's place and shows the
+            logo, turning into the panel icon on hover or focus: ChatGPT's logo
+            is its "Open sidebar" button the same way. One button element in
+            both states, so the focus the user just used survives the toggle.
+
+            The mark is still the home link, as it is in SiteHeader on all five
+            marketing pages, while the sidebar is open; closed, the route home
+            is one click further, as it is in ChatGPT. A plain <a href>, not an
+            onClick: the delegated handler in this file turns in-app anchors
+            into client-side navigation, so the link stays right-clickable. */}
+        <div className="wb-rail-head">
+          <a href="/" className="wb-mark" title="Back to the home page" aria-label="Forma — home page">
+            <Logo size={26} />
+            <span className="wb-wordmark">Forma</span>
+          </a>
+          <button
+            ref={railToggleRef}
+            data-toggle-rail
+            title={`${sidebarToggleLabel(isStackedLayout, isRailExpanded)} (${sidebarShortcutText(navigator.platform)})`}
+            aria-label={sidebarToggleLabel(isStackedLayout, isRailExpanded)}
+            aria-expanded={isStackedLayout ? isRailDrawerOpen : isRailExpanded}
+            aria-controls="wb-rail"
+            aria-keyshortcuts={SIDEBAR_SHORTCUT_ARIA}
+            onClick={isStackedLayout ? closeRailDrawer : toggleSidebar}
+          >
+            <span className="wb-toggle-logo" aria-hidden="true"><Logo size={26} /></span>
+            <span className="wb-toggle-icon" aria-hidden="true">
+              {isStackedLayout ? <IconClose size={18} /> : <IconPanelLeft size={19} />}
+            </span>
+          </button>
+        </div>
 
         {railBtn('review', 'Chat', <IconLayout size={19} />)}
         {railBtn('projects', 'Saved projects', <IconFolder size={19} />)}
         {railBtn('revisions', 'Revisions', <IconRedo size={19} />)}
         {railBtn('batch', 'Batch', <IconStack size={19} />)}
         {railBtn('library', 'Report library', <IconDoc size={19} />)}
-        <button data-open-config title="Configure" aria-label="Configure" onClick={() => setIsConfigOpen(true)}>
+        <button data-open-config title="Configure" aria-label="Configure" onClick={() => { setIsRailDrawerOpen(false); setIsConfigOpen(true); }}>
           <IconTune size={19} />
           <span className="wb-rail-label">Configure</span>
         </button>
@@ -4827,16 +4921,18 @@ export default function App() {
             hidden — which is why it lives in the rail rather than in the panel
             it collapses. `aria-expanded` rather than `aria-current`: that
             attribute is the rail's "this section is showing" paint, and this is
-            not a section. */}
+            not a section. Chevrons since 2026-11-04: the panel icon went to the
+            sidebar's own toggle, which is where Gemini and ChatGPT put it, and
+            two toggles wearing one icon would be guesswork. */}
         <button
           data-toggle-panel
           title={isReviewCollapsed ? 'Show the side panel' : 'Hide the side panel'}
           aria-label={isReviewCollapsed ? 'Show the side panel' : 'Hide the side panel'}
           aria-expanded={!isReviewCollapsed}
           aria-controls="wb-review-panel"
-          onClick={toggleReviewPanel}
+          onClick={() => { setIsRailDrawerOpen(false); toggleReviewPanel(); }}
         >
-          <IconPanelLeft size={19} />
+          {isReviewCollapsed ? <IconChevronsRight size={19} /> : <IconChevronsLeft size={19} />}
           <span className="wb-rail-label">{isReviewCollapsed ? 'Show panel' : 'Hide panel'}</span>
         </button>
         <span className="wb-spacer" />

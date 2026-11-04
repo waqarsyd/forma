@@ -194,7 +194,7 @@ The handle is a focusable `role="separator"` with `aria-valuenow`/`min`/`max`: a
 
 **The rail is the whole navigation.** `railPanel: 'review' | 'projects' | 'history' | 'revisions' | 'batch'` chooses what the second column shows — three until 2026-09-05, when the revision history and the batch queue each took a panel rather than a modal, because both are things you watch while working on the bench rather than dialogs you open and dismiss. It and `aria-current="true"` paints the selected target. That is also why the signed-out account slot is a plain rail button and not the accent disc: the disc is simultaneously the avatar treatment *and* the selected-section treatment, so using it for "not signed in" made an empty workspace look logged in and asked for a sign-out. The mark at the top is an `<a href="/">`, matching `SiteHeader` on the five pages that mount it — the artifact drew a plain `<img>`, which left the workspace with no route back to the site. (`LoginPage` is the one `.landing` page with no `SiteHeader`; its own lockup is a bare `<Logo />` that goes nowhere, so it is not the precedent to copy here.)
 
-**The rail expands into a labelled sidebar** (2026-08-14), 56px to 208px, remembered in `railExpanded`. Four things about it:
+**The rail expands into a labelled sidebar** (2026-08-14), 56px to 208px (260px since 2026-11-04, see *The sidebar opens and closes as Gemini's and ChatGPT's do* below), remembered in `railExpanded`. Four things about it:
 
 - **The labels are always in the markup**, hidden by `.wb-rail-label { display: none }` and revealed under `[data-rail='wide']`. Rendering them conditionally would remount the tree on every toggle, which drops focus and replays `wb-rise` for a span that costs nothing to keep.
 - **The icon column does not move.** 9px of rail padding plus 9px inside each target puts the icons at x=19 against the narrow rail's centred x=18.5, and the mark's 6px margin holds it at 15 in both states. Toggling reveals text; it does not slide the icons sideways. Those two numbers are the whole reason the padding is 9 and not the 10 it was first written as.
@@ -203,7 +203,28 @@ The handle is a focusable `role="separator"` with `aria-valuenow`/`min`/`max`: a
 
 - **The mark becomes a lockup.** Expanded, `Forma` sits beside the logo in `.wb-col-title`'s treatment — the workspace's own heading type, not `SiteHeader`'s 20px, which is sized for a 68px bar and towers over a 26px mark in a 208px rail. The word is hidden with the labels while the rail is narrow. The logo itself stays at x=15 in both states, like the icons below it.
 
-Below 881px the expander is hidden along with the drag handle: the rail is a horizontal row there and labels in a row would overflow it. Verified over CDP on 2026-08-14 at 1600px and 800px — expand, collapse, reload, the wordmark appearing and going, and the icon column holding still across the toggle.
+Below 881px the expander was hidden along with the drag handle: the rail was a horizontal row there and labels in a row would overflow it. Verified over CDP on 2026-08-14 at 1600px and 800px — expand, collapse, reload, the wordmark appearing and going, and the icon column holding still across the toggle. The sidebar below replaced the expander and the row on 2026-11-04.
+
+**The sidebar opens and closes as Gemini's and ChatGPT's do** (2026-11-04). The owner asked for the workspace rail to behave like those two products' sidebars, so both were measured first rather than recalled. Gemini was captured with REA's browser scenario, signed out, at 1280px and at 390px. ChatGPT shows automated browsers a bot check, so it was measured in the owner's own Chrome, signed out, reading only the sidebar's structure, widths and timing. `src/lib/sidebar.ts` carries the measurements in its header.
+
+| | Gemini | ChatGPT | Forma now |
+|---|---|---|---|
+| Closed | an icon rail, logo on top | a 56px icon rail; the logo is the "Open sidebar" button and turns into the panel icon on hover | 56px; the toggle shows the logo, the panel icon on hover or focus |
+| Open | brand at the left of the header, panel icon at the right ("Close sidebar") | 260px, the same header | 260px (was 208), the same header; the mark is the home link |
+| Movement | width changes, the page is pushed | `inline-size` over 0.22s, `cubic-bezier(0.2, 0.8, 0.2, 1)` | the grid track over the same 0.22s curve; none under reduced motion or while the review column is dragged |
+| Remembered | not observed | yes, in a cookie | yes, `railExpanded` as before |
+| Phone | no rail: a menu button in a top bar opens a drawer over a dimmed page, X to close | not measured | the same: `.wb-topbar` with the menu button, the rail as a drawer, closed by its X, the dimmed page, Escape or choosing a section |
+
+Four decisions worth keeping:
+
+- **One toggle element in both states.** It sits in `.wb-rail-head` with the mark. Closed, the head is the 38px square the mark used to occupy and the toggle covers it, showing the logo; open, the mark and word sit at the left and the toggle at the right showing only the panel icon. Swapping two elements would drop the focus the user just used, which is the same reason the labels are always in the markup.
+- **The route home moves one click further while the sidebar is closed**, as it is in ChatGPT, whose closed logo opens the sidebar rather than going anywhere. Open, the mark is the `<a href="/">` it has always been, and the phone top bar carries one too.
+- **The panel icon belongs to the sidebar now.** `IconPanelLeft` toggled the review column until this change; that button wears chevrons instead, because two toggles wearing one icon would be guesswork.
+- **The shortcut is Forma's choice, not a copy.** Ctrl+B, Cmd+B on a Mac, the editor convention for a sidebar. Ctrl+Shift+S, which ChatGPT is said to use, was not confirmed in the measurement, and it is Edge's web capture, which a page cannot take back. `isSidebarShortcut` refuses every neighbouring combination, and the listener only runs while the workspace is on screen without the sign-in sheet over it.
+
+The drawer reuses the open sidebar's styling rather than restating it: stacked, `App.tsx` sets `data-rail='wide'` whatever the desktop choice, and the labelled-column rules in `workspace.css` no longer sit inside a desktop media query. The drawer's `visibility` follows its slide out, so nothing in it can be focused while it is gone. Opening moves the focus to its close button; closing returns it to the menu button.
+
+Verified 2026-11-04 in the owner's Chrome at 1280px: closing samples 260, 210, 97, 69, 58, 56px over about 250ms; the closed logo turns into the panel icon on hover; Ctrl+B opens and closes; the choice survives a reload; nothing scrolls sideways. At 390px in REA's browser: the top bar, the drawer over the dimmed page with every section labelled, and Escape closing it.
 
 **The Recent panel's rows carried a bare wall-clock time until 2026-08-26**, so a session saved three weeks ago read "3:42:11 PM" directly above this morning's "9:15:04 AM" — indistinguishable, which is the whole job of that list. `formatSessionStamp()` in **`src/lib/datetime.ts`** now renders *Today, 9:15 AM* · *Yesterday, 11:05 PM* · *Aug 3, 3:42 PM* · *Aug 24, 2025, 3:42 PM*, dropping seconds (never useful for telling two sessions apart, and longer than the name above it) and adding the year only when it is not the current one.
 

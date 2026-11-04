@@ -562,7 +562,10 @@ src/
                        report library in docs/proposals/rag.md, alongside
                        services/library.ts, components/LibraryPanel.tsx and
                        the rail's sixth panel in App.tsx),
-                       attachments, panelSize, announcements, datetime,
+                       attachments, panelSize, sidebar (the workspace sidebar
+                       opening and closing as Gemini's and ChatGPT's do: the
+                       phone breakpoint, Ctrl+B, the toggle's name),
+                       announcements, datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        geminiClient (loads the generation service on demand, so
                        its 19.6 kB prompt is not on every page load) and

@@ -1202,11 +1202,16 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 
    Everything below is scoped to `[data-rail='wide']` on the shell, so the
    narrow rail is served entirely by the ported rules and stays byte-identical
-   to the artifact. */
+   to the artifact.
+
+   Not scoped to a width since 2026-11-04: stacked, the sidebar is a drawer,
+   and the drawer is the open sidebar, so `App.tsx` sets `data-rail='wide'`
+   there too. The block keeps its old indentation, from the media query it
+   used to sit in. */
 .wb-rail-label,
 .wb-wordmark { display: none; }
 
-@media (min-width: 881px) {
+/* (was `@media (min-width: 881px) {`) */
   /* 9px here and 9px inside each target puts the icons at x=19, against x=18.5
      centred in the narrow rail. Toggling therefore does not slide the icon
      column sideways — it only reveals the text to its right. Same reason the
@@ -1294,7 +1299,144 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
     border: 1px solid var(--accent-line);
     color: var(--accent);
   }
+/* (end of the former media query) */
+
+/* ------------------------------------------- the sidebar, as Gemini's and ChatGPT's
+
+   Measured on both on 2026-11-04 (lib/sidebar.ts has what and how). Three
+   parts: the head, where one toggle does what their two-state headers do; the
+   width animating instead of jumping; and, stacked, a drawer instead of a row.
+
+   The head. Closed, it is the 38px square the mark used to occupy, holding
+   only the toggle, which shows the logo until it is hovered or focused and
+   then the panel icon, as ChatGPT's logo does. Open, it is a row: the mark
+   and word at the left, the toggle at the right, panel icon only. The logo
+   sits at x=15 in both states, so opening slides nothing sideways. */
+.wb-rail-head {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-bottom: 14px;
 }
+.wb-rail-head a.wb-mark { display: none; }
+.wb-rail-head .wb-toggle-logo,
+.wb-rail-head .wb-toggle-icon { display: grid; place-items: center; }
+.wb-rail-head .wb-toggle-icon { display: none; }
+.wb-rail-head [data-toggle-rail]:hover .wb-toggle-logo,
+.wb-rail-head [data-toggle-rail]:focus-visible .wb-toggle-logo { display: none; }
+.wb-rail-head [data-toggle-rail]:hover .wb-toggle-icon,
+.wb-rail-head [data-toggle-rail]:focus-visible .wb-toggle-icon { display: grid; }
+
+.wb-shell[data-rail='wide'] .wb-rail-head { width: 100%; }
+/* `min-width: 0` and the clip let the word give way while the column is still
+   narrower than it, mid-animation, instead of pushing the toggle out. */
+.wb-shell[data-rail='wide'] .wb-rail-head a.wb-mark {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  margin: 0 0 0 6px;
+}
+.wb-shell[data-rail='wide'] .wb-wordmark { white-space: nowrap; }
+/* The toggle stays the 38px pill it is when closed, pushed to the right,
+   against the open rail's rule that stretches every other target. */
+.wb-shell[data-rail='wide'] .wb-rail .wb-rail-head button[data-toggle-rail] {
+  width: 38px;
+  flex: none;
+  justify-content: center;
+  padding: 0;
+  margin-left: auto;
+}
+.wb-shell[data-rail='wide'] .wb-rail-head .wb-toggle-logo { display: none; }
+.wb-shell[data-rail='wide'] .wb-rail-head .wb-toggle-icon { display: grid; }
+/* A label in a flex row will not shrink below its text without this, and
+   mid-animation it has to. */
+.wb-shell[data-rail='wide'] .wb-rail-label { min-width: 0; }
+
+/* The width animates, with ChatGPT's measured timing: 0.22s on a curve that
+   starts fast and settles. Not while the review column is being dragged,
+   where the track has to follow the pointer exactly; and not at all under
+   reduced motion, which the rule at the foot of this file already enforces
+   for everything in the workspace. */
+@media (min-width: 881px) {
+  .wb-shell { transition: grid-template-columns .22s cubic-bezier(.2, .8, .2, 1); }
+  .wb-shell[data-resizing='true'] { transition: none; }
+}
+
+/* Stacked: a top bar with the menu button, and the sidebar as a drawer over a
+   dimmed page, as Gemini's phone layout is. Above 880px neither exists. */
+.wb-topbar { display: none; }
+@media (max-width: 880px) {
+  .wb-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+    padding: 8px 12px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--rule);
+  }
+  .wb-menu-btn {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: none;
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: color .15s ease, background .15s ease;
+  }
+  .wb-menu-btn:hover { color: var(--ink); background: var(--track); }
+  .wb-topbar-mark {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink);
+    text-decoration: none;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: -.025em;
+  }
+
+  /* The drawer. Off the page and out of the tab order when closed:
+     `visibility` follows the slide out, so nothing in it can be focused while
+     it is gone, and arrives at once when it slides in. */
+  .wb-rail {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: min(300px, 86vw);
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 14px 12px;
+    overflow-y: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--rule);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform .22s cubic-bezier(.2, .8, .2, 1), visibility 0s linear .22s;
+  }
+  .wb-shell[data-drawer='open'] .wb-rail {
+    transform: none;
+    visibility: visible;
+    box-shadow: 0 0 40px rgba(0, 0, 0, .18);
+    transition: transform .22s cubic-bezier(.2, .8, .2, 1), visibility 0s;
+  }
+  .wb-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, .4);
+    animation: wb-scrim-in .22s ease;
+  }
+}
+@keyframes wb-scrim-in { from { opacity: 0; } }
 
 /* --------------------------------------------------- the config dialog
 
@@ -1351,42 +1493,20 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 }
 .wb-root .wb-keyrow .wb-wrap { min-width: 190px; }
 
-/* Nothing to resize or expand once the layout has stacked: the rail is a
-   horizontal row there, and labels in a row would overflow it. The hide toggle
-   survives, because hiding is the one width change that still means something
-   in a single column. */
+/* Nothing to resize once the layout has stacked. The hide toggle survives,
+   because hiding is the one width change that still means something in a
+   single column. The rail's own toggle was hidden here too until 2026-11-04;
+   stacked, it is now the drawer's close button. */
 @media (max-width: 880px) {
-  .wb-resizer,
-  .wb-rail [data-toggle-rail] { display: none; }
+  .wb-resizer { display: none; }
 }
 
-/* The stacked rail has to be allowed to wrap, or it takes the page with it.
-   The ported rule turns it into a `flex-direction: row` with no wrap, and the
-   row has a hard floor: nine 38px targets plus the mark cannot be made to fit a
-   320px viewport at any gap or padding. Measured, the rail demanded 358px, so
-   `document.scrollWidth` became 358 against a 320 viewport and the WHOLE page
-   scrolled sideways — on the one screen where a horizontal scrollbar is most
-   destructive. 340px overflowed by 18px; 360px and up were already fine.
-
-   `flex-wrap: wrap` is the fix rather than shrinking the targets, because the
-   alternatives are all worse: smaller buttons would have to drop under 32px to
-   fit, which is below a usable touch target on exactly the devices this affects;
-   `overflow-x: auto` would hide controls behind a scroll gesture with nothing
-   indicating they are there. Wrapping keeps every control visible at full size
-   and costs one extra row on phones narrower than 360px. It is inert above that
-   — wrap only engages when the content genuinely does not fit, so the 360-880px
-   layout is byte-identical to before.
-
-   `.wb-spacer` is `flex: 1`, i.e. `flex: 1 1 0%`, so it contributes no base
-   width and cannot force a break by itself; it just absorbs the slack on
-   whichever line it lands on.
-
-   Not edited into the 880px rule above: that block is ported and stays
-   byte-identical, same as the resizable-column rules — this wins on position
-   instead. */
-@media (max-width: 880px) {
-  .wb-rail { flex-wrap: wrap; }
-}
+/* The stacked rail used to be a row of icons across the top, and a rule here
+   let it wrap: nine 38px targets and the mark demanded 358px and scrolled a
+   320px page sideways. Since 2026-11-04 the stacked rail is a drawer, a column
+   of labelled rows that cannot overflow sideways, and the rule went with the
+   row (`git log -S"flex-wrap: wrap" -- src/workspace.css` has it). The drawer's
+   own rules are with the sidebar's, above. */
 
 /* In the stacked layout the spare height belongs to the canvas, not the rail.
 

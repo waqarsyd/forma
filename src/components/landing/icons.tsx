@@ -404,9 +404,11 @@ export const IconMenu = (p: Props) => (
     <path d="M4 7h16M4 12h16M4 17h16" />
   </Svg>
 );
-/* The workspace's side-panel toggle. Distinct from `IconLayout` — that one
-   divides the frame with a header rule and reads as "a page"; this divides it
-   with a full-height rule and reads as "a column beside the work". */
+/* The workspace sidebar's open/close toggle, the icon Gemini and ChatGPT use
+   for theirs (it toggled the side panel until 2026-11-04). Distinct from
+   `IconLayout` — that one divides the frame with a header rule and reads as
+   "a page"; this divides it with a full-height rule and reads as "a column
+   beside the work". */
 export const IconPanelLeft = (p: Props) => (
   <Svg {...p}>
     <rect x="3" y="3" width="18" height="18" rx="2" />
