@@ -16,7 +16,8 @@
 //                                              "child", "childColumn" } ],
 //                             "types": { "Sales.OrderDate": "DateTime" },
 //                             "parameters": { "Region": "North" },
-//                             "exports": [ "pdf", "xlsx", ... ] }
+//                             "exports": [ "pdf", "xlsx", ... ],
+//                             "pngResolution": 100 }
 //
 // Column types are inferred from the values (bool, whole number, number, an
 // ISO date string, otherwise string) unless "types" names one.
@@ -48,6 +49,9 @@ static class Render {
     const string DxBin = @"C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework";
 
     static readonly string[] AllExports = { "pdf", "xlsx", "xlsx-data", "csv", "docx", "rtf", "png", "html" };
+
+    /// The PNG export's resolution: 96 unless data.json says "pngResolution".
+    static int pngResolution = 96;
 
     public static int Run(string caseDir, string outDir) {
         // An export may reach for an assembly this project does not reference
@@ -96,6 +100,12 @@ static class Render {
             if (root.TryGetValue("exports", out wanted) && wanted is object[]) {
                 exports.Clear();
                 foreach (object e in (object[])wanted) exports.Add((string)e);
+            }
+            // The PNG's resolution, 96 by default. Forma's box reader trains on
+            // pages at 100 pixels to the inch, a pixel to a hundredth (2026-11-04).
+            object resolution;
+            if (root.TryGetValue("pngResolution", out resolution) && resolution != null) {
+                pngResolution = Convert.ToInt32(resolution, CultureInfo.InvariantCulture);
             }
         }
         report.RequestParameters = false;
@@ -169,7 +179,7 @@ static class Render {
                     report.ExportToImage(path, new ImageExportOptions(ImageFormat.Png) {
                         ExportMode = ImageExportMode.SingleFilePageByPage,
                         PageRange = "1",
-                        Resolution = 96,
+                        Resolution = pngResolution,
                     });
                     break;
                 default:

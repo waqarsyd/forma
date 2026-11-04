@@ -121,8 +121,10 @@ const readJsonl = <T>(path: string): T[] =>
 
 const labelFiles = (dir: string): string[] => {
   const here = join(dir, 'labels.jsonl');
+  // A linked folder (a Windows junction) counts too: shards drawn and printed
+  // elsewhere are gathered under one --data folder that way (2026-11-04).
   const subs = readdirSync(dir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
+    .filter((d) => d.isDirectory() || d.isSymbolicLink())
     .map((d) => join(dir, d.name, 'labels.jsonl'))
     .filter(existsSync);
   return [...(existsSync(here) ? [here] : []), ...subs];

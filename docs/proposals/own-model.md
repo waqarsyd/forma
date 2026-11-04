@@ -998,6 +998,59 @@ no group. It became the report footer with a sum over the report
 (`sumSum`, `Running="Report"`). One of its two figures is that total; the
 other stayed a value, as the network decides in a report footer.
 
+### The box reader on the company's real reports (2026-11-04)
+
+Every score above is on drawn pages: layouts learned from the reports, then
+drawn by Forma. The owner approved scoring the reader on the company's own
+reports, printed by DevExpress, with only the scores kept.
+`scripts/model/realScore.ts` does it, in a work folder outside the
+repository:
+- It takes one `.repx` per distinct layout from the report folders: 219 of
+  906 files.
+- It fills each with made-up data and prints it with `RepxProbe render`, at
+  100 dpi. DevExpress could print 200 of them here.
+- OCR reads each picture as the app does, and the reader runs over that
+  reading.
+- Each printed text's true band and role come from the control that printed
+  it, through the bricks DevExpress writes (`printedTruth.ts`). Those are the
+  parsed layout's band and `skeletonOf`'s role.
+
+Nothing the reports contain is printed or kept, only counts.
+
+**The shipped reader (v1) on 200 real pages, 7,587 texts:**
+- Band and role both right: 55.8% (band 75.2%, role 67.0%).
+- Each control's first appearance, which is what a design keeps: 30.4%.
+- Totals in a footer: 6.3%.
+- By band: Detail 91.7%, PageFooter 94.5%, PageHeader 52.7%, ReportHeader
+  39.4%, GroupHeader 30.2%, GroupFooter 15.6%. Page information is right
+  83.9% of the time.
+
+Against the 81.0% on drawn pages, the real pages show what drawing leaves
+out: headers, group bands and footers as DevExpress prints them.
+
+**Two versions trained on printed pages, neither shipped.**
+`scripts/model/printed.ts` prints training pages from the Crystal
+skeletons by the same route as real reports: Forma's design, then
+DevExpress's print, labelled from the bricks. It wrote 2,860 pages, used
+beside the drawn ones.
+- **v2** reached 54.3% both right, 31.9% on first appearances and 19.7% on
+  footer totals. Detail fell, and page information fell to 46.8%. Its
+  training pages had page information printed in record bands.
+- **v3** dropped page information from the record bands. It reached 52.0%
+  both right, 30.4% on first appearances and 10.5% on footer totals.
+  - Header and footer bands rose: PageHeader 68.5%, ReportHeader 63.0%,
+    ReportFooter 55.9%, GroupHeader 33.1%.
+  - Detail fell from 91.7% to 83.8%. Its commonest error is Detail read as
+    GroupHeader, 454 texts, because the printed layouts are richer in
+    groups than the real ones.
+  - Page information fell to 9.7%. The printed pages hold it on only 80
+    lines of 2,860 pages, so the drawn pages' examples are outweighed.
+
+v1 stays the model in `assets/model/boxReader.json`. If printed pages are
+tried again, they need their group share matched to the real reports'. They
+also need page information in the page bands as often as real reports
+carry it.
+
 ### Still to build
 
 1. ~~Train version 4 and score it~~: done 2026-11-04. It loops on every
@@ -1021,10 +1074,14 @@ other stayed a value, as the network decides in a report footer.
 6. **The box reader's weak spots**: ~~totals~~, improved 2026-11-04 (see
    *Totals and group footers*). Group footers read as records, about one
    footer text in three on the largest held-out set, and names in records.
-   More drawn layouts with groups, and a check on scans of real reports
-   kept on this machine, come next.
-7. **The brief's effect on a generation** is unmeasured, as the vision
-   brief's was: `bench:fidelity` needs the owner's key.
+   ~~A check on real reports~~: done 2026-11-04, 55.8% both right on 200
+   printed pages (see *The box reader on the company's real reports*). Two
+   versions trained on printed pages did not beat it and were not shipped.
+7. ~~The brief's effect on a generation~~: measured 2026-11-04 with
+   `bench:fidelity --brief`. The invoice scored the same with it, 16/16.
+   The customer list looped in one run, and its brief was a poor reading of
+   its page. See the runs of that date under *The fidelity benchmark* in
+   `gemini.md`.
 
 ## Forma's team: every part in its role (2026-11-03)
 
