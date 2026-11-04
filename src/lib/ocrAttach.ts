@@ -8,11 +8,14 @@
  * entry chunk carries none of it.
  */
 import type { PreviewMeta } from './attachments';
+import { READER_MAX_LOST, readDetectedPage, type BoxReaderModel } from './boxReader';
 import { recognizePage, type OcrPage } from './ocr';
 import { detectLayout, layoutText } from './ocrLayout';
 import { layoutToRepx, layoutToReport, ocrSummary, reportNameFor, validateOcrRepx } from './ocrRepx';
 import { imageDpi, pageForImage } from './reportGeometry';
+import type { ReportSkeleton } from './reportSkeleton';
 import type { ReportLayout } from './reportTypes';
+import { mergePageSkeletons, pageTextsOf, skeletonToDesign } from './skeletonRepx';
 
 /** A page read: the OCR, and how many of its texts hold a word read without confidence. */
 export interface ReadPage {
@@ -65,6 +68,54 @@ export function buildFromRead(
     flagged: layout.flagged,
     problems: validateOcrRepx(repxContent).problems,
   };
+}
+
+/** A report Forma's box reader built, with the skeleton it read and how many titles and captions took OCR's words. */
+export interface ReaderBuiltReport {
+  title: string;
+  repxContent: string;
+  layout: ReportLayout;
+  markdown: string;
+  skeleton: ReportSkeleton;
+  read: number;
+  placeholders: number;
+}
+
+/**
+ * A report built from pages already read, with each text put in its band and
+ * given its role by Forma's box reader (2026-11-04, boxReader.ts): a banded
+ * report whose records print from bound fields, where `buildFromRead` copies
+ * the page as it printed. The first page is read, and the last when there are
+ * more, for the footers and totals only it shows, as the vision model reads
+ * them. Null when the first page holds no text, or when a design from its
+ * reading would lose more than READER_MAX_LOST of its texts (readerCoverage):
+ * a form read as records, say, where OCR's copy keeps every word.
+ */
+export function buildWithReader(
+  pages: readonly { meta: PreviewMeta; read: ReadPage }[],
+  model: BoxReaderModel,
+  paper: string,
+): ReaderBuiltReport | null {
+  if (!pages.length) return null;
+  const layoutOf = (p: { read: ReadPage }) =>
+    detectLayout([{ ocr: p.read.ocr, page: pageForImage(p.read.ocr, 'HundredthsOfAnInch', paper) }], { unit: 'HundredthsOfAnInch' });
+  const first = layoutOf(pages[0]);
+  if (!first.pages[0] || !first.total) return null;
+  const reading = readDetectedPage(model, first.pages[0]);
+  // A page a design would lose too much of is better as OCR's copy.
+  if (reading.coverage.lost > READER_MAX_LOST * reading.coverage.texts) return null;
+  const skeletons = [reading.skeleton];
+  if (pages.length > 1) {
+    const last = layoutOf(pages[pages.length - 1]).pages[0];
+    if (last && last.labels.length + last.tables.length) skeletons.push(readDetectedPage(model, last).skeleton);
+  }
+  const skeleton = mergePageSkeletons(skeletons[0], ...skeletons.slice(1));
+  const design = skeletonToDesign(skeleton, {
+    texts: pageTextsOf(first),
+    title: pages[0].meta.file.replace(/\.[^.]+$/, '') || 'Report read by OCR',
+    readBy: "Forma's box reader, from the text OCR read",
+  });
+  return { title: design.title, repxContent: design.repx, layout: design.layout, markdown: design.markdown, skeleton, read: design.read, placeholders: design.placeholders };
 }
 
 /**

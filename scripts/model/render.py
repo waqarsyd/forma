@@ -183,7 +183,7 @@ def put_text(draw, text, font, x, y, w, h, align):
     draw.text((tx, ty), text, font=font, fill=0)
     x0, y0, x1, y1 = draw.textbbox((tx, ty), text, font=font)
     _drawn.append({'box': [int(round(x0)), int(round(y0)), int(round(x1 - x0)), int(round(y1 - y0))],
-                   'band': _where['band'], 'instance': _where['instance'], 'role': _where['role']})
+                   'band': _where['band'], 'instance': _where['instance'], 'role': _where['role'], 'text': text})
 
 
 def put_paragraph(draw, rng, font, x, y, w, h):
@@ -208,11 +208,19 @@ def borders(draw, x, y, w, h, mask):
 
 
 def control_text(rng, role, align, chars, ctx, column):
-    """The placeholder for one place. `column` names the place across repeated records."""
-    if role == 'title':
-        return rng.choice(TITLES.get(ctx['category'], TITLES[None]))
-    if role == 'caption':
-        return caption_text(rng, chars)
+    """
+    The placeholder for one place. `column` names the place across repeated
+    records. A title or caption is a control's static text, so it prints the
+    same in every record and every group; only values change (until
+    2026-11-04 each record drew a caption of its own, which no report does,
+    and Forma's box reader could not learn that a column of one word is a
+    caption).
+    """
+    if role in ('title', 'caption'):
+        if column not in ctx['captions']:
+            ctx['captions'][column] = (rng.choice(TITLES.get(ctx['category'], TITLES[None])) if role == 'title'
+                                       else caption_text(rng, chars))
+        return ctx['captions'][column]
     if role in ('value', 'total'):
         if column not in ctx['kinds']:
             ctx['kinds'][column] = value_kind(rng, align, role)
@@ -290,7 +298,7 @@ def draw_control(draw, rng, c, ox, oy, ctx):
         if rng.random() < 0.5:
             draw.line([(x + 4, y + h / 2.0), (x + 2 + s / 2.0, y + (h + s) / 2.0 - 2), (x + s, y + (h - s) / 2.0 + 2)],
                       fill=0, width=2)
-        put_text(draw, caption_text(rng, c['chars']), font_for(c['font']), x + s + 4, y, w - s - 4, h, 'left')
+        put_text(draw, control_text(rng, 'caption', 'left', c['chars'], ctx, id(c)), font_for(c['font']), x + s + 4, y, w - s - 4, h, 'left')
         return
     if kind == 'richText':
         put_paragraph(draw, rng, font_for(c['font']), x, y, w, h)
@@ -345,7 +353,7 @@ def render(skeleton, category, rng, noise):
     m = skeleton['margins']
     img = Image.new('L', (max(W, 8), max(H, 8)), 255)
     draw = ImageDraw.Draw(img)
-    ctx = {'category': category, 'page': rng.randint(1, 3), 'kinds': {}}
+    ctx = {'category': category, 'page': rng.randint(1, 3), 'kinds': {}, 'captions': {}}
     bands = sorted(skeleton['bands'], key=lambda b: ORDER.index(b['kind']) if b['kind'] in ORDER else 99)
     by_kind = {}
     for b in bands:
@@ -436,6 +444,9 @@ def main():
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--limit', type=int, default=0, help='draw only the first N examples (for a quick look)')
     ap.add_argument('--boxes', action='store_true', help='the boxes design: each row a prompt with the text boxes and their answer')
+    ap.add_argument('--labels', action='store_true',
+                    help="Forma's box reader: write labels.jsonl, every text drawn with its box, band and role")
+    ap.add_argument('--no-images', action='store_true', help='draw the pages but do not save them, for --labels alone')
     args = ap.parse_args()
 
     src = os.path.join(args.dataset, 'examples.jsonl')
@@ -447,12 +458,21 @@ def main():
         examples = examples[:args.limit]
 
     out = {'train': [], 'eval': []}
+    labels = []
     for ex in examples:
         for v in range(args.variants):
             rng = random.Random('%d-%s-%d' % (args.seed, ex['id'], v))
             img = render(ex['skeleton'], ex['category'], rng, noise=v > 0)
             name = '%s-%d.png' % (ex['id'], v)
-            img.save(os.path.join(args.dataset, name), optimize=True)
+            if not args.no_images:
+                img.save(os.path.join(args.dataset, name), optimize=True)
+            if args.labels:
+                # Forma's box reader (2026-11-04) learns each text's band and role
+                # from these. The words are this script's placeholders, never a
+                # report's: a skeleton holds none.
+                k = ex['skeleton']
+                labels.append({'image': name, 'id': ex['id'], 'split': ex['split'], 'width': k['width'], 'height': k['height'],
+                               'margins': k['margins'], 'bands': list(_bands), 'texts': list(_drawn)})
             row = {'image': name, 'id': ex['id'], 'category': ex['category'], 'target': ex['target']}
             if args.boxes:
                 # Its own generator, so the page drawn is the same as without --boxes.
@@ -463,6 +483,10 @@ def main():
     for split, rows in out.items():
         with open(os.path.join(args.dataset, split + '.jsonl'), 'w', encoding='utf-8', newline='\n') as fh:
             for r in rows:
+                fh.write(json.dumps(r) + '\n')
+    if args.labels:
+        with open(os.path.join(args.dataset, 'labels.jsonl'), 'w', encoding='utf-8', newline='\n') as fh:
+            for r in labels:
                 fh.write(json.dumps(r) + '\n')
     print('images %d (examples %d x variants %d): train %d, eval %d' % (
         len(out['train']) + len(out['eval']), len(examples), args.variants, len(out['train']), len(out['eval'])))

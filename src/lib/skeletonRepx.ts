@@ -4,8 +4,10 @@
  *
  * Forma's vision model looks at a picture of a report page and writes its
  * skeleton (skeletonText.ts): the paper, the bands, and each control's kind,
- * place, size, font and role, but none of its words. This module writes the
- * .repx, the Mockup's layout and the spec from that skeleton.
+ * place, size, font and role, but none of its words. Forma's box reader
+ * (boxReader.ts, 2026-11-04) writes one from OCR's reading of the page
+ * instead. This module writes the .repx, the Mockup's layout and the spec
+ * from either.
  * - **Words** come from what OCR read on the same page, matched by place. A
  *   title or a caption takes the text printed inside its box. One with
  *   nothing read keeps a placeholder: "Total" in a footer, "Caption"
@@ -245,9 +247,10 @@ const key = (p: Pick<Place, 'band' | 'control' | 'row' | 'cell'>) => `${p.band}:
 
 /**
  * The report a skeleton describes, its words from `texts` where they were read.
- * `title` names the report when no title was read.
+ * `title` names the report when no title was read. `readBy` names what read
+ * the layout, for the spec: the vision model unless said otherwise.
  */
-export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly PageText[]; title?: string } = {}): SkeletonDesign {
+export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly PageText[]; title?: string; readBy?: string } = {}): SkeletonDesign {
   const texts = options.texts ?? [];
   const places = placesOf(k);
 
@@ -453,7 +456,7 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
   const markdown = [
     `# ${title}`,
     '',
-    `Read from the picture by Forma's vision model: ${k.paper}${k.landscape ? ' landscape' : ''}, ${k.bands.length} bands, ${controlCount} controls.`,
+    `Read from the picture by ${options.readBy ?? "Forma's vision model"}: ${k.paper}${k.landscape ? ' landscape' : ''}, ${k.bands.length} bands, ${controlCount} controls.`,
     '',
     texts.length
       ? `${read} of ${read + placeholders} titles and captions took their words from the page's text; ${placeholders ? `${placeholders} kept a placeholder to replace.` : 'none kept a placeholder.'}`
@@ -461,7 +464,9 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
     '',
     fields.length ? '| Field | Printed as |\n| --- | --- |\n' + fields.map((f) => `| \`[${f}]\` | a value |`).join('\n') : 'No field is bound.',
     '',
-    'Bind real data in the Data tab. The positions are the model\'s reading of the picture; check them in the Preview.',
+    options.readBy
+      ? 'Bind real data in the Data tab. The bands and roles are a reading of the picture; check them in the Preview.'
+      : 'Bind real data in the Data tab. The positions are the model\'s reading of the picture; check them in the Preview.',
   ].join('\n');
 
   return { title, repx, layout: { title, pageWidth: k.width, sections }, markdown, fields, read, placeholders };

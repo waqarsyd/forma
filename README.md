@@ -458,6 +458,10 @@ src/
                        boxText (the boxes design: the vision model given the
                        text read on a page as numbered boxes, and asked only
                        for its bands and each box's band and role),
+                       boxReader (Forma's box reader: two small networks,
+                       learned on the CPU, that put each text OCR read in its
+                       band and give it its role, decoded in print order and
+                       made a skeleton at the places OCR read),
                        skeletonRepx (the report a skeleton describes, its
                        words from what OCR read in each box, its values bound
                        to fields named after their column's caption),

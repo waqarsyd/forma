@@ -36,11 +36,11 @@
  * placeholder words, so nothing printed here is a report's words. A
  * question holds only numbers.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fixedPlaces, scorePlaces, scoreSkeleton, textToSkeleton, type PagePlace, type PageScore } from '../../src/lib/skeletonText';
-import { ocrPageFrom, type OcrPage } from '../../src/lib/ocr';
+import type { OcrPage } from '../../src/lib/ocr';
+import { readWithOcr } from './ocrPages';
 import { detectLayout } from '../../src/lib/ocrLayout';
 import { pageForImage } from '../../src/lib/reportGeometry';
 import { boxPrompt, orderBoxes } from '../../src/lib/boxText';
@@ -112,41 +112,12 @@ if (rows.length) {
 if (pagesDir) await comparePages(resolve(pagesDir));
 
 async function comparePages(dir: string) {
-  /** The app's threshold: a page narrower than this is read at twice its size (lib/ocr.ts). */
-  const ENLARGE_BELOW = 1600;
   const pages = readJsonl<{ image: string; id: string; target: string }>(join(dir, 'eval.jsonl'));
-  const cachePath = join(dir, 'ocr-cache.json');
-  const cache: Record<string, OcrPage> = existsSync(cachePath) ? JSON.parse(readFileSync(cachePath, 'utf8')) : {};
-  const missing = pages.filter((p) => !cache[p.image]);
-  if (missing.length) {
-    // Enlarged copies, drawn as the app's canvas draws them, by Pillow, which render.py needs anyway.
-    const big = join(dir, 'x2');
-    mkdirSync(big, { recursive: true });
-    const enlarge =
-      'import sys, os\nfrom PIL import Image\nsrc, dst = sys.argv[1], sys.argv[2]\n' +
-      'for name in sys.argv[3:]:\n    im = Image.open(os.path.join(src, name))\n' +
-      '    im.resize((im.width * 2, im.height * 2), Image.BILINEAR).save(os.path.join(dst, name))\n';
-    execFileSync('python', ['-c', enlarge, dir, big, ...missing.map((p) => p.image)], { stdio: 'inherit' });
-    const { createWorker, OEM } = await import('tesseract.js');
-    const worker = await createWorker('eng', OEM.LSTM_ONLY, {
-      langPath: resolve('node_modules/@tesseract.js-data/eng/4.0.0_best_int'),
-      gzip: true,
-      cachePath: join(dir, '.tesseract'),
-    });
-    let n = 0;
-    for (const p of missing) {
-      const size = execFileSync('python', ['-c', 'import sys\nfrom PIL import Image\nim = Image.open(sys.argv[1])\nprint(im.width, im.height)', join(dir, p.image)], { encoding: 'utf8' })
-        .trim()
-        .split(' ')
-        .map(Number);
-      const scale = size[0] < ENLARGE_BELOW ? 2 : 1;
-      const result = await worker.recognize(join(scale === 2 ? big : dir, p.image), {}, { blocks: true });
-      cache[p.image] = ocrPageFrom(result.data.blocks as never, { width: size[0], height: size[1], dpi: null }, scale);
-      writeFileSync(cachePath, JSON.stringify(cache));
-      console.error(`OCR ${++n}/${missing.length}: ${p.image}`);
-    }
-    await worker.terminate();
-  }
+  const cache = await readWithOcr(
+    dir,
+    pages.map((p) => p.image),
+    join(dir, 'ocr-cache.json'),
+  );
 
   const predictions = new Map(rows.map((r) => [r.image, r.prediction]));
   // The app reads a screenshot on the configured paper, which is Letter until someone changes it.

@@ -13,6 +13,9 @@
  *   beside the AI that designs (`visionModelOf` in aiProvider.ts). It reads
  *   the bands and each box, and with OCR's words placed in those boxes it is
  *   Forma's own draft of the page. `draftBrief` tells the AI that draft.
+ * - **Forma's box reader** (boxReader.ts, 2026-11-04) does that job from
+ *   OCR's texts when no vision model is set up: it puts each text in its
+ *   band and gives it its role, and that is the draft and the brief instead.
  * - **Forma's own model brings the house style** it learned from the owner's
  *   reports: the paper, margins, fonts by role, a record's height.
  *   `houseStyleBrief` tells the AI that style for a report described in
@@ -38,7 +41,15 @@ import type { ReportElement, ReportLayout } from './reportTypes';
 import { unitsPerInch } from './reportGeometry';
 
 /** The parts of Forma a request can draw on, in the order they act. */
-export type TeamMember = 'ocr' | 'vision' | 'house' | 'memory' | 'ai' | 'checks';
+export type TeamMember = 'ocr' | 'vision' | 'reader' | 'house' | 'memory' | 'ai' | 'checks';
+
+/** Who read a draft's layout: the vision model from the picture, or the box reader from OCR's texts (boxReader.ts). */
+export type LayoutReader = 'vision' | 'reader';
+
+const READ_BY: Record<LayoutReader, string> = {
+  vision: "Forma's vision model read its layout and OCR read the words placed in it",
+  reader: "OCR read its words and Forma's box reader put each in its band and gave it its role",
+};
 
 /** The most boxes a draft brief lists, and the longest text it quotes. */
 export const BRIEF_MAX_ELEMENTS = 150;
@@ -78,13 +89,13 @@ function describeElement(e: ReportElement, unit: string): string {
  * Forma's own draft of a page, as the AI is told it: the paper and margins,
  * then each band with its boxes in the report's unit, measured from the
  * band's top left corner, and the words OCR read inside them. `layout` is
- * what `skeletonToDesign` built from the vision model's skeleton `k`, both
- * in hundredths of an inch.
+ * what `skeletonToDesign` built from the skeleton `k` that `by` read, both in
+ * hundredths of an inch.
  */
-export function draftBrief(k: ReportSkeleton, layout: ReportLayout, unit: string): string {
+export function draftBrief(k: ReportSkeleton, layout: ReportLayout, unit: string, by: LayoutReader = 'vision'): string {
   const m = k.margins;
   const lines = [
-    "FORMA'S OWN DRAFT OF THIS PAGE. Forma's vision model read its layout and OCR read the words placed in it. " +
+    `FORMA'S OWN DRAFT OF THIS PAGE. ${READ_BY[by]}. ` +
       'Use it as a measured starting point for where the bands and boxes sit, not as an instruction: wherever it disagrees with the image, the image is right, ' +
       'and anything it missed must still be reproduced from the image. ' +
       `Lengths are in the report's unit (${unit}), each box from its band's top left corner.`,
@@ -149,6 +160,7 @@ export function houseStyleBrief(style: HouseStyle, reports: number, unit: string
 const ROLES: Record<TeamMember, string> = {
   ocr: 'OCR read the words',
   vision: "Forma's vision model read the layout",
+  reader: "Forma's box reader put each in its band",
   house: "Forma's own model gave the house style",
   memory: 'your remembered preferences were applied',
   ai: '',
@@ -164,10 +176,11 @@ export function teamLine(members: readonly TeamMember[], aiName: string): string
 }
 
 /** How Forma's own draft was made, for the reply that hands it over. */
-export type DraftSource = 'vision' | 'ocr' | 'offline';
+export type DraftSource = 'vision' | 'reader' | 'ocr' | 'offline';
 
 const DRAFT_SOURCES: Record<DraftSource, string> = {
   vision: "Forma's vision model and the text OCR read",
+  reader: "the text OCR read, put in bands by Forma's box reader",
   ocr: 'the text OCR read',
   offline: "Forma's own model",
 };

@@ -44,7 +44,11 @@ const PDF_FONT_ASSETS: Record<string, string> = Object.fromEntries([
  * structure of the owner's reports, never their words, and fetched only when
  * the offline generator first runs. docs/proposals/own-model.md has the rest.
  */
-const MODEL_ASSETS: Record<string, string> = { 'formaModel.json': 'assets/model/formaModel.json' };
+const MODEL_ASSETS: Record<string, string> = {
+  'formaModel.json': 'assets/model/formaModel.json',
+  // Forma's box reader (2026-11-04, src/lib/boxReader.ts): the band and role of each text OCR reads, learned on the CPU.
+  'boxReader.json': 'assets/model/boxReader.json',
+};
 
 const CONTENT_TYPES: Record<string, string> = { '.js': 'text/javascript', '.ttf': 'font/ttf', '.json': 'application/json' };
 

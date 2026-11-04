@@ -237,6 +237,7 @@ import { repeatedHeadingTables } from './lib/mockupRows';
 import ChatThread, { WorkingDots } from './components/ChatThread';
 import Composer from './components/Composer';
 import type { OcrBuiltReport } from './components/OcrDialog';
+import type { ReaderBuiltReport } from './lib/ocrAttach';
 import type { ReadPage } from './lib/ocrAttach';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
@@ -2845,6 +2846,42 @@ export default function App() {
     setOcrReview(null);
   };
 
+  /**
+   * A report Forma's box reader built from the text OCR read (2026-11-04,
+   * lib/boxReader.ts): banded, its records printing from bound fields. The
+   * page as OCR read it, every text where it printed, is kept as the revision
+   * before it, so either is one click away in Revisions.
+   */
+  const handleReaderBuild = (built: ReaderBuiltReport, copy: OcrBuiltReport | null) => {
+    if (copy) recordRevision('Read by OCR', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: copy.repxContent, usage: null });
+    const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
+    setResult(newResult);
+    recordRevision("Forma's box reader", newResult);
+    setActiveTab('ui');
+    const bands = built.skeleton.bands.filter((b) => b.controls.length).length;
+    setMessages(prev => [...prev, {
+      id: nextMessageId(),
+      role: 'assistant',
+      text:
+        `Built "${built.title}" from the text OCR read, with Forma's box reader putting each text in its band: ` +
+        `${bands} ${bands === 1 ? 'band' : 'bands'}, the records printing from bound fields.` +
+        (copy ? ' The page exactly as OCR read it is the revision before this one.' : ''),
+      result: newResult,
+    }]);
+    setOcrReview(null);
+  };
+
+  /** Forma's box reader's report from the pages read, or null when it cannot load or finds no text. */
+  const readerBuild = async (read: readonly { meta: PreviewMeta; read: ReadPage }[]): Promise<ReaderBuiltReport | null> => {
+    try {
+      const [{ loadBoxReader }, { buildWithReader }] = await Promise.all([import('./lib/boxReader'), import('./lib/ocrAttach')]);
+      return buildWithReader(read, await loadBoxReader(), config.pageSize);
+    } catch (err) {
+      console.warn("Forma's box reader could not read the page.", err);
+      return null;
+    }
+  };
+
   /** The text read from the sent pages, as attachments for the message. */
   const ocrAttachments = async (read: readonly { meta: PreviewMeta; read: ReadPage }[]): Promise<TextAttachment[]> => {
     if (!read.length) return [];
@@ -3381,6 +3418,19 @@ export default function App() {
         console.warn("Forma's vision model could not read the page; the AI designs without its draft.", err);
       }
     }
+    // With no vision model's draft, Forma's box reader puts the texts OCR read
+    // in their bands (2026-11-04, lib/boxReader.ts), and that is the brief and
+    // the stand-in. It needs no AI and no GPU, so it is there for every picture.
+    if (!draft && input.read.length) {
+      const built = await readerBuild(input.read);
+      if (built && !signal.aborted) {
+        const { draftBrief } = await import('./lib/formaTeam');
+        brief = draftBrief(built.skeleton, built.layout, config.unit, 'reader');
+        members.push('reader');
+        const readerResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
+        draft = async () => ({ result: readerResult, source: 'reader' });
+      }
+    }
     if (!draft && input.read.length) {
       const read = input.read;
       draft = async () => {
@@ -3693,6 +3743,13 @@ export default function App() {
       if (read.length) {
         const { buildFromRead } = await import('./lib/ocrAttach');
         const built = buildFromRead(read, config.unit, config.pageSize);
+        // Banded by Forma's box reader when it can be (2026-11-04), with the page
+        // as OCR read it kept as the revision before; OCR's copy alone otherwise.
+        const banded = await readerBuild(read);
+        if (banded) {
+          handleReaderBuild(banded, built);
+          return;
+        }
         if (built) {
           handleOcrBuild(built);
           return;
@@ -3817,9 +3874,11 @@ export default function App() {
       if (read.length) {
         const { buildFromRead } = await import('./lib/ocrAttach');
         const built = buildFromRead(read, config.unit, config.pageSize);
-        if (built) {
+        const banded = await readerBuild(read);
+        if (banded || built) {
           say(`Forma's vision model could not read the page (${why}), so the report was built from the text OCR read.`);
-          handleOcrBuild(built);
+          if (banded) handleReaderBuild(banded, built);
+          else if (built) handleOcrBuild(built);
           return;
         }
       }

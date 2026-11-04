@@ -152,6 +152,8 @@ values, each group's total and the grand total.
 
 **An image** is built from the text OCR read, by `buildFromRead` in
 `ocrAttach.ts`, the build the OCR review's Build .repx makes, now shared.
+Since 2026-11-04 Forma's box reader puts that reading in bands first; see
+*Forma's box reader* below.
 The owner's bilingual certificate, which Gemini could not finish because
 thinking took its whole output limit, built this way with no model.
 
@@ -763,6 +765,154 @@ table's first row read 77.4%, 40.6% and 59.1%. A caption made from a box
 now has a length estimated from its width, since the question carries
 numbers only.
 
+### The deployment check on the boxes run's model (2026-11-04)
+
+*Forma vision export* Version 3 ran on Kaggle's CPU for 55 minutes, on the
+boxes run's merged model:
+- **The files:** the Q8_0 model is 2,077 MB and the projector 668 MB, as
+  before.
+- **llama.cpp** answered both pages.
+- **Ollama** now imports the model with the chat template copied from
+  `qwen3.5:2b`, lists vision, and generates. Both answers came back with
+  empty `content` and finished on length. The whole answer was in the
+  message's `reasoning`: Ollama's qwen3.5 parser treats what the model
+  writes as thinking, and the fine-tuned model never closes it.
+
+Fixing that means one of three changes: leave PARSER and RENDERER out of
+the Modelfile, ask with thinking off, or read `reasoning` when `content` is
+empty. None was made, because no vision model is wired into Forma.
+
+### Forma's box reader (2026-11-04)
+
+The owner's choice after the boxes run: "go with the CPU classifier
+option". OCR already places the text, so the reader does not look at the
+picture at all. It reads the boxes OCR found and the characters in them,
+and says which band each text is in and what role it plays. It is two
+small networks, learned on this server's CPU and shipped as
+`assets/model/boxReader.json`: 7,552 weights, 68,705 bytes.
+
+How it reads a page (`src/lib/boxReader.ts`):
+- **Lines.** The texts are grouped into the lines they print on.
+- **A band per line.** The line network weighs 33 features of each line:
+  - its place on the page and the gaps around it;
+  - how many lines share its shape, which is how records show;
+  - where it sits against the records;
+  - whether its texts stand in the records' columns;
+  - what characters it holds.
+
+  The bands are then decoded together in DevExpress's print order, the
+  odds of each band following another learned from the training pages and
+  weighted 0.2 against the line's own scores.
+- **A role per text.** The text network weighs 71 features: the text's
+  place in its line and column, its characters, its line's band and the
+  line's features. Three of them say whether the texts in its column, on
+  lines shaped like its own, read the same or differ.
+- **One settled fact.** A row of column headings lines up with the records
+  under it and reads as one more record. `settleRecords` gives the line
+  that opens a run of records back to the header band above it when the
+  line holds no digit and the next line has one in a column under it.
+- **The skeleton.** Each band keeps its first appearance, and the records
+  only their first. The first record is the first stretch of lines that
+  repeats for two more periods; where several periods fit, the shortest
+  under which every line holds a text reading word for word as it did a
+  period earlier. Each text becomes a label (a page number an
+  XRPageInfo), sized as OCR's own build sizes one, at the place OCR read
+  it. Bands stack from the top margin as DevExpress prints the first page,
+  so nothing moves. `skeletonToDesign` makes it a report:
+  - titles and captions take OCR's words;
+  - values are bound to fields named after the captions above them;
+  - totals sum those fields.
+- **A guard.** `readerCoverage` counts what a design would lose: a band
+  that prints once, seen a second time, or a line among the records shaped
+  like none of them. Over 15% of a page, OCR's copy is built instead.
+
+How it was trained (`scripts/model/boxes.ts`, `npx tsx`, no npm script):
+- **The data.** `render.py --labels` writes every text it draws with its
+  box, band and role. The words are the script's placeholders. Version 4's
+  2,640 layouts, twice each, made 5,280 pages in under four minutes; 80 are
+  held out.
+- **As OCR reads them.** 2,600 training pages were read by OCR as the app
+  reads a picture (`scripts/model/ocrPages.ts`, taken out of `evaluate.ts`,
+  12 Tesseract workers, about 25 minutes). Each text read takes the band
+  and role of the drawn text it covers most. The drawn boxes of every
+  training page come too, jittered, thinned and run together as OCR does.
+- **The sizes.** 7,378 pages, 209,453 lines and 810,852 texts. One layout
+  in twenty is held out to choose the transition weight, by the mean of
+  each band's accuracy. Training takes about five minutes.
+
+Measured on the 40 held-out pages as OCR read them (`v5-eval-pages`, drawn
+again after the caption fix below), beside the vision model's boxes run:
+
+| On OCR's reading of the held-out pages | Vision model | Box reader |
+|---|---|---|
+| Texts of each band's first appearance: right band | 23.2% | 72.8% |
+| … right band and role | 8.7% | 66.5% |
+| All texts: band, role, both right | | 88.3%, 91.8%, 83.4% |
+| Text found where it prints (OCR's own build: 53.9%) | 52.4% | 52.2% |
+| Box right at half overlap (OCR's own build: 14.0%) | | 13.7% |
+| Pages built banded; the rest as OCR's copy | | 33 of 40 |
+
+By band, the page footer is right for all 9 of its texts, Detail for
+94.7%, the report header for 89.2%, the report footer for 83.5%, a group
+header for 76.3%, the page header for 71.5% and a group footer for 64.1%;
+the two margins' four texts are all wrong. By role, values are right for
+95.7%, captions for 89.6%, titles for all 20, page numbers for 84.6% and
+totals for 51.2%.
+
+**It places text as OCR does and adds what OCR cannot: the bands, the roles
+and a design.** Its places come from OCR, so on the page it stays within
+1.7 points of OCR's own build, sized alike. What it adds is the structure,
+which the vision model never got: the band of each band's first
+appearance right three times as often, band and role more than seven
+times. It is wired in three places:
+- **As the AI's brief.** With no vision model, Forma's team tells the AI
+  the reader's draft (`draftBrief(…, 'reader')`).
+- **As the stand-in.** The same draft is used when the AI cannot answer.
+- **As the build with no key.** A picture is built banded, with OCR's
+  copy kept as the revision before it (`buildWithReader`).
+
+Checked in the owner's Chrome with no key, on held-out page r100: 20
+records under a header block and a total. The reply was "Built … with
+Forma's box reader putting each text in its band: 4 bands". The Preview
+printed:
+- the report header's captions;
+- the page header;
+- one record of five bound fields, three times over test data;
+- the report footer's total.
+
+What it took, in the order it was found:
+1. **Trained on drawn boxes alone**, it was right about the band of 88% of
+   texts with the drawn boxes and 75% with OCR's. Trained on OCR's
+   reading of the same kind of page, 88% with either.
+2. **Unweighted, the rare bands were read as records**: the page footer
+   was right for 56%. Weighting each class by the square root of its
+   rarity, at most five times, made it 100%.
+3. **`render.py` drew a fresh random caption in every record**, where a
+   report prints its static text the same each time, so "a column of one
+   word is a caption" could not be learned. Captions are now drawn once
+   per control on a page. This changes the Kaggle dataset too, for the
+   better.
+4. **Decoded at full weight**, a record after a record was so likely that
+   a page number at the foot of a short listing became one more record.
+   Choosing the weight by overall accuracy picked 1, because records are
+   most lines; by the mean of each band's accuracy, 0.2.
+5. **A second settled rule was measured and left out.** It said that a
+   caption whose column reads differently on the next record is a value.
+   It took captions from 93.7% right to 77.4% on the drawn boxes.
+6. **The first live run built a four-record Detail band** of 22 fields: a
+   code had recurred four lines apart by chance, and counting matches
+   preferred that period. The period rule above fixed it; a test pins
+   both cases.
+7. **Labels sized to the ink wrapped mid-word** in the Preview
+   ("Designatio" over "n"). They are now sized as OCR's own build sizes
+   them, and a title allows for bold.
+
+Its weak spots, in order: totals, group footers, the margins, and names in
+records, which a hand-made listing showed it can call captions. It is
+measured on drawn pages only: a scan of a real report has never been
+scored, and doing so would need real reports' pictures, which are client
+material and stay on this machine.
+
 ### Still to build
 
 1. ~~Train version 4 and score it~~: done 2026-11-04. It loops on every
@@ -770,8 +920,10 @@ numbers only.
 2. ~~Train the boxes design once and score it~~: done 2026-11-04. With
    OCR's boxes it places 52.4% against OCR's 55.7%, and it puts 23% of
    boxes in the right band, so Forma's vision path does not ask it.
-3. The Ollama check again, with the chat template, on the boxes run's
-   model: running on Kaggle's CPU (*Forma vision export*, Version 3).
+3. ~~The Ollama check again, with the chat template~~: done 2026-11-04.
+   llama.cpp answers; Ollama generates, but into `reasoning` (see *The
+   deployment check on the boxes run's model*). Fix it before a vision
+   model is next wired in.
 4. ~~More than one page per picture~~: done 2026-11-04. The vision model
    reads an upload's first page and, when there are more, its last, and
    `mergePageSkeletons` (`skeletonRepx.ts`) keeps the first page's bands
@@ -779,16 +931,13 @@ numbers only.
    their totals. Streaming the model's answer as it is written is no
    longer wanted, since the minimal chat (2026-11-04) shows working dots
    and not the answer's text.
-5. **The owner's decision, before any more GPU.** The only part this
-   design needs from a model is a band and a role for each box OCR reads.
-   Three ways on:
-   - **Stop:** keep OCR and Forma's own model, and leave the vision brief
-     off.
-   - **More from the same model:** more epochs, or a larger model. Each run
-     is 4 to 5 GPU hours, and none has yet read the page.
-   - **No vision model:** a small classifier trained here on the CPU, from
-     the same skeletons, that takes each box's place and size and gives its
-     band and role.
+5. ~~The owner's decision, before any more GPU~~: the CPU classifier,
+   2026-11-04, built as *Forma's box reader* above and wired in.
+6. **The box reader's weak spots**: totals (51% right), group footers (64%)
+   and names in records. More drawn layouts with group footers, and a
+   check on scans of real reports kept on this machine, come first.
+7. **The brief's effect on a generation** is unmeasured, as the vision
+   brief's was: `bench:fidelity` needs the owner's key.
 
 ## Forma's team: every part in its role (2026-11-03)
 
@@ -827,8 +976,9 @@ the owner's key. The stand-ins were checked in the owner's Chrome with
 Local AI pointed at a closed port. The vision brief needs a vision model
 running, and waits for an exported model worth running. Version 4 loops
 (see *Version 4 loops on every page*), and the boxes run places worse than
-OCR alone (see *The boxes run lists the boxes and reads little*). The rest
-is recorded under
+OCR alone (see *The boxes run lists the boxes and reads little*). Since
+2026-11-04 Forma's box reader gives a draft and a brief without one (see
+*Forma's box reader*). The rest is recorded under
 *One request, every part of Forma in its role* in
 `docs/notes/app-shell.md`.
 

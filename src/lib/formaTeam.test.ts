@@ -67,6 +67,13 @@ describe('draftBrief', () => {
     expect(brief).toContain('- Page footer, height 20:\n  (nothing drawn)');
   });
 
+  it("says when Forma's box reader, not the vision model, read the layout", () => {
+    const brief = draftBrief(skeleton, layout, 'HundredthsOfAnInch', 'reader');
+    expect(brief).toMatch(/^FORMA'S OWN DRAFT OF THIS PAGE\. OCR read its words and Forma's box reader put each in its band and gave it its role\. /);
+    expect(brief).not.toContain('vision model');
+    expect(brief).toContain('- Report header, height 60:');
+  });
+
   it("gives every length in the report's own unit", () => {
     const brief = draftBrief(skeleton, layout, 'TenthsOfAMillimeter');
     expect(brief).toContain('margins top 127, bottom 101.6, left 101.6, right 76.2');
@@ -125,6 +132,9 @@ describe('the replies', () => {
     );
     expect(teamLine(['house', 'ai', 'checks'], 'Local AI')).toBe("Forma's own model gave the house style, Local AI designed the report and Forma checked and repaired the result.");
     expect(teamLine(['ai'], 'Gemini')).toBe('');
+    expect(teamLine(['ocr', 'reader', 'ai', 'checks'], 'Gemini')).toBe(
+      "OCR read the words, Forma's box reader put each in its band, Gemini designed the report and Forma checked and repaired the result.",
+    );
   });
 
   it('says why the AI did not answer in a few words, and what the draft was made from', () => {
@@ -137,5 +147,6 @@ describe('the replies', () => {
         'Send the request again when Gemini is available to have it designed in full.',
     );
     expect(fallbackReply('OpenRouter', 'Failed to fetch', 'offline')).toContain("from Forma's own model.");
+    expect(fallbackReply('Gemini', '503', 'reader')).toContain("from the text OCR read, put in bands by Forma's box reader.");
   });
 });

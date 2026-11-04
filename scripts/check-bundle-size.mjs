@@ -321,6 +321,13 @@ const BUDGETS = [
    * that is a reason to read the archetype count before raising this.
    */
   { prefix: 'formaModel', ext: '.json', max: 198_000, note: 'the offline model, lazy' },
+  /*
+   * Forma's box reader (2026-11-04, src/lib/boxReader.ts): two small networks,
+   * 7,552 weights at five decimals, 68,705 B as first trained, so 94%. More
+   * features or a wider hidden layer move it; read the weight count in the
+   * training script's last line before raising this.
+   */
+  { prefix: 'boxReader', ext: '.json', max: 73_000, note: "Forma's box reader, lazy" },
 ];
 
 /**

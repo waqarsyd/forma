@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,245 tests in 114 files** — under the `node` environment
+`npm test` runs Vitest over **2,260 tests in 115 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -94,6 +94,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/attachments` | 9 |  |
 | `lib/batchQueue` | 24 |  |
 | `lib/boxText` | 5 | the boxes design for the vision model: its question word for word with render.py's, boxes numbered in reading order and read back, an answer read tolerantly, made a skeleton on the boxes' places, and scored box by box |
+| `lib/boxReader` | 14 | Forma's box reader: texts grouped into the lines they print on; every line's and text's features finite and as many as the model reads; a small network's arithmetic; a band that cannot follow the one above never decoded; a skeleton keeping each band once and one record, a one-line record whose code recurs by chance and a two-line one, with every text where OCR read it; made a report with fields named after the captions; the shipped reader reading these features, holding no string but its names, and reading a plain listing as headings over records with its page number at the foot; a heading row taken for a record given back to the header; a report built from an OCR page and nothing from an empty one; a reader trained on other features refused, and fetched again |
 | `lib/chatSession` | 21 |  |
 | `lib/contactSubmit` | 6 |  |
 | `lib/criteria` | 10 | DevExpress's expression language; the 44 expressions and 11 totals of parity case s16, each a string DevExpress printed |
@@ -106,7 +107,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/expressions` | 8 | the expression reference and the check a generated one is held to, including that an aggregate in a column prints blank |
 | `lib/fidelity` | 18 | the benchmark's scorer; the runner under `scripts/fidelity/` is not in the suite |
 | `lib/formaModel` | 12 | Forma's own model over made-up reports: a skeleton keeps the structure and every text's role and none of its words, the paper named either way up, the feature vector; a Crystal Reports layout (`skeletonFromLayout`) named, margined and titled as a parsed report is, with unknown kinds, roles and non-finite numbers held to the vocabulary; `categoryOf` naming a generic category and never the folder; the house style by role, two kinds of report with their categories, the archetype a request names ranked first, the same clusters every time; `unexpectedStrings` empty and naming what is slipped in; and the shipped `assets/model/formaModel.json` holding no string outside its vocabulary |
-| `lib/formaTeam` | 8 | Forma's team: the vision model's draft told to the AI in the report's own unit, with OCR's words, bound values and totals named, a long text cut and the boxes capped, and the image said to win; the house style told as defaults, nothing when it holds nothing, and the shipped model's style read; who took part named in order; why the AI did not answer in a few words, and what the stand-in draft was made from |
+| `lib/formaTeam` | 9 | Forma's team: the vision model's draft told to the AI in the report's own unit, with OCR's words, bound values and totals named, a long text cut and the boxes capped, and the image said to win; the box reader's draft said to be the box reader's; the house style told as defaults, nothing when it holds nothing, and the shipped model's style read; who took part named in order; why the AI did not answer in a few words, and what the stand-in draft was made from |
 | `lib/firebaseClient` | 4 | the auth and Firestore halves of the loader against mocks, and the imports that would undo the split against the source |
 | `lib/geminiClient` | 6 |  |
 | `lib/geminiErrors` | 28 | since 2026-11-02 also which quota a 429 is (daily or per minute), the count to midnight Pacific when daily quotas reset, and a spent daily allowance named as one, with Forma Offline offered meanwhile |
@@ -191,7 +192,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,245 in 114 files** — and that total is the arithmetic sum of the column above
+**Total: 2,260 in 115 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -205,7 +206,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2127** against a real 2,245 and will talk you into
+A grep for `\bit(` answers **2142** against a real 2,260 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
