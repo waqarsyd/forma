@@ -144,6 +144,15 @@ export function lineSpacingPt(family: string | null | undefined, sizePt: number,
 }
 
 /**
+ * One line alone, in points: GDI+'s cell ascent plus descent, where a font
+ * sets a gap between lines, else its spacing. What decides whether a label
+ * crossing the page's foot can be split there (parity row 57).
+ */
+export function oneLinePt(family: string | null | undefined, sizePt: number, style?: FontStyleSpec): number {
+  return lineMetricsFor(family, style).one * sizePt;
+}
+
+/**
  * How tall `count` lines print, in points, before the 1.5pt a grown control
  * adds: one line at its own height, more at the line spacing each (row 51).
  * `short` false is one line that fits its box only kerned, which takes the

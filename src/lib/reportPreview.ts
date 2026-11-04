@@ -39,7 +39,7 @@
 import { formatComposite, formatDate, toRoman } from './netFormat';
 import { pxToUnits, unitsPerInch } from './reportGeometry';
 import { parsePicture, type PreviewPicture } from './pictureBox';
-import { GROW_EXTRA_PT, lineSpacingPt, linesHeightPt, type FontSpec, type MeasureText } from './textMeasure';
+import { GROW_EXTRA_PT, lineSpacingPt, linesHeightPt, oneLinePt, type FontSpec, type MeasureText } from './textMeasure';
 import { ReportData, aggregate, groupRuns, sortCompare, sortedOrder, valueText, type CalculatedField, type TextData, type TextScope, type TypedRow } from './reportData';
 import { parseParameters, type ReportParameter } from './repxParameters';
 import { isTrue, parseCriteria, type Value } from './criteria';
@@ -3059,6 +3059,46 @@ export function splitInstance(inst: BandInstance, avail: number, unit: string, s
       const fit = Math.floor((avail - pc.y - toUnits(inset.top)) / spacing + EPS);
       // Unmeasured text is taken as one line.
       const lineCount = pc.lines ? pc.lines.length : pc.text ? 1 : 0;
+      if (lineCount === 1) {
+        /*
+         * One line crossing the page's foot (parity row 57, 2026-11-04,
+         * measured in sweep s64: about 63,000 layouts in Arial and Times New
+         * Roman from 8 to 14pt, the room a unit and a twentieth at a time, and
+         * every s41 and s51 case). With r the room from the label's top to the
+         * foot and H its box, after growing:
+         * - kept whole, overrunning the foot, while H - r is at most half a
+         *   96-dpi pixel;
+         * - split at the foot, r here and H - r carried, when the line fits
+         *   the room below its top padding (one line is GDI+'s ascent plus
+         *   descent, and in Arial and Times New Roman 0.1615 hundredths more
+         *   for a text of two or more characters) AND the box holds the
+         *   padding, that line and three tenths of the spacing;
+         * - otherwise moved whole to the next page.
+         * Until this the test was the line spacing alone, which moved labels
+         * DevExpress split and split some it moved (s41c, s51). Other fonts
+         * kept the room condition in all twelve measured; a second split mode
+         * some of them showed depended on whether the host process was 32- or
+         * 64-bit, and is not modelled.
+         */
+        const r = avail - pc.y;
+        const family = c.fontFamily ?? 'Times New Roman';
+        const size = c.fontSize ?? 9.75;
+        const line = toUnits(oneLinePt(family, size, c));
+        const text = pc.text ?? c.text ?? '';
+        const longer = [...text].length > 1 && /^(arial|times new roman)$/i.test(family.trim()) ? (0.1615 / 100) * perInch : 0;
+        if (pc.height - r <= perInch / 192 + EPS) {
+          first.push(pc);
+          continue;
+        }
+        if (r + EPS >= toUnits(inset.top) + line + longer && pc.height + EPS >= toUnits(inset.top + inset.bottom) + line + 0.3 * spacing) {
+          first.push({ ...pc, height: r });
+          boxCut = true;
+          continue;
+        }
+        crossing.push({ origBottom: bottom, origY: pc.y, part: { ...pc, y: 0 } });
+        movedTop = Math.min(movedTop, pc.y);
+        continue;
+      }
       // An empty label has no line to keep, so it goes with its record: c02's
       // record 12, with empty notes, moved to page 2 whole.
       if (lineCount >= 1 && fit >= lineCount) {

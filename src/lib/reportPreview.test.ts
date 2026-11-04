@@ -2037,11 +2037,56 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
   // label that moved whole, where the room ran to 930, and its page header
   // followed it there. A label whose line stays keeps the part to the foot.
   it('ends a part above a label that moves whole, and at the foot when one stays', () => {
-    const two = layoutBand(band(label(1, 'a', 'x', 0) + label(2, 'b', 'x', 40)), 1, null, { measure: null, unit: 'HundredthsOfAnInch' });
+    // The second box is 22 tall: Arial 10pt splits at the foot only from 20.308
+    // (parity row 57), and the 20 this fixture had until then moves whole.
+    const two = layoutBand(band(label(1, 'a', 'x', 0) + label(2, 'b', 'x', 40, 22)), 1, null, { measure: null, unit: 'HundredthsOfAnInch' });
     const [moved] = splitInstance(two, 50, 'HundredthsOfAnInch');
     expect(moved!.height).toBe(40);
     const [stayed] = splitInstance(two, 57, 'HundredthsOfAnInch');
     expect(stayed!.height).toBe(57);
+  });
+
+  /*
+   * Parity row 57 (2026-11-04, sweep s64): a one-line label crossing the
+   * foot. Arial 10pt: one line (ascent and descent) is 15.517 units, the
+   * spacing 15.971, so a split needs 15.517 of room below the top padding and
+   * a box of 15.517 + 0.3 x 15.971 = 20.308; within half a 96-dpi pixel of
+   * fitting it is kept whole. Measured edges: room 15.51|15.52, box
+   * 20.306|20.308.
+   */
+  describe('a one-line label at the foot (parity row 57)', () => {
+    const at = (h: number, text = 'x') => layoutBand(band(label(1, 'a', text, 40, h)), 1, null, { measure: null, unit: 'HundredthsOfAnInch' });
+    const fate = (inst: BandInstance, avail: number) => {
+      const [first, rest] = splitInstance(inst, avail, 'HundredthsOfAnInch');
+      const kept = first?.controls.find((pc) => pc.control.name === 'a');
+      if (kept && Math.abs(kept.height - (avail - 40)) < 1e-6) return 'split';
+      if (kept) return 'kept';
+      return rest?.controls.some((pc) => pc.control.name === 'a') ? 'moved' : 'gone';
+    };
+
+    it('moves a box too short to split, however much room there is (s51: 20 units, 17 of room)', () => {
+      expect(fate(at(20), 57)).toBe('moved');
+      expect(fate(at(20.3), 57)).toBe('moved');
+    });
+
+    it('splits a box tall enough, at the foot, when the line fits the room', () => {
+      expect(fate(at(20.31), 57)).toBe('split');
+      expect(fate(at(30), 40 + 15.52)).toBe('split');
+    });
+
+    it('moves it when the line does not fit the room', () => {
+      expect(fate(at(30), 40 + 15.51)).toBe('moved');
+    });
+
+    it('needs 0.1615 more room for two or more characters, in Arial and Times New Roman', () => {
+      expect(fate(at(30, 'xy'), 40 + 15.6)).toBe('moved');
+      expect(fate(at(30, 'xy'), 40 + 15.7)).toBe('split');
+    });
+
+    it('keeps it whole when it overruns the foot by half a pixel or less', () => {
+      expect(fate(at(20), 40 + 19.5)).toBe('kept');
+      expect(fate(at(20), 40 + 19.4)).toBe('moved');
+    });
   });
 
   // Parity row 40, measured in s29s: DevExpress cuts a record at the foot of
