@@ -10,11 +10,13 @@
  * The engine is loaded on first use, like `pdf.ts` and `genai.ts`, and from
  * this site's own `/ocr/` (see `servedAssets('ocr', …)` in vite.config.ts): the worker,
  * the core build for the browser's SIMD support, and the English LSTM data,
- * about 7 MB the first time and cached by the browser after; with each
- * language chosen in Settings, its own data too (lib/ocrLanguages.ts).
+ * about 7 MB the first time and cached by the browser after. Another
+ * language's data is fetched only when a page turns out to need it: since
+ * 2026-11-04 OCR works out the language itself (lib/ocrScript.ts), where
+ * before the user ticked languages in Settings.
  */
 import type { PixelBox } from './reportGeometry';
-import { ocrHandwriting, ocrLanguageString } from './ocrLanguages';
+import { OTHER_SCRIPTS, bestScript, latinLanguageOf, looksHandwritten, meanConfidence, probeLines, readsAsLatin } from './ocrScript';
 
 /** One recognized word: its text, its box in the image's pixels, and Tesseract's confidence, 0 to 100. */
 export interface OcrWord {
@@ -87,18 +89,16 @@ export type OcrProgress = (stage: string, progress: number) => void;
 
 type Engine = Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>>;
 let engine: Promise<Engine> | null = null;
-/** The languages the engine was created with, `eng` alone or `eng+ara` and so on. */
+/** The languages the engine reads now, `eng` alone or `ara+eng` and so on. */
 let engineLanguages = '';
 let listener: OcrProgress | null = null;
 
 /**
- * The engine, created once and kept: loading it is most of the cost. Created
- * again when the languages chosen in Settings change (2026-11-04,
- * lib/ocrLanguages.ts), since Tesseract reads the ones it was created with.
+ * The engine, created once and kept: loading it is most of the cost. Given
+ * other languages, the same worker is re-initialised with them rather than
+ * created again, which fetches only the new language's data.
  */
-async function loadEngine(): Promise<Engine> {
-  const languages = ocrLanguageString();
-  if (engine && engineLanguages !== languages) await stopOcr();
+async function loadEngine(languages = 'eng'): Promise<Engine> {
   if (!engine) {
     engineLanguages = languages;
     engine = import('tesseract.js')
@@ -115,8 +115,55 @@ async function loadEngine(): Promise<Engine> {
         engine = null;
         throw err;
       });
+    return engine;
   }
-  return engine;
+  const worker = await engine;
+  if (engineLanguages !== languages) {
+    const { OEM } = await import('tesseract.js');
+    await worker.reinitialize(languages, OEM.LSTM_ONLY);
+    engineLanguages = languages;
+  }
+  return worker;
+}
+
+type Recognized = Awaited<ReturnType<Engine['recognize']>>;
+
+/** One reading of the whole page with `languages`, as an `OcrPage`. */
+async function readWith(
+  languages: string,
+  input: HTMLCanvasElement,
+  image: { width: number; height: number; dpi: number | null },
+  scale: number,
+): Promise<OcrPage> {
+  const worker = await loadEngine(languages);
+  const result: Recognized = await worker.recognize(input, {}, { blocks: true });
+  return ocrPageFrom(result.data.blocks as TesseractBlocks[] | null, image, scale);
+}
+
+/** A canvas as one PNG, encoded once for the reads that share it. */
+function pngOf(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('The page could not be encoded.'))), 'image/png'));
+}
+
+/**
+ * How confidently `languages` reads each of the given lines, as rectangles of
+ * the whole page. Measured on 2026-11-04 on the owner's certificate, the
+ * three ways a line can be probed: as a rectangle of the page, Arabic read the
+ * six lines at 58.8 against English's 32.7; cut out as crops, 50.0 against
+ * 46.8, too close to tell, because a crop has no resolution and Tesseract
+ * guesses one for each (269 to 789 dpi on those six). The page goes in once,
+ * encoded beforehand: given the canvas, each read encoded it again, and the
+ * probes took 98 s.
+ */
+async function probeWith(languages: string, page: Blob, boxes: readonly PixelBox[]): Promise<number[]> {
+  const worker = await loadEngine(languages);
+  const out: number[] = [];
+  for (const b of boxes) {
+    const rectangle = { left: Math.round(b.x0), top: Math.round(b.y0), width: Math.round(b.x1 - b.x0), height: Math.round(b.y1 - b.y0) };
+    const result: Recognized = await worker.recognize(page, { rectangle });
+    out.push(result.data.confidence);
+  }
+  return out;
 }
 
 /** Stop the engine, for a cancelled run; the next run loads it again. */
@@ -147,20 +194,65 @@ export async function recognizePage(
   const input = scale === 1 ? source : enlarge(source, scale);
   const abort = () => void stopOcr();
   options.signal?.addEventListener('abort', abort, { once: true });
+  const stopped = () => {
+    if (options.signal?.aborted) throw new DOMException('OCR was stopped.', 'AbortError');
+  };
   try {
-    if (options.signal?.aborted) throw new DOMException('OCR was stopped.', 'AbortError');
+    stopped();
     listener = options.onProgress ?? null;
-    const worker = await loadEngine();
-    const result = await worker.recognize(input, {}, { blocks: true });
-    if (options.signal?.aborted) throw new DOMException('OCR was stopped.', 'AbortError');
-    const page = ocrPageFrom(result.data.blocks as TesseractBlocks[] | null, { width: source.width, height: source.height, dpi }, scale);
-    // The lines Tesseract was unsure of, read again as handwriting when
-    // Settings ask for it (2026-11-04, lib/handwriting.ts). A model that will
-    // not load leaves Tesseract's reading as it was.
-    if (!ocrHandwriting()) return page;
+    const image = { width: source.width, height: source.height, dpi };
+    const started = performance.now();
+    const took: string[] = [];
+    const lap = (what: string, from: number) => took.push(`${what} ${((performance.now() - from) / 1000).toFixed(1)}s`);
+    // English first, as every page always was; then the page's own language,
+    // worked out from that reading (lib/ocrScript.ts).
+    let page = await readWith('eng', input, image, scale);
+    lap('English', started);
+    stopped();
+    let language = 'eng';
+    if (readsAsLatin(page)) {
+      const latin = latinLanguageOf(page.lines.map((l) => l.text).join(' '));
+      if (latin) {
+        const from = performance.now();
+        const again = await readWith(`${latin}+eng`, input, image, scale);
+        lap(latin, from);
+        if (meanConfidence(again.lines) >= meanConfidence(page.lines) - 2) [page, language] = [again, latin];
+      }
+    } else {
+      const boxes = probeLines(page);
+      if (boxes.length) {
+        // The probes read the picture at its own size, where the boxes already
+        // are: they only compare scripts, and an enlarged page costs four
+        // times as much to send each time (Arabic still led English 57 to 29).
+        const from = performance.now();
+        listener?.('working out the language', 0);
+        const png = await pngOf(source);
+        const english = await probeWith('eng', png, boxes);
+        const scores: Record<string, number[]> = {};
+        for (const script of OTHER_SCRIPTS) {
+          stopped();
+          scores[script] = await probeWith(script, png, boxes);
+        }
+        lap('probes', from);
+        const script = bestScript(english, scores);
+        if (script) {
+          const again = performance.now();
+          [page, language] = [await readWith(`${script}+eng`, input, image, scale), script];
+          lap(script, again);
+        }
+      }
+    }
+    stopped();
+    console.debug(`OCR read the page as ${language === 'eng' ? 'English' : language} (${took.join(', ')}).`);
+    // The lines still unsure, read again as handwriting (2026-11-04,
+    // lib/handwriting.ts): only on a Latin page where enough of them are
+    // unsure, and only where this site serves the model. One that will not
+    // load leaves Tesseract's reading as it was.
+    if (language !== 'eng' || !looksHandwritten(page)) return page;
     try {
+      const { handwritingServed, readHandwriting } = await import('./handwriting');
+      if (!(await handwritingServed())) return page;
       listener?.('reading handwriting', 0);
-      const { readHandwriting } = await import('./handwriting');
       return await readHandwriting(page, source, options.signal);
     } catch (err) {
       console.warn('Handwriting was not read; keeping what OCR read.', err);

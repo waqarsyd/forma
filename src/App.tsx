@@ -52,6 +52,7 @@ import {
   IconTune,
   IconWarn,
 } from './components/landing/icons';
+import { applyDetected, detectSettings, repxFacts, type DetectInput, type DetectedSettings, type SourcePage } from './lib/autoConfig';
 import {
   SIDEBAR_CLOSED_WIDTH,
   SIDEBAR_OPEN_WIDTH,
@@ -159,8 +160,10 @@ const OcrDialog = lazy(() => import('./components/OcrDialog'));
 const ProviderSettings = lazy(() => import('./components/ProviderSettings'));
 // What Forma remembers (2026-11-02), in the settings dialog only.
 const MemorySettings = lazy(() => import('./components/MemorySettings'));
-const DataSettings = lazy(() => import('./components/DataSettings'));
-const OcrSettings = lazy(() => import('./components/OcrSettings'));
+/* DataSettings (right to left, stored procedure) and OcrSettings (languages,
+   handwriting) went on 2026-11-04, with the choices they offered: Forma works
+   those out per request now (lib/autoConfig.ts, lib/ocrScript.ts).
+   `git log --diff-filter=D -- src/components/OcrSettings.tsx` finds them. */
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -231,7 +234,6 @@ import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import { makeRightToLeft } from './lib/repxRtl';
-import { setOcrHandwriting, setOcrLanguages } from './lib/ocrLanguages';
 import {
   buildChatHistory,
   isGenerationTurn,
@@ -262,6 +264,14 @@ import {
   REVIEW_MIN_WIDTH,
   REVIEW_MAX_WIDTH,
 } from './lib/panelSize';
+
+/** What a request brings that its settings are worked out from (lib/autoConfig.ts). */
+interface DetectionSources {
+  texts?: readonly { file: string; text: string }[];
+  metas?: readonly PreviewMeta[];
+  pages?: readonly SourcePage[];
+  words?: string;
+}
 
 interface DesignResult {
   content: string;
@@ -1619,6 +1629,9 @@ export default function App() {
   const [uploadNotices, setUploadNotices] = useState<string[]>([]);
   const [isIngesting, setIsIngesting] = useState(false);
   const [result, setResult] = useState<DesignResult | null>(null);
+  /* The unit the open report is written in, for the panes that measure it:
+     its own, not whichever unit the next request will be worked out in. */
+  const openUnit = useMemo(() => repxFacts(result?.repxContent).unit ?? 'HundredthsOfAnInch', [result?.repxContent]);
   const [showLogin, setShowLogin] = useState(false);
   const [loginInitialMode, setLoginInitialMode] = useState<'signin' | 'signup'>('signin');
   const [currentRoute, setCurrentRoute] = useState(currentPath());
@@ -2135,25 +2148,22 @@ export default function App() {
     // retired id (gemini-2.5-flash) and defeat detection — drop it.
     try { localStorage.removeItem('selectedAiModel'); } catch { /* storage disabled */ }
 
+    // The page size is worked out per request (lib/autoConfig.ts); this one is
+    // the stand-in until the first request does. There is no header or footer
+    // here since 2026-11-04: their defaults went into every prompt as "Include
+    // Company Logo: No" and "Include Page Numbers: Yes", overruling the source.
     const defaults: ReportConfig = {
       version: '23.2',
       unit: 'HundredthsOfAnInch',
       pageSize: 'Letter',
-      header: {
-        showCompanyLogo: false,
-        title: ''
-      },
-      footer: {
-        showPageNumbers: true,
-        customText: ''
-      },
       customApiKey: ''
     };
 
-    // The document settings are a standing preference — someone targeting
-    // DevExpress 20.1 targets it every session. They used to live in state only,
-    // so every reload silently reset the version to 23.2 and the next export
-    // went out for a designer that would refuse it.
+    // The version and unit are a standing preference, learned from the reports
+    // the user brings: someone targeting DevExpress 20.1 targets it every
+    // session. They used to live in state only, so every reload silently reset
+    // the version to 23.2 and the next export went out for a designer that
+    // would refuse it.
     //
     // The key is deliberately applied *after* the merge and never round-trips
     // through localStorage; see reportConfigStore.ts.
@@ -2184,13 +2194,6 @@ export default function App() {
     writeProviderSettings(config);
   }, [config.provider, config.localUrl, config.localModel, config.openRouterModel, config.openRouterKey, config.visionModel]);
 
-  // The languages OCR reads besides English, and handwriting, as Settings has them (lib/ocrLanguages.ts).
-  useEffect(() => {
-    setOcrLanguages(config.ocrLanguages);
-  }, [config.ocrLanguages]);
-  useEffect(() => {
-    setOcrHandwriting(config.ocrHandwriting);
-  }, [config.ocrHandwriting]);
 
   /**
    * Whether an AI model is set up to answer: Gemini with a key, a local AI with
@@ -2773,12 +2776,55 @@ export default function App() {
     }));
   }, []);
 
+  /*
+   * The settings Forma works out for itself (2026-11-04, lib/autoConfig.ts):
+   * the DevExpress version, unit, paper, direction and stored procedure, read
+   * from the report, pages and words of the request in hand, where they used
+   * to be chosen in Settings. `effectiveConfig` is the stored config with them
+   * laid over it; every path that makes a report reads that, not `config`.
+   */
+  const detectedRef = useRef<DetectedSettings | null>(null);
+  const isReportFile = (t: { file: string }) => /\.repx$/i.test(t.file);
+  const detectionInput = (sources: DetectionSources, withOpenReport: boolean): DetectInput => ({
+    // An uploaded report first, then the one open, which a request refines.
+    repx: [...(sources.texts ?? []).filter(isReportFile).map((t) => t.text), ...(withOpenReport ? [result?.repxContent] : [])],
+    pages: [
+      ...(sources.metas ?? []).flatMap((m) => (m.pagePoints ? [{ ...m.pagePoints, pagePoints: m.pagePoints }] : [])),
+      ...(sources.pages ?? []),
+    ],
+    text: [sources.words, ...(sources.texts ?? []).filter((t) => !isReportFile(t)).map((t) => t.text)].filter(Boolean).join('\n'),
+    locale: navigator.language,
+    learned: { version: config.version, unit: config.unit },
+  });
+  /** Work the settings out for the request in hand, and keep them for every path that makes its report. */
+  const detectFor = (sources: DetectionSources): DetectedSettings => {
+    const detected = detectSettings(detectionInput(sources, true));
+    detectedRef.current = detected;
+    console.debug(`Forma worked out: ${detected.reasons.join('; ')}.`);
+    // A report the user brings teaches the version and unit their designer
+    // uses, kept for the requests that bring none.
+    const brought = (sources.texts ?? []).filter(isReportFile).map((t) => repxFacts(t.text)).find((f) => f.version || f.unit);
+    if (brought && ((brought.version && brought.version !== config.version) || (brought.unit && brought.unit !== config.unit))) {
+      setConfig((prev) => ({ ...prev, ...(brought.version ? { version: brought.version } : {}), ...(brought.unit ? { unit: brought.unit } : {}) }));
+    }
+    return detected;
+  };
+  const effectiveConfig = (): ReportConfig => (detectedRef.current ? applyDetected(config, detectedRef.current) : config);
+  /** Pages OCR read, as detection takes them: their shape, and their words for the direction. */
+  const readSources = (read: readonly { meta: PreviewMeta; read: ReadPage }[]) => ({
+    pages: read.map(({ meta, read: r }) => ({ width: r.ocr.width, height: r.ocr.height, pagePoints: meta.pagePoints })),
+    words: read.flatMap(({ read: r }) => r.ocr.lines.map((l) => l.text)).join('\n'),
+  });
+
   const batchResults = useRef<Map<string, DesignResult>>(new Map());
   const runOneBatchFile = useCallback(async (file: File, signal: AbortSignal, id: string) => {
     const ingested = await ingestFile(file, `batch-${id}`, config.unit);
     const parts = toAttachmentParts(ingested.images, ingested.texts);
     const { analyzeReportDesign } = await loadGemini();
-    const response = await analyzeReportDesign('', parts, config, undefined, signal);
+    // Worked out per file and not kept, since up to three files run at once,
+    // and from the file alone: the report open on the bench is not its source.
+    const fileConfig = applyDetected(config, detectSettings(detectionInput({ texts: ingested.texts, metas: ingested.imageMeta }, false)));
+    const response = await analyzeReportDesign('', parts, fileConfig, undefined, signal);
     const { auditRepx } = await import('./lib/repxAudit');
     const audit = auditRepx(response.repxContent, response.layout);
     batchResults.current.set(id, {
@@ -2868,7 +2914,8 @@ export default function App() {
       if (read === undefined) {
         try {
           const { readPage } = await import('./lib/ocrAttach');
-          read = await readPage(src, meta, config.unit, config.pageSize, (progress) => onProgress?.(i, pages.length, progress));
+          const settings = effectiveConfig();
+          read = await readPage(src, meta, settings.unit, settings.pageSize, (progress) => onProgress?.(i, pages.length, progress));
         } catch (err) {
           // The image still goes with the message; only its text does not.
           console.warn(`The text of ${meta.file} could not be read:`, err);
@@ -2922,12 +2969,13 @@ export default function App() {
   const ocrReviewPages = useMemo(() => (ocrReview ? sentPages[ocrReview] ?? [] : []), [sentPages, ocrReview]);
 
   /**
-   * A report as Settings asks for it: right to left when that is checked
-   * (2026-11-04, lib/repxRtl.ts). Applied wherever a report reaches the bench,
-   * because the prompt is the only other thing that knows the setting and
-   * most of the ways Forma makes a report use no prompt.
+   * A report as its source is written: right to left when the request's text
+   * or report is (2026-11-04, lib/repxRtl.ts and lib/autoConfig.ts). Applied
+   * wherever a report reaches the bench, because the prompt is the only other
+   * thing that knows the direction and most of the ways Forma makes a report
+   * use no prompt.
    */
-  const asConfigured = (xml: string): string => (config.rtl && xml ? makeRightToLeft(xml) : xml);
+  const asConfigured = (xml: string): string => (effectiveConfig().rtl && xml ? makeRightToLeft(xml) : xml);
 
   /** A report built from OCR alone: every pane, a revision, and a line in the thread. */
   const handleOcrBuild = (built: OcrBuiltReport) => {
@@ -2984,7 +3032,7 @@ export default function App() {
   const readerBuild = async (read: readonly { meta: PreviewMeta; read: ReadPage }[]): Promise<ReaderBuiltReport | null> => {
     try {
       const [{ loadBoxReader }, { buildWithReader }] = await Promise.all([import('./lib/boxReader'), import('./lib/ocrAttach')]);
-      return buildWithReader(read, await loadBoxReader(), config.pageSize);
+      return buildWithReader(read, await loadBoxReader(), effectiveConfig().pageSize);
     } catch (err) {
       console.warn("Forma's box reader could not read the page.", err);
       return null;
@@ -2996,7 +3044,8 @@ export default function App() {
     if (!read.length) return [];
     const { ocrTexts } = await import('./lib/ocrAttach');
     const stamp = Date.now();
-    return ocrTexts(read, config.unit, config.pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}` }));
+    const { unit, pageSize } = effectiveConfig();
+    return ocrTexts(read, unit, pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}` }));
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -3487,6 +3536,8 @@ export default function App() {
    */
   const prepareTeam = async (input: TeamInput | undefined, signal: AbortSignal): Promise<TeamPlan> => {
     if (!input) return NO_TEAM;
+    // The settings worked out for this request, not the stored ones (lib/autoConfig.ts).
+    const config = effectiveConfig();
     const members: TeamMember[] = [];
     let brief = '';
     let draft: TeamPlan['draft'] = null;
@@ -3579,6 +3630,8 @@ export default function App() {
     /** What Forma's own parts bring (lib/formaTeam.ts); absent on a refinement in words. */
     teamInput?: TeamInput,
   ) => {
+    // The settings worked out for this request, not the stored ones (lib/autoConfig.ts).
+    const config = effectiveConfig();
     loadingIntervalRef.current = setInterval(() => setProgress(tickSimulated), STEP_INTERVAL_MS);
 
     console.log(`${copy.start} Prompt: "${currentPrompt}"`);
@@ -3861,6 +3914,7 @@ export default function App() {
    */
   const designOffline = async (message: string) => {
     const staged = [...previews];
+    const stagedMeta = [...previewMeta];
     const stagedForOcr = ocrPages;
     const texts = attachmentTexts;
     setMessages(prev => [...prev, {
@@ -3881,9 +3935,12 @@ export default function App() {
     try {
       // Read behind the scenes, with the message already in the thread (2026-11-03).
       const read = await readSentPages(stagedForOcr);
+      const fromPages = readSources(read);
+      detectFor({ texts, metas: stagedMeta, pages: fromPages.pages, words: [message, fromPages.words].join('\n') });
       if (read.length) {
         const { buildFromRead } = await import('./lib/ocrAttach');
-        const built = buildFromRead(read, config.unit, config.pageSize);
+        const { unit, pageSize } = effectiveConfig();
+        const built = buildFromRead(read, unit, pageSize);
         // Banded by Forma's box reader when it can be (2026-11-04), with the page
         // as OCR read it kept as the revision before; OCR's copy alone otherwise.
         const banded = await readerBuild(read);
@@ -3970,6 +4027,8 @@ export default function App() {
           })().then((readings) => ({ readings }), (e: unknown) => ({ failed: e }))
         : Promise.resolve({ failed: new Error('no vision model is set up') });
       read = await readSentPages(stagedForOcr);
+      const fromPages = readSources(read);
+      detectFor({ metas: stagedMeta, pages: fromPages.pages, words: [message, fromPages.words].join('\n') });
       setIsChatting(true);
       const looked = await looking;
       if ('failed' in looked) throw looked.failed;
@@ -3983,7 +4042,7 @@ export default function App() {
       // The words OCR read on the same page, in the skeleton's unit and on its paper.
       const first = stagedMeta[0];
       const page = read.find(({ meta }) => meta.uploadId === first?.uploadId && (meta.page ?? 0) === (first?.page ?? 0));
-      const paper = reading.skeleton.paper === 'Custom' ? config.pageSize : reading.skeleton.paper;
+      const paper = reading.skeleton.paper === 'Custom' ? effectiveConfig().pageSize : reading.skeleton.paper;
       const texts = page
         ? pageTextsOf(detectLayout([{ ocr: page.read.ocr, page: pageForImage(page.read.ocr, 'HundredthsOfAnInch', paper) }], { unit: 'HundredthsOfAnInch' }))
         : [];
@@ -4015,7 +4074,8 @@ export default function App() {
       const why = err?.message || 'it did not answer';
       if (read.length) {
         const { buildFromRead } = await import('./lib/ocrAttach');
-        const built = buildFromRead(read, config.unit, config.pageSize);
+        const { unit, pageSize } = effectiveConfig();
+        const built = buildFromRead(read, unit, pageSize);
         const banded = await readerBuild(read);
         if (banded || built) {
           say(`Forma's vision model could not read the page (${why}), so the report was built from the text OCR read.`);
@@ -4075,6 +4135,10 @@ export default function App() {
       return;
     }
 
+    // The version, unit, paper, direction and data source, worked out from what
+    // this request brings (lib/autoConfig.ts); again once its pages are read.
+    detectFor({ texts: attachmentTexts, metas: previewMeta, words: promptText });
+
     // A picture for Forma's own vision model alone (2026-11-03): the Local AI
     // model is itself "forma-vision", which is asked the one question it was
     // trained on and not the mega-prompt; or no AI is set up and the vision
@@ -4125,6 +4189,8 @@ export default function App() {
     // layer does (2026-11-01). It is read now, behind the scenes, with the
     // message already in the thread (2026-11-03).
     const read = await readSentPages(stagedForOcr);
+    const fromPages = readSources(read);
+    detectFor({ texts: attachmentTexts, metas: stagedMeta, pages: fromPages.pages, words: [currentPrompt, fromPages.words].join('\n') });
     const readByOcr = await ocrAttachments(read);
     const currentTexts = [...attachmentTexts, ...readByOcr];
     if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
@@ -4237,6 +4303,8 @@ export default function App() {
   const startDescribedGeneration = async (request: ReportDescriptionRequest) => {
     setIsAnalyzing(true);
     activeDescribeRef.current = request;
+    // The words are the whole source here, answers included ("on A4", "EXEC dbo.Sales").
+    detectFor({ words: [request.description, request.title, request.dataSchema, ...(request.answers ?? []).map((a) => a.answer)].filter(Boolean).join('\n') });
     // The house style is the brief, and Forma's own model the stand-in (lib/formaTeam.ts).
     const teamInput: TeamInput = { read: [], described: request };
     setProgress(startProgress());
@@ -5454,7 +5522,7 @@ export default function App() {
                   {/* ReportMockup sits directly in the holder — it carries the
                       artifact's proof frame itself (see its root), so wrapping it
                       in `.wb-proof` would draw that frame twice. */}
-                  <ReportMockup layout={result.layout!} sourceImages={mockupSourceImages} reportUnit={config.unit} />
+                  <ReportMockup layout={result.layout!} sourceImages={mockupSourceImages} reportUnit={openUnit} />
                 </div>
               )}
 
@@ -5544,7 +5612,7 @@ export default function App() {
                 <div className="wb-sheet wb-reg-marks">
                   <RepxViewer
                     xml={result.repxContent || ''}
-                    unit={config.unit}
+                    unit={openUnit}
                     audit={repxAudit}
                     usage={summariseUsage(result.usage) ? { short: summariseUsage(result.usage)!, long: describeUsage(result.usage) } : null}
                   />
@@ -5590,8 +5658,8 @@ export default function App() {
               const run = ocrRuns[ocrKey(meta)];
               return run?.state === 'done' ? run.read.ocr : null;
             })}
-            unit={config.unit}
-            pageSize={config.pageSize}
+            unit={effectiveConfig().unit}
+            pageSize={effectiveConfig().pageSize}
             onBuild={handleOcrBuild}
             onClose={() => setOcrReview(null)}
           />
@@ -5611,7 +5679,7 @@ export default function App() {
             tabIndex={-1}
           >
             <div className="wb-modal-head">
-              <h2 id="config-title">Report configuration</h2>
+              <h2 id="config-title">Settings</h2>
               <button className="wb-pill wb-pill--round" onClick={dismissConfigWithoutSaving} aria-label="Close without saving">
                 <IconClose size={16} />
               </button>
@@ -5624,137 +5692,28 @@ export default function App() {
                 `sessionStorage` and the vault and must never travel with it. */}
             <div className="wb-modal-body">
               <div className="wb-modal-col">
+              {/* What used to be chosen here is worked out for each request
+                  since 2026-11-04 (lib/autoConfig.ts, lib/ocrScript.ts): the
+                  DevExpress version, unit, paper, direction and data source,
+                  and the language and handwriting of a picture, from what the
+                  request brings. The owner's rule is that nobody is asked what
+                  the input already says. A header and footer are reproduced
+                  from the source, or asked for in words, like anything else. */}
               <div className="wb-fset">
-                <div className="wb-eyebrow"><b>x 000</b>Output<span className="wb-fade" /></div>
-                {/* The two short values share a row and the long one takes the
-                    width. The other way round — version alone, unit beside page
-                    size — is what the single-column dialog did, and in a 328px
-                    column it clipped the unit to "Hundredths of an". */}
-                <div className="wb-grid2">
-                  <div>
-                    <label className="wb-lbl" htmlFor="cfg-ver">DevExpress version</label>
-                    <span className="wb-sel">
-                      <select
-                        className="wb-ctl"
-                        id="cfg-ver"
-                        value={config.version}
-                        onChange={(e) => setConfig({ ...config, version: e.target.value })}
-                      >
-                        <option value="26.1">v26.1</option>
-                        <option value="25.2">v25.2</option>
-                        <option value="25.1">v25.1</option>
-                        <option value="24.1">v24.1</option>
-                        <option value="23.2">v23.2</option>
-                        <option value="23.1">v23.1</option>
-                        <option value="22.2">v22.2</option>
-                        {/* 20.1 is here because the ERP this was first built for is
-                            built against DevExpress.XtraReports.v20.1 and its
-                            templates declare SerializerVersion 20.1.3.0, so a file
-                            matching it drops straight into that codebase.
-
-                            This comment used to say a newer .repx does not open in an
-                            older designer, and that the installed 20.1 was therefore
-                            the only version openable here. Both were wrong. Measured
-                            2026-09-06 with `RepxProbe inspect`: a 24.1 file loaded
-                            through the installed 20.1 assemblies with nothing lost,
-                            and the loader rewrote the tag to 20.1.3.0 on save. Pick
-                            whichever version suits whoever opens the file. */}
-                        <option value="20.1">v20.1</option>
-                      </select>
-                      <IconChevronDown size={13} className="wb-caret" />
-                    </span>
-
-                  </div>
-                  <div>
-                    <label className="wb-lbl" htmlFor="cfg-page">Page size</label>
-                    <span className="wb-sel">
-                      <select
-                        className="wb-ctl"
-                        id="cfg-page"
-                        value={config.pageSize}
-                        onChange={(e) => setConfig({ ...config, pageSize: e.target.value })}
-                      >
-                        <option value="Letter">Letter</option>
-                        <option value="A4">A4</option>
-                        <option value="Legal">Legal</option>
-                      </select>
-                      <IconChevronDown size={13} className="wb-caret" />
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <label className="wb-lbl" htmlFor="cfg-unit">Report unit</label>
-                  <span className="wb-sel">
-                    <select
-                      className="wb-ctl"
-                      id="cfg-unit"
-                      value={config.unit}
-                      onChange={(e) => setConfig({ ...config, unit: e.target.value })}
-                    >
-                      {/* The label is prose, the value is still the exact
-                          DevExpress enum that goes into the XML. The enum names
-                          were the labels and did not fit the field —
-                          "HundredthsOfAnInch" rendered as "HundredthsOfAnIr…",
-                          which is a worse thing to show than the words it
-                          stands for. */}
-                      <option value="HundredthsOfAnInch">Hundredths of an inch</option>
-                      <option value="TenthsOfAMillimeter">Tenths of a millimetre</option>
-                      <option value="Pixels">Pixels</option>
-                    </select>
-                    <IconChevronDown size={13} className="wb-caret" />
-                  </span>
-                </div>
+                <div className="wb-eyebrow"><b>auto</b>Worked out for you<span className="wb-fade" /></div>
+                <p className="wb-hint">
+                  Forma reads the DevExpress version and unit from a report you bring, the paper from your page or
+                  your words, right to left from the text, the stored procedure from your words or data, and the
+                  language of a picture as it reads it. Ask in the chat for anything else.
+                </p>
+                {detectedRef.current && (
+                  <ul className="wb-hint wb-auto-list" aria-label="Worked out for the last request">
+                    {detectedRef.current.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                  </ul>
+                )}
               </div>
-
-              <div className="wb-fset">
-                <div className="wb-eyebrow"><b>y 0000</b>Header<span className="wb-fade" /></div>
-                <label className="wb-checkrow">
-                  <input
-                    type="checkbox"
-                    checked={!!config.header?.showCompanyLogo}
-                    onChange={(e) => setConfig({ ...config, header: { ...config.header, showCompanyLogo: e.target.checked } })}
-                  />
-                  Include company logo
-                </label>
-                <div>
-                  <label className="wb-lbl" htmlFor="cfg-title">Report title</label>
-                  <input
-                    className="wb-ctl"
-                    id="cfg-title"
-                    type="text"
-                    placeholder="e.g., Monthly Sales Report"
-                    value={config.header?.title || ''}
-                    onChange={(e) => setConfig({ ...config, header: { ...config.header, title: e.target.value } })}
-                  />
-                </div>
-              </div>
-
-              <div className="wb-fset">
-                <div className="wb-eyebrow"><b>y 0474</b>Footer<span className="wb-fade" /></div>
-                <label className="wb-checkrow">
-                  <input
-                    type="checkbox"
-                    checked={!!config.footer?.showPageNumbers}
-                    onChange={(e) => setConfig({ ...config, footer: { ...config.footer, showPageNumbers: e.target.checked } })}
-                  />
-                  Include page numbers
-                </label>
-                <div>
-                  <label className="wb-lbl" htmlFor="cfg-foot">Custom footer text</label>
-                  <input
-                    className="wb-ctl"
-                    id="cfg-foot"
-                    type="text"
-                    placeholder="e.g., Confidential Document"
-                    value={config.footer?.customText || ''}
-                    onChange={(e) => setConfig({ ...config, footer: { ...config.footer, customText: e.target.value } })}
-                  />
-                </div>
-              </div>
-
               <Suspense fallback={null}>
-                <DataSettings config={config} onChange={(changes) => setConfig(prev => ({ ...prev, ...changes }))} />
-                <OcrSettings config={config} onChange={(changes) => setConfig(prev => ({ ...prev, ...changes }))} />
+                <MemorySettings />
               </Suspense>
 
               </div>
@@ -5762,7 +5721,6 @@ export default function App() {
               <div className="wb-modal-col">
               <Suspense fallback={null}>
                 <ProviderSettings config={config} onChange={(changes) => setConfig(prev => ({ ...prev, ...changes }))} />
-                <MemorySettings />
               </Suspense>
               <div className="wb-fset">
                 <div className="wb-eyebrow"><b>key</b>Your Gemini key<span className="wb-fade" /></div>

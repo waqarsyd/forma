@@ -315,15 +315,17 @@ const BUDGETS = [
   { prefix: 'eng.traineddata', ext: '.gz', max: 3_140_000, note: 'English OCR data, best_int, lazy' },
   /*
    * The six languages the owner approved on 2026-11-04, from @tesseract.js-data
-   * 1.0.0's best_int data like English's. Each is fetched only by someone who
-   * chose it in Settings, so none adds to what an English reader downloads.
+   * 1.0.0's best_int data like English's. Each is fetched only when a page
+   * needs it (lib/ocrScript.ts): Arabic, Urdu and Hindi to probe a page English
+   * garbled, the other three for a page in one. None adds to what an English
+   * reader of a clean page downloads.
    */
-  { prefix: 'ara.traineddata', ext: '.gz', max: 1_770_000, note: 'Arabic OCR data, chosen in Settings' },
-  { prefix: 'hin.traineddata', ext: '.gz', max: 1_480_000, note: 'Hindi OCR data, chosen in Settings' },
-  { prefix: 'urd.traineddata', ext: '.gz', max: 1_090_000, note: 'Urdu OCR data, chosen in Settings' },
-  { prefix: 'fra.traineddata', ext: '.gz', max: 753_000, note: 'French OCR data, chosen in Settings' },
-  { prefix: 'deu.traineddata', ext: '.gz', max: 1_420_000, note: 'German OCR data, chosen in Settings' },
-  { prefix: 'spa.traineddata', ext: '.gz', max: 2_240_000, note: 'Spanish OCR data, chosen in Settings' },
+  { prefix: 'ara.traineddata', ext: '.gz', max: 1_770_000, note: 'Arabic OCR data, when a page needs it' },
+  { prefix: 'hin.traineddata', ext: '.gz', max: 1_480_000, note: 'Hindi OCR data, when a page needs it' },
+  { prefix: 'urd.traineddata', ext: '.gz', max: 1_090_000, note: 'Urdu OCR data, when a page needs it' },
+  { prefix: 'fra.traineddata', ext: '.gz', max: 753_000, note: 'French OCR data, when a page needs it' },
+  { prefix: 'deu.traineddata', ext: '.gz', max: 1_420_000, note: 'German OCR data, when a page needs it' },
+  { prefix: 'spa.traineddata', ext: '.gz', max: 2_240_000, note: 'Spanish OCR data, when a page needs it' },
   /*
    * Handwriting (2026-11-04, lib/handwriting.ts), opt-in. The runtime is from
    * @huggingface/transformers 3.7.6 and its onnxruntime-web; the model is

@@ -1,10 +1,16 @@
 /**
- * Persistence for the report configuration — and only the report parts of it.
+ * Persistence for the report configuration — and only the part of it that is
+ * the user's standing setup.
  *
- * The settings that describe the *document* (DevExpress version, unit, page
- * size, header, footer) are a standing preference: a user targeting DevExpress
- * 20.1 targets it every session, and losing that on reload means the next export
- * silently goes out as 23.2 and is refused by their designer.
+ * Since 2026-11-04 that is the DevExpress version and the report unit, and
+ * both are learned rather than chosen: Forma reads them from the reports the
+ * user brings (lib/autoConfig.ts) and keeps them for the requests that bring
+ * none, since a user targeting DevExpress 20.1 targets it every session.
+ * Everything else the settings dialog used to ask for (page size, header,
+ * footer, right to left, stored procedure, OCR languages, handwriting) is
+ * worked out per request now, and a stored value nobody can see or change
+ * would only overrule what the request shows. Old entries for them are
+ * dropped on the way in, as any unknown field is.
  *
  * The API key is not a preference and must never be written here. It lives in
  * `sessionStorage`, erased by the browser when the tab closes, with an optional
@@ -15,37 +21,16 @@
  * `ReportConfig` later is *not* persisted until someone adds it here on purpose.
  */
 
-import { isSupportedUnit, isSupportedPageSize } from './reportGeometry';
-import { validOcrLanguages } from './ocrLanguages';
+import { isSupportedUnit } from './reportGeometry';
 
 export const STORAGE_KEY = 'reportConfig';
 
-/**
- * Exactly the fields the settings UI exposes. Nothing else is stored.
- *
- * `rtl` and `spName` joined on 2026-11-04, when Settings began to set them:
- * they describe the document as the others do. Each is checked for its type
- * on the way back in, and the name for a length, so a stored entry cannot
- * grow the prompt without bound. `dataSchema` is deliberately not here: a
- * schema belongs to the Data tab, beside the report it binds.
- */
-const PERSISTED_FIELDS = ['version', 'unit', 'pageSize', 'header', 'footer', 'rtl', 'spName', 'ocrLanguages', 'ocrHandwriting'] as const;
-
-/** Longest stored stored-procedure name. */
-export const MAX_SP_NAME = 256;
+/** Exactly the fields learned from the user's reports. Nothing else is stored. */
+const PERSISTED_FIELDS = ['version', 'unit'] as const;
 
 export interface PersistableConfig {
   version?: string;
   unit?: string;
-  pageSize?: string;
-  header?: { showCompanyLogo?: boolean; title?: string };
-  footer?: { showPageNumbers?: boolean; customText?: string };
-  rtl?: boolean;
-  spName?: string;
-  /** The OCR languages chosen besides English (2026-11-04), only the ones offered. */
-  ocrLanguages?: string[];
-  /** Handwriting read by TrOCR (2026-11-04), a boolean. */
-  ocrHandwriting?: boolean;
 }
 
 /**
@@ -56,7 +41,7 @@ export function toPersistable<T extends PersistableConfig>(config: T): Persistab
   const out: PersistableConfig = {};
   for (const field of PERSISTED_FIELDS) {
     const value = config[field];
-    if (value !== undefined) (out as Record<string, unknown>)[field] = value;
+    if (value !== undefined) out[field] = value;
   }
   return out;
 }
@@ -67,7 +52,8 @@ export function toPersistable<T extends PersistableConfig>(config: T): Persistab
  * Anything unparseable, missing or of the wrong shape falls back to the default
  * rather than throwing — a corrupted entry must not stop the workspace loading.
  * Unknown fields in the stored object are dropped, which is what stops a key
- * written by a future bug (or by hand) from being read back into the config.
+ * written by a future bug (or by hand) from being read back into the config,
+ * and what retires the fields this file stopped keeping on 2026-11-04.
  */
 export function mergeStoredConfig<T extends PersistableConfig>(defaults: T, raw: string | null): T {
   if (!raw) return defaults;
@@ -85,42 +71,18 @@ export function mergeStoredConfig<T extends PersistableConfig>(defaults: T, raw:
   const merged: T = { ...defaults };
   for (const field of PERSISTED_FIELDS) {
     const value = stored[field];
-    if (value === undefined || value === null) continue;
-
-    if (field === 'header' || field === 'footer') {
-      if (typeof value === 'object' && !Array.isArray(value)) {
-        (merged as Record<string, unknown>)[field] = { ...(defaults[field] as object), ...(value as object) };
-      }
-      continue;
-    }
-
-    if (field === 'rtl' || field === 'ocrHandwriting') {
-      if (typeof value === 'boolean') merged[field] = value;
-      continue;
-    }
-    // A language OCR does not offer would be a file the site does not serve.
-    if (field === 'ocrLanguages') {
-      merged.ocrLanguages = validOcrLanguages(value);
-      continue;
-    }
-
     if (typeof value !== 'string') continue;
-    if (field === 'spName' && value.length > MAX_SP_NAME) continue;
 
-    // Type is not enough for these two. `unit` and `pageSize` are DevExpress
-    // enum names that reach the geometry *and* get written verbatim into the
-    // REPX, so an unrecognised one produces a plausible layout at the wrong
-    // scale, or a file DevExpress refuses. Accepting any string here is what
-    // made BUG-001 reachable: a stored `"Document"` silently converted at 100
-    // units per inch instead of 300.
-    //
-    // Rejecting falls back to the default rather than throwing, for the same
-    // reason the rest of this function does: a corrupted entry must not stop
-    // the workspace loading.
+    // Type is not enough for the unit. It is a DevExpress enum name that
+    // reaches the geometry *and* gets written verbatim into the REPX, so an
+    // unrecognised one produces a plausible layout at the wrong scale.
+    // Accepting any string here is what made BUG-001 reachable: a stored
+    // `"Document"` silently converted at 100 units per inch instead of 300.
     if (field === 'unit' && !isSupportedUnit(value)) continue;
-    if (field === 'pageSize' && !isSupportedPageSize(value)) continue;
+    // A version is a SerializerVersion's major and minor, nothing else.
+    if (field === 'version' && !/^\d{2}\.\d$/.test(value)) continue;
 
-    (merged as Record<string, unknown>)[field] = value;
+    merged[field] = value;
   }
 
   return merged;

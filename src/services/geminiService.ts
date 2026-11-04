@@ -63,23 +63,18 @@ import type { AnalysisResponse, ReportLayout, AttachmentPart } from "../lib/repo
 import type { CompatEndpoint } from "./compatClient";
 
 export interface ReportConfig {
+  /**
+   * The version, unit, paper, direction and stored procedure are worked out
+   * for each request from what it brings (lib/autoConfig.ts) and laid over
+   * the stored config before it reaches this file. There is no header or
+   * footer since 2026-11-04: their defaults told the model "Include Company
+   * Logo: No" and "Include Page Numbers: Yes" whatever the source showed.
+   */
   version: string;
   unit: string;
   pageSize: string;
-  header?: {
-    showCompanyLogo?: boolean;
-    title?: string;
-  };
-  footer?: {
-    showPageNumbers?: boolean;
-    customText?: string;
-  };
   rtl?: boolean;
   spName?: string;
-  /** Languages OCR reads besides English (2026-11-04, lib/ocrLanguages.ts); the prompt never sees them. */
-  ocrLanguages?: string[];
-  /** Read the lines OCR was unsure of again as handwriting (2026-11-04, lib/handwriting.ts). */
-  ocrHandwriting?: boolean;
   customApiKey?: string;
   dataSchema?: string;
   modelName?: string;
@@ -1835,16 +1830,6 @@ export async function analyzeReportDesign(
   CRITICAL CONFIGURATION:
   - DevExpress Version: ${config.version}
   - PaperKind: ${pageSize}. The exact PageWidth/PageHeight/ReportUnit values are given in the ROOT STRUCTURE above and are already correct for this paper — use them verbatim rather than recomputing them.
-  ${config.header ? `
-  - HEADER:
-    - Include Company Logo: ${config.header.showCompanyLogo ? 'Yes' : 'No'}
-    - Report Title: ${config.header.title || 'None'}
-  ` : ''}
-  ${config.footer ? `
-  - FOOTER:
-    - Include Page Numbers: ${config.footer.showPageNumbers ? 'Yes' : 'No'}
-    - Custom Footer Text: ${config.footer.customText || 'None'}
-  ` : ''}
   ${config.rtl ? `
   - LOCALIZATION:
     - Set RightToLeft="Yes" and RightToLeftLayout="Yes" on the main report component for Arabic/RTL support.

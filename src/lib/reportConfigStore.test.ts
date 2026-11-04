@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { toPersistable, mergeStoredConfig, MAX_SP_NAME } from './reportConfigStore';
-import { SUPPORTED_UNITS, SUPPORTED_PAGE_SIZES } from './reportGeometry';
+import { toPersistable, mergeStoredConfig } from './reportConfigStore';
+import { SUPPORTED_UNITS } from './reportGeometry';
 
 const defaults = {
   version: '23.2',
   unit: 'HundredthsOfAnInch',
   pageSize: 'Letter',
-  header: { showCompanyLogo: false, title: '' },
-  footer: { showPageNumbers: true, customText: '' },
   customApiKey: '',
 };
 
@@ -19,23 +17,18 @@ const defaults = {
  * the next export goes out targeting the wrong DevExpress.
  */
 describe('toPersistable', () => {
-  it('keeps the report fields', () => {
-    expect(toPersistable(defaults)).toEqual({
-      version: '23.2',
-      unit: 'HundredthsOfAnInch',
-      pageSize: 'Letter',
-      header: { showCompanyLogo: false, title: '' },
-      footer: { showPageNumbers: true, customText: '' },
-    });
+  it('keeps the version and unit learned from the reports the user brings, and nothing else', () => {
+    expect(toPersistable(defaults)).toEqual({ version: '23.2', unit: 'HundredthsOfAnInch' });
   });
 
   it('never carries the API key, however it is spelled', () => {
-    const withKey = { ...defaults, customApiKey: 'AIzaSyREALKEYMATERIAL', modelName: 'gemini-flash-latest' };
+    const withKey = { ...defaults, customApiKey: 'AIzaSyREALKEYMATERIAL', modelName: 'gemini-flash-latest', openRouterKey: 'sk-or-secret' };
     const out = toPersistable(withKey) as Record<string, unknown>;
 
     expect(out.customApiKey).toBeUndefined();
     expect(out.modelName).toBeUndefined();
     expect(JSON.stringify(out)).not.toContain('AIza');
+    expect(JSON.stringify(out)).not.toContain('sk-or');
   });
 
   it('drops fields added later until they are allowlisted on purpose', () => {
@@ -45,40 +38,9 @@ describe('toPersistable', () => {
     expect(out.somethingNew).toBeUndefined();
   });
 
-  it('keeps right to left and the stored procedure, which Settings sets since 2026-11-04, and not a data schema', () => {
-    const out = toPersistable({ ...defaults, rtl: true, spName: 'dbo.GetSales', dataSchema: '{"Amount": 1}', openRouterKey: 'sk-or-secret' } as never) as Record<string, unknown>;
-    expect(out).toMatchObject({ rtl: true, spName: 'dbo.GetSales' });
-    expect(out.dataSchema).toBeUndefined();
-    expect(JSON.stringify(out)).not.toContain('sk-or');
-  });
-});
-
-describe('mergeStoredConfig — direction and data source', () => {
-  it('restores them', () => {
-    const merged = mergeStoredConfig(defaults, JSON.stringify({ rtl: true, spName: 'dbo.GetSales' }));
-    expect(merged).toMatchObject({ rtl: true, spName: 'dbo.GetSales' });
-  });
-
-  it('takes right to left only as a true boolean', () => {
-    expect((mergeStoredConfig(defaults, JSON.stringify({ rtl: 'yes' })) as { rtl?: boolean }).rtl).toBeUndefined();
-    expect((mergeStoredConfig(defaults, JSON.stringify({ rtl: false })) as { rtl?: boolean }).rtl).toBe(false);
-  });
-
-  it('restores handwriting only as a true boolean', () => {
-    expect((mergeStoredConfig(defaults, JSON.stringify({ ocrHandwriting: true })) as { ocrHandwriting?: boolean }).ocrHandwriting).toBe(true);
-    expect((mergeStoredConfig(defaults, JSON.stringify({ ocrHandwriting: 'on' })) as { ocrHandwriting?: boolean }).ocrHandwriting).toBeUndefined();
-  });
-
-  it('restores the OCR languages, dropping any the site does not serve', () => {
-    const merged = mergeStoredConfig(defaults, JSON.stringify({ ocrLanguages: ['fra', '../../etc', 'ara'] })) as { ocrLanguages?: string[] };
-    expect(merged.ocrLanguages).toEqual(['ara', 'fra']);
-    expect(toPersistable({ ...defaults, ocrLanguages: ['hin'] } as never)).toMatchObject({ ocrLanguages: ['hin'] });
-  });
-
-  it('drops a stored procedure name too long to be one, and keeps the rest', () => {
-    const merged = mergeStoredConfig(defaults, JSON.stringify({ spName: 'x'.repeat(MAX_SP_NAME + 1), version: '20.1' })) as { spName?: string; version: string };
-    expect(merged.spName).toBeUndefined();
-    expect(merged.version).toBe('20.1');
+  it('keeps none of what Forma works out per request since 2026-11-04', () => {
+    const chosen = { ...defaults, pageSize: 'A4', header: { title: 'x' }, footer: { showPageNumbers: true }, rtl: true, spName: 'dbo.X', ocrLanguages: ['ara'], ocrHandwriting: true };
+    expect(Object.keys(toPersistable(chosen as never))).toEqual(['version', 'unit']);
   });
 });
 
@@ -106,43 +68,39 @@ describe('mergeStoredConfig', () => {
   });
 
   it('ignores fields of the wrong type instead of adopting them', () => {
-    const merged = mergeStoredConfig(defaults, JSON.stringify({ version: 20.1, pageSize: ['A4'] }));
-    expect(merged.version).toBe('23.2');
-    expect(merged.pageSize).toBe('Letter');
+    expect(mergeStoredConfig(defaults, JSON.stringify({ version: 20.1 })).version).toBe('23.2');
   });
 
-  it('merges a partial header over the default rather than replacing it', () => {
-    const merged = mergeStoredConfig(defaults, JSON.stringify({ header: { title: 'Job Card' } }));
-    expect(merged.header).toEqual({ showCompanyLogo: false, title: 'Job Card' });
+  it('takes a version only as a major and minor', () => {
+    expect(mergeStoredConfig(defaults, JSON.stringify({ version: '20.1.3.0' })).version).toBe('23.2');
+    expect(mergeStoredConfig(defaults, JSON.stringify({ version: 'latest' })).version).toBe('23.2');
+  });
+
+  it('retires what earlier builds stored and Forma now works out: the paper, header, footer, direction, procedure and OCR choices', () => {
+    const old = { pageSize: 'Legal', header: { title: 'Job Card' }, footer: { showPageNumbers: false }, rtl: true, spName: 'dbo.X', ocrLanguages: ['ara'], ocrHandwriting: true, version: '20.1' };
+    const merged = mergeStoredConfig(defaults, JSON.stringify(old)) as Record<string, unknown>;
+    expect(merged.pageSize).toBe('Letter');
+    for (const gone of ['header', 'footer', 'rtl', 'spName', 'ocrLanguages', 'ocrHandwriting']) expect(merged[gone]).toBeUndefined();
+    expect(merged.version).toBe('20.1');
   });
 });
 
 /**
- * `unit` and `pageSize` are not free-text (audit BUG-001).
+ * `unit` is not free-text (audit BUG-001).
  *
- * They are DevExpress enum names that reach the geometry and are then written
+ * It is a DevExpress enum name that reaches the geometry and is then written
  * verbatim into the generated REPX. Accepting any string meant a stored
  * "Document" -- a real ReportUnit member the geometry table did not carry --
  * converted at 100 units per inch instead of 300: a 3x scale error, every font
  * three times too large, and both the layout JSON and the XML internally
- * consistent while doing it. A stored "a4" or "pixels" fell back the same way.
- *
- * Type-checking was not enough, so the domain is checked too. An unsupported
- * value is dropped for the default rather than throwing, matching how the rest
- * of this function treats a corrupted entry.
+ * consistent while doing it. A stored "pixels" fell back the same way.
  */
-describe('mergeStoredConfig — unit and pageSize are validated, not just typed', () => {
-  const defaults = { version: '20.1', unit: 'HundredthsOfAnInch', pageSize: 'Letter' };
+describe('mergeStoredConfig — the unit is validated, not just typed', () => {
   const merge = (stored: object) => mergeStoredConfig(defaults, JSON.stringify(stored));
 
-  it('accepts every supported value', () => {
+  it('accepts every supported unit, Document included, which is real and used to be silently wrong', () => {
     for (const unit of SUPPORTED_UNITS) expect(merge({ unit }).unit).toBe(unit);
-    for (const pageSize of SUPPORTED_PAGE_SIZES) expect(merge({ pageSize }).pageSize).toBe(pageSize);
-  });
-
-  it('accepts Document and Tabloid, which are real and used to be silently wrong', () => {
     expect(merge({ unit: 'Document' }).unit).toBe('Document');
-    expect(merge({ pageSize: 'Tabloid' }).pageSize).toBe('Tabloid');
   });
 
   it('drops an unsupported unit rather than converting it wrongly', () => {
@@ -151,26 +109,9 @@ describe('mergeStoredConfig — unit and pageSize are validated, not just typed'
     }
   });
 
-  it('drops an unsupported page size', () => {
-    for (const pageSize of ['A3', 'a4', 'LETTER', 'Letter ', '']) {
-      expect(merge({ pageSize }).pageSize).toBe(defaults.pageSize);
-    }
-  });
-
-  it('keeps the other fields when one is rejected', () => {
-    // A bad unit must not cost the user their version or paper choice.
-    const merged = merge({ unit: 'Nonsense', pageSize: 'A4', version: '20.1' });
+  it('keeps the version when the unit is rejected', () => {
+    const merged = merge({ unit: 'Nonsense', version: '20.1' });
     expect(merged.unit).toBe(defaults.unit);
-    expect(merged.pageSize).toBe('A4');
     expect(merged.version).toBe('20.1');
-  });
-
-  it('still does not validate the fields that are genuinely free-text', () => {
-    // `version` is checked against the dropdown elsewhere; header/footer text is
-    // the user's own words. Validation here is specifically about the two enum
-    // fields that reach the XML.
-    expect(mergeStoredConfig({ ...defaults, header: { title: '' } } as any,
-      JSON.stringify({ header: { title: 'Anything at all — 你好' } }) as any) as any)
-      .toMatchObject({ header: { title: 'Anything at all — 你好' } });
   });
 });

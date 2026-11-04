@@ -43,6 +43,24 @@ export const HANDWRITING_CONFIDENCE = 60;
 export const HANDWRITING_BASE = '/handwriting/';
 const MODEL = 'Xenova/trocr-small-handwritten';
 
+/** One of the model's files, asked for to learn whether this site serves it. */
+export const HANDWRITING_PROBE = `${HANDWRITING_BASE}models/${MODEL}/config.json`;
+
+let served: Promise<boolean> | null = null;
+
+/**
+ * Whether this site serves the handwriting model, which is a deploy-time
+ * decision (README). Asked once per page load. A JSON answer is required, not
+ * only a 200: a site that rewrites every unknown path to its index, as the
+ * hosted one does, answers a missing file with HTML and a 200.
+ */
+export function handwritingServed(): Promise<boolean> {
+  served ??= fetch(HANDWRITING_PROBE, { method: 'HEAD' })
+    .then((r) => r.ok && /json/i.test(r.headers.get('content-type') ?? ''))
+    .catch(() => false);
+  return served;
+}
+
 /** The lines of a page to read again, by index: those below `below`, with at least one word. */
 export function unsureLines(page: OcrPage, below = HANDWRITING_BELOW): number[] {
   return page.lines.flatMap((line, i) => (line.confidence < below && line.words.length ? [i] : []));

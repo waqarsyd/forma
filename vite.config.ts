@@ -21,8 +21,9 @@ const OCR_ASSETS: Record<string, string> = {
   'tesseract-core-simd-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js',
   'tesseract-core-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-lstm.wasm.js',
   'eng.traineddata.gz': 'node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz',
-  // The languages Settings offers besides English (2026-11-04, lib/ocrLanguages.ts),
-  // each fetched only by someone who chose it.
+  // The languages OCR reads besides English (2026-11-04), each fetched only when
+  // a page turns out to need it (lib/ocrScript.ts): Arabic, Urdu and Hindi to
+  // probe a page English garbled, French, German and Spanish for a page in one.
   ...Object.fromEntries(
     ['ara', 'hin', 'urd', 'fra', 'deu', 'spa'].map((l) => [`${l}.traineddata.gz`, `node_modules/@tesseract.js-data/${l}/4.0.0_best_int/${l}.traineddata.gz`]),
   ),
@@ -58,13 +59,14 @@ const MODEL_ASSETS: Record<string, string> = {
 /**
  * Handwriting (2026-11-04, lib/handwriting.ts): TrOCR-small-handwritten, read
  * by Transformers.js on ONNX Runtime's WebAssembly, every file served from
- * this site, the owner's choice over a CDN, and fetched only by someone who
- * turned it on in Settings. The runtime's WebAssembly Vite emits into
+ * this site, the owner's choice over a CDN, and fetched only when a page
+ * looks handwritten (lib/ocrScript.ts, since 2026-11-04; a switch in Settings
+ * before that). The runtime's WebAssembly Vite emits into
  * `assets/` itself, from the `new URL(…, import.meta.url)` onnxruntime-web
  * writes; the model is served at `/handwriting/models/` from
  * `vendor/handwriting/`, which `npm run fetch:handwriting` fills and git
- * ignores. A build without the model leaves those files out, and the switch
- * in Settings says handwriting is not on this site.
+ * ignores. A build without the model leaves those files out, and OCR then
+ * keeps Tesseract's reading of a handwritten page (`handwritingServed`).
  */
 const HANDWRITING_MODEL = 'vendor/handwriting/Xenova/trocr-small-handwritten';
 const HANDWRITING_ASSETS: Record<string, string> = Object.fromEntries(
