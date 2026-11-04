@@ -41,6 +41,7 @@ import {
   fontDecoration,
   recordCountFromLayout,
   pieShare,
+  insetsPt,
   type Appearance,
   type ChartModel,
   type PlacedControl,
@@ -53,7 +54,7 @@ import { readBoundFields } from '../lib/repxBindingPlan';
 import { groupHeaderFields, setGroupField } from '../lib/repxGroupField';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
 import { naturalSize, pictureRect } from '../lib/pictureBox';
-import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt } from '../lib/textMeasure';
+import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt, oneLinePt, turnedLines, turnedWidths } from '../lib/textMeasure';
 import { exportFileName, layoutContinuous, reportToCsv } from '../lib/csvExport';
 import { reportToXlsxFiles, xlsxOptionsOf } from '../lib/xlsxExport';
 import { buildZip } from '../lib/zip';
@@ -861,15 +862,33 @@ function ControlBox({
     const text = placed.text ?? printed(control.text, control.field, record);
     const sizePt = control.fontSize ?? 9.75;
     const font = { family: control.fontFamily ?? 'Times New Roman', sizePt, bold: control.bold, italic: control.italic };
-    const w = ((lineWidthPt(text, font) ?? text.length * sizePt * 0.5) * 96) / 72;
-    const h = (lineSpacingPt(control.fontFamily, sizePt, control) * 96) / 72;
+    const spacingPt = lineSpacingPt(control.fontFamily, sizePt, control);
+    /*
+     * A quarter turn longer than its box (parity row 54, 2026-11-04) prints
+     * the lines DevExpress keeps: laid out along the box, again at the width
+     * of its widest line, as many lines as fit across, the last continued by
+     * characters (`turnedLines`). Until then the whole text was drawn on one
+     * line, cut at the box's edge. Where nothing can measure, as under jsdom,
+     * it is still one line.
+     */
+    const widths = Math.abs(control.angle % 180) === 90 ? turnedWidths(font) : null;
+    let lines = [text];
+    if (widths) {
+      const inset = insetsPt(control.appearance, control.borders);
+      const toPt = (u: number) => (u / unitsPerInch(unit)) * 72;
+      const laid = turnedLines(text, widths, toPt(placed.height) - inset.top - inset.bottom, toPt(control.width) - inset.left - inset.right, oneLinePt(control.fontFamily, sizePt, control), spacingPt, control.wordWrap);
+      lines = laid.length ? laid : [''];
+    }
+    const w = (Math.max(...lines.map((l) => lineWidthPt(l, font) ?? l.length * sizePt * 0.5)) * 96) / 72;
+    const lineH = (spacingPt * 96) / 72;
+    const h = lineH * lines.length;
     const turn = (control.angle * Math.PI) / 180;
     const [boxW, boxH] = [Math.abs(w * Math.cos(turn)) + Math.abs(h * Math.sin(turn)), Math.abs(w * Math.sin(turn)) + Math.abs(h * Math.cos(turn))];
     return (
       <Box {...link}>
         <span style={{ position: 'relative', flex: 'none', width: boxW, height: boxH }}>
-          <span style={{ position: 'absolute', left: '50%', top: '50%', width: w, lineHeight: `${h}px`, whiteSpace: 'pre', transform: `translate(-50%, -50%) rotate(${-control.angle}deg)` }}>
-            {text}
+          <span style={{ position: 'absolute', left: '50%', top: '50%', width: w, lineHeight: `${lineH}px`, whiteSpace: 'pre', transform: `translate(-50%, -50%) rotate(${-control.angle}deg)` }}>
+            {lines.join('\n')}
           </span>
         </span>
       </Box>

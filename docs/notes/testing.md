@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,335 tests in 119 files** — under the `node` environment
+`npm test` runs Vitest over **2,342 tests in 119 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -170,7 +170,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/skeletonRepx` | 11 | jsdom (`checkRepx`); a skeleton made a report again (milestone 6): written and read back through the Preview's parser as the same skeleton, caption lengths and A4's exact size aside; a file the app opens with no audit error; titles and captions in the words read inside their boxes, a placeholder where none was, "Total" in a footer; values bound to fields named after the caption over their column, totals summing that field at their band's scope; a date or a page number as the page showed; the empty Detail band DevExpress expects; the Mockup's sections and the spec; several pages' skeletons joined, the first page's bands kept and a later page's footers added where DevExpress prints them (2026-11-04) |
 | `lib/skeletonText` | 21 | the text Forma's vision model learns to write (milestone 6): a skeleton written and read back exactly, one line per band, control and table row, places rounded to whole hundredths; a model's answer read tolerantly, each skipped line named, a malformed row skipped whole, no page line refused; bands as tall as DevExpress prints them; a variant with the same structure in other places, every control inside its band and the printable width, no word added, the same for the same seed; the instruction word for word as `train_vision.py` asks it, read from the script; the scorer, perfect on the right answer, pairing controls by place within a band; the page scorer that sets the model beside OCR, its fixed bands laid out as render.py draws them, a box right at half overlap and a text found where something was read inside it, readings among the records ignored; a font outside the public list found as a stray word, and replaced by Arial in labels and cells alike |
 | `lib/sourceRect` | 14 |  |
-| `lib/textMeasure` | 45 | 24 from one `it.each`; line breaking and spacing as DevExpress printed them, one line and several in ten fonts; the canvas broke 18 of 18 printed texts identically; the slack a line may overrun its box by, the faces GDI does not kern, and one line at the full spacing when it fits only kerned (row 59); which families have a synthesized bold and how far it widens (row 60), and the two widenings of the families that widen otherwise, against DevExpress's breaks and short lines (row 67); the families GDI does not kern (row 61); line metrics outside the table (row 63); the face the browser knows a GDI family name by (row 62) |
+| `lib/textMeasure` | 52 | 24 from one `it.each`; line breaking and spacing as DevExpress printed them, one line and several in ten fonts; the canvas broke 18 of 18 printed texts identically; the slack a line may overrun its box by, the faces GDI does not kern, and one line at the full spacing when it fits only kerned (row 59); which families have a synthesized bold and how far it widens (row 60), and the two widenings of the families that widen otherwise, against DevExpress's breaks and short lines (row 67); the families GDI does not kern (row 61); line metrics outside the table (row 63); the face the browser knows a GDI family name by (row 62); since 2026-11-04 also turned text laid out twice as DevExpress prints it (parity row 54), over fake widths, and one line as GDI+'s ascent and descent |
 | `lib/themeTransition` | 15 | jsdom |
 | `lib/tokenUsage` | 15 |  |
 | `lib/trueType` | 6 | the committed Liberation faces read for a PDF descriptor (Arial's 905 and -212, a space of 277.832, as DevExpress's s60b); a subset keeping every glyph slot with outlines only for the glyphs used and the components of a composite, the nine tables, long `loca`, checksums a font reader accepts; a CFF font refused |
@@ -196,7 +196,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,335 in 119 files** — and that total is the arithmetic sum of the column above
+**Total: 2,342 in 119 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -210,7 +210,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2217** against a real 2,335 and will talk you into
+A grep for `\bit(` answers **2224** against a real 2,342 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

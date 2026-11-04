@@ -545,6 +545,116 @@ export function canvasMeasurer(): MeasureText | null {
   return measure;
 }
 
+/** The two widths a turned label is laid out by (parity row 54), in points. */
+export interface TurnedWidths {
+  /** GDI's kerned width, which DevExpress breaks a line between words by (row 59). */
+  kerned: (s: string) => number;
+  /** The plain advances, which it measures a line and cuts it between characters by. */
+  plain: (s: string) => number;
+}
+
+let turnedContext: CanvasRenderingContext2D | null | undefined;
+
+/** Both widths for a font, measured on a canvas; null where there is none, as for `canvasMeasurer`. */
+export function turnedWidths(font: FontSpec): TurnedWidths | null {
+  if (turnedContext === undefined) turnedContext = canvasContext();
+  const context = turnedContext;
+  if (!context) return null;
+  const synthesized = synthesizedBold(font);
+  const face = measureFont(synthesized ? { ...font, bold: false } : font);
+  const kerns = gdiKerns(font);
+  const at = (s: string, kerned: boolean) => {
+    const text = s.replace(/\s+$/, '');
+    if (!text) return 0;
+    setCanvasFont(context, face);
+    if ('fontKerning' in context) context.fontKerning = kerned ? 'normal' : 'none';
+    return (context.measureText(text).width * font.sizePt) / MEASURE_PX + boldWideningPt(text, font);
+  };
+  return { kerned: (s) => at(s, kerns), plain: (s) => at(s, false) };
+}
+
+interface Segment {
+  start: number;
+  end: number;
+}
+
+/** Lines of `text` at `width`: a word joins a line while the line's kerned width fits; a word wider than the line is cut between characters by plain width. */
+function turnedBreak(text: string, w: TurnedWidths, width: number): Segment[] {
+  const fitsK = (s: string) => w.kerned(s) <= width * FIT_SLACK;
+  const out: Segment[] = [];
+  let base = 0;
+  for (const para of text.split('\n')) {
+    const words = [...para.matchAll(/\S+/g)].map((m) => ({ start: base + m.index!, end: base + m.index! + m[0].length }));
+    let line: Segment | null = null;
+    for (const word of words) {
+      if (line && fitsK(text.slice(line.start, word.end))) {
+        line = { start: line.start, end: word.end };
+        continue;
+      }
+      if (line) out.push(line);
+      let s = word.start;
+      while (s < word.end && !fitsK(text.slice(s, word.end))) {
+        let e = s + 1;
+        while (e < word.end && w.plain(text.slice(s, e + 1)) <= width * FIT_SLACK) e++;
+        out.push({ start: s, end: e });
+        s = e;
+      }
+      line = s < word.end ? { start: s, end: word.end } : null;
+    }
+    if (line) out.push(line);
+    else if (!words.length) out.push({ start: base, end: base });
+    base += para.length + 1;
+  }
+  return out;
+}
+
+/** One line, cut between characters where it stops fitting `width` by plain width: WordWrap off. */
+function turnedCut(text: string, w: TurnedWidths, width: number): Segment[] {
+  const firstLine = text.split('\n')[0];
+  let end = firstLine.length;
+  while (end > 1 && w.plain(firstLine.slice(0, end)) > width * FIT_SLACK) end--;
+  return [{ start: 0, end }];
+}
+
+/**
+ * The lines DevExpress prints of a label turned 90 or 270 degrees (parity row
+ * 54, 2026-11-04), measured with its own text formatter (`RepxProbe
+ * text-lines`) and then restated in two widths a browser can measure. It
+ * printed every one of 150 turned labels this way, in s35b to s35e and in the
+ * s65 holdout (Arial, Tahoma and Times New Roman, both angles, one to two
+ * lines across); plain advances alone got 146, each miss a character more at
+ * the end of the last line.
+ *
+ * The text is laid out twice. First along the box's length `lengthPt`, every
+ * line kept; that layout's width, W, is its widest line's kerned width when
+ * it broke, and the whole text's plain width when it did not, rounded up to a
+ * whole 96-dpi pixel. Then again at W, keeping the lines that fit across,
+ * `acrossPt`: n of them while (n - 1) spacings and one line fit. When text is
+ * left over, the last kept line takes the characters after it one by one,
+ * the space first, while it still fits W by plain width, which is why a line
+ * can end inside a word. Trailing spaces are not measured, and not printed.
+ */
+export function turnedLines(text: string, w: TurnedWidths, lengthPt: number, acrossPt: number, onePt: number, spacingPt: number, wordWrap = true): string[] {
+  const t = text.replace(/\r\n?/g, '\n');
+  if (!t.trim()) return [];
+  const pass = (width: number) => (wordWrap ? turnedBreak(t, w, width) : turnedCut(t, w, width));
+  const first = pass(lengthPt);
+  const broke = first.length > 1 || first[0].end < t.length;
+  const widest = broke ? Math.max(...first.map((l) => w.kerned(t.slice(l.start, l.end)))) : w.plain(t);
+  const pixel = 0.75;
+  const width = Math.ceil(widest / pixel - 1e-9) * pixel;
+  const second = pass(width);
+  const n = Math.max(1, Math.floor((acrossPt - onePt) / spacingPt + 1e-9) + 1);
+  const kept = second.slice(0, n);
+  const last = kept[kept.length - 1];
+  if (last && (second.length > n || last.end < t.length)) {
+    let end = last.end;
+    while (end < t.length && t[end] !== '\n' && w.plain(t.slice(last.start, end + 1)) <= width * FIT_SLACK) end++;
+    kept[kept.length - 1] = { start: last.start, end };
+  }
+  return kept.map((l) => t.slice(l.start, l.end).replace(/\s+$/, ''));
+}
+
 /** A canvas to measure on, or null under Node and jsdom, as for `canvasMeasurer`. */
 function canvasContext(): CanvasRenderingContext2D | null {
   if (typeof document === 'undefined') return null;

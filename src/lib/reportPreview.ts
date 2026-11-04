@@ -2509,7 +2509,7 @@ const EPS = 1e-6;
 const MEASURED_TYPES = new Set(['XRLabel']);
 
 /** Points inside a control's edge, from its padding and drawn borders. */
-function insetsPt(look: Appearance, borders: PreviewControl['borders']) {
+export function insetsPt(look: Appearance, borders: PreviewControl['borders']) {
   const pad = (look.Padding ?? '').split(',').map((p) => Number(p.trim()));
   const dpi = pad[4] && pad[4] > 0 ? pad[4] : 100;
   const padPt = (i: number) => (Number.isFinite(pad[i]) ? (pad[i] / dpi) * 72 : 0);

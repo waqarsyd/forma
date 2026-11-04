@@ -6,10 +6,58 @@
  * identical lines; these cases pin the rules that made that true.
  */
 import { describe, it, expect } from 'vitest';
-import { wrapText, lineSpacingPt, linesHeightPt, cssFont, cssFace, browserFace, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, drawnBoldWideningPt, resolveLineMetrics, GROW_EXTRA_PT } from './textMeasure';
+import { wrapText, lineSpacingPt, linesHeightPt, cssFont, cssFace, browserFace, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, drawnBoldWideningPt, resolveLineMetrics, GROW_EXTRA_PT, turnedLines, oneLinePt, type TurnedWidths } from './textMeasure';
 
 /** Every character one point wide, so widths are character counts. */
 const mono = (s: string) => s.length;
+
+/*
+ * Turned text longer than its box (parity row 54). Every character 5pt
+ * wide, trailing spaces unmeasured, as DevExpress measures them; one line
+ * 10pt and the spacing 12pt.
+ */
+describe('turnedLines', () => {
+  const plain = (s: string) => s.replace(/\s+$/, '').length * 5;
+  const flat: TurnedWidths = { kerned: plain, plain };
+  const lay = (text: string, length: number, across: number, w: TurnedWidths = flat, wrap = true) => turnedLines(text, w, length, across, 10, 12, wrap);
+
+  it('prints a text that fits as it is', () => {
+    expect(lay('SHORT', 60, 20)).toEqual(['SHORT']);
+  });
+
+  it('keeps the lines that fit across, and continues the last by characters, inside a word', () => {
+    // At 30: "AB" / "CDEFGH". One line across: "AB" takes " CDE" while it fits 30.
+    expect(lay('AB CDEFGH', 30, 21)).toEqual(['AB CDE']);
+    // Two lines fit across from (2 - 1) x 12 + 10 = 22.
+    expect(lay('AB CDEFGH', 30, 22)).toEqual(['AB', 'CDEFGH']);
+  });
+
+  it('lays the text out again at its widest line, rounded up to a pixel, not at the box', () => {
+    // At 60: "A LONGER" (40) / "TURNED" / "HEADING", so the second layout is at
+    // 40.5, and "A LONGER" cannot take " T".
+    expect(lay('A LONGER TURNED HEADING', 60, 20)).toEqual(['A LONGER']);
+  });
+
+  it('breaks between words by the kerned width and cuts characters by the plain one', () => {
+    // Kerning takes 2pt from a line of two words: "AB CD" fits 23.25 kerned, not plain.
+    const kerned: TurnedWidths = { kerned: (s) => plain(s) - (/\S \S/.test(s) ? 2 : 0), plain };
+    expect(lay('AB CD EF', 25, 20, kerned)).toEqual(['AB CD']);
+  });
+
+  it('cuts one line with WordWrap off', () => {
+    expect(lay('ABCDEFGH', 20, 20, flat, false)).toEqual(['ABCD']);
+  });
+
+  it('prints nothing for no text', () => {
+    expect(lay('  ', 60, 20)).toEqual([]);
+  });
+
+  it("takes one line as GDI+'s ascent and descent", () => {
+    // Arial: 2288/2048 of the size, where its spacing is 2355/2048.
+    expect(oneLinePt('Arial', 10)).toBeCloseTo((10 * 2288) / 2048, 9);
+    expect(oneLinePt('Verdana', 10)).toBeCloseTo(lineSpacingPt('Verdana', 10), 9);
+  });
+});
 
 describe('wrapText', () => {
   it('breaks greedily at spaces', () => {
