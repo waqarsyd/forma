@@ -14,7 +14,7 @@
  * appear during a generation.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import ChatThread from './ChatThread';
 import type { PreviewMeta } from '../lib/attachments';
 import type { ChatMessage } from '../lib/chatSession';
@@ -466,5 +466,95 @@ describe('a clean chat', () => {
     draw({ messages: [msg({ id: 'b', role: 'assistant', text: 'Built "scan" from the text OCR read.' })] });
     expect(screen.getByText('Built "scan" from the text OCR read.')).toBeTruthy();
     expect(document.querySelectorAll('.wb-note button')).toHaveLength(0);
+  });
+
+  it("offers editing and withdrawing on the person's messages, never on Forma's", () => {
+    draw({
+      messages: [msg({ id: 'u', role: 'user', text: 'a sales report' }), msg({ id: 'a', role: 'assistant', text: 'Built it.' })],
+      onEdit: vi.fn(),
+      onWithdraw: vi.fn(),
+    });
+    const [mine, forma] = document.querySelectorAll('.wb-note');
+    expect([...mine.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Edit', 'Withdraw']);
+    expect(forma.querySelectorAll('button')).toHaveLength(0);
+  });
+});
+
+/** A sent message, edited or withdrawn (2026-11-04). */
+describe('editing and withdrawing a message', () => {
+  const thread = [msg({ id: 'u', role: 'user', text: 'a sales report' }), msg({ id: 'a', role: 'assistant', text: 'Built it.' })];
+
+  it('edits in place and sends the changed text for that message', () => {
+    const onEdit = vi.fn();
+    draw({ messages: thread, onEdit, onWithdraw: vi.fn() });
+    fireEvent.click(screen.getByText('Edit'));
+    const box = screen.getByLabelText('Edit your message') as HTMLTextAreaElement;
+    expect(box.value).toBe('a sales report');
+    fireEvent.change(box, { target: { value: 'a sales report by region' } });
+    fireEvent.click(screen.getByText('Send'));
+    expect(onEdit).toHaveBeenCalledWith('u', 'a sales report by region');
+    expect(screen.queryByLabelText('Edit your message')).toBeNull();
+  });
+
+  it('sends nothing for unchanged text, and Escape puts the message back', () => {
+    const onEdit = vi.fn();
+    draw({ messages: thread, onEdit });
+    fireEvent.click(screen.getByText('Edit'));
+    expect((screen.getByText('Send') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByLabelText('Edit your message'), { key: 'Enter' });
+    expect(onEdit).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByLabelText('Edit your message'), { key: 'Escape' });
+    expect(screen.getByText('a sales report')).toBeTruthy();
+  });
+
+  it('does not offer editing a message sent with pictures, which an edit would not send again', () => {
+    draw({ messages: [msg({ id: 'u', text: 'this scan', images: ['data:image/png;base64,AA'] })], onEdit: vi.fn(), onWithdraw: vi.fn() });
+    expect(screen.queryByText('Edit')).toBeNull();
+    expect(screen.getByText('Withdraw')).toBeTruthy();
+  });
+
+  it('withdraws only once asked twice, and Keep changes nothing', () => {
+    const onWithdraw = vi.fn();
+    draw({ messages: thread, onWithdraw });
+    fireEvent.click(screen.getByText('Withdraw'));
+    expect(screen.getByText("Withdraw this message and Forma's answer?")).toBeTruthy();
+    fireEvent.click(screen.getByText('Keep'));
+    expect(onWithdraw).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Withdraw'));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Withdraw this message' })).getByText('Withdraw'));
+    expect(onWithdraw).toHaveBeenCalledWith('u');
+  });
+
+  it('holds both while something runs', () => {
+    draw({ messages: thread, onEdit: vi.fn(), onWithdraw: vi.fn(), isChatting: true });
+    expect((screen.getByText('Edit') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText('Withdraw') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('searching the transcript', () => {
+  const thread = [
+    msg({ id: '1', role: 'user', text: 'an invoice with totals' }),
+    msg({ id: '2', role: 'assistant', text: 'Built the invoice.' }),
+    msg({ id: '3', role: 'user', text: 'move the logo' }),
+  ];
+
+  it('draws only the messages holding the query, each match marked', () => {
+    draw({ messages: thread, query: 'INVOICE' });
+    expect(document.querySelectorAll('.wb-note')).toHaveLength(2);
+    expect([...document.querySelectorAll('mark.wb-hit')].map((m) => m.textContent)).toEqual(['invoice', 'invoice']);
+    expect(screen.getByRole('status').textContent).toBe('2 of 3 messages');
+  });
+
+  it('says so when nothing holds it', () => {
+    draw({ messages: thread, query: 'chart' });
+    expect(document.querySelectorAll('.wb-note')).toHaveLength(0);
+    expect(screen.getByRole('status').textContent).toBe('No message holds that.');
+  });
+
+  it('draws everything, unmarked, with no query', () => {
+    draw({ messages: thread, query: '' });
+    expect(document.querySelectorAll('.wb-note')).toHaveLength(3);
+    expect(document.querySelectorAll('mark')).toHaveLength(0);
   });
 });

@@ -225,6 +225,7 @@ import {
   nextMessageId,
   noteCountLabel,
   truncateFrom,
+  withdrawTurn,
   type ChatMessage as ChatSessionMessage,
 } from './lib/chatSession';
 import { formatSessionStamp } from './lib/datetime';
@@ -1962,6 +1963,8 @@ export default function App() {
    * them. Answered by that message's form or by the next message typed.
    */
   const pendingClarifyRef = useRef<{ request: ReportDescriptionRequest; messageId: string } | null>(null);
+  /** The transcript search: null while closed, the text typed while open. */
+  const [chatQuery, setChatQuery] = useState<string | null>(null);
   /** The description the last run was started from, which Test data describes the report by. */
   const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
   /** What a part of Forma's team is doing before the AI is asked, for the progress card; null when nothing. */
@@ -2927,6 +2930,7 @@ export default function App() {
     setMessages([]);
     // A new conversation owes no answers to the last one's questions.
     pendingClarifyRef.current = null;
+    setChatQuery(null);
     setOcrReview(null);
   };
 
@@ -3711,6 +3715,34 @@ export default function App() {
     setMessages((prev) => truncateFrom(prev, id));
     setError(null);
     void handleGenerate(failed.text);
+  };
+
+  /**
+   * A sent message, edited (2026-11-04): as Try again, the message and
+   * everything after it leave the transcript and the new text is sent in its
+   * place. Questions Forma asked after it go with it, so an open clarification
+   * that belonged to them is closed rather than answered by the next message.
+   */
+  const handleEditMessage = (id: string, text: string) => {
+    if (isChatting || isAnalyzing) return;
+    const at = messages.findIndex((m) => m.id === id);
+    if (at === -1 || messages[at].role !== 'user' || !text.trim()) return;
+    const pending = pendingClarifyRef.current;
+    if (pending && messages.findIndex((m) => m.id === pending.messageId) >= at) pendingClarifyRef.current = null;
+    setMessages((prev) => truncateFrom(prev, id));
+    setError(null);
+    void handleGenerate(text.trim());
+  };
+
+  /** One of the person's messages and Forma's answers to it, withdrawn (2026-11-04). See `withdrawTurn`. */
+  const handleWithdrawMessage = (id: string) => {
+    if (isChatting || isAnalyzing) return;
+    const pending = pendingClarifyRef.current;
+    if (pending) {
+      const kept = withdrawTurn(messages, id);
+      if (!kept.some((m) => m.id === pending.messageId)) pendingClarifyRef.current = null;
+    }
+    setMessages((prev) => withdrawTurn(prev, id));
   };
 
   /**
@@ -4873,7 +4905,40 @@ export default function App() {
                 is the conversation, as in the chat apps people know. It said
                 "Review" with "2 notes" until then. */}
             <h2 className="wb-col-title">Chat</h2>
+            {/* Searching the transcript (2026-11-04): a field under the head,
+                opened from here, as the chat apps people know do it. */}
+            {messages.length > 0 && (
+              <button
+                type="button"
+                className={`wb-icon-btn${chatQuery !== null ? ' wb-is-on' : ''}`}
+                title="Search the chat"
+                aria-label="Search the chat"
+                aria-expanded={chatQuery !== null}
+                onClick={() => setChatQuery((q) => (q === null ? '' : null))}
+              >
+                <IconSearch size={14} />
+              </button>
+            )}
           </div>
+          {chatQuery !== null && messages.length > 0 && (
+            <div className="wb-chat-search">
+              <IconSearch size={13} />
+              <input
+                type="search"
+                value={chatQuery}
+                autoFocus
+                placeholder="Search the chat"
+                aria-label="Search the chat"
+                onChange={(e) => setChatQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setChatQuery(null);
+                }}
+              />
+              <button type="button" title="Close the search" aria-label="Close the search" onClick={() => setChatQuery(null)}>
+                <IconClose size={13} />
+              </button>
+            </div>
+          )}
 
           {/* Unverified means an address nobody has proved they can read. It is
               a nudge, not a gate: nothing here is withheld until it is done,
@@ -4908,6 +4973,9 @@ export default function App() {
             onAnswer={handleClarifyAnswers}
             suggestions={PREDEFINED_PROMPTS}
             onSuggest={setPrompt}
+            onEdit={handleEditMessage}
+            onWithdraw={handleWithdrawMessage}
+            query={chatQuery ?? ''}
           >
             {/* Generation, as Forma's answer being written: three dots
                 (2026-11-04). Until then a card held a progress ring, the step,

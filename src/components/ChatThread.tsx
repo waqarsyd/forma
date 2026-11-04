@@ -21,7 +21,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
-import type { ChatMessage } from '../lib/chatSession';
+import { messageMatches, searchParts, type ChatMessage } from '../lib/chatSession';
 
 /**
  * How far off the bottom still counts as "at the bottom".
@@ -61,8 +61,70 @@ export interface ChatThreadProps<R> {
    */
   suggestions?: readonly { id: string; title: string; text: string }[];
   onSuggest?: (text: string) => void;
+  /**
+   * The person's own messages can be edited and withdrawn (2026-11-04). An
+   * edit sends the changed text again from that message on, as Try again
+   * does; a withdrawal takes the message and Forma's answers to it out of
+   * the transcript. Absent, neither is offered.
+   */
+  onEdit?: (id: string, text: string) => void;
+  onWithdraw?: (id: string) => void;
+  /** A transcript search: only the messages holding it are drawn, with each match marked. */
+  query?: string;
   /** Forma's working line during a generation, rendered after the transcript. */
   children?: ReactNode;
+}
+
+/** A message's text with every match of the search marked. */
+function Marked({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>;
+  return (
+    <>
+      {searchParts(text, query).map((p, i) => (p.hit ? <mark key={i} className="wb-hit">{p.text}</mark> : <span key={i}>{p.text}</span>))}
+    </>
+  );
+}
+
+/**
+ * Editing a sent message, in place. Enter sends, Shift+Enter breaks the
+ * line and Escape puts the message back, as in the composer.
+ */
+function EditForm({ text, disabled, onSend, onCancel }: { text: string; disabled: boolean; onSend: (text: string) => void; onCancel: () => void }) {
+  const [draft, setDraft] = useState(text);
+  const changed = draft.trim().length > 0 && draft.trim() !== text.trim();
+  return (
+    <form
+      className="wb-edit"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (changed) onSend(draft.trim());
+      }}
+    >
+      <textarea
+        className="wb-ctl"
+        aria-label="Edit your message"
+        value={draft}
+        rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+        autoFocus
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onCancel();
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (changed && !disabled) onSend(draft.trim());
+          }
+        }}
+      />
+      <div className="wb-note-actions">
+        <button type="submit" className="wb-pill wb-pill--accent" disabled={disabled || !changed}>
+          Send
+        </button>
+        <button type="button" className="wb-pill wb-pill--outline" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
 }
 
 /**
@@ -150,19 +212,47 @@ const ChatNote = memo(function ChatNote<R>({
   onRetry,
   onOpenAttachment,
   onAnswer,
+  onEdit,
+  onWithdraw,
+  query = '',
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
+  onEdit?: (id: string, text: string) => void;
+  onWithdraw?: (id: string) => void;
+  query?: string;
 }) {
+  const mine = message.role === 'user';
+  const [editing, setEditing] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  // A message sent with pictures is not offered for editing: an edit sends
+  // the text again, and the pictures would not go with it.
+  const editable = mine && !!onEdit && !!message.text && !message.images?.length;
   return (
-    <article className={`wb-note${message.role === 'user' ? ' wb-note--me' : ''}`}>
+    <article className={`wb-note${mine ? ' wb-note--me' : ''}`}>
       <span className="wb-spine" />
       <div>
-        <div className="wb-who">{message.role === 'user' ? 'You' : 'Forma'}</div>
-        {message.text && <p>{message.text}</p>}
+        <div className="wb-who">{mine ? 'You' : 'Forma'}</div>
+        {editing ? (
+          <EditForm
+            text={message.text}
+            disabled={retryDisabled}
+            onSend={(text) => {
+              setEditing(false);
+              onEdit?.(message.id, text);
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        ) : (
+          message.text && (
+            <p>
+              <Marked text={message.text} query={query} />
+            </p>
+          )
+        )}
         {message.clarify && !message.clarify.answered && onAnswer && (
           <ClarifyForm id={message.id} questions={message.clarify.questions} disabled={retryDisabled} onAnswer={onAnswer} />
         )}
@@ -207,6 +297,41 @@ const ChatNote = memo(function ChatNote<R>({
             </button>
           </p>
         )}
+
+        {mine && !editing && (editable || onWithdraw) && (
+          withdrawing ? (
+            <div className="wb-note-actions" role="group" aria-label="Withdraw this message">
+              <span className="wb-note-ask">Withdraw this message and Forma's answer?</span>
+              <button
+                type="button"
+                className="wb-note-act wb-danger"
+                disabled={retryDisabled}
+                onClick={() => {
+                  setWithdrawing(false);
+                  onWithdraw?.(message.id);
+                }}
+              >
+                Withdraw
+              </button>
+              <button type="button" className="wb-note-act" onClick={() => setWithdrawing(false)}>
+                Keep
+              </button>
+            </div>
+          ) : (
+            <div className="wb-note-actions wb-note-actions--quiet">
+              {editable && (
+                <button type="button" className="wb-note-act" disabled={retryDisabled} onClick={() => setEditing(true)}>
+                  Edit
+                </button>
+              )}
+              {onWithdraw && (
+                <button type="button" className="wb-note-act" disabled={retryDisabled} onClick={() => setWithdrawing(true)}>
+                  Withdraw
+                </button>
+              )}
+            </div>
+          )
+        )}
       </div>
     </article>
   );
@@ -216,6 +341,9 @@ const ChatNote = memo(function ChatNote<R>({
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
+  onEdit?: (id: string, text: string) => void;
+  onWithdraw?: (id: string) => void;
+  query?: string;
 }) => React.ReactElement;
 
 export default function ChatThread<R>({
@@ -228,6 +356,9 @@ export default function ChatThread<R>({
   onAnswer,
   suggestions,
   onSuggest,
+  onEdit,
+  onWithdraw,
+  query = '',
   children,
 }: ChatThreadProps<R>) {
   /*
@@ -240,16 +371,20 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer });
-  latest.current = { onRetry, onOpenAttachment, onAnswer };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw };
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
   const openAttachment = useCallback(
     (view: AttachmentView) => latest.current.onOpenAttachment(view),
     []
   );
   const answer = useCallback((id: string, answers: ClarifyAnswer[]) => latest.current.onAnswer?.(id, answers), []);
+  const edit = useCallback((id: string, text: string) => latest.current.onEdit?.(id, text), []);
+  const withdraw = useCallback((id: string) => latest.current.onWithdraw?.(id), []);
 
   const retryDisabled = isChatting || isAnalyzing;
+  const searching = query.trim().length > 0;
+  const shown = searching ? messages.filter((m) => messageMatches(m, query)) : messages;
 
   /*
    * Follow the conversation, unless the reader has gone looking for something.
@@ -293,7 +428,14 @@ export default function ChatThread<R>({
     <div className="wb-thread" ref={threadRef} onScroll={notePinned}>
       {/* One box does everything, so the empty thread says what it takes, and
           offers the predefined descriptions as places to start. */}
-      {messages.length === 0 && !isChatting && !isAnalyzing && suggestions && suggestions.length > 0 && (
+      {searching && (
+        <p className="wb-search-count" role="status">
+          {shown.length === 0
+            ? 'No message holds that.'
+            : `${shown.length} of ${messages.length} ${messages.length === 1 ? 'message' : 'messages'}`}
+        </p>
+      )}
+      {!searching && messages.length === 0 && !isChatting && !isAnalyzing && suggestions && suggestions.length > 0 && (
         <article className="wb-note wb-note--start">
           <span className="wb-spine" />
           <div>
@@ -312,7 +454,7 @@ export default function ChatThread<R>({
           </div>
         </article>
       )}
-      {messages.map((msg) => (
+      {shown.map((msg) => (
         <ChatNote
           key={msg.id}
           message={msg}
@@ -320,6 +462,9 @@ export default function ChatThread<R>({
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}
+          onEdit={onEdit ? edit : undefined}
+          onWithdraw={onWithdraw ? withdraw : undefined}
+          query={searching ? query : ''}
         />
       ))}
 

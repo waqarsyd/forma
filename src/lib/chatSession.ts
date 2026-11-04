@@ -169,6 +169,53 @@ export function truncateFrom<T extends { id: string }>(
 }
 
 /**
+ * Withdraw one of the person's own messages (2026-11-04): the message and
+ * Forma's answers to it, up to the person's next message, leave the
+ * transcript, and so leave the history the next turn sends. A report the
+ * turn built stays where it is; the Revisions panel keeps it like any other.
+ * An unknown id, or one of Forma's messages, changes nothing.
+ */
+export function withdrawTurn<T extends { id: string; role: 'user' | 'assistant' }>(messages: ReadonlyArray<T>, id: string): T[] {
+  const idx = messages.findIndex((m) => m.id === id);
+  if (idx === -1 || messages[idx].role !== 'user') return [...messages];
+  let end = idx + 1;
+  while (end < messages.length && messages[end].role !== 'user') end++;
+  return [...messages.slice(0, idx), ...messages.slice(end)];
+}
+
+/** A search for `query` as typed, matching case-insensitively; null when there is nothing to look for. */
+function searchPattern(query: string): RegExp | null {
+  const q = query.trim();
+  return q ? new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'giu') : null;
+}
+
+/**
+ * `text` cut where `query` occurs, each piece saying whether it is a match,
+ * for the transcript search to mark. Split on the pattern rather than on
+ * indexes into a lower-cased copy, because lower-casing can change a
+ * string's length ("İ" becomes two code units) and the cuts would drift.
+ */
+export function searchParts(text: string, query: string): { text: string; hit: boolean }[] {
+  const pattern = searchPattern(query);
+  if (!pattern) return [{ text, hit: false }];
+  return text
+    .split(pattern)
+    .map((piece, i) => ({ text: piece, hit: i % 2 === 1 }))
+    .filter((p) => p.text.length > 0);
+}
+
+/** Whether a message holds `query`, in its text or in the questions it asks. */
+export function messageMatches(message: { text: string; clarify?: { questions: { question: string }[] } }, query: string): boolean {
+  const pattern = searchPattern(query);
+  if (!pattern) return true;
+  const test = (s: string) => {
+    pattern.lastIndex = 0;
+    return pattern.test(s);
+  };
+  return test(message.text) || (message.clarify?.questions.some((q) => test(q.question)) ?? false);
+}
+
+/**
  * The review column's own count, and the same wording on a saved project's row.
  *
  * Two call sites had this ternary written out; they are the kind that drift into

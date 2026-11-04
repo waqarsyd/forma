@@ -602,6 +602,68 @@
 .wb-note--me .wb-who { color: var(--accent); }
 .wb-note p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
 .wb-note p + p { margin-top: 8px; }
+
+/* Edit and Withdraw under the person's own messages (2026-11-04), quiet until
+   the message is pointed at, as in the chat apps people know; always shown
+   where nothing can point. */
+.wb-note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 6px; }
+.wb-note-actions--quiet { opacity: 0; transition: opacity .15s ease; }
+.wb-note:hover .wb-note-actions--quiet, .wb-note:focus-within .wb-note-actions--quiet { opacity: 1; }
+@media (hover: none) { .wb-note-actions--quiet { opacity: 1; } }
+.wb-note-act {
+  padding: 1px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.wb-note-act:hover:not(:disabled) { color: var(--ink); border-color: var(--rule-strong); background: var(--track); }
+.wb-note-act.wb-danger:hover:not(:disabled) { color: var(--bad-ink); border-color: var(--bad-ink); }
+.wb-note-act:disabled { opacity: .45; cursor: default; }
+.wb-note-ask { font-size: 12px; color: var(--bad-ink); }
+.wb-edit textarea { width: 100%; resize: vertical; font: inherit; font-size: 13.5px; line-height: 1.6; }
+
+/* The transcript search: its field sits under the column head and the
+   matches are marked in the messages. */
+.wb-icon-btn {
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.wb-icon-btn:hover, .wb-icon-btn.wb-is-on { color: var(--ink); border-color: var(--rule); background: var(--track); }
+.wb-chat-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 0;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-faint);
+}
+.wb-chat-search:focus-within { border-color: var(--accent); }
+.wb-chat-search input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--ink); outline: none; }
+/* The pill shows the focus, and its own button closes the search: the
+   browser's ring and clear button inside it would be a second of each. */
+.wb-chat-search input:focus-visible { outline: none; }
+.wb-chat-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+.wb-chat-search button { width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 999px; background: none; color: var(--ink-faint); cursor: pointer; }
+.wb-chat-search button:hover { background: var(--track); color: var(--ink); }
+.wb-search-count { margin: 0; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; color: var(--ink-faint); }
+mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 3px; box-shadow: 0 0 0 1px var(--accent-line); }
 .wb-attach {
   display: inline-flex;
   align-items: center;

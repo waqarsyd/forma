@@ -4,8 +4,11 @@ import {
   isGenerationTurn,
   markMessageError,
   nextMessageId,
+  messageMatches,
   noteCountLabel,
+  searchParts,
   truncateFrom,
+  withdrawTurn,
   type ChatMessage,
 } from './chatSession';
 
@@ -171,6 +174,77 @@ describe('truncateFrom', () => {
     const messages = [msg({ id: '1' }), msg({ id: '2' })];
     truncateFrom(messages, '1');
     expect(messages).toHaveLength(2);
+  });
+});
+
+describe('withdrawTurn', () => {
+  const thread = [
+    msg({ id: 'u1', role: 'user', text: 'first' }),
+    msg({ id: 'a1', role: 'assistant', text: 'answer one' }),
+    msg({ id: 'a1b', role: 'assistant', text: 'and a report' }),
+    msg({ id: 'u2', role: 'user', text: 'second' }),
+    msg({ id: 'a2', role: 'assistant', text: 'answer two' }),
+  ];
+
+  it('takes the message and every answer to it, up to the next message of the person', () => {
+    expect(withdrawTurn(thread, 'u1').map((m) => m.id)).toEqual(['u2', 'a2']);
+  });
+
+  it('takes the last turn to the end', () => {
+    expect(withdrawTurn(thread, 'u2').map((m) => m.id)).toEqual(['u1', 'a1', 'a1b']);
+  });
+
+  it("leaves Forma's own messages, and an unknown id, alone", () => {
+    expect(withdrawTurn(thread, 'a1')).toEqual(thread);
+    expect(withdrawTurn(thread, 'gone')).toEqual(thread);
+  });
+
+  it('does not mutate the transcript it is given', () => {
+    withdrawTurn(thread, 'u1');
+    expect(thread).toHaveLength(5);
+  });
+});
+
+describe('searchParts', () => {
+  it('marks every match, whatever its case', () => {
+    expect(searchParts('Total by Region, total by month', 'total')).toEqual([
+      { text: 'Total', hit: true },
+      { text: ' by Region, ', hit: false },
+      { text: 'total', hit: true },
+      { text: ' by month', hit: false },
+    ]);
+  });
+
+  it('takes the query as text, not as a pattern', () => {
+    expect(searchParts('a (b) a.b', '(b)')).toEqual([
+      { text: 'a ', hit: false },
+      { text: '(b)', hit: true },
+      { text: ' a.b', hit: false },
+    ]);
+    expect(searchParts('axb', 'a.b')).toEqual([{ text: 'axb', hit: false }]);
+  });
+
+  it('returns the text whole for an empty or blank query', () => {
+    expect(searchParts('anything', '  ')).toEqual([{ text: 'anything', hit: false }]);
+  });
+
+  it('cuts in the right places where lower-casing changes a length', () => {
+    const parts = searchParts('İstanbul total', 'total');
+    expect(parts.map((p) => p.text).join('')).toBe('İstanbul total');
+    expect(parts.find((p) => p.hit)?.text).toBe('total');
+  });
+});
+
+describe('messageMatches', () => {
+  it('finds the query in the text or in the questions a message asks', () => {
+    const asks = msg({ id: '1', role: 'assistant', text: 'A few questions', clarify: { questions: [{ id: 'q', question: 'Which paper size?' }], answered: false } });
+    expect(messageMatches(asks, 'PAPER')).toBe(true);
+    expect(messageMatches(asks, 'few')).toBe(true);
+    expect(messageMatches(asks, 'landscape')).toBe(false);
+  });
+
+  it('matches everything while nothing is typed', () => {
+    expect(messageMatches(msg({ id: '1', text: 'x' }), '')).toBe(true);
   });
 });
 
