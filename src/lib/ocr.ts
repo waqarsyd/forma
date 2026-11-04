@@ -10,9 +10,11 @@
  * The engine is loaded on first use, like `pdf.ts` and `genai.ts`, and from
  * this site's own `/ocr/` (see `servedAssets('ocr', …)` in vite.config.ts): the worker,
  * the core build for the browser's SIMD support, and the English LSTM data,
- * about 7 MB the first time and cached by the browser after.
+ * about 7 MB the first time and cached by the browser after; with each
+ * language chosen in Settings, its own data too (lib/ocrLanguages.ts).
  */
 import type { PixelBox } from './reportGeometry';
+import { ocrLanguageString } from './ocrLanguages';
 
 /** One recognized word: its text, its box in the image's pixels, and Tesseract's confidence, 0 to 100. */
 export interface OcrWord {
@@ -46,6 +48,14 @@ interface TesseractBlocks {
 
 const scaleBox = (b: PixelBox, s: number): PixelBox => ({ x0: b.x0 / s, y0: b.y0 / s, x1: b.x1 / s, y1: b.y1 / s });
 
+/*
+ * Direction marks Tesseract wraps right-to-left words in (2026-11-04, read in
+ * the owner's Chrome with Arabic chosen: U+200F before a word, U+200E after).
+ * They print as nothing, so a report's text keeps none of them, and they would
+ * stop a word matching itself anywhere downstream.
+ */
+const DIRECTION_MARKS = /[‎‏‪-‮⁦-⁩]/g;
+
 /**
  * Tesseract's blocks as an `OcrPage`, its boxes divided by `scale` when the
  * image was enlarged for recognition. Pure; empty words and lines are left
@@ -57,7 +67,7 @@ export function ocrPageFrom(blocks: readonly TesseractBlocks[] | null | undefine
     for (const paragraph of block.paragraphs ?? []) {
       for (const line of paragraph.lines ?? []) {
         const words = (line.words ?? [])
-          .map((w) => ({ text: w.text.trim(), box: scaleBox(w.bbox, scale), confidence: w.confidence }))
+          .map((w) => ({ text: w.text.replace(DIRECTION_MARKS, '').trim(), box: scaleBox(w.bbox, scale), confidence: w.confidence }))
           .filter((w) => w.text);
         if (!words.length) continue;
         lines.push({
@@ -77,14 +87,23 @@ export type OcrProgress = (stage: string, progress: number) => void;
 
 type Engine = Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>>;
 let engine: Promise<Engine> | null = null;
+/** The languages the engine was created with, `eng` alone or `eng+ara` and so on. */
+let engineLanguages = '';
 let listener: OcrProgress | null = null;
 
-/** The engine, created once and kept: loading it is most of the cost. */
-function loadEngine(): Promise<Engine> {
+/**
+ * The engine, created once and kept: loading it is most of the cost. Created
+ * again when the languages chosen in Settings change (2026-11-04,
+ * lib/ocrLanguages.ts), since Tesseract reads the ones it was created with.
+ */
+async function loadEngine(): Promise<Engine> {
+  const languages = ocrLanguageString();
+  if (engine && engineLanguages !== languages) await stopOcr();
   if (!engine) {
+    engineLanguages = languages;
     engine = import('tesseract.js')
       .then(({ createWorker, OEM }) =>
-        createWorker('eng', OEM.LSTM_ONLY, {
+        createWorker(languages, OEM.LSTM_ONLY, {
           workerPath: '/ocr/worker.min.js',
           corePath: '/ocr/',
           langPath: '/ocr/',

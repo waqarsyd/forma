@@ -46,4 +46,14 @@ describe('ocrPageFrom', () => {
   it('reads no blocks as no lines', () => {
     expect(ocrPageFrom(null, { width: 1, height: 1, dpi: null }).lines).toEqual([]);
   });
+
+  // Read in the owner's Chrome with Arabic chosen (2026-11-04): Tesseract wraps
+  // a right-to-left word in U+200F and U+200E, which print as nothing.
+  it('drops the direction marks Tesseract puts around right-to-left words', () => {
+    const word = (text: string) => ({ text, confidence: 90, bbox: { x0: 0, y0: 0, x1: 10, y1: 10 } });
+    const arabic = [{ paragraphs: [{ lines: [{ text: '', confidence: 90, bbox: { x0: 0, y0: 0, x1: 10, y1: 10 }, words: [word('‏المبلغ‎'), word('‏‎')] }] }] }];
+    const page = ocrPageFrom(arabic, { width: 10, height: 10, dpi: null });
+    expect(page.lines[0].words.map((w) => w.text)).toEqual(['المبلغ']);
+    expect(page.lines[0].text).toBe('المبلغ');
+  });
 });

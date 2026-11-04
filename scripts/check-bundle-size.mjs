@@ -314,6 +314,17 @@ const BUDGETS = [
   { prefix: 'worker.min', ext: '.js', max: 118_000, note: 'the OCR worker, lazy' },
   { prefix: 'eng.traineddata', ext: '.gz', max: 3_140_000, note: 'English OCR data, best_int, lazy' },
   /*
+   * The six languages the owner approved on 2026-11-04, from @tesseract.js-data
+   * 1.0.0's best_int data like English's. Each is fetched only by someone who
+   * chose it in Settings, so none adds to what an English reader downloads.
+   */
+  { prefix: 'ara.traineddata', ext: '.gz', max: 1_770_000, note: 'Arabic OCR data, chosen in Settings' },
+  { prefix: 'hin.traineddata', ext: '.gz', max: 1_480_000, note: 'Hindi OCR data, chosen in Settings' },
+  { prefix: 'urd.traineddata', ext: '.gz', max: 1_090_000, note: 'Urdu OCR data, chosen in Settings' },
+  { prefix: 'fra.traineddata', ext: '.gz', max: 753_000, note: 'French OCR data, chosen in Settings' },
+  { prefix: 'deu.traineddata', ext: '.gz', max: 1_420_000, note: 'German OCR data, chosen in Settings' },
+  { prefix: 'spa.traineddata', ext: '.gz', max: 2_240_000, note: 'Spanish OCR data, chosen in Settings' },
+  /*
    * The twelve Liberation faces a PDF/A file embeds (2026-11-02, parity row
    * 72; see PDF_FONT_ASSETS in vite.config.ts and assets/pdf-fonts/README.md),
    * committed unmodified from the 2.1.5 release. The largest is
@@ -466,7 +477,13 @@ const MODEL_DIR = join(DIST, 'model');
 const isModel = (f) => f.path.startsWith(MODEL_DIR);
 const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f)).reduce((a, f) => a + f.size, 0);
 const ocrTotal = files.filter(isOcr).reduce((a, f) => a + f.size, 0);
-const OCR_TOTAL_MAX = 15_700_000;
+/*
+ * 15,700,000 until 2026-11-04, when the six OCR languages the owner approved
+ * added 8,216,036 B of data (22,981,939 B in all). Each language is its own
+ * file, fetched only by someone who chose it, so an English reader downloads
+ * what they did before; 24,450,000 puts the total back at 94.0%.
+ */
+const OCR_TOTAL_MAX = 24_450_000;
 const fontTotal = files.filter(isPdfFont).reduce((a, f) => a + f.size, 0);
 const FONT_TOTAL_MAX = 4_640_000;
 

@@ -64,6 +64,12 @@ describe('mergeStoredConfig — direction and data source', () => {
     expect((mergeStoredConfig(defaults, JSON.stringify({ rtl: false })) as { rtl?: boolean }).rtl).toBe(false);
   });
 
+  it('restores the OCR languages, dropping any the site does not serve', () => {
+    const merged = mergeStoredConfig(defaults, JSON.stringify({ ocrLanguages: ['fra', '../../etc', 'ara'] })) as { ocrLanguages?: string[] };
+    expect(merged.ocrLanguages).toEqual(['ara', 'fra']);
+    expect(toPersistable({ ...defaults, ocrLanguages: ['hin'] } as never)).toMatchObject({ ocrLanguages: ['hin'] });
+  });
+
   it('drops a stored procedure name too long to be one, and keeps the rest', () => {
     const merged = mergeStoredConfig(defaults, JSON.stringify({ spName: 'x'.repeat(MAX_SP_NAME + 1), version: '20.1' })) as { spName?: string; version: string };
     expect(merged.spName).toBeUndefined();

@@ -21,6 +21,11 @@ const OCR_ASSETS: Record<string, string> = {
   'tesseract-core-simd-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js',
   'tesseract-core-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-lstm.wasm.js',
   'eng.traineddata.gz': 'node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz',
+  // The languages Settings offers besides English (2026-11-04, lib/ocrLanguages.ts),
+  // each fetched only by someone who chose it.
+  ...Object.fromEntries(
+    ['ara', 'hin', 'urd', 'fra', 'deu', 'spa'].map((l) => [`${l}.traineddata.gz`, `node_modules/@tesseract.js-data/${l}/4.0.0_best_int/${l}.traineddata.gz`]),
+  ),
 };
 
 /**

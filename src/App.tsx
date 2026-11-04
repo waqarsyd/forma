@@ -150,6 +150,7 @@ const ProviderSettings = lazy(() => import('./components/ProviderSettings'));
 // What Forma remembers (2026-11-02), in the settings dialog only.
 const MemorySettings = lazy(() => import('./components/MemorySettings'));
 const DataSettings = lazy(() => import('./components/DataSettings'));
+const OcrSettings = lazy(() => import('./components/OcrSettings'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -220,6 +221,7 @@ import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import { makeRightToLeft } from './lib/repxRtl';
+import { setOcrLanguages } from './lib/ocrLanguages';
 import {
   buildChatHistory,
   isGenerationTurn,
@@ -2096,6 +2098,11 @@ export default function App() {
   useEffect(() => {
     writeProviderSettings(config);
   }, [config.provider, config.localUrl, config.localModel, config.openRouterModel, config.openRouterKey, config.visionModel]);
+
+  // The languages OCR reads besides English, as Settings has them (lib/ocrLanguages.ts).
+  useEffect(() => {
+    setOcrLanguages(config.ocrLanguages);
+  }, [config.ocrLanguages]);
 
   /**
    * Whether an AI model is set up to answer: Gemini with a key, a local AI with
@@ -5628,6 +5635,7 @@ export default function App() {
 
               <Suspense fallback={null}>
                 <DataSettings config={config} onChange={(changes) => setConfig(prev => ({ ...prev, ...changes }))} />
+                <OcrSettings config={config} onChange={(changes) => setConfig(prev => ({ ...prev, ...changes }))} />
               </Suspense>
 
               </div>

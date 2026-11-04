@@ -30,7 +30,13 @@
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
+    "@tesseract.js-data/ara": "^1.0.0",
+    "@tesseract.js-data/deu": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/fra": "^1.0.0",
+    "@tesseract.js-data/hin": "^1.0.0",
+    "@tesseract.js-data/spa": "^1.0.0",
+    "@tesseract.js-data/urd": "^1.0.0",
     "compression": "^1.8.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",

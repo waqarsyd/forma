@@ -76,6 +76,8 @@ export interface ReportConfig {
   };
   rtl?: boolean;
   spName?: string;
+  /** Languages OCR reads besides English (2026-11-04, lib/ocrLanguages.ts); the prompt never sees them. */
+  ocrLanguages?: string[];
   customApiKey?: string;
   dataSchema?: string;
   modelName?: string;
