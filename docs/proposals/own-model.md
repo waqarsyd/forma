@@ -674,7 +674,7 @@ Two changes came out of it:
 The model was not exported. The deployment check is a test of the
 toolchain, not of the model, so it waits for the boxes run's model.
 
-### The boxes design (built 2026-11-04, not yet trained)
+### The boxes design (built 2026-11-04)
 
 The owner approved one more training run if version 4 still places worse
 than OCR, for this design. Version 2 found 11% of a page's text where it
@@ -706,17 +706,72 @@ reading.
   counts the question as well as the answer, because in this design the
   question carries every box.
 
+### The boxes run lists the boxes and reads little (2026-11-04)
+
+The one approved run: Kaggle's Version 4 of *Forma vision train*, on
+version 4's data drawn with `--boxes`.
+- **Training:** one epoch on 2,490 pages. 110 were left out as over 8,000
+  characters, and so was 1 of the 40 held-out pages. Training took 6,739 s
+  (1.9 GPU hours), 4.2 hours in all with the answers. The loss fell from
+  1.17 to about 0.73 in the first tenth of the epoch and then stayed
+  between 0.69 and 0.74.
+- **Asked twice:** the 39 held-out pages with the boxes recorded while
+  drawing them, and all 40 with OCR's boxes from `eval-ocr.jsonl`.
+- **Scored:** with `boxText.ts`, in the browser as before. Beside them is
+  the right answer, scored the same way: the ceiling of the design.
+
+| On the held-out pages | Exact boxes | OCR's boxes | Right answer | OCR alone |
+|---|---|---|---|---|
+| Text found where it prints, all | 91.3% | 52.4% | 94.9% | 55.7% |
+| Text found where it prints, version 2's 20 | 98.1% | 47.7% | 100.0% | 54.8% |
+| Boxes listed in the right band | 23.2% | | 100% | |
+| In the right band with the right role | 8.7% | | 100% | |
+| Bands found, against the right answer | 43.0% | | 100% | |
+| Paper and orientation right | 61.5% | 65.0% | 100% | |
+
+**With OCR's boxes it places worse than OCR alone**, 52.4% against 55.7%,
+so Forma's vision path does not ask it. The first row mostly measures the
+boxes, not the model. The places come from the boxes, so any answer that
+lists them scores near the right answer's 94.9%. What the model adds is
+which band each box is in and what role it plays, and there it is weak:
+- **Bands and roles:** even with the exact boxes, 23% of boxes are in the
+  right band, and 9% have the right role as well.
+- **The page line:** it never wrote the right one. The 39 answers hold
+  five distinct page lines.
+- **How it answers:** it lists the boxes in order, nearly all as `value`.
+  Of the 39 exact-box answers:
+  - the median is 171 lines, against 41 in the right answers;
+  - 22 go on past the last box, 922 lines in all;
+  - 20 list a box twice;
+  - 12 were stopped by `loop_guard`, and 13 of the 40 asked with OCR's
+    boxes.
+
+  With OCR's boxes, about 1,000 of its lines copy the question's box lines
+  back.
+
+The flat loss and the stock page line read the same way: the model learned
+the answer's format and its commonest content, not to read the page or the
+numbers. Version 2 got roles right for 97% of the controls it found; this
+run did not keep that. **The approved GPU run is spent**, and a next step is
+the owner's to choose (see *Still to build*).
+
+**Scoring it found a defect in `boxAnswerToSkeleton`.** It made every box
+a label with a length of 0, which a skeleton reads as an empty caption. So
+each box called a caption scored as printing nothing, and the right answer
+itself found only 59.1% of the text where it prints. Before the fix, the
+table's first row read 77.4%, 40.6% and 59.1%. A caption made from a box
+now has a length estimated from its width, since the question carries
+numbers only.
+
 ### Still to build
 
 1. ~~Train version 4 and score it~~: done 2026-11-04. It loops on every
    page and places 13.1% of text, against OCR's 55.7%.
-2. Train the boxes design once, with the exact boxes and with OCR's, and
-   score it the same way. If it places better than OCR alone, ask
-   Forma's vision path the boxes question with OCR's boxes. Version 2
-   already got roles right for 97% of the controls it found, which is
-   the part this design keeps.
+2. ~~Train the boxes design once and score it~~: done 2026-11-04. With
+   OCR's boxes it places 52.4% against OCR's 55.7%, and it puts 23% of
+   boxes in the right band, so Forma's vision path does not ask it.
 3. The Ollama check again, with the chat template, on the boxes run's
-   model.
+   model: running on Kaggle's CPU (*Forma vision export*, Version 3).
 4. ~~More than one page per picture~~: done 2026-11-04. The vision model
    reads an upload's first page and, when there are more, its last, and
    `mergePageSkeletons` (`skeletonRepx.ts`) keeps the first page's bands
@@ -724,6 +779,16 @@ reading.
    their totals. Streaming the model's answer as it is written is no
    longer wanted, since the minimal chat (2026-11-04) shows working dots
    and not the answer's text.
+5. **The owner's decision, before any more GPU.** The only part this
+   design needs from a model is a band and a role for each box OCR reads.
+   Three ways on:
+   - **Stop:** keep OCR and Forma's own model, and leave the vision brief
+     off.
+   - **More from the same model:** more epochs, or a larger model. Each run
+     is 4 to 5 GPU hours, and none has yet read the page.
+   - **No vision model:** a small classifier trained here on the CPU, from
+     the same skeletons, that takes each box's place and size and gives its
+     band and role.
 
 ## Forma's team: every part in its role (2026-11-03)
 
@@ -760,8 +825,10 @@ Three decisions in it:
 Its effect on a generation is unmeasured until `bench:fidelity` runs with
 the owner's key. The stand-ins were checked in the owner's Chrome with
 Local AI pointed at a closed port. The vision brief needs a vision model
-running, and waits for an exported model worth running: version 4 loops
-(see *Version 4 loops on every page*). The rest is recorded under
+running, and waits for an exported model worth running. Version 4 loops
+(see *Version 4 loops on every page*), and the boxes run places worse than
+OCR alone (see *The boxes run lists the boxes and reads little*). The rest
+is recorded under
 *One request, every part of Forma in its role* in
 `docs/notes/app-shell.md`.
 

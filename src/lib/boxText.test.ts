@@ -60,6 +60,8 @@ describe('the answer', () => {
       ['caption', 9, 29, 60, 7],
       ['value', 416, 50, 35, 8],
     ]);
+    // A caption read off the page has text: its length comes from its width, so it prints.
+    expect(header.controls.map((c) => c.chars)).toEqual([9, 0]);
     expect(k.bands.find((b) => b.kind === 'Detail')!.controls[0]).toMatchObject({ x: 9, y: 7 });
     // Box 4 is not among the boxes, so the footer has no control.
     expect(k.bands.find((b) => b.kind === 'ReportFooter')!.controls).toHaveLength(0);

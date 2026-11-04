@@ -95,11 +95,20 @@ export function parseBoxAnswer(text: string): BoxAnswer {
   return out;
 }
 
+/** Roughly how wide one character prints, in hundredths of an inch: 7 is a 10-point face. */
+const CHAR_WIDTH = 7;
+
 /**
  * The skeleton an answer describes, its controls at the boxes' places: each
  * box listed under a band becomes a label in it, from the band's top and the
  * page's left margin. A box numbered that the boxes do not hold is left out.
  * Null when the answer has no page line.
+ *
+ * A box is text read on the page, so a caption made from one is never empty:
+ * its length is estimated from the box's width, since the question carries
+ * numbers only. Until 2026-11-04 it was 0, which a skeleton reads as an empty
+ * caption, so every box called a caption scored as printing nothing and the
+ * right answer itself found only 59.1% of the text where it prints.
  */
 export function boxAnswerToSkeleton(answer: BoxAnswer, boxes: ReadonlyMap<number, TextBox>): ReportSkeleton | null {
   if (!answer.page) return null;
@@ -110,7 +119,9 @@ export function boxAnswerToSkeleton(answer: BoxAnswer, boxes: ReadonlyMap<number
     groupFields: b.kind === 'GroupHeader' ? 1 : 0,
     controls: b.boxes.flatMap(({ n, role }) => {
       const box = boxes.get(n);
-      return box ? [{ kind: 'label' as const, role, x: box.x - left, y: box.y - b.top, w: box.w, h: box.h, font: null, align: 'left' as const, borders: 0, chars: 0 }] : [];
+      if (!box) return [];
+      const chars = role === 'caption' ? Math.max(1, Math.round(box.w / CHAR_WIDTH)) : 0;
+      return [{ kind: 'label' as const, role, x: box.x - left, y: box.y - b.top, w: box.w, h: box.h, font: null, align: 'left' as const, borders: 0, chars }];
     }),
   }));
   return { ...answer.page, bands };
