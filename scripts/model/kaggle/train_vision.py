@@ -407,8 +407,18 @@ def check(args):
                 time.sleep(1)
         # Ollama needs the chat template of the model's family. With none, the
         # first check (2026-11-03) imported the model with vision listed and got
-        # empty answers. The template, renderer, parser and parameters are copied
-        # from Ollama's own qwen3.5:2b, as Unsloth's guide says to.
+        # empty answers. The template, renderer and parameters are copied from
+        # Ollama's own qwen3.5:2b, as Unsloth's guide says to.
+        #
+        # Its PARSER is not (2026-11-04). With it, the second check got empty
+        # `content` and the whole answer in `reasoning`: the qwen3.5 parser
+        # treats what the model writes as thinking until a closing tag, and a
+        # model fine-tuned on page lines never writes one. The renderer stays,
+        # because the copied TEMPLATE alone may be a bare `{{ .Prompt }}` with
+        # the chat format in the renderer. `forma-vision` is the fix, asked as
+        # Forma asks. `forma-vision-parsed` keeps the parser and is asked with
+        # thinking off, the other way out, on one page, so one run says which
+        # works.
         sh('ollama pull qwen3.5:2b > /dev/null 2>&1', optional=True)
         base = subprocess.run(['ollama', 'show', '--modelfile', 'qwen3.5:2b'], capture_output=True, text=True).stdout
         kept, block = [], None
@@ -424,35 +434,61 @@ def check(args):
                 block = [line]
             elif word in ('TEMPLATE', 'PARAMETER', 'RENDERER', 'PARSER'):
                 kept.append(line)
-        report.append('template copied from qwen3.5:2b: %d lines' % len(kept))
-        with open('/tmp/Modelfile', 'w') as fh:
-            fh.write('FROM %s\nFROM %s\n%s\nPARAMETER temperature 0\n' % (model, mmproj, '\n'.join(kept)))
-        created = subprocess.run(['ollama', 'create', 'forma-vision', '-f', '/tmp/Modelfile'], capture_output=True, text=True)
-        shown = subprocess.run(['ollama', 'show', 'forma-vision'], capture_output=True, text=True)
-        vision = 'vision' in shown.stdout.lower()
-        report.append('ollama create: %s; capabilities list vision: %s' % (
-            'OK' if created.returncode == 0 else 'FAILED: ' + (created.stderr or created.stdout)[-300:], vision))
-        if created.returncode == 0:
+        words = [l.split(' ', 1)[0] for l in kept if l.split(' ', 1)[0] in ('TEMPLATE', 'PARAMETER', 'RENDERER', 'PARSER')]
+        report.append('copied from qwen3.5:2b: %d lines (%s)' % (len(kept), ', '.join(words)))
+
+        def create(name, lines):
+            with open('/tmp/Modelfile', 'w') as fh:
+                fh.write('FROM %s\nFROM %s\n%s\nPARAMETER temperature 0\n' % (model, mmproj, '\n'.join(lines)))
+            made = subprocess.run(['ollama', 'create', name, '-f', '/tmp/Modelfile'], capture_output=True, text=True)
+            shown = subprocess.run(['ollama', 'show', name], capture_output=True, text=True).stdout.lower()
+            report.append('ollama create %s: %s; vision: %s; thinking: %s' % (
+                name, 'OK' if made.returncode == 0 else 'FAILED: ' + (made.stderr or made.stdout)[-300:],
+                'vision' in shown, 'thinking' in shown))
+            return made.returncode == 0
+
+        def ask(label, r, path, body):
+            req = urllib.request.Request('http://127.0.0.1:11434' + path, data=json.dumps(body).encode('utf-8'),
+                                         headers={'Content-Type': 'application/json'})
+            try:
+                reply = json.load(urllib.request.urlopen(req, timeout=900))
+                if 'choices' in reply:
+                    message, finish = reply['choices'][0]['message'], reply['choices'][0].get('finish_reason')
+                else:
+                    message, finish = reply.get('message', {}), reply.get('done_reason')
+                answer = message.get('content') or ''
+                first = next((l for l in answer.splitlines() if l.startswith('page ')), '')
+                # An empty answer says nothing; what the reply did hold says why.
+                seen = '' if first else ' (finish %s; message keys %s; reasoning starts %r)' % (
+                    finish, sorted(message.keys()),
+                    (message.get('reasoning') or message.get('reasoning_content') or message.get('thinking') or '')[:120])
+                report.append('%s %s: %s, %d lines, first: %s%s' % (
+                    label, r['image'], 'ANSWERED' if first else 'NO PAGE LINE', len(answer.splitlines()), first or answer[:200], seen))
+            except Exception as err:
+                report.append('%s %s: FAILED: %s' % (label, r['image'], err))
+
+        def image_of(r):
+            with open(r['path'], 'rb') as fh:
+                return base64.b64encode(fh.read()).decode('ascii')
+
+        def as_forma(name, r, **extra):
+            body = {'model': name, 'temperature': 0, 'max_tokens': args.check_tokens, 'messages': [
+                {'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,' + image_of(r)}},
+                                             {'type': 'text', 'text': prompt_of(r)}]}]}
+            body.update(extra)
+            return body
+
+        if create('forma-vision', [l for l in kept if not l.startswith('PARSER')]):
             for r in pages:
-                with open(r['path'], 'rb') as fh:
-                    url = 'data:image/png;base64,' + base64.b64encode(fh.read()).decode('ascii')
-                body = json.dumps({'model': 'forma-vision', 'temperature': 0, 'max_tokens': args.check_tokens, 'messages': [
-                    {'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': url}}, {'type': 'text', 'text': prompt_of(r)}]}]})
-                req = urllib.request.Request('http://127.0.0.1:11434/v1/chat/completions', data=body.encode('utf-8'),
-                                             headers={'Content-Type': 'application/json'})
-                try:
-                    reply = json.load(urllib.request.urlopen(req, timeout=900))
-                    message = reply['choices'][0]['message']
-                    answer = message.get('content') or ''
-                    first = next((l for l in answer.splitlines() if l.startswith('page ')), '')
-                    # An empty answer says nothing; what the reply did hold says why.
-                    seen = '' if first else ' (finish %s; message keys %s; reasoning starts %r)' % (
-                        reply['choices'][0].get('finish_reason'), sorted(message.keys()),
-                        (message.get('reasoning') or message.get('reasoning_content') or '')[:120])
-                    report.append('ollama (as Forma asks) %s: %s, %d lines, first: %s%s' % (
-                        r['image'], 'ANSWERED' if first else 'NO PAGE LINE', len(answer.splitlines()), first or answer[:200], seen))
-                except Exception as err:
-                    report.append('ollama (as Forma asks) %s: FAILED: %s' % (r['image'], err))
+                ask('ollama (as Forma asks)', r, '/v1/chat/completions', as_forma('forma-vision', r))
+        if any(l.startswith('PARSER') for l in kept) and create('forma-vision-parsed', kept):
+            r = pages[0]
+            ask('ollama with its parser, reasoning_effort none', r, '/v1/chat/completions',
+                as_forma('forma-vision-parsed', r, reasoning_effort='none'))
+            ask('ollama with its parser, native think false', r, '/api/chat', {
+                'model': 'forma-vision-parsed', 'stream': False, 'think': False,
+                'options': {'temperature': 0, 'num_predict': args.check_tokens},
+                'messages': [{'role': 'user', 'content': prompt_of(r), 'images': [image_of(r)]}]})
     finally:
         server.terminate()
 
