@@ -62,6 +62,8 @@ static class Program {
             Console.WriteLine();
             Console.WriteLine("  what DevExpress PRINTS, with data:");
             Console.WriteLine("    render <case-dir> [out-dir]  lay out report.repx over data.json, dump bricks, export every format");
+            Console.WriteLine("    text-lines <case-dir>        the lines DevExpress's text formatter lays out in each turned label");
+            Console.WriteLine("    text-lines <spec> <out.tsv>  the same for many boxes: font|pt|length|across|text per line");
             return 2;
         }
         try {
@@ -86,6 +88,7 @@ static class Program {
             case "emit-comb":  EmitComb(args[1]);  return 0;
             case "render-cols": return RenderColumns();
             case "render":     return Render.Run(args[1], args.Length > 2 ? args[2] : Path.Combine(args[1], "out"));
+            case "text-lines": return TextLines.Run(args);
             case "emit-pdf":   EmitPdfContent(args[1]); return 0;
                 case "inspect":    return Inspect(args[1]);
                 default:

@@ -25,6 +25,8 @@ RepxProbe emit-comb <out.repx>   # the same, for a CHARACTER COMB
 RepxProbe emit-pdf <out.repx>    # the same, for XRPdfContent
 RepxProbe render-cols            # what does DevExpress DRAW? bricks from CreateDocument()
 RepxProbe render <case-dir> [out-dir] # what does it PRINT over real data, and what do the exports hold?
+RepxProbe text-lines <case-dir>  # which lines does it lay out in each TURNED label?
+RepxProbe text-lines <spec> <out.tsv> # the same for many boxes: font|pt|length|across|text per line
 RepxProbe inspect <in.repx>      # what does the loader SEE in a file we produced?
 ```
 
@@ -67,6 +69,25 @@ that layout. The third was that **every band and control is read at its own
 `Dpi`**, 100 when absent, whatever `ReportUnit` says (case s24), so a
 millimetre report written without `Dpi` prints 2.54 times too large.
 
+## `text-lines` asks the text formatter, for turned text
+
+Added 2026-11-04 for parity row 54, where turned text longer than its box
+printed only the lines that fit across, sometimes ending inside a word, and no
+rule read from the PDFs matched more than nine of fourteen cases. Rather than
+guess again, this calls DevExpress's own `TextFormatter.FormatMultilineText`
+and `Measurer` with each turned label's box, font and `StringFormat`, read from
+the laid-out brick. The doc comment at the top of `TextLines.cs` is the
+current account.
+
+Asked once, at the box's length, the formatter lays out more than prints: 17
+of 40 matched. **Printing lays the text out twice.** The whole text is first
+measured wrapped at the box's length with no line limit; that width, its
+widest wrapped line, is rounded up to a whole 96-dpi pixel; and the text is
+laid out again at that narrower width, keeping the lines that fit across and
+continuing the last one character by character. That matched every turned
+label in s35b to s35e and in the s65 holdout, 150 of 150; without the rounding,
+137. The PDF remains the check: run `render` on the same case and compare.
+
 ## Why this exists
 
 Forma emits `XtraReportsLayoutSerializer` XML. The DevExpress documentation
@@ -99,7 +120,18 @@ Output lands in `tools\RepxProbe\bin\Release\RepxProbe.exe`, which is gitignored
 along with `obj/` by the `tools/**/bin/` rules in `.gitignore`.
 
 Unlike `RepxDesigner`, this is a **console** app and never opens a window — so
-unlike that one, it is fine to run from an agent shell. It references five
+unlike that one, it is fine to run from an agent shell.
+
+**It runs as a 32-bit process, and that can change what DevExpress prints.**
+Parity row 57 (2026-11-04, sweep `s64` in the parity work) laid the same report
+out in a 32-bit and a 64-bit process: for Arial and Times New Roman every
+page-break decision agreed, but for Segoe UI and Verdana a label crossing the
+page's foot was moved whole in one and split in the other (s51t, Segoe UI 10pt,
+a 23-unit box with 19 units of room). Text measurement is GDI+, whose rounding
+differs between the two. So a measurement here is a measurement of a 32-bit
+host; an application hosting reports in a 64-bit process can disagree at the
+edges, and a rule built from these numbers should say which fonts it was
+checked in. It references five
 DevExpress assemblies by full path against the installed 20.1, the version the
 target ERP is built against and therefore the one whose serializer output is
 worth measuring.
