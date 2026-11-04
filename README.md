@@ -255,7 +255,7 @@ Beyond the environment variables above, two things are configurable.
 | Paper size and orientation | Page geometry for the generated report. |
 | `thinkingBudget` | A lever on how long the model reasons before emitting output. Unset by default. |
 
-Three further options exist in the report shape but are **not yet exposed in the UI**: RTL layout, stored-procedure name, and the data-binding schema. See [`docs/PRD.md`](docs/PRD.md) §2.4.
+**Right to left** and the **stored procedure** the data comes from are set under *Direction and data source* (since 2026-11-04). Right to left applies with or without a key: the report is mirrored however it was made. A data schema is pasted in the **Data** tab rather than here. See [`docs/PRD.md`](docs/PRD.md) §2.4.
 
 ---
 
@@ -529,6 +529,8 @@ src/
                        repxRefs (makes the model's Ref values unique — a repeat
                        makes DevExpress alias two elements onto one and drop
                        the second's content, with no error anywhere),
+                       repxRtl (the Settings checkbox's right to left, written
+                       on the report root however the report was made),
                        repxBindingPlan (finds the header and detail rows, proves
                        they describe the same columns, and binds the detail row
                        to one field each — declining rather than guess when the
@@ -770,7 +772,7 @@ If you would rather run the Express bundle than a static host, it needs a platfo
 From [`docs/PRD.md`](docs/PRD.md) §6, which is kept current against the code:
 
 - Raise or remove the 8-page PDF cap, and support multi-page `.repx` datasets.
-- Expose the RTL and stored-procedure options in the settings UI. (`ExpressionBindings` generation is done — it left the settings dialog entirely and became the **Data** tab, because a schema is not a setting: it belongs beside the report it binds, not in a modal shared with the API key.)
+- ~~Expose the RTL and stored-procedure options in the settings UI.~~ Done 2026-11-04. (`ExpressionBindings` generation was done earlier — it left the settings dialog entirely and became the **Data** tab, because a schema is not a setting: it belongs beside the report it binds, not in a modal shared with the API key.)
 - Render real gauges and barcodes in the mockup, and draw charts *there* with a real charting library rather than the current stylised approximation; chart titles, legends and axis labels are not yet read from the source. (The exported REPX no longer approximates — charts are real `XRChart` elements and value matrices real `XRCrossTab` elements.)
 - Editing: deleting and adding a control, editing a table cell's text, and multi-select. Move, resize, retype, keyboard nudge and per-gesture undo are done.
 - A data source for the preview. It has none today, so it repeats one record's worth of content — it proves the band structure and the pagination, not the data.

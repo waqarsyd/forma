@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,295 tests in 116 files** — under the `node` environment
+`npm test` runs Vitest over **2,307 tests in 118 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -81,6 +81,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/ChatThread` | 40 | jsdom; since 2026-11-01 also the predefined descriptions an empty conversation starts from, and a description's questions asked as a form holding their suggestions; since 2026-11-04 the working dots named for a screen reader before the first token, and a reply drawn as its words with no buttons; and editing and withdrawing a sent message, and searching the transcript |
 | `components/Composer` | 31 | jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box: one test now sends with no key, to Forma's own model); a clean composer (2026-11-04): nothing under the box with or without a key, and the send a Stop while a generation runs; the one chat box (2026-11-01): no separate Describe or OCR button, an attached image shown as the file alone and sent at once, its text read after the message goes (2026-11-03; until then its reading showed on its chip and held the send), a pasted image attached |
 | `components/DataBinding` | 18 | jsdom |
+| `components/DataSettings` | 3 | jsdom; right to left and the stored procedure in Settings, and the schema sent to the Data tab |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
 | `components/OcrDialog` | 7 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run, low-confidence text listed and named or left out, a report built after the app's checks, a PDF page read at its resolution, and pages the chat box read already shown without reading them again |
@@ -134,7 +135,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/promptSections` | 48 |  |
 | `lib/promptToReport` | 12 | the pure half of Prompt-to-Report; a description typed into the chat box, its fenced or CREATE TABLE schema taken as the data source |
 | `lib/reportBands` | 15 |  |
-| `lib/reportConfigStore` | 15 |  |
+| `lib/reportConfigStore` | 19 | since 2026-11-04 also right to left and the stored procedure, typed and length-checked, and no data schema |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
 | `lib/reportGeometry` | 43 |  |
 | `lib/reportPreview` | 296 | 32 from eight loops, the fifth an `it.each` over the four table-of-contents placements, the sixth over two drill-down cases, the seventh over four s57 page feet and the eighth over four right-to-left cases: parity cases c05 to c05e page for page, the seven s19 nesting variants, the four one-field-per-kind cross-tabs' CSVs, and s29a and s29b; a chart's points over test data against DevExpress's, and its pie shares (row 32); drill-down collapsed (s56a, s56d) label for label, expanded as none, one group toggled, and the CSVs byte for byte (row 69); a one-line record at the foot of the page kept while its line fits and moved whole once it does not, with a page footer and without, against DevExpress's PDFs (s57); interactive sorting leaving the data and `SortFields` orders as DevExpress printed them (s58); right to left, every label's and cell's aligned edge against DevExpress's PDFs of s63a to s63d, and the file's own x kept for edits (row 75) |
@@ -155,6 +156,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxPaper` | 10 | the paper DevExpress prints on, and naming it as its serializer does; parity row 44 |
 | `lib/repxParameters` | 24 |  |
 | `lib/repxRefs` | 26 |  |
+| `lib/repxRtl` | 5 | the Settings checkbox's right to left, on the report root only, idempotent, and read back by the Preview as mirrored |
 | `lib/repxStyles` | 18 |  |
 | `lib/repxSummaries` | 19 | totals with no running scope, which DevExpress prints blank; each fixture is a shape it was made to print |
 | `lib/repxTruncation` | 19 |  |
@@ -193,7 +195,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,295 in 116 files** — and that total is the arithmetic sum of the column above
+**Total: 2,307 in 118 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -207,7 +209,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2177** against a real 2,295 and will talk you into
+A grep for `\bit(` answers **2189** against a real 2,307 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

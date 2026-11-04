@@ -19,8 +19,19 @@ import { isSupportedUnit, isSupportedPageSize } from './reportGeometry';
 
 export const STORAGE_KEY = 'reportConfig';
 
-/** Exactly the fields the settings UI exposes. Nothing else is stored. */
-const PERSISTED_FIELDS = ['version', 'unit', 'pageSize', 'header', 'footer'] as const;
+/**
+ * Exactly the fields the settings UI exposes. Nothing else is stored.
+ *
+ * `rtl` and `spName` joined on 2026-11-04, when Settings began to set them:
+ * they describe the document as the others do. Each is checked for its type
+ * on the way back in, and the name for a length, so a stored entry cannot
+ * grow the prompt without bound. `dataSchema` is deliberately not here: a
+ * schema belongs to the Data tab, beside the report it binds.
+ */
+const PERSISTED_FIELDS = ['version', 'unit', 'pageSize', 'header', 'footer', 'rtl', 'spName'] as const;
+
+/** Longest stored stored-procedure name. */
+export const MAX_SP_NAME = 256;
 
 export interface PersistableConfig {
   version?: string;
@@ -28,6 +39,8 @@ export interface PersistableConfig {
   pageSize?: string;
   header?: { showCompanyLogo?: boolean; title?: string };
   footer?: { showPageNumbers?: boolean; customText?: string };
+  rtl?: boolean;
+  spName?: string;
 }
 
 /**
@@ -76,7 +89,13 @@ export function mergeStoredConfig<T extends PersistableConfig>(defaults: T, raw:
       continue;
     }
 
+    if (field === 'rtl') {
+      if (typeof value === 'boolean') merged.rtl = value;
+      continue;
+    }
+
     if (typeof value !== 'string') continue;
+    if (field === 'spName' && value.length > MAX_SP_NAME) continue;
 
     // Type is not enough for these two. `unit` and `pageSize` are DevExpress
     // enum names that reach the geometry *and* get written verbatim into the

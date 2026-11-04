@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toPersistable, mergeStoredConfig } from './reportConfigStore';
+import { toPersistable, mergeStoredConfig, MAX_SP_NAME } from './reportConfigStore';
 import { SUPPORTED_UNITS, SUPPORTED_PAGE_SIZES } from './reportGeometry';
 
 const defaults = {
@@ -43,6 +43,31 @@ describe('toPersistable', () => {
     // just because nobody remembered to exclude it.
     const out = toPersistable({ ...defaults, somethingNew: 'x' } as never) as Record<string, unknown>;
     expect(out.somethingNew).toBeUndefined();
+  });
+
+  it('keeps right to left and the stored procedure, which Settings sets since 2026-11-04, and not a data schema', () => {
+    const out = toPersistable({ ...defaults, rtl: true, spName: 'dbo.GetSales', dataSchema: '{"Amount": 1}', openRouterKey: 'sk-or-secret' } as never) as Record<string, unknown>;
+    expect(out).toMatchObject({ rtl: true, spName: 'dbo.GetSales' });
+    expect(out.dataSchema).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain('sk-or');
+  });
+});
+
+describe('mergeStoredConfig — direction and data source', () => {
+  it('restores them', () => {
+    const merged = mergeStoredConfig(defaults, JSON.stringify({ rtl: true, spName: 'dbo.GetSales' }));
+    expect(merged).toMatchObject({ rtl: true, spName: 'dbo.GetSales' });
+  });
+
+  it('takes right to left only as a true boolean', () => {
+    expect((mergeStoredConfig(defaults, JSON.stringify({ rtl: 'yes' })) as { rtl?: boolean }).rtl).toBeUndefined();
+    expect((mergeStoredConfig(defaults, JSON.stringify({ rtl: false })) as { rtl?: boolean }).rtl).toBe(false);
+  });
+
+  it('drops a stored procedure name too long to be one, and keeps the rest', () => {
+    const merged = mergeStoredConfig(defaults, JSON.stringify({ spName: 'x'.repeat(MAX_SP_NAME + 1), version: '20.1' })) as { spName?: string; version: string };
+    expect(merged.spName).toBeUndefined();
+    expect(merged.version).toBe('20.1');
   });
 });
 

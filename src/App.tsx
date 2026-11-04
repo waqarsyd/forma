@@ -149,6 +149,7 @@ const OcrDialog = lazy(() => import('./components/OcrDialog'));
 const ProviderSettings = lazy(() => import('./components/ProviderSettings'));
 // What Forma remembers (2026-11-02), in the settings dialog only.
 const MemorySettings = lazy(() => import('./components/MemorySettings'));
+const DataSettings = lazy(() => import('./components/DataSettings'));
 import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
@@ -218,6 +219,7 @@ import { sourceRectFor } from './lib/sourceRect';
 import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
+import { makeRightToLeft } from './lib/repxRtl';
 import {
   buildChatHistory,
   isGenerationTurn,
@@ -2824,6 +2826,14 @@ export default function App() {
   const [ocrReview, setOcrReview] = useState<string | null>(null);
   const ocrReviewPages = useMemo(() => (ocrReview ? sentPages[ocrReview] ?? [] : []), [sentPages, ocrReview]);
 
+  /**
+   * A report as Settings asks for it: right to left when that is checked
+   * (2026-11-04, lib/repxRtl.ts). Applied wherever a report reaches the bench,
+   * because the prompt is the only other thing that knows the setting and
+   * most of the ways Forma makes a report use no prompt.
+   */
+  const asConfigured = (xml: string): string => (config.rtl && xml ? makeRightToLeft(xml) : xml);
+
   /** A report built from OCR alone: every pane, a revision, and a line in the thread. */
   const handleOcrBuild = (built: OcrBuiltReport) => {
     const newResult: DesignResult = {
@@ -2831,7 +2841,7 @@ export default function App() {
       timestamp: new Date(),
       title: built.title,
       layout: built.layout,
-      repxContent: built.repxContent,
+      repxContent: asConfigured(built.repxContent),
       usage: null,
     };
     setResult(newResult);
@@ -2857,8 +2867,8 @@ export default function App() {
    * before it, so either is one click away in Revisions.
    */
   const handleReaderBuild = (built: ReaderBuiltReport, copy: OcrBuiltReport | null) => {
-    if (copy) recordRevision('Read by OCR', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: copy.repxContent, usage: null });
-    const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
+    if (copy) recordRevision('Read by OCR', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: asConfigured(copy.repxContent), usage: null });
+    const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: asConfigured(built.repxContent), usage: null };
     setResult(newResult);
     recordRevision("Forma's box reader", newResult);
     setActiveTab('ui');
@@ -3604,7 +3614,8 @@ export default function App() {
         timestamp: new Date(),
         title: response.layout.title,
         layout: response.layout,
-        repxContent: response.repxContent,
+        // The prompt asks for right to left; this makes sure of it.
+        repxContent: asConfigured(response.repxContent),
         usage: response.usage ?? null
       };
 
@@ -3656,14 +3667,15 @@ export default function App() {
           const made = await team.draft();
           if (made && !signal.aborted) {
             const { fallbackReply } = await import('./lib/formaTeam');
-            setResult(made.result);
-            recordRevision("Forma's own draft", made.result);
+            const drafted = { ...made.result, repxContent: asConfigured(made.result.repxContent ?? '') };
+            setResult(drafted);
+            recordRevision("Forma's own draft", drafted);
             setActiveTab('ui');
             setMessages(prev => [...prev, {
               id: nextMessageId(),
               role: 'assistant',
               text: fallbackReply(aiName, err?.message || friendlyMessage, made.source),
-              result: made.result,
+              result: drafted,
             }]);
             return;
           }
@@ -3802,7 +3814,8 @@ export default function App() {
         return;
       }
       // With what the user asked Forma to remember, and what their kept reports show.
-      const { result: newResult, reply } = await offlineDesign(request, message);
+      const { result: designed, reply } = await offlineDesign(request, message);
+      const newResult = { ...designed, repxContent: asConfigured(designed.repxContent ?? '') };
       setResult(newResult);
       recordRevision("Forma's own model", newResult);
       setActiveTab('ui');
@@ -3885,7 +3898,7 @@ export default function App() {
         timestamp: new Date(),
         title: design.title,
         layout: design.layout,
-        repxContent: design.repx,
+        repxContent: asConfigured(design.repx),
         usage: null,
       };
       setResult(newResult);
@@ -5612,6 +5625,10 @@ export default function App() {
                   />
                 </div>
               </div>
+
+              <Suspense fallback={null}>
+                <DataSettings config={config} onChange={(changes) => setConfig(prev => ({ ...prev, ...changes }))} />
+              </Suspense>
 
               </div>
 
