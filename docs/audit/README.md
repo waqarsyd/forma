@@ -14,8 +14,11 @@ git show a4ac759:docs/audit/00-inventory.md        # 01-runbook, 02-architecture
 This file exists because the reports could be deleted but their **identifiers could not**.
 The findings below are cited **67 times across 42 source and config files** (2026-09-01,
 re-verified unchanged 2026-09-06) — in `index.html`, `src/index.css`, `.env.example`,
-`.github/workflows/checks.yml`, half a dozen tests — and **21 local branches carry a
+`.github/workflows/checks.yml`, half a dozen tests — and **21 local branches carried a
 finding's identifier in their name** (`audit/SEC-001-security-headers` and the rest).
+Those branches are gone: on 2026-11-04 `git for-each-ref refs/heads` named `main`
+alone, and when they were deleted is not recorded. They were never pushed, so the
+identifiers survive only here and in the source comments that cite them.
 Without this table, a reader hitting `// (audit ARC-001)` in
 `src/lib/attachmentParts.ts` has no way to learn what that was.
 

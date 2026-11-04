@@ -203,7 +203,7 @@ import {
 // whole app (and pdf.js, and Firebase) into a test run.
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
-import { auditRepx, type RepxAudit } from './lib/repxAudit';
+import type { RepxAudit } from './lib/repxAudit';
 import {
   describedRequest,
   fixInstruction,
@@ -2679,6 +2679,7 @@ export default function App() {
     const parts = toAttachmentParts(ingested.images, ingested.texts);
     const { analyzeReportDesign } = await loadGemini();
     const response = await analyzeReportDesign('', parts, config, undefined, signal);
+    const { auditRepx } = await import('./lib/repxAudit');
     const audit = auditRepx(response.repxContent, response.layout);
     batchResults.current.set(id, {
       content: response.markdown,
@@ -3559,6 +3560,7 @@ export default function App() {
        * repair that declined than a layout the model can be talked out of.
        */
       if (describeRequest) {
+        const { auditRepx } = await import('./lib/repxAudit');
         let attempt = 1;
         let audit = auditRepx(response.repxContent, response.layout);
         while (shouldRetryForErrors(audit, attempt)) {
@@ -4257,11 +4259,28 @@ export default function App() {
    * anything: the tables were discarded on load, the page numbering was dropped,
    * and the app reported success each time because by its own lights it had
    * succeeded. This is that gap. See `repxAudit.ts`.
+   *
+   * Loaded on demand since 2026-11-04: the audit and what it imports (the
+   * cross-tab, layout and accessibility checks) were on the entry chunk every
+   * landing-page visitor downloads, for a box only the REPX pane shows. Until
+   * the module arrives the pane shows no findings, which is what it showed for
+   * a report with none.
    */
-  const repxAudit = useMemo(
-    () => (result?.repxContent ? auditRepx(result.repxContent, result.layout) : null),
-    [result?.repxContent, result?.layout]
-  );
+  const [repxAudit, setRepxAudit] = useState<RepxAudit | null>(null);
+  useEffect(() => {
+    const xml = result?.repxContent;
+    if (!xml) {
+      setRepxAudit(null);
+      return;
+    }
+    let current = true;
+    void import('./lib/repxAudit').then(({ auditRepx }) => {
+      if (current) setRepxAudit(auditRepx(xml, result?.layout));
+    });
+    return () => {
+      current = false;
+    };
+  }, [result?.repxContent, result?.layout]);
 
   /**
    * Escape closes the attachment viewer. The backdrop already closes on a click,

@@ -108,7 +108,15 @@ const BUDGETS = [
   // Each feature's body (the generator, the model, the adapter, the panels,
   // memory) is in lazy chunks; these are the call sites. 696_000 is 94.0%,
   // the band this file keeps, and the cut named above is still owed.
-  { prefix: 'index-', ext: '.js', max: 696_000, note: 'eager entry chunk + the genai chunk' },
+  //
+  // Lowered to 672_000 on 2026-11-04, when the cut was made: App.tsx loads
+  // repxAudit on demand (its REPX-pane box, the batch run and the repair loop
+  // all wait for a result anyway), and the audit with the cross-tab, layout
+  // and accessibility checks it imports left the entry chunk. 663,826 ->
+  // 631,562 B, -32,264, and repxAudit-*.js is 29,347 B of its own. Left at
+  // 696_000 the cap would sit at 90.7% with room to hide a regression;
+  // 672_000 puts it at 94.0%.
+  { prefix: 'index-', ext: '.js', max: 672_000, note: 'eager entry chunk + the genai chunk' },
   /*
    * The generation service, lazy as of 2026-09-04.
    *
