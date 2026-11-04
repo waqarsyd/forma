@@ -153,25 +153,82 @@ def load_image(path):
     return Image.open(path).convert('RGB')
 
 
+def loop_guard(tokenizer, start, window=16, distinct=2, every=16):
+    """
+    Stop an answer that has fallen into a loop: its last `window` complete
+    lines hold `distinct` different lines or fewer. Version 3 (2026-11-04)
+    looped on all 40 held-out pages, one line repeated from about line 10 to
+    the token limit, and spent 3.5 of its 5.3 GPU hours writing them. A
+    boxes answer never repeats a line, and a skeleton rarely repeats one
+    sixteen times. Looked at every `every` tokens, so it costs little.
+    """
+    import torch
+    from transformers import StoppingCriteria
+
+    class LoopGuard(StoppingCriteria):
+        def __init__(self):
+            self.steps = 0
+            self.fired = False
+
+        def __call__(self, input_ids, scores, **kwargs):
+            self.steps += 1
+            if self.steps % every == 0 and not self.fired:
+                lines = tokenizer.decode(input_ids[0][start:], skip_special_tokens=True).split('\n')[:-1]
+                tail = [l.strip() for l in lines[-window:]]
+                self.fired = len(tail) >= window and len(set(tail)) <= distinct
+            return torch.full((input_ids.shape[0],), self.fired, dtype=torch.bool, device=input_ids.device)
+
+    return LoopGuard()
+
+
 def predict(model, tokenizer, pages, max_new_tokens, out_path):
     from unsloth import FastVisionModel
+    from transformers import StoppingCriteriaList
     FastVisionModel.for_inference(model)
+    looped = 0
     with open(out_path, 'w', encoding='utf-8', newline='\n') as fh:
         for i, r in enumerate(pages):
             messages = [{'role': 'user', 'content': [{'type': 'image'}, {'type': 'text', 'text': prompt_of(r)}]}]
             prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
             inputs = tokenizer(load_image(r['path']), prompt, add_special_tokens=False, return_tensors='pt').to('cuda')
-            out = model.generate(**inputs, max_new_tokens=max_new_tokens, use_cache=True, do_sample=False)
+            guard = loop_guard(tokenizer, inputs['input_ids'].shape[1])
+            out = model.generate(**inputs, max_new_tokens=max_new_tokens, use_cache=True, do_sample=False,
+                                 stopping_criteria=StoppingCriteriaList([guard]))
             text = tokenizer.decode(out[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
             text = re.sub(r'<think>.*?</think>', '', text, flags=re.S).strip()
+            looped += guard.fired
             # The boxes design keeps the prompt and the skeleton, which scoring on the page needs.
             extra = {k: r[k] for k in ('prompt', 'truth') if k in r}
+            if guard.fired:
+                extra['stopped'] = 'loop'
             fh.write(json.dumps(dict({'id': r['id'], 'image': r['image'], 'target': r['target'], 'prediction': text}, **extra)) + '\n')
             fh.flush()
             print('predicted %d/%d (%s): %d lines, the right answer has %d' % (
                 i + 1, len(pages), r['image'], len(text.splitlines()), len(r['target'].splitlines())), flush=True)
             if i == 0:
                 print('\n'.join(text.splitlines()[:8]), flush=True)
+    print('%s: %d of %d answers stopped looping' % (os.path.basename(out_path), looped, len(pages)), flush=True)
+
+
+def ocr_rows(max_chars):
+    """
+    The held-out pages asked with OCR's boxes instead of the drawn ones, for
+    the boxes design: eval-ocr.jsonl, written on the owner's machine by
+    `scripts/model/evaluate.ts --ocr-prompts` from the same pages read by the
+    app's own OCR. Each row names a page image the dataset draws here. None
+    when the dataset holds no such file.
+    """
+    hits = glob.glob('/kaggle/input/**/eval-ocr.jsonl', recursive=True)
+    if not hits:
+        return []
+    d = dataset_dir()
+    with open(hits[0], encoding='utf-8') as fh:
+        out = [json.loads(line) for line in fh if line.strip()]
+    kept = [r for r in out if len(r['prompt']) <= max_chars and os.path.exists(os.path.join(d, r['image']))]
+    for r in kept:
+        r['path'] = os.path.join(d, r['image'])
+    print('eval-ocr: %d of %d pages asked with OCR boxes' % (len(kept), len(out)), flush=True)
+    return kept
 
 
 def train(args, smoke):
@@ -228,6 +285,11 @@ def train(args, smoke):
     tokenizer.save_pretrained(lora)
     print('adapter saved to %s' % lora, flush=True)
     predict(model, tokenizer, eval_rows, args.max_new_tokens, os.path.join(WORK, 'predictions.jsonl'))
+    if BOXES:
+        # The same pages with OCR's boxes: what Forma will really ask.
+        ocr = ocr_rows(args.max_chars)
+        if ocr:
+            predict(model, tokenizer, ocr[:3 if smoke else len(ocr)], args.max_new_tokens, os.path.join(WORK, 'predictions-ocr.jsonl'))
     print('Done. predictions.jsonl holds the answers.' + (' Next: --train.' if smoke else ' Next: --export.'))
 
 

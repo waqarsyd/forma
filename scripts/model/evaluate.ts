@@ -24,8 +24,17 @@
  *   random number of times on a drawn page. OCR runs once per page, and
  *   ocr-cache.json in the folder keeps the readings for the next run.
  *
+ * --ocr-prompts <file>  with --pages, also writes each page's question in
+ *   the boxes design (src/lib/boxText.ts) with OCR's boxes: the places the
+ *   OCR reading at known scale found, in reading order. train_vision.py
+ *   --boxes asks the model those when the file is in its dataset, so the
+ *   held-out pages are scored as Forma will ask them, not only with the
+ *   exact boxes the drawing recorded. Each row keeps the page's skeleton
+ *   as `truth`; it has no right answer of its own, so `target` is empty.
+ *
  * Both skeleton texts are structure only, and a drawn page holds only
- * placeholder words, so nothing printed here is a report's words.
+ * placeholder words, so nothing printed here is a report's words. A
+ * question holds only numbers.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -34,11 +43,13 @@ import { fixedPlaces, scorePlaces, scoreSkeleton, textToSkeleton, type PagePlace
 import { ocrPageFrom, type OcrPage } from '../../src/lib/ocr';
 import { detectLayout } from '../../src/lib/ocrLayout';
 import { pageForImage } from '../../src/lib/reportGeometry';
+import { boxPrompt, orderBoxes } from '../../src/lib/boxText';
 
 const argv = process.argv.slice(2);
-const pagesAt = argv.indexOf('--pages');
-const pagesDir = pagesAt >= 0 ? argv[pagesAt + 1] : undefined;
-const file = argv.find((a, i) => !a.startsWith('--') && argv[i - 1] !== '--pages');
+const valueOf = (flag: string) => (argv.indexOf(flag) >= 0 ? argv[argv.indexOf(flag) + 1] : undefined);
+const pagesDir = valueOf('--pages');
+const ocrPromptsFile = valueOf('--ocr-prompts');
+const file = argv.find((a, i) => !a.startsWith('--') && argv[i - 1] !== '--pages' && argv[i - 1] !== '--ocr-prompts');
 if (!file && !pagesDir) {
   console.error('Usage: npx tsx scripts/model/evaluate.ts <predictions.jsonl> [--pages <dir>], or --pages <dir> alone.');
   process.exit(2);
@@ -158,12 +169,15 @@ async function comparePages(dir: string) {
     const cells = page.tables.flatMap((t) => t.rows.flatMap((r) => r.cells.filter((c): c is NonNullable<typeof c> => !!c)));
     return [...page.labels, ...cells].map((t) => ({ x: t.x, y: t.y, w: t.w, h: t.h, text: true }));
   };
+  const questions: string[] = [];
   for (const p of pages) {
     const expected = textToSkeleton(p.target).skeleton;
     if (!expected) continue;
     const truth = fixedPlaces(expected);
     const paper = expected.paper === 'Custom' ? 'Letter' : expected.paper;
-    const scores = [scorePlaces(ocrPlaces(cache[p.image], 100, paper), truth.places, truth.regions), scorePlaces(ocrPlaces(cache[p.image], null, 'Letter'), truth.places, truth.regions)];
+    const read = ocrPlaces(cache[p.image], 100, paper);
+    if (ocrPromptsFile) questions.push(JSON.stringify({ id: p.id, image: p.image, target: '', truth: p.target, prompt: boxPrompt(orderBoxes(read)) }));
+    const scores = [scorePlaces(read, truth.places, truth.regions), scorePlaces(ocrPlaces(cache[p.image], null, 'Letter'), truth.places, truth.regions)];
     if (predictions.size) {
       const k = textToSkeleton(predictions.get(p.image) ?? '').skeleton;
       scores.push(scorePlaces(k ? fixedPlaces(k).places : [], truth.places, truth.regions));
@@ -188,4 +202,8 @@ async function comparePages(dir: string) {
   console.log('');
   console.log(`per page: ${systems.join(' | ')}`);
   for (const line of perPage) console.log(line);
+  if (ocrPromptsFile) {
+    writeFileSync(ocrPromptsFile, questions.map((q) => `${q}\n`).join(''));
+    console.log(`\nwrote ${questions.length} questions with OCR's boxes to ${ocrPromptsFile}`);
+  }
 }

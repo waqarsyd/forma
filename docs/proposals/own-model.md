@@ -626,7 +626,7 @@ On version 4's 40 held-out pages:
 
 On version 2's 20 of them, version 2 found **11.0%** of texts where they
 print, and OCR 54.8% with the scale known. So version 2 places worse than
-OCR does. Version 4 is scored the same way when it finishes.
+OCR does. Version 4 did no better; see the next section.
 
 The middle row was a defect in the app, not in OCR. A screenshot was
 always fitted inside the page's margins, so a full-page picture, which
@@ -634,6 +634,45 @@ carries its own margins, came out pushed in and shrunk.
 `reportGeometry.ts` now knows a picture with a paper's shape as that
 whole page (`paperOfImage`, `placeImage`); see the OCR bullets in
 `docs/notes/app-shell.md`.
+
+### Version 4 loops on every page (2026-11-04)
+
+Kaggle's Version 3 of *Forma vision train*, on version 4's data. It trained
+on 2,245 pages; 355 more were left out as over 8,000 characters. One epoch
+took 1.7 GPU hours, and the loss fell from 0.85 to 0.46. Answering the 40
+held-out pages took another 3.5 hours, 5.3 in all.
+
+| On the held-out pages | Version 2 | Version 4 | OCR, scale known |
+|---|---|---|---|
+| Text found where it prints, version 2's 20 pages | 11.0% | 14.2% | 54.8% |
+| Text found where it prints, all 40 | | 13.1% | 55.7% |
+| Controls at half overlap in their band, F1, version 2's 20 | 11.6% | 0.0% | |
+| Bands found, all 40 | | 16.9% | |
+| Paper and orientation right, all 40 | | 62.5% | |
+
+All 40 answers loop. Each repeats one line, starting at about its tenth
+line, until the 4,096-token limit, so every answer is about 150 lines
+whatever the page. That is why answering took 3.5 hours. More data did
+not help: version 4 learned the format and the opening lines, then fell
+into repetition under greedy decoding. It places far worse than OCR, so
+the boxes design below gets its one run.
+
+Two changes came out of it:
+- **`loop_guard` in `train_vision.py`** stops an answer whose last 16
+  lines hold two different lines or fewer. It was tested with stand-in
+  modules: it ignores a long answer that never repeats, and stops a
+  one-line loop at character 720 of 4,361. A row stopped that way says
+  `"stopped": "loop"`.
+- **The held-out pages are also asked with OCR's boxes.**
+  `evaluate.ts --ocr-prompts` writes `eval-ocr.jsonl` from the same OCR
+  reading at known scale. With it in the dataset, `train_vision.py
+  --boxes` answers those too, into `predictions-ocr.jsonl`. The exact
+  boxes the drawing recorded give an upper bound; OCR's give what Forma
+  will really get. OCR's boxes are line boxes, taller than the drawn ink:
+  r5's first box is `109 131 59 12` read, against `109 133 60 7` drawn.
+
+The model was not exported. The deployment check is a test of the
+toolchain, not of the model, so it waits for the boxes run's model.
 
 ### The boxes design (built 2026-11-04, not yet trained)
 
@@ -669,13 +708,15 @@ reading.
 
 ### Still to build
 
-1. Train version 4 on Kaggle and score it on the same 20 pages, plus the 20 new
-   ones, band by band and on the page beside OCR.
-2. If it still places worse than OCR, train the boxes design once and
-   score it the same way; then ask Forma's vision path the boxes question
-   with OCR's boxes. Version 2 already got roles right for 97% of the
-   controls it found, which is the part this design keeps.
-3. The Ollama check again, with the chat template.
+1. ~~Train version 4 and score it~~: done 2026-11-04. It loops on every
+   page and places 13.1% of text, against OCR's 55.7%.
+2. Train the boxes design once, with the exact boxes and with OCR's, and
+   score it the same way. If it places better than OCR alone, ask
+   Forma's vision path the boxes question with OCR's boxes. Version 2
+   already got roles right for 97% of the controls it found, which is
+   the part this design keeps.
+3. The Ollama check again, with the chat template, on the boxes run's
+   model.
 4. ~~More than one page per picture~~: done 2026-11-04. The vision model
    reads an upload's first page and, when there are more, its last, and
    `mergePageSkeletons` (`skeletonRepx.ts`) keeps the first page's bands
@@ -719,7 +760,8 @@ Three decisions in it:
 Its effect on a generation is unmeasured until `bench:fidelity` runs with
 the owner's key. The stand-ins were checked in the owner's Chrome with
 Local AI pointed at a closed port. The vision brief needs a vision model
-running, and waits for version 4's export. The rest is recorded under
+running, and waits for an exported model worth running: version 4 loops
+(see *Version 4 loops on every page*). The rest is recorded under
 *One request, every part of Forma in its role* in
 `docs/notes/app-shell.md`.
 
