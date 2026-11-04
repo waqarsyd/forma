@@ -16,6 +16,9 @@ import {
   setControlText,
   overflowsBand,
   escapeXmlAttribute,
+  deleteControl,
+  addLabel,
+  setCellText,
 } from './repxEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
@@ -215,5 +218,81 @@ describe('overflowsBand', () => {
 
   it('tolerates the rounding a drag leaves behind', () => {
     expect(overflowsBand(control(15.2, 25), 40)).toBe(false);
+  });
+});
+
+/* Deleting, adding, and retyping a table cell (2026-11-04). */
+describe('deleting a control', () => {
+  it('takes the control out and numbers the items after it again', () => {
+    const out = deleteControl(report, TITLE);
+    expect(out).toMatchObject({ applied: true, reason: 'deleted XRLabel "title"' });
+    expect(out.xml).not.toContain('Name="title"');
+    // "subtitle" was Item2 with a closing tag; it is Item1 now, both ends.
+    expect(out.xml).toContain('<Item1 Ref="4" ControlType="XRLabel" Name="subtitle"');
+    expect(out.xml).toContain('Multiline="true"></Item1>');
+    expect(parseReportStructure(out.xml).bands[1].controls.map((c) => c.name)).toEqual(['subtitle']);
+    // Nothing else moved.
+    expect(out.xml.slice(out.xml.indexOf('<Item3'))).toBe(report.slice(report.indexOf('<Item3')));
+  });
+
+  it('takes an emptied <Controls> with its last control', () => {
+    const out = deleteControl(report, LINE);
+    expect(out.applied).toBe(true);
+    expect(out.xml).toMatch(/<Item3 Ref="5" ControlType="DetailBand" Name="Detail" HeightF="40">\s*<\/Item3>/);
+  });
+
+  it('declines a control another part of the report names by its Ref', () => {
+    const named = report.replace('Name="Detail" HeightF="40"', 'Name="Detail" HeightF="40" DrillDownControl="#Ref-3"');
+    const out = deleteControl(named, TITLE);
+    expect(out.applied).toBe(false);
+    expect(out.reason).toContain('#Ref-3');
+    expect(out.xml).toBe(named);
+  });
+});
+
+describe('adding a label', () => {
+  it('adds one with a fresh Ref and name, at the place given', () => {
+    const out = addLabel(report, LINE.band, 100, 10);
+    expect(out).toMatchObject({ applied: true, reason: 'added XRLabel "label1"' });
+    const added = parseReportStructure(out.xml).bands[LINE.band].controls[1];
+    expect(added).toMatchObject({ name: 'label1', text: 'New label', x: 100, y: 10, width: 100, height: 23 });
+    expect(out.xml).toContain('<Item2 Ref="8" ControlType="XRLabel" Name="label1"');
+  });
+
+  it('gives a band with no controls its first, self-closing band included', () => {
+    const out = addLabel(report, 0, 0, 0);
+    expect(out.applied).toBe(true);
+    expect(out.xml).toMatch(/<Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0"><Controls><Item1 Ref="8"[^>]*\/><\/Controls><\/Item1>/);
+    expect(parseReportStructure(out.xml).bands[0].controls).toHaveLength(1);
+  });
+
+  it("writes it in the band's own Dpi, so it prints where it was put", () => {
+    const mm = report.replace('ReportUnit="HundredthsOfAnInch"', 'ReportUnit="TenthsOfAMillimeter" Dpi="254"').replace('Name="Detail" HeightF="40"', 'Name="Detail" HeightF="102" Dpi="254"');
+    const out = addLabel(mm, LINE.band, 254, 0);
+    expect(out.xml).toContain('LocationFloat="254, 0" SizeF="254, 58" Padding="2,2,0,0,254" Dpi="254"');
+  });
+});
+
+describe('retyping a table cell', () => {
+  const table = report.replace(
+    '<Item1 Ref="6" ControlType="XRLabel" Name="line" Text="Widget" LocationFloat="0,0" SizeF="600,25" />',
+    '<Item1 Ref="6" ControlType="XRTable" Name="t" LocationFloat="0,0" SizeF="600,25"><Rows>' +
+      '<Item1 Ref="10" ControlType="XRTableRow" Name="r1" Weight="1"><Cells>' +
+      '<Item1 Ref="11" ControlType="XRTableCell" Name="c1" Text="Item" Weight="1" />' +
+      '<Item2 Ref="12" ControlType="XRTableCell" Name="c2" Weight="1"><ExpressionBindings><Item1 Ref="13" EventName="BeforePrint" PropertyName="Text" Expression="[Amount]" /></ExpressionBindings></Item2>' +
+      '</Cells></Item1></Rows></Item1>',
+  );
+
+  it('sets the text of the cell named by row and place', () => {
+    const out = setCellText(table, LINE, 0, 0, 'Product & code');
+    expect(out).toMatchObject({ applied: true, reason: 'retyped XRTableCell "c1"' });
+    expect(out.xml).toContain('Name="c1" Text="Product &amp; code"');
+    expect(parseReportStructure(out.xml).bands[LINE.band].controls[0].rows[0].cells[0].text).toBe('Product & code');
+  });
+
+  it('declines a bound cell, a missing one, and a control that is not a table', () => {
+    expect(setCellText(table, LINE, 0, 1, 'x')).toMatchObject({ applied: false, reason: 'the cell prints a field, not typed text: bind another in the Data tab' });
+    expect(setCellText(table, LINE, 2, 0, 'x').applied).toBe(false);
+    expect(setCellText(report, TITLE, 0, 0, 'x').applied).toBe(false);
   });
 });

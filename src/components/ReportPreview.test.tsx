@@ -18,6 +18,7 @@
  */
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
 import ReportPreview from './ReportPreview';
 
 afterEach(cleanup);
@@ -220,6 +221,109 @@ describe('choosing the grouping field', () => {
   it('is not offered where the report cannot be edited', () => {
     render(<ReportPreview repxContent={grouped} layout={null} title="Grouped" records={rows} />);
     expect(screen.queryByLabelText('Field GroupHeader1 groups by')).toBeNull();
+  });
+});
+
+/* Deleting and adding a control, a table cell retyped, and multi-select (2026-11-04). */
+describe('editing in the pane', () => {
+  const editable = `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Edit" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />
+    <Item2 Ref="3" ControlType="DetailBand" Name="Detail" HeightF="120">
+      <Controls>
+        <Item1 Ref="4" ControlType="XRLabel" Name="a" Text="ALPHA" LocationFloat="0,0" SizeF="100,20" />
+        <Item2 Ref="5" ControlType="XRLabel" Name="b" Text="BETA" LocationFloat="200,0" SizeF="100,20" />
+        <Item3 Ref="6" ControlType="XRTable" Name="t" LocationFloat="0,40" SizeF="300,25">
+          <Rows><Item1 Ref="7" ControlType="XRTableRow" Name="r" Weight="1"><Cells>
+            <Item1 Ref="8" ControlType="XRTableCell" Name="c1" Text="ONE" Weight="1" />
+            <Item2 Ref="9" ControlType="XRTableCell" Name="c2" Text="TWO" Weight="1" />
+          </Cells></Item1></Rows>
+        </Item3>
+      </Controls>
+    </Item2>
+    <Item3 Ref="10" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+
+  /** The pane as App holds it: each edit becomes its content. */
+  function Holder({ onEdit }: { onEdit: (xml: string, reason: string) => void }) {
+    const [xml, setXml] = useState(editable);
+    return <ReportPreview repxContent={xml} layout={null} title="Edit" onEdit={(next, reason) => { setXml(next); onEdit(next, reason); }} />;
+  }
+  const hits = () => [...document.querySelectorAll('.rp-hit')] as HTMLElement[];
+
+  it('selects more with Shift+click, and deletes them all as one step', () => {
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    fireEvent.pointerDown(hits()[0]);
+    fireEvent.pointerDown(hits()[1], { shiftKey: true });
+    expect(screen.getByText('2 selected')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    const [xml, reason] = onEdit.mock.calls[0];
+    expect(reason).toBe('deleted 2 controls');
+    expect(xml).not.toContain('Name="a"');
+    expect(xml).not.toContain('Name="b"');
+    expect(xml).toContain('<Item1 Ref="6" ControlType="XRTable" Name="t"');
+  });
+
+  it('nudges every selected control by the same step', () => {
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    fireEvent.pointerDown(hits()[0]);
+    fireEvent.pointerDown(hits()[1], { shiftKey: true });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    const [xml, reason] = onEdit.mock.calls[0];
+    expect(reason).toBe('moved 2 controls');
+    expect(xml).toContain('Name="a" Text="ALPHA" LocationFloat="1,0"');
+    expect(xml).toContain('Name="b" Text="BETA" LocationFloat="201,0"');
+  });
+
+  it('adds a label under the selected control', () => {
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    fireEvent.pointerDown(hits()[0]);
+    fireEvent.click(screen.getByText('Add label'));
+    const [xml, reason] = onEdit.mock.calls[0];
+    expect(reason).toBe('added XRLabel "label1"');
+    expect(xml).toContain('Name="label1" Text="New label" TextAlignment="TopLeft" LocationFloat="0, 24"');
+  });
+
+  it('retypes the table cell double-clicked', () => {
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    // The Detail band prints three placeholder records: the table of the first.
+    fireEvent.doubleClick(hits()[2]);
+    const field = screen.getByLabelText("Edit the cell's text") as HTMLInputElement;
+    expect(field.value).toBe('ONE');
+    fireEvent.change(field, { target: { value: 'FIRST' } });
+    fireEvent.blur(field);
+    const [xml, reason] = onEdit.mock.calls[0];
+    expect(reason).toBe('retyped XRTableCell "c1"');
+    expect(xml).toContain('Name="c1" Text="FIRST"');
+  });
+
+  it('retypes a label in a Detail band printed once per record, in the one placement clicked', () => {
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    fireEvent.doubleClick(hits()[0]);
+    // One editor, not one per record, each taking the focus from the last.
+    expect(screen.getAllByLabelText("Edit the control's text")).toHaveLength(1);
+    const field = screen.getByLabelText("Edit the control's text") as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'FIRST' } });
+    fireEvent.blur(field);
+    expect(onEdit.mock.calls[0][1]).toBe('retyped XRLabel "a"');
+  });
+
+  it('says why when an edit is declined', () => {
+    const named = editable.replace('Name="Detail" HeightF="120"', 'Name="Detail" HeightF="120" DrillDownControl="#Ref-4"');
+    const onEdit = vi.fn();
+    render(<ReportPreview repxContent={named} layout={null} title="Edit" onEdit={onEdit} />);
+    fireEvent.pointerDown(hits()[0]);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('is named elsewhere in the report (#Ref-4)');
   });
 });
 

@@ -57,7 +57,7 @@ import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt } from '../lib/text
 import { exportFileName, layoutContinuous, reportToCsv } from '../lib/csvExport';
 import { reportToXlsxFiles, xlsxOptionsOf } from '../lib/xlsxExport';
 import { buildZip } from '../lib/zip';
-import { moveControl, resizeControl, setControlText, overflowsBand, type ControlRef } from '../lib/repxEdit';
+import { moveControl, resizeControl, setControlText, overflowsBand, deleteControl, addLabel, setCellText, type ControlRef } from '../lib/repxEdit';
 import type { ReportLayout } from '../lib/reportTypes';
 
 interface Props {
@@ -129,6 +129,8 @@ type Gesture = {
   dpiScale: number;
   /** Drawn mirrored by a right-to-left layout (s63a): `originX` is the file's own, and moves go the other way. */
   mirrored: boolean;
+  /** The rest of a multiple selection, moved by the same amount (2026-11-04). */
+  others: { ref: ControlRef; originX: number; originY: number; mirrored: boolean; dpiScale: number }[];
 } | null;
 
 /** Bands the reader should be able to tell apart on screen. */
@@ -894,7 +896,24 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   const [scale, setScale] = useState(1);
   const [showBands, setShowBands] = useState(true);
   const [selected, setSelected] = useState<ControlRef | null>(null);
+  /*
+   * More controls selected beside `selected` (2026-11-04): Shift+click adds or
+   * takes one away, and arrows, Delete and a drag act on them all. `selected`
+   * stays the one the toolbar describes and the handle resizes.
+   */
+  const [also, setAlso] = useState<ControlRef[]>([]);
   const [editingText, setEditingText] = useState<string | null>(null);
+  /*
+   * Which placement of the label is being retyped, `page:band`. A Detail band
+   * prints once per record, and until 2026-11-04 the editor opened in every
+   * placement of the label at once, each taking the focus from the last, so
+   * the blur closed the edit before a key was typed.
+   */
+  const [editingAt, setEditingAt] = useState<string | null>(null);
+  /** A table cell being retyped, found from where the double-click landed. */
+  const [editingCell, setEditingCell] = useState<{ at: string; ref: ControlRef; row: number; cell: number; text: string; box: { left: number; top: number; width: number; height: number } } | null>(null);
+  /** Why the last edit was declined, shown in the toolbar until the next one. */
+  const [editNote, setEditNote] = useState<string | null>(null);
   const gesture = useRef<Gesture>(null);
   const editable = Boolean(onEdit);
 
@@ -911,10 +930,33 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   const [undoDepth, setUndoDepth] = useState(0);
 
   const commit = (result: { xml: string; applied: boolean; reason: string }, previous: string) => {
+    if (!result.applied) setEditNote(result.reason);
     if (!result.applied || !onEdit) return;
+    setEditNote(null);
     undoStack.current.push({ xml: previous, reason: result.reason });
     setUndoDepth(undoStack.current.length);
     onEdit(result.xml, result.reason);
+  };
+
+  /**
+   * One edit applied to several controls, as one undo step. Each is applied
+   * to the file the one before left, so indexes must still hold: a delete
+   * goes from the last control back to the first.
+   */
+  const applyAll = (refs: readonly ControlRef[], edit: (xml: string, ref: ControlRef) => { xml: string; applied: boolean; reason: string }, what: string) => {
+    if (!repxContent || !refs.length) return;
+    let xml = repxContent;
+    const reasons: string[] = [];
+    for (const ref of refs) {
+      const result = edit(xml, ref);
+      if (!result.applied) {
+        commit(result, repxContent);
+        return;
+      }
+      xml = result.xml;
+      reasons.push(result.reason);
+    }
+    commit({ xml, applied: true, reason: refs.length === 1 ? reasons[0] : `${what} ${refs.length} controls` }, repxContent);
   };
 
   const undo = () => {
@@ -1022,8 +1064,23 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     if (!control) return;
     event.preventDefault();
     event.stopPropagation();
+    const same = (a: ControlRef) => a.band === ref.band && a.control === ref.control;
+    // Shift+click adds a control to the selection or takes it away, and drags nothing.
+    if (mode === 'move' && event.shiftKey && selected) {
+      if (same(selected)) {
+        setSelected(also[0] ?? null);
+        setAlso(also.slice(1));
+      } else {
+        setAlso(also.some(same) ? also.filter((a) => !same(a)) : [...also, ref]);
+      }
+      return;
+    }
+    // A drag on one of several selected moves them all; anywhere else starts over.
+    const group = mode === 'move' && (selected && same(selected) || also.some(same)) ? [selected!, ...also].filter((a) => !same(a)) : [];
+    if (!group.length) setAlso([]);
     setSelected(ref);
     setEditingText(null);
+    setEditingCell(null);
     // One undo entry per gesture, recorded before the first frame of it.
     undoStack.current.push({ xml: repxContent, reason: mode === 'move' ? 'move' : 'resize' });
     setUndoDepth(undoStack.current.length);
@@ -1041,6 +1098,10 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       originW: control.width,
       originH: control.height,
       dpiScale: control.dpiScale ?? 1,
+      others: group.flatMap((r) => {
+        const c = structureBands[r.band]?.controls[r.control];
+        return c ? [{ ref: r, originX: c.fileX ?? c.x, originY: c.y, mirrored: c.fileX !== undefined, dpiScale: c.dpiScale ?? 1 }] : [];
+      }),
     };
   };
 
@@ -1067,6 +1128,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         const moved = moveControl(result.xml, g.ref, (g.originX - dx) / s, g.originY / s);
         if (moved.applied) result = { ...moved, reason: result.reason };
       }
+      // The rest of a multiple selection moves by the same amount.
+      if (g.mode === 'move' && result.applied) {
+        for (const o of g.others) {
+          const next = moveControl(result.xml, o.ref, (o.originX + (o.mirrored ? -dx : dx)) / o.dpiScale, (o.originY + dy) / o.dpiScale);
+          if (next.applied) result = { ...next, reason: `moved ${g.others.length + 1} controls` };
+        }
+      }
       if (result.applied) onEdit(result.xml, result.reason);
     };
     const onUp = () => { gesture.current = null; };
@@ -1083,14 +1151,27 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   useEffect(() => {
     if (!editable) return;
     const onKey = (event: KeyboardEvent) => {
-      if (editingText !== null) return;
+      if (editingText !== null || editingCell !== null) return;
+      // Typing in a field elsewhere on the page (a parameter, the chat) is not an edit of the report.
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         undo();
         return;
       }
-      if (event.key === 'Escape') { setSelected(null); return; }
+      if (event.key === 'Escape') { setSelected(null); setAlso([]); return; }
       if (!selected || !selectedControl || !repxContent) return;
+      const chosen = [selected, ...also];
+      // Delete takes the whole selection, last first so the indexes still hold.
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        const order = [...chosen].sort((a, b) => b.band - a.band || b.control - a.control);
+        applyAll(order, deleteControl, 'deleted');
+        setSelected(null);
+        setAlso([]);
+        return;
+      }
       const step = event.shiftKey ? 10 : 1;
       const nudge: Record<string, [number, number]> = {
         ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
@@ -1099,16 +1180,18 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       if (!delta) return;
       // Arrow keys are the precision half of direct manipulation: a drag gets
       // you close, one unit at a time gets you exact. A unit of the file's own
-      // numbers, so they stay whole whatever the control's Dpi.
+      // numbers, so they stay whole whatever the control's Dpi. Every selected
+      // control moves, as one undo step.
       event.preventDefault();
-      const s = selectedControl.dpiScale ?? 1;
-      // Mirrored (s63a), the left arrow moves the control left on the page,
-      // which is right in the file.
-      const mirrored = selectedControl.fileX !== undefined;
-      commit(
-        moveControl(repxContent, selected, (selectedControl.fileX ?? selectedControl.x) / s + (mirrored ? -delta[0] : delta[0]), selectedControl.y / s + delta[1]),
-        repxContent,
-      );
+      applyAll(chosen, (xml, ref) => {
+        const c = structureBands[ref.band]?.controls[ref.control];
+        if (!c) return { xml, applied: false, reason: 'a selected control is gone' };
+        const s = c.dpiScale ?? 1;
+        // Mirrored (s63a), the left arrow moves the control left on the page,
+        // which is right in the file.
+        const mirrored = c.fileX !== undefined;
+        return moveControl(xml, ref, (c.fileX ?? c.x) / s + (mirrored ? -delta[0] : delta[0]), c.y / s + delta[1]);
+      }, 'moved');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1505,7 +1588,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                              handler on each shape would mean the gesture works
                              on a label and not on a table. */
                           <div
-                            className={`rp-hit${isSelected ? ' is-selected' : ''}`}
+                            className={`rp-hit${isSelected || (editing && also.some((a) => a.band === bandIndex && a.control === c)) ? ' is-selected' : ''}`}
                             style={{
                               // Over the control where it is drawn, which after
                               // growth and push-down need not be where the file
@@ -1518,8 +1601,41 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                             onPointerDown={(e) => beginGesture(e, { band: bandIndex, control: c }, 'move')}
                             onDoubleClick={(e) => {
                               e.stopPropagation();
+                              if (control.type === 'XRTable' && control.rows.length) {
+                                // The cell under the pointer, from the rows as placed and
+                                // the cells' weights across (2026-11-04).
+                                const r = e.currentTarget.getBoundingClientRect();
+                                const fy = (e.clientY - r.top) / Math.max(1, r.height);
+                                const fx = (e.clientX - r.left) / Math.max(1, r.width);
+                                const heights = pc.rowHeights?.length ? pc.rowHeights : control.rows.map(() => 1);
+                                const total = heights.reduce((s, h) => s + h, 0) || 1;
+                                let row = 0;
+                                let top = 0;
+                                while (row < heights.length - 1 && (top + heights[row]) / total < fy) top += heights[row++];
+                                const rowIndex = Math.min(control.rows.length - 1, (pc.rowStart ?? 0) + row);
+                                const cells = control.rows[rowIndex].cells;
+                                const weights = cells.map((cell) => cell.weight || 1);
+                                const sum = weights.reduce((s, w) => s + w, 0) || 1;
+                                let k = 0;
+                                let left = 0;
+                                while (k < weights.length - 1 && (left + weights[k]) / sum < fx) left += weights[k++];
+                                setSelected({ band: bandIndex, control: c });
+                                setAlso([]);
+                                setEditingCell({
+                                  // The placement clicked: a Detail band prints once per record,
+                                  // and an editor in every one would steal focus from the last.
+                                  at: `${pageIndex}:${i}`,
+                                  ref: { band: bandIndex, control: c },
+                                  row: rowIndex,
+                                  cell: k,
+                                  text: cells[k]?.text ?? '',
+                                  box: { left: left / sum, top: top / total, width: weights[k] / sum, height: heights[row] / total },
+                                });
+                                return;
+                              }
                               if (control.type !== 'XRLabel') return;
                               setSelected({ band: bandIndex, control: c });
+                              setEditingAt(`${pageIndex}:${i}`);
                               setEditingText(control.text);
                             }}
                           >
@@ -1531,7 +1647,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                                 }
                               />
                             )}
-                            {isSelected && editingText !== null && (
+                            {isSelected && editingText !== null && editingAt === `${pageIndex}:${i}` && (
                               <input
                                 className="rp-textedit"
                                 autoFocus
@@ -1556,6 +1672,36 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                                   // committing it, which is what Escape means
                                   // everywhere else in this app.
                                   if (e.key === 'Escape') { setEditingText(null); }
+                                  e.stopPropagation();
+                                }}
+                              />
+                            )}
+                            {editingCell && editingCell.at === `${pageIndex}:${i}` && editingCell.ref.band === bandIndex && editingCell.ref.control === c && (
+                              <input
+                                className="rp-textedit"
+                                autoFocus
+                                value={editingCell.text}
+                                aria-label="Edit the cell's text"
+                                style={{
+                                  left: `${editingCell.box.left * 100}%`,
+                                  top: `${editingCell.box.top * 100}%`,
+                                  width: `${editingCell.box.width * 100}%`,
+                                  height: `${editingCell.box.height * 100}%`,
+                                  fontSize: control.fontSize ? `${control.fontSize}pt` : '9pt',
+                                }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onDoubleClick={(e) => e.stopPropagation()}
+                                onChange={(e) => setEditingCell({ ...editingCell, text: e.target.value })}
+                                onBlur={() => {
+                                  const before = control.rows[editingCell.row]?.cells[editingCell.cell]?.text;
+                                  if (repxContent && editingCell.text !== before) {
+                                    commit(setCellText(repxContent, editingCell.ref, editingCell.row, editingCell.cell, editingCell.text), repxContent);
+                                  }
+                                  setEditingCell(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') e.currentTarget.blur();
+                                  if (e.key === 'Escape') setEditingCell(null);
                                   e.stopPropagation();
                                 }}
                               />
@@ -1762,15 +1908,52 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                     <span className="rp-over"> · past the band’s {Math.round(structureBands[selected.band]?.height ?? 0)}-unit height</span>
                   )}
                 </>
-              : 'Click a control to move it · double-click a label to retype it'}
+              : 'Click a control to move it · Shift+click for more · double-click a label or a table cell to retype it'}
+            {also.length > 0 && <> · <b>{also.length + 1} selected</b></>}
+            {editNote && <span className="rp-over"> · {editNote}</span>}
           </span>
+        )}
+        {editable && (
+          <button
+            className="wb-pill wb-pill--outline"
+            onClick={() => {
+              if (!repxContent) return;
+              // Beside the selection, under it in its band; else at the top of the records.
+              const bandIndex = selected?.band ?? Math.max(0, structureBands.findIndex((b) => b.kind === 'Detail'));
+              const below = selectedControl ? { x: selectedControl.x, y: selectedControl.y + selectedControl.height + 4 } : { x: 0, y: 0 };
+              const count = structureBands[bandIndex]?.controls.length ?? 0;
+              const result = addLabel(repxContent, bandIndex, below.x, below.y);
+              commit(result, repxContent);
+              if (result.applied) {
+                setSelected({ band: bandIndex, control: count });
+                setAlso([]);
+              }
+            }}
+            title="A new label, under the selected control or at the top of the records"
+            style={{ marginLeft: 'auto' }}
+          >
+            Add label
+          </button>
+        )}
+        {editable && selected && (
+          <button
+            className="wb-pill wb-pill--outline"
+            onClick={() => {
+              const order = [selected, ...also].sort((a, b) => b.band - a.band || b.control - a.control);
+              applyAll(order, deleteControl, 'deleted');
+              setSelected(null);
+              setAlso([]);
+            }}
+            title="Delete the selected controls (Delete key)"
+          >
+            Delete
+          </button>
         )}
         {editable && (
           <button
             className="wb-pill wb-pill--outline"
             onClick={undo}
             disabled={undoDepth === 0}
-            style={{ marginLeft: 'auto' }}
           >
             Undo
           </button>
