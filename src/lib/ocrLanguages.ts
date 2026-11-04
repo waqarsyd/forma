@@ -48,5 +48,17 @@ export function ocrLanguageString(): string {
   return tesseractLanguages(current);
 }
 
+let handwriting = false;
+
+/** Turn handwriting on or off for the next OCR run (lib/handwriting.ts); App calls it when Settings change. */
+export function setOcrHandwriting(on: boolean | undefined): void {
+  handwriting = on === true;
+}
+
+/** Whether OCR reads unsure lines again as handwriting. */
+export function ocrHandwriting(): boolean {
+  return handwriting;
+}
+
 /** Whether `code` is a language OCR offers. */
 export const isOcrLanguage = (code: string): code is OcrLanguage => CODES.includes(code);

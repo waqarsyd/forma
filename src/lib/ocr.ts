@@ -14,7 +14,7 @@
  * language chosen in Settings, its own data too (lib/ocrLanguages.ts).
  */
 import type { PixelBox } from './reportGeometry';
-import { ocrLanguageString } from './ocrLanguages';
+import { ocrHandwriting, ocrLanguageString } from './ocrLanguages';
 
 /** One recognized word: its text, its box in the image's pixels, and Tesseract's confidence, 0 to 100. */
 export interface OcrWord {
@@ -153,7 +153,19 @@ export async function recognizePage(
     const worker = await loadEngine();
     const result = await worker.recognize(input, {}, { blocks: true });
     if (options.signal?.aborted) throw new DOMException('OCR was stopped.', 'AbortError');
-    return ocrPageFrom(result.data.blocks as TesseractBlocks[] | null, { width: source.width, height: source.height, dpi }, scale);
+    const page = ocrPageFrom(result.data.blocks as TesseractBlocks[] | null, { width: source.width, height: source.height, dpi }, scale);
+    // The lines Tesseract was unsure of, read again as handwriting when
+    // Settings ask for it (2026-11-04, lib/handwriting.ts). A model that will
+    // not load leaves Tesseract's reading as it was.
+    if (!ocrHandwriting()) return page;
+    try {
+      listener?.('reading handwriting', 0);
+      const { readHandwriting } = await import('./handwriting');
+      return await readHandwriting(page, source, options.signal);
+    } catch (err) {
+      console.warn('Handwriting was not read; keeping what OCR read.', err);
+      return page;
+    }
   } finally {
     listener = null;
     options.signal?.removeEventListener('abort', abort);

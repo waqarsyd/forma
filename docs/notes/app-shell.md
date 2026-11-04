@@ -458,7 +458,22 @@ Three things about it are deliberate and should survive any edit:
 - **DE·HTR** (Apache-2.0, ONNX Runtime Web): German only, also line by line.
 - Nothing free covers Arabic, Hindi or Urdu handwriting in a browser.
 
-Not built: usable means reading the handwriting on a report page (a signature line, a filled form's entries) well enough to beat Tesseract on those lines, and that can only be measured with the model downloaded and run on sample pages. That download (about 64 MB from Hugging Face, to be served from this site like the OCR data if adopted, never fetched from the CDN by visitors) waits for the owner. Sources: [the model card](https://huggingface.co/microsoft/trocr-small-handwritten), [its ONNX files](https://huggingface.co/Xenova/trocr-small-handwritten/tree/main/onnx), [DE·HTR](https://huggingface.co/naeyn/de-htr-web-v2).
+Sources: [the model card](https://huggingface.co/microsoft/trocr-small-handwritten), [its ONNX files](https://huggingface.co/Xenova/trocr-small-handwritten/tree/main/onnx), [DE·HTR](https://huggingface.co/naeyn/de-htr-web-v2).
+
+**Measured, then built (2026-11-04), after the owner said "yes download TrOCR and test it".** In a scratch project outside the repository (`forma-model-data/trocr-test`), TrOCR-small (quantized) and Tesseract with Forma's own English data read the same lines:
+
+| lines | Tesseract | TrOCR | TrOCR where Tesseract's confidence is below 70 |
+|---|---|---|---|
+| 60 real handwritten (IAM validation, MIT on Hugging Face) | 47.4% of characters wrong | 10.1% | 10.6% |
+| 40 report entries in Windows' handwriting fonts | 3.4% | 10.1% | 3.6% |
+| 20 printed (Arial, Times New Roman) | 0.0% | 4.3% | 0.0% |
+
+TrOCR was fine-tuned on IAM, so its own column there is a best case; the point is the last column, which keeps print exact and takes four fifths of the errors out of real handwriting. About 0.2 s a line in Node, one to two seconds in the browser. The owner chose to serve it from Forma's own site, opt-in, over a CDN, knowing a first download (about 88 MB) counts against the free hosting quota. How it is built:
+- `lib/handwriting.ts` reads again the lines Tesseract read below 70 (`HANDWRITING_BELOW`), each cut from the page with a fifth of its height above and below and half at the sides, and puts back what TrOCR read as one word over the line at confidence 60, not flagged and no more than that. `recognizePage` calls it when *Read handwriting (English)* is on in Settings (`OcrSettings.tsx`, kept with the document settings); a model that will not load leaves Tesseract's reading.
+- **Every file from this site.** The model is served at `/handwriting/models/` from `vendor/handwriting/`, which `npm run fetch:handwriting` fills from one pinned commit of the model repository, every file checked against its SHA-256, and git ignores; a build without it (CI's) has no model, and Settings says so. ONNX Runtime's glue and WebAssembly are imported as URLs of Vite's own copies: Transformers.js points the runtime at cdn.jsdelivr.net otherwise, which the production CSP blocked in the owner's Chrome, and handwriting then fell back to Tesseract with nothing on screen. No CSP change was needed: same-origin scripts, `'wasm-unsafe-eval'` and `blob:` workers were already allowed.
+- `check-bundle-size.mjs` counts the 90.6 MB apart, like the OCR data, with the two model files optional since CI builds without them; onnxruntime-node and sharp, which Transformers.js brings for Node, have their install scripts denied.
+
+Checked in the owner's Chrome twice. In development, two IAM lines through `recognizePage`: "twas q splendid inbaprclalion ef thet" became "It was a splendid interpretation of that", and the second line went from noise to "resemblance to the shrunk heads are". On the production build under `npm start`, with handwriting on in Settings and a handwritten line attached and sent in the chat box, the report held "resemblance to the shrunk heads we had", the line exactly, and the only request off the site was the designer bridge's local ping.
 
 Four things the first run in the owner's Chrome found, on a two-page scan built from DevExpress's own PNGs of s54a and s23-gen. Each is now a rule with a test.
 

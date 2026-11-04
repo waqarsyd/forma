@@ -29,7 +29,7 @@ export const STORAGE_KEY = 'reportConfig';
  * grow the prompt without bound. `dataSchema` is deliberately not here: a
  * schema belongs to the Data tab, beside the report it binds.
  */
-const PERSISTED_FIELDS = ['version', 'unit', 'pageSize', 'header', 'footer', 'rtl', 'spName', 'ocrLanguages'] as const;
+const PERSISTED_FIELDS = ['version', 'unit', 'pageSize', 'header', 'footer', 'rtl', 'spName', 'ocrLanguages', 'ocrHandwriting'] as const;
 
 /** Longest stored stored-procedure name. */
 export const MAX_SP_NAME = 256;
@@ -44,6 +44,8 @@ export interface PersistableConfig {
   spName?: string;
   /** The OCR languages chosen besides English (2026-11-04), only the ones offered. */
   ocrLanguages?: string[];
+  /** Handwriting read by TrOCR (2026-11-04), a boolean. */
+  ocrHandwriting?: boolean;
 }
 
 /**
@@ -92,8 +94,8 @@ export function mergeStoredConfig<T extends PersistableConfig>(defaults: T, raw:
       continue;
     }
 
-    if (field === 'rtl') {
-      if (typeof value === 'boolean') merged.rtl = value;
+    if (field === 'rtl' || field === 'ocrHandwriting') {
+      if (typeof value === 'boolean') merged[field] = value;
       continue;
     }
     // A language OCR does not offer would be a file the site does not serve.

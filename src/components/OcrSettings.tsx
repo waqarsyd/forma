@@ -8,8 +8,12 @@
  * and the line under the boxes says how much that is, since a chosen language
  * slows every reading a little whether the page holds it or not.
  */
+import { useEffect, useState } from 'react';
 import { OCR_LANGUAGES, validOcrLanguages, type OcrLanguage } from '../lib/ocrLanguages';
 import type { ReportConfig } from '../services/geminiService';
+
+/** One of the handwriting model's files, asked for to learn whether this site serves it. */
+const HANDWRITING_PROBE = '/handwriting/models/Xenova/trocr-small-handwritten/config.json';
 
 export interface OcrSettingsProps {
   config: ReportConfig;
@@ -26,6 +30,22 @@ export default function OcrSettings({ config, onChange }: OcrSettingsProps) {
     onChange({ ocrLanguages: validOcrLanguages(next) });
   };
   const extra = chosen.reduce((t, c) => t + SIZE_MB[c], 0);
+  /*
+   * Handwriting (2026-11-04, lib/handwriting.ts) is served only by a build
+   * made after `npm run fetch:handwriting`; this asks once whether that file
+   * is here, so the switch can say when it is not. Null while unknown.
+   */
+  const [served, setServed] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (typeof fetch !== 'function') return;
+    let live = true;
+    fetch(HANDWRITING_PROBE, { method: 'HEAD' })
+      .then((r) => live && setServed(r.ok))
+      .catch(() => live && setServed(false));
+    return () => {
+      live = false;
+    };
+  }, []);
   return (
     <div className="wb-fset">
       <div className="wb-eyebrow"><b>ocr</b>Text in pictures<span className="wb-fade" /></div>
@@ -43,6 +63,20 @@ export default function OcrSettings({ config, onChange }: OcrSettingsProps) {
           {`${extra.toFixed(1)} MB more the first time OCR runs, kept by the browser after; each language makes every reading a little slower.`}
         </p>
       )}
+      <label className="wb-checkrow">
+        <input
+          type="checkbox"
+          checked={!!config.ocrHandwriting}
+          disabled={served === false}
+          onChange={(e) => onChange({ ocrHandwriting: e.target.checked })}
+        />
+        Read handwriting (English)
+      </label>
+      <p className="wb-hint">
+        {served === false
+          ? 'This site does not serve the handwriting model.'
+          : 'Lines OCR is unsure of are read again by a handwriting model: about 88 MB from this site the first time, then a second or two per line.'}
+      </p>
     </div>
   );
 }

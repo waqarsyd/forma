@@ -678,6 +678,7 @@ firebase-applet-config.json
 | `npm run lint:encoding` | Fails if any source file contains mojibake |
 | `npm run lint:links` | Fails if a relative link or a cited section heading in the docs does not resolve |
 | `npm run check:size` | Artifact size budgets — run `build` first |
+| `npm run fetch:handwriting` | Download the handwriting model (about 64 MB, pinned by SHA-256) into `vendor/handwriting/` for the next build — see *Handwriting is a deploy-time decision* |
 | `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |
 | `npm run test:coverage` | Coverage over `lib/` and `services/` — see the note in `vitest.config.ts` about what is deliberately excluded |
@@ -749,6 +750,8 @@ npm run build
 npx firebase deploy --only hosting          # every site in firebase.json
 npx firebase deploy --only firestore:rules  # the rules, deployed separately
 ```
+
+**Handwriting is a deploy-time decision.** The handwriting model (2026-11-04, opt-in in Settings) is served only by a build made after `npm run fetch:handwriting`, which downloads it into the gitignored `vendor/handwriting/`, pinned by SHA-256. Each visitor who turns handwriting on downloads about 88 MB once, a quarter of the free plan's 360 MB a day, and on Spark a product that passes its quota is switched off rather than billed. Deploy without fetching it and the site serves no model, and Settings says handwriting is not on this site.
 
 **`hosting` is an array — one entry per site**, because Firebase cannot share a block between sites. The entries are identical apart from `site`, and the test below asserts that: a second site quietly missing an origin from `connect-src` would keep serving while defending less, and both URLs would look fine. Generate the duplicate rather than typing it.
 

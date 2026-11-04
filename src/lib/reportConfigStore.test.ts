@@ -64,6 +64,11 @@ describe('mergeStoredConfig — direction and data source', () => {
     expect((mergeStoredConfig(defaults, JSON.stringify({ rtl: false })) as { rtl?: boolean }).rtl).toBe(false);
   });
 
+  it('restores handwriting only as a true boolean', () => {
+    expect((mergeStoredConfig(defaults, JSON.stringify({ ocrHandwriting: true })) as { ocrHandwriting?: boolean }).ocrHandwriting).toBe(true);
+    expect((mergeStoredConfig(defaults, JSON.stringify({ ocrHandwriting: 'on' })) as { ocrHandwriting?: boolean }).ocrHandwriting).toBeUndefined();
+  });
+
   it('restores the OCR languages, dropping any the site does not serve', () => {
     const merged = mergeStoredConfig(defaults, JSON.stringify({ ocrLanguages: ['fra', '../../etc', 'ara'] })) as { ocrLanguages?: string[] };
     expect(merged.ocrLanguages).toEqual(['ara', 'fra']);

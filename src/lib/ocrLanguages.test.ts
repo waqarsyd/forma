@@ -1,7 +1,20 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { OCR_LANGUAGES, isOcrLanguage, ocrLanguageString, setOcrLanguages, tesseractLanguages, validOcrLanguages } from './ocrLanguages';
+import { OCR_LANGUAGES, isOcrLanguage, ocrHandwriting, ocrLanguageString, setOcrHandwriting, setOcrLanguages, tesseractLanguages, validOcrLanguages } from './ocrLanguages';
 
-afterEach(() => setOcrLanguages([]));
+afterEach(() => {
+  setOcrLanguages([]);
+  setOcrHandwriting(false);
+});
+
+describe('handwriting', () => {
+  it('is off unless it is turned on with a true', () => {
+    expect(ocrHandwriting()).toBe(false);
+    setOcrHandwriting(true);
+    expect(ocrHandwriting()).toBe(true);
+    setOcrHandwriting(undefined);
+    expect(ocrHandwriting()).toBe(false);
+  });
+});
 
 describe('the OCR languages', () => {
   it('offers the six the owner approved, by their Tesseract names', () => {

@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import {defineConfig, type Plugin} from 'vite';
-import {createReadStream, readFileSync} from 'node:fs';
+import {createReadStream, existsSync, readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 
 /**
@@ -55,7 +55,25 @@ const MODEL_ASSETS: Record<string, string> = {
   'boxReader.json': 'assets/model/boxReader.json',
 };
 
-const CONTENT_TYPES: Record<string, string> = { '.js': 'text/javascript', '.ttf': 'font/ttf', '.json': 'application/json' };
+/**
+ * Handwriting (2026-11-04, lib/handwriting.ts): TrOCR-small-handwritten, read
+ * by Transformers.js on ONNX Runtime's WebAssembly, every file served from
+ * this site, the owner's choice over a CDN, and fetched only by someone who
+ * turned it on in Settings. The runtime's WebAssembly Vite emits into
+ * `assets/` itself, from the `new URL(…, import.meta.url)` onnxruntime-web
+ * writes; the model is served at `/handwriting/models/` from
+ * `vendor/handwriting/`, which `npm run fetch:handwriting` fills and git
+ * ignores. A build without the model leaves those files out, and the switch
+ * in Settings says handwriting is not on this site.
+ */
+const HANDWRITING_MODEL = 'vendor/handwriting/Xenova/trocr-small-handwritten';
+const HANDWRITING_ASSETS: Record<string, string> = Object.fromEntries(
+  ['config.json', 'generation_config.json', 'preprocessor_config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/encoder_model_quantized.onnx', 'onnx/decoder_model_merged_quantized.onnx']
+    .map((f) => [`models/Xenova/trocr-small-handwritten/${f}`, `${HANDWRITING_MODEL}/${f}`])
+    .filter(([, source]) => existsSync(resolve(source))),
+);
+
+const CONTENT_TYPES: Record<string, string> = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.ttf': 'font/ttf', '.json': 'application/json' };
 
 /** Files served at `/<dir>/` from their sources in development and copied into `dist/<dir>/` at build. */
 function servedAssets(dir: string, files: Record<string, string>): Plugin {
@@ -80,7 +98,7 @@ function servedAssets(dir: string, files: Record<string, string>): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), servedAssets('ocr', OCR_ASSETS), servedAssets('pdf-fonts', PDF_FONT_ASSETS), servedAssets('model', MODEL_ASSETS)],
+    plugins: [react(), tailwindcss(), servedAssets('ocr', OCR_ASSETS), servedAssets('pdf-fonts', PDF_FONT_ASSETS), servedAssets('model', MODEL_ASSETS), servedAssets('handwriting', HANDWRITING_ASSETS)],
     // Only VITE_* reaches the client. GEMINI_* was previously allowlisted here,
     // which inlined GEMINI_API_KEY into the shipped bundle — Google's secret
     // scanner found that key and revoked it (403 "reported as leaked").

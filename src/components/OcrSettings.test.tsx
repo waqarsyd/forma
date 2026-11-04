@@ -29,6 +29,22 @@ describe('OcrSettings', () => {
     expect(document.body.textContent).toContain('OCR always reads English');
   });
 
+  it('turns handwriting on, and says when this site does not serve its model', async () => {
+    const onChange = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })));
+    render(<OcrSettings config={config()} onChange={onChange} />);
+    const box = screen.getByLabelText('Read handwriting (English)') as HTMLInputElement;
+    expect(await screen.findByText('This site does not serve the handwriting model.')).toBeTruthy();
+    expect(box.disabled).toBe(true);
+    vi.unstubAllGlobals();
+    cleanup();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    render(<OcrSettings config={config()} onChange={onChange} />);
+    fireEvent.click(screen.getByLabelText('Read handwriting (English)'));
+    expect(onChange).toHaveBeenLastCalledWith({ ocrHandwriting: true });
+    vi.unstubAllGlobals();
+  });
+
   it('says what the chosen languages cost, and nothing when none is chosen', () => {
     const { rerender } = render(<OcrSettings config={config()} onChange={vi.fn()} />);
     expect(screen.queryByRole('status')).toBeNull();

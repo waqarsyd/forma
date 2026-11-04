@@ -221,7 +221,7 @@ import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import { makeRightToLeft } from './lib/repxRtl';
-import { setOcrLanguages } from './lib/ocrLanguages';
+import { setOcrHandwriting, setOcrLanguages } from './lib/ocrLanguages';
 import {
   buildChatHistory,
   isGenerationTurn,
@@ -2119,10 +2119,13 @@ export default function App() {
     writeProviderSettings(config);
   }, [config.provider, config.localUrl, config.localModel, config.openRouterModel, config.openRouterKey, config.visionModel]);
 
-  // The languages OCR reads besides English, as Settings has them (lib/ocrLanguages.ts).
+  // The languages OCR reads besides English, and handwriting, as Settings has them (lib/ocrLanguages.ts).
   useEffect(() => {
     setOcrLanguages(config.ocrLanguages);
   }, [config.ocrLanguages]);
+  useEffect(() => {
+    setOcrHandwriting(config.ocrHandwriting);
+  }, [config.ocrHandwriting]);
 
   /**
    * Whether an AI model is set up to answer: Gemini with a key, a local AI with

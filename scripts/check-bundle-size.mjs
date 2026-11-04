@@ -325,6 +325,16 @@ const BUDGETS = [
   { prefix: 'deu.traineddata', ext: '.gz', max: 1_420_000, note: 'German OCR data, chosen in Settings' },
   { prefix: 'spa.traineddata', ext: '.gz', max: 2_240_000, note: 'Spanish OCR data, chosen in Settings' },
   /*
+   * Handwriting (2026-11-04, lib/handwriting.ts), opt-in. The runtime is from
+   * @huggingface/transformers 3.7.6 and its onnxruntime-web; the model is
+   * pinned by SHA-256 in scripts/fetch-handwriting.mjs and is optional here,
+   * since a build made without fetching it (CI's) has none.
+   */
+  { prefix: 'transformers.web', ext: '.js', max: 947_000, note: 'Transformers.js, handwriting only' },
+  { prefix: 'ort-wasm-simd-threaded', ext: '.wasm', max: 22_970_000, note: "ONNX Runtime's WebAssembly, handwriting only" },
+  { prefix: 'encoder_model_quantized', ext: '.onnx', max: 24_550_000, note: 'TrOCR encoder, handwriting only', optional: true },
+  { prefix: 'decoder_model_merged_quantized', ext: '.onnx', max: 43_110_000, note: 'TrOCR decoder, handwriting only', optional: true },
+  /*
    * The twelve Liberation faces a PDF/A file embeds (2026-11-02, parity row
    * 72; see PDF_FONT_ASSETS in vite.config.ts and assets/pdf-fonts/README.md),
    * committed unmodified from the 2.1.5 release. The largest is
@@ -475,7 +485,19 @@ const isPdfFont = (f) => f.path.startsWith(FONT_DIR);
 // And dist/model/ (2026-11-02), the offline model, fetched only when it is used; its own budget is above.
 const MODEL_DIR = join(DIST, 'model');
 const isModel = (f) => f.path.startsWith(MODEL_DIR);
-const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f)).reduce((a, f) => a + f.size, 0);
+/*
+ * Handwriting (2026-11-04) likewise: the model under dist/handwriting/ (only
+ * when npm run fetch:handwriting ran), and the two files Vite emits into
+ * assets/ for it, Transformers.js and ONNX Runtime's WebAssembly, all fetched
+ * only by someone who turned handwriting on. About 88 MB together; folded into
+ * the total above they would make its cap guard nothing.
+ */
+const HANDWRITING_DIR = join(DIST, 'handwriting');
+const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-simd-threaded|transformers\.web)/.test(f.name);
+const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f)).reduce((a, f) => a + f.size, 0);
+const handwritingTotal = files.filter(isHandwriting).reduce((a, f) => a + f.size, 0);
+// 90,597,142 B with the model (2026-11-04), so 94.0%.
+const HANDWRITING_TOTAL_MAX = 96_400_000;
 const ocrTotal = files.filter(isOcr).reduce((a, f) => a + f.size, 0);
 /*
  * 15,700,000 until 2026-11-04, when the six OCR languages the owner approved
@@ -495,6 +517,9 @@ for (const budget of BUDGETS) {
     (f) => f.name.startsWith(budget.prefix) && f.name.endsWith(budget.ext),
   );
   if (matches.length === 0) {
+    // The handwriting model is fetched separately (npm run fetch:handwriting)
+    // and CI builds without it; its budgets apply when it is there.
+    if (budget.optional) continue;
     breaches.push(
       `MISSING  ${budget.prefix}*${budget.ext} — no artifact matched. Either the build ` +
         `changed shape or it did not run; a budget that matches nothing is not passing, ` +
@@ -517,6 +542,10 @@ for (const budget of BUDGETS) {
 rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr, dist/pdf-fonts and dist/model' });
 rows.push({ name: 'dist/ocr/ total', size: ocrTotal, max: OCR_TOTAL_MAX, pct: ((ocrTotal / OCR_TOTAL_MAX) * 100).toFixed(1), note: 'the OCR engine, lazy' });
 rows.push({ name: 'dist/pdf-fonts/ total', size: fontTotal, max: FONT_TOTAL_MAX, pct: ((fontTotal / FONT_TOTAL_MAX) * 100).toFixed(1), note: 'PDF/A fonts, lazy' });
+rows.push({ name: 'handwriting total', size: handwritingTotal, max: HANDWRITING_TOTAL_MAX, pct: ((handwritingTotal / HANDWRITING_TOTAL_MAX) * 100).toFixed(1), note: 'TrOCR and its runtime, opt-in' });
+if (handwritingTotal > HANDWRITING_TOTAL_MAX) {
+  breaches.push(`OVER     handwriting total — ${handwritingTotal.toLocaleString()} B exceeds the ${HANDWRITING_TOTAL_MAX.toLocaleString()} B budget`);
+}
 if (ocrTotal > OCR_TOTAL_MAX) {
   breaches.push(`OVER     dist/ocr/ total — ${ocrTotal.toLocaleString()} B exceeds the ${OCR_TOTAL_MAX.toLocaleString()} B budget`);
 }

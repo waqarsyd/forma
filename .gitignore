@@ -2,6 +2,11 @@ node_modules/
 build/
 dist/
 coverage/
+# The handwriting model (2026-11-04), about 64 MB, fetched by
+# `npm run fetch:handwriting` with every file pinned by SHA-256 and copied into
+# dist/handwriting/ at build. Too large to commit; scripts/fetch-handwriting.mjs
+# has the rest.
+vendor/
 .DS_Store
 *.log
 .env*
