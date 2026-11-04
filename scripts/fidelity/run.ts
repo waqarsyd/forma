@@ -21,6 +21,12 @@
  *                     environment, so it never appears on a command line, in a
  *                     shell history or in an agent session's transcript. Copy
  *                     the key, run, then copy something else over it.
+ *   --house <dir>     after the cases, the report library's evaluation: import
+ *                     the .repx files there as the house style and refine each
+ *                     first pass with and without it (houseEvaluation, below;
+ *                     scripts/fidelity/house holds made-up ones)
+ *   --brief           send Forma's box reader's brief with each picture, as
+ *                     the app has since 2026-11-04 (readerBriefFor, below)
  *
  * What it measures and why is the doc comment of src/lib/fidelity.ts. This file
  * is the part that cannot live in the suite: it spends the owner's quota, takes
@@ -66,9 +72,17 @@ import { spawnSync } from 'node:child_process';
 import { analyzeReportDesign, type ReportConfig } from '../../src/services/geminiService';
 import type { AnalysisResponse, AttachmentPart } from '../../src/lib/reportTypes';
 import { readCachedModel } from '../../src/lib/modelCache';
+import { importReports, retrieveHouseStyle } from '../../src/services/library';
+import { embedEntries, embedTexts } from '../../src/services/embeddings';
+import type { LibraryEntry } from '../../src/lib/embedStore';
+import { readsTheseFeatures, type BoxReaderModel } from '../../src/lib/boxReader';
+import { buildWithReader } from '../../src/lib/ocrAttach';
+import { draftBrief } from '../../src/lib/formaTeam';
+import { readWithOcr } from '../model/ocrPages';
 import {
   checkFidelity,
   measureReport,
+  median,
   scoreChecks,
   type FidelityCheck,
   type FidelityExpectations,
@@ -144,6 +158,8 @@ function parseArgs(argv: string[]) {
     rerender: false,
     strict: false,
     keyFromClipboard: false,
+    house: '',
+    brief: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -163,6 +179,8 @@ function parseArgs(argv: string[]) {
       case '--rerender': opts.rerender = true; break;
       case '--strict': opts.strict = true; break;
       case '--key-from-clipboard': opts.keyFromClipboard = true; break;
+      case '--house': opts.house = next(); break;
+      case '--brief': opts.brief = true; break;
       default: throw new Error(`Unknown option ${a}`);
     }
   }
@@ -300,6 +318,29 @@ function attachmentFor(c: LoadedCase, rerender: boolean): AttachmentPart[] {
   return [{ inlineData: { data: bytes.toString('base64'), mimeType } }];
 }
 
+/**
+ * Forma's box reader's brief for a picture, as App.tsx's prepareTeam passes it
+ * with every upload since 2026-11-04 (`--brief`): the page read by OCR as the
+ * app reads it (scripts/model/ocrPages.ts), the box reader run over that
+ * reading, and `draftBrief` of what it built. '' when the case is not a PNG or
+ * the reader declines the page, which the product would answer the same way.
+ * The OCR works in the results folder, so no case directory gains files.
+ */
+async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir: string): Promise<string> {
+  let source = join(c.dir, c.file.source);
+  if (extname(source).toLowerCase() === '.html') source = source.replace(/\.html$/i, '.png');
+  if (extname(source).toLowerCase() !== '.png' || !existsSync(source)) return '';
+  const work = join(outDir, 'ocr');
+  mkdirSync(work, { recursive: true });
+  const name = `${c.name}.png`;
+  writeFileSync(join(work, name), readFileSync(source));
+  const ocr = (await readWithOcr(work, [name], join(work, 'ocr.json'), 1, false))[name];
+  const model = JSON.parse(readFileSync('assets/model/boxReader.json', 'utf8')) as BoxReaderModel;
+  if (!readsTheseFeatures(model)) throw new Error('assets/model/boxReader.json is not one this version reads.');
+  const built = buildWithReader([{ meta: { uploadId: c.name, file: name }, read: { ocr, flagged: 0, lines: ocr.lines.length } }], model, paper);
+  return built ? draftBrief(built.skeleton, built.layout, unit, 'reader') : '';
+}
+
 function configFor(c: LoadedCase, key: string, opts: ReturnType<typeof parseArgs>): ReportConfig {
   const config: ReportConfig = {
     version: '23.2',
@@ -338,7 +379,11 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
   };
   try {
     const parts = attachmentFor(c, opts.rerender && run === 1);
-    record.response = await capturingConsole(record.log, () => analyzeReportDesign(prompt, parts, config));
+    const formaBrief = opts.brief ? await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir) : '';
+    if (opts.brief) console.log(`[${c.name}] box reader brief: ${formaBrief ? `${formaBrief.split('\n').length} lines` : 'none (not a PNG, or the reader declined the page)'}`);
+    record.response = await capturingConsole(record.log, () =>
+      analyzeReportDesign(prompt, parts, config, undefined, undefined, undefined, formaBrief ? { formaBrief } : undefined),
+    );
   } catch (error: any) {
     record.error = error?.message ?? String(error);
     // The service attaches what it could not parse. Kept as its own file so
@@ -354,6 +399,120 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
   record.model = readCachedModel();
   score(record, c.file.expect);
   return record;
+}
+
+/*
+ * The report library's evaluation (2026-11-04; docs/proposals/rag.md, *How
+ * we would know it worked*), on made-up reports the owner chose over the
+ * company's, so nothing of theirs is sent anywhere.
+ *
+ * `--house <dir>` imports the .repx files there into an in-memory library,
+ * embedded with the real model, as the Library panel would. Then each case's
+ * first pass is refined twice with the same neutral instruction: once as
+ * today, and once with the house-style block `retrieveHouseStyle` builds from
+ * the library against that draft. The house's look is its body text's font
+ * family and median size; each refine is scored by the share of its text
+ * controls in that family and its median size, beside the first pass's.
+ * Retrieval is real, so this measures what reaches the model and what the
+ * model does with it; a held-out real report remains the stronger test.
+ */
+/** A refine that does not mention the house, and one that asks for it. */
+const HOUSE_INSTRUCTIONS = [
+  'Tidy up the formatting of this report, keeping its content.',
+  'Restyle this report in our house style, keeping its content.',
+];
+
+interface Look {
+  family: string;
+  size: number;
+}
+
+/**
+ * The font each label and table cell prints in: its own Font, else its style's,
+ * else the nearest enclosing element's, as DevExpress inherits it. A scan of
+ * the tags rather than a parse, which is enough for what the serializer and
+ * the model write.
+ */
+function textFonts(xml: string): Look[] {
+  const attr = (attrs: string, name: string) => new RegExp(`\\b${name}="([^"]*)"`).exec(attrs)?.[1];
+  const styles = new Map<string, string>();
+  const sheet = /<StyleSheet>([\s\S]*?)<\/StyleSheet>/.exec(xml)?.[1] ?? '';
+  for (const m of sheet.matchAll(/<Item\d+\b([^>]*?)\/?>/g)) {
+    const name = attr(m[1], 'Name');
+    const font = attr(m[1], 'Font');
+    if (name && font) styles.set(name, font);
+  }
+  const out: Look[] = [];
+  const stack: string[] = [];
+  for (const m of xml.replace(/<StyleSheet>[\s\S]*?<\/StyleSheet>/, '').matchAll(/<(\/?)([\w.:]+)([^>]*?)(\/?)>/g)) {
+    const [, close, , attrs, self] = m;
+    if (close) {
+      stack.pop();
+      continue;
+    }
+    const styleName = attr(attrs, 'StyleName');
+    const font = attr(attrs, 'Font') ?? (styleName ? styles.get(styleName) : undefined) ?? stack[stack.length - 1] ?? '';
+    if (/\bControlType="[^"]*\bXR(Label|TableCell)\b/.test(attrs) && font) {
+      out.push({ family: font.split(',')[0].trim(), size: Number(/(\d+(?:\.\d+)?)pt/.exec(font)?.[1] ?? 0) });
+    }
+    if (!self) stack.push(font);
+  }
+  return out;
+}
+
+/** The body text of some reports: their commonest font family and median size. */
+function lookOf(xmls: readonly string[]): Look {
+  const fonts = xmls.flatMap(textFonts);
+  const families = new Map<string, number>();
+  for (const f of fonts) families.set(f.family, (families.get(f.family) ?? 0) + 1);
+  const family = [...families].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+  return { family, size: median(fonts.map((f) => f.size).filter((s) => s > 0)) ?? 0 };
+}
+
+/** How much of a report's text is in the house's family, and its median size. */
+function adoption(xml: string | undefined, house: Look): { share: number; size: number } {
+  const fonts = textFonts(xml ?? '');
+  const inFamily = fonts.filter((f) => f.family.toLowerCase() === house.family.toLowerCase()).length;
+  return { share: fonts.length ? inFamily / fonts.length : 0, size: lookOf(xml ? [xml] : []).size };
+}
+
+async function houseEvaluation(records: RunRecord[], cases: LoadedCase[], key: string, opts: ReturnType<typeof parseArgs>, outDir: string): Promise<void> {
+  const files = readdirSync(opts.house)
+    .filter((f) => f.toLowerCase().endsWith('.repx'))
+    .map((f) => ({ name: f, text: readFileSync(join(opts.house, f), 'utf8') }));
+  const house = lookOf(files.map((f) => f.text));
+  let entries: LibraryEntry[] = [];
+  const deps = { storage: { load: async () => entries, save: async (e: readonly LibraryEntry[]) => { entries = [...e]; } }, embedEntries, embedTexts };
+  const imported = await importReports(files, deps, { apiKey: key });
+  console.log(`\n=== house style: ${files.length} report(s), ${imported.added} fragment(s) embedded; their body text is ${house.family} ${house.size}pt ===`);
+  const lines = [`| case | instruction | first pass | refined as today | refined with the house style |`, `|---|---|---|---|---|`];
+  const cell = (a: { share: number; size: number }) => `${Math.round(a.share * 100)}% ${house.family}, median ${a.size}pt`;
+  for (const r of records) {
+    if (!r.response?.repxContent) continue;
+    const c = cases.find((x) => x.name === r.case);
+    if (!c) continue;
+    const config = configFor(c, key, opts);
+    const previous = { layout: r.response.layout, repxContent: r.response.repxContent };
+    for (const [i, instruction] of HOUSE_INSTRUCTIONS.entries()) {
+      const log: string[] = [];
+      try {
+        const plain = await capturingConsole(log, () => analyzeReportDesign(instruction, [], config, previous));
+        const block = await retrieveHouseStyle(r.response.repxContent, instruction, deps, { apiKey: key });
+        writeFileSync(join(outDir, `${r.case}-${r.run}.house-block-${i + 1}.txt`), block);
+        const styled = await capturingConsole(log, () => analyzeReportDesign(instruction, [], config, { ...previous, houseStyle: block }));
+        writeFileSync(join(outDir, `${r.case}-${r.run}.refined-${i + 1}.repx`), plain.repxContent);
+        writeFileSync(join(outDir, `${r.case}-${r.run}.house-${i + 1}.repx`), styled.repxContent);
+        const fragments = (block.match(/^--- example \d+/gm) ?? []).length;
+        const row = `| ${r.case} | ${instruction} | ${cell(adoption(r.response.repxContent, house))} | ${cell(adoption(plain.repxContent, house))} | ${cell(adoption(styled.repxContent, house))} (${fragments} fragment(s) retrieved) |`;
+        lines.push(row);
+        console.log(row);
+      } catch (error: any) {
+        lines.push(`| ${r.case} | ${instruction} | failed: ${String(error?.message ?? error).slice(0, 120)} | | |`);
+        console.log(`[${r.case}] house evaluation failed: ${error?.message ?? error}`);
+      }
+    }
+  }
+  writeFileSync(join(outDir, 'house.md'), [`House style: ${house.family} ${house.size}pt body, from ${files.map((f) => f.name).join(', ')}.`, '', ...lines, ''].join('\n'));
 }
 
 function score(record: RunRecord, expect: FidelityExpectations): void {
@@ -468,6 +627,16 @@ async function main(): Promise<number> {
       console.error(`Nothing to replay in ${opts.replay} for these cases.`);
       return 1;
     }
+    // The house evaluation refines the saved first passes, which does call the model.
+    if (opts.house) {
+      const key = readKey(opts.keyFromClipboard);
+      if (key.length < 20 || /\s/.test(key)) {
+        console.error('--house needs a key, even with --replay: the refines are real requests. Nothing was sent.');
+        return 1;
+      }
+      mkdirSync(outDir, { recursive: true });
+      await houseEvaluation(records, cases, key, opts, outDir);
+    }
   } else {
     const key = readKey(opts.keyFromClipboard);
     if (!key) {
@@ -497,6 +666,7 @@ async function main(): Promise<number> {
         console.log(`[${c.name}] ${s.passed}/${s.total} checks passed in ${Math.round(record.elapsedMs / 1000)}s`);
       }
     }
+    if (opts.house) await houseEvaluation(records, cases, key, opts, outDir);
   }
 
   mkdirSync(outDir, { recursive: true });

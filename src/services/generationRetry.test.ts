@@ -143,6 +143,22 @@ describe('a generation whose model begins repeating itself', () => {
     expect(urls[3]).toContain('model-b');
   });
 
+  it('asks the retry with a little sampling, since at temperature 0 the same request loops the same way (2026-11-04)', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+    const fetchMock = stubSequence(runaway, runaway, runaway, good);
+    await analyzeReportDesign('', parts, config);
+    const temperatures = fetchMock.mock.calls.map((c) => /"temperature":([\d.]+)/.exec(String((c[1] as RequestInit | undefined)?.body))?.[1]);
+    // model-a at 0, then its two retries sampled; model-b starts again at 0.
+    expect(temperatures).toEqual(['0', '0.4', '0.4', '0']);
+  });
+
+  it('does not sample on the retry of a stream that merely ended early', async () => {
+    const fetchMock = stubSequence(truncated, good);
+    await analyzeReportDesign('', parts, config);
+    const temperatures = fetchMock.mock.calls.map((c) => /"temperature":([\d.]+)/.exec(String((c[1] as RequestInit | undefined)?.body))?.[1]);
+    expect(temperatures).toEqual(['0', '0']);
+  });
+
   it('does not wander off a model the user pinned', async () => {
     cacheModel('model-a', ['model-a', 'model-b']);
     const fetchMock = stubSequence(runaway);

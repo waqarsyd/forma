@@ -425,6 +425,19 @@ the "with retrieval" run needs a runner option that retrieves against a seeded l
 first. That option is the remaining piece of this evaluation. See *The fidelity
 benchmark* in `docs/notes/gemini.md`.
 
+*The option exists as of 2026-11-04, and has a first result.* `--house <dir>` imports
+the `.repx` files there as the library, embedded with the real model, and refines each
+case's first pass with and without the block `retrieveHouseStyle` builds from it. The
+owner chose made-up house reports over their own, which are company material and would
+leave the machine: `scripts/fidelity/house/` holds three, with Verdana 8pt body text
+and Georgia headings. Measured on the invoice case with an instruction that does not
+mention the house, four fragments were retrieved and the refine kept every font it had:
+**0% Verdana with the block, as without it**. So, for a refine that does not ask for
+it, the block is not yet earning its tokens. The instruction that does ask ("Restyle
+this report in our house style") is the next measurement; the owner's free daily
+allowance ran out first. A held-out real report remains the stronger test, and needs
+the owner's say-so to send one.
+
 ## Open questions
 
 1. How large is the real library? Everything above assumes hundreds. Thousands changes

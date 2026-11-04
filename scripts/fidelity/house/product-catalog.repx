@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a" Name="ProductCatalog" Margins="60, 60, 60, 60" PageWidth="850" PageHeight="1100" Version="20.1" Dpi="100">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="60" Dpi="100" />
+    <Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="70" Dpi="100">
+      <Controls>
+        <Item1 Ref="4" ControlType="XRLabel" Name="labelTitle" Text="Product Catalog" LocationFloat="0, 0" SizeF="400, 32" Font="Georgia, 16pt, style=Bold" ForeColor="255,31,56,100" Padding="0,0,0,0,100" Dpi="100" />
+        <Item2 Ref="5" ControlType="XRLabel" Name="labelSubtitle" Text="Prices in USD, excluding tax" LocationFloat="0, 36" SizeF="400, 16" Font="Verdana, 8pt" ForeColor="255,89,89,89" Padding="0,0,0,0,100" Dpi="100" />
+        <Item3 Ref="6" ControlType="XRLine" Name="lineTitle" LocationFloat="0, 60" SizeF="730, 2" ForeColor="255,31,56,100" Dpi="100" />
+      </Controls>
+    </Item2>
+    <Item3 Ref="7" ControlType="GroupHeaderBand" Name="GroupHeaderCategory" HeightF="46" Dpi="100">
+      <GroupFields>
+        <Item1 Ref="8" FieldName="Category" />
+      </GroupFields>
+      <Controls>
+        <Item1 Ref="9" ControlType="XRLabel" Name="labelCategory" Text="Beverages" LocationFloat="0, 4" SizeF="730, 18" Font="Georgia, 11pt, style=Bold" ForeColor="255,31,56,100" Padding="0,0,0,0,100" Dpi="100" />
+        <Item2 Ref="10" ControlType="XRTable" Name="tableHeader" LocationFloat="0, 24" SizeF="730, 22" BackColor="255,31,56,100" Dpi="100">
+          <Rows>
+            <Item1 Ref="11" ControlType="XRTableRow" Name="rowHeader" Weight="1" Dpi="100">
+              <Cells>
+                <Item1 Ref="12" ControlType="XRTableCell" Name="cellHeadCode" Text="Code" Weight="1" Font="Verdana, 8pt, style=Bold" ForeColor="White" Padding="6,6,4,4,100" Dpi="100" />
+                <Item2 Ref="13" ControlType="XRTableCell" Name="cellHeadProduct" Text="Product" Weight="3" Font="Verdana, 8pt, style=Bold" ForeColor="White" Padding="6,6,4,4,100" Dpi="100" />
+                <Item3 Ref="14" ControlType="XRTableCell" Name="cellHeadUnit" Text="Unit" Weight="1.5" Font="Verdana, 8pt, style=Bold" ForeColor="White" Padding="6,6,4,4,100" Dpi="100" />
+                <Item4 Ref="15" ControlType="XRTableCell" Name="cellHeadPrice" Text="Price" Weight="1" Font="Verdana, 8pt, style=Bold" ForeColor="White" TextAlignment="TopRight" Padding="6,6,4,4,100" Dpi="100" />
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item2>
+      </Controls>
+    </Item3>
+    <Item4 Ref="16" ControlType="DetailBand" Name="Detail" HeightF="20" Dpi="100">
+      <Controls>
+        <Item1 Ref="17" ControlType="XRTable" Name="tableDetail" LocationFloat="0, 0" SizeF="730, 20" Borders="Bottom" BorderColor="255,217,217,217" Dpi="100">
+          <Rows>
+            <Item1 Ref="18" ControlType="XRTableRow" Name="rowDetail" Weight="1" Dpi="100">
+              <Cells>
+                <Item1 Ref="19" ControlType="XRTableCell" Name="cellCode" Text="P-001" Weight="1" Font="Verdana, 8pt" Padding="6,6,3,3,100" Dpi="100" />
+                <Item2 Ref="20" ControlType="XRTableCell" Name="cellProduct" Text="Example product" Weight="3" Font="Verdana, 8pt" Padding="6,6,3,3,100" Dpi="100" />
+                <Item3 Ref="21" ControlType="XRTableCell" Name="cellUnit" Text="12 x 330 ml" Weight="1.5" Font="Verdana, 8pt" Padding="6,6,3,3,100" Dpi="100" />
+                <Item4 Ref="22" ControlType="XRTableCell" Name="cellPrice" Text="18.00" Weight="1" Font="Verdana, 8pt" TextAlignment="TopRight" Padding="6,6,3,3,100" Dpi="100" />
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item1>
+      </Controls>
+    </Item4>
+    <Item5 Ref="23" ControlType="PageFooterBand" Name="PageFooter" HeightF="24" Dpi="100">
+      <Controls>
+        <Item1 Ref="24" ControlType="XRLabel" Name="labelFooter" Text="Example Holdings - internal" LocationFloat="0, 4" SizeF="300, 16" Font="Verdana, 7pt" ForeColor="255,89,89,89" Padding="0,0,0,0,100" Dpi="100" />
+        <Item2 Ref="25" ControlType="XRPageInfo" Name="pageInfo" TextFormatString="Page {0} of {1}" LocationFloat="580, 4" SizeF="150, 16" Font="Verdana, 7pt" ForeColor="255,89,89,89" TextAlignment="TopRight" Padding="0,0,0,0,100" Dpi="100" />
+      </Controls>
+    </Item5>
+    <Item6 Ref="26" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="60" Dpi="100" />
+  </Bands>
+</XtraReportsLayoutSerializer>

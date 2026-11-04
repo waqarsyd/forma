@@ -1929,7 +1929,7 @@ ${houseStyleContext}
    * written. That turns the progress bar from a 2.5s timer that invented its
    * own percentages into something driven by real output.
    */
-  const requestFor = async (modelName: string): Promise<{ text: string; finishReason?: string; usage?: TokenUsage | null }> => {
+  const requestFor = async (modelName: string, temperature = 0): Promise<{ text: string; finishReason?: string; usage?: TokenUsage | null }> => {
     // Our own controller, chained to the caller's signal, so a looping model
     // can be cut off below without the user having pressed anything -- and so
     // that cutting it off closes the connection rather than leaving the model
@@ -1938,7 +1938,7 @@ ${houseStyleContext}
     if (signal?.aborted) controller.abort();
     else signal?.addEventListener("abort", () => controller.abort(), { once: true });
 
-    const stream = await ai.models.generateContentStream(buildRequest(modelName, controller.signal));
+    const stream = await ai.models.generateContentStream(buildRequest(modelName, controller.signal, temperature));
 
     let text = '';
     let finishReason: string | undefined;
@@ -2020,7 +2020,7 @@ ${houseStyleContext}
     return { text, finishReason, usage: readTokenUsage(usage) };
   };
 
-  const buildRequest = (modelName: string, abortSignal: AbortSignal | undefined = signal) => ({
+  const buildRequest = (modelName: string, abortSignal: AbortSignal | undefined = signal, temperature = 0) => ({
     model: modelName,
     contents: [
       {
@@ -2181,7 +2181,9 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       // stream reader cuts off a looping model. Client-side only: the service
       // may still finish the generation and bill for it.
       abortSignal,
-      temperature: 0,
+      // 0 on every first attempt; RUNAWAY_RETRY_TEMPERATURE on the retry of a
+      // model that looped, below.
+      temperature,
       maxOutputTokens: 65536,
       // Omitted entirely unless explicitly set, so the model keeps its own
       // default. See ReportConfig.thinkingBudget.
@@ -2306,17 +2308,29 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
    * ran to the ceiling, four minutes and 48,000 tokens later.
    */
   const MAX_OUTPUT_RETRIES = 2;
+  /**
+   * The temperature a retry after a loop asks at (2026-11-04). The generation
+   * runs at 0, and at 0 the same request is the same draw: the benchmark run
+   * with Forma's box reader's brief saw the model loop on "3" at character
+   * 4,744 on the first attempt and on both retries, identically, so the
+   * retries spent two requests reproducing the failure. A little sampling
+   * lets the retry take another path while staying close to the best one.
+   * The chat path needs nothing like it: it already samples at 0.4.
+   */
+  const RUNAWAY_RETRY_TEMPERATURE = 0.4;
 
   let response;
   let overloadAttempts = 0;
   let outputAttempts = 0;
+  /** Set once this model has looped, so its retries sample; cleared on a new model. */
+  let looped = false;
   let alreadyRedetected = false;
   /** Models given up on for this request -- 503 until the retries ran out, or looping twice -- in the order tried. */
   const overloadedModels: string[] = [];
 
   while (true) {
     try {
-      response = await requestFor(selectedModel);
+      response = await requestFor(selectedModel, looped ? RUNAWAY_RETRY_TEMPERATURE : 0);
       break;
     } catch (error: any) {
       // Cancellation is never worth retrying.
@@ -2329,9 +2343,10 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       const runaway = isRunawayOutput(error);
       if ((runaway || isTruncatedStream(error)) && outputAttempts < MAX_OUTPUT_RETRIES) {
         outputAttempts++;
+        if (runaway) looped = true;
         console.warn(
           `${runaway ? "The model began repeating itself" : "The stream ended early"} on "${selectedModel}". ` +
-          `Retrying the same request — attempt ${outputAttempts} of ${MAX_OUTPUT_RETRIES}.`
+          `Retrying the same request${looped ? ` at temperature ${RUNAWAY_RETRY_TEMPERATURE}` : ''} — attempt ${outputAttempts} of ${MAX_OUTPUT_RETRIES}.`
         );
         continue;
       }
@@ -2407,6 +2422,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
           selectedModel = next;
           overloadAttempts = 0;
           outputAttempts = 0;
+          looped = false;
           continue;
         }
 
