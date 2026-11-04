@@ -531,6 +531,8 @@ src/
                        the second's content, with no error anywhere),
                        repxRtl (the Settings checkbox's right to left, written
                        on the report root however the report was made),
+                       repxGroupField (the field a group breaks on, chosen
+                       above the Preview's paper, its heading following),
                        repxBindingPlan (finds the header and detail rows, proves
                        they describe the same columns, and binds the detail row
                        to one field each — declining rather than guess when the

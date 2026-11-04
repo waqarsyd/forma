@@ -50,6 +50,7 @@ import {
 } from '../lib/reportPreview';
 import { parseParameters } from '../lib/repxParameters';
 import { readBoundFields } from '../lib/repxBindingPlan';
+import { groupHeaderFields, setGroupField } from '../lib/repxGroupField';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
 import { naturalSize, pictureRect } from '../lib/pictureBox';
 import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt } from '../lib/textMeasure';
@@ -977,6 +978,18 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     .map((b) => activeColumns(b.columns, report.content.width))
     .find((c) => c !== null) ?? null;
   const parameters = useMemo(() => parseParameters(repxContent), [repxContent]);
+  /*
+   * The field each group header breaks on, to choose another (2026-11-04,
+   * lib/repxGroupField.ts). Offered from the fields the report binds and the
+   * test rows' columns, so over test data a choice regroups the pages at once.
+   */
+  const groupChoices = useMemo(() => groupHeaderFields(repxContent), [repxContent]);
+  const groupOptions = (current: string | null) =>
+    [...new Set([current ?? '', ...boundFields, ...Object.keys(records?.[0] ?? {})].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const regroup = (band: string, field: string) => {
+    if (!repxContent) return;
+    commit(setGroupField(repxContent, band, field), repxContent);
+  };
 
   const pageW = unitsToPx(report.page.width, report.unit);
 
@@ -1671,6 +1684,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           background: transparent; color: inherit;
         }
         .rp-param input:focus { outline: none; border-bottom-color: currentColor; }
+        .rp-param select {
+          font-family: var(--font-code, monospace); font-size: 11px; max-width: 18ch;
+          padding: 0 2px; border: 0; border-bottom: 1px solid var(--paper-rule, #d7dee7);
+          background: transparent; color: inherit; cursor: pointer;
+        }
         @media print { .rp-params { display: none !important; } }
 
         /* Printing renders the pages a SECOND time, into a portal attached to
@@ -1852,6 +1870,25 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
               </span>
             ),
           )}
+        </div>
+      )}
+
+      {/* The field each group breaks on, chosen here (2026-11-04). Over test
+          data the pages regroup as soon as it changes; Undo takes it back. */}
+      {editable && groupChoices.length > 0 && (
+        <div className="rp-params">
+          <span className="rp-params-label">Grouped by</span>
+          {groupChoices.map((g) => (
+            <label className="rp-param" key={g.band}>
+              {g.band}
+              <select value={g.field ?? ''} onChange={(e) => regroup(g.band, e.target.value)} aria-label={`Field ${g.band} groups by`}>
+                {!g.field && <option value="">nothing</option>}
+                {groupOptions(g.field).map((f) => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
+            </label>
+          ))}
         </div>
       )}
 

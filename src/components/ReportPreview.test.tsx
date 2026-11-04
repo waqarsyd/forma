@@ -173,6 +173,56 @@ describe('parameters over test data', () => {
   });
 });
 
+/* The field a group breaks on, chosen above the paper (2026-11-04). */
+describe('choosing the grouping field', () => {
+  const grouped = `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Grouped" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />
+    <Item2 Ref="3" ControlType="GroupHeaderBand" Name="GroupHeader1" HeightF="25">
+      <GroupFields><Item1 Ref="4" FieldName="Region" /></GroupFields>
+      <Controls>
+        <Item1 Ref="5" ControlType="XRLabel" Name="lblGroup" LocationFloat="0,0" SizeF="200,20">
+          <ExpressionBindings><Item1 Ref="6" EventName="BeforePrint" PropertyName="Text" Expression="[Region]" /></ExpressionBindings>
+        </Item1>
+      </Controls>
+    </Item2>
+    <Item3 Ref="7" ControlType="DetailBand" Name="Detail" HeightF="25">
+      <Controls>
+        <Item1 Ref="8" ControlType="XRLabel" Name="lblCust" LocationFloat="0,0" SizeF="200,20">
+          <ExpressionBindings><Item1 Ref="9" EventName="BeforePrint" PropertyName="Text" Expression="[Customer]" /></ExpressionBindings>
+        </Item1>
+      </Controls>
+    </Item3>
+    <Item4 Ref="10" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+  const rows = [
+    { Region: 'North', Country: 'Oman', Customer: 'C1' },
+    { Region: 'North', Country: 'Qatar', Customer: 'C2' },
+  ];
+
+  it('offers the fields the report binds and the test rows hold, and edits through the undo path', () => {
+    const onEdit = vi.fn();
+    render(<ReportPreview repxContent={grouped} layout={null} title="Grouped" records={rows} onEdit={onEdit} />);
+    const choice = screen.getByLabelText('Field GroupHeader1 groups by') as HTMLSelectElement;
+    expect(choice.value).toBe('Region');
+    expect([...choice.options].map((o) => o.value)).toEqual(['Country', 'Customer', 'Region']);
+    fireEvent.change(choice, { target: { value: 'Country' } });
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    const [xml, reason] = onEdit.mock.calls[0];
+    expect(xml).toContain('FieldName="Country"');
+    expect(xml).toContain('Expression="[Country]"');
+    expect(reason).toBe('grouped GroupHeader1 by Country instead of Region');
+    expect((screen.getByText('Undo') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('is not offered where the report cannot be edited', () => {
+    render(<ReportPreview repxContent={grouped} layout={null} title="Grouped" records={rows} />);
+    expect(screen.queryByLabelText('Field GroupHeader1 groups by')).toBeNull();
+  });
+});
+
 /*
  * A label with a NavigateUrl is drawn as an anchor, in its own colour and
  * decoration, so the browser's printed PDF keeps the link as DevExpress's did
