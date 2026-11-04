@@ -8,7 +8,8 @@
  * 1. **Segments.** A recognized line is split where the gap between two words
  *    is wider than the line is tall: in a table row Tesseract often reads
  *    several cells as one line, and the gap between cells is what tells them
- *    apart. A segment is a label or a cell.
+ *    apart. Two amounts side by side are split however close (2026-11-04).
+ *    A segment is a label or a cell.
  * 2. **Units.** Each segment's pixel box is placed on the page by
  *    `placeImage` in reportGeometry.ts, the only place a conversion is
  *    written: a rendered PDF page by its resolution, a screenshot fitted to
@@ -99,14 +100,27 @@ interface Segment {
   words: OcrWord[];
 }
 
-/** A recognized line split into segments at gaps wider than the line is tall. */
+/** An amount or a count, as a column of figures prints one. */
+const AMOUNT = /^[-+(]?[$€£₹]?\d[\d,]*(?:[.,]\d+)?\)?%?$/;
+/** Digits written with a space between thousands: "1 250.00" is one number. */
+const THOUSANDS = (a: string, b: string) => /^\d{1,3}$/.test(a) && /^\d{3}(?:[.,]\d+)?$/.test(b);
+
+/**
+ * A recognized line split into segments at gaps wider than the line is tall,
+ * and between two amounts side by side (2026-11-04): a column of figures sits
+ * closer than that, and "894 213,086.00 184,088.14" read as one text put
+ * three cells in one label, which Forma's box reader then could not call
+ * totals.
+ */
 function segmentsOf(line: OcrPage['lines'][number]): Segment[] {
   const words = [...line.words].sort((a, b) => a.box.x0 - b.box.x0);
   const height = line.box.y1 - line.box.y0;
   const out: Segment[] = [];
   for (const w of words) {
     const last = out[out.length - 1];
-    if (last && w.box.x0 - last.box.x1 <= height) {
+    const before = last?.words[last.words.length - 1]?.text ?? '';
+    const twoAmounts = AMOUNT.test(before) && AMOUNT.test(w.text) && !THOUSANDS(before, w.text);
+    if (last && w.box.x0 - last.box.x1 <= height && !twoAmounts) {
       last.words.push(w);
       last.text += ` ${w.text}`;
       last.box = { x0: Math.min(last.box.x0, w.box.x0), y0: Math.min(last.box.y0, w.box.y0), x1: Math.max(last.box.x1, w.box.x1), y1: Math.max(last.box.y1, w.box.y1) };

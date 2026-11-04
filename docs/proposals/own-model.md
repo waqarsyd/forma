@@ -913,6 +913,91 @@ measured on drawn pages only: a scan of a real report has never been
 scored, and doing so would need real reports' pictures, which are client
 material and stay on this machine.
 
+### Totals and group footers (2026-11-04)
+
+The owner's request after the reader shipped: "improve the totals and group
+footers". The first step was measuring exactly what was wrong.
+- **"Totals 51% right" mixed two things.** Some were running totals
+  printed in every record, which read as values to the eye. The rest were
+  the totals a footer sums, which the reader already read as totals 71.5%
+  of the time, and 59.7% in the right footer as well.
+- **The misses had three causes:**
+  - OCR ran amounts together: "894 213,086.00 184,088.14" was one text,
+    because a line was split only where a gap was wider than the line was
+    tall.
+  - The number test failed on OCR's debris, as in "474,045." and
+    "288] 328,304.67".
+  - A group footer recurs once a group, and the reader counted any line
+    whose shape recurred as a record.
+- **Forty pages were too few to judge by.** Footers are a few lines on a
+  few pages, and one page decoded differently moved the scores by twenty
+  points. Every change was also scored on the training layouts held out of
+  training, as OCR read them: 280 pages. The scores that matter most are
+  on what a design keeps, each band's first appearance.
+
+What changed:
+1. **`ocrLayout.ts` splits two amounts side by side**, however close.
+   "1 250.00", digits with a space between thousands, stays one. OCR alone
+   then found 55.7% of text where it prints on the held-out pages, against
+   55.5%.
+2. **The reader's features.**
+   - The number test ignores OCR's rules and stray dots.
+   - A record is a line in a run of lines alike one after another.
+   - Two line features say how long that run is and how often its shape
+     recurs elsewhere: a group's footer is a run of one that recurs.
+   - A text's column is compared only within its run.
+   - A new text feature says when a figure stands under a column of the
+     records' figures, where a total stands.
+3. **Two footer rules in `settleRecords`**, each measured apart:
+   - The line after a run of records, with fewer texts than a record and
+     shaped like none of them, with a figure under the records' columns, is
+     a footer. Records after it, or group headers on the page, make it a
+     group's; otherwise it is the report's. It must not be followed by one
+     more record, since a record OCR read a little differently breaks the
+     run too. Without that condition, records fell from 94.4% right to
+     89.5%.
+   - In a group footer, a figure under the records' columns is a total. In
+     a report footer, half the numbers are values in the training reports,
+     so the network decides there.
+4. **Every training page read by OCR**: 5,182, twice as many as before.
+5. **A second look at each line.** A third network, 2,560 weights, reads
+   each line with the first network's scores for it, the line above, the
+   line below and the lines shaped like it (`contextFeatures`). It learns
+   from first scores given by networks that never saw those pages: two,
+   each trained on half the layouts. The transition weight is now 0.5.
+
+The features and rules alone did not help on OCR's reading. On the 280
+pages, group footers went from 71.7% right to 66.3%. The data and the
+second look made the difference:
+
+| Band and role right, in each band's first appearance | Shipped | Now |
+|---|---|---|
+| Footer totals: 280 held-out pages, as OCR read them | 48.4% | 52.7% |
+| Footer totals: the 40 held-out pages, as OCR read them | 43.4% | 63.8% |
+| Footer totals: the 40 pages' drawn boxes | 53.2% | 76.6% |
+| Group footer band: 280 pages | 58.4% | 54.7% |
+| Group footer band: 40 pages | 23.1% | 50.9% |
+| Group footer band: drawn boxes | 46.0% | 66.4% |
+| Group header band: 280 pages | 52.0% | 55.4% |
+| Every text, both right: 280 pages | 76.9% | 81.0% |
+| Every text, both right: 40 pages | 66.5% | 71.0% |
+
+Over all texts, the 280 pages went from 83.0% right in band and role to
+85.8%, and the 40 pages from 83.4% to 85.3%. Text found where it prints
+went from 52.2% to 53.1%, against 54.1% for OCR's own build sized alike.
+Six of the 40 pages fall back to OCR's copy, against seven.
+
+**Totals improved on every set.** **Group footers improved on two and lost
+3.7 points on the largest.** What is left there is mostly footers read as
+records: 603 texts on the 280 pages. The model is 94,270 bytes and 10,432
+weights.
+
+Checked in the owner's Chrome with no key, on held-out page r100, where a
+footer line "Weight 202 454,870.63" follows twenty records on a page with
+no group. It became the report footer with a sum over the report
+(`sumSum`, `Running="Report"`). One of its two figures is that total; the
+other stayed a value, as the network decides in a report footer.
+
 ### Still to build
 
 1. ~~Train version 4 and score it~~: done 2026-11-04. It loops on every
@@ -933,9 +1018,11 @@ material and stay on this machine.
    and not the answer's text.
 5. ~~The owner's decision, before any more GPU~~: the CPU classifier,
    2026-11-04, built as *Forma's box reader* above and wired in.
-6. **The box reader's weak spots**: totals (51% right), group footers (64%)
-   and names in records. More drawn layouts with group footers, and a
-   check on scans of real reports kept on this machine, come first.
+6. **The box reader's weak spots**: ~~totals~~, improved 2026-11-04 (see
+   *Totals and group footers*). Group footers read as records, about one
+   footer text in three on the largest held-out set, and names in records.
+   More drawn layouts with groups, and a check on scans of real reports
+   kept on this machine, come next.
 7. **The brief's effect on a generation** is unmeasured, as the vision
    brief's was: `bench:fidelity` needs the owner's key.
 

@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,260 tests in 115 files** — under the `node` environment
+`npm test` runs Vitest over **2,263 tests in 115 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -94,7 +94,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/attachments` | 9 |  |
 | `lib/batchQueue` | 24 |  |
 | `lib/boxText` | 5 | the boxes design for the vision model: its question word for word with render.py's, boxes numbered in reading order and read back, an answer read tolerantly, made a skeleton on the boxes' places, and scored box by box |
-| `lib/boxReader` | 14 | Forma's box reader: texts grouped into the lines they print on; every line's and text's features finite and as many as the model reads; a small network's arithmetic; a band that cannot follow the one above never decoded; a skeleton keeping each band once and one record, a one-line record whose code recurs by chance and a two-line one, with every text where OCR read it; made a report with fields named after the captions; the shipped reader reading these features, holding no string but its names, and reading a plain listing as headings over records with its page number at the foot; a heading row taken for a record given back to the header; a report built from an OCR page and nothing from an empty one; a reader trained on other features refused, and fetched again |
+| `lib/boxReader` | 16 | Forma's box reader: texts grouped into the lines they print on; every line's and text's features finite and as many as the model reads; a small network's arithmetic; the second look given each line's own, neighbours' and lookalikes' first scores; a band that cannot follow the one above never decoded; a footer read as a record settled as the report's or a group's, its figure under the amounts a total, and a record with a field missing left a record; a skeleton keeping each band once and one record, a one-line record whose code recurs by chance and a two-line one, with every text where OCR read it; made a report with fields named after the captions; the shipped reader reading these features, holding no string but its names, and reading a plain listing as headings over records with its page number at the foot; a heading row taken for a record given back to the header; a report built from an OCR page and nothing from an empty one; a reader trained on other features refused, and fetched again |
 | `lib/chatSession` | 21 |  |
 | `lib/contactSubmit` | 6 |  |
 | `lib/criteria` | 10 | DevExpress's expression language; the 44 expressions and 11 totals of parity case s16, each a string DevExpress printed |
@@ -121,7 +121,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/netDecimal` | 8 | .NET's decimal: scale, exact sums, 28-place division, both roundings |
 | `lib/netFormat` | 15 | .NET composite, date and number formatting in en-US; every cell of parity case s15's format table is a string DevExpress drew |
 | `lib/ocr` | 3 | Tesseract's blocks read as words and lines with boxes and confidence, enlarged boxes divided back |
-| `lib/ocrLayout` | 13 | OCR to layout: a label at its text, a line split at a gap wider than it is tall, aligned rows as a table and a row that does not line up kept out of it, a table sized by its cells' widths when their boxes take in the borders, the text for the model, low-confidence words flagged, picture readings set aside, margins fitted to the content, a screenshot fitted to the printable width, the font from the ink |
+| `lib/ocrLayout` | 14 | OCR to layout: a label at its text, a line split at a gap wider than it is tall and between two amounts however close, but not inside a number with a space between its thousands, aligned rows as a table and a row that does not line up kept out of it, a table sized by its cells' widths when their boxes take in the borders, the text for the model, low-confidence words flagged, picture readings set aside, margins fitted to the content, a screenshot fitted to the printable width, the font from the ink |
 | `lib/ocrRepx` | 6 | jsdom; a detected layout written as a .repx: the app's own checks pass, every label and cell where the layout put it on the report header, a page break per page, labels as wide as Arial prints them, the Mockup's layout and the spec from the same controls, Dpi and paper by the repair passes, flagged text named or left out |
 | `lib/offlineGenerator` | 7 | jsdom (`checkRepx`); reports designed by Forma's own model over the shipped model: the words read for category, columns, grouping, totals and page; field names, captions, types and titles; a grouped payroll report that opens, passes the audit and prints its records, group totals and grand total; a pasted schema and a given title winning; the house style and a remembered paper; a named kind of report starting from its usual columns; the category's pattern chosen |
 | `lib/panelSize` | 13 |  |
@@ -192,7 +192,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,260 in 115 files** — and that total is the arithmetic sum of the column above
+**Total: 2,263 in 115 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -206,7 +206,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2142** against a real 2,260 and will talk you into
+A grep for `\bit(` answers **2145** against a real 2,263 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

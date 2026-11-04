@@ -39,6 +39,7 @@ import {
   READER_ROLES,
   readerCoverage,
   boxFeatures,
+  contextFeatures,
   controlPlaceOf,
   decodeBands,
   lineFeatures,
@@ -46,6 +47,7 @@ import {
   mlpProbs,
   readBoxes,
   readerSkeleton,
+  readsTheseFeatures,
   type BoxReaderModel,
   type BoxReading,
   type ControlPlace,
@@ -76,10 +78,19 @@ const READ_LIMIT = Number(valueOf('--read-limit') ?? Infinity);
 const MODEL_FILE = valueOf('--model');
 /** Score the networks' reading alone, before `settleRecords`. */
 const RAW = argv.includes('--raw');
+/** Which footer rules run: none, totals, footers or both (the default), to measure each apart. */
+const RULE_ARG = valueOf('--rules') ?? 'both';
+/** Train the second look at each line too (`contextFeatures` in boxReader.ts). */
+const CONTEXT = argv.includes('--context');
+const CONTEXT_HIDDEN = 32;
+const RULES = { totals: RULE_ARG === 'totals' || RULE_ARG === 'both', footers: RULE_ARG === 'footers' || RULE_ARG === 'both' };
 /** List the held-out pages where the reader found fewer texts than OCR alone, line by line. */
 const WHY = argv.includes('--why');
 const why: { lost: number; text: string }[] = [];
 const lostShares: number[] = [];
+/** The totals given the wrong role on OCR's reading, for --why. */
+const totalMisses: string[] = [];
+let whyTally: unknown = null;
 if (!dataDir) {
   console.error('Usage: npx tsx scripts/model/boxes.ts --data <dir> [--pages <dir>] [--out <file>]');
   process.exit(2);
@@ -118,6 +129,9 @@ const labelFiles = (dir: string): string[] => {
 };
 
 const BAND_OF: Record<string, ReaderBand> = { DetailReport: 'Detail', Unknown: 'ReportFooter' };
+/** An amount or a count, as ocrLayout.ts tells one when it splits a line. */
+const AMOUNT = /^[-+(]?[$€£₹]?\d[\d,]*(?:[.,]\d+)?\)?%?$/;
+const FOOTERS: readonly ReaderBand[] = ['GroupFooter', 'ReportFooter', 'PageFooter'];
 const bandOf = (b: string | null): ReaderBand => (b && (READER_BANDS as readonly string[]).includes(b) ? (b as ReaderBand) : BAND_OF[b ?? ''] ?? 'Detail');
 const roleOf = (r: string): ReaderRole => ((READER_ROLES as readonly string[]).includes(r) ? (r as ReaderRole) : 'value');
 
@@ -215,7 +229,9 @@ function exampleOf(p: LabelPage, noisy: boolean): Example {
       for (const k of l.boxes.slice(1)) {
         const nb = items[k];
         const gap = nb.box.x - (cur.box.x + cur.box.w);
-        if (gap <= 1.4 * Math.max(cur.box.h, nb.box.h) && rand() < 0.8) {
+        // Two amounts side by side stay two, as detectLayout splits them.
+        const amounts = AMOUNT.test(cur.box.text.split(' ').pop() ?? '') && AMOUNT.test(nb.box.text.split(' ')[0] ?? '');
+        if (gap <= 1.4 * Math.max(cur.box.h, nb.box.h) && !amounts && rand() < 0.8) {
           const keep = nb.box.text.length > cur.box.text.length ? nb : cur;
           const x = Math.min(cur.box.x, nb.box.x);
           const y = Math.min(cur.box.y, nb.box.y);
@@ -368,11 +384,7 @@ const trainPages = pages.filter((p) => p.split === 'train' && p.texts.length);
 const evalPages = pages.filter((p) => p.split === 'eval' && p.texts.length);
 console.log(`labels: ${pages.length} pages from ${files.length} file(s); train ${trainPages.length}, held out ${evalPages.length}`);
 
-const model: BoxReaderModel = MODEL_FILE ? (JSON.parse(readFileSync(resolve(MODEL_FILE), 'utf8')) as BoxReaderModel) : await trainModel();
-if (MODEL_FILE) console.log(`scoring ${MODEL_FILE} without training it`);
-
-async function trainModel(): Promise<BoxReaderModel> {
-const trainEx = trainPages.map((p) => exampleOf(p, true));
+const allTraining = trainPages.map((p) => exampleOf(p, true));
 let readPages = 0;
 if (READ) {
   // Each folder's training pages, read by OCR as the app reads a picture.
@@ -389,18 +401,27 @@ if (READ) {
     );
     for (const p of here) {
       if (!cache[p.image]) continue;
-      trainEx.push(exampleFromOcr(p, cache[p.image]));
+      allTraining.push(exampleFromOcr(p, cache[p.image]));
       readPages++;
     }
   }
 }
-// One layout in twenty is held out of training to choose the decoding's
-// transition weight on, all its pages together.
+// One layout in twenty is held out of training, all its pages together: the
+// decoding's transition weight is chosen on it, and every run is scored on it
+// as well as on the held-out pages, four times the footers they hold.
 const hash = (s: string) => [...s].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7);
-const validation = trainEx.filter((ex) => Math.abs(hash(ex.id)) % 20 === 0);
-const fitting = trainEx.filter((ex) => Math.abs(hash(ex.id)) % 20 !== 0);
-trainEx.length = 0;
-trainEx.push(...fitting);
+const validation = allTraining.filter((ex) => Math.abs(hash(ex.id)) % 20 === 0);
+const fitting = allTraining.filter((ex) => Math.abs(hash(ex.id)) % 20 !== 0);
+
+const model: BoxReaderModel = MODEL_FILE ? (JSON.parse(readFileSync(resolve(MODEL_FILE), 'utf8')) as BoxReaderModel) : await trainModel();
+if (MODEL_FILE) console.log(`scoring ${MODEL_FILE} without training it`);
+if (!readsTheseFeatures(model)) {
+  console.error(`${MODEL_FILE} was trained on other features than boxReader.ts computes now; train it again.`);
+  process.exit(2);
+}
+
+async function trainModel(): Promise<BoxReaderModel> {
+const trainEx = fitting;
 const lineX: number[][] = [];
 const lineY: number[] = [];
 const counts = READER_BANDS.map(() => new Array(READER_BANDS.length).fill(0.1));
@@ -426,6 +447,46 @@ const lineNet = train(lineX, lineY, READER_BANDS.length, HIDDEN, EPOCHS, 'lines'
 const startLog = starts.map((c) => Math.log(c / starts.reduce((a, b) => a + b, 0)));
 const transLog = counts.map((row) => row.map((c) => Math.log(c / row.reduce((a: number, b: number) => a + b, 0))));
 
+// The second look, with --context. It learns from first scores a network gave
+// pages it never saw: each half of the layouts is scored by a network trained
+// on the other half, as the app's first network has never seen the page
+// either. Scores a network gave its own training pages are surer than any it
+// gives a new one.
+let contextNet: Mlp | undefined;
+let firstScores: number[][][] = trainLines.map(({ feats }) => feats.map((f) => mlpProbs(lineNet, f)));
+if (CONTEXT) {
+  const half = (ex: Example) => Math.abs(hash(`${ex.id}#`)) % 2;
+  const netOf = (h: number) => {
+    const xs: number[][] = [];
+    const ys: number[] = [];
+    trainEx.forEach((ex, e) => {
+      if (half(ex) !== h) return;
+      trainLines[e].labels.forEach((l, i) => {
+        if (l < 0) return;
+        xs.push(trainLines[e].feats[i]);
+        ys.push(l);
+      });
+    });
+    return train(xs, ys, READER_BANDS.length, HIDDEN, EPOCHS, `lines, half ${h + 1}`);
+  };
+  const halves = [netOf(0), netOf(1)];
+  firstScores = trainLines.map(({ feats }, e) => feats.map((f) => mlpProbs(halves[1 - half(trainEx[e])], f)));
+  const ctxX: number[][] = [];
+  const ctxY: number[] = [];
+  trainEx.forEach((ex, e) => {
+    const { lines, feats, labels } = trainLines[e];
+    contextFeatures(lines, ex.boxes, feats, firstScores[e]).forEach((x, i) => {
+      if (labels[i] < 0) return;
+      ctxX.push(x);
+      ctxY.push(labels[i]);
+    });
+  });
+  contextNet = train(ctxX, ctxY, READER_BANDS.length, CONTEXT_HIDDEN, EPOCHS, 'context');
+}
+/** The band scores the app will decode from: the first network's, then the second look's when there is one. */
+const scoresOf = (lines: ReturnType<typeof linesOf>, boxesOfPage: ReadBox[], feats: number[][], first: number[][]) =>
+  contextNet ? contextFeatures(lines, boxesOfPage, feats, first).map((x) => mlpProbs(contextNet!, x)) : first;
+
 // The transition weight that decodes the held-out layouts best, OCR's readings
 // first, by the mean of each band's accuracy: chosen on all lines together it
 // was 1, because records are most of them, and a page number at the foot of a
@@ -433,7 +494,8 @@ const transLog = counts.map((row) => row.map((c) => Math.log(c / row.reduce((a: 
 const choosing = validation.some((ex) => ex.places) ? validation.filter((ex) => ex.places) : validation;
 const scored = choosing.map((ex) => {
   const lines = linesOf(ex.boxes);
-  return { scores: lineFeatures(ex.page, ex.boxes, lines).map((f) => mlpProbs(lineNet, f)), labels: lineLabels(ex, lines) };
+  const feats = lineFeatures(ex.page, ex.boxes, lines);
+  return { scores: scoresOf(lines, ex.boxes, feats, feats.map((f) => mlpProbs(lineNet, f))), labels: lineLabels(ex, lines) };
 });
 let transitionWeight = 1;
 let bestRight = -1;
@@ -464,12 +526,7 @@ const boxX: number[][] = [];
 const boxY: number[] = [];
 trainEx.forEach((ex, e) => {
   const { lines, feats } = trainLines[e];
-  const bands = decodeBands(
-    feats.map((f) => mlpProbs(lineNet, f)),
-    startLog,
-    transLog,
-    transitionWeight,
-  ).map((k) => READER_BANDS[k]);
+  const bands = decodeBands(scoresOf(lines, ex.boxes, feats, firstScores[e]), startLog, transLog, transitionWeight).map((k) => READER_BANDS[k]);
   boxFeatures(ex.page, ex.boxes, lines, bands, feats).forEach((f, k) => {
     if (!ex.known[k]) return;
     boxX.push(f);
@@ -486,6 +543,7 @@ return {
   boxFeatures: BOX_FEATURES,
   lines: lineNet,
   boxes: boxNet,
+  ...(contextNet ? { context: contextNet } : {}),
   start: startLog.map((v) => Math.round(v * 1e4) / 1e4),
   transitions: transLog.map((row) => row.map((v) => Math.round(v * 1e4) / 1e4)),
   transitionWeight,
@@ -509,6 +567,15 @@ interface Tally {
   bandCounts: Record<string, { n: number; right: number }>;
   /** Texts put in the wrong band, by the right band and the one given. */
   confused: Record<string, number>;
+  /** Texts given the wrong role, by the right role and the one given. */
+  roleConfused: Record<string, number>;
+  /** Totals: how many, how many in the right band, and of those how many given the right role. */
+  totals: { n: number; bandRight: number; roleRightInBand: number; roleRightBandWrong: number };
+  /** Totals in a footer band, the ones a report sums: how many, and how many read as totals. */
+  footerTotals: { n: number; right: number; bothRight: number };
+  /** In each band's first appearance, what a design keeps: texts by band, and footer totals. */
+  firstByBand: Record<string, { n: number; right: number }>;
+  firstFooterTotals: { n: number; bothRight: number };
   page: { expected: number; predicted: number; matched: number; found: number };
 }
 const tally = (): Tally => ({
@@ -525,6 +592,11 @@ const tally = (): Tally => ({
   roleCounts: {},
   bandCounts: {},
   confused: {},
+  roleConfused: {},
+  totals: { n: 0, bandRight: 0, roleRightInBand: 0, roleRightBandWrong: 0 },
+  footerTotals: { n: 0, right: 0, bothRight: 0 },
+  firstByBand: {},
+  firstFooterTotals: { n: 0, bothRight: 0 },
   page: { expected: 0, predicted: 0, matched: 0, found: 0 },
 });
 
@@ -554,6 +626,13 @@ function scoreReading(t: Tally, ex: Example, reading: BoxReading, known: boolean
       t.firstTexts++;
       if (bandOk) t.firstBand++;
       if (bandOk && roleOk) t.firstBoth++;
+      const fb = (t.firstByBand[ex.band[k]] ??= { n: 0, right: 0 });
+      fb.n++;
+      if (bandOk) fb.right++;
+      if (ex.role[k] === 'total' && FOOTERS.includes(ex.band[k])) {
+        t.firstFooterTotals.n++;
+        if (bandOk && roleOk) t.firstFooterTotals.bothRight++;
+      }
     }
     const rc = (t.roleCounts[ex.role[k]] ??= { n: 0, right: 0 });
     rc.n++;
@@ -562,6 +641,19 @@ function scoreReading(t: Tally, ex: Example, reading: BoxReading, known: boolean
     bc.n++;
     if (bandOk) bc.right++;
     else t.confused[`${ex.band[k]} as ${band}`] = (t.confused[`${ex.band[k]} as ${band}`] ?? 0) + 1;
+    if (!roleOk) t.roleConfused[`${ex.role[k]} as ${reading.roles[k]}`] = (t.roleConfused[`${ex.role[k]} as ${reading.roles[k]}`] ?? 0) + 1;
+    if (ex.role[k] === 'total') {
+      if (WHY && !roleOk && t === whyTally) totalMisses.push(`${JSON.stringify(ex.boxes[k].text)} ${ex.band[k]} read in ${band} as ${reading.roles[k]}`);
+      t.totals.n++;
+      if (FOOTERS.includes(ex.band[k])) {
+        t.footerTotals.n++;
+        if (roleOk) t.footerTotals.right++;
+        if (roleOk && bandOk) t.footerTotals.bothRight++;
+      }
+      if (bandOk) t.totals.bandRight++;
+      if (roleOk && bandOk) t.totals.roleRightInBand++;
+      if (roleOk && !bandOk) t.totals.roleRightBandWrong++;
+    }
   });
 }
 
@@ -584,6 +676,20 @@ function report(label: string, t: Tally, extra: string[] = []) {
   console.log(`by band: ${Object.entries(t.bandCounts).map(([b, c]) => `${b} ${pct(c.right, c.n)} of ${c.n}`).join(', ')}`);
   const confused = Object.entries(t.confused).sort((a, b) => b[1] - a[1]).slice(0, 8);
   if (confused.length) console.log(`most put in the wrong band: ${confused.map(([k, n]) => `${k} ${n}`).join(', ')}`);
+  const roleConfused = Object.entries(t.roleConfused).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  if (roleConfused.length) console.log(`most given the wrong role: ${roleConfused.map(([k, n]) => `${k} ${n}`).join(', ')}`);
+  const tt = t.totals;
+  if (tt.n)
+    console.log(
+      `totals: ${tt.n}; band right ${pct(tt.bandRight, tt.n)}; role right ${pct(tt.roleRightInBand, tt.bandRight)} where the band is right, ${pct(tt.roleRightBandWrong, tt.n - tt.bandRight)} where it is not`,
+    );
+  const ft = t.footerTotals;
+  if (ft.n) console.log(`totals in a footer: ${ft.n}; read as totals ${pct(ft.right, ft.n)}, in the right footer too ${pct(ft.bothRight, ft.n)}`);
+  const fb = t.firstByBand;
+  const ff = t.firstFooterTotals;
+  console.log(
+    `what a design keeps, each band's first appearance: ${['GroupHeader', 'GroupFooter', 'ReportFooter'].map((b) => `${b} ${pct(fb[b]?.right ?? 0, fb[b]?.n ?? 0)} of ${fb[b]?.n ?? 0}`).join(', ')}; footer totals right in band and role ${pct(ff.bothRight, ff.n)} of ${ff.n}`,
+  );
   if (t.page.expected) console.log(`on the page (fixed bands): text found where it prints ${pct(t.page.found, t.page.expected)}; box right recall ${pct(t.page.matched, t.page.expected)}`);
   for (const line of extra) console.log(line);
 }
@@ -599,12 +705,20 @@ const evalLabels = new Map(evalPages.map((p) => [p.image, p]));
 const exact = tally();
 for (const p of evalPages.filter((q) => q.image.endsWith('-0.png'))) {
   const ex = exampleOf(p, false);
-  const reading = readBoxes(model, ex.page, ex.boxes, !RAW);
+  const reading = readBoxes(model, ex.page, ex.boxes, !RAW, RULES);
   scoreReading(exact, ex, reading, ex.known);
   const k = readerSkeleton({ ...ex.page, margins: p.margins }, ex.boxes, reading);
   addPage(exact, fixedPlaces(k).places, targets.get(p.image));
 }
 const majorityBand = Object.entries(exact.bandCounts).sort((a, b) => b[1].n - a[1].n)[0]?.[0] ?? 'Detail';
+
+// The layouts held out of training, as OCR read them: a second, larger test.
+const heldOut = validation.filter((ex) => ex.places);
+if (heldOut.length) {
+  const v = tally();
+  for (const ex of heldOut) scoreReading(v, ex, readBoxes(model, ex.page, ex.boxes, !RAW, RULES), ex.known);
+  report(`layouts held out of training, as OCR read them (${heldOut.length} pages)`, v);
+}
 report('held-out pages, the boxes as drawn', exact, [`(always ${majorityBand}: ${pct(exact.bandCounts[majorityBand]?.n ?? 0, exact.texts)} of texts)`]);
 
 if (pagesDir) {
@@ -612,6 +726,7 @@ if (pagesDir) {
   const cache: Record<string, OcrPage> = JSON.parse(readFileSync(join(dir, 'ocr-cache.json'), 'utf8'));
   const evalRows = readJsonl<{ image: string; target: string }>(join(dir, 'eval.jsonl'));
   const ocr = tally();
+  whyTally = ocr;
   const alone = tally();
   /** OCR's own build: every text it read, its label sized as the reader's are. */
   const built = tally();
@@ -624,7 +739,7 @@ if (pagesDir) {
     const ex = exampleFromOcr(labels, cache[row.image], truth.paper === 'Custom' ? 'Letter' : truth.paper);
     unmatched += ex.known.filter((k) => !k).length;
     read += ex.boxes.length;
-    const reading = readBoxes(model, ex.page, ex.boxes, !RAW);
+    const reading = readBoxes(model, ex.page, ex.boxes, !RAW, RULES);
     scoreReading(ocr, ex, reading, ex.known);
     const k = readerSkeleton({ ...ex.page, margins: ex.margins }, ex.boxes, reading, ex.places);
     const cover = readerCoverage(ex.boxes, reading);
@@ -667,6 +782,7 @@ if (pagesDir) {
       `${sorted.filter((s) => s > READER_MAX_LOST).length} of ${sorted.length} pages over ${pct(READER_MAX_LOST, 1)}, which the app builds as OCR's copy instead`,
   ]);
   for (const w of why.sort((a, b) => b.lost - a.lost).slice(0, 6)) console.log(`\n${w.text}`);
+  if (WHY && totalMisses.length) console.log(`\ntotals given the wrong role (${totalMisses.length}):\n  ${totalMisses.slice(0, 40).join('\n  ')}`);
 }
 
 if (outFile) {

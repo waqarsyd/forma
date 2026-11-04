@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BOX_FEATURES,
+  CONTEXT_FEATURES,
   LINE_FEATURES,
   READER_BANDS,
   READER_ROLES,
   boxFeatures,
+  contextFeatures,
   decodeBands,
   lineFeatures,
   linesOf,
@@ -73,6 +75,22 @@ describe('the networks and the decoding', () => {
     expect(p[0] + p[1]).toBeCloseTo(1, 10);
     expect(p[1]).toBeGreaterThan(0.99);
     expect(mlpProbs(m, [-2, 0])).toEqual([0.5, 0.5]);
+  });
+
+  it("gives the second look each line with its neighbours' first scores, and its lookalikes'", () => {
+    const lines = linesOf(boxes);
+    const lf = lineFeatures(page, boxes, lines);
+    const K = READER_BANDS.length;
+    const scores = lines.map((_, i) => READER_BANDS.map((__, k) => (k === i % K ? 1 : 0)));
+    const cf = contextFeatures(lines, boxes, lf, scores);
+    expect(cf.every((x) => x.length === CONTEXT_FEATURES.length)).toBe(true);
+    const slot = (x: number[], name: string) => x.slice(CONTEXT_FEATURES.indexOf(`${name}_TopMargin`), CONTEXT_FEATURES.indexOf(`${name}_TopMargin`) + K);
+    expect(slot(cf[3], 'self')).toEqual(scores[3]);
+    expect(slot(cf[3], 'above')).toEqual(scores[2]);
+    expect(slot(cf[3], 'below')).toEqual(scores[4]);
+    expect(slot(cf[0], 'above')).toEqual(new Array(K).fill(0));
+    // The headings and the four records share a shape: a record's lookalikes are the other four.
+    expect(slot(cf[2], 'alike')).toEqual(READER_BANDS.map((_, k) => [1, 3, 4, 5].reduce((s, j) => s + scores[j][k], 0) / 4));
   });
 
   it('never decodes a band that cannot follow the one above it', () => {
@@ -143,12 +161,13 @@ describe('the shipped reader', () => {
 
   it('reads the features this version computes', () => {
     expect(readsTheseFeatures(model)).toBe(true);
+    expect(model.context?.inputs).toBe(CONTEXT_FEATURES.length);
     expect(model.bands).toEqual([...READER_BANDS]);
     expect(model.roles).toEqual([...READER_ROLES]);
   });
 
   it('holds numbers and the names of its bands, roles and features, nothing else', () => {
-    const names = new Set<string>([...READER_BANDS, ...READER_ROLES, ...LINE_FEATURES, ...BOX_FEATURES]);
+    const names = new Set<string>([...READER_BANDS, ...READER_ROLES, ...LINE_FEATURES, ...BOX_FEATURES, ...CONTEXT_FEATURES]);
     const strings: string[] = [];
     const walk = (v: unknown, key = '') => {
       if (typeof v === 'string') strings.push(v);
@@ -170,6 +189,30 @@ describe('the shipped reader', () => {
     expect(['ReportHeader', 'PageHeader', 'GroupHeader']).toContain(bandOf(1));
     expect(r.roles[boxes.length - 1]).toBe('pageInfo');
     expect(bandOf(boxes.length - 1)).toBe('PageFooter');
+  });
+
+  it('settles a footer read as one more record, and its totals', () => {
+    // Four records and a total line, all read as records and values.
+    const page2 = [
+      ...[0, 1, 2, 3].flatMap((r) => [t(100, 140 + r * 18, 80, `Name ${r}`), t(400, 140 + r * 18, 30, `${r + 2}`), t(650, 140 + r * 18, 40, '1,250.00')]),
+      t(560, 220, 50, 'Total'),
+      t(650, 220, 40, '5,000.00'),
+    ];
+    const lines = linesOf(page2);
+    const raw: BoxReading = { lines, bands: lines.map(() => 'Detail'), roles: page2.map(() => 'value') };
+    const settled = settleRecords(page2, raw);
+    // No group on the page and no records after it: the report's footer. Its total is left to the network there.
+    expect(settled.bands[4]).toBe('ReportFooter');
+    // With a group header above, a group's footer, and the figure under the amounts its total.
+    const grouped = settleRecords(page2, { ...raw, bands: ['GroupHeader', ...raw.bands.slice(1)] });
+    expect(grouped.bands[4]).toBe('GroupFooter');
+    expect(grouped.roles[page2.length - 1]).toBe('total');
+    expect(grouped.roles[page2.length - 2]).toBe('value');
+    // A record OCR read with a field missing, more records after it, stays a record.
+    const gap = page2.filter((b) => !(b.y === 176 && b.x === 400));
+    const gapLines = linesOf(gap);
+    const kept = settleRecords(gap, { lines: gapLines, bands: gapLines.map(() => 'Detail'), roles: gap.map(() => 'value') });
+    expect(kept.bands[2]).toBe('Detail');
   });
 
   it('settles a heading row the networks read as a record', () => {

@@ -10,11 +10,16 @@
  * band. OCR already places the text; what it cannot tell is the structure.
  * - **Lines.** The texts are grouped into the lines they print on.
  * - **A band per line.** A network scores each line's band from its place on
- *   the page, its neighbours and whether it repeats; the bands are then
- *   decoded together in the order DevExpress prints them (`decodeBands`), so
- *   a page header never follows the records.
- * - **A role per text.** A second network scores each text's role from its
+ *   the page, its neighbours and whether it repeats; a second look
+ *   (`contextFeatures`) scores it again with the first scores of the lines
+ *   around it and shaped like it; the bands are then decoded together in the
+ *   order DevExpress prints them (`decodeBands`), so a page header never
+ *   follows the records.
+ * - **A role per text.** Another network scores each text's role from its
  *   place, its characters, its column and its line's band.
+ * - **What the page states plainly** is settled after the networks
+ *   (`settleRecords`): a row of column headings is not a record, and a
+ *   footer after the records holds totals under their columns.
  * - **The skeleton.** `readerSkeleton` keeps the first appearance of each band
  *   and the first record, as a report's design holds them, with each text a
  *   control at the place OCR read it. `skeletonToDesign` (skeletonRepx.ts)
@@ -73,6 +78,12 @@ export interface BoxReaderModel {
   /** Log probabilities: of the first line's band, and of a line's band after the line above's. */
   start: number[];
   transitions: number[][];
+  /**
+   * A second look at each line, when present: its features with the first
+   * network's scores for it, the line above, the line below and the lines
+   * shaped like it elsewhere (`contextFeatures`).
+   */
+  context?: Mlp;
   /**
    * How much the order counts against a line's own scores when decoding.
    * At full weight a record after a record is so likely that a page number
@@ -136,6 +147,13 @@ function charShares(text: string) {
 
 const NUMERIC = /^[-+(]?[$€£₹]?\s?\d[\d.,\s]*%?\)?$/;
 const MONEY = /\d[.,]\d{2}\)?$/;
+/**
+ * A text as a figure is tested: OCR reads a table's rules as `|`, `[` or `]`
+ * and leaves a stray dot after an amount, and "474,045." or "288] 328,304.67"
+ * failed the test for a number (2026-11-04).
+ */
+const figure = (t: string) => t.replace(/[|[\]{}]/g, ' ').replace(/\s+/g, ' ').trim().replace(/[.,;:'`]+$/, '');
+const isFigure = (t: string) => NUMERIC.test(figure(t));
 const DATE = /\b\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}\b/;
 const PAGE_OF = /\d+\s*\/\s*\d+$|\b\d+\s+\D{1,4}\s+\d+$/;
 
@@ -204,6 +222,8 @@ export const LINE_FEATURES = [
   'toRecordsAbove',
   'toRecordsBelow',
   'inRecordColumns',
+  'runLength',
+  'repeatsApart',
 ] as const;
 
 /** Each line's features, in LINE_FEATURES order. */
@@ -216,10 +236,14 @@ export function lineFeatures(page: { width: number; height: number }, boxes: rea
   const contentTop = n ? lines[0].top : 0;
   const contentBottom = n ? lines[n - 1].bottom : H;
   const repeats = lines.map((l, i) => lines.reduce((s, m, j) => s + (j !== i && sameShape(l, m, boxes) ? 1 : 0), 0));
-  const recordLines = lines.map((_, i) => i).filter((i) => repeats[i] >= 2);
+  const runs = runsOf(lines, boxes);
+  // Records repeat back to back. A group's footer recurs once a group, with
+  // records between, and until 2026-11-04 it counted as one, so a footer
+  // after the records read as one more of them.
+  const isRecord = lines.map((_, i) => repeats[i] >= 2 && runs.length[i] >= 2);
+  const recordLines = lines.map((_, i) => i).filter((i) => isRecord[i]);
   const firstRecord = recordLines.length ? recordLines[0] : -1;
   const lastRecord = recordLines.length ? recordLines[recordLines.length - 1] : -1;
-  const isRecord = lines.map((_, i) => repeats[i] >= 2);
   // The records' columns, by their right edges: a total sits under one.
   const recordRights = recordLines.flatMap((i) => lines[i].boxes.map((k) => boxes[k].x + boxes[k].w));
   const toRecord = (i: number, dir: -1 | 1) => {
@@ -256,7 +280,7 @@ export function lineFeatures(page: { width: number; height: number }, boxes: rea
       below && sameShape(l, below, boxes) ? 1 : 0,
       shares.reduce((s, c) => s + c.digits, 0) / shares.length,
       shares.reduce((s, c) => s + c.letters, 0) / shares.length,
-      texts.filter((t) => NUMERIC.test(t.trim())).length / texts.length,
+      texts.filter(isFigure).length / texts.length,
       texts.filter((t) => DATE.test(t)).length / texts.length,
       texts.some((t) => PAGE_OF.test(t.trim())) ? 1 : 0,
       Math.log1p(n),
@@ -266,8 +290,24 @@ export function lineFeatures(page: { width: number; height: number }, boxes: rea
       toRecord(i, -1),
       toRecord(i, 1),
       isRecord[i] ? 0 : inColumns,
+      Math.log1p(runs.length[i]),
+      Math.log1p(lines.reduce((s, m, j) => s + (runs.id[j] !== runs.id[i] && sameShape(l, m, boxes) ? 1 : 0), 0)),
     ];
   });
+}
+
+/**
+ * The runs of lines shaped alike one after another (`similarShape`): each
+ * line's run, by a number, and how many lines it holds. Records make long
+ * runs; a group's header or footer is a run of one that recurs elsewhere.
+ */
+function runsOf(lines: readonly BoxLine[], boxes: readonly ReadBox[]): { id: number[]; length: number[] } {
+  const id = new Array<number>(lines.length).fill(0);
+  let run = 0;
+  for (let i = 1; i < lines.length; i++) id[i] = similarShape(lines[i - 1], lines[i], boxes) ? run : ++run;
+  const size = new Map<number, number>();
+  for (const r of id) size.set(r, (size.get(r) ?? 0) + 1);
+  return { id, length: id.map((r) => size.get(r)!) };
 }
 
 export const BOX_FEATURES = [
@@ -300,6 +340,7 @@ export const BOX_FEATURES = [
   'alignedInRecords',
   'sameInRecords',
   'differsInRecords',
+  'underRecordFigures',
   ...READER_BANDS.map((b) => `band${b}`),
   ...LINE_FEATURES.map((f) => `line_${f}`),
 ] as const;
@@ -317,9 +358,15 @@ export function boxFeatures(
   const maxH = Math.max(1, ...boxes.map((b) => b.h));
   const lineOf = new Array<number>(boxes.length).fill(-1);
   lines.forEach((l, li) => l.boxes.forEach((k) => (lineOf[k] = li)));
-  // The lines shaped like each line: its record printing again, when it is one.
-  const alike = lines.map((l, li) => lines.flatMap((m, mi) => (mi !== li && similarShape(l, m, boxes) ? [mi] : [])));
+  // The lines shaped like each line in its own run: its record printing
+  // again, when it is one. Across the page, a group's total would be compared
+  // with the next group's, differ, and read as a value.
+  const runs = runsOf(lines, boxes);
+  const alike = lines.map((l, li) => lines.flatMap((m, mi) => (mi !== li && runs.id[mi] === runs.id[li] && similarShape(l, m, boxes) ? [mi] : [])));
   const words = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  // The right edges of the figures in record lines (runs of two or more): a
+  // total stands under one, below the records.
+  const recordFigures = lines.flatMap((l, li) => (runs.length[li] >= 2 ? l.boxes.filter((k) => isFigure(boxes[k].text)).map((k) => ({ li, right: boxes[k].x + boxes[k].w })) : []));
   const out = new Array<number[]>(boxes.length);
   lines.forEach((l, li) => {
     l.boxes.forEach((k, idx) => {
@@ -350,6 +397,8 @@ export function boxFeatures(
         lines[m].boxes.filter((j) => Math.abs(boxes[j].x - b.x) <= 4 || Math.abs(boxes[j].x + boxes[j].w - (b.x + b.w)) <= 4),
       );
       const same = column.filter((j) => words(boxes[j].text) === words(t)).length;
+      const figureHere = isFigure(t);
+      const figuresAbove = figureHere ? recordFigures.filter((f) => f.li < li && runs.id[f.li] !== runs.id[li] && Math.abs(f.right - (b.x + b.w)) <= 6).length : 0;
       out[k] = [
         b.x / W,
         (b.x + b.w) / W,
@@ -366,26 +415,58 @@ export function boxFeatures(
         c.digits,
         c.letters,
         c.upper,
-        NUMERIC.test(t) ? 1 : 0,
-        MONEY.test(t) ? 1 : 0,
+        figureHere ? 1 : 0,
+        MONEY.test(figure(t)) ? 1 : 0,
         DATE.test(t) ? 1 : 0,
         PAGE_OF.test(t) ? 1 : 0,
         /:\s*$/.test(t) ? 1 : 0,
         Math.log1p(leftAligned),
         Math.log1p(rightAligned),
-        up !== null && NUMERIC.test(up) ? 1 : 0,
-        up !== null && !NUMERIC.test(up) ? 1 : 0,
-        down !== null && NUMERIC.test(down) ? 1 : 0,
+        up !== null && isFigure(up) ? 1 : 0,
+        up !== null && !isFigure(up) ? 1 : 0,
+        down !== null && isFigure(down) ? 1 : 0,
         Math.abs(centre - W / 2) / W < 0.05 ? 1 : 0,
         Math.log1p(column.length),
         column.length ? same / column.length : 0,
         column.length && same < column.length ? 1 : 0,
+        Math.log1p(figuresAbove),
         ...READER_BANDS.map((band) => (bands[li] === band ? 1 : 0)),
         ...lineFeats[li],
       ];
     });
   });
   return out;
+}
+
+export const CONTEXT_FEATURES = [
+  ...LINE_FEATURES,
+  ...READER_BANDS.map((b) => `self_${b}`),
+  ...READER_BANDS.map((b) => `above_${b}`),
+  ...READER_BANDS.map((b) => `below_${b}`),
+  ...READER_BANDS.map((b) => `alike_${b}`),
+] as const;
+
+/**
+ * The second look's features (2026-11-04): each line's own, then the first
+ * network's scores for it, for the line above and below, and their mean over
+ * the lines shaped like it elsewhere on the page. A group's footer follows
+ * records and comes before the next group's header, and recurs once a group;
+ * the first network sees a line alone.
+ */
+export function contextFeatures(lines: readonly BoxLine[], boxes: readonly ReadBox[], lineFeats: readonly number[][], scores: readonly number[][]): number[][] {
+  const K = READER_BANDS.length;
+  const none = new Array<number>(K).fill(0);
+  return lines.map((l, i) => {
+    const alike = lines.flatMap((m, j) => (j !== i && sameShape(l, m, boxes) ? [scores[j]] : []));
+    const mean = alike.length ? none.map((_, k) => alike.reduce((s, p) => s + p[k], 0) / alike.length) : none;
+    return [...lineFeats[i], ...scores[i], ...(scores[i - 1] ?? none), ...(scores[i + 1] ?? none), ...mean];
+  });
+}
+
+/** The band scores of every line: the first network's, then the second look's when the model has one. */
+export function lineScores(model: BoxReaderModel, lines: readonly BoxLine[], boxes: readonly ReadBox[], lineFeats: readonly number[][]): number[][] {
+  const first = lineFeats.map((x) => mlpProbs(model.lines, x));
+  return model.context ? contextFeatures(lines, boxes, lineFeats, first).map((x) => mlpProbs(model.context!, x)) : first;
 }
 
 /** The network's probabilities for one input. */
@@ -461,21 +542,22 @@ export interface BoxReading {
   roles: ReaderRole[];
 }
 
-export function readBoxes(model: BoxReaderModel, page: { width: number; height: number }, boxes: readonly ReadBox[], settle = true): BoxReading {
+export function readBoxes(
+  model: BoxReaderModel,
+  page: { width: number; height: number },
+  boxes: readonly ReadBox[],
+  settle = true,
+  rules: FooterRules = { totals: true, footers: true },
+): BoxReading {
   const lines = linesOf(boxes);
   const lf = lineFeatures(page, boxes, lines);
-  const bands = decodeBands(
-    lf.map((x) => mlpProbs(model.lines, x)),
-    model.start,
-    model.transitions,
-    model.transitionWeight,
-  ).map((k) => model.bands[k] as ReaderBand);
+  const bands = decodeBands(lineScores(model, lines, boxes, lf), model.start, model.transitions, model.transitionWeight).map((k) => model.bands[k] as ReaderBand);
   const bf = boxFeatures(page, boxes, lines, bands, lf);
   const roles = bf.map((x) => {
     const p = mlpProbs(model.boxes, x);
     return model.roles[p.indexOf(Math.max(...p))] as ReaderRole;
   });
-  return settle ? settleRecords(boxes, { lines, bands, roles }) : { lines, bands, roles };
+  return settle ? settleRecords(boxes, { lines, bands, roles }, rules) : { lines, bands, roles };
 }
 
 const HEADER_BANDS: readonly ReaderBand[] = ['ReportHeader', 'PageHeader', 'GroupHeader'];
@@ -491,7 +573,7 @@ const HEADER_BANDS: readonly ReaderBand[] = ['ReportHeader', 'PageHeader', 'Grou
  * are captions. Text, not the networks' roles, decides, because the role
  * network reads a text in a record as a value.
  */
-export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading): BoxReading {
+export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading, rules: FooterRules = { totals: true, footers: true }): BoxReading {
   const { lines } = reading;
   const bands = [...reading.bands];
   const roles = [...reading.roles];
@@ -510,7 +592,59 @@ export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading): B
   // record is a value, was measured and left out: on the held-out pages it
   // took captions from 93.7% right to 77.4%, as group headers read as
   // records set their captions among the records' values.
+  settleFooters(boxes, lines, bands, roles, rules);
   return { lines, bands, roles };
+}
+
+/** Which footer rules run; all by default. For measuring each one apart. */
+export interface FooterRules {
+  totals: boolean;
+  footers: boolean;
+}
+
+/**
+ * Footers and their totals, as a page shows them (2026-11-04). A total is a
+ * figure standing under a column of the records' figures, below them. A
+ * footer is the line after a run of records that is not shaped like them
+ * and holds such a figure; records after it, or group headers anywhere on
+ * the page, make it a group's footer, and otherwise it is the report's.
+ */
+function settleFooters(boxes: readonly ReadBox[], lines: readonly BoxLine[], bands: ReaderBand[], roles: ReaderRole[], rules: FooterRules) {
+  const runs = runsOf(lines, boxes);
+  const recordLine = (li: number) => bands[li] === 'Detail' && runs.length[li] >= 2;
+  const rightOf = (k: number) => boxes[k].x + boxes[k].w;
+  const columnsAbove = (li: number) =>
+    lines.slice(0, li).flatMap((l, m) => (recordLine(m) ? l.boxes.filter((k) => isFigure(boxes[k].text)).map(rightOf) : []));
+  const underColumn = (k: number, columns: readonly number[]) => isFigure(boxes[k].text) && columns.some((r) => Math.abs(r - rightOf(k)) <= 6);
+  const grouped = bands.includes('GroupHeader');
+
+  if (rules.footers) {
+    for (let li = 1; li < lines.length; li++) {
+      // Right after a run of records, and not one of them.
+      if (bands[li] !== 'Detail' || !recordLine(li - 1) || runs.id[li] === runs.id[li - 1]) continue;
+      const run = lines.flatMap((_, m) => (runs.id[m] === runs.id[li - 1] ? [m] : []));
+      // Fewer texts than a record holds, shaped like none of them, and not
+      // followed by one more of them: a record OCR read a little differently
+      // breaks the run too, and more records like it follow.
+      const fewer = lines[li].boxes.length < Math.min(...run.map((m) => lines[m].boxes.length));
+      const likeRecord = (q: number) => run.some((m) => similarShape(lines[m], lines[q], boxes));
+      if (!fewer || likeRecord(li) || (li + 1 < lines.length && likeRecord(li + 1))) continue;
+      const columns = columnsAbove(li);
+      if (!lines[li].boxes.some((k) => underColumn(k, columns))) continue;
+      const moreRecords = lines.slice(li + 1).some((_, d) => recordLine(li + 1 + d));
+      bands[li] = moreRecords || grouped ? 'GroupFooter' : 'ReportFooter';
+    }
+  }
+  if (rules.totals) {
+    // A group footer's figures under the records' columns are its totals. A
+    // report footer's are left to the network: half the numbers printed
+    // there in the training reports are values, not totals.
+    lines.forEach((l, li) => {
+      if (bands[li] !== 'GroupFooter') return;
+      const columns = columnsAbove(li);
+      for (const k of l.boxes) if (roles[k] === 'value' && underColumn(k, columns)) roles[k] = 'total';
+    });
+  }
 }
 
 /** Bands whose appearances repeat down a page; a design keeps the first. */
@@ -675,7 +809,7 @@ export function readerSkeleton(
     const p = all[k];
     const role = roles[k] as SkeletonRole;
     const t = boxes[k].text.trim();
-    const numeric = NUMERIC.test(t);
+    const numeric = isFigure(t);
     const align = (role === 'value' || role === 'total') && numeric ? 'right' : role === 'title' && Math.abs(p.x + p.w / 2 - page.width / 2) < page.width * 0.05 ? 'center' : 'left';
     // A title prints bold, about a tenth wider than the face it was measured in.
     const w = role === 'title' ? p.w * 1.12 : p.w;
@@ -762,7 +896,7 @@ export function readDetectedPage(
 export function controlPlaceOf(t: DetectedText): ControlPlace {
   const inArial = pointsToUnits(lineWidthPt(t.text, { family: 'Arial', sizePt: t.fontSize, bold: false, italic: false }) ?? t.text.length * 0.6 * t.fontSize, 'HundredthsOfAnInch');
   const w = Math.max(t.w * 1.08, inArial * 1.04) + 4;
-  const x = NUMERIC.test(t.text.trim()) ? t.x + t.w - w : t.x;
+  const x = isFigure(t.text) ? t.x + t.w - w : t.x;
   return { x, y: t.y, w, h: t.h, fontSize: t.fontSize };
 }
 
@@ -780,6 +914,7 @@ export function readsTheseFeatures(model: BoxReaderModel): boolean {
     same(model.roles, READER_ROLES) &&
     model.lines.inputs === LINE_FEATURES.length &&
     model.boxes.inputs === BOX_FEATURES.length &&
+    (!model.context || model.context.inputs === CONTEXT_FEATURES.length) &&
     typeof model.transitionWeight === 'number'
   );
 }

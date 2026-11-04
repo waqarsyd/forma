@@ -326,8 +326,13 @@ const BUDGETS = [
    * 7,552 weights at five decimals, 68,705 B as first trained, so 94%. More
    * features or a wider hidden layer move it; read the weight count in the
    * training script's last line before raising this.
+   *
+   * Raised from 73_000 the same day, naming the growth: 68,705 -> 94,270 B for
+   * the second look at each line (a third network, 2,560 weights) and nine
+   * more features, added to read group footers and their totals. 10,432
+   * weights in all; 100_000 puts it at 94.3%.
    */
-  { prefix: 'boxReader', ext: '.json', max: 73_000, note: "Forma's box reader, lazy" },
+  { prefix: 'boxReader', ext: '.json', max: 100_000, note: "Forma's box reader, lazy" },
 ];
 
 /**

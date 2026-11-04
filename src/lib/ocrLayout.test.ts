@@ -57,6 +57,15 @@ describe('detectLayout', () => {
     expect(p.labels.map((l) => l.text)).toEqual(['Bill to', 'Total', '42.00']);
   });
 
+  it('splits two amounts side by side, however close, but not a number with a space between its thousands', () => {
+    const [p] = layoutOf([
+      line(100, ['894', 300, 318], ['213,086.00', 324, 380], ['184,088.14', 386, 442]),
+      line(140, ['Total', 60, 90], ['1', 300, 306], ['250.00', 310, 346]),
+      line(180, ['Invoice', 60, 100], ['42', 104, 116]),
+    ]).pages;
+    expect(p.labels.map((l) => l.text)).toEqual(['894', '213,086.00', '184,088.14', 'Total', '1 250.00', 'Invoice 42']);
+  });
+
   it('flags a word read below the confidence threshold, and the label that holds it', () => {
     const layout = layoutOf([line(100, ['Total', 60, 90], ['due', 94, 112, 41])]);
     const [l] = layout.pages[0].labels;
