@@ -54,11 +54,31 @@ describe('queueing', () => {
    */
   it('does not offer a folder the picker cannot select', () => {
     render(<BatchPanel ready runOne={vi.fn()} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
-    const input = document.querySelector('input[type=file]') as HTMLInputElement;
+    const inputs = [...document.querySelectorAll('input[type=file]')] as HTMLInputElement[];
     const claimsFolders = /folder/i.test(document.body.textContent ?? '');
     // `webkitdirectory` is the only thing that makes a folder selectable.
-    expect(claimsFolders).toBe(input.hasAttribute('webkitdirectory'));
-    expect(input.multiple).toBe(true);
+    expect(claimsFolders).toBe(inputs.some((i) => i.hasAttribute('webkitdirectory')));
+    expect(inputs[0].multiple).toBe(true);
+    expect(inputs[0].hasAttribute('webkitdirectory')).toBe(false);
+  });
+
+  it('queues a chosen folder by path, leaving out what it cannot take, and says so', () => {
+    render(<BatchPanel ready runOne={vi.fn()} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    const folder = document.querySelectorAll('input[type=file]')[1] as HTMLInputElement;
+    const inFolder = (path: string, type: string) => Object.assign(new File(['x'], path.split('/').pop()!, { type }), { webkitRelativePath: path });
+    const files = [inFolder('old/b.pdf', 'application/pdf'), inFolder('old/a.png', 'image/png'), inFolder('old/notes.xlsx', 'application/vnd.ms-excel'), inFolder('old/.DS_Store', '')];
+    Object.defineProperty(folder, 'files', { configurable: true, value: Object.assign(files, { item: (i: number) => files[i] }) });
+    fireEvent.change(folder);
+    expect([...document.querySelectorAll('.bp-name')].map((n) => n.textContent)).toEqual(['old/a.png', 'old/b.pdf']);
+    expect(screen.getByText(/2 files ready \(2 other files left out\)\. Nothing is sent until you start\./)).toBeTruthy();
+  });
+
+  it('takes files dropped on the panel', async () => {
+    render(<BatchPanel ready runOne={vi.fn()} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    const dropped = [file('x.png'), file('y.png')];
+    const items = dropped.map((f) => ({ kind: 'file', getAsFile: () => f }));
+    fireEvent.drop(document.querySelector('.bp-root')!, { dataTransfer: { items, types: ['Files'] } });
+    await waitFor(() => expect(document.querySelectorAll('.bp-row')).toHaveLength(2));
   });
 
   it('makes one row per file', () => {
@@ -100,6 +120,42 @@ describe('running the queue', () => {
     await waitFor(() => expect(screen.getByText('3/3 done')).toBeTruthy());
     // Forty parallel requests turn a slow success into a fast 429.
     expect(peak).toBe(1);
+  });
+
+  it('runs as many at once as chosen, never the same file twice', async () => {
+    let running = 0;
+    let peak = 0;
+    const runOne = vi.fn(async (f: File, _signal: AbortSignal, _id: string) => {
+      running++;
+      peak = Math.max(peak, running);
+      await new Promise((r) => setTimeout(r, 5));
+      running--;
+      return outcome(f.name);
+    });
+    render(<BatchPanel ready runOne={runOne} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    choose(['a.png', 'b.png', 'c.png', 'd.png', 'e.png']);
+    fireEvent.change(screen.getByLabelText('At a time'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('Generate 5'));
+    await waitFor(() => expect(screen.getByText('5/5 done')).toBeTruthy());
+    expect(peak).toBe(2);
+    expect(runOne).toHaveBeenCalledTimes(5);
+    expect(new Set(runOne.mock.calls.map((c) => c[2])).size).toBe(5);
+  });
+
+  it('stops every worker on a quota failure, and says so once', async () => {
+    const runOne = vi.fn(async (f: File) => {
+      await new Promise((r) => setTimeout(r, f.name === 'a.png' ? 1 : 10));
+      if (f.name === 'a.png') throw new Error('exceeded your Gemini API quota');
+      return outcome(f.name);
+    });
+    render(<BatchPanel ready runOne={runOne} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    choose(['a.png', 'b.png', 'c.png', 'd.png']);
+    fireEvent.change(screen.getByLabelText('At a time'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('Generate 4'));
+    await waitFor(() => expect(screen.getByText(/Stopped after "a.png"/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Retry 3')).toBeTruthy());
+    // b was already running beside a; c and d were never started.
+    expect(runOne).toHaveBeenCalledTimes(2);
   });
 
   it('shows the audit verdict rather than only that it finished', async () => {

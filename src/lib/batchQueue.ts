@@ -13,12 +13,18 @@
  * structurally cannot offer: you can describe one report to an assistant, but
  * you cannot describe forty you have never read.
  *
- * ## Sequential, deliberately
+ * ## One at a time unless asked
  *
- * One generation at a time. The user's own key carries the quota, and Gemini's
- * free tier is rate-limited per minute — firing forty requests at once turns a
- * slow success into a fast 429. Sequential also makes Stop mean something: the
- * item in flight is the only one that can be wasted.
+ * One generation at a time by default. The user's own key carries the quota,
+ * and Gemini's free tier is rate-limited per minute — firing forty requests at
+ * once turns a slow success into a fast 429. One at a time also makes Stop
+ * mean something: the item in flight is the only one that can be wasted.
+ *
+ * Since 2026-11-04 the panel can run two or three at once
+ * (`BATCH_PARALLEL`), for a key whose quota allows it: a paid tier, a local
+ * model, OpenRouter. Never more, because past three the free tiers answer
+ * 429 to nearly every request and the run is slower, not faster. A quota or
+ * key failure still stops the whole run, wherever it happens.
  *
  * ## Pure
  *
@@ -28,6 +34,9 @@
  */
 
 export type BatchStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
+
+/** How many files the panel may run at once; the first is the default. */
+export const BATCH_PARALLEL = [1, 2, 3] as const;
 
 export interface BatchItem {
   /** Stable across the queue's life; used as the React key. */
@@ -193,6 +202,9 @@ export function verdict(item: BatchItem): string {
  * reports anyone can find anything in.
  */
 export function outputName(item: BatchItem): string {
-  const base = (item.title || item.sourceName.replace(/\.[^.]+$/, '') || 'report').trim();
+  // A file from a dropped folder is queued by its path in it (2026-11-04); its
+  // report is named after the file, not the folders above it.
+  const file = item.sourceName.split('/').pop() ?? '';
+  const base = (item.title || file.replace(/\.[^.]+$/, '') || 'report').trim();
   return `${base}.repx`;
 }
