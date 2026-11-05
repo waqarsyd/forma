@@ -121,8 +121,12 @@ function says(c: { text: string; field: string | null }): string {
   return c.text.trim() ? `"${clip(c.text)}"` : '';
 }
 
-/** The report as the model is shown it. `findings` are the checks' messages, worth fixing when asked. */
-export function reportOutline(xml: string, options: { findings?: readonly string[] } = {}): string {
+/**
+ * The report as the model is shown it. `findings` are the checks' messages,
+ * worth fixing when asked; `selected` the controls selected on the Preview
+ * (2026-11-05), which "this" and "these" in a message mean.
+ */
+export function reportOutline(xml: string, options: { findings?: readonly string[]; selected?: readonly string[] } = {}): string {
   const structure = parseReportStructure(xml);
   const rootAttrs = ROOT.exec(xml)?.[1] ?? '';
   const title = /\sDisplayName="([^"]*)"/.exec(rootAttrs)?.[1] ?? /\sName="([^"]*)"/.exec(rootAttrs)?.[1] ?? 'the report';
@@ -166,6 +170,7 @@ export function reportOutline(xml: string, options: { findings?: readonly string
   if (fields.size) lines.push(`FIELDS PRINTED: ${[...fields].map((f) => `[${f}]`).join(', ')}`);
   if (structure.parameters.length) lines.push(`PARAMETERS: ${structure.parameters.map((p) => p.name).join(', ')}`);
   if (options.findings?.length) lines.push(`CHECKS FOUND: ${options.findings.slice(0, 8).join(' | ')}`);
+  if (options.selected?.length) lines.push(`SELECTED ON THE PREVIEW: ${options.selected.join(', ')}`);
   return lines.join('\n');
 }
 

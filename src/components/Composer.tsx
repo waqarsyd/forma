@@ -32,6 +32,7 @@ import {
   IconDoc,
   IconKey,
   IconPaperclip,
+  IconTarget,
   IconWarn,
 } from './landing/icons';
 
@@ -82,6 +83,12 @@ export interface ComposerProps {
   isIngesting: boolean;
   /** Files pasted into the box, as a drop or a pick would bring them. */
   onPasteFiles?: (files: File[]) => void;
+  /**
+   * The controls selected on the Preview (2026-11-05), shown above the box
+   * as what "this" will mean, as ChatGPT's canvas shows a highlighted
+   * passage. Cleared on the Preview, where it was made.
+   */
+  selection?: readonly string[];
 }
 
 export default function Composer({
@@ -106,6 +113,7 @@ export default function Composer({
   isChatting,
   isIngesting,
   onPasteFiles,
+  selection = [],
 }: ComposerProps) {
   /*
    * One condition, read by the button *and* the keyboard.
@@ -223,6 +231,14 @@ export default function Composer({
               </span>
             );
           })}
+        </div>
+      )}
+      {selection.length > 0 && (
+        <div className="wb-chip-row">
+          <span className="wb-attach wb-attach--selection" role="status" title="Selected on the Preview: “this” in your message means it">
+            <IconTarget size={12} />
+            {selection.length === 1 ? selection[0] : `${selection.length} controls: ${selection.join(', ')}`}
+          </span>
         </div>
       )}
       {uploadNotices.length > 0 && (

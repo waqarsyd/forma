@@ -234,6 +234,20 @@ describe('a clean composer', () => {
     expect(send().disabled).toBe(false);
   });
 
+  // What is selected on the Preview is what "this" means (2026-11-05).
+  it('shows the controls selected on the Preview above the box, and nothing with none', () => {
+    const { rerender } = draw({ selection: ['title'] });
+    expect(screen.getByRole('status').textContent).toBe('title');
+    rerender(
+      <Composer previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="" onPromptChange={vi.fn()} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} selection={['title', 'total']} />,
+    );
+    expect(screen.getByRole('status').textContent).toBe('2 controls: title, total');
+    rerender(
+      <Composer previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="" onPromptChange={vi.fn()} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} />,
+    );
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   // A reply being written can be stopped too (2026-11-05), as ChatGPT's can.
   it('turns the send into a Stop while a reply is written', () => {
     const onStop = vi.fn();

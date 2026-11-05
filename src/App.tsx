@@ -2108,6 +2108,8 @@ export default function App() {
     setPendingTools(null);
     runToolsRef.current?.(pendingTools);
   }, [pendingTools]);
+  /** The controls selected on the Preview, by name: what the chat's "this" means (2026-11-05). */
+  const [previewSelection, setPreviewSelection] = useState<string[]>([]);
   /** An export the chat asked the Preview for, made once per nonce. */
   const [exportRequest, setExportRequest] = useState<{ format: Exclude<AgentTool['format'], 'repx' | undefined>; nonce: number } | null>(null);
   /**
@@ -4503,7 +4505,9 @@ export default function App() {
          */
         const open = result?.repxContent ? result : null;
         const agent = open ? await import('./lib/agentEdit') : null;
-        const outline = open && agent ? agent.reportOutline(open.repxContent!, { findings: repxAudit?.findings.map((f) => f.message) }) : undefined;
+        const outline = open && agent
+          ? agent.reportOutline(open.repxContent!, { findings: repxAudit?.findings.map((f) => f.message), selected: previewSelection })
+          : undefined;
         const answered = await chatReply(history, config, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
@@ -5585,6 +5589,7 @@ export default function App() {
             isChatting={isChatting}
             isIngesting={isIngesting}
             onPasteFiles={ingestFiles}
+            selection={result?.repxContent ? previewSelection : []}
           />
         </div>
 
@@ -5922,6 +5927,7 @@ export default function App() {
                       testDataBusy={testDataBusy}
                       exportRequest={exportRequest}
                       onExportRequestDone={() => setExportRequest(null)}
+                      onSelectionChange={setPreviewSelection}
                       /* Editing writes the REPX only. The layout and the spec
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not

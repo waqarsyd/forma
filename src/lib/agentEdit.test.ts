@@ -53,6 +53,11 @@ describe('reportOutline: the report as the model is shown it', () => {
     expect(outline).toContain('FIELDS PRINTED: [Amount], [CustomerName]');
     expect(outline).toContain('CHECKS FOUND: A total prints blank.');
   });
+
+  it('names what is selected on the Preview last, and nothing when nothing is', () => {
+    expect(reportOutline(report, { selected: ['title', 'customer'] }).split('\n').pop()).toBe('SELECTED ON THE PREVIEW: title, customer');
+    expect(outline).not.toContain('SELECTED');
+  });
 });
 
 describe('applyEdits: what the model asked for, made by splices', () => {

@@ -93,6 +93,11 @@ interface Props {
    */
   exportRequest?: { format: 'pdf' | 'csv' | 'xlsx' | 'docx' | 'rtf' | 'html' | 'png'; nonce: number } | null;
   onExportRequestDone?: () => void;
+  /**
+   * The controls selected on the pane, by name, whenever that changes, and
+   * none once the pane closes (2026-11-05): the chat's "this" and "these".
+   */
+  onSelectionChange?: (names: string[]) => void;
 }
 
 export type TestRow = RecordValues;
@@ -968,7 +973,7 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [showBands, setShowBands] = useState(true);
@@ -1088,6 +1093,22 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
 
   const boundFields = useMemo(() => readBoundFields(repxContent), [repxContent]);
   const structureBands = structure.bands;
+
+  // The selection by name, for the chat (2026-11-05): see `onSelectionChange`.
+  const selectionNames = useMemo(
+    () =>
+      (selected ? [selected, ...also] : [])
+        .map((r) => structure.bands[r.band]?.controls[r.control]?.name)
+        .filter((n): n is string => Boolean(n)),
+    [selected, also, structure],
+  );
+  const reportSelection = useRef(onSelectionChange);
+  reportSelection.current = onSelectionChange;
+  const selectionKey = selectionNames.join('\n');
+  useEffect(() => {
+    reportSelection.current?.(selectionKey ? selectionKey.split('\n') : []);
+  }, [selectionKey]);
+  useEffect(() => () => reportSelection.current?.([]), []);
   /** The `Ref` of the control that toggles Detail, when it has a drill-down. */
   const drillRef = structureBands.find((b) => b.kind === 'Detail')?.drillDown?.control;
   const watermark = structure.watermark;

@@ -730,6 +730,8 @@ The edits, by "op", and the fields each reads:
 - add: a new label: band (its name or kind), text, x, y, and optionally width, height.
 - paper: paper (A4, Letter, Legal, A3, A5, Tabloid), landscape. margins: any of left, right, top, bottom.
 
+When the outline ends with SELECTED ON THE PREVIEW, the user has selected those controls, and "this", "it", "these" and "them" in the message mean them.
+
 "tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows, which costs a request), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer).
 
 "reply": one or two sentences to the user, drawn as Markdown with no headings. For an edit, say briefly what you changed; Forma lists the changes itself, so do not list them. For a rebuild, say what Forma will redesign. Never claim a change you did not list.`;
@@ -780,7 +782,8 @@ function buildMockChatReply(userText: string): ChatOutcome {
  * anything else is a redesign.
  */
 function buildMockReportReply(userText: string, outline: string): ChatOutcome {
-  const first = /^ {2}([^\s:(]+): XR/m.exec(outline)?.[1];
+  // What is selected on the Preview first, as "this" would mean it.
+  const first = /^SELECTED ON THE PREVIEW: ([^,\s]+)/m.exec(outline)?.[1] ?? /^ {2}([^\s:(]+): XR/m.exec(outline)?.[1];
   const text = userText.trim();
   const answer = (reply: string): ChatOutcome => ({ reply, wantsReport: false, action: 'answer', edits: [] });
   const edit = (reply: string, edits: AgentEdit[]): ChatOutcome => ({ reply, wantsReport: false, action: 'edit', edits });

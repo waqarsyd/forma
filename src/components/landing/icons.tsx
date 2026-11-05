@@ -356,6 +356,13 @@ export const IconSave = (p: Props) => (
     <path d="M8 3v6h8V3M8 21v-6h8v6" />
   </Svg>
 );
+/* What is selected on the Preview, above the chat box (2026-11-05). */
+export const IconTarget = (p: Props) => (
+  <Svg strokeWidth={2} {...p}>
+    <circle cx="12" cy="12" r="8" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+);
 /* New report in the sidebar (2026-11-05): a pencil over a square, the mark
    ChatGPT's and Gemini's sidebars give a new chat. */
 export const IconCompose = (p: Props) => (
