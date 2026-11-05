@@ -259,8 +259,14 @@ import { repeatedHeadingTables } from './lib/mockupRows';
 // 2026-11-04 (the minimal workspace). Find that commit with
 // git log --diff-filter=D -- src/components/LogoPulse.tsx, and recover the file
 // with git show <it>~1:src/components/LogoPulse.tsx.
-import ChatThread, { WorkingDots } from './components/ChatThread';
-import Composer from './components/Composer';
+/* The chat column, on demand (2026-11-05): only the workspace shows it, and
+   the entry chunk every landing-page visitor downloads had reached 98.3% of
+   its budget, half of that day's growth being the chat's own features. The
+   working dots come from the same module, so all three are one chunk. See the
+   index- entry in scripts/check-bundle-size.mjs. */
+const ChatThread = lazy(() => import('./components/ChatThread'));
+const WorkingDots = lazy(() => import('./components/ChatThread').then((m) => ({ default: m.WorkingDots })));
+const Composer = lazy(() => import('./components/Composer'));
 import type { OcrBuiltReport } from './components/OcrDialog';
 import type { ReaderBuiltReport } from './lib/ocrAttach';
 import type { ReadPage } from './lib/ocrAttach';
@@ -5612,6 +5618,9 @@ export default function App() {
             </div>
           )}
 
+          {/* An empty column while the chat's chunk arrives, holding the
+              composer to the foot as the thread does. */}
+          <Suspense fallback={<div className="wb-thread" />}>
           <ChatThread
             messages={messages}
             isChatting={isChatting}
@@ -5656,7 +5665,9 @@ export default function App() {
               </article>
             )}
           </ChatThread>
+          </Suspense>
 
+          <Suspense fallback={null}>
           <Composer
             previews={previews}
             previewGroups={previewGroups}
@@ -5681,6 +5692,7 @@ export default function App() {
             onPasteFiles={ingestFiles}
             selection={result?.repxContent ? previewSelection : []}
           />
+          </Suspense>
         </div>
 
         {/* ------------------------------------------------- saved projects */}

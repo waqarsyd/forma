@@ -116,6 +116,17 @@ const BUDGETS = [
   // 631,562 B, -32,264, and repxAudit-*.js is 29,347 B of its own. Left at
   // 696_000 the cap would sit at 90.7% with room to hide a regression;
   // 672_000 puts it at 94.0%.
+  //
+  // Left at 672_000 on 2026-11-05, and cut under rather than raised. It had
+  // reached 660,284 B (98.3%) without tripping: 631,562 -> 646,183 B across
+  // the sidebar, settings and token-saving work of 2026-11-04 and -05, then
+  // -> 660,284, +14,101 B, for the chat's agent features the same day (Stop
+  // on a reply, Markdown, reply actions, saving on its own, the edits, tools,
+  // selection and versions; each body is lazy, these were App's call sites).
+  // The cut: ChatThread and Composer, which only the workspace shows, load
+  // on demand from App.tsx, -13,264 B to 647,020 B (96.3%). Still above the
+  // 93-94% band; the next cut is the same kind, more of the workspace out of
+  // what every landing-page visitor downloads.
   { prefix: 'index-', ext: '.js', max: 672_000, note: 'eager entry chunk + the genai chunk' },
   /*
    * The generation service, lazy as of 2026-09-04.
@@ -277,7 +288,16 @@ const BUDGETS = [
   // Recorded so the next percentage sweep does not re-litigate it -- and note this
   // is the cap the whole script was written for, so loosening it on a number alone
   // would blunt the one detector aimed at the founding defect.
-  { prefix: 'index-', ext: '.css', max: 116_000, note: 'the whole stylesheet' },
+  //
+  // Raised to 120_000 on 2026-11-05, a RAISE naming the growth, at 113,006 B
+  // (97.4%) without tripping. Not a Tailwind leak: 110,128 -> 113,006 B,
+  // +2,878 B, is hand-written workspace.css for the chat made a chat that
+  // day: Forma's replies as Markdown (lists, code, tables), the actions under
+  // a reply and a message, Undo and the redesign question, the selection
+  // chip, the bubbles on the right, the versions and the way back to the
+  // latest message, and the sidebar's search. The single stylesheet has no
+  // cut to make the way a chunk does. 120_000 puts it at 94.2%.
+  { prefix: 'index-', ext: '.css', max: 120_000, note: 'the whole stylesheet' },
   { prefix: 'pdf.worker-', ext: '.mjs', max: 2_250_000, note: 'pdfjs worker, lazy' },
   { prefix: 'pdf-', ext: '.js', max: 470_000, note: 'pdfjs entry, lazy' },
   { prefix: 'Markdown-', ext: '.js', max: 175_000, note: 'react-markdown + remark-gfm, lazy' },
