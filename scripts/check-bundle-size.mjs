@@ -252,7 +252,18 @@ const BUDGETS = [
   // 2 and 5 (`20a8e27`, `dd80fcc`, `20441fb`), the totals repair and its
   // prompt sentence among them. Measured by building HEAD before this change,
   // not inferred. 120_000 puts it at 93.5%.
-  { prefix: 'geminiService-', ext: '.js', max: 120_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
+  //
+  // Raised to 128_000 on 2026-11-05, a RAISE carrying both halves again. This
+  // commit grew it 115,452 -> 119,839 B, +4,387 B, for the chat that edits an
+  // open report: `REPORT_CHAT_INSTRUCTIONS`, the edits' response schema and
+  // `buildMockReportReply`. It first tripped the cap by 219 B because the
+  // service imported `lib/agentEdit.ts` and with it `repxEdit.ts`; that import
+  // is now a type only (App loads the edit library on demand), so what is left
+  // is prompt and schema. The 112,233 -> 115,452 B before it, +3,219 B, had
+  // fitted in silence: the REPX-only answer and the draft-and-correct path of
+  // the same week. Measured by building HEAD in a throwaway worktree, not
+  // inferred. 128_000 puts it at 93.6%.
+  { prefix: 'geminiService-', ext: '.js', max: 128_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it

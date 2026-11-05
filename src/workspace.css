@@ -656,6 +656,8 @@
    ChatGPT's, and a pressed rating wears the hover. */
 .wb-note-act.wb-note-icon { display: inline-grid; place-items: center; width: 24px; height: 22px; padding: 0; }
 .wb-note-act[aria-pressed="true"] { color: var(--ink); background: var(--track); }
+/* A reply whose change was taken back (2026-11-05). */
+.wb-note-done { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); padding: 1px 7px; }
 .wb-note-ask { font-size: 12px; color: var(--bad-ink); }
 .wb-edit textarea { width: 100%; resize: vertical; font: inherit; font-size: 13.5px; line-height: 1.6; }
 

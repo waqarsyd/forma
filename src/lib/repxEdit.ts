@@ -148,6 +148,24 @@ export function setControlText(xml: string, ref: ControlRef, text: string): Edit
 }
 
 /**
+ * Set any attributes on a control's opening tag, worked out from the tag as
+ * it stands and the control as parsed (2026-11-05, for the chat's edits: a
+ * font made bold keeps its family and size, an alignment keeps its vertical
+ * half). Values are escaped on the way in, as everywhere here.
+ */
+export function updateControl(
+  xml: string,
+  ref: ControlRef,
+  attrs: (openTag: string, control: PreviewControl) => Record<string, string>,
+  what: string,
+): EditResult {
+  const control = locate(xml, ref);
+  if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
+  const openTag = xml.slice(control.openStart, control.openEnd + 1);
+  return applyAttributes(xml, ref, attrs(openTag, control), what);
+}
+
+/**
  * Keep a control inside its band, or say the band has to grow.
  *
  * Not enforced by the movers above, and that is deliberate: a control dragged
@@ -345,6 +363,27 @@ export function addLabel(xml: string, bandIndex: number, x: number, y: number, t
  * when it prints, so typed text would never be seen.
  */
 export function setCellText(xml: string, ref: ControlRef, row: number, cell: number, text: string): EditResult {
+  return updateCellElement(xml, ref, row, cell, (_, bound) => (bound ? null : { Text: text }), 'retyped', 'the cell prints a field, not typed text: bind another in the Data tab');
+}
+
+/**
+ * Set attributes on one cell of a table (2026-11-05, for the chat's edits), by
+ * its row and place in the row in file order, worked out from the cell's
+ * opening tag as it stands.
+ */
+export function updateCell(xml: string, ref: ControlRef, row: number, cell: number, attrs: (openTag: string) => Record<string, string>, what: string): EditResult {
+  return updateCellElement(xml, ref, row, cell, (openTag) => attrs(openTag), what, '');
+}
+
+function updateCellElement(
+  xml: string,
+  ref: ControlRef,
+  row: number,
+  cell: number,
+  attrs: (openTag: string, bound: boolean) => Record<string, string> | null,
+  what: string,
+  refusal: string,
+): EditResult {
   const control = locate(xml, ref);
   if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
   if (control.type !== 'XRTable') return decline(xml, `${control.name || control.type} is not a table`);
@@ -355,12 +394,13 @@ export function setCellText(xml: string, ref: ControlRef, row: number, cell: num
   const cells = rowEl && childrenIn(xml, rowEl.openEnd, rowEl.end).find((c) => c.name === 'Cells');
   const cellEl = cells && childrenIn(xml, cells.openEnd, cells.end).filter((c) => /^Item\d+$/.test(c.name))[cell];
   if (!cellEl) return decline(xml, `no cell ${cell + 1} in row ${row + 1} of ${control.name || 'the table'}`);
-  if (/PropertyName="Text"/.test(xml.slice(cellEl.start, cellEl.end))) return decline(xml, 'the cell prints a field, not typed text: bind another in the Data tab');
   const openTag = xml.slice(cellEl.start, cellEl.openEnd);
+  const wanted = attrs(openTag, /PropertyName="Text"/.test(xml.slice(cellEl.start, cellEl.end)));
+  if (!wanted) return decline(xml, refusal);
   const name = /\sName="([^"]*)"/.exec(openTag)?.[1];
   return {
-    xml: xml.slice(0, cellEl.start) + withAttributes(openTag, { Text: text }) + xml.slice(cellEl.openEnd),
+    xml: xml.slice(0, cellEl.start) + withAttributes(openTag, wanted) + xml.slice(cellEl.openEnd),
     applied: true,
-    reason: `retyped XRTableCell${name ? ` "${name}"` : ''}`,
+    reason: `${what} XRTableCell${name ? ` "${name}"` : ''}`,
   };
 }

@@ -36,6 +36,9 @@ import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runaw
 import { buildDescriptionBrief, type ReportDescriptionRequest, type ClarificationQuestion } from "../lib/promptToReport";
 import { resolveOverlaps } from "../lib/repxOverlaps";
 import { EXPRESSION_REFERENCE, checkExpression } from "../lib/expressions";
+// A type only: the edit library is App's to load on demand, and importing
+// it here put it and repxEdit in this chunk, over its budget (2026-11-05).
+import type { AgentEdit } from "../lib/agentEdit";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -690,7 +693,42 @@ export interface ChatOutcome {
    * conversation from work.
    */
   wantsReport: boolean;
+  /**
+   * With a report open (2026-11-05, `lib/agentEdit.ts`): whether the message
+   * is answered, made as edits in place, or needs the report redesigned,
+   * which is the one that sets `wantsReport`. Absent with no report open.
+   */
+  action?: 'answer' | 'edit' | 'rebuild';
+  /** The edits, for `action: 'edit'`, as the model wrote them; `applyEdits` checks each. */
+  edits?: AgentEdit[];
 }
+
+/**
+ * What the chat turn is told when a report is open (2026-11-05). The model
+ * sees the report's outline (`reportOutline`) and answers in one request with
+ * what to do: answer, edit in place, or redesign. Until then the chat saw the
+ * last ten messages and nothing of the report, answered questions about it
+ * blind, and sent every change, "make the title bold" included, to a second
+ * request that wrote the whole REPX again.
+ */
+export const REPORT_CHAT_INSTRUCTIONS = `You are the assistant inside Forma, which designs DevExpress reports. A report is open, and its outline is below: every band and control by its Name, where it is, what it says or prints, and its font. It IS the report the user is looking at.
+
+Decide what the user's last message needs, and set "action":
+- "answer": a question, about this report, Forma or DevExpress, or anything that changes nothing. Answer from the outline; never say you cannot see the report.
+- "edit": a change the edits below can make. List them in "edits", in order. Name controls exactly as the outline does. Positions and sizes are in the report's unit, as the outline gives them; font sizes are points; colours are #RRGGBB. Keep every control inside its band and the page.
+- "rebuild": a change the edits cannot make: a new table, chart or group, binding to data or new fields, totals, a different layout, or many controls redesigned at once. Forma then redesigns the whole report from the user's words, which takes a minute or two. List no edits.
+
+The edits, by "op", and the fields each reads:
+- text: control, text. For a table's cell also row and cell, numbered as in the outline. A control or cell printing a [Field] cannot be retyped.
+- move: control, x, y. resize: control, width, height.
+- font: control (and row, cell for a table's cell), any of family, size, bold, italic, underline.
+- color: control (row, cell), foreColor and/or backColor.
+- align: control (row, cell), align: left, center or right.
+- delete: control. visible: control, visible.
+- add: a new label: band (its name or kind), text, x, y, and optionally width, height.
+- paper: paper (A4, Letter, Legal, A3, A5, Tabloid), landscape. margins: any of left, right, top, bottom.
+
+"reply": one or two sentences to the user, drawn as Markdown with no headings. For an edit, say briefly what you changed; Forma lists the changes itself, so do not list them. For a rebuild, say what Forma will redesign. Never claim a change you did not list.`;
 
 /**
  * What the chat turn is told before the conversation. Since 2026-11-01 the
@@ -728,6 +766,30 @@ function buildMockChatReply(userText: string): ChatOutcome {
       : "**Mock mode is on**, so this reply is canned rather than generated. For real answers:\n\n- set `VITE_FORMA_MOCK` aside\n- add your API key",
     wantsReport: asks,
   };
+}
+
+/**
+ * Canned report turn for VITE_FORMA_MOCK (2026-11-05), keyword-based like the
+ * one above, on the first control the outline lists, so the edit path, its
+ * change list and Undo can be exercised offline: "bold", "bigger", an
+ * alignment, a colour and a paper are edits, a question is an answer, and
+ * anything else is a redesign.
+ */
+function buildMockReportReply(userText: string, outline: string): ChatOutcome {
+  const first = /^ {2}([^\s:(]+): XR/m.exec(outline)?.[1];
+  const text = userText.trim();
+  const answer = (reply: string): ChatOutcome => ({ reply, wantsReport: false, action: 'answer', edits: [] });
+  const edit = (reply: string, edits: AgentEdit[]): ChatOutcome => ({ reply, wantsReport: false, action: 'edit', edits });
+  if (/\?$/.test(text)) return answer(`**Mock mode**: the open report's first control is \`${first ?? 'none'}\`. A real key answers from the whole outline.`);
+  if (first && /\bbold\b/i.test(text)) return edit(`Made \`${first}\` bold.`, [{ op: 'font', control: first, bold: true }]);
+  if (first && /\b(bigger|larger)\b/i.test(text)) return edit(`Made \`${first}\` bigger.`, [{ op: 'font', control: first, size: 18 }]);
+  const side = /\b(left|right|center|centre)\b/i.exec(text)?.[1]?.toLowerCase();
+  if (first && side) return edit(`Aligned \`${first}\` ${side}.`, [{ op: 'align', control: first, align: side === 'centre' ? 'center' : (side as 'left' | 'right' | 'center') }]);
+  const colour = /\b(red|blue|green|navy)\b/i.exec(text)?.[1];
+  if (first && colour) return edit(`Coloured \`${first}\` ${colour.toLowerCase()}.`, [{ op: 'color', control: first, foreColor: colour[0].toUpperCase() + colour.slice(1).toLowerCase() }]);
+  const paper = /\b(A4|A3|Letter|Legal)\b/i.exec(text)?.[1];
+  if (paper) return edit(`Set the paper to ${paper}.`, [{ op: 'paper', paper, landscape: /landscape/i.test(text) }]);
+  return { reply: 'Mock mode is on, so Forma will redesign the canned report for that.', wantsReport: true, action: 'rebuild', edits: [] };
 }
 
 /**
@@ -914,7 +976,15 @@ export async function chatReply(
   history: ChatTurn[],
   config?: ReportConfig,
   signal?: AbortSignal,
-  onPartialReply?: (text: string) => void
+  onPartialReply?: (text: string) => void,
+  /**
+   * The open report, as `reportOutline` writes it, and the edits Forma can
+   * make, `EDIT_OPS` (2026-11-05). With it the turn answers with an action and
+   * edits (`REPORT_CHAT_INSTRUCTIONS`), which `readReportOutcome` in
+   * `lib/agentEdit.ts` checks before anything is acted on; without it, a
+   * reply and whether a report is wanted, as before.
+   */
+  report?: { outline: string; ops: readonly string[] },
 ): Promise<ChatOutcome> {
   if (signal?.aborted) throw abortError();
 
@@ -928,7 +998,7 @@ export async function chatReply(
   if (isMockMode(viteEnv.VITE_FORMA_MOCK)) {
     console.warn("VITE_FORMA_MOCK is set — answering from the mock chat reply without calling Gemini.");
     const lastUserTurn = [...history].reverse().find((t) => t.role === 'user')?.text ?? '';
-    const mock = buildMockChatReply(lastUserTurn);
+    const mock = report ? buildMockReportReply(lastUserTurn, report.outline) : buildMockChatReply(lastUserTurn);
     // Typed out rather than delivered whole, so the progressive-display path is
     // exercised under the flag instead of being skipped.
     if (onPartialReply) {
@@ -972,13 +1042,60 @@ export async function chatReply(
 
   const startedAt = Date.now();
 
+  /*
+   * With a report open the answer also carries an action and edits, so it gets
+   * room for them, and the reply comes first in the object so it can be typed
+   * out while the edits are still arriving.
+   */
+  const editSchema = report
+    ? {
+        type: Type.OBJECT,
+        properties: {
+          op: { type: Type.STRING, enum: [...report.ops] },
+          control: { type: Type.STRING },
+          row: { type: Type.INTEGER },
+          cell: { type: Type.INTEGER },
+          band: { type: Type.STRING },
+          text: { type: Type.STRING },
+          x: { type: Type.NUMBER },
+          y: { type: Type.NUMBER },
+          width: { type: Type.NUMBER },
+          height: { type: Type.NUMBER },
+          family: { type: Type.STRING },
+          size: { type: Type.NUMBER },
+          bold: { type: Type.BOOLEAN },
+          italic: { type: Type.BOOLEAN },
+          underline: { type: Type.BOOLEAN },
+          foreColor: { type: Type.STRING },
+          backColor: { type: Type.STRING },
+          align: { type: Type.STRING, enum: ['left', 'center', 'right'] },
+          paper: { type: Type.STRING },
+          landscape: { type: Type.BOOLEAN },
+          left: { type: Type.NUMBER },
+          right: { type: Type.NUMBER },
+          top: { type: Type.NUMBER },
+          bottom: { type: Type.NUMBER },
+          visible: { type: Type.BOOLEAN },
+        },
+        required: ['op'],
+      }
+    : null;
+
   const buildChatRequest = (disableThinking: boolean) => ({
     model: activeModel,
     contents: [
       {
         parts: [
           {
-            text: `${CHAT_INSTRUCTIONS}
+            text: report
+              ? `${REPORT_CHAT_INSTRUCTIONS}
+
+THE OPEN REPORT:
+${report.outline}
+
+Conversation so far:
+${transcript}`
+              : `${CHAT_INSTRUCTIONS}
 
 Never claim to have generated anything. You do not generate reports — you only reply and decide.
 
@@ -990,8 +1107,8 @@ ${transcript}`,
     ],
     config: {
       abortSignal: signal,
-      temperature: 0.4,
-      maxOutputTokens: 512,
+      temperature: report ? 0.2 : 0.4,
+      maxOutputTokens: report ? 2048 : 512,
       // Chat is a two-or-three sentence answer plus a yes/no classification.
       // These models otherwise reason silently before writing a single
       // character, which for "hello" is the entire wait — and it is timed and
@@ -1004,14 +1121,25 @@ ${transcript}`,
       // sending it unconditionally.
       ...(disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
       responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          reply: { type: Type.STRING },
-          wantsReport: { type: Type.BOOLEAN },
-        },
-        required: ['reply', 'wantsReport'],
-      },
+      responseSchema: editSchema
+        ? {
+            type: Type.OBJECT,
+            properties: {
+              reply: { type: Type.STRING },
+              action: { type: Type.STRING, enum: ['answer', 'edit', 'rebuild'] },
+              edits: { type: Type.ARRAY, items: editSchema },
+            },
+            required: ['reply', 'action'],
+            propertyOrdering: ['reply', 'action', 'edits'],
+          }
+        : {
+            type: Type.OBJECT,
+            properties: {
+              reply: { type: Type.STRING },
+              wantsReport: { type: Type.BOOLEAN },
+            },
+            required: ['reply', 'wantsReport'],
+          },
     },
   });
 
@@ -1174,6 +1302,8 @@ ${transcript}`,
 
   try {
     const parsed = JSON.parse(raw) as ChatOutcome;
+    // As the model wrote it; `readReportOutcome` decides what it means.
+    if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits };
     return {
       reply: parsed.reply || 'Sorry — I did not catch that.',
       wantsReport: Boolean(parsed.wantsReport),
@@ -1182,9 +1312,12 @@ ${transcript}`,
     // Never show the user raw JSON if the object arrived malformed — the
     // scanner above already has a usable answer in most cases.
     const salvaged = extractPartialReply(raw);
-    return { reply: salvaged || raw, wantsReport: false };
+    return report
+      ? { reply: salvaged || raw, wantsReport: false, action: 'answer', edits: [] }
+      : { reply: salvaged || raw, wantsReport: false };
   }
 }
+
 
 /**
  * What gets attached to the request: page images, plus any text recovered from

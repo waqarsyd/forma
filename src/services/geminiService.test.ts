@@ -11,6 +11,7 @@ import {
   CHAT_INSTRUCTIONS,
   generateSmall,
   SMALL_CALL_THINKING_ROOM,
+  REPORT_CHAT_INSTRUCTIONS,
 } from './geminiService';
 import { auditRepx } from '../lib/repxAudit';
 import { liftReportMargins } from '../lib/repxMargins';
@@ -25,6 +26,14 @@ import { normalizeItemNames } from '../lib/repxItems';
  * stray characters flickering in the UI rather than as an error, which is
  * exactly the kind of thing that survives manual testing.
  */
+/* The report turn's instructions (2026-11-05, lib/agentEdit.ts). */
+describe('REPORT_CHAT_INSTRUCTIONS', () => {
+  it('tells the model the outline is the report, and to name controls as it does', () => {
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain('It IS the report the user is looking at.');
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain('Name controls exactly as the outline does.');
+  });
+});
+
 describe('extractPartialReply', () => {
   const cases: Array<{ name: string; reply: string }> = [
     { name: 'plain text', reply: 'Hello there, this is a reply.' },

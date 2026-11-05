@@ -80,6 +80,8 @@ export interface ChatMessage<R = unknown, M = unknown> {
    * nowhere.
    */
   rating?: 'good' | 'bad';
+  /** The change this reply made was taken back with its Undo (2026-11-05). */
+  undone?: true;
 }
 
 /**

@@ -75,6 +75,13 @@ export interface ChatThreadProps<R> {
    */
   onRegenerate?: (id: string) => void;
   onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
+  /**
+   * The replies whose change to the report can still be taken back
+   * (2026-11-05): the chat's edits and redesigns, while the report is still
+   * the one that change left. Each gets an Undo.
+   */
+  undoable?: ReadonlySet<string>;
+  onUndo?: (id: string) => void;
   /** A transcript search: only the messages holding it are drawn, with each match marked. */
   query?: string;
   /** Forma's working line during a generation, rendered after the transcript. */
@@ -127,16 +134,22 @@ function ReplyActions({
   rating,
   latest,
   disabled,
+  undone,
   onRegenerate,
   onRate,
+  onUndo,
 }: {
   id: string;
   text: string;
   rating?: 'good' | 'bad';
   latest: boolean;
   disabled: boolean;
+  /** Its change was taken back. */
+  undone?: boolean;
   onRegenerate?: (id: string) => void;
   onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
+  /** Present only while its change can still be taken back. */
+  onUndo?: (id: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -173,6 +186,12 @@ function ReplyActions({
           <IconRedo size={13} />
         </button>
       )}
+      {onUndo && (
+        <button type="button" className="wb-note-act" title="Put the report back as it was before this change" disabled={disabled} onClick={() => onUndo(id)}>
+          Undo
+        </button>
+      )}
+      {undone && <span className="wb-note-done">Undone</span>}
     </div>
   );
 }
@@ -309,12 +328,15 @@ const ChatNote = memo(function ChatNote<R>({
   onWithdraw,
   onRegenerate,
   onRate,
+  onUndo,
   query = '',
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
   /** The latest of Forma's replies, whose actions show without pointing at it. */
   latest?: boolean;
+  /** Present only while this reply's change can still be taken back. */
+  onUndo?: (id: string) => void;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
@@ -400,8 +422,10 @@ const ChatNote = memo(function ChatNote<R>({
             rating={message.rating}
             latest={latest}
             disabled={retryDisabled}
+            undone={message.undone}
             onRegenerate={onRegenerate}
             onRate={onRate}
+            onUndo={onUndo}
           />
         )}
 
@@ -446,6 +470,7 @@ const ChatNote = memo(function ChatNote<R>({
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
   latest?: boolean;
+  onUndo?: (id: string) => void;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
@@ -468,6 +493,8 @@ export default function ChatThread<R>({
   onWithdraw,
   onRegenerate,
   onRate,
+  undoable,
+  onUndo,
   query = '',
   children,
 }: ChatThreadProps<R>) {
@@ -481,8 +508,9 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo };
+  const undo = useCallback((id: string) => latest.current.onUndo?.(id), []);
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
   const openAttachment = useCallback(
     (view: AttachmentView) => latest.current.onOpenAttachment(view),
@@ -556,6 +584,7 @@ export default function ChatThread<R>({
           message={msg}
           retryDisabled={retryDisabled}
           latest={msg.id === lastReplyId}
+          onUndo={onUndo && undoable?.has(msg.id) ? undo : undefined}
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}

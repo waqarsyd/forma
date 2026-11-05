@@ -2092,6 +2092,13 @@ export default function App() {
   /** The transcript search: null while closed, the text typed while open. */
   const [chatQuery, setChatQuery] = useState<string | null>(null);
   /**
+   * The changes the chat made, each with the report before it, for the
+   * reply's Undo (2026-11-05). Held in memory only: a saved project keeps its
+   * versions in Revisions, and an Undo offered after a reload would restore
+   * a report from a session that no longer exists.
+   */
+  const [chatChanges, setChatChanges] = useState<Record<string, { before: DesignResult; after: DesignResult }>>({});
+  /**
    * The sidebar's Search over the saved projects (2026-11-05), as ChatGPT's
    * searches its chats: null while closed, the text typed while open.
    */
@@ -3145,6 +3152,7 @@ export default function App() {
     setPrompt('');
     setError(null);
     setMessages([]);
+    setChatChanges({});
     // A new conversation owes no answers to the last one's questions.
     pendingClarifyRef.current = null;
     setChatQuery(null);
@@ -3484,6 +3492,7 @@ export default function App() {
     setSavedSignature(signature);
     setMessages(report.messages);
     setResult(report.result);
+    setChatChanges({});
     setRevisions([]);
     setRailPanel('review');
     openReportId.current = report.id;
@@ -3958,12 +3967,20 @@ export default function App() {
             .then(m => m.teamLine([...team.members, ...(response.fromDraft ? (['corrector', 'builder'] as const) : (['ai', 'checks'] as const))], aiName))
             .catch(() => '')
         : '';
+      // A redesign says what it changed and can be undone, as an edit in
+      // place can (2026-11-05, lib/agentEdit.ts).
+      const changed = result?.repxContent && newResult.repxContent
+        ? await import('./lib/agentEdit')
+            .then(m => m.changesMarkdown(m.describeChanges(result.repxContent!, newResult.repxContent!)))
+            .catch(() => '')
+        : '';
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
         role: 'assistant',
-        text: credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)),
+        text: [credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)), changed].filter(Boolean).join('\n\n'),
         result: newResult
       };
+      if (result && result.repxContent !== newResult.repxContent) rememberChange(newAssistantMsg.id, result, newResult);
       setMessages(prev => [...prev, newAssistantMsg]);
       console.log(copy.done);
 
@@ -4088,6 +4105,33 @@ export default function App() {
     setMessages((prev) => truncateFrom(prev, asked.id));
     setError(null);
     void handleGenerate(asked.text, asked);
+  };
+
+  /** A change the chat made, kept for its reply's Undo. */
+  const rememberChange = (id: string, before: DesignResult, after: DesignResult) =>
+    setChatChanges((prev) => ({ ...prev, [id]: { before, after } }));
+
+  /**
+   * A reply's change taken back (2026-11-05): the report as it was before it.
+   * Offered only while the report is still the one that change left, so an
+   * Undo never throws away a later change along with its own; earlier ones
+   * are in Revisions.
+   */
+  const undoableIds = useMemo(
+    () => new Set(Object.entries(chatChanges).filter(([, c]) => c.after.repxContent === result?.repxContent).map(([id]) => id)),
+    [chatChanges, result?.repxContent],
+  );
+  const handleUndo = (id: string) => {
+    const change = chatChanges[id];
+    if (!change || !undoableIds.has(id) || isChatting || isAnalyzing) return;
+    setResult(change.before);
+    recordRevision('Undone in the chat', change.before);
+    setChatChanges((prev) => {
+      const rest = { ...prev };
+      delete rest[id];
+      return rest;
+    });
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, undone: true } : m)));
   };
 
   /** A reply rated, or its rating taken back (2026-11-05). It stays with the message and goes nowhere else. */
@@ -4435,27 +4479,61 @@ export default function App() {
       try {
         const history: ChatTurn[] = buildChatHistory(messages, currentPrompt);
         const { chatReply } = await loadGemini();
-        const outcome = await chatReply(history, config, turn.signal, (text) => {
+        /*
+         * With a report open, the turn sees it and may change it in place
+         * (2026-11-05, lib/agentEdit.ts): its outline goes with the
+         * conversation, and one answer says whether to answer, edit or
+         * redesign. Until then the turn saw the conversation alone, and every
+         * change went to a second request that wrote the whole REPX again.
+         */
+        const open = result?.repxContent ? result : null;
+        const agent = open ? await import('./lib/agentEdit') : null;
+        const outline = open && agent ? agent.reportOutline(open.repxContent!, { findings: repxAudit?.findings.map((f) => f.message) }) : undefined;
+        const answered = await chatReply(history, config, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
-        });
+        }, outline && agent ? { outline, ops: agent.EDIT_OPS } : undefined);
+        // A report turn's answer is checked before anything is acted on.
+        const outcome = agent ? agent.readReportOutcome(answered) : answered;
 
-        if (!outcome.wantsReport) {
+        if (open && agent && outcome.action === 'edit') {
+          const done = agent.applyEdits(open.repxContent!, outcome.edits ?? []);
+          const id = nextMessageId();
+          if (done.changed) {
+            const next: DesignResult = { ...open, repxContent: done.xml };
+            setResult(next);
+            recordRevision('Changed in the chat', next);
+            rememberChange(id, open, next);
+            const changes = agent.describeChanges(open.repxContent!, done.xml);
+            setMessages(prev => [...prev, {
+              id,
+              role: 'assistant',
+              text: [outcome.reply, agent.changesMarkdown(changes, done.declined)].filter(Boolean).join('\n\n'),
+            }]);
+            return;
+          }
+          // Nothing could be made in place: say why, and redesign instead.
+          setMessages(prev => [...prev, {
+            id,
+            role: 'assistant',
+            text: `That could not be changed in place, so Forma is redesigning the report.\n\n${agent.changesMarkdown([], done.declined)}`,
+          }]);
+        } else if (!outcome.wantsReport) {
           setMessages(prev => [...prev, {
             id: nextMessageId(),
             role: 'assistant',
             text: outcome.reply,
           }]);
           return;
+        } else {
+          // The user does want a report built or redesigned — fall through to
+          // generation below, after acknowledging.
+          setMessages(prev => [...prev, {
+            id: nextMessageId(),
+            role: 'assistant',
+            text: outcome.reply,
+          }]);
         }
-
-        // The user does want a report built from their description — fall
-        // through to generation below, after acknowledging.
-        setMessages(prev => [...prev, {
-          id: nextMessageId(),
-          role: 'assistant',
-          text: outcome.reply,
-        }]);
         // With no report to refine, a description is designed as the Describe
         // dialog designed one, which the chat box took over on 2026-11-01:
         // a question or two first if it leaves something open, then the brief.
@@ -5400,6 +5478,8 @@ export default function App() {
             onWithdraw={handleWithdrawMessage}
             onRegenerate={handleRegenerate}
             onRate={handleRate}
+            undoable={undoableIds}
+            onUndo={handleUndo}
             query={chatQuery ?? ''}
           >
             {/* Generation, as Forma's answer being written: three dots

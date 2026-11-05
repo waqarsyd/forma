@@ -512,6 +512,19 @@ describe("actions on Forma's replies", () => {
     expect(onRate).toHaveBeenLastCalledWith('a1', undefined);
   });
 
+  // The chat's changes to the report can be taken back (2026-11-05).
+  it('offers Undo only on a reply whose change can still be taken back, and says Undone after', () => {
+    const onUndo = vi.fn();
+    const { rerender } = draw({ messages: thread, undoable: new Set(['a2']), onUndo });
+    expect(within(actions('a1')).queryByText('Undo')).toBeNull();
+    fireEvent.click(within(actions('a2')).getByText('Undo'));
+    expect(onUndo).toHaveBeenCalledWith('a2');
+    const undone = thread.map((m) => (m.id === 'a2' ? { ...m, undone: true as const } : m));
+    rerender(<ChatThread messages={undone} isChatting={false} isAnalyzing={false} streamingReply="" onRetry={vi.fn()} onOpenAttachment={vi.fn()} undoable={new Set()} onUndo={onUndo} />);
+    expect(within(actions('a2')).queryByText('Undo')).toBeNull();
+    expect(within(actions('a2')).getByText('Undone')).toBeTruthy();
+  });
+
   it('asks for the reply to be written again by its own id, and holds that while something runs', () => {
     const onRegenerate = vi.fn();
     const { unmount } = draw({ messages: thread, onRegenerate });
