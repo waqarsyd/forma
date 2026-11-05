@@ -1464,6 +1464,8 @@ const REVIEW_WIDTH_EPOCH_KEY = 'reviewWidthEpoch';
 /* The project open in this tab, kept in sessionStorage so a reload opens it
    again (2026-11-05). An id only; the project itself is where it was saved. */
 const OPEN_PROJECT_KEY = 'forma:openProject';
+/* The message typed and not yet sent, kept per tab so a reload keeps it (2026-11-05). */
+const DRAFT_KEY = 'forma:draft';
 
 /**
  * The remembered column width, or the default if this browser has not caught up
@@ -1615,7 +1617,30 @@ export default function App() {
    * is presentation; see `IngestResult.imageMeta`.
    */
   const [previewMeta, setPreviewMeta] = useState<PreviewMeta[]>([]);
-  const [prompt, setPrompt] = useState('');
+  /*
+   * What is typed and not yet sent survives a reload (2026-11-05), as a
+   * ChatGPT draft does. Per tab, in sessionStorage, as the key is: this may be
+   * a shared machine, and an unsent message is the person's words. Sending,
+   * New report and signing out clear the box, and so the draft.
+   */
+  const [prompt, setPrompt] = useState(() => {
+    try {
+      return sessionStorage.getItem(DRAFT_KEY) ?? '';
+    } catch {
+      return '';
+    }
+  });
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      try {
+        if (prompt) sessionStorage.setItem(DRAFT_KEY, prompt);
+        else sessionStorage.removeItem(DRAFT_KEY);
+      } catch {
+        /* storage blocked: the draft lasts as long as the page */
+      }
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [prompt]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // Through the validating reader. A bare JSON.parse here threw during the very
   // first render on a corrupted entry, taking the whole application to the error
