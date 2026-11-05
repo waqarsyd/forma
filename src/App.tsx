@@ -87,7 +87,8 @@ import { loadGemini, isMissingApiKey } from './lib/geminiClient';
 import { effectiveProvider, isVisionOnly, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
 import type { DraftSource, TeamMember } from './lib/formaTeam';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
-import { clearCachedModel } from './lib/modelCache';
+import { clearCachedModel, readCachedModelSet } from './lib/modelCache';
+import { requestsToday } from './lib/requestCount';
 import {
   encryptApiKey,
   decryptApiKey,
@@ -2306,6 +2307,26 @@ export default function App() {
   const [isChatting, setIsChatting] = useState(false);
   /** The assistant's answer as it streams in, before it becomes a real message. */
   const [streamingReply, setStreamingReply] = useState('');
+  /*
+   * The model picker in the chat box (2026-11-05), as Gemini's: Auto, or one
+   * of the models this key has answered for (`readCachedModelSet`, the probe's
+   * own list, never a catalogue), with today's requests from this browser
+   * (`lib/requestCount.ts`). A choice pins `config.modelName` for this tab
+   * only: `toPersistable` never saves it, so a reload is Auto again and a
+   * retired id cannot be left pinned, which is how the old dropdown broke
+   * every request (gemini.md, *The model is auto-detected*). Read again after
+   * each request, when both lists may have moved. Gemini only.
+   */
+  const modelPicker = useMemo(() => {
+    if (effectiveProvider(config) !== 'gemini') return null;
+    const used = requestsToday();
+    return {
+      current: config.modelName?.trim() ?? '',
+      choices: (readCachedModelSet() ?? []).map((id) => ({ id, used: used[id] ?? 0 })),
+      onChoose: (id: string) => setConfig((prev) => ({ ...prev, modelName: id || undefined })),
+    };
+    // isChatting and isAnalyzing: a request has just ended, so the lists may have moved.
+  }, [config, isChatting, isAnalyzing]);
   /**
    * The turn in flight before any generation (2026-11-05): a chat reply, the
    * questions asked before a design, or a sent page being read. The
@@ -5763,6 +5784,7 @@ export default function App() {
             isIngesting={isIngesting}
             onPasteFiles={ingestFiles}
             selection={result?.repxContent ? previewSelection : []}
+            models={modelPicker}
           />
           </Suspense>
         </div>

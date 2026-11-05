@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,467 tests in 127 files** — under the `node` environment
+`npm test` runs Vitest over **2,472 tests in 128 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -79,7 +79,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/AccountDialog` | 23 | jsdom |
 | `components/BatchPanel` | 15 | jsdom; since 2026-11-04 also a chosen folder queued by path, a drop on the panel, and two at a time with a quota failure stopping both workers |
 | `components/ChatThread` | 54 | since 2026-11-05 the time and the cost beside the icons; since 2026-11-05 the versions of a message, and editing one sent with pictures; since 2026-11-05 the way back to the latest message; since 2026-11-05 Redesign / Not now; since 2026-11-05 Undo on a change still the latest; since 2026-11-05 Copy, the rating and Try again under a reply; since 2026-11-05 a reply as Markdown, a link opening in a new tab, the person's words as typed, and a reply plain under a search; jsdom; since 2026-11-05 an empty conversation showing nothing (from 2026-11-01 until then, the predefined descriptions it started from); since 2026-11-01 a description's questions asked as a form holding their suggestions; since 2026-11-04 the working dots named for a screen reader before the first token, and a reply drawn as its words with no buttons; and editing and withdrawing a sent message, and searching the transcript |
-| `components/Composer` | 34 | since 2026-11-05 a spoken message; since 2026-11-05 also the Preview's selection above the box; since 2026-11-05 the send is a Stop while a reply is written too; jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box; since 2026-11-05 one test locks it again with no key, sends nothing and offers the key button in place of the send); a clean composer (2026-11-04): nothing under the box with or without a key, and the send a Stop while a generation runs; the one chat box (2026-11-01): no separate Describe or OCR button, an attached image shown as the file alone and sent at once, its text read after the message goes (2026-11-03; until then its reading showed on its chip and held the send), a pasted image attached |
+| `components/Composer` | 36 | since 2026-11-05 the model picker; since 2026-11-05 a spoken message; since 2026-11-05 also the Preview's selection above the box; since 2026-11-05 the send is a Stop while a reply is written too; jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box; since 2026-11-05 one test locks it again with no key, sends nothing and offers the key button in place of the send); a clean composer (2026-11-04): nothing under the box with or without a key, and the send a Stop while a generation runs; the one chat box (2026-11-01): no separate Describe or OCR button, an attached image shown as the file alone and sent at once, its text read after the message goes (2026-11-03; until then its reading showed on its chip and held the send), a pasted image attached |
 | `components/DataBinding` | 18 | jsdom |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
@@ -172,6 +172,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/router` | 17 | jsdom |
 | `lib/routes` | 17 | since 2026-11-05 the title of a tab that finished something unseen |
 | `lib/shortcuts` | 4 | the chat's keyboard shortcuts, ChatGPT's own (2026-11-05): Ctrl+Shift+O, Shift+Esc and Ctrl+Shift+C read exactly, nothing else held, never mid-composition, and each written as a PC and a Mac write it |
+| `lib/requestCount` | 3 | requests sent to each Gemini model today (2026-11-05): the Pacific day, a count per model that starts again at zero the next day, and storage that will not read or write |
 | `lib/runawayOutput` | 10 |  |
 | `lib/savedReport` | 38 | since 2026-11-05 the session signature the workspace saves on, and a project's name; jsdom |
 | `lib/skeletonRepx` | 11 | jsdom (`checkRepx`); a skeleton made a report again (milestone 6): written and read back through the Preview's parser as the same skeleton, caption lengths and A4's exact size aside; a file the app opens with no audit error; titles and captions in the words read inside their boxes, a placeholder where none was, "Total" in a footer; values bound to fields named after the caption over their column, totals summing that field at their band's scope; a date or a page number as the page showed; the empty Detail band DevExpress expects; the Mockup's sections and the spec; several pages' skeletons joined, the first page's bands kept and a later page's footers added where DevExpress prints them (2026-11-04) |
@@ -204,7 +205,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,467 in 127 files** — and that total is the arithmetic sum of the column above
+**Total: 2,472 in 128 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -218,7 +219,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2349** against a real 2,467 and will talk you into
+A grep for `\bit(` answers **2354** against a real 2,472 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

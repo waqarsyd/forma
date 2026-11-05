@@ -28,6 +28,7 @@ import { groupLabel } from '../lib/attachments';
 import {
   IconAlert,
   IconArrowUp,
+  IconChevronDown,
   IconClose,
   IconDoc,
   IconKey,
@@ -109,6 +110,18 @@ export interface ComposerProps {
    * passage. Cleared on the Preview, where it was made.
    */
   selection?: readonly string[];
+  /**
+   * The Gemini model the chat and reports use (2026-11-05), shown in the box
+   * as Gemini shows its own: Auto, which Forma's detection picks per request,
+   * or one of the models this key has answered for, with the requests sent
+   * to each from this browser today. Absent for another AI.
+   */
+  models?: { current: string; choices: readonly { id: string; used: number }[]; onChoose: (id: string) => void } | null;
+}
+
+/** A model's name as the picker shows it: "2.5-flash" for "gemini-2.5-flash". */
+export function modelLabel(id: string): string {
+  return id ? id.replace(/^models\//, '').replace(/^gemini-/, '') : 'Auto';
 }
 
 export default function Composer({
@@ -134,7 +147,26 @@ export default function Composer({
   isIngesting,
   onPasteFiles,
   selection = [],
+  models,
 }: ComposerProps) {
+  /* The model menu, open over the box; Escape or a click elsewhere closes it. */
+  const [modelMenu, setModelMenu] = useState(false);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!modelMenu) return;
+    const away = (e: MouseEvent) => {
+      if (!modelMenuRef.current?.contains(e.target as Node)) setModelMenu(false);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setModelMenu(false);
+    };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [modelMenu]);
   /*
    * One condition, read by the button *and* the keyboard.
    *
@@ -390,6 +422,45 @@ export default function Composer({
           placeholder={listening ? 'Listening…' : hasApiKey ? 'Describe changes…' : 'Add your API key to start'}
           aria-label="Message"
         />
+        {hasApiKey && models && (
+          <div className="wb-model" ref={modelMenuRef}>
+            <button
+              type="button"
+              className="wb-model-pick"
+              aria-haspopup="menu"
+              aria-expanded={modelMenu}
+              title="The model the chat and reports use"
+              onClick={() => setModelMenu((open) => !open)}
+            >
+              {modelLabel(models.current)}
+              <IconChevronDown size={12} />
+            </button>
+            {modelMenu && (
+              <div className="wb-model-menu" role="menu" aria-label="Model">
+                {[{ id: '', used: -1 }, ...models.choices].map((choice) => (
+                  <button
+                    key={choice.id || 'auto'}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={models.current === choice.id}
+                    onClick={() => {
+                      models.onChoose(choice.id);
+                      setModelMenu(false);
+                    }}
+                  >
+                    <span>{choice.id ? modelLabel(choice.id) : 'Auto'}</span>
+                    <small>{choice.id ? `${choice.used} today` : 'Forma picks'}</small>
+                  </button>
+                ))}
+                <p>
+                  {models.choices.length
+                    ? 'Requests sent from this browser today. Free daily limits reset at midnight Pacific time.'
+                    : 'The models this key can use are listed after its first request.'}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
         {hasApiKey && Recognizer && (
           <button
             type="button"

@@ -36,6 +36,7 @@ import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runaw
 import { buildDescriptionBrief, type ReportDescriptionRequest, type ClarificationQuestion } from "../lib/promptToReport";
 import { resolveOverlaps } from "../lib/repxOverlaps";
 import { EXPRESSION_REFERENCE, checkExpression } from "../lib/expressions";
+import { noteRequest } from "../lib/requestCount";
 // A type only: the edit library is App's to load on demand, and importing
 // it here put it and repxEdit in this chunk, over its budget (2026-11-05).
 import type { AgentEdit, AgentTool } from "../lib/agentEdit";
@@ -147,7 +148,28 @@ async function clientFor(config: ReportConfig | undefined, apiKey: string): Prom
     return compatClient(endpoint) as unknown as Pick<GenAIClient, 'models'>;
   }
   const { GoogleGenAI } = await loadGenAI();
-  return new GoogleGenAI({ apiKey });
+  return countingRequests(new GoogleGenAI({ apiKey }));
+}
+
+/**
+ * Every Gemini request counted by its model as it leaves (2026-11-05,
+ * `lib/requestCount.ts`), for the chat box's model picker: the free tier's
+ * limits are per model per day. The two calls this file makes are wrapped;
+ * everything else on the client passes through untouched.
+ */
+function countingRequests(client: Pick<GenAIClient, 'models'>): Pick<GenAIClient, 'models'> {
+  const models = new Proxy(client.models, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== 'function') return value;
+      if (prop !== 'generateContent' && prop !== 'generateContentStream') return value.bind(target);
+      return (request: { model?: string }) => {
+        noteRequest(request?.model);
+        return value.call(target, request);
+      };
+    },
+  });
+  return { models };
 }
 
 /**

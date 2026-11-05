@@ -234,6 +234,26 @@ describe('a clean composer', () => {
     expect(send().disabled).toBe(false);
   });
 
+  // The model in the box, as Gemini's (2026-11-05).
+  it("shows the model, lists Auto and the key's models with today's requests, and hands up the choice", () => {
+    const onChoose = vi.fn();
+    draw({ models: { current: '', choices: [{ id: 'gemini-2.5-flash', used: 7 }, { id: 'gemini-2.5-flash-lite', used: 0 }], onChoose } });
+    const pick = screen.getByTitle('The model the chat and reports use');
+    expect(pick.textContent).toBe('Auto');
+    fireEvent.click(pick);
+    const items = screen.getAllByRole('menuitemradio');
+    expect(items.map((i) => i.textContent)).toEqual(['AutoForma picks', '2.5-flash7 today', '2.5-flash-lite0 today']);
+    expect(items[0].getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(items[1]);
+    expect(onChoose).toHaveBeenCalledWith('gemini-2.5-flash');
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('offers no model picker for another AI', () => {
+    draw({ models: null });
+    expect(screen.queryByTitle('The model the chat and reports use')).toBeNull();
+  });
+
   // A spoken message (2026-11-05), as ChatGPT's and Gemini's boxes take one.
   it('offers the microphone only where the browser hears speech, and writes what it hears after what was typed', () => {
     expect(screen.queryByLabelText('Speak your message')).toBeNull();

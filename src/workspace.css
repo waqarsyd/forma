@@ -859,6 +859,28 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   transition: color .15s ease, background .15s ease;
 }
 .wb-tool:hover { color: var(--ink); background: var(--track); }
+/* The model in the box, as Gemini's (2026-11-05): its name and a chevron,
+   and a menu over the box listing Auto and the key's models with today's
+   requests. */
+.wb-model { position: relative; flex: none; }
+.wb-model-pick {
+  display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px;
+  border: 0; border-radius: 999px; background: none; color: var(--ink-2);
+  font-family: var(--mono); font-size: 10.5px; cursor: pointer; white-space: nowrap;
+}
+.wb-model-pick:hover, .wb-model-pick[aria-expanded="true"] { color: var(--ink); background: var(--track); }
+.wb-model-menu {
+  position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 5; width: 230px;
+  display: flex; flex-direction: column; padding: 6px;
+  border: 1px solid var(--rule); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-md);
+}
+.wb-model-menu button {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 10px;
+  border: 0; border-radius: 10px; background: none; color: var(--ink); font-size: 12.5px; text-align: left; cursor: pointer;
+}
+.wb-model-menu button:hover, .wb-model-menu button[aria-checked="true"] { background: var(--track); }
+.wb-model-menu small { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+.wb-model-menu p { margin: 6px 10px 4px; font-size: 10.5px; line-height: 1.4; color: var(--ink-faint); }
 /* Listening to a spoken message (2026-11-05): the microphone in the accent,
    breathing, until the browser stops hearing. */
 .wb-tool.wb-is-listening { color: var(--accent); background: var(--accent-wash); animation: wb-listen 1.2s ease-in-out infinite; }
