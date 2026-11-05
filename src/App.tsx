@@ -115,9 +115,10 @@ import { OperationType } from './lib/firestoreOps';
 import {
   toFirestoreDocument,
   fromFirestoreDocument,
-  reportDisplayName,
+  projectName,
   saveReportsLocally,
   loadReportsLocally,
+  sessionSignature,
 } from './lib/savedReport';
 import { loadPdfjs } from './lib/pdf';
 import { toAttachmentParts } from './lib/attachmentParts';
@@ -1449,6 +1450,9 @@ const CANONICAL_KEY = 'libraryCanonical';
  */
 const REVIEW_WIDTH_EPOCH = '2';
 const REVIEW_WIDTH_EPOCH_KEY = 'reviewWidthEpoch';
+/* The project open in this tab, kept in sessionStorage so a reload opens it
+   again (2026-11-05). An id only; the project itself is where it was saved. */
+const OPEN_PROJECT_KEY = 'forma:openProject';
 
 /**
  * The remembered column width, or the default if this browser has not caught up
@@ -2800,6 +2804,24 @@ export default function App() {
    * Invoice Report" showed as EVERY row highlighted at once (2026-09-06).
    */
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  /**
+   * What the last save kept (`sessionSignature`, 2026-11-05): the ref for the
+   * autosave's comparison, the state for the Save button's "Saved".
+   */
+  const savedSignatureRef = useRef('');
+  const [savedSignature, setSavedSignature] = useState('');
+  /** The project whose automatic save already said it failed, so it says so once. */
+  const autosaveFailedFor = useRef<string | null>(null);
+  /** The automatic save waiting for its moment, which `flushAutosave` runs at once. */
+  const pendingAutosave = useRef<{ timer: number; run: () => void } | null>(null);
+  /** The project open in this tab before a reload, opened again once the list holds it. */
+  const restoreProjectId = useRef<string | null>((() => {
+    try {
+      return sessionStorage.getItem(OPEN_PROJECT_KEY);
+    } catch {
+      return null;
+    }
+  })());
   const recordRevision = useCallback((label: string, snapshot: DesignResult) => {
     setRevisions((list) => pushRevision(list, label, {
       content: snapshot.content,
@@ -3212,12 +3234,11 @@ export default function App() {
    * `lib/revisionStore.ts`: localStorage is one shared 5–10 MB quota across
    * every project, and a megabyte of history per report would evict the reports.
    *
-   * The read of what is already stored looks redundant today — `handleSaveReport`
-   * mints a new `reportId` on every save, so the collection always comes back
-   * empty and the plan always writes everything. It is here because the plan is
-   * what makes this correct the day saving updates a project in place instead of
-   * creating another one, and an empty query is a cheap price for not having to
-   * remember that.
+   * The read of what is already stored is what lets a project be saved again:
+   * since 2026-11-05 saving updates the open project in place (`persistProject`,
+   * after every turn), and the plan writes only the versions the collection
+   * does not hold yet. Until then every save minted a new `reportId`, the
+   * collection always came back empty, and this read waited for that day.
    */
   const persistRevisions = async (
     reportId: string,
@@ -3258,15 +3279,39 @@ export default function App() {
     }).catch(() => undefined);
   };
 
-  const handleSaveReport = async () => {
+  /**
+   * The open session saved (2026-11-05), by the Save button or on its own.
+   *
+   * Into the open project, which is the change: every save minted a new id
+   * until then, so saving twice listed the project twice. A session with no
+   * project yet gets one, and from then on it is that project.
+   *
+   * `quiet` is the save the workspace makes on its own after a turn, as
+   * ChatGPT keeps every conversation: no notice, and the memory of the
+   * report's style is taught only by a Save the person chose. A failure says
+   * so once per project rather than after every turn.
+   */
+  const persistProject = async (quiet: boolean) => {
     if (!result && messages.length === 0) return;
-    rememberKept(result?.repxContent);
-    const reportId = Date.now().toString();
+    if (!quiet) rememberKept(result?.repxContent);
+    const reportId = openReportId.current ?? Date.now().toString();
     const ts = Date.now();
+    const signature = sessionSignature(messages, result);
     // Saving makes this the open project, so the list marks the row it just
     // created rather than nothing.
     openReportId.current = reportId;
     setOpenProjectId(reportId);
+    const fail = (message: string) => {
+      if (quiet && autosaveFailedFor.current === reportId) return;
+      autosaveFailedFor.current = reportId;
+      setError(quiet ? `Forma could not save this conversation on its own. ${message}` : message);
+      revealSaveFailure();
+    };
+    const saved = () => {
+      autosaveFailedFor.current = null;
+      savedSignatureRef.current = signature;
+      setSavedSignature(signature);
+    };
 
     // One report, one shape, converted at the boundary rather than assembled
     // differently in each branch — the two used to compute the display name
@@ -3274,7 +3319,7 @@ export default function App() {
     // on whether it was saved signed in. See src/lib/savedReport.ts.
     const draft: SavedReport = {
       id: reportId,
-      name: reportDisplayName(result?.title || prompt),
+      name: projectName(savedReports.find((r) => r.id === reportId)?.name, result?.title, messages.find((m) => m.role === 'user' && m.text)?.text || prompt),
       timestamp: new Date(ts).toISOString(),
       messages,
       result,
@@ -3307,13 +3352,12 @@ export default function App() {
         }
 
         if (payload.messages.length + payload.result.length > CLOUD_SAVE_BUDGET_BYTES) {
-          setError(
-            'This project is too large to sync to your account. It is still open here, and "Save Project" while signed out keeps it on this device.'
-          );
+          fail('This project is too large to sync to your account. It is still open here, and "Save Project" while signed out keeps it on this device.');
           return;
         }
 
         await sdk.setDoc(docRef, payload);
+        saved();
 
         // After the report, and only after: a version filed under a report that
         // failed to save would be history for something nobody can open.
@@ -3324,12 +3368,16 @@ export default function App() {
           : history === 'failed' ? ' Its version history could not be synced — it is still here for this session.'
           : '';
 
-        setSaveNotice(
-          (imagesDropped
-            ? 'Saved to your projects — the uploaded images were too large to sync, so the spec and REPX were saved without them.'
-            : 'Saved to your projects.') + historyNote
-        );
+        if (!quiet) {
+          setSaveNotice(
+            (imagesDropped
+              ? 'Saved to your projects — the uploaded images were too large to sync, so the spec and REPX were saved without them.'
+              : 'Saved to your projects.') + historyNote
+          );
+        }
       } catch (err) {
+        if (quiet && autosaveFailedFor.current === reportId) return;
+        autosaveFailedFor.current = reportId;
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${reportId}`,
           'That project could not be saved to your account. It is still open here — try again in a moment.');
         revealSaveFailure();
@@ -3339,19 +3387,84 @@ export default function App() {
       // setItem used to throw from inside a setSavedReports updater, which put
       // the exception into React rather than in front of the user. Deciding
       // first also means the list never shows a project that was not stored.
-      const updated = [draft, ...savedReports];
+      // The project replaces its own earlier save and goes to the top.
+      const updated = [draft, ...savedReports.filter((r) => r.id !== reportId)];
       const outcome = saveReportsLocally(updated);
 
       if (!outcome.ok) {
-        setError(outcome.message);
-        revealSaveFailure();
+        fail(outcome.message);
         return;
       }
 
       setSavedReports(updated);
-      setSaveNotice('Saved on this device. Sign in to sync across devices.');
+      saved();
+      if (!quiet) setSaveNotice('Saved on this device. Sign in to sync across devices.');
     }
   };
+
+  const handleSaveReport = () => void persistProject(false);
+
+  /*
+   * Saving on its own (2026-11-05). The open session is saved once a turn has
+   * settled and nothing has changed for a moment, whenever what a save keeps
+   * has moved (`sessionSignature`): a reply, a report, an edit on Preview, a
+   * rating. New report and opening another project run a waiting save at
+   * once rather than drop it (`flushAutosave`); signing out and an account
+   * change drop it, so one person's work is never saved where the next
+   * person signs in.
+   */
+  const AUTOSAVE_DELAY_MS = 1200;
+  const currentSignature = useMemo(() => sessionSignature(messages, result), [messages, result]);
+  useEffect(() => {
+    if (isChatting || isAnalyzing || messages.length === 0) return;
+    if (currentSignature === savedSignatureRef.current) return;
+    const run = () => {
+      if (pendingAutosave.current?.run === run) pendingAutosave.current = null;
+      void persistProject(true);
+    };
+    const timer = window.setTimeout(run, AUTOSAVE_DELAY_MS);
+    pendingAutosave.current = { timer, run };
+    return () => {
+      window.clearTimeout(timer);
+      if (pendingAutosave.current?.timer === timer) pendingAutosave.current = null;
+    };
+    // persistProject is redefined every render; the signature is what decides,
+    // and the closure scheduled is the latest render's, holding what moved it.
+  }, [currentSignature, isChatting, isAnalyzing]);
+
+  /** Runs a waiting automatic save now, before the session it belongs to is replaced. */
+  const flushAutosave = () => {
+    const pending = pendingAutosave.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingAutosave.current = null;
+    pending.run();
+  };
+
+  /*
+   * A reload opens the project that was open (2026-11-05), as a reloaded chat
+   * in ChatGPT is still that chat. The id is kept per tab, in sessionStorage;
+   * the project is opened once the list holding it has arrived, which signed
+   * in is after Firestore answers, and only into an empty workspace.
+   */
+  useEffect(() => {
+    try {
+      if (openProjectId) sessionStorage.setItem(OPEN_PROJECT_KEY, openProjectId);
+      else sessionStorage.removeItem(OPEN_PROJECT_KEY);
+    } catch {
+      /* storage blocked: a reload starts empty, as before */
+    }
+  }, [openProjectId]);
+  useEffect(() => {
+    const id = restoreProjectId.current;
+    if (!id) return;
+    const report = savedReports.find((r) => r.id === id);
+    if (!report) return;
+    restoreProjectId.current = null;
+    if (messages.length || result) return;
+    void handleLoadReport(report);
+    // Once, when the list first holds the project; the ref keeps it to once.
+  }, [savedReports]);
 
   /**
    * Open a saved project, and bring its history with it.
@@ -3363,6 +3476,12 @@ export default function App() {
    * one way a revision list can be actively misleading rather than merely empty.
    */
   const handleLoadReport = async (report: SavedReport) => {
+    // The session being left keeps its last turn (2026-11-05), and the one
+    // opened is already saved as it is.
+    flushAutosave();
+    const signature = sessionSignature(report.messages, report.result);
+    savedSignatureRef.current = signature;
+    setSavedSignature(signature);
     setMessages(report.messages);
     setResult(report.result);
     setRevisions([]);
@@ -5080,7 +5199,7 @@ export default function App() {
           data-new-report
           title="New report"
           aria-label="New report"
-          onClick={() => { handleClearChat(); showRailPanel('review'); }}
+          onClick={() => { flushAutosave(); handleClearChat(); showRailPanel('review'); }}
         >
           <IconCompose size={19} />
           <span className="wb-rail-label">New report</span>
@@ -5594,13 +5713,19 @@ export default function App() {
                 <span className="wb-saved-text">{saveNotice}</span>
               </span>
             )}
+            {/* "Saved" while the open session matches its last save (2026-11-05):
+                the workspace saves on its own after each turn, so the button is
+                there for the moment before that, and after a save that failed. */}
             <button
               className="wb-pill wb-pill--outline"
               onClick={handleSaveReport}
-              disabled={!result && messages.length === 0}
+              disabled={(!result && messages.length === 0) || savedSignature === currentSignature}
+              title={savedSignature === currentSignature && (result || messages.length)
+                ? user ? 'Saved to your projects' : 'Saved on this device. Sign in to sync across devices.'
+                : 'Save this project'}
             >
-              <IconSave size={14} />
-              Save
+              {savedSignature === currentSignature && (result || messages.length) ? <IconCheck size={14} /> : <IconSave size={14} />}
+              {savedSignature === currentSignature && (result || messages.length) ? 'Saved' : 'Save'}
             </button>
             {/* Always in the bar, beside Save and Export, and disabled rather
                 than absent when the local companion is not answering — see

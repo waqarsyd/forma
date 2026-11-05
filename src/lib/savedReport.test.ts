@@ -29,6 +29,8 @@ import {
   reportDisplayName,
   saveReportsLocally,
   loadReportsLocally,
+  sessionSignature,
+  projectName,
   type SavedReportLike,
 } from './savedReport';
 
@@ -186,6 +188,48 @@ describe('reportDisplayName', () => {
   it('falls back when there is no name at all', () => {
     expect(reportDisplayName('')).toBe('Untitled Report');
     expect(reportDisplayName('   ')).toBe('Untitled Report');
+  });
+});
+
+/* The session saves itself when this moves (2026-11-05). */
+describe('sessionSignature', () => {
+  const messages = [
+    { id: '1', text: 'an invoice' },
+    { id: '2', text: 'Built it.' },
+  ];
+  const result = { title: 'Invoice', content: '# Invoice', repxContent: '<XtraReportsLayoutSerializer><Item1 Location="10, 0" /></XtraReportsLayoutSerializer>' };
+  const base = sessionSignature(messages, result);
+
+  it('signs the same session the same, a reloaded result with a string timestamp included', () => {
+    expect(sessionSignature([...messages], { ...result, timestamp: '2026-11-05T10:00:00Z' } as typeof result)).toBe(base);
+  });
+
+  it('moves when a control moves without the REPX changing length', () => {
+    expect(sessionSignature(messages, { ...result, repxContent: result.repxContent.replace('10, 0', '20, 0') })).not.toBe(base);
+  });
+
+  it('moves for a new message, a rating, a failure and an answered question', () => {
+    const changed = [
+      sessionSignature([...messages, { id: '3', text: 'bigger title' }], result),
+      sessionSignature([messages[0], { ...messages[1], rating: 'good' }], result),
+      sessionSignature([{ ...messages[0], error: 'quota' }, messages[1]], result),
+      sessionSignature([messages[0], { ...messages[1], clarify: { answered: true } }], result),
+      sessionSignature([messages[0], { ...messages[1], clarify: { answered: false } }], result),
+      sessionSignature(messages, null),
+    ];
+    expect(new Set([base, ...changed]).size).toBe(changed.length + 1);
+  });
+});
+
+describe('projectName', () => {
+  it('keeps a name once it has one', () => {
+    expect(projectName('Q3 invoice', 'Invoice', 'an invoice')).toBe('Q3 invoice');
+  });
+
+  it("names an untitled project from the report's title, else the first line said", () => {
+    expect(projectName('Untitled Report', 'Sales by region', 'hello')).toBe('Sales by region');
+    expect(projectName(undefined, undefined, 'hello there\nand more')).toBe('hello there');
+    expect(projectName(undefined, '', '')).toBe('Untitled Report');
   });
 });
 

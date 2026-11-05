@@ -61,6 +61,49 @@ export function reportDisplayName(raw: string | undefined | null): string {
   return name.length > NAME_LIMIT ? `${name.substring(0, NAME_LIMIT)}...` : name;
 }
 
+/**
+ * What a save of the open session keeps, as one string (2026-11-05): two
+ * equal signatures mean nothing a save records has changed. The workspace
+ * saves on its own when this moves and a turn has settled, as ChatGPT keeps
+ * every conversation, and the Save button reads "Saved" while it matches
+ * the last save.
+ *
+ * The REPX and every message's words are hashed rather than measured,
+ * because dragging a control from x=10 to x=20 changes neither length.
+ * Pictures are covered by the message ids, which are new for every message.
+ * The result's timestamp is left out on purpose: a reloaded project gives it
+ * back as a string where the session held a Date, and the same report must
+ * sign the same.
+ */
+export function sessionSignature(
+  messages: ReadonlyArray<{ id: string; text: string; rating?: string; error?: string; clarify?: { answered: boolean } }>,
+  result: { title?: string; content?: string; repxContent?: string } | null,
+): string {
+  const parts = messages.map((m) => `${m.id}|${hash(m.text)}|${m.rating ?? ''}|${m.error ? 'e' : ''}|${m.clarify ? (m.clarify.answered ? 'a' : 'q') : ''}`);
+  const report = result ? `${result.title ?? ''}|${hash(result.content ?? '')}|${hash(result.repxContent ?? '')}` : 'none';
+  return `${parts.join(';')}#${report}`;
+}
+
+/** FNV-1a over UTF-16 code units, as eight hex digits: cheap, stable, not a security hash. */
+function hash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * A project's name (2026-11-05): kept once it has one, so a name chosen
+ * later is not undone by the next save; an untitled one takes the report's
+ * title, or else the first thing the person said, as ChatGPT names a chat.
+ */
+export function projectName(existing: string | undefined, title: string | undefined, firstWords: string | undefined): string {
+  if (existing && existing !== 'Untitled Report') return existing;
+  return reportDisplayName(title?.trim() || firstWords?.trim().split('\n')[0]);
+}
+
 export function toFirestoreDocument<M, R>(
   report: SavedReportLike<M, R>,
   userId: string
