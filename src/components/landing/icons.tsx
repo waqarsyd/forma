@@ -469,11 +469,8 @@ export const IconCheckCircle = (p: Props) => (
     <path d="M8 12.5l2.5 2.5L16 9.5" />
   </Svg>
 );
-export const IconPaperclip = (p: Props) => (
-  <Svg {...p}>
-    <path d="M18 7.5 9.5 16a3 3 0 0 1-4.2-4.2l8-8a4.5 4.5 0 0 1 6.4 6.4l-8.4 8.4a6 6 0 0 1-8.5-8.5l6-6" />
-  </Svg>
-);
+/* IconPaperclip went on 2026-11-05 with the chat box's paperclip, now a plus
+   as ChatGPT's and Gemini's are; `git log -S"IconPaperclip"` finds it. */
 export const IconCopy = (p: Props) => (
   <Svg {...p}>
     <rect x="9" y="9" width="11" height="11" rx="2" />

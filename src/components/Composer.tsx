@@ -32,7 +32,7 @@ import {
   IconDoc,
   IconKey,
   IconMic,
-  IconPaperclip,
+  IconPlus,
   IconTarget,
   IconWarn,
 } from './landing/icons';
@@ -317,14 +317,16 @@ export default function Composer({
       )}
 
       <div className={`wb-box${hasApiKey ? '' : ' wb-is-locked'}`}>
+        {/* A plus at the left of the box, as ChatGPT's and Gemini's are
+            (2026-11-05, at the owner's request): it was a paperclip. */}
         <button
           className="wb-tool"
-          aria-label="Attach a file"
-          title="Attach an image, a PDF or a .repx"
+          aria-label="Add photos and files"
+          title="Add photos and files: an image, a PDF or a .repx"
           onClick={() => fileInputRef.current?.click()}
           disabled={!hasApiKey}
         >
-          <IconPaperclip size={16} />
+          <IconPlus size={18} />
         </button>
         <input
           ref={fileInputRef}

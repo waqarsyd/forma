@@ -168,7 +168,7 @@ describe('when sending is not possible', () => {
     draw({ hasApiKey: false, onSend, onAddKey });
     expect(field().disabled).toBe(true);
     expect(field().placeholder).toBe('Add your API key to start');
-    expect(screen.getByRole('button', { name: 'Attach a file' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Add photos and files' })).toHaveProperty('disabled', true);
     expect(screen.queryByRole('button', { name: 'Send note' })).toBeNull();
     fireEvent.keyDown(field(), { key: 'Enter' });
     expect(onSend).not.toHaveBeenCalled();
