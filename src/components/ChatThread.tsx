@@ -22,6 +22,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import { messageMatches, searchParts, type ChatMessage } from '../lib/chatSession';
+import { IconCheck, IconCopy, IconRedo, IconThumbDown, IconThumbUp } from './landing/icons';
 
 /* Loaded on demand, as the Spec pane loads it: react-markdown brings the whole
    micromark tokenizer, and the eager bundle is budgeted (see Markdown.tsx). */
@@ -66,6 +67,14 @@ export interface ChatThreadProps<R> {
    */
   onEdit?: (id: string, text: string) => void;
   onWithdraw?: (id: string) => void;
+  /**
+   * Under each of Forma's replies (2026-11-05), as ChatGPT has them: Copy,
+   * always; a rating, which stays with the message; and Try again, which
+   * sends the message the reply answered again. Absent, those two are not
+   * offered.
+   */
+  onRegenerate?: (id: string) => void;
+  onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
   /** A transcript search: only the messages holding it are drawn, with each match marked. */
   query?: string;
   /** Forma's working line during a generation, rendered after the transcript. */
@@ -102,6 +111,68 @@ function MessageText({ text, query, markdown }: { text: string; query: string; m
       <Suspense fallback={plain}>
         <Markdown>{text}</Markdown>
       </Suspense>
+    </div>
+  );
+}
+
+/**
+ * Copy, the rating and Try again under one of Forma's replies (2026-11-05).
+ * Quiet until the reply is pointed at, except on the latest, as ChatGPT
+ * shows them. Copy says "Copied" for a moment; a clipboard the browser
+ * refuses changes nothing. Rating the same way twice takes it back.
+ */
+function ReplyActions({
+  id,
+  text,
+  rating,
+  latest,
+  disabled,
+  onRegenerate,
+  onRate,
+}: {
+  id: string;
+  text: string;
+  rating?: 'good' | 'bad';
+  latest: boolean;
+  disabled: boolean;
+  onRegenerate?: (id: string) => void;
+  onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      /* no clipboard here (an insecure page, a refusal): nothing to say */
+    }
+  };
+  const rate = (value: 'good' | 'bad') => onRate?.(id, rating === value ? undefined : value);
+  return (
+    <div className={`wb-note-actions${latest ? '' : ' wb-note-actions--quiet'}`} role="group" aria-label="This reply">
+      <button type="button" className="wb-note-act wb-note-icon" title={copied ? 'Copied' : 'Copy'} aria-label={copied ? 'Copied' : 'Copy'} onClick={() => void copy()}>
+        {copied ? <IconCheck size={11} /> : <IconCopy size={13} />}
+      </button>
+      {onRate && (
+        <>
+          <button type="button" className="wb-note-act wb-note-icon" title="Good reply" aria-label="Good reply" aria-pressed={rating === 'good'} onClick={() => rate('good')}>
+            <IconThumbUp size={13} />
+          </button>
+          <button type="button" className="wb-note-act wb-note-icon" title="Bad reply" aria-label="Bad reply" aria-pressed={rating === 'bad'} onClick={() => rate('bad')}>
+            <IconThumbDown size={13} />
+          </button>
+        </>
+      )}
+      {onRegenerate && (
+        <button type="button" className="wb-note-act wb-note-icon" title="Try again" aria-label="Try again" disabled={disabled} onClick={() => onRegenerate(id)}>
+          <IconRedo size={13} />
+        </button>
+      )}
     </div>
   );
 }
@@ -230,20 +301,27 @@ function ClarifyForm({
 const ChatNote = memo(function ChatNote<R>({
   message,
   retryDisabled,
+  latest = false,
   onRetry,
   onOpenAttachment,
   onAnswer,
   onEdit,
   onWithdraw,
+  onRegenerate,
+  onRate,
   query = '',
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
+  /** The latest of Forma's replies, whose actions show without pointing at it. */
+  latest?: boolean;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
   onEdit?: (id: string, text: string) => void;
   onWithdraw?: (id: string) => void;
+  onRegenerate?: (id: string) => void;
+  onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
   query?: string;
 }) {
   const mine = message.role === 'user';
@@ -315,6 +393,18 @@ const ChatNote = memo(function ChatNote<R>({
           </p>
         )}
 
+        {!mine && message.text && (
+          <ReplyActions
+            id={message.id}
+            text={message.text}
+            rating={message.rating}
+            latest={latest}
+            disabled={retryDisabled}
+            onRegenerate={onRegenerate}
+            onRate={onRate}
+          />
+        )}
+
         {mine && !editing && (editable || onWithdraw) && (
           withdrawing ? (
             <div className="wb-note-actions" role="group" aria-label="Withdraw this message">
@@ -355,11 +445,14 @@ const ChatNote = memo(function ChatNote<R>({
 }) as <R>(props: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
+  latest?: boolean;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
   onEdit?: (id: string, text: string) => void;
   onWithdraw?: (id: string) => void;
+  onRegenerate?: (id: string) => void;
+  onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
   query?: string;
 }) => React.ReactElement;
 
@@ -373,6 +466,8 @@ export default function ChatThread<R>({
   onAnswer,
   onEdit,
   onWithdraw,
+  onRegenerate,
+  onRate,
   query = '',
   children,
 }: ChatThreadProps<R>) {
@@ -386,8 +481,8 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate };
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
   const openAttachment = useCallback(
     (view: AttachmentView) => latest.current.onOpenAttachment(view),
@@ -396,10 +491,13 @@ export default function ChatThread<R>({
   const answer = useCallback((id: string, answers: ClarifyAnswer[]) => latest.current.onAnswer?.(id, answers), []);
   const edit = useCallback((id: string, text: string) => latest.current.onEdit?.(id, text), []);
   const withdraw = useCallback((id: string) => latest.current.onWithdraw?.(id), []);
+  const regenerate = useCallback((id: string) => latest.current.onRegenerate?.(id), []);
+  const rate = useCallback((id: string, rating: 'good' | 'bad' | undefined) => latest.current.onRate?.(id, rating), []);
 
   const retryDisabled = isChatting || isAnalyzing;
   const searching = query.trim().length > 0;
   const shown = searching ? messages.filter((m) => messageMatches(m, query)) : messages;
+  const lastReplyId = [...messages].reverse().find((m) => m.role === 'assistant')?.id;
 
   /*
    * Follow the conversation, unless the reader has gone looking for something.
@@ -457,11 +555,14 @@ export default function ChatThread<R>({
           key={msg.id}
           message={msg}
           retryDisabled={retryDisabled}
+          latest={msg.id === lastReplyId}
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}
           onEdit={onEdit ? edit : undefined}
           onWithdraw={onWithdraw ? withdraw : undefined}
+          onRegenerate={onRegenerate ? regenerate : undefined}
+          onRate={onRate ? rate : undefined}
           query={searching ? query : ''}
         />
       ))}

@@ -239,6 +239,7 @@ import {
   isGenerationTurn,
   markMessageError,
   nextMessageId,
+  answeredBy,
   noteCountLabel,
   projectMatches,
   truncateFrom,
@@ -3950,7 +3951,29 @@ export default function App() {
 
     setMessages((prev) => truncateFrom(prev, id));
     setError(null);
-    void handleGenerate(failed.text);
+    void handleGenerate(failed.text, failed);
+  };
+
+  /**
+   * One of Forma's replies, written again (2026-11-05), as ChatGPT's
+   * regenerate: the message it answered is sent again, pictures and all, and
+   * it and everything after it leave the transcript first. A report the turn
+   * built stays in Revisions.
+   */
+  const handleRegenerate = (id: string) => {
+    if (isChatting || isAnalyzing) return;
+    const asked = answeredBy(messages, id);
+    if (!asked) return;
+    const pending = pendingClarifyRef.current;
+    if (pending && messages.findIndex((m) => m.id === pending.messageId) >= messages.indexOf(asked)) pendingClarifyRef.current = null;
+    setMessages((prev) => truncateFrom(prev, asked.id));
+    setError(null);
+    void handleGenerate(asked.text, asked);
+  };
+
+  /** A reply rated, or its rating taken back (2026-11-05). It stays with the message and goes nowhere else. */
+  const handleRate = (id: string, rating: 'good' | 'bad' | undefined) => {
+    setMessages((prev) => prev.map((m) => (m.id === id && m.role === 'assistant' ? { ...m, rating } : m)));
   };
 
   /**
@@ -4001,16 +4024,19 @@ export default function App() {
    * question. When the model cannot be reached, or its answer has no page
    * line, the report is built from OCR alone and the reply says why.
    */
-  const designFromVision = async (message: string) => {
-    const staged = [...previews];
-    const stagedMeta = [...previewMeta];
-    const stagedForOcr = ocrPages;
+  const designFromVision = async (message: string, resend?: { images: string[]; imageMeta: PreviewMeta[] }) => {
+    // A message sent again brings its own pictures and leaves the composer alone (see handleGenerate).
+    const staged = resend ? [...resend.images] : [...previews];
+    const stagedMeta = resend ? [...resend.imageMeta] : [...previewMeta];
+    const stagedForOcr = resend ? staged.map((src, i) => ({ src, meta: stagedMeta[i] })) : ocrPages;
     setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: message, images: staged, imageMeta: stagedMeta }]);
-    setPrompt('');
-    setPreviews([]);
-    setPreviewMeta([]);
-    setAttachmentTexts([]);
-    setUploadNotices([]);
+    if (!resend) {
+      setPrompt('');
+      setPreviews([]);
+      setPreviewMeta([]);
+      setAttachmentTexts([]);
+      setUploadNotices([]);
+    }
     setError(null);
     const say = (text: string, attached?: DesignResult) =>
       setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text, ...(attached ? { result: attached } : {}) }]);
@@ -4111,12 +4137,21 @@ export default function App() {
   };
 
   /**
-   * `overridePrompt` exists for the retry affordance on a failed message, which
-   * re-sends that message's own text rather than whatever is in the composer.
-   * Every call site passes it explicitly — never wire this straight to onClick,
-   * or the click event arrives as the prompt.
+   * `overridePrompt` exists for sending a message again — Try again on a
+   * failed message or on a reply, and an edit — which re-sends that message's
+   * own text rather than whatever is in the composer. Every call site passes
+   * it explicitly — never wire this straight to onClick, or the click event
+   * arrives as the prompt.
+   *
+   * A message sent again carries its own pictures, `resend` (2026-11-05), and
+   * nothing staged in the composer, which it leaves as it is. Until then a
+   * retry sent the words alone, so a failed picture turn came back as a chat
+   * reply about nothing, while whatever was staged in the composer went with
+   * the old words and the box was cleared. Text read from a PDF or a `.repx`
+   * is not kept on a message, so a PDF's pages are read again by OCR and a
+   * `.repx` cannot be sent again.
    */
-  const handleGenerate = async (overridePrompt?: string) => {
+  const handleGenerate = async (overridePrompt?: string, resend?: { images?: string[]; imageMeta?: PreviewMeta[] }) => {
     /*
      * Refuse re-entry while a request is already in flight.
      *
@@ -4135,28 +4170,49 @@ export default function App() {
     if (isChatting || isAnalyzing) return;
 
     const promptText = overridePrompt ?? prompt;
+    // What goes with the words: the composer's staging, or a message's own
+    // pictures when it is sent again (see `resend` above).
+    const again = overridePrompt !== undefined;
+    const stagedImages = again ? resend?.images ?? [] : previews;
+    const stagedImageMeta: PreviewMeta[] = again
+      ? stagedImages.map((_, i) => resend?.imageMeta?.[i] ?? { uploadId: `again-${i}`, file: 'image' })
+      : previewMeta;
+    const stagedTexts = again ? [] : attachmentTexts;
+    const stagedOcr = again ? stagedImages.map((src, i) => ({ src, meta: stagedImageMeta[i] })) : ocrPages;
+    /** Clears the composer, unless this is a message sent again, which leaves it as it is. */
+    const clearComposer = () => {
+      if (again) return;
+      setPrompt('');
+      setPreviews([]);
+      setPreviewMeta([]);
+      setAttachmentTexts([]);
+      setUploadNotices([]);
+    };
 
-    if (previews.length === 0 && attachmentTexts.length === 0 && !promptText) {
+    if (stagedImages.length === 0 && stagedTexts.length === 0 && !promptText) {
       setError('Please provide at least an image, PDF, or a text description.');
       return;
     }
 
     // "Remember: always use A4" is kept, not designed or sent (2026-11-02,
     // lib/memory.ts), whichever AI answers and with none.
-    if (previews.length === 0 && attachmentTexts.length === 0 && REMEMBER_WORDS.test(promptText)) {
+    if (stagedImages.length === 0 && stagedTexts.length === 0 && REMEMBER_WORDS.test(promptText)) {
       setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: promptText }]);
-      setPrompt('');
+      clearComposer();
       const memory = await import('./lib/memory');
       const kept = memory.memoryFrom(promptText);
       const state = memory.readMemory();
-      memory.writeMemory({ ...state, memories: [...state.memories, kept] });
-      setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: memory.rememberedReply(kept) }]);
+      // Once (2026-11-05): Try again or an edit sends the same words again,
+      // and a memory kept twice would be told to the AI twice.
+      const known = state.memories.find((m) => m.text.toLowerCase() === kept.text.toLowerCase());
+      if (!known) memory.writeMemory({ ...state, memories: [...state.memories, kept] });
+      setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: memory.rememberedReply(known ?? kept) }]);
       return;
     }
 
     // The version, unit, paper, direction and data source, worked out from what
     // this request brings (lib/autoConfig.ts); again once its pages are read.
-    detectFor({ texts: attachmentTexts, metas: previewMeta, words: promptText });
+    detectFor({ texts: stagedTexts, metas: stagedImageMeta, words: promptText });
 
     // No AI set up, no work (2026-11-05): the key is the entry point, as it
     // was until 2026-11-02. The composer is locked without one; this is the
@@ -4170,21 +4226,21 @@ export default function App() {
     // model is itself "forma-vision", which is asked the one question it was
     // trained on and not the mega-prompt. As a helper beside another AI it
     // helps that AI instead (prepareTeam).
-    if (previews.length > 0 && isVisionOnly(config)) {
-      await designFromVision(promptText);
+    if (stagedImages.length > 0 && isVisionOnly(config)) {
+      await designFromVision(promptText, again ? { images: stagedImages, imageMeta: stagedImageMeta } : undefined);
       return;
     }
 
     const currentPrompt = promptText;
-    const currentPreviews = [...previews];
+    const currentPreviews = [...stagedImages];
     // The staged pages whose text is read in the browser, captured before the
     // composer is cleared below; their text joins the attachments after.
-    const stagedForOcr = ocrPages;
+    const stagedForOcr = stagedOcr;
     // What Forma's own parts need for a picture (lib/formaTeam.ts), captured
     // before the composer is cleared: the first page for the vision model,
     // when it is an image rather than a PDF. The pages OCR reads join it
     // once they are read, after the message is in the thread.
-    const stagedMeta = [...previewMeta];
+    const stagedMeta = [...stagedImageMeta];
     const [firstAt, lastAt] = visionPages(currentPreviews, stagedMeta);
     const firstImage = firstAt !== undefined ? { src: currentPreviews[firstAt], meta: stagedMeta[firstAt] } : undefined;
     const lastImage = lastAt !== undefined ? { src: currentPreviews[lastAt], meta: stagedMeta[lastAt] } : undefined;
@@ -4195,15 +4251,11 @@ export default function App() {
       role: 'user',
       text: currentPrompt, // Only use the prompt the user actually typed
       images: currentPreviews.length > 0 ? currentPreviews : undefined,
-      imageMeta: currentPreviews.length > 0 ? previewMeta : undefined
+      imageMeta: currentPreviews.length > 0 ? stagedMeta : undefined
     };
 
     setMessages(prev => [...prev, newUserMsg]);
-    setPrompt('');
-    setPreviews([]);
-    setPreviewMeta([]);
-    setAttachmentTexts([]);
-    setUploadNotices([]);
+    clearComposer();
 
     // Stop abandons everything up to a generation (2026-11-05): see turnAbortRef.
     const turn = new AbortController();
@@ -4215,9 +4267,9 @@ export default function App() {
     const read = await readSentPages(stagedForOcr, turn.signal);
     if (turn.signal.aborted) return;
     const fromPages = readSources(read);
-    detectFor({ texts: attachmentTexts, metas: stagedMeta, pages: fromPages.pages, words: [currentPrompt, fromPages.words].join('\n') });
+    detectFor({ texts: stagedTexts, metas: stagedMeta, pages: fromPages.pages, words: [currentPrompt, fromPages.words].join('\n') });
     const readByOcr = await ocrAttachments(read);
-    const currentTexts = [...attachmentTexts, ...readByOcr];
+    const currentTexts = [...stagedTexts, ...readByOcr];
     if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
     const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage, lastImage } : undefined;
 
@@ -5227,6 +5279,8 @@ export default function App() {
             onAnswer={handleClarifyAnswers}
             onEdit={handleEditMessage}
             onWithdraw={handleWithdrawMessage}
+            onRegenerate={handleRegenerate}
+            onRate={handleRate}
             query={chatQuery ?? ''}
           >
             {/* Generation, as Forma's answer being written: three dots

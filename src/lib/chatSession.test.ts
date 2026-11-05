@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  answeredBy,
   buildChatHistory,
   isGenerationTurn,
   markMessageError,
@@ -246,6 +247,28 @@ describe('messageMatches', () => {
 
   it('matches everything while nothing is typed', () => {
     expect(messageMatches(msg({ id: '1', text: 'x' }), '')).toBe(true);
+  });
+});
+
+/* Try again on a reply sends the message it answered (2026-11-05). */
+describe('answeredBy', () => {
+  const thread = [
+    msg({ id: 'u1', text: 'hello' }),
+    msg({ id: 'a1', role: 'assistant', text: 'Hi' }),
+    msg({ id: 'a2', role: 'assistant', text: 'Anything else?' }),
+    msg({ id: 'u2', text: 'an invoice' }),
+    msg({ id: 'a3', role: 'assistant', text: 'Built it' }),
+  ];
+
+  it('finds the nearest of the person\'s messages before a reply, past other replies', () => {
+    expect(answeredBy(thread, 'a3')?.id).toBe('u2');
+    expect(answeredBy(thread, 'a2')?.id).toBe('u1');
+  });
+
+  it('answers null for a person\'s message, an unknown id, or a reply with nothing before it', () => {
+    expect(answeredBy(thread, 'u2')).toBeNull();
+    expect(answeredBy(thread, 'nope')).toBeNull();
+    expect(answeredBy([msg({ id: 'a', role: 'assistant', text: 'Welcome' })], 'a')).toBeNull();
   });
 });
 

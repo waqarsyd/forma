@@ -454,10 +454,11 @@ describe('a report described in the chat', () => {
  * description's questions.
  */
 describe('a clean chat', () => {
-  it('draws a reply as its words and its report, with no buttons', () => {
+  // Copy is the one button a reply always has (2026-11-05); until then it had none.
+  it('draws a reply as its words and its report, with Copy alone when nothing else is wired', () => {
     draw({ messages: [msg({ id: 'b', role: 'assistant', text: 'Built "scan" from the text OCR read.' })] });
     expect(screen.getByText('Built "scan" from the text OCR read.')).toBeTruthy();
-    expect(document.querySelectorAll('.wb-note button')).toHaveLength(0);
+    expect([...document.querySelectorAll('.wb-note button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Copy']);
   });
 
   it("offers editing and withdrawing on the person's messages, never on Forma's", () => {
@@ -468,7 +469,57 @@ describe('a clean chat', () => {
     });
     const [mine, forma] = document.querySelectorAll('.wb-note');
     expect([...mine.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Edit', 'Withdraw']);
-    expect(forma.querySelectorAll('button')).toHaveLength(0);
+    expect(within(forma as HTMLElement).queryByText('Edit')).toBeNull();
+    expect(within(forma as HTMLElement).queryByText('Withdraw')).toBeNull();
+  });
+});
+
+/* Copy, the rating and Try again under Forma's replies (2026-11-05). */
+describe("actions on Forma's replies", () => {
+  const thread = [
+    msg({ id: 'u1', role: 'user', text: 'hello' }),
+    msg({ id: 'a1', role: 'assistant', text: 'Hi.' }),
+    msg({ id: 'u2', role: 'user', text: 'an invoice' }),
+    msg({ id: 'a2', role: 'assistant', text: 'Built **it**.' }),
+  ];
+  const actions = (id: string) => [...document.querySelectorAll('.wb-note')][thread.findIndex((m) => m.id === id)].querySelector('[role="group"][aria-label="This reply"]') as HTMLElement;
+
+  it('offers Copy, the rating and Try again on every reply, showing them without pointing only on the latest', () => {
+    draw({ messages: thread, onRegenerate: vi.fn(), onRate: vi.fn() });
+    expect([...actions('a2').querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Copy', 'Good reply', 'Bad reply', 'Try again']);
+    expect(actions('a2').className).not.toContain('wb-note-actions--quiet');
+    expect(actions('a1').className).toContain('wb-note-actions--quiet');
+  });
+
+  it("copies the reply's own words, Markdown and all, and says so", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    draw({ messages: thread });
+    fireEvent.click(within(actions('a2')).getByLabelText('Copy'));
+    expect(writeText).toHaveBeenCalledWith('Built **it**.');
+    expect(await within(actions('a2')).findByLabelText('Copied')).toBeTruthy();
+  });
+
+  it('rates a reply, and takes the rating back when the same is chosen again', () => {
+    const onRate = vi.fn();
+    const { rerender } = draw({ messages: thread, onRate });
+    fireEvent.click(within(actions('a1')).getByLabelText('Bad reply'));
+    expect(onRate).toHaveBeenLastCalledWith('a1', 'bad');
+    const rated = thread.map((m) => (m.id === 'a1' ? { ...m, rating: 'bad' as const } : m));
+    rerender(<ChatThread messages={rated} isChatting={false} isAnalyzing={false} streamingReply="" onRetry={vi.fn()} onOpenAttachment={vi.fn()} onRate={onRate} />);
+    expect(within(actions('a1')).getByLabelText('Bad reply').getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(within(actions('a1')).getByLabelText('Bad reply'));
+    expect(onRate).toHaveBeenLastCalledWith('a1', undefined);
+  });
+
+  it('asks for the reply to be written again by its own id, and holds that while something runs', () => {
+    const onRegenerate = vi.fn();
+    const { unmount } = draw({ messages: thread, onRegenerate });
+    fireEvent.click(within(actions('a1')).getByLabelText('Try again'));
+    expect(onRegenerate).toHaveBeenCalledWith('a1');
+    unmount();
+    draw({ messages: thread, onRegenerate, isChatting: true });
+    expect((within(actions('a2')).getByLabelText('Try again') as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

@@ -74,6 +74,24 @@ export interface ChatMessage<R = unknown, M = unknown> {
    * once the reader has replied, by the form or by typing.
    */
   clarify?: { questions: { id: string; question: string; suggestion?: string }[]; answered: boolean };
+  /**
+   * The person's rating of one of Forma's replies (2026-11-05), as ChatGPT's
+   * thumbs. Kept with the message, and so with a saved project, and sent
+   * nowhere.
+   */
+  rating?: 'good' | 'bad';
+}
+
+/**
+ * The person's message a reply answers: the nearest one before it. Null for
+ * a reply with none before it, or an id that is not one of Forma's replies.
+ * Try again on a reply (2026-11-05) sends that message again.
+ */
+export function answeredBy<T extends { id: string; role: 'user' | 'assistant' }>(messages: ReadonlyArray<T>, replyId: string): T | null {
+  const at = messages.findIndex((m) => m.id === replyId);
+  if (at === -1 || messages[at].role !== 'assistant') return null;
+  for (let i = at - 1; i >= 0; i--) if (messages[i].role === 'user') return messages[i];
+  return null;
 }
 
 /**
