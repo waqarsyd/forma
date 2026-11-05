@@ -104,6 +104,43 @@ export function projectName(existing: string | undefined, title: string | undefi
   return reportDisplayName(title?.trim() || firstWords?.trim().split('\n')[0]);
 }
 
+/**
+ * The projects as the list shows them (2026-11-05): pinned first, in the
+ * order they were saved, then the rest; archived ones only when the archive
+ * is open, and then only they. Pins and the archive are kept on this device
+ * (`readIdList`), at the owner's choice, so they need no change to the
+ * shape `firestore.rules` pins; a name syncs, since `name` is already one of
+ * the six fields.
+ */
+export function arrangeProjects<T extends { id: string }>(reports: readonly T[], pinned: readonly string[], archived: readonly string[], showArchived: boolean): T[] {
+  const archive = new Set(archived);
+  const pins = new Set(pinned);
+  const shown = reports.filter((r) => archive.has(r.id) === showArchived);
+  return [...shown.filter((r) => pins.has(r.id)), ...shown.filter((r) => !pins.has(r.id))];
+}
+
+/** A list of project ids kept on this device; an unreadable one is empty. */
+export function readIdList(key: string, storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): string[] {
+  try {
+    const value = JSON.parse(storage?.getItem(key) ?? '[]');
+    return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The same list written back; a storage that refuses keeps it for the page. */
+export function writeIdList(key: string, ids: readonly string[], storage: Pick<Storage, 'setItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): void {
+  try {
+    storage?.setItem(key, JSON.stringify([...new Set(ids)]));
+  } catch {
+    /* blocked or full */
+  }
+}
+
+/** `id` added to the list, or taken out when it is there. */
+export const toggleId = (ids: readonly string[], id: string): string[] => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
+
 export function toFirestoreDocument<M, R>(
   report: SavedReportLike<M, R>,
   userId: string

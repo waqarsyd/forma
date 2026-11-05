@@ -49,6 +49,9 @@ import {
   IconCompose,
   IconSave,
   IconTrash,
+  IconPin,
+  IconPencil,
+  IconArchive,
   IconTune,
   IconWarn,
 } from './components/landing/icons';
@@ -120,6 +123,10 @@ import {
   saveReportsLocally,
   loadReportsLocally,
   sessionSignature,
+  arrangeProjects,
+  readIdList,
+  writeIdList,
+  toggleId,
 } from './lib/savedReport';
 import { loadPdfjs } from './lib/pdf';
 import { toAttachmentParts } from './lib/attachmentParts';
@@ -1480,6 +1487,9 @@ const REVIEW_WIDTH_EPOCH_KEY = 'reviewWidthEpoch';
 const OPEN_PROJECT_KEY = 'forma:openProject';
 /* The message typed and not yet sent, kept per tab so a reload keeps it (2026-11-05). */
 const DRAFT_KEY = 'forma:draft';
+/* Pinned and archived projects, kept on this device (2026-11-05). Ids only. */
+const PINNED_PROJECTS_KEY = 'forma:pinnedProjects';
+const ARCHIVED_PROJECTS_KEY = 'forma:archivedProjects';
 
 /**
  * The remembered column width, or the default if this browser has not caught up
@@ -3638,6 +3648,54 @@ export default function App() {
   const [leavingReportIds, setLeavingReportIds] = useState<string[]>([]);
   /** Two-step confirm for "Clear all". A native confirm() is banned here. */
   const [confirmingClearAll, setConfirmingClearAll] = useState(false);
+
+  /*
+   * Pinned and archived projects (2026-11-05), kept on this device at the
+   * owner's choice: lists of ids in localStorage, so the six fields
+   * `firestore.rules` allows are untouched. A rename does sync, since `name`
+   * is one of them. See `arrangeProjects` in lib/savedReport.ts.
+   */
+  const [pinnedProjects, setPinnedProjects] = useState(() => readIdList(PINNED_PROJECTS_KEY));
+  const [archivedProjects, setArchivedProjects] = useState(() => readIdList(ARCHIVED_PROJECTS_KEY));
+  const [showArchived, setShowArchived] = useState(false);
+  /** The project whose name is being typed over, and the words so far. */
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const togglePinned = (id: string) => setPinnedProjects((ids) => {
+    const next = toggleId(ids, id);
+    writeIdList(PINNED_PROJECTS_KEY, next);
+    return next;
+  });
+  const toggleArchived = (id: string) => setArchivedProjects((ids) => {
+    const next = toggleId(ids, id);
+    writeIdList(ARCHIVED_PROJECTS_KEY, next);
+    return next;
+  });
+
+  /** A saved project renamed, where it is kept: the account's document, or this device. */
+  const handleRenameProject = async (id: string, typed: string) => {
+    setRenaming(null);
+    const report = savedReports.find((r) => r.id === id);
+    const name = typed.trim().slice(0, 120);
+    if (!report || !name || name === report.name) return;
+    const renamed = { ...report, name };
+    if (user) {
+      try {
+        const { sdk, paths, db } = await loadFirebase();
+        // The whole document again, as a save writes it; the list follows through onSnapshot.
+        await sdk.setDoc(paths.reportDocRef(db, user.uid, id), toFirestoreDocument(renamed, user.uid));
+      } catch (err) {
+        reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${id}`, 'That project could not be renamed in your account. Try again in a moment.');
+      }
+      return;
+    }
+    const updated = savedReports.map((r) => (r.id === id ? renamed : r));
+    const outcome = saveReportsLocally(updated);
+    if (!outcome.ok) {
+      setError(outcome.message);
+      return;
+    }
+    setSavedReports(updated);
+  };
 
   const REMOVE_FADE_MS = 190;
 
@@ -5888,24 +5946,68 @@ export default function App() {
               ) : projectQuery && !savedReports.some((r) => projectMatches(r, projectQuery)) ? (
                 <div className="wb-empty">No project holds that.</div>
               ) : (
-                savedReports.filter((r) => projectMatches(r, projectQuery ?? '')).map((report) => {
+                arrangeProjects(savedReports.filter((r) => projectMatches(r, projectQuery ?? '')), pinnedProjects, archivedProjects, showArchived).map((report) => {
                   // Day and time. A bare clock time was the same six characters
                   // for a session from this morning and one from last month.
                   const stamp = formatSessionStamp(report.timestamp);
                   const leaving = leavingReportIds.includes(report.id);
                   const open = report.id === openProjectId;
+                  const pinned = pinnedProjects.includes(report.id);
+                  const archived = archivedProjects.includes(report.id);
                   return (
                     <div
                       key={report.id}
                       className={`wb-card${open ? ' wb-is-open' : ''}${leaving ? ' wb-leaving' : ''}`}
-                      onClick={() => void handleLoadReport(report)}
+                      onClick={() => { if (renaming?.id !== report.id) void handleLoadReport(report); }}
                     >
-                      <div className="wb-nm">{report.name}</div>
+                      {/* A rename typed in place (2026-11-05): Enter keeps it, Escape or leaving puts it back. */}
+                      {renaming?.id === report.id ? (
+                        <input
+                          className="wb-ctl wb-rename"
+                          aria-label={`Rename ${report.name}`}
+                          value={renaming.name}
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setRenaming({ id: report.id, name: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void handleRenameProject(report.id, renaming.name);
+                            if (e.key === 'Escape') setRenaming(null);
+                          }}
+                          onBlur={() => setRenaming(null)}
+                        />
+                      ) : (
+                        <div className="wb-nm">
+                          {pinned && <IconPin size={11} />}
+                          {report.name}
+                        </div>
+                      )}
                       <div className="wb-sub">
                         {stamp && `${stamp} · `}
                         {noteCountLabel(report.messages.length)}
                       </div>
                       <div className="wb-row-actions">
+                        <button
+                          aria-label={pinned ? `Unpin ${report.name}` : `Pin ${report.name}`}
+                          aria-pressed={pinned}
+                          title={pinned ? 'Unpin' : 'Pin to the top (on this device)'}
+                          onClick={(e) => { e.stopPropagation(); togglePinned(report.id); }}
+                        >
+                          <IconPin size={14} />
+                        </button>
+                        <button
+                          aria-label={`Rename ${report.name}`}
+                          title="Rename"
+                          onClick={(e) => { e.stopPropagation(); setRenaming({ id: report.id, name: report.name }); }}
+                        >
+                          <IconPencil size={14} />
+                        </button>
+                        <button
+                          aria-label={archived ? `Unarchive ${report.name}` : `Archive ${report.name}`}
+                          title={archived ? 'Back to projects' : 'Archive (on this device)'}
+                          onClick={(e) => { e.stopPropagation(); toggleArchived(report.id); }}
+                        >
+                          <IconArchive size={14} />
+                        </button>
                         <button
                           className="wb-danger"
                           aria-label={`Delete ${report.name}`}
@@ -5920,6 +6022,13 @@ export default function App() {
                 })
               )}
             </div>
+            {/* The archive, kept on this device (2026-11-05): out of the list until opened. */}
+            {(showArchived || savedReports.some((r) => archivedProjects.includes(r.id))) && (
+              <button type="button" className="wb-mini wb-archive-toggle" onClick={() => setShowArchived((open) => !open)}>
+                <IconArchive size={12} />
+                {showArchived ? 'Back to projects' : `Archived (${savedReports.filter((r) => archivedProjects.includes(r.id)).length})`}
+              </button>
+            )}
           </div>
 
         {/* -------------------------------------------------------- recent */}

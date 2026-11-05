@@ -31,6 +31,10 @@ import {
   loadReportsLocally,
   sessionSignature,
   projectName,
+  arrangeProjects,
+  readIdList,
+  writeIdList,
+  toggleId,
   type SavedReportLike,
 } from './savedReport';
 
@@ -218,6 +222,27 @@ describe('sessionSignature', () => {
       sessionSignature(messages, null),
     ];
     expect(new Set([base, ...changed]).size).toBe(changed.length + 1);
+  });
+});
+
+/* Pins and the archive, kept on this device (2026-11-05). */
+describe('arrangeProjects, readIdList, writeIdList and toggleId', () => {
+  const list = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+
+  it('shows pinned projects first in their own order, then the rest, and hides the archive until it is opened', () => {
+    expect(arrangeProjects(list, ['c'], ['b'], false).map((r) => r.id)).toEqual(['c', 'a', 'd']);
+    expect(arrangeProjects(list, ['c'], ['b'], true).map((r) => r.id)).toEqual(['b']);
+  });
+
+  it('keeps a list of ids on the device, ignoring what is not a list of strings, and toggles one', () => {
+    const data = new Map<string, string>();
+    const store = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
+    writeIdList('pins', ['a', 'a', 'b'], store);
+    expect(readIdList('pins', store)).toEqual(['a', 'b']);
+    data.set('pins', '{"a":1}');
+    expect(readIdList('pins', store)).toEqual([]);
+    expect(toggleId(['a', 'b'], 'a')).toEqual(['b']);
+    expect(toggleId(['b'], 'a')).toEqual(['b', 'a']);
   });
 });
 

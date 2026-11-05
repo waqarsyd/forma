@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,479 tests in 129 files** — under the `node` environment
+`npm test` runs Vitest over **2,481 tests in 129 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -175,7 +175,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/requestCount` | 3 | requests sent to each Gemini model today (2026-11-05): the Pacific day, a count per model that starts again at zero the next day, and storage that will not read or write |
 | `lib/dataFiles` | 7 | data files attached in the chat (2026-11-05): the kinds taken, quoted CSV, a CSV and a JSON array as fields and first rows, a workbook's first sheet with shared strings, a deflated Word document read through the zip reader, and what a bad file says |
 | `lib/runawayOutput` | 10 |  |
-| `lib/savedReport` | 38 | since 2026-11-05 the session signature the workspace saves on, and a project's name; jsdom |
+| `lib/savedReport` | 40 | since 2026-11-05 pinned and archived projects kept on this device; since 2026-11-05 the session signature the workspace saves on, and a project's name; jsdom |
 | `lib/skeletonRepx` | 11 | jsdom (`checkRepx`); a skeleton made a report again (milestone 6): written and read back through the Preview's parser as the same skeleton, caption lengths and A4's exact size aside; a file the app opens with no audit error; titles and captions in the words read inside their boxes, a placeholder where none was, "Total" in a footer; values bound to fields named after the caption over their column, totals summing that field at their band's scope; a date or a page number as the page showed; the empty Detail band DevExpress expects; the Mockup's sections and the spec; several pages' skeletons joined, the first page's bands kept and a later page's footers added where DevExpress prints them (2026-11-04) |
 | `lib/skeletonText` | 21 | the text Forma's vision model learns to write (milestone 6): a skeleton written and read back exactly, one line per band, control and table row, places rounded to whole hundredths; a model's answer read tolerantly, each skipped line named, a malformed row skipped whole, no page line refused; bands as tall as DevExpress prints them; a variant with the same structure in other places, every control inside its band and the printable width, no word added, the same for the same seed; the instruction word for word as `train_vision.py` asks it, read from the script; the scorer, perfect on the right answer, pairing controls by place within a band; the page scorer that sets the model beside OCR, its fixed bands laid out as render.py draws them, a box right at half overlap and a text found where something was read inside it, readings among the records ignored; a font outside the public list found as a stray word, and replaced by Arial in labels and cells alike |
 | `lib/sourceRect` | 14 |  |
@@ -206,7 +206,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,479 in 129 files** — and that total is the arithmetic sum of the column above
+**Total: 2,481 in 129 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -220,7 +220,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2361** against a real 2,479 and will talk you into
+A grep for `\bit(` answers **2363** against a real 2,481 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

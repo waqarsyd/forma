@@ -356,6 +356,18 @@ export const IconSave = (p: Props) => (
     <path d="M8 3v6h8V3M8 21v-6h8v6" />
   </Svg>
 );
+/* Pinning and archiving a saved project (2026-11-05). */
+export const IconPin = (p: Props) => (
+  <Svg {...p}>
+    <path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v7" />
+  </Svg>
+);
+export const IconArchive = (p: Props) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="5" rx="1.5" />
+    <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4" />
+  </Svg>
+);
 /* Speaking a message into the chat box (2026-11-05), as ChatGPT's and Gemini's. */
 export const IconMic = (p: Props) => (
   <Svg {...p}>

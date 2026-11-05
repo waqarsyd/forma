@@ -531,7 +531,13 @@
 }
 .wb-card:hover { border-color: var(--rule-strong); box-shadow: var(--shadow-sm); }
 .wb-card.wb-is-open { border-color: var(--accent-line); background: var(--accent-wash); }
-.wb-card .wb-nm { font-size: 13px; font-weight: 600; padding-right: 58px; }
+/* Four buttons on a hovered card since 2026-11-05 (pin, rename, archive,
+   delete): they cover the end of the name on the card's own ground rather
+   than the name keeping their width free all the time, as ChatGPT's list
+   does. A pinned project's name carries the pin. */
+.wb-card .wb-nm { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; padding-right: 8px; }
+.wb-card .wb-nm svg { flex: none; color: var(--ink-faint); }
+.wb-card .wb-rename { width: 100%; font-size: 13px; padding: 3px 8px; }
 .wb-card .wb-sub {
   margin-top: 3px;
   font-family: var(--mono);
@@ -540,7 +546,9 @@
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
 }
-.wb-card .wb-row-actions { position: absolute; top: 9px; right: 9px; display: flex; gap: 2px; opacity: 0; transition: opacity .15s ease; }
+.wb-card .wb-row-actions { position: absolute; top: 9px; right: 9px; display: flex; gap: 2px; opacity: 0; transition: opacity .15s ease; background: inherit; border-radius: 999px; }
+.wb-row-actions button[aria-pressed="true"] { color: var(--ink); }
+.wb-archive-toggle { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin: 4px 16px 16px; }
 .wb-card:hover .wb-row-actions, .wb-card:focus-within .wb-row-actions { opacity: 1; }
 @media (hover: none) { .wb-card .wb-row-actions { opacity: 1; } }
 .wb-row-actions button {
