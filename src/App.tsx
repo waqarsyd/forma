@@ -1529,7 +1529,8 @@ const DESCRIBE_RUN: RunCopy = {
   request: 'Sending the description to Gemini API...',
   done: 'Report designed from the description.',
   assistant: () =>
-    "I've designed the report from your description. You can view the UI preview and specifications on the right, and the status bar says what the audit still found.",
+    // The REPX pane, not the status bar, which went on 2026-11-04 and this line did not follow.
+    "I've designed the report from your description. You can view the UI preview and specifications on the right, and the REPX pane says what the audit still found.",
 };
 
 /**

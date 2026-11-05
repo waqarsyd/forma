@@ -745,7 +745,7 @@ export default function FeaturesPage({
                 },
                 {
                   k: 'A verdict on every row',
-                  d: 'Each finished file carries the structural audit’s answer in the words the status bar uses: clean, N warnings, or N errors and content will be lost. The point of running forty is knowing which of the forty are worth opening.',
+                  d: 'Each finished file carries the structural audit’s answer in the words the REPX pane uses: clean, N warnings, or N errors and content will be lost. The point of running forty is knowing which of the forty are worth opening.',
                 },
                 {
                   k: 'Stop and retry mean what they say',

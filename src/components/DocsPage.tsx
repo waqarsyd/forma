@@ -906,7 +906,7 @@ y_top = pageHeight − (baseline + height)`}
                   simultaneous requests turn a slow success into a fast 429.
                 </Def>
                 <Def t="A verdict per row">
-                  Each finished row carries the structural audit's answer in the same words the status bar
+                  Each finished row carries the structural audit's answer in the same words the REPX pane
                   uses — clean, N warnings, or N errors and content will be lost — because the point of
                   running forty files is knowing which of the forty are worth opening.
                 </Def>
