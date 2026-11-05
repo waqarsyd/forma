@@ -356,6 +356,14 @@ export const IconSave = (p: Props) => (
     <path d="M8 3v6h8V3M8 21v-6h8v6" />
   </Svg>
 );
+/* New report in the sidebar (2026-11-05): a pencil over a square, the mark
+   ChatGPT's and Gemini's sidebars give a new chat. */
+export const IconCompose = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" />
+    <path d="M17.6 3.4a2 2 0 0 1 2.9 2.9L13 13.8l-3.8.9.9-3.8z" />
+  </Svg>
+);
 export const IconPlus = (p: Props) => (
   <Svg strokeWidth={2.2} {...p}>
     <path d="M12 5v14M5 12h14" />

@@ -6,6 +6,7 @@ import {
   nextMessageId,
   messageMatches,
   noteCountLabel,
+  projectMatches,
   searchParts,
   truncateFrom,
   withdrawTurn,
@@ -245,6 +246,24 @@ describe('messageMatches', () => {
 
   it('matches everything while nothing is typed', () => {
     expect(messageMatches(msg({ id: '1', text: 'x' }), '')).toBe(true);
+  });
+});
+
+/* The sidebar's Search over the saved projects (2026-11-05). */
+describe('projectMatches', () => {
+  const project = { name: 'Q3 invoice', messages: [msg({ id: '1', text: 'Group it by region' }), msg({ id: '2', role: 'assistant', text: 'Done', clarify: { questions: [{ id: 'q', question: 'Which paper size?' }], answered: true } })] };
+
+  it('finds the query in the name, in what was said, or in the questions asked, as typed', () => {
+    expect(projectMatches(project, 'q3')).toBe(true);
+    expect(projectMatches(project, 'REGION')).toBe(true);
+    expect(projectMatches(project, 'paper')).toBe(true);
+    expect(projectMatches(project, 'landscape')).toBe(false);
+    // Taken as text, never as a pattern.
+    expect(projectMatches({ name: 'Totals (USD)', messages: [] }, '(USD')).toBe(true);
+  });
+
+  it('matches every project while nothing is typed', () => {
+    expect(projectMatches({ name: 'x', messages: [] }, '  ')).toBe(true);
   });
 });
 

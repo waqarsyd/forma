@@ -46,7 +46,7 @@ import {
   IconLogout,
   IconMenu,
   IconPanelLeft,
-  IconPlus,
+  IconCompose,
   IconSave,
   IconTrash,
   IconTune,
@@ -240,6 +240,7 @@ import {
   markMessageError,
   nextMessageId,
   noteCountLabel,
+  projectMatches,
   truncateFrom,
   withdrawTurn,
   type ChatMessage as ChatSessionMessage,
@@ -1791,6 +1792,12 @@ export default function App() {
     setIsRailDrawerOpen(false);
   }, [rememberReviewCollapsed]);
 
+  /** The sidebar's Search: the saved projects, with the search field open. */
+  const openProjectSearch = useCallback(() => {
+    showRailPanel('projects');
+    setProjectQuery((q) => q ?? '');
+  }, [showRailPanel]);
+
   /* Ctrl+B / Cmd+B opens and closes the sidebar, and Escape closes the drawer.
      Only while the workspace is what is on screen: a marketing page has no
      sidebar, and the sign-in sheet over the workspace owns the keyboard. */
@@ -2079,6 +2086,11 @@ export default function App() {
   const pendingClarifyRef = useRef<{ request: ReportDescriptionRequest; messageId: string } | null>(null);
   /** The transcript search: null while closed, the text typed while open. */
   const [chatQuery, setChatQuery] = useState<string | null>(null);
+  /**
+   * The sidebar's Search over the saved projects (2026-11-05), as ChatGPT's
+   * searches its chats: null while closed, the text typed while open.
+   */
+  const [projectQuery, setProjectQuery] = useState<string | null>(null);
   /** The description the last run was started from, which Test data describes the report by. */
   const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
   /** What a part of Forma's team is doing before the AI is asked, for the progress card; null when nothing. */
@@ -4928,6 +4940,15 @@ export default function App() {
             <Logo size={26} />
             <span className="wb-wordmark">Forma</span>
           </a>
+          {/* Search sits right before the toggle while the sidebar is open, as
+              ChatGPT's does (2026-11-05, measured: Search at x=252 and Hide
+              sidebar at x=296, both 36px). Closed, its twin below New report
+              shows instead. Two buttons rather than one moved about: each is in
+              the tab order where it is seen, and neither is the control just
+              used to open or close the sidebar. */}
+          <button data-rail-search data-in-head title="Search projects" aria-label="Search projects" onClick={openProjectSearch}>
+            <IconSearch size={18} />
+          </button>
           <button
             ref={railToggleRef}
             data-toggle-rail
@@ -4944,6 +4965,24 @@ export default function App() {
             </span>
           </button>
         </div>
+
+        {/* New report first, as ChatGPT's New chat; Search under it while the
+            sidebar is closed, as ChatGPT's rail has it (2026-11-05). They moved
+            here from the top of the side panel, where "+ New report" and a
+            magnifier sat above every panel. */}
+        <button
+          data-new-report
+          title="New report"
+          aria-label="New report"
+          onClick={() => { handleClearChat(); showRailPanel('review'); }}
+        >
+          <IconCompose size={19} />
+          <span className="wb-rail-label">New report</span>
+        </button>
+        <button data-rail-search title="Search projects" aria-label="Search projects" onClick={openProjectSearch}>
+          <IconSearch size={19} />
+          <span className="wb-rail-label">Search</span>
+        </button>
 
         {railBtn('review', 'Chat', <IconLayout size={19} />)}
         {railBtn('projects', 'Saved projects', <IconFolder size={19} />)}
@@ -5046,25 +5085,9 @@ export default function App() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Always present, whichever panel shows: a new report is reachable from
-            anywhere without navigating somewhere else first. */}
-        <div className="wb-actions">
-          <button
-            className="wb-pill wb-pill--accent wb-grow"
-            onClick={() => { handleClearChat(); showRailPanel('review'); }}
-          >
-            <IconPlus size={14} />
-            New report
-          </button>
-          <button
-            className="wb-pill wb-pill--outline"
-            title="Search projects"
-            aria-label="Search projects"
-            onClick={() => showRailPanel('projects')}
-          >
-            <IconSearch size={14} />
-          </button>
-        </div>
+        {/* New report and Search are the sidebar's since 2026-11-05, as in
+            ChatGPT, where they are always in reach. They sat here, as an orange
+            "+ New report" pill and a magnifier above every panel. */}
 
         {/* ------------------------------------------------ current session */}
         <div className={`wb-panel-body${railPanel === 'review' ? '' : ' wb-hidden'}`}>
@@ -5265,11 +5288,34 @@ export default function App() {
                 </span>
               )}
             </div>
+            {/* The sidebar's Search (2026-11-05): the projects whose name or
+                chat holds what is typed, as ChatGPT's search finds chats. */}
+            {projectQuery !== null && (
+              <div className="wb-chat-search">
+                <IconSearch size={13} />
+                <input
+                  type="search"
+                  value={projectQuery}
+                  autoFocus
+                  placeholder="Search projects"
+                  aria-label="Search projects"
+                  onChange={(e) => setProjectQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setProjectQuery(null);
+                  }}
+                />
+                <button type="button" title="Close the search" aria-label="Close the search" onClick={() => setProjectQuery(null)}>
+                  <IconClose size={13} />
+                </button>
+              </div>
+            )}
             <div className="wb-list">
               {savedReports.length === 0 ? (
                 <div className="wb-empty">No saved projects yet.</div>
+              ) : projectQuery && !savedReports.some((r) => projectMatches(r, projectQuery)) ? (
+                <div className="wb-empty">No project holds that.</div>
               ) : (
-                savedReports.map((report) => {
+                savedReports.filter((r) => projectMatches(r, projectQuery ?? '')).map((report) => {
                   // Day and time. A bare clock time was the same six characters
                   // for a session from this morning and one from last month.
                   const stamp = formatSessionStamp(report.timestamp);

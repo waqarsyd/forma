@@ -16,6 +16,19 @@
  *   `inline-size` over 0.22s, cubic-bezier(0.2, 0.8, 0.2, 1), and the page
  *   beside it is pushed, not covered. The state is kept across visits.
  *
+ * Measured again on 2026-11-05, for the header's controls (the owner asked
+ * for Search beside the close button, as ChatGPT has it). ChatGPT, signed in,
+ * 1280px: open, its name at the left, then **Search** (36px at x=252) right
+ * before **Hide sidebar** (36px at x=296), 8px apart, and New chat as the
+ * first item below; closed, a 52px rail of 36px buttons 8px in, one every
+ * 36px: the logo ("Show sidebar"), **New chat, Search**, Recents, Library,
+ * the profile at the foot, the empty rail itself opening it too. It was
+ * 340px wide open that day. Gemini, signed out (REA): the brand at the left,
+ * "Close sidebar" at the right, New chat first below; its Search shows only
+ * signed in. Forma follows ChatGPT's order: open, the mark, Search, the
+ * toggle; closed, the toggle, New report, Search, then its sections, and
+ * keeps its 56px and 260px and 38px buttons.
+ *
  * Forma copies that behaviour and keeps its own parts: the same sections, the
  * mark as the route home while the sidebar is open, and the choice kept in
  * localStorage (`railExpanded`), as before. The keyboard shortcut is Forma's

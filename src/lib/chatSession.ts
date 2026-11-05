@@ -216,6 +216,18 @@ export function messageMatches(message: { text: string; clarify?: { questions: {
 }
 
 /**
+ * Whether a saved project holds `query`, in its name or anywhere in its chat:
+ * the sidebar's Search (2026-11-05), which searches the projects as ChatGPT's
+ * searches its chats. Every project matches an empty query.
+ */
+export function projectMatches(project: { name: string; messages: readonly { text: string; clarify?: { questions: { question: string }[] } }[] }, query: string): boolean {
+  const pattern = searchPattern(query);
+  if (!pattern) return true;
+  pattern.lastIndex = 0;
+  return pattern.test(project.name) || project.messages.some((m) => messageMatches(m, query));
+}
+
+/**
  * The review column's own count, and the same wording on a saved project's row.
  *
  * Two call sites had this ternary written out; they are the kind that drift into
