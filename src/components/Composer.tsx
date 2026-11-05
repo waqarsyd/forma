@@ -281,7 +281,7 @@ export default function Composer({
             }
           }}
           disabled={!hasApiKey}
-          placeholder={hasApiKey ? 'Describe a report, attach or paste an image, or ask anything…' : 'Add your API key to start'}
+          placeholder={hasApiKey ? 'Describe changes…' : 'Add your API key to start'}
           aria-label="Message"
         />
         {!hasApiKey ? (

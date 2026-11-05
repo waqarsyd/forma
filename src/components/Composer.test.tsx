@@ -180,7 +180,8 @@ describe('when sending is not possible', () => {
     draw();
     expect(send().disabled).toBe(false);
     expect(field().disabled).toBe(false);
-    expect(field().placeholder).toBe('Describe a report, attach or paste an image, or ask anything…');
+    // The owner's wording, 2026-11-05.
+    expect(field().placeholder).toBe('Describe changes…');
   });
 });
 
