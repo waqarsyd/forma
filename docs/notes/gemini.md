@@ -89,6 +89,21 @@ So since that date:
 
 **Measured the same day in the product**, on the benchmark invoice with OCR's reading and the box reader's brief, against the same invoice and brief on 2026-11-04: output **12,111 → 3,082** (−75%), thinking 8,585 → 9,123, input 15,045 → 15,974 (the browser also sends OCR's text, which the benchmark did not), total **35,741 → 28,179**. Thinking is now the largest share and the next lever; the note under *Chat and report generation are separate paths* says to cap it only against measurement, and the benchmark's `--thinking` is how.
 
+**The benchmark, before and after, the same day**, every run pinned to `gemini-2.5-flash` (`--model`) so a refused model could not be swapped for another; before is 2026-11-04 on the old answer:
+
+| Run | Case | Score | Input | Output | Thinking | Total |
+|---|---|---|---|---|---|---|
+| before | invoice-ruled | 16/16 | 13,269 | 7,465 | 6,758 | 27,492 |
+| after | invoice-ruled | 16/16 | 11,438 | 3,161 | 10,275 | 24,874 |
+| before | customer-list | 14/14 | 13,269 | 5,082 | 10,565 | 28,916 |
+| after, `--brief` | customer-list | 14/14 | 11,868 | 1,879 | 8,072 | 21,819 |
+| after, `--brief --thinking 2048` | customer-list | 14/14 | 11,868 | 1,444 | 2,044 | 15,356 |
+| after, `--brief --thinking 2048` | invoice-ruled | 15/16 | 13,214 | 3,191 | 2,047 | 18,452 |
+
+Scores held, input fell 14% with the layout sections gone, and output fell 58% and 63%. **Thinking is the noisy share**: the same invoice thought 6,758 tokens on one day and 10,275 on the next at temperature 0, which is why a single run says little about it. At a budget of 2,048 the customer list scored the same 14/14 at 15,356 tokens, 30% under its uncapped run. The capped invoice missed one check, its median font at 7pt against the case's 8 to 12, and that is the brief rather than the cap as far as one run can say: the case renders Letter at 150 pixels an inch, so its 14px body text is 6.7pt on the page, the box reader's brief passes OCR's measured sizes, and the same invoice without the brief came out at 10pt. Its uncapped run with the brief, the pair that would settle it, was refused for quota. **So no cap is set by default yet**; one clean pair is not the measurement the note above asks for.
+
+**The free tier's limit is requests, not tokens.** Google's refusal that day named it: `generate_content_free_tier_requests`, **limit 20** a day for `gemini-2.5-flash`. A report is one request when nothing goes wrong, and a retry, a clarification and the model probe (a one-token generation per candidate model, once a day per key in the browser, and on every benchmark run that does not pass `--model`) each spend another. Tokens decide how long a report takes and how much of the per-minute allowance it uses; requests decide how many reports a user gets in a day.
+
 This is the first part of the owner's request, not all of it: the local parts still brief the AI rather than doing the work. The rest is Forma drafting the report and the AI correcting the draft in a compact form, which needs a correction format that carries the words and fields the skeleton text leaves out (`docs/proposals/own-model.md`).
 
 ## The model is auto-detected, and there is no model picker
