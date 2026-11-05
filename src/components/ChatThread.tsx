@@ -82,6 +82,8 @@ export interface ChatThreadProps<R> {
    */
   undoable?: ReadonlySet<string>;
   onUndo?: (id: string) => void;
+  /** The answer to a redesign a reply asks before making (2026-11-05): see `ChatMessage.confirm`. */
+  onConfirm?: (id: string, yes: boolean) => void;
   /** A transcript search: only the messages holding it are drawn, with each match marked. */
   query?: string;
   /** Forma's working line during a generation, rendered after the transcript. */
@@ -329,12 +331,14 @@ const ChatNote = memo(function ChatNote<R>({
   onRegenerate,
   onRate,
   onUndo,
+  onConfirm,
   query = '',
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
   /** The latest of Forma's replies, whose actions show without pointing at it. */
   latest?: boolean;
+  onConfirm?: (id: string, yes: boolean) => void;
   /** Present only while this reply's change can still be taken back. */
   onUndo?: (id: string) => void;
   onRetry: (id: string) => void;
@@ -373,6 +377,17 @@ const ChatNote = memo(function ChatNote<R>({
         {message.clarify && !message.clarify.answered && onAnswer && (
           <ClarifyForm id={message.id} questions={message.clarify.questions} disabled={retryDisabled} onAnswer={onAnswer} />
         )}
+        {message.confirm && !message.confirm.answered && onConfirm && (
+          <div className="wb-note-actions" role="group" aria-label="Redesign the report?">
+            <button type="button" className="wb-pill wb-pill--accent" disabled={retryDisabled} onClick={() => onConfirm(message.id, true)}>
+              Redesign
+            </button>
+            <button type="button" className="wb-pill wb-pill--outline" disabled={retryDisabled} onClick={() => onConfirm(message.id, false)}>
+              Not now
+            </button>
+          </div>
+        )}
+        {message.confirm?.answered === 'no' && <span className="wb-note-done">Not redesigned</span>}
 
         {message.images && message.images.length > 0 && (
           // Sent messages showed a count and nothing else, so once a
@@ -471,6 +486,7 @@ const ChatNote = memo(function ChatNote<R>({
   retryDisabled: boolean;
   latest?: boolean;
   onUndo?: (id: string) => void;
+  onConfirm?: (id: string, yes: boolean) => void;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
@@ -495,6 +511,7 @@ export default function ChatThread<R>({
   onRate,
   undoable,
   onUndo,
+  onConfirm,
   query = '',
   children,
 }: ChatThreadProps<R>) {
@@ -508,9 +525,10 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm };
   const undo = useCallback((id: string) => latest.current.onUndo?.(id), []);
+  const confirm = useCallback((id: string, yes: boolean) => latest.current.onConfirm?.(id, yes), []);
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
   const openAttachment = useCallback(
     (view: AttachmentView) => latest.current.onOpenAttachment(view),
@@ -585,6 +603,7 @@ export default function ChatThread<R>({
           retryDisabled={retryDisabled}
           latest={msg.id === lastReplyId}
           onUndo={onUndo && undoable?.has(msg.id) ? undo : undefined}
+          onConfirm={onConfirm ? confirm : undefined}
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}

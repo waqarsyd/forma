@@ -82,7 +82,18 @@ export interface ChatMessage<R = unknown, M = unknown> {
   rating?: 'good' | 'bad';
   /** The change this reply made was taken back with its Undo (2026-11-05). */
   undone?: true;
+  /**
+   * A redesign this reply asks before making (2026-11-05): with a report
+   * open, a change only a full redesign can make costs a minute or two and
+   * the whole REPX in tokens, so Forma asks first, as an agent asks before a
+   * costly step. `prompt` is what is redesigned from; `answered` once the
+   * person has said yes or no, by the buttons or by typing.
+   */
+  confirm?: { prompt: string; answered?: 'yes' | 'no' };
 }
+
+/** A typed yes to a question Forma asked: "yes", "ok", "go ahead", "do it", "redesign it". */
+export const AFFIRMATIVE = /^\s*(yes|yeah|yep|ok(ay)?|sure|go( ahead)?|do it|please( do)?|redesign( it)?)\b[\s.!]*$/i;
 
 /**
  * The person's message a reply answers: the nearest one before it. Null for

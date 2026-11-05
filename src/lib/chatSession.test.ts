@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  AFFIRMATIVE,
   answeredBy,
   buildChatHistory,
   isGenerationTurn,
@@ -247,6 +248,14 @@ describe('messageMatches', () => {
 
   it('matches everything while nothing is typed', () => {
     expect(messageMatches(msg({ id: '1', text: 'x' }), '')).toBe(true);
+  });
+});
+
+/* A typed answer to a redesign Forma asked about (2026-11-05). */
+describe('AFFIRMATIVE', () => {
+  it('reads a short yes as yes, and anything that says more as a message of its own', () => {
+    for (const yes of ['yes', 'Yes!', 'ok', 'okay.', 'go ahead', 'do it', 'redesign it', 'sure']) expect(AFFIRMATIVE.test(yes)).toBe(true);
+    for (const other of ['yes but keep the logo', 'no', 'not now', 'make it bold', 'okay so what about the totals']) expect(AFFIRMATIVE.test(other)).toBe(false);
   });
 });
 

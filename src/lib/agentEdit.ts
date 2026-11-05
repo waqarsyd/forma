@@ -553,6 +553,22 @@ export function describeChanges(before: string, after: string, limit = 10): stri
   return lines;
 }
 
+/**
+ * What the REPX checks found, said in the reply (2026-11-05), as an agent
+ * reports its own checking rather than leaving it to a pane nobody opened.
+ * After a redesign, everything found, or that nothing was; after an edit
+ * (`before` given), only what the edit brought, and nothing when it brought
+ * nothing. Four lines, then a count of the rest.
+ */
+export function checksMarkdown(after: readonly { severity: string; message: string }[], before?: readonly { message: string }[]): string {
+  const seen = new Set(before?.map((f) => f.message));
+  const found = before ? after.filter((f) => !seen.has(f.message)) : after;
+  if (!found.length) return before ? '' : '**Checked**: the REPX checks found nothing wrong.';
+  const lines = found.slice(0, 4).map((f) => `- ${f.severity === 'error' ? 'error: ' : ''}${f.message}`);
+  if (found.length > 4) lines.push(`- and ${found.length - 4} more, listed in the REPX pane`);
+  return `**${before ? 'The change brought' : 'The checks found'} ${found.length} ${found.length === 1 ? 'problem' : 'problems'}**\n${lines.join('\n')}`;
+}
+
 /** The reply's account of a turn: what changed, what was asked and not done, and what Forma did. */
 export function changesMarkdown(changes: readonly string[], declined: readonly string[] = [], done: readonly string[] = []): string {
   const parts: string[] = [];

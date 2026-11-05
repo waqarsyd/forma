@@ -525,6 +525,22 @@ describe("actions on Forma's replies", () => {
     expect(within(actions('a2')).getByText('Undone')).toBeTruthy();
   });
 
+  // A redesign asked before it is made (2026-11-05).
+  it('asks before a redesign with Redesign and Not now, and says Not redesigned after a no', () => {
+    const onConfirm = vi.fn();
+    const asking = [msg({ id: 'u', text: 'add a chart' }), msg({ id: 'a', role: 'assistant', text: 'Forma would redesign it.', confirm: { prompt: 'add a chart' } })];
+    const { rerender } = draw({ messages: asking, onConfirm });
+    const group = screen.getByRole('group', { name: 'Redesign the report?' });
+    fireEvent.click(within(group).getByText('Redesign'));
+    expect(onConfirm).toHaveBeenCalledWith('a', true);
+    fireEvent.click(within(group).getByText('Not now'));
+    expect(onConfirm).toHaveBeenLastCalledWith('a', false);
+    const answered = asking.map((m) => (m.id === 'a' ? { ...m, confirm: { prompt: 'add a chart', answered: 'no' as const } } : m));
+    rerender(<ChatThread messages={answered} isChatting={false} isAnalyzing={false} streamingReply="" onRetry={vi.fn()} onOpenAttachment={vi.fn()} onConfirm={onConfirm} />);
+    expect(screen.queryByRole('group', { name: 'Redesign the report?' })).toBeNull();
+    expect(screen.getByText('Not redesigned')).toBeTruthy();
+  });
+
   it('asks for the reply to be written again by its own id, and holds that while something runs', () => {
     const onRegenerate = vi.fn();
     const { unmount } = draw({ messages: thread, onRegenerate });

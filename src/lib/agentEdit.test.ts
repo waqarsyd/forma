@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changesMarkdown, describeChanges, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, changesMarkdown, checksMarkdown, describeChanges, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -187,6 +187,23 @@ describe('describeChanges: what the reply says changed', () => {
     expect(describeChanges(report, report)).toEqual([]);
     const out = edit({ op: 'move', control: 'title', x: 1 }, { op: 'move', control: 'subtitle', x: 1 }, { op: 'move', control: 'customer', x: 1 });
     expect(describeChanges(report, out.xml, 2)).toEqual(['moved **title** to 1, 20', 'moved **subtitle** to 1, 70', 'and 1 more changes']);
+  });
+
+  // The checks said aloud (2026-11-05).
+  it('says what the checks found after a redesign, or that they found nothing', () => {
+    expect(checksMarkdown([])).toBe('**Checked**: the REPX checks found nothing wrong.');
+    const found = Array.from({ length: 6 }, (_, i) => ({ severity: i ? 'warning' : 'error', message: `problem ${i + 1}` }));
+    expect(checksMarkdown(found)).toBe(
+      '**The checks found 6 problems**\n- error: problem 1\n- problem 2\n- problem 3\n- problem 4\n- and 2 more, listed in the REPX pane',
+    );
+  });
+
+  it('says only what an edit brought, and nothing when it brought nothing', () => {
+    const before = [{ severity: 'warning', message: 'old one' }];
+    expect(checksMarkdown(before, before)).toBe('');
+    expect(checksMarkdown([...before, { severity: 'error', message: 'A control is outside the page.' }], before)).toBe(
+      '**The change brought 1 problem**\n- error: A control is outside the page.',
+    );
   });
 
   it('writes the reply part as a Markdown list, with what was not done', () => {

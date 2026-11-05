@@ -241,6 +241,7 @@ import {
   isGenerationTurn,
   markMessageError,
   nextMessageId,
+  AFFIRMATIVE,
   answeredBy,
   noteCountLabel,
   projectMatches,
@@ -3985,16 +3986,20 @@ export default function App() {
             .catch(() => '')
         : '';
       // A redesign says what it changed and can be undone, as an edit in
-      // place can (2026-11-05, lib/agentEdit.ts).
-      const changed = result?.repxContent && newResult.repxContent
-        ? await import('./lib/agentEdit')
-            .then(m => m.changesMarkdown(m.describeChanges(result.repxContent!, newResult.repxContent!)))
-            .catch(() => '')
-        : '';
+      // place can, and what the REPX checks found (2026-11-05,
+      // lib/agentEdit.ts): an agent reports its own checking.
+      const [changed, checked] = newResult.repxContent
+        ? await Promise.all([import('./lib/agentEdit'), import('./lib/repxAudit')])
+            .then(([m, a]) => [
+              result?.repxContent ? m.changesMarkdown(m.describeChanges(result.repxContent, newResult.repxContent!)) : '',
+              m.checksMarkdown(a.auditRepx(newResult.repxContent, newResult.layout).findings),
+            ])
+            .catch(() => ['', ''])
+        : ['', ''];
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
         role: 'assistant',
-        text: [credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)), changed].filter(Boolean).join('\n\n'),
+        text: [credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)), changed, checked].filter(Boolean).join('\n\n'),
         result: newResult
       };
       if (result && result.repxContent !== newResult.repxContent) rememberChange(newAssistantMsg.id, result, newResult);
@@ -4149,6 +4154,28 @@ export default function App() {
       return rest;
     });
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, undone: true } : m)));
+  };
+
+  /**
+   * The answer to a redesign Forma asked before making (2026-11-05): yes
+   * starts it from the words the reply asked about, no leaves the report.
+   */
+  const handleConfirm = async (id: string, yes: boolean) => {
+    if (isChatting || isAnalyzing) return;
+    const asked = messages.find((m) => m.id === id);
+    if (!asked?.confirm || asked.confirm.answered) return;
+    setMessages((prev) => prev.map((m) => (m.id === id && m.confirm ? { ...m, confirm: { ...m.confirm, answered: yes ? 'yes' : 'no' } } : m)));
+    if (!yes) return;
+    await startRedesign(asked.confirm.prompt);
+  };
+
+  /** A redesign of the open report from words, as a refinement has always run. */
+  const startRedesign = async (words: string) => {
+    setIsAnalyzing(true);
+    setProgress(startProgress());
+    setError(null);
+    activeDescribeRef.current = undefined;
+    await runGeneration(words, [], [], INITIAL_RUN);
   };
 
   /** A reply rated, or its rating taken back (2026-11-05). It stays with the message and goes nowhere else. */
@@ -4402,6 +4429,24 @@ export default function App() {
       return;
     }
 
+    /*
+     * The answer to a redesign Forma just asked about (2026-11-05). A typed
+     * yes starts it with no request spent on what "yes" means; anything
+     * else typed instead is a no, and is answered as the message it is.
+     */
+    const lastMessage = messages[messages.length - 1];
+    if (!again && lastMessage?.role === 'assistant' && lastMessage.confirm && !lastMessage.confirm.answered) {
+      const yes = AFFIRMATIVE.test(promptText) && stagedImages.length === 0 && stagedTexts.length === 0;
+      const asked = lastMessage.confirm;
+      setMessages(prev => prev.map(m => (m.id === lastMessage.id ? { ...m, confirm: { ...asked, answered: yes ? 'yes' : 'no' } } : m)));
+      if (yes) {
+        setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: promptText }]);
+        clearComposer();
+        await startRedesign(asked.prompt);
+        return;
+      }
+    }
+
     // A picture for Forma's own vision model alone (2026-11-03): the Local AI
     // model is itself "forma-vision", which is asked the one question it was
     // trained on and not the mega-prompt. As a helper beside another AI it
@@ -4535,19 +4580,38 @@ export default function App() {
             recordRevision('Changed in the chat', next);
             rememberChange(id, open, next);
             const changes = agent.describeChanges(open.repxContent!, done.xml);
+            // Whatever the edit brought that the checks find, said here (2026-11-05).
+            const { auditRepx } = await import('./lib/repxAudit');
+            const brought = agent.checksMarkdown(auditRepx(done.xml, open.layout).findings, auditRepx(open.repxContent!, open.layout).findings);
             setMessages(prev => [...prev, {
               id,
               role: 'assistant',
-              text: [outcome.reply, agent.changesMarkdown(changes, done.declined, toolsDone)].filter(Boolean).join('\n\n'),
+              text: [outcome.reply, agent.changesMarkdown(changes, done.declined, toolsDone), brought].filter(Boolean).join('\n\n'),
             }]);
             return;
           }
-          // Nothing could be made in place: say why, and redesign instead.
+          // Nothing could be made in place: say why, and ask before redesigning.
           setMessages(prev => [...prev, {
             id,
             role: 'assistant',
-            text: `That could not be changed in place, so Forma is redesigning the report.\n\n${agent.changesMarkdown([], done.declined)}`,
+            text: `That could not be changed in place. Redesign the report from your words? It rewrites the whole report and takes a minute or two.\n\n${agent.changesMarkdown([], done.declined)}`,
+            confirm: { prompt: currentPrompt },
           }]);
+          return;
+        } else if (open && outcome.wantsReport) {
+          /*
+           * A change only a redesign can make, asked first (2026-11-05): with a
+           * report open it rewrites the whole report, minutes and the whole
+           * REPX in tokens, as an agent asks before a costly step. The buttons
+           * or a typed yes start it (`handleConfirm`).
+           */
+          setMessages(prev => [...prev, {
+            id: nextMessageId(),
+            role: 'assistant',
+            text: [outcome.reply, 'Redesigning rewrites the whole report and takes a minute or two.'].filter(Boolean).join(' '),
+            confirm: { prompt: currentPrompt },
+          }]);
+          return;
         } else if (!outcome.wantsReport) {
           setMessages(prev => [...prev, {
             id: nextMessageId(),
@@ -5537,6 +5601,7 @@ export default function App() {
             onRate={handleRate}
             undoable={undoableIds}
             onUndo={handleUndo}
+            onConfirm={(id, yes) => void handleConfirm(id, yes)}
             query={chatQuery ?? ''}
           >
             {/* Generation, as Forma's answer being written: three dots
