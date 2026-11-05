@@ -83,7 +83,7 @@ import type {
   ChatTurn,
 } from './services/geminiService';
 import { loadGemini, isMissingApiKey } from './lib/geminiClient';
-import { aiReady, effectiveProvider, isVisionOnly, PROVIDER_NAMES, readProviderSettings, visionModelOf, writeProviderSettings } from './lib/aiProvider';
+import { effectiveProvider, isVisionOnly, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
 import type { DraftSource, TeamMember } from './lib/formaTeam';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
 import { clearCachedModel } from './lib/modelCache';
@@ -2202,7 +2202,8 @@ export default function App() {
    * to Forma's own model and images to OCR. Until 2026-11-02 it was the Gemini
    * key alone, and the whole workspace's gate.
    */
-  const hasApiKey = aiReady(config);
+  // The Gemini key opens the workspace, whichever AI is chosen (2026-11-05).
+  const hasApiKey = workspaceOpen(config);
   /** The Gemini key field's own state, whichever provider answers. */
   const hasGeminiKey = Boolean(config.customApiKey?.trim());
 

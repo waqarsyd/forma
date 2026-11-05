@@ -4,7 +4,7 @@
  * localStorage and sessionStorage; this must stay line 1.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { aiReady, DEFAULT_LOCAL_URL, effectiveProvider, isVisionOnly, readProviderSettings, visionModelOf, writeProviderSettings } from './aiProvider';
+import { aiReady, DEFAULT_LOCAL_URL, effectiveProvider, isVisionOnly, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './aiProvider';
 import type { ReportConfig } from '../services/geminiService';
 
 const base: ReportConfig = { version: '20.1', unit: 'HundredthsOfAnInch', pageSize: 'A4' };
@@ -29,6 +29,17 @@ describe('which provider answers', () => {
     expect(aiReady({ ...base, provider: 'local', localUrl: DEFAULT_LOCAL_URL, localModel: 'gemma3' })).toBe(true);
     expect(aiReady({ ...base, provider: 'openrouter', openRouterModel: 'x:free' })).toBe(false);
     expect(aiReady({ ...base, provider: 'openrouter', openRouterModel: 'x:free', openRouterKey: 'k' })).toBe(true);
+  });
+
+  it('opens the workspace only with the Gemini key in, whichever AI is chosen, and that AI ready (2026-11-05)', () => {
+    const local = { ...base, provider: 'local' as const, localUrl: DEFAULT_LOCAL_URL, localModel: 'gemma3' };
+    const openRouter = { ...base, provider: 'openrouter' as const, openRouterModel: 'x:free', openRouterKey: 'k' };
+    expect(workspaceOpen({ ...base, customApiKey: 'AIza' })).toBe(true);
+    expect(workspaceOpen(local)).toBe(false);
+    expect(workspaceOpen({ ...local, customApiKey: 'AIza' })).toBe(true);
+    expect(workspaceOpen({ ...local, localModel: '', customApiKey: 'AIza' })).toBe(false);
+    expect(workspaceOpen(openRouter)).toBe(false);
+    expect(workspaceOpen({ ...openRouter, customApiKey: 'AIza' })).toBe(true);
   });
 
   it("finds Forma's vision model as a helper beside any AI, or as the Local AI model itself", () => {

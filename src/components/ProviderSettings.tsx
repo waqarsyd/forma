@@ -160,6 +160,14 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
           <span>{aiReady(config) ? `${PROVIDER_NAMES[provider]} is ready.` : `${PROVIDER_NAMES[provider]} needs ${provider === 'openrouter' && !config.openRouterKey?.trim() ? 'a key and ' : ''}a model.`}</span>
         </div>
       )}
+      {/* The Gemini key opens the workspace whichever AI designs (2026-11-05),
+          so choosing another one does not let anyone past it. */}
+      {provider !== 'auto' && !config.customApiKey?.trim() && (
+        <div className="wb-note-line wb-warn">
+          <span className="wb-ic"><IconAlert size={13} /></span>
+          <span>Forma also needs your Gemini key, below, to start.</span>
+        </div>
+      )}
 
       {/* Forma's team (2026-11-03, lib/formaTeam.ts): the vision model as a
           helper beside whichever AI designs. Hidden when the AI chosen above

@@ -100,10 +100,16 @@ export function effectiveProvider(config: Pick<ReportConfig, 'provider'>): Effec
 }
 
 /**
- * Whether an AI is set up to answer, which is what opens the workspace: its
- * key, or for Local AI its server and model. With none, Forma does no work
- * and asks for one (2026-11-05).
+ * Whether the workspace opens: the Gemini key is in, whichever AI is chosen,
+ * and that AI is ready to answer. The owner's rule (2026-11-05): the key is
+ * the entry point to any work, Local AI and OpenRouter included; with no key
+ * the composer is locked and asks for one.
  */
+export function workspaceOpen(config: ReportConfig): boolean {
+  return Boolean(config.customApiKey?.trim()) && aiReady(config);
+}
+
+/** Whether the chosen AI is set up to answer: its key, or for Local AI its server and model. */
 export function aiReady(config: ReportConfig): boolean {
   switch (effectiveProvider(config)) {
     case 'gemini':
