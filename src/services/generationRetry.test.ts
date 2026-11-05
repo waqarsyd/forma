@@ -229,7 +229,7 @@ describe('a generation whose model is out of its free daily allowance (2026-11-0
   it('says it is the daily allowance, when it resets, and what works meanwhile, once every model is out', async () => {
     cacheModel('model-a', ['model-a', 'model-b']);
     stubSequence(dailyQuota('model-a'), dailyQuota('model-b'));
-    await expect(analyzeReportDesign('', parts, config)).rejects.toThrow(/daily allowance.*midnight Pacific.*Forma Offline/s);
+    await expect(analyzeReportDesign('', parts, config)).rejects.toThrow(/daily allowance.*midnight Pacific.*a local AI or OpenRouter/s);
   });
 });
 

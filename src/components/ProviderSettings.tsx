@@ -3,10 +3,9 @@
  * 2026-11-02, in the manner of Hermes Agent (docs/proposals/own-model.md,
  * milestone 3). Lives in the settings dialog, loaded only when it opens.
  *
- * Five choices, all free to use:
- * - Automatic: Gemini when a key is in, Forma Offline otherwise.
- * - Forma Offline: Forma's own model and OCR, no key and no quota.
- * - Gemini: with the key below.
+ * Three choices, all free to use, since the owner merged Automatic and Forma
+ * Offline on 2026-11-05 and made an AI the entry point to any work:
+ * - Automatic: Gemini, with the key below.
  * - Local AI: Ollama or LM Studio on this computer.
  * - OpenRouter: its free models, with a key of the user's own.
  * For a local server or OpenRouter, "Find models" asks the server what it
@@ -20,9 +19,7 @@ import { aiReady, DEFAULT_LOCAL_URL, isVisionOnly, OPENROUTER_URL, PROVIDER_NAME
 import type { ReportConfig } from '../services/geminiService';
 
 const NOTES: Record<AiProvider, string> = {
-  auto: 'Gemini when a key is in below, Forma Offline otherwise.',
-  offline: "Forma's own model designs from your words, and OCR builds from an image's text. No key, no quota, nothing leaves the browser.",
-  gemini: 'Google Gemini with your own free key, below.',
+  auto: 'Google Gemini with your own free key, below. Forma starts once a key is in.',
   local: 'Ollama or LM Studio on this computer: free, unlimited and private. Choose a model that reads images to design from pictures.',
   openrouter: "OpenRouter's free models, with a key of your own. Free models have daily limits, and their providers may log requests.",
 };

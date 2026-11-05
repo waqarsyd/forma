@@ -118,6 +118,13 @@ client; the script refuses a path inside it.
 
 ## The offline generator (milestone 2, 2026-11-02)
 
+**Reversed on 2026-11-05, as the entry point.** The owner merged Automatic
+and Forma Offline and made the key the entry point to any work: with no AI
+set up the chat box is locked again and `designOffline` is gone. The
+generator below is unchanged and still designs, as the draft that stands in
+when the AI set up fails to answer. What follows is the record of the three
+days it answered with no key.
+
 With no key, the chat box no longer stops: `designOffline` in `App.tsx`
 answers instead of Gemini.
 
@@ -1082,6 +1089,16 @@ carry it.
    The customer list looped in one run, and its brief was a poor reading of
    its page. See the runs of that date under *The fidelity benchmark* in
    `gemini.md`.
+8. **The customer list is the box reader's plainest failure**, and it is a
+   committed, synthetic page. OCR reads its 23 lines cleanly, and
+   `detectLayout` finds the 21-row table. The reader then puts every line
+   but the footer in Detail: the title, the heading row and all twenty
+   records. The design keeps a band's first appearance, so the brief loses
+   the title and its run date. It shows the heading row as the record, with
+   three of six columns bound. This is the weakness the real reports
+   measure, page and report headers read as Detail, on the simplest page
+   there is. Until the reader reads it, whether the brief helps a
+   generation stays unproven: the invoice scored the same with it.
 
 ## Forma's team: every part in its role (2026-11-03)
 

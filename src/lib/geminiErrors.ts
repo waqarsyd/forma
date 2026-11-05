@@ -158,7 +158,8 @@ export function classifyGeminiError(error: any): Error {
       return new Error(
         `This key's free daily allowance${model ? ` for ${model}` : ''} is used up, and Forma tried the other models it can use. ` +
           `It resets at midnight Pacific time, in about ${hours} hour${hours === 1 ? '' : 's'}. ` +
-          "Meanwhile Forma Offline designs from your words and builds from images with no key: choose it in Settings.",
+          // Forma Offline went on 2026-11-05; the other AIs Settings offers are what works meanwhile.
+          'Meanwhile a local AI or OpenRouter can design instead: choose one in Settings.',
       );
     }
     const waitMs = parseRetryDelayMs(error);

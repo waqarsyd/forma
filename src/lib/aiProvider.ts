@@ -3,13 +3,18 @@
  * docs/proposals/own-model.md).
  *
  * The owner asked for provider setup in the manner of Hermes Agent, and
- * chose four:
- * - **Forma Offline:** Forma's own model, no key and no service.
- * - **Gemini** with the user's free key.
- * - **Local AI:** Ollama or LM Studio on the user's own computer, through
- *   their OpenAI-compatible endpoint.
- * - **OpenRouter's free models.**
- * "Automatic" uses Gemini when a key is in, and Forma Offline otherwise.
+ * chose Gemini with the user's free key, Local AI (Ollama or LM Studio on the
+ * user's own computer, through their OpenAI-compatible endpoint) and
+ * OpenRouter's free models, beside Forma Offline, Forma's own model with no
+ * key at all.
+ *
+ * **On 2026-11-05 the owner merged Automatic and Forma Offline and made the
+ * key the entry point again**: with no AI set up, Forma does no work, as it
+ * was before 2026-11-02. So the choices are three: Automatic, which is Gemini
+ * with the key in Settings; Local AI; OpenRouter. A browser that kept
+ * "gemini" or "offline" from before reads as Automatic. Forma's own model is
+ * still there behind the scenes, as the draft that stands in when the AI
+ * set up fails to answer (lib/formaTeam.ts).
  *
  * The choice, the local endpoint and the model names are preferences, kept in
  * localStorage. The OpenRouter key is not: like the Gemini key it lives in
@@ -17,9 +22,12 @@
  */
 import type { ReportConfig } from '../services/geminiService';
 
-export type AiProvider = 'auto' | 'offline' | 'gemini' | 'local' | 'openrouter';
+/** What the settings offer. */
+export type AiProvider = 'auto' | 'local' | 'openrouter';
+/** What answers: Automatic is Gemini. */
+export type EffectiveProvider = 'gemini' | 'local' | 'openrouter';
 
-export const PROVIDERS: AiProvider[] = ['auto', 'offline', 'gemini', 'local', 'openrouter'];
+export const PROVIDERS: AiProvider[] = ['auto', 'local', 'openrouter'];
 
 /** Ollama's OpenAI-compatible endpoint; LM Studio's is http://localhost:1234/v1. */
 export const DEFAULT_LOCAL_URL = 'http://localhost:11434/v1';
@@ -86,17 +94,15 @@ export function writeProviderSettings(s: Partial<ProviderSettings>): void {
   }
 }
 
-/** The provider a config actually uses: Automatic resolved to Gemini or Forma Offline. */
-export function effectiveProvider(config: Pick<ReportConfig, 'provider' | 'customApiKey'>): Exclude<AiProvider, 'auto'> {
-  const p = config.provider ?? 'auto';
-  if (p !== 'auto') return p;
-  return config.customApiKey?.trim() ? 'gemini' : 'offline';
+/** The provider a config actually uses: Automatic, and anything a browser kept from before, is Gemini. */
+export function effectiveProvider(config: Pick<ReportConfig, 'provider'>): EffectiveProvider {
+  return config.provider === 'local' || config.provider === 'openrouter' ? config.provider : 'gemini';
 }
 
 /**
- * Whether an AI model is set up to answer, which is what the workspace's
- * AI features check. Forma Offline is never an AI model: with it the chat box
- * hands words to Forma's own model and images to OCR.
+ * Whether an AI is set up to answer, which is what opens the workspace: its
+ * key, or for Local AI its server and model. With none, Forma does no work
+ * and asks for one (2026-11-05).
  */
 export function aiReady(config: ReportConfig): boolean {
   switch (effectiveProvider(config)) {
@@ -106,8 +112,6 @@ export function aiReady(config: ReportConfig): boolean {
       return Boolean(config.localUrl?.trim() && config.localModel?.trim());
     case 'openrouter':
       return Boolean(config.openRouterKey?.trim() && config.openRouterModel?.trim());
-    default:
-      return false;
   }
 }
 
@@ -137,9 +141,8 @@ export function visionModelOf(config: Pick<ReportConfig, 'provider' | 'localUrl'
 }
 
 /** A provider's name as the settings and the thread say it. */
-export const PROVIDER_NAMES: Record<AiProvider, string> = {
+export const PROVIDER_NAMES: Record<AiProvider | EffectiveProvider, string> = {
   auto: 'Automatic',
-  offline: 'Forma Offline',
   gemini: 'Gemini',
   local: 'Local AI',
   openrouter: 'OpenRouter',

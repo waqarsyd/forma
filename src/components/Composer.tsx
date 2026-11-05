@@ -30,6 +30,7 @@ import {
   IconArrowUp,
   IconClose,
   IconDoc,
+  IconKey,
   IconPaperclip,
   IconWarn,
 } from './landing/icons';
@@ -66,8 +67,14 @@ export interface ComposerProps {
   onStop?: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onFileChange: ChangeEventHandler<HTMLInputElement>;
-  /** Whether an AI is set up: only the placeholder changes. Forma ships no key of its own. */
+  /**
+   * Whether an AI is set up. Forma ships no key of its own, and with none the
+   * box is locked and its button opens Settings for one (2026-11-05, the
+   * owner's rule that the key is the entry point to any work).
+   */
   hasApiKey: boolean;
+  /** Opens Settings at the key, from the locked box's button. */
+  onAddKey?: () => void;
   isAnalyzing: boolean;
   /** A chat turn is in flight. Blocks a second send — see `canSend` below. */
   isChatting: boolean;
@@ -93,6 +100,7 @@ export default function Composer({
   fileInputRef,
   onFileChange,
   hasApiKey,
+  onAddKey,
   isAnalyzing,
   isChatting,
   isIngesting,
@@ -114,11 +122,11 @@ export default function Composer({
    * `isChatting` is new here for the same reason: the button never had it, so a
    * chat turn in flight left the control fully live.
    */
-  // With no key the box still sends (2026-11-02): Forma's own model designs
-  // from words and OCR builds from images, so the key unlocks AI, not the box.
-  // Nothing about an attachment holds the send (2026-11-03): its text is read
-  // after the message goes, as a step of the run, not while it is written.
-  const canSend = !isAnalyzing && !isChatting && !isIngesting;
+  // No key, no send (2026-11-05): the key is the entry point to any work, as
+  // it was before 2026-11-02, when for three days Forma's own model answered
+  // without one. Nothing about an attachment holds the send (2026-11-03): its
+  // text is read after the message goes, as a step of the run.
+  const canSend = hasApiKey && !isAnalyzing && !isChatting && !isIngesting;
 
   /*
    * Sending puts the caret back in the field, and this is not a nicety.
@@ -229,12 +237,13 @@ export default function Composer({
         </div>
       )}
 
-      <div className="wb-box">
+      <div className={`wb-box${hasApiKey ? '' : ' wb-is-locked'}`}>
         <button
           className="wb-tool"
           aria-label="Attach a file"
           title="Attach an image, a PDF or a .repx"
           onClick={() => fileInputRef.current?.click()}
+          disabled={!hasApiKey}
         >
           <IconPaperclip size={16} />
         </button>
@@ -271,10 +280,17 @@ export default function Composer({
               onPasteFiles(files);
             }
           }}
-          placeholder={hasApiKey ? 'Describe a report, attach or paste an image, or ask anything…' : 'Describe a report or attach an image: Forma’s own model, no key needed'}
+          disabled={!hasApiKey}
+          placeholder={hasApiKey ? 'Describe a report, attach or paste an image, or ask anything…' : 'Add your API key to start'}
           aria-label="Message"
         />
-        {isAnalyzing && onStop ? (
+        {!hasApiKey ? (
+          /* Locked, the send button is the way in: it opens Settings at the
+             key, so nothing has to be added under the box (2026-11-04). */
+          <button className="wb-send" aria-label="Add your API key" title="Add your API key in Settings" onClick={onAddKey}>
+            <IconKey size={15} />
+          </button>
+        ) : isAnalyzing && onStop ? (
           /* While a generation runs, the send button is its Stop (2026-11-04),
              as in the chat apps people know. */
           <button className="wb-send wb-send--stop" aria-label="Stop" title="Stop" onClick={onStop}>

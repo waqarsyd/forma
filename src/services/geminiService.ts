@@ -93,11 +93,12 @@ export interface ReportConfig {
   thinkingBudget?: number;
   /**
    * Which AI answers (2026-11-02, lib/aiProvider.ts). Absent or `auto` is
-   * Gemini with a key and Forma Offline without; `offline` never reaches this
-   * file. `local` and `openrouter` go through an OpenAI-compatible endpoint
-   * (compatClient.ts) with their own model, and need no Gemini key.
+   * Gemini, with the key; Forma Offline went into it on 2026-11-05, when the
+   * owner made an AI the entry point to any work. `local` and `openrouter` go
+   * through an OpenAI-compatible endpoint (compatClient.ts) with their own
+   * model, and need no Gemini key.
    */
-  provider?: 'auto' | 'offline' | 'gemini' | 'local' | 'openrouter';
+  provider?: 'auto' | 'local' | 'openrouter';
   localUrl?: string;
   localModel?: string;
   openRouterModel?: string;

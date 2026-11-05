@@ -15,16 +15,16 @@ beforeEach(() => {
 });
 
 describe('which provider answers', () => {
-  it('resolves Automatic to Gemini with a key and Forma Offline without', () => {
-    expect(effectiveProvider({ customApiKey: 'AIza' })).toBe('gemini');
-    expect(effectiveProvider({ customApiKey: ' ' })).toBe('offline');
-    expect(effectiveProvider({ provider: 'offline', customApiKey: 'AIza' })).toBe('offline');
+  it('resolves Automatic to Gemini, key or no key, since Forma Offline went into it (2026-11-05)', () => {
+    expect(effectiveProvider({})).toBe('gemini');
+    expect(effectiveProvider({ provider: 'auto' })).toBe('gemini');
+    expect(effectiveProvider({ provider: 'local' })).toBe('local');
   });
 
-  it('is ready only with what the provider needs', () => {
+  it('is ready only with what the provider needs, and never with no key or server at all', () => {
     expect(aiReady({ ...base, customApiKey: 'AIza' })).toBe(true);
-    expect(aiReady({ ...base, provider: 'offline', customApiKey: 'AIza' })).toBe(false);
-    expect(aiReady({ ...base, provider: 'gemini' })).toBe(false);
+    expect(aiReady({ ...base })).toBe(false);
+    expect(aiReady({ ...base, customApiKey: '  ' })).toBe(false);
     expect(aiReady({ ...base, provider: 'local', localUrl: DEFAULT_LOCAL_URL })).toBe(false);
     expect(aiReady({ ...base, provider: 'local', localUrl: DEFAULT_LOCAL_URL, localModel: 'gemma3' })).toBe(true);
     expect(aiReady({ ...base, provider: 'openrouter', openRouterModel: 'x:free' })).toBe(false);
@@ -32,8 +32,8 @@ describe('which provider answers', () => {
   });
 
   it("finds Forma's vision model as a helper beside any AI, or as the Local AI model itself", () => {
-    expect(visionModelOf({ ...base, provider: 'gemini' })).toBeNull();
-    expect(visionModelOf({ ...base, provider: 'gemini', visionModel: ' forma-vision ' })).toEqual({ baseUrl: DEFAULT_LOCAL_URL, model: 'forma-vision' });
+    expect(visionModelOf({ ...base, provider: 'auto' })).toBeNull();
+    expect(visionModelOf({ ...base, provider: 'auto', visionModel: ' forma-vision ' })).toEqual({ baseUrl: DEFAULT_LOCAL_URL, model: 'forma-vision' });
     expect(visionModelOf({ ...base, provider: 'local', localUrl: 'http://localhost:1234/v1', localModel: 'gemma3', visionModel: 'forma-vision:q8' })).toEqual({
       baseUrl: 'http://localhost:1234/v1',
       model: 'forma-vision:q8',
@@ -42,7 +42,7 @@ describe('which provider answers', () => {
     // Alone only when the AI that designs is the vision model; a helper beside another AI is not.
     expect(isVisionOnly({ provider: 'local', localModel: 'forma-vision' })).toBe(true);
     expect(isVisionOnly({ provider: 'local', localModel: 'gemma3' })).toBe(false);
-    expect(isVisionOnly({ provider: 'gemini', localModel: 'forma-vision' })).toBe(false);
+    expect(isVisionOnly({ provider: 'auto', localModel: 'forma-vision' })).toBe(false);
   });
 });
 
@@ -60,8 +60,10 @@ describe('the kept settings', () => {
     expect(sessionStorage.getItem('openRouterKey:session')).toBeNull();
   });
 
-  it('ignores a provider it does not know', () => {
-    localStorage.setItem('forma.aiProvider', JSON.stringify({ provider: 'skynet' }));
-    expect(readProviderSettings().provider).toBe('auto');
+  it('ignores a provider it does not know, and reads the retired Gemini and Forma Offline choices as Automatic', () => {
+    for (const provider of ['skynet', 'gemini', 'offline']) {
+      localStorage.setItem('forma.aiProvider', JSON.stringify({ provider }));
+      expect(readProviderSettings().provider).toBe('auto');
+    }
   });
 });

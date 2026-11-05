@@ -210,6 +210,6 @@ describe('which quota a 429 is (2026-11-02)', () => {
     const e = classifyGeminiError({ status: 429, message: "Quota exceeded for quota metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', model: gemini-2.5-flash" });
     expect(e.message).toMatch(/daily allowance for gemini-2\.5-flash is used up/);
     expect(e.message).toMatch(/midnight Pacific time, in about \d+ hours?/);
-    expect(e.message).toContain('Forma Offline');
+    expect(e.message).toContain('a local AI or OpenRouter');
   });
 });

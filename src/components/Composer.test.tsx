@@ -160,16 +160,20 @@ describe('when sending is not possible', () => {
     expect(send().disabled).toBe(true);
   });
 
-  // Since 2026-11-02 a missing key no longer locks the box: Forma's own model
-  // designs from words with no key, so only work in flight holds the send.
-  it("sends with no key, to Forma's own model, and says so in the placeholder", () => {
+  // The key is the entry point again (2026-11-05): with none the box is
+  // locked, as it was until 2026-11-02, and its button opens Settings.
+  it('locks with no key, sends nothing, and offers the way to a key in place of the send', () => {
     const onSend = vi.fn();
-    draw({ hasApiKey: false, onSend });
-    expect(send().disabled).toBe(false);
-    expect(field().disabled).toBe(false);
-    expect(field().placeholder).toBe('Describe a report or attach an image: Forma’s own model, no key needed');
+    const onAddKey = vi.fn();
+    draw({ hasApiKey: false, onSend, onAddKey });
+    expect(field().disabled).toBe(true);
+    expect(field().placeholder).toBe('Add your API key to start');
+    expect(screen.getByRole('button', { name: 'Attach a file' })).toHaveProperty('disabled', true);
+    expect(screen.queryByRole('button', { name: 'Send note' })).toBeNull();
     fireEvent.keyDown(field(), { key: 'Enter' });
-    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add your API key' }));
+    expect(onAddKey).toHaveBeenCalledTimes(1);
   });
 
   it('is ready when a key is present and nothing is in flight', () => {

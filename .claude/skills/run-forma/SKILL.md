@@ -99,7 +99,7 @@ node .claude/skills/run-forma/drive.mjs --out $sp `
 | `--prompt <text>` | text sent with the generation — workspace only |
 | `--say <text>` | a chat turn after the report; repeatable — workspace only |
 | `--pane <name>` | open a pane at the end: `Mockup`, `Preview`, `Data`, `Spec` or `REPX` — workspace only |
-| `--no-key` | remove the key, to see Forma's own model answer |
+| `--no-key` | remove the key, to see the composer locked |
 | `--wait <s>` | generation timeout, default 60 |
 | `--port <n>` | the CDP port to attach to, default 9222 — only needed if Edge was started on another one |
 
@@ -117,7 +117,7 @@ foreach ($r in '/','/features','/docs','/contact','/terms','/privacy','/nope') {
 ```
 
 It prints the document title, the rendered character count and `h1`, whether an
-AI or Forma's own model will answer, how long the generation took, and — on the
+the composer is open or locked, how long the generation took, and — on the
 workspace, once a report exists — **the report's title and the REPX audit**, read
 from the REPX pane's audit box with every finding, or `clean` when there is no
 box. It exits non-zero when a step cannot complete, so it works as a check and
@@ -139,8 +139,9 @@ one, and the driver **asserts** the resulting state instead of printing it — a
 surviving under `--no-key` throws, because every step after that would be
 testing the wrong thing. Skipping the seed was the first implementation, and it
 cheerfully reported `composer enabled` on a run that had asked for the opposite.
-Since 2026-11-02 a missing key no longer locks the composer, so the state is read
-from its placeholder, which ends "no key needed" when Forma's own model answers.
+Since 2026-11-05 a missing key locks the composer again (from 2026-11-02 Forma's
+own model answered without one), so the state is read from whether the message
+field is disabled.
 
 `docs/media/screenshot.png` is a convenient thing to attach: it is committed, it
 is a real image, and it is large enough to exercise the upload optimiser.

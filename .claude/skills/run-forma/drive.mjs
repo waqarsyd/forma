@@ -268,15 +268,16 @@ if (bodyLen < 50) throw new Error(`the page rendered ${bodyLen} characters -- it
 if (isWorkspace) {
   /*
    * Assert rather than report. A key state that is not what was asked for means
-   * every step after this would be testing the wrong thing. Since 2026-11-02 a
-   * missing key no longer locks the composer (Forma's own model answers), so
-   * the state is read from the placeholder, which says which one will answer.
+   * every step after this would be testing the wrong thing. Since 2026-11-05 a
+   * missing key locks the composer again (the owner made the key the entry
+   * point; from 2026-11-02 Forma's own model answered without one), so the
+   * state is read from whether the message field is disabled.
    */
-  const keyed = await evalJs(`!/no key needed/i.test(document.querySelector(${JSON.stringify(SEL.composer)}).placeholder)`);
-  console.log('key    ' + (keyed ? 'present, an AI answers' : "absent, Forma's own model answers"));
+  const keyed = await evalJs(`!document.querySelector(${JSON.stringify(SEL.composer)}).disabled`);
+  console.log('key    ' + (keyed ? 'present, the composer is open' : 'absent, the composer is locked'));
   if (keyed !== opts.key) {
     throw new Error(opts.key
-      ? 'the seeded key did not take -- the placeholder still says no key is needed'
+      ? 'the seeded key did not take -- the composer is still locked'
       : '--no-key was asked for but a key survived in this tab');
   }
 } else {

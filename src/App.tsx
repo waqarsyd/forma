@@ -3905,77 +3905,12 @@ export default function App() {
     setMessages((prev) => withdrawTurn(prev, id));
   };
 
-  /**
-   * The chat box with no key (2026-11-02, docs/proposals/own-model.md).
-   * Forma's own model designs a report from words, and an image is built from
-   * the text OCR read, both with no AI service, so the workspace works for
-   * anyone. A PDF's text layer and an attached .repx still need a model, and
-   * the reply says so rather than pretending.
-   */
-  const designOffline = async (message: string) => {
-    const staged = [...previews];
-    const stagedMeta = [...previewMeta];
-    const stagedForOcr = ocrPages;
-    const texts = attachmentTexts;
-    setMessages(prev => [...prev, {
-      id: nextMessageId(),
-      role: 'user',
-      text: message,
-      images: staged.length > 0 ? staged : undefined,
-      imageMeta: staged.length > 0 ? previewMeta : undefined,
-    }]);
-    setPrompt('');
-    setPreviews([]);
-    setPreviewMeta([]);
-    setAttachmentTexts([]);
-    setUploadNotices([]);
-    setError(null);
-    const say = (text: string, attached?: DesignResult) =>
-      setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text, ...(attached ? { result: attached } : {}) }]);
-    try {
-      // Read behind the scenes, with the message already in the thread (2026-11-03).
-      const read = await readSentPages(stagedForOcr);
-      const fromPages = readSources(read);
-      detectFor({ texts, metas: stagedMeta, pages: fromPages.pages, words: [message, fromPages.words].join('\n') });
-      if (read.length) {
-        const { buildFromRead } = await import('./lib/ocrAttach');
-        const { unit, pageSize } = effectiveConfig();
-        const built = buildFromRead(read, unit, pageSize);
-        // Banded by Forma's box reader when it can be (2026-11-04), with the page
-        // as OCR read it kept as the revision before; OCR's copy alone otherwise.
-        const banded = await readerBuild(read);
-        if (banded) {
-          handleReaderBuild(banded, built);
-          return;
-        }
-        if (built) {
-          handleOcrBuild(built);
-          return;
-        }
-      }
-      // The words, the replies and the generator are one lazy module, so the
-      // entry chunk carries none of them.
-      const offline = await import('./lib/offlineGenerator');
-      if (staged.length || texts.length) {
-        say(offline.OFFLINE_NEEDS_MODEL);
-        return;
-      }
-      const request = describedRequest(message);
-      if (!request.dataSchema && !offline.isOfflineRequest(message)) {
-        say(offline.OFFLINE_HELP);
-        return;
-      }
-      // With what the user asked Forma to remember, and what their kept reports show.
-      const { result: designed, reply } = await offlineDesign(request, message);
-      const newResult = { ...designed, repxContent: asConfigured(designed.repxContent ?? '') };
-      setResult(newResult);
-      recordRevision("Forma's own model", newResult);
-      setActiveTab('ui');
-      say(reply, newResult);
-    } catch (err: any) {
-      say(err?.message || "Forma's own model could not design this report.");
-    }
-  };
+  /* `designOffline`, the chat box with no key, went on 2026-11-05: the owner
+     made the key the entry point to any work again, and the composer locks
+     without one. It answered words with Forma's own model and images with
+     OCR from 2026-11-02 (adccf55); `git log -S"const designOffline"` finds
+     it. Forma's own model and OCR's build still stand in when the AI set up
+     fails to answer (`offlineDesign`, `prepareTeam`'s draft). */
 
   /**
    * A picture read by Forma's vision model alone (2026-11-03, milestone 6 of
@@ -4139,19 +4074,20 @@ export default function App() {
     // this request brings (lib/autoConfig.ts); again once its pages are read.
     detectFor({ texts: attachmentTexts, metas: previewMeta, words: promptText });
 
-    // A picture for Forma's own vision model alone (2026-11-03): the Local AI
-    // model is itself "forma-vision", which is asked the one question it was
-    // trained on and not the mega-prompt; or no AI is set up and the vision
-    // model is, as a helper. With an AI it helps that AI instead (prepareTeam).
-    if (previews.length > 0 && (isVisionOnly(config) || (!hasApiKey && visionModelOf(config)))) {
-      await designFromVision(promptText);
+    // No AI set up, no work (2026-11-05): the key is the entry point, as it
+    // was until 2026-11-02. The composer is locked without one; this is the
+    // guard that makes it true whoever calls.
+    if (!hasApiKey) {
+      setIsConfigOpen(true);
       return;
     }
 
-    // With no key, Forma's own model and OCR answer instead of Gemini
-    // (2026-11-02). Until then the key gated the whole workspace here.
-    if (!hasApiKey) {
-      await designOffline(promptText);
+    // A picture for Forma's own vision model alone (2026-11-03): the Local AI
+    // model is itself "forma-vision", which is asked the one question it was
+    // trained on and not the mega-prompt. As a helper beside another AI it
+    // helps that AI instead (prepareTeam).
+    if (previews.length > 0 && isVisionOnly(config)) {
+      await designFromVision(promptText);
       return;
     }
 
@@ -5179,7 +5115,9 @@ export default function App() {
             onOpenAttachment={setFullScreenImage}
             onAnswer={handleClarifyAnswers}
             suggestions={PREDEFINED_PROMPTS}
-            onSuggest={setPrompt}
+            /* A suggestion fills the box, or with no AI set up opens Settings
+               for one: a locked box would hold it with nowhere to send it. */
+            onSuggest={(text) => (hasApiKey ? setPrompt(text) : setIsConfigOpen(true))}
             onEdit={handleEditMessage}
             onWithdraw={handleWithdrawMessage}
             query={chatQuery ?? ''}
@@ -5229,6 +5167,7 @@ export default function App() {
             fileInputRef={fileInputRef}
             onFileChange={handleFileChange}
             hasApiKey={hasApiKey}
+            onAddKey={() => setIsConfigOpen(true)}
             isAnalyzing={isAnalyzing}
             isChatting={isChatting}
             isIngesting={isIngesting}
