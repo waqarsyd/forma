@@ -43,76 +43,15 @@
 import { parseDataSource, type DataSource } from './dataSource';
 import type { RepxAudit } from './repxAudit';
 
-/** One of the wizard's built-in suggestions. */
-export interface PredefinedPrompt {
-  id: string;
-  title: string;
-  text: string;
-}
-
-/**
- * The catalogue the dialog offers. Each is a complete description on its own,
- * written the way the DevExpress documentation says a good prompt is written:
- * layout, calculations, grouping and the visual type, so the model assumes
- * less. Users edit them before sending; the text is a start, not a template.
+/*
+ * PREDEFINED_PROMPTS, six complete descriptions offered as chips in an empty
+ * conversation, went on 2026-11-05 when the owner asked for the chat to show
+ * none of that (`git log -S"PREDEFINED_PROMPTS"`).
  */
-export const PREDEFINED_PROMPTS: readonly PredefinedPrompt[] = Object.freeze([
-  {
-    id: 'invoice',
-    title: 'Invoice',
-    text:
-      'An invoice. Company name, address and logo placeholder top left; the word INVOICE, the invoice number, ' +
-      'invoice date and due date top right. A "Bill To" block with the customer name and address. A line-item table ' +
-      'with columns Item, Description, Qty, Unit Price and Amount, with a bold heading row and right-aligned numbers. ' +
-      'Below it, right-aligned: Subtotal, Tax, Shipping and a bold Total Due. Payment terms and a thank-you line at ' +
-      'the bottom, and the page number in the footer.',
-  },
-  {
-    id: 'customer-list',
-    title: 'Customer list',
-    text:
-      'A customer listing. A title "Customer List" with the run date beside it. One table with columns Customer ID, ' +
-      'Company, Contact, City, Country and Balance, with a ruled heading row that repeats on every page and ' +
-      'right-aligned balances. Sorted by Customer ID. Page number in the footer.',
-  },
-  {
-    id: 'sales-by-region',
-    title: 'Sales by region',
-    text:
-      'A sales summary grouped by Region. For each region a group header with the region name, then rows of ' +
-      'Salesperson, Orders, Revenue and Average Order, and a group footer with the region subtotal in bold. ' +
-      'A grand total at the end of the report. A bar chart of revenue by region in the report header.',
-  },
-  {
-    id: 'employee-directory',
-    title: 'Employee directory',
-    text:
-      'An employee directory grouped by Department. Each row shows a photo placeholder, Name, Title, Email, Phone ' +
-      'and Start Date. Department name in the group header with the head count, and the department on every page ' +
-      'header. Page X of Y in the footer.',
-  },
-  {
-    id: 'purchase-order',
-    title: 'Purchase order',
-    text:
-      'A purchase order. Buyer name and address top left, "PURCHASE ORDER" with the PO number and date top right, ' +
-      'a Vendor block and a Ship To block side by side, then a table with columns Line, Part Number, Description, ' +
-      'Quantity, Unit Cost and Extended Cost. Subtotal, tax and total at the bottom right, an authorised-by ' +
-      'signature line at the bottom left.',
-  },
-  {
-    id: 'inventory',
-    title: 'Inventory status',
-    text:
-      'An inventory status report grouped by Warehouse. Columns SKU, Product, On Hand, Reserved, Available and ' +
-      'Reorder Level, with rows whose Available is below Reorder Level shown in red. Warehouse totals in each group ' +
-      'footer and a company total in the report footer. Report date in the header and page number in the footer.',
-  },
-]);
 
 /** What the dialog collects. The page size and unit come from the report configuration. */
 export interface ReportDescriptionRequest {
-  /** The user's description, edited from a predefined prompt or typed. */
+  /** The user's description, as typed. */
   description: string;
   /** Optional. When absent the model names the report from the description. */
   title?: string;

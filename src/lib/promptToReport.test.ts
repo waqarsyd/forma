@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  PREDEFINED_PROMPTS,
   buildDescriptionBrief,
   describeDataSource,
   describedRequest,
@@ -12,18 +11,6 @@ import {
   withAnswers,
   MAX_FIX_ATTEMPTS,
 } from './promptToReport';
-
-describe('the predefined prompts', () => {
-  it('are six complete descriptions with unique ids, each naming its columns', () => {
-    expect(PREDEFINED_PROMPTS).toHaveLength(6);
-    expect(new Set(PREDEFINED_PROMPTS.map((p) => p.id)).size).toBe(6);
-    for (const p of PREDEFINED_PROMPTS) {
-      expect(p.title.length).toBeGreaterThan(3);
-      expect(p.text.length).toBeGreaterThan(120);
-      expect(isDescribable({ description: p.text })).toBe(true);
-    }
-  });
-});
 
 describe('normalizeDescription and isDescribable', () => {
   it('collapses whitespace and refuses a description too short to design from', () => {

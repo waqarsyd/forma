@@ -55,13 +55,6 @@ export interface ChatThreadProps<R> {
    */
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
   /**
-   * Starting points for an empty conversation: the predefined report
-   * descriptions the Describe dialog offered before the chat took it over.
-   * Choosing one puts its text in the composer, to edit or send.
-   */
-  suggestions?: readonly { id: string; title: string; text: string }[];
-  onSuggest?: (text: string) => void;
-  /**
    * The person's own messages can be edited and withdrawn (2026-11-04). An
    * edit sends the changed text again from that message on, as Try again
    * does; a withdrawal takes the message and Forma's answers to it out of
@@ -354,8 +347,6 @@ export default function ChatThread<R>({
   onRetry,
   onOpenAttachment,
   onAnswer,
-  suggestions,
-  onSuggest,
   onEdit,
   onWithdraw,
   query = '',
@@ -426,33 +417,16 @@ export default function ChatThread<R>({
 
   return (
     <div className="wb-thread" ref={threadRef} onScroll={notePinned}>
-      {/* One box does everything, so the empty thread says what it takes, and
-          offers the predefined descriptions as places to start. */}
+      {/* An empty conversation is empty (2026-11-05). It opened with a note
+          saying what the box takes and six predefined descriptions as chips,
+          until the owner asked for all of that to go behind the scenes, as the
+          chat apps people know do it; `git log -S"wb-note--start"` finds it. */}
       {searching && (
         <p className="wb-search-count" role="status">
           {shown.length === 0
             ? 'No message holds that.'
             : `${shown.length} of ${messages.length} ${messages.length === 1 ? 'message' : 'messages'}`}
         </p>
-      )}
-      {!searching && messages.length === 0 && !isChatting && !isAnalyzing && suggestions && suggestions.length > 0 && (
-        <article className="wb-note wb-note--start">
-          <span className="wb-spine" />
-          <div>
-            <div className="wb-who">Forma</div>
-            <p>
-              Attach an image, a scan, a PDF or a .repx, describe the report you want, or both, and send. The rest
-              happens behind the scenes, and a description gets a question or two when it leaves something open.
-            </p>
-            <div className="wb-chips" role="group" aria-label="Start from a description">
-              {suggestions.map((s) => (
-                <button key={s.id} type="button" className="wb-pill wb-pill--outline" onClick={() => onSuggest?.(s.text)}>
-                  {s.title}
-                </button>
-              ))}
-            </div>
-          </div>
-        </article>
       )}
       {shown.map((msg) => (
         <ChatNote

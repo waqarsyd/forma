@@ -404,24 +404,16 @@ describe('the progress card passed through', () => {
 });
 
 /*
- * The chat box took over the Describe dialog (2026-11-01): its predefined
- * descriptions are where an empty conversation starts, and its follow-up
+ * The chat box took over the Describe dialog (2026-11-01): its follow-up
  * questions are a form in the thread, each field holding its suggestion.
+ * Since 2026-11-05 an empty conversation shows nothing: no opening note and
+ * no predefined descriptions, at the owner's request.
  */
 describe('a report described in the chat', () => {
-  const suggestions = [
-    { id: 'invoice', title: 'Invoice', text: 'An invoice with line items.' },
-    { id: 'list', title: 'Customer list', text: 'A customer list.' },
-  ];
-
-  it('offers the predefined descriptions in an empty conversation, and only there', () => {
-    const onSuggest = vi.fn();
-    draw({ suggestions, onSuggest });
-    fireEvent.click(screen.getByText('Customer list'));
-    expect(onSuggest).toHaveBeenCalledWith('A customer list.');
-    cleanup();
-    draw({ suggestions, onSuggest, messages: [msg({ id: '1', text: 'hello' })] });
-    expect(screen.queryByText('Customer list')).toBeNull();
+  it('shows nothing in an empty conversation', () => {
+    draw({});
+    expect(document.querySelector('.wb-thread')!.textContent).toBe('');
+    expect(document.querySelector('.wb-note')).toBeNull();
   });
 
   it('asks its questions as a form holding the suggestions, and hands up the answers', () => {

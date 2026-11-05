@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,403 tests in 125 files** — under the `node` environment
+`npm test` runs Vitest over **2,402 tests in 125 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -78,7 +78,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 |---|---:|---|
 | `components/AccountDialog` | 23 | jsdom |
 | `components/BatchPanel` | 15 | jsdom; since 2026-11-04 also a chosen folder queued by path, a drop on the panel, and two at a time with a quota failure stopping both workers |
-| `components/ChatThread` | 40 | jsdom; since 2026-11-01 also the predefined descriptions an empty conversation starts from, and a description's questions asked as a form holding their suggestions; since 2026-11-04 the working dots named for a screen reader before the first token, and a reply drawn as its words with no buttons; and editing and withdrawing a sent message, and searching the transcript |
+| `components/ChatThread` | 40 | jsdom; since 2026-11-05 an empty conversation showing nothing (from 2026-11-01 until then, the predefined descriptions it started from); since 2026-11-01 a description's questions asked as a form holding their suggestions; since 2026-11-04 the working dots named for a screen reader before the first token, and a reply drawn as its words with no buttons; and editing and withdrawing a sent message, and searching the transcript |
 | `components/Composer` | 31 | jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box; since 2026-11-05 one test locks it again with no key, sends nothing and offers the key button in place of the send); a clean composer (2026-11-04): nothing under the box with or without a key, and the send a Stop while a generation runs; the one chat box (2026-11-01): no separate Describe or OCR button, an attached image shown as the file alone and sent at once, its text read after the message goes (2026-11-03; until then its reading showed on its chip and held the send), a pasted image attached |
 | `components/DataBinding` | 18 | jsdom |
 | `components/LibraryPanel` | 17 | jsdom |
@@ -137,7 +137,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/pictureBox` | 11 | an XRPictureBox as DevExpress 20.1 printed every Sizing mode (row 76): PNG, JPEG, GIF and BMP headers read for the pixels and the DPI, 96 when unsaid; the settings with their defaults; the same pixels at 192 dpi half as large; Normal, CenterImage, StretchImage, AutoSize, ZoomImage, Squeeze and Tile in a 180 by 100 box, with a small and a large image; a written ImageAlignment in every mode; an image of unknown size drawn zoomed |
 | `lib/pdfWriter` | 5 | pdfjs warmed in a `beforeAll` since 2026-11-02, when its cold import timed the first case out in a full run; the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
 | `lib/promptSections` | 48 |  |
-| `lib/promptToReport` | 12 | the pure half of Prompt-to-Report; a description typed into the chat box, its fenced or CREATE TABLE schema taken as the data source |
+| `lib/promptToReport` | 11 | the pure half of Prompt-to-Report (its six predefined prompts and their test went on 2026-11-05); a description typed into the chat box, its fenced or CREATE TABLE schema taken as the data source |
 | `lib/reportBands` | 14 | since 2026-11-05 no layout JSON or markdown asked for, and no row cap |
 | `lib/reportConfigStore` | 14 | since 2026-11-04 only the version and unit learned from the user's reports are kept, a version only as major and minor, and what earlier builds stored for the paper, header, footer, direction, procedure and OCR retired on the way in |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
@@ -202,7 +202,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,403 in 125 files** — and that total is the arithmetic sum of the column above
+**Total: 2,402 in 125 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -216,7 +216,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2285** against a real 2,403 and will talk you into
+A grep for `\bit(` answers **2284** against a real 2,402 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

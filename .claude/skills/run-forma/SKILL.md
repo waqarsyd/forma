@@ -246,7 +246,7 @@ They live in one block at the top of `drive.mjs`; these are the ones that surpri
 - The composer is `[aria-label="Message"]`. Work in flight is `.wb-dots` (or the
   generation's `[role=progressbar]`); a report exists once the result pane's
   `[role=tablist][aria-label=View]` does; the notes are the thread's `.wb-note`s
-  bar the opening one; the audit is `[data-audit]` in the REPX pane.
+  (an empty thread has none since 2026-11-05); the audit is `[data-audit]` in the REPX pane.
 
 ## Two CDP traps this cost a session to learn
 

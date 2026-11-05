@@ -195,7 +195,7 @@ const SEL = {
   fileInput: 'input[type=file]',
   working: '.wb-dots, [role=progressbar]',
   tabs: '[role=tablist][aria-label=View]',
-  notes: '.wb-thread .wb-note:not(.wb-note--start)',
+  notes: '.wb-thread .wb-note',
   audit: '[data-audit]',
 };
 

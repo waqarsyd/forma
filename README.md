@@ -496,7 +496,7 @@ src/
                        a generated expression is held to -- balance, not SQL,
                        and no field the data lacks),
                        promptToReport (the pure half of Prompt-to-Report:
-                       the predefined prompts, the brief a description run
+                       the brief a description run
                        opens the prompt with, the follow-up answers and the
                        repair decision; the wizard is the chat box, whose
                        questions are a form in the thread, and the

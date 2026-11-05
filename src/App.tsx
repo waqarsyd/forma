@@ -224,7 +224,6 @@ import {
   describedRequest,
   fixInstruction,
   isDescribable,
-  PREDEFINED_PROMPTS,
   shouldRetryForErrors,
   withAnswers,
   type ClarificationAnswer,
@@ -5149,10 +5148,6 @@ export default function App() {
             onRetry={handleRetryMessage}
             onOpenAttachment={setFullScreenImage}
             onAnswer={handleClarifyAnswers}
-            suggestions={PREDEFINED_PROMPTS}
-            /* A suggestion fills the box, or with no AI set up opens Settings
-               for one: a locked box would hold it with nowhere to send it. */
-            onSuggest={(text) => (hasApiKey ? setPrompt(text) : setIsConfigOpen(true))}
             onEdit={handleEditMessage}
             onWithdraw={handleWithdrawMessage}
             query={chatQuery ?? ''}
