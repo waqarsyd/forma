@@ -1089,6 +1089,92 @@ tried again, they need their group share matched to the real reports'. They
 also need page information in the page bands as often as real reports
 carry it.
 
+### The weak spots, worked on the real reports (2026-11-05)
+
+The owner: "pause vision model, fix box reader weak spots". Everything here
+was measured on the 200 real pages above (`realScore.ts`, scores only) and
+on the drawn pages' 280 held-out layouts, the real pages deciding. Two
+options were added for it: `realScore.ts --dump`, each line's structure
+with its words masked to their character classes, written outside the
+repository, and `--rules` on both scripts, to switch each rule.
+
+**What the real pages showed.** The commonest band errors were group
+footers read as records (478 texts) and group headers read as records
+(342), then group headers read as page headers (117) and page headers as
+report headers (112). The commonest role error was values read as captions
+(916). The masked lines and the page kinds explained much of it: the
+training pages do not look like the company's first pages.
+
+| Pages with… | Real reports | Drawn pages | Printed pages |
+|---|---|---|---|
+| a report header | 10% | 85% | 88% |
+| a page header | 35% | 94% | 96% |
+| a group band | 41% | 51% | 57% |
+| page information | 31% | 37% | 3% |
+
+Many real reports keep their first content in group headers or in Detail,
+so a reader that learned that a page opens with a report header and a page
+header reads them that way. Some "group header read as a record" is a
+report whose master record is a group header: read as Detail, it still
+prints once per record.
+
+**Rules, each measured apart, and all but one left out:**
+
+| On the real pages, band and role both right | |
+|---|---|
+| The shipped reader | 55.8% |
+| *above*: lines read as records above the first run of them, shaped like none, to the header | 52.9% |
+| *loose*: a footer as long as a record, with no figure | 52.4% |
+| *chain*: a footer running on over several lines | 42.9% |
+| *headings*: a heading row under a title both read as records | 56.3% |
+| **the column rule (`settleColumns`), shipped** | **59.2%** |
+
+Real records break the shape a rule looks for often enough that every rule
+which moves lines out of Detail by shape takes real records with it: Detail
+fell from 91.7% right to between 66% and 87%. The column rule reads names in
+records instead: in a run of three or more records, a text whose column, on
+the records shaped like its own line, mostly reads differently is a value,
+and one that reads the same in every record and holds no digit is a
+caption. Values went from 74.8% right to 79.9%, captions from 48.0% to
+44.5%, and on the drawn pages band and role together from 85.8% to 85.0%:
+compared across every line of a run, captions there fell to 83.5%, since a
+record of two lines puts a caption over the other line's values. A page
+number rule was measured too and left out: with the shipped model it added
+nothing (page information was already 83.9% right) and cost the drawn pages
+1.8 points.
+
+**Training weighted to the real page kinds, measured and not shipped.**
+`boxes.ts --match <file>` weights each training page by the real share of
+its kind (whether it has a report header, a page header, a group band,
+page information) over the training share, the shares counted from the
+dump, nothing a report says. `--match-power` softens it.
+
+| Real pages, with the column rule | v1 shipped | v4a matched | v4b + printed | v4d half-matched |
+|---|---|---|---|---|
+| Band and role both right | 59.2% | 60.3% | 57.9% | 58.6% |
+| Each control's first appearance | 31.5% | 35.9% | 35.4% | 30.0% |
+| Footer totals | 6.3% | 13.4% | 14.7% | 7.8% |
+| Page header | 52.7% | 84.2% | 89.3% | 73.2% |
+| Report header | 39.4% | 9.4% | 7.9% | 14.2% |
+| Pages built banded | 126 | 104 | 120 | 125 |
+
+v4a reads the real pages best and fixes the customer list (its title and
+headings to the report header), but 22 fewer pages pass `readerCoverage`,
+and a page that fails it has no draft for the AI to correct (*Forma
+drafts, the AI corrects* in `docs/notes/gemini.md`), so it goes down the
+full path. It also falls to 80.5% on the drawn pages. Weighted, the role
+network lost page information (83.9% to 9.7%): its training examples sit on
+pages with report headers, which the weighting turns down, so `--match`
+weights the band networks alone unless `--match-roles` is given. Trained
+models and results are in `forma-model-data\boxreader-v4a` to `v4d`.
+
+**What is still weak**: group footers (15.6% right on the real pages) and
+group headers (30.2%), and the customer list's title and headings, read as
+records with the shipped model. The next attempt that measures as
+promising is a retrain that keeps v4a's reading without losing the banded
+pages: the coverage check, rather than the model, may be what the matched
+reading fails.
+
 ### Still to build
 
 1. ~~Train version 4 and score it~~: done 2026-11-04. It loops on every
@@ -1116,6 +1202,9 @@ carry it.
    ~~A check on real reports~~: done 2026-11-04, 55.8% both right on 200
    printed pages (see *The box reader on the company's real reports*). Two
    versions trained on printed pages did not beat it and were not shipped.
+   ~~Names in records~~: the column rule, 2026-11-05, 59.2% on the same
+   pages (see *The weak spots, worked on the real reports*). Group footers
+   and headers remain.
 7. ~~The brief's effect on a generation~~: measured 2026-11-04 with
    `bench:fidelity --brief`. The invoice scored the same with it, 16/16.
    The customer list looped in one run, and its brief was a poor reading of
@@ -1180,4 +1269,13 @@ OCR alone (see *The boxes run lists the boxes and reads little*). Since
 Each is its own milestone, with tests, docs and the checks, and is recorded
 here as it is built:
 
-1. **The vision model of milestone 6**, above, to its end.
+1. ~~**The vision model of milestone 6**, above, to its end.~~ **Paused by
+   the owner on 2026-11-05**: "pause vision model, fix box reader weak
+   spots". Its best version placed 52.4% of text against OCR's 55.7%, and
+   since the same day Forma drafts and the AI corrects (*Forma drafts, the AI
+   corrects* in `docs/notes/gemini.md`), which needs the box reader's draft,
+   not a vision model's. The training script, the datasets on Kaggle and the
+   Ollama export stay as they are; a vision model named in Settings is still
+   used as a helper.
+2. **The box reader's weak spots**, from *Still to build* item 6, measured on
+   the company's real reports as well as the drawn pages.

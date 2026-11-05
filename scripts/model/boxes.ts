@@ -48,6 +48,7 @@ import {
   readBoxes,
   readerSkeleton,
   readsTheseFeatures,
+  rulesOf,
   type BoxReaderModel,
   type BoxReading,
   type ControlPlace,
@@ -78,12 +79,34 @@ const READ_LIMIT = Number(valueOf('--read-limit') ?? Infinity);
 const MODEL_FILE = valueOf('--model');
 /** Score the networks' reading alone, before `settleRecords`. */
 const RAW = argv.includes('--raw');
-/** Which footer rules run: none, totals, footers or both (the default), to measure each apart. */
+/**
+ * Which rules run, to measure each apart: none, totals, footers or both (the
+ * default), and since 2026-11-05 `columns` joined on with `+`, as in
+ * `both+columns`, or `app` for the rules the app runs (`rulesOf`).
+ */
 const RULE_ARG = valueOf('--rules') ?? 'both';
+/**
+ * `--match <file>` (2026-11-05): the share of each kind of page among the
+ * company's real reports, `{ "cells": { "0110": 0.21, … } }` by `pageKind`,
+ * made by counting realScore.ts's `--dump` and nothing a report says. Each
+ * training page is weighted by the real share of its kind over the training
+ * share, between a fifth and five times: the drawn and printed pages open with
+ * a report header 85% of the time and a page header 94%, the real first pages
+ * 10% and 35%, and the reader had learned to expect both.
+ */
+const MATCH = valueOf('--match');
+/** Weight the role network by page kind too; off, since it cost page information (see the role network). */
+const MATCH_ROLES = argv.includes('--match-roles');
+/**
+ * `--match-power p`: each page's weight is (real share / training share) to
+ * the power p, between a fifth and five times; 1 by default, 0.5 a softer
+ * matching (2026-11-05).
+ */
+const MATCH_POWER = Number(valueOf('--match-power') ?? 1);
 /** Train the second look at each line too (`contextFeatures` in boxReader.ts). */
 const CONTEXT = argv.includes('--context');
 const CONTEXT_HIDDEN = 32;
-const RULES = { totals: RULE_ARG === 'totals' || RULE_ARG === 'both', footers: RULE_ARG === 'footers' || RULE_ARG === 'both' };
+const RULES = rulesOf(RULE_ARG);
 /** List the held-out pages where the reader found fewer texts than OCR alone, line by line. */
 const WHY = argv.includes('--why');
 const why: { lost: number; text: string }[] = [];
@@ -263,6 +286,31 @@ function exampleOf(p: LabelPage, noisy: boolean): Example {
 }
 
 /** A line's band: the band most of its labelled texts were drawn in; -1 when none has a label. */
+/** A page's kind: whether it holds a report header, a page header, a group band and page information, as four digits. */
+function pageKind(ex: Example): string {
+  const has = (b: ReaderBand) => ex.band.some((x, k) => ex.known[k] && x === b);
+  const info = ex.role.some((r, k) => ex.known[k] && r === 'pageInfo');
+  return [has('ReportHeader'), has('PageHeader'), has('GroupHeader') || has('GroupFooter'), info].map(Number).join('');
+}
+
+/** Each training page's weight under `--match`, a mean of one; all ones without it. */
+function pageWeightsOf(examples: readonly Example[]): number[] {
+  if (!MATCH) return examples.map(() => 1);
+  const real = (JSON.parse(readFileSync(resolve(MATCH), 'utf8')) as { cells: Record<string, number> }).cells;
+  const kinds = examples.map(pageKind);
+  const share = new Map<string, number>();
+  for (const k of kinds) share.set(k, (share.get(k) ?? 0) + 1 / kinds.length);
+  const raw = kinds.map((k) => Math.min(5, Math.max(0.2, ((real[k] ?? 0) / share.get(k)!) ** MATCH_POWER)));
+  const mean = raw.reduce((s, w) => s + w, 0) / raw.length;
+  console.log(
+    `page kinds (report header, page header, groups, page information): ${[...share]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([k, s]) => `${k} train ${(100 * s).toFixed(1)}% real ${(100 * (real[k] ?? 0)).toFixed(1)}%`)
+      .join('; ')}`,
+  );
+  return raw.map((w) => w / mean);
+}
+
 function lineLabels(ex: Example, lines: ReturnType<typeof linesOf>): number[] {
   return lines.map((l) => {
     const count = new Array(READER_BANDS.length).fill(0);
@@ -277,7 +325,7 @@ function lineLabels(ex: Example, lines: ReturnType<typeof linesOf>): number[] {
  * square root of how rare it is (at most five times): a page footer is one
  * line in thirty, and unweighted the network learned to call it a record.
  */
-function train(xs: number[][], ys: number[], outputs: number, hidden: number, epochs: number, label: string): Mlp {
+function train(xs: number[][], ys: number[], outputs: number, hidden: number, epochs: number, label: string, sampleWeights?: readonly number[]): Mlp {
   const inputs = xs[0].length;
   const seen = new Array(outputs).fill(0);
   for (const y of ys) seen[y]++;
@@ -336,7 +384,7 @@ function train(xs: number[][], ys: number[], outputs: number, hidden: number, ep
           sum += p[k];
         }
         for (let k = 0; k < outputs; k++) p[k] /= sum;
-        const wy = weight[y];
+        const wy = weight[y] * (sampleWeights ? sampleWeights[order[b]] : 1);
         loss -= wy * Math.log(Math.max(p[y], 1e-12));
         for (let k = 0; k < outputs; k++) {
           const d = wy * (p[k] - (k === y ? 1 : 0));
@@ -424,11 +472,13 @@ if (!readsTheseFeatures(model)) {
 
 async function trainModel(): Promise<BoxReaderModel> {
 const trainEx = fitting;
+const pageWeight = pageWeightsOf(trainEx);
 const lineX: number[][] = [];
 const lineY: number[] = [];
+const lineW: number[] = [];
 const counts = READER_BANDS.map(() => new Array(READER_BANDS.length).fill(0.1));
 const starts = new Array(READER_BANDS.length).fill(0.1);
-const trainLines = trainEx.map((ex) => {
+const trainLines = trainEx.map((ex, e) => {
   const lines = linesOf(ex.boxes);
   const feats = lineFeatures(ex.page, ex.boxes, lines);
   const labels = lineLabels(ex, lines);
@@ -436,16 +486,17 @@ const trainLines = trainEx.map((ex) => {
     if (labels[i] < 0) return;
     lineX.push(f);
     lineY.push(labels[i]);
+    lineW.push(pageWeight[e]);
   });
   const known = labels.filter((l) => l >= 0);
-  if (known.length) starts[known[0]]++;
-  for (let i = 1; i < known.length; i++) counts[known[i - 1]][known[i]]++;
+  if (known.length) starts[known[0]] += pageWeight[e];
+  for (let i = 1; i < known.length; i++) counts[known[i - 1]][known[i]] += pageWeight[e];
   return { lines, feats, labels };
 });
 const texts = trainEx.reduce((s, e) => s + e.known.filter(Boolean).length, 0);
 console.log(`training on ${trainEx.length} pages (${readPages} of them as OCR read them), ${lineX.length} lines and ${texts} texts`);
 
-const lineNet = train(lineX, lineY, READER_BANDS.length, HIDDEN, EPOCHS, 'lines');
+const lineNet = train(lineX, lineY, READER_BANDS.length, HIDDEN, EPOCHS, 'lines', MATCH ? lineW : undefined);
 const startLog = starts.map((c) => Math.log(c / starts.reduce((a, b) => a + b, 0)));
 const transLog = counts.map((row) => row.map((c) => Math.log(c / row.reduce((a: number, b: number) => a + b, 0))));
 
@@ -461,29 +512,33 @@ if (CONTEXT) {
   const netOf = (h: number) => {
     const xs: number[][] = [];
     const ys: number[] = [];
+    const ws: number[] = [];
     trainEx.forEach((ex, e) => {
       if (half(ex) !== h) return;
       trainLines[e].labels.forEach((l, i) => {
         if (l < 0) return;
         xs.push(trainLines[e].feats[i]);
         ys.push(l);
+        ws.push(pageWeight[e]);
       });
     });
-    return train(xs, ys, READER_BANDS.length, HIDDEN, EPOCHS, `lines, half ${h + 1}`);
+    return train(xs, ys, READER_BANDS.length, HIDDEN, EPOCHS, `lines, half ${h + 1}`, MATCH ? ws : undefined);
   };
   const halves = [netOf(0), netOf(1)];
   firstScores = trainLines.map(({ feats }, e) => feats.map((f) => mlpProbs(halves[1 - half(trainEx[e])], f)));
   const ctxX: number[][] = [];
   const ctxY: number[] = [];
+  const ctxW: number[] = [];
   trainEx.forEach((ex, e) => {
     const { lines, feats, labels } = trainLines[e];
     contextFeatures(lines, ex.boxes, feats, firstScores[e]).forEach((x, i) => {
       if (labels[i] < 0) return;
       ctxX.push(x);
       ctxY.push(labels[i]);
+      ctxW.push(pageWeight[e]);
     });
   });
-  contextNet = train(ctxX, ctxY, READER_BANDS.length, CONTEXT_HIDDEN, EPOCHS, 'context');
+  contextNet = train(ctxX, ctxY, READER_BANDS.length, CONTEXT_HIDDEN, EPOCHS, 'context', MATCH ? ctxW : undefined);
 }
 /** The band scores the app will decode from: the first network's, then the second look's when there is one. */
 const scoresOf = (lines: ReturnType<typeof linesOf>, boxesOfPage: ReadBox[], feats: number[][], first: number[][]) =>
@@ -526,6 +581,7 @@ console.log(`transition weight ${transitionWeight}, on ${choosing.length} held-o
 // The roles are learned with the bands the reader itself decodes, as the app will have them.
 const boxX: number[][] = [];
 const boxY: number[] = [];
+const boxW: number[] = [];
 trainEx.forEach((ex, e) => {
   const { lines, feats } = trainLines[e];
   const bands = decodeBands(scoresOf(lines, ex.boxes, feats, firstScores[e]), startLog, transLog, transitionWeight).map((k) => READER_BANDS[k]);
@@ -533,9 +589,15 @@ trainEx.forEach((ex, e) => {
     if (!ex.known[k]) return;
     boxX.push(f);
     boxY.push(READER_ROLES.indexOf(ex.role[k]));
+    boxW.push(pageWeight[e]);
   });
 });
-const boxNet = train(boxX, boxY, READER_ROLES.length, HIDDEN, EPOCHS, 'texts');
+// The roles are not weighted by page kind: a page's kind is about its bands.
+// Weighted, page information fell from 83.9% right on the real reports to
+// 9.7%, since most training pages that print it also have a report header,
+// a kind the real first pages rarely have (2026-11-05). `boxW` is kept for
+// `--match-roles`, which measures that again.
+const boxNet = train(boxX, boxY, READER_ROLES.length, HIDDEN, EPOCHS, 'texts', MATCH && MATCH_ROLES ? boxW : undefined);
 
 return {
   version: 1,

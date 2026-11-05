@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,402 tests in 125 files** — under the `node` environment
+`npm test` runs Vitest over **2,403 tests in 125 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -95,7 +95,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/attachments` | 9 |  |
 | `lib/batchQueue` | 24 |  |
 | `lib/boxText` | 5 | the boxes design for the vision model: its question word for word with render.py's, boxes numbered in reading order and read back, an answer read tolerantly, made a skeleton on the boxes' places, and scored box by box |
-| `lib/boxReader` | 16 | Forma's box reader: texts grouped into the lines they print on; every line's and text's features finite and as many as the model reads; a small network's arithmetic; the second look given each line's own, neighbours' and lookalikes' first scores; a band that cannot follow the one above never decoded; a footer read as a record settled as the report's or a group's, its figure under the amounts a total, and a record with a field missing left a record; a skeleton keeping each band once and one record, a one-line record whose code recurs by chance and a two-line one, with every text where OCR read it; made a report with fields named after the captions; the shipped reader reading these features, holding no string but its names, and reading a plain listing as headings over records with its page number at the foot; a heading row taken for a record given back to the header; a report built from an OCR page and nothing from an empty one; a reader trained on other features refused, and fetched again |
+| `lib/boxReader` | 17 | Forma's box reader: since 2026-11-05 a column that changes from record to record read as values and one that never does, holding no digit, as captions; texts grouped into the lines they print on; every line's and text's features finite and as many as the model reads; a small network's arithmetic; the second look given each line's own, neighbours' and lookalikes' first scores; a band that cannot follow the one above never decoded; a footer read as a record settled as the report's or a group's, its figure under the amounts a total, and a record with a field missing left a record; a skeleton keeping each band once and one record, a one-line record whose code recurs by chance and a two-line one, with every text where OCR read it; made a report with fields named after the captions; the shipped reader reading these features, holding no string but its names, and reading a plain listing as headings over records with its page number at the foot; a heading row taken for a record given back to the header; a report built from an OCR page and nothing from an empty one; a reader trained on other features refused, and fetched again |
 | `lib/chatSession` | 31 | since 2026-11-04 also withdrawing a turn and the transcript search: a query taken as text, and cut correctly where lower-casing changes a length |
 | `lib/contactSubmit` | 6 |  |
 | `lib/criteria` | 10 | DevExpress's expression language; the 44 expressions and 11 totals of parity case s16, each a string DevExpress printed |
@@ -202,7 +202,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,402 in 125 files** — and that total is the arithmetic sum of the column above
+**Total: 2,403 in 125 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -216,7 +216,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2284** against a real 2,402 and will talk you into
+A grep for `\bit(` answers **2285** against a real 2,403 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

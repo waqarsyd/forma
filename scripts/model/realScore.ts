@@ -32,7 +32,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
-import { readDetectedPage, readsTheseFeatures, type BoxReaderModel } from '../../src/lib/boxReader';
+import { readDetectedPage, readsTheseFeatures, rulesOf, type BoxReaderModel } from '../../src/lib/boxReader';
 import { detectLayout } from '../../src/lib/ocrLayout';
 import { pageForImage } from '../../src/lib/reportGeometry';
 import { parseReportStructure } from '../../src/lib/reportPreview';
@@ -49,6 +49,11 @@ const workDir = valueOf('--work');
 const LIMIT = Number(valueOf('--limit') ?? 60);
 const WORKERS = Number(valueOf('--workers') ?? 8);
 const modelFile = valueOf('--model') ?? 'assets/model/boxReader.json';
+/** `--dump <file>`: each line's masked structure, for studying the misreadings; outside the repository. */
+const dumpFile = valueOf('--dump');
+/** `--rules`, as boxes.ts takes it: the rules after the networks, `app` by default. */
+const RULES = rulesOf(valueOf('--rules') ?? 'app');
+const dumpRows: string[] = [];
 const PROBE = resolve('tools/RepxProbe/bin/Release/RepxProbe.exe');
 
 if (!reportDirs.length || !workDir) {
@@ -57,6 +62,10 @@ if (!reportDirs.length || !workDir) {
 }
 if (resolve(workDir).startsWith(resolve('.') + sep)) {
   console.error('--work must be outside the repository: the printed pages hold client material.');
+  process.exit(2);
+}
+if (dumpFile && resolve(dumpFile).startsWith(resolve('.') + sep)) {
+  console.error('--dump must be outside the repository, as --work is.');
   process.exit(2);
 }
 
@@ -161,12 +170,13 @@ for (const [ci, c] of cases.entries()) {
   const read = { ...ocr, dpi: 96 };
   const layout = detectLayout([{ ocr: read, page: pageForImage(read, 'HundredthsOfAnInch', 'Letter') }], { unit: 'HundredthsOfAnInch' }).pages[0];
   if (!layout) continue;
-  const { reading, coverage } = readDetectedPage(model, layout);
+  const { reading, coverage } = readDetectedPage(model, layout, RULES);
   if (coverage.lost <= 0.15 * coverage.texts) banded++;
   const cells = layout.tables.flatMap((t) => t.rows.flatMap((r) => r.cells.filter((x): x is NonNullable<typeof x> => !!x)));
   const found = [...layout.labels, ...cells];
   const lineOf = new Map<number, number>();
   reading.lines.forEach((l, li) => l.boxes.forEach((k) => lineOf.set(k, li)));
+  const truthOf = new Map<number, Truth>();
   found.forEach((t, k) => {
     tally.texts++;
     const ink = t.ink;
@@ -201,6 +211,7 @@ for (const [ci, c] of cases.entries()) {
       tally.footerTotals++;
       if (bandOk && roleOk) tally.footerTotalsRight++;
     }
+    truthOf.set(k, truth);
     if (!bandOk) bandConfusion.set(`${truth.band} -> ${band}`, (bandConfusion.get(`${truth.band} -> ${band}`) ?? 0) + 1);
     if (!roleOk) roleConfusion.set(`${truth.role} -> ${role}`, (roleConfusion.get(`${truth.role} -> ${role}`) ?? 0) + 1);
     (byBand[truth.band] ??= { n: 0, right: 0 }).n++;
@@ -208,7 +219,30 @@ for (const [ci, c] of cases.entries()) {
     (byRole[truth.role] ??= { n: 0, right: 0 }).n++;
     if (roleOk) byRole[truth.role].right++;
   });
+  // `--dump`: each line's structure, its words masked to their character
+  // classes, so the shapes the reader misreads can be studied with nothing a
+  // report says kept. Written in the work folder, outside the repository.
+  if (dumpFile) {
+    const mask = (s: string) => (/^[-+(]?[$€£₹]?\s?\d[\d.,\s]*%?\)?$/.test(s.trim()) ? '9' : /\d/.test(s) ? (/\p{L}/u.test(s) ? 'A9' : '9x') : /\p{Lu}/u.test(s.trim()[0] ?? '') ? 'A' : 'a');
+    for (const [li, l] of reading.lines.entries()) {
+      const truths = l.boxes.map((k) => truthOf.get(k)).filter((t): t is Truth => !!t);
+      const counts = new Map<string, number>();
+      for (const t of truths) counts.set(t.band, (counts.get(t.band) ?? 0) + 1);
+      const truthBand = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+      dumpRows.push(JSON.stringify({
+        page: ci,
+        line: li,
+        texts: l.boxes.length,
+        shape: l.boxes.map((k) => `${mask(found[k].text)}@${Math.round(found[k].ink.x / 10)}`).join(' '),
+        band: reading.bands[li],
+        truth: truthBand,
+        roles: l.boxes.map((k) => reading.roles[k]).join(','),
+        truthRoles: l.boxes.map((k) => truthOf.get(k)?.role ?? '-').join(','),
+      }));
+    }
+  }
 }
+if (dumpFile) writeFileSync(dumpFile, dumpRows.join('\n'));
 
 const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(1)}%` : 'n/a');
 console.log('');

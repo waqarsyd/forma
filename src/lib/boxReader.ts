@@ -547,7 +547,7 @@ export function readBoxes(
   page: { width: number; height: number },
   boxes: readonly ReadBox[],
   settle = true,
-  rules: FooterRules = { totals: true, footers: true },
+  rules: FooterRules = DEFAULT_RULES,
 ): BoxReading {
   const lines = linesOf(boxes);
   const lf = lineFeatures(page, boxes, lines);
@@ -573,7 +573,7 @@ const HEADER_BANDS: readonly ReaderBand[] = ['ReportHeader', 'PageHeader', 'Grou
  * are captions. Text, not the networks' roles, decides, because the role
  * network reads a text in a record as a value.
  */
-export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading, rules: FooterRules = { totals: true, footers: true }): BoxReading {
+export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading, rules: FooterRules = DEFAULT_RULES): BoxReading {
   const { lines } = reading;
   const bands = [...reading.bands];
   const roles = [...reading.roles];
@@ -593,13 +593,77 @@ export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading, ru
   // took captions from 93.7% right to 77.4%, as group headers read as
   // records set their captions among the records' values.
   settleFooters(boxes, lines, bands, roles, rules);
+  if (rules.columns) settleColumns(boxes, lines, bands, roles);
   return { lines, bands, roles };
 }
 
-/** Which footer rules run; all by default. For measuring each one apart. */
+/** Which rules run after the networks; all by default. For measuring each one apart. */
 export interface FooterRules {
   totals: boolean;
   footers: boolean;
+  /** In a run of records, a column that reads differently from record to record holds values (`settleColumns`, 2026-11-05). */
+  columns?: boolean;
+}
+
+/** The rules the app runs. */
+export const DEFAULT_RULES: FooterRules = { totals: true, footers: true, columns: true };
+
+/**
+ * Rules from a list such as `totals+footers` (the training and scoring
+ * scripts' `--rules`): none, totals, footers, both, columns, or `app` for
+ * DEFAULT_RULES. Five more rules were measured on 2026-11-05 and left out;
+ * docs/proposals/own-model.md has their numbers.
+ */
+export function rulesOf(list: string): FooterRules {
+  if (list === 'app') return { ...DEFAULT_RULES };
+  const words = new Set(list.split('+'));
+  const both = words.has('both');
+  return { totals: both || words.has('totals'), footers: both || words.has('footers'), columns: words.has('columns') };
+}
+
+/**
+ * Names in records (2026-11-05). In a run of three or more records, a text's
+ * column is the texts the records shaped like its own print where it does.
+ * When most of them read differently, it prints data: a value, whatever the
+ * role network thought of a city that recurs. When every one reads the same
+ * and holds no digit, it is the record's own caption, "Due:" printed in each;
+ * a date or an amount every record prints alike is still data. A text with
+ * fewer than two others in its column is left to the network.
+ *
+ * Measured on the company's real reports, printed (realScore.ts): band and
+ * role both right 55.8% to 59.2%, values 74.8% to 79.9%. On the drawn pages'
+ * 280 held-out layouts, 85.8% to 85.0%, the cost being captions. Compared
+ * with every line of the run, captions there fell from 95.2% right to
+ * 83.5%, since a record of two lines puts a caption over the other line's
+ * values; with the lines shaped alike, to 89.1%; with the lines a whole
+ * record apart (`recordPeriod`), to 83.8%. An earlier rule of the same kind,
+ * comparing with the next record only, was left out on 2026-11-04.
+ */
+function settleColumns(boxes: readonly ReadBox[], lines: readonly BoxLine[], bands: readonly ReaderBand[], roles: ReaderRole[]) {
+  const runs = runsOf(lines, boxes);
+  const byRun = new Map<number, number[]>();
+  lines.forEach((_, i) => {
+    if (bands[i] !== 'Detail' || runs.length[i] < 3) return;
+    const list = byRun.get(runs.id[i]) ?? [];
+    list.push(i);
+    byRun.set(runs.id[i], list);
+  });
+  const words = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  const overlapping = (a: ReadBox, b: ReadBox) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0.5 * Math.min(a.w, b.w);
+  for (const run of byRun.values()) {
+    for (const i of run) {
+      const alike = run.filter((j) => j !== i && sameShape(lines[i], lines[j], boxes));
+      for (const k of lines[i].boxes) {
+        if (roles[k] !== 'caption' && roles[k] !== 'value') continue;
+        const others = alike.flatMap((j) => lines[j].boxes.filter((m) => overlapping(boxes[m], boxes[k])).slice(0, 1).map((m) => words(boxes[m].text)));
+        if (others.length < 2) continue;
+        const same = others.filter((t) => t === words(boxes[k].text)).length;
+        // A figure or a date that every record prints alike is still data.
+        if (same === others.length && !/\d/.test(boxes[k].text)) roles[k] = 'caption';
+        else if (same / others.length < 0.5) roles[k] = 'value';
+      }
+    }
+  }
 }
 
 /**
@@ -877,11 +941,12 @@ export function readerSkeleton(
 export function readDetectedPage(
   model: BoxReaderModel,
   page: DetectedPage,
+  rules?: FooterRules,
 ): { skeleton: ReportSkeleton; reading: BoxReading; coverage: ReturnType<typeof readerCoverage> } {
   const cells = page.tables.flatMap((t) => t.rows.flatMap((r) => r.cells.filter((c): c is NonNullable<typeof c> => !!c)));
   const found = [...page.labels, ...cells];
   const boxes = found.map((t) => ({ ...t.ink, text: t.text }));
-  const reading = readBoxes(model, page, boxes);
+  const reading = readBoxes(model, page, boxes, true, rules);
   const skeleton = readerSkeleton(page, boxes, reading, found.map(controlPlaceOf));
   return { skeleton, reading, coverage: readerCoverage(boxes, reading) };
 }

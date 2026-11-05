@@ -230,6 +230,20 @@ describe('the shipped reader', () => {
     const records = settleRecords(boxes, { ...raw, bands: ['PageHeader', 'PageHeader', 'Detail', 'Detail', 'Detail', 'Detail', 'ReportFooter', 'PageFooter'] });
     expect(records.bands[2]).toBe('Detail');
   });
+
+  it('reads a column that changes from record to record as values, and one that never does as captions (2026-11-05)', () => {
+    // Four records: a city that recurs, a caption printed in every record, and an amount.
+    const cities = ['London', 'Berlin', 'London', 'Paris'];
+    const listing = [0, 1, 2, 3].flatMap((r) => [t(100, 140 + r * 18, 60, cities[r]), t(300, 140 + r * 18, 40, 'Due:'), t(650, 140 + r * 18, 40, '1,250.00')]);
+    const lines = linesOf(listing);
+    // The networks' reading: the recurring city taken for a caption, the printed "Due:" for a value.
+    const raw: BoxReading = { lines, bands: lines.map(() => 'Detail'), roles: listing.map((_, k) => (k % 3 === 0 ? 'caption' : 'value')) };
+    const settled = settleRecords(listing, raw, { totals: true, footers: true, columns: true });
+    expect([0, 3, 6, 9].map((k) => settled.roles[k])).toEqual(['value', 'value', 'value', 'value']);
+    expect([1, 4, 7, 10].map((k) => settled.roles[k])).toEqual(['caption', 'caption', 'caption', 'caption']);
+    // Without the rule, the networks' reading stands.
+    expect(settleRecords(listing, raw, { totals: true, footers: true }).roles[0]).toBe('caption');
+  });
 });
 
 describe('a report from a page OCR read', () => {
