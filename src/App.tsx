@@ -596,7 +596,19 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
     return out;
   }
 
-  out.notices.push(`"${name}" is not a supported type. Use an image, a PDF, or a .repx file.`);
+  // A data file (2026-11-05, lib/dataFiles.ts): a table's columns are the
+  // report's fields; a document is the person's words. Read in the browser,
+  // by a module loaded only when such a file arrives: imported statically it
+  // put 8 kB on the entry chunk every landing-page visitor downloads.
+  const data = await import('./lib/dataFiles');
+  if (data.isDataFile(name)) {
+    const read = await data.readDataFile(name, new Uint8Array(await file.arrayBuffer()));
+    if (read.note) out.notices.push(read.note);
+    if (read.text) out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text });
+    return out;
+  }
+
+  out.notices.push(`"${name}" is not a supported type. Use an image, a PDF, a .repx, or data (CSV, TSV, JSON, text, SQL, Excel or Word).`);
   return out;
 }
 

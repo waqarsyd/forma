@@ -379,7 +379,7 @@ export default function Composer({
         <button
           className="wb-tool"
           aria-label="Add photos and files"
-          title="Add photos and files: an image, a PDF or a .repx"
+          title="Add photos and files: an image, a PDF, a .repx, or data (CSV, Excel, JSON, Word, text, SQL)"
           onClick={() => fileInputRef.current?.click()}
           disabled={!hasApiKey}
         >
@@ -389,7 +389,7 @@ export default function Composer({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*,application/pdf,.repx"
+          accept="image/*,application/pdf,.repx,.csv,.tsv,.json,.txt,.sql,.xlsx,.docx"
           onChange={onFileChange}
           className="wb-hidden"
         />
