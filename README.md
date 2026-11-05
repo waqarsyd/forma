@@ -590,7 +590,9 @@ src/
                        changed, read off the file), shortcuts (ChatGPT's
                        keyboard shortcuts for the chat), requestCount
                        (requests sent to each model today, for the
-                       chat box's model picker), dataFiles (CSV, JSON,
+                       chat box's model picker), modelTiers (that
+                       picker's Auto, Fast and Balanced, each naming
+                       its model), dataFiles (CSV, JSON,
                        Excel, Word and the rest attached in the chat,
                        read in the browser as the report's data),
                        geminiErrors (what the user is told when a

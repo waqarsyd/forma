@@ -25,6 +25,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEventHandler, type RefObject } from 'react';
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
+import { modelTiers } from '../lib/modelTiers';
 import {
   IconAlert,
   IconArrowUp,
@@ -151,6 +152,7 @@ export default function Composer({
 }: ComposerProps) {
   /* The model menu, open over the box; Escape or a click elsewhere closes it. */
   const [modelMenu, setModelMenu] = useState(false);
+  const tiers = models ? modelTiers(models.choices) : [];
   const modelMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!modelMenu) return;
@@ -433,12 +435,14 @@ export default function Composer({
               title="The model the chat and reports use"
               onClick={() => setModelMenu((open) => !open)}
             >
-              {modelLabel(models.current)}
+              {tiers.find((t) => t.id === models.current)?.label ?? modelLabel(models.current)}
               <IconChevronDown size={12} />
             </button>
             {modelMenu && (
+              /* Named tiers (2026-11-05), as Stitch names its "Speed" and
+                 "Balanced", each with the model behind it: see lib/modelTiers.ts. */
               <div className="wb-model-menu" role="menu" aria-label="Model">
-                {[{ id: '', used: -1 }, ...models.choices].map((choice) => (
+                {[{ id: '', label: 'Auto', note: 'Forma picks the best model your key can use.', used: -1 }, ...tiers].map((choice) => (
                   <button
                     key={choice.id || 'auto'}
                     type="button"
@@ -449,8 +453,8 @@ export default function Composer({
                       setModelMenu(false);
                     }}
                   >
-                    <span>{choice.id ? modelLabel(choice.id) : 'Auto'}</span>
-                    <small>{choice.id ? `${choice.used} today` : 'Forma picks'}</small>
+                    <span>{choice.label}</span>
+                    <small>{choice.used >= 0 ? `${choice.note} ${choice.used} today.` : choice.note}</small>
                   </button>
                 ))}
                 <p>

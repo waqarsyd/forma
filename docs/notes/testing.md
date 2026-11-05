@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,500 tests in 132 files** — under the `node` environment
+`npm test` runs Vitest over **2,504 tests in 133 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -79,7 +79,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/AccountDialog` | 23 | jsdom |
 | `components/BatchPanel` | 15 | jsdom; since 2026-11-04 also a chosen folder queued by path, a drop on the panel, and two at a time with a quota failure stopping both workers |
 | `components/ChatThread` | 54 | since 2026-11-05 the time and the cost beside the icons; since 2026-11-05 the versions of a message, and editing one sent with pictures; since 2026-11-05 the way back to the latest message; since 2026-11-05 Redesign / Not now; since 2026-11-05 Undo on a change still the latest; since 2026-11-05 Copy, the rating and Try again under a reply; since 2026-11-05 a reply as Markdown, a link opening in a new tab, the person's words as typed, and a reply plain under a search; jsdom; since 2026-11-05 an empty conversation showing nothing (from 2026-11-01 until then, the predefined descriptions it started from); since 2026-11-01 a description's questions asked as a form holding their suggestions; since 2026-11-04 the working dots named for a screen reader before the first token, and a reply drawn as its words with no buttons; and editing and withdrawing a sent message, and searching the transcript |
-| `components/Composer` | 36 | since 2026-11-05 the model picker; since 2026-11-05 a spoken message; since 2026-11-05 also the Preview's selection above the box; since 2026-11-05 the send is a Stop while a reply is written too; jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box; since 2026-11-05 one test locks it again with no key, sends nothing and offers the key button in place of the send); a clean composer (2026-11-04): nothing under the box with or without a key, and the send a Stop while a generation runs; the one chat box (2026-11-01): no separate Describe or OCR button, an attached image shown as the file alone and sent at once, its text read after the message goes (2026-11-03; until then its reading showed on its chip and held the send), a pasted image attached |
+| `components/Composer` | 37 | since 2026-11-05 the model menu as Stitch's tiers; since 2026-11-05 the model picker; since 2026-11-05 a spoken message; since 2026-11-05 also the Preview's selection above the box; since 2026-11-05 the send is a Stop while a reply is written too; jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box; since 2026-11-05 one test locks it again with no key, sends nothing and offers the key button in place of the send); a clean composer (2026-11-04): nothing under the box with or without a key, and the send a Stop while a generation runs; the one chat box (2026-11-01): no separate Describe or OCR button, an attached image shown as the file alone and sent at once, its text read after the message goes (2026-11-03; until then its reading showed on its chip and held the send), a pasted image attached |
 | `components/RequestCard` | 3 | the conversation a request at a time (2026-11-05), as Stitch's agent card: the ask pinned in a pill and opened by its arrow, the card folded to its mark, Edit and Try again from the pill. jsdom |
 | `components/RequestLog` | 2 | every request beneath the card (2026-11-05), as Stitch's Agent log: the count folded, newest first with a mark each, picking one, the search and the export. jsdom |
 | `components/SelectionToolbar` | 2 | the toolbar over a selection on Preview (2026-11-05), as Stitch's: the selection named, Format from its menu, Edit text for one control only, Delete and Clear under More. jsdom |
@@ -176,6 +176,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/routes` | 17 | since 2026-11-05 the title of a tab that finished something unseen |
 | `lib/shortcuts` | 4 | the chat's keyboard shortcuts, ChatGPT's own (2026-11-05): Ctrl+Shift+O, Shift+Esc and Ctrl+Shift+C read exactly, nothing else held, never mid-composition, and each written as a PC and a Mac write it |
 | `lib/requestCount` | 3 | requests sent to each Gemini model today (2026-11-05): the Pacific day, a count per model that starts again at zero the next day, and storage that will not read or write |
+| `lib/modelTiers` | 3 | the box's model menu as named tiers (2026-11-05), as Stitch names its two: a model's id read as a person would, Fast as the first Flash-Lite and Balanced the first Flash in the probe's order, a tier with no model left out |
 | `lib/dataFiles` | 7 | data files attached in the chat (2026-11-05): the kinds taken, quoted CSV, a CSV and a JSON array as fields and first rows, a workbook's first sheet with shared strings, a deflated Word document read through the zip reader, and what a bad file says |
 | `lib/runawayOutput` | 10 |  |
 | `lib/savedReport` | 40 | since 2026-11-05 pinned and archived projects kept on this device; since 2026-11-05 the session signature the workspace saves on, and a project's name; jsdom |
@@ -209,7 +210,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,500 in 132 files** — and that total is the arithmetic sum of the column above
+**Total: 2,504 in 133 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -223,7 +224,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2382** against a real 2,500 and will talk you into
+A grep for `\bit(` answers **2386** against a real 2,504 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
