@@ -598,6 +598,37 @@
 .wb-note--me .wb-who { color: var(--accent); }
 .wb-note p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
 .wb-note p + p { margin-top: 8px; }
+/* The person's words as typed, line breaks kept; and a reply until its
+   Markdown has loaded (2026-11-05). */
+.wb-note .wb-plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Forma's replies as Markdown (2026-11-05), in the note's own type: no larger
+   headings, a list indented as text is, code on the hover grey. */
+.wb-note .wb-md { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); overflow-wrap: anywhere; }
+.wb-note .wb-md p,
+.wb-note .wb-md ul,
+.wb-note .wb-md ol,
+.wb-note .wb-md pre,
+.wb-note .wb-md table,
+.wb-note .wb-md blockquote { margin: 0 0 8px; }
+.wb-note .wb-md p + p { margin-top: 0; }
+.wb-note .wb-md > :last-child { margin-bottom: 0; }
+.wb-note .wb-md ul, .wb-note .wb-md ol { padding-left: 20px; }
+.wb-note .wb-md ul { list-style: disc; }
+.wb-note .wb-md ol { list-style: decimal; }
+.wb-note .wb-md li + li { margin-top: 2px; }
+.wb-note .wb-md strong { font-weight: 600; color: var(--ink); }
+.wb-note .wb-md h1, .wb-note .wb-md h2, .wb-note .wb-md h3, .wb-note .wb-md h4 {
+  margin: 10px 0 4px; font-size: 13.5px; font-weight: 700; color: var(--ink);
+}
+.wb-note .wb-md > h1:first-child, .wb-note .wb-md > h2:first-child, .wb-note .wb-md > h3:first-child { margin-top: 0; }
+.wb-note .wb-md code { font-family: var(--mono); font-size: 12px; background: var(--track); border-radius: 4px; padding: 1px 4px; }
+.wb-note .wb-md pre { background: var(--track); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+.wb-note .wb-md pre code { background: none; padding: 0; }
+.wb-note .wb-md a { color: var(--accent); text-decoration: underline; }
+.wb-note .wb-md table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 12.5px; }
+.wb-note .wb-md th, .wb-note .wb-md td { border: 1px solid var(--rule); padding: 3px 8px; text-align: left; }
+.wb-note .wb-md blockquote { border-left: 3px solid var(--rule-strong); padding-left: 10px; color: var(--ink-faint); }
 
 /* Edit and Withdraw under the person's own messages (2026-11-04), quiet until
    the message is pointed at, as in the chat apps people know; always shown

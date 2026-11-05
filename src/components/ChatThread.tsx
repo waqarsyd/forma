@@ -19,9 +19,13 @@
  * exactly what the tests want.
  */
 
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import { messageMatches, searchParts, type ChatMessage } from '../lib/chatSession';
+
+/* Loaded on demand, as the Spec pane loads it: react-markdown brings the whole
+   micromark tokenizer, and the eager bundle is budgeted (see Markdown.tsx). */
+const Markdown = lazy(() => import('./Markdown'));
 
 /**
  * How far off the bottom still counts as "at the bottom".
@@ -75,6 +79,30 @@ function Marked({ text, query }: { text: string; query: string }) {
     <>
       {searchParts(text, query).map((p, i) => (p.hit ? <mark key={i} className="wb-hit">{p.text}</mark> : <span key={i}>{p.text}</span>))}
     </>
+  );
+}
+
+/**
+ * What a message says (2026-11-05). Forma's words are Markdown, as ChatGPT's
+ * and Gemini's replies are: a list, bold, `code` and a table draw as such
+ * rather than as asterisks and pipes. The person's own words stay as typed,
+ * line breaks kept, as those apps keep them. While a search is open both are
+ * plain, so each match can be marked; and until the renderer has loaded, a
+ * reply shows as plain text rather than as nothing.
+ */
+function MessageText({ text, query, markdown }: { text: string; query: string; markdown: boolean }) {
+  const plain = (
+    <p className="wb-plain">
+      <Marked text={text} query={query} />
+    </p>
+  );
+  if (!markdown || query.trim()) return plain;
+  return (
+    <div className="wb-md">
+      <Suspense fallback={plain}>
+        <Markdown>{text}</Markdown>
+      </Suspense>
+    </div>
   );
 }
 
@@ -240,11 +268,7 @@ const ChatNote = memo(function ChatNote<R>({
             onCancel={() => setEditing(false)}
           />
         ) : (
-          message.text && (
-            <p>
-              <Marked text={message.text} query={query} />
-            </p>
-          )
+          message.text && <MessageText text={message.text} query={query} markdown={!mine} />
         )}
         {message.clarify && !message.clarify.answered && onAnswer && (
           <ClarifyForm id={message.id} questions={message.clarify.questions} disabled={retryDisabled} onAnswer={onAnswer} />
@@ -453,7 +477,7 @@ export default function ChatThread<R>({
             <div className="wb-who">Forma</div>
             {/* The answer as it streams; until the first word, the dots. */}
             {streamingReply ? (
-              <p>{streamingReply}</p>
+              <MessageText text={streamingReply} query="" markdown />
             ) : (
               <p role="status" aria-label="Forma is working">
                 <WorkingDots />

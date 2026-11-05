@@ -13,7 +13,7 @@
  * has to appear beside the turn that failed, and the placeholder that must not
  * appear during a generation.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import ChatThread from './ChatThread';
 import type { PreviewMeta } from '../lib/attachments';
@@ -521,6 +521,43 @@ describe('editing and withdrawing a message', () => {
     draw({ messages: thread, onEdit: vi.fn(), onWithdraw: vi.fn(), isChatting: true });
     expect((screen.getByText('Edit') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByText('Withdraw') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+/* Forma's replies as Markdown, the person's words as typed (2026-11-05). */
+describe('what a message says', () => {
+  // The renderer is lazy, and its cold import (micromark and all) took longer
+  // than findBy's one second when the first case paid for it; testing.md's
+  // "a timeout in only the first case" is this trap.
+  beforeAll(async () => {
+    await import('./Markdown');
+  });
+
+  it("draws Forma's reply as Markdown", async () => {
+    draw({ messages: [msg({ id: 'a', role: 'assistant', text: 'Added **two** totals:\n\n- Balance\n- `Count`' })] });
+    expect((await screen.findByText('two')).tagName).toBe('STRONG');
+    expect([...document.querySelectorAll('.wb-md li')].map((li) => li.textContent)).toEqual(['Balance', 'Count']);
+    expect(document.querySelector('.wb-md code')?.textContent).toBe('Count');
+  });
+
+  it('opens a link in a reply in a new tab, away from the unsaved report', async () => {
+    draw({ messages: [msg({ id: 'a', role: 'assistant', text: 'See [the docs](https://docs.devexpress.com/).' })] });
+    const link = await screen.findByRole('link', { name: 'the docs' });
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it("keeps the person's words as typed, line breaks and asterisks included", () => {
+    draw({ messages: [msg({ id: 'u', role: 'user', text: 'Which paper? A4\n**not** Letter' })] });
+    const p = document.querySelector('.wb-note--me .wb-plain')!;
+    expect(p.textContent).toBe('Which paper? A4\n**not** Letter');
+    expect(document.querySelector('.wb-note--me strong')).toBeNull();
+  });
+
+  it('draws a reply plain while a search marks its matches', () => {
+    draw({ messages: [msg({ id: 'a', role: 'assistant', text: 'Added **two** totals' })], query: 'two' });
+    expect(document.querySelector('.wb-md')).toBeNull();
+    expect(document.querySelector('mark.wb-hit')?.textContent).toBe('two');
   });
 });
 
