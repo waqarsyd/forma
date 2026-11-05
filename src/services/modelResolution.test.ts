@@ -181,9 +181,13 @@ describe('resolveModel', () => {
       await expect(resolveModel(KEY)).rejects.toThrow(/key was rejected/i);
     });
 
-    it('sends the user to billing when every probe is over quota', async () => {
+    // Not to billing (2026-11-05): Forma is free, and says when the allowance returns.
+    it('says when the allowance returns and what works meanwhile when every probe is over quota', async () => {
       stubNetwork({ probe: () => 429 });
-      await expect(resolveModel(KEY)).rejects.toThrow(/over quota/i);
+      const err = await resolveModel(KEY).catch((e: Error) => e);
+      expect((err as Error).message).toMatch(/over quota/i);
+      expect((err as Error).message).toMatch(/resets at midnight Pacific time/);
+      expect((err as Error).message).not.toMatch(/billing/i);
     });
 
     it('sends the user to make a new key when nothing is available at all', async () => {

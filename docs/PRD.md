@@ -74,7 +74,7 @@ Two more joined that list when BUG-001 was fixed, and they are a different kind:
 
 ## 4. User Journeys
 1.  **First Run:** User opens Forma with no key -> generation prompts for one -> user pastes a key from Google AI Studio -> "Check key" confirms it and names the model that will be used -> user drops an image -> system analyzes using Gemini -> outputs valid `repx` XML with correct column and row widths.
-2.  **Quota Exhaustion:** User exceeds the quota on *their own* key -> app shows an explicit "exceeded your Gemini API quota" message pointing at their plan and billing.
+2.  **Quota Exhaustion:** User exceeds the quota on *their own* key -> Forma moves on to the other models the key can use, and when none is left says which limit it was, when it resets (a minute, or midnight Pacific time for the free daily allowance), and that a local AI or OpenRouter can design meanwhile. Never billing (since 2026-11-05): Forma is free, and its users are on the free tier by design.
 3.  **Refinement:** User types "Move the picture box 2 inches down" -> Gemini natively updates the `repxContent` X/Y coordinates contextually.
 4.  **New Device:** Signed-in user with a synced key opens Forma elsewhere -> enters their passphrase -> the key is decrypted in-browser and cached for that tab.
 5.  **Forgotten Account Password:** User cannot sign in -> chooses "Forgot Password" -> the address already typed in the form is used, and Forma confirms a reset link is on its way if that account exists -> user follows the emailed link. *This resets the **account** password only. It has no bearing on the key-vault passphrase, which is unrecoverable by design (§5) — the two are separate secrets and only one of them can be reset.*

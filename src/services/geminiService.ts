@@ -1,6 +1,6 @@
 import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
-import { classifyGeminiError, isQuotaExhausted, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
+import { classifyGeminiError, isQuotaExhausted, msUntilPacificMidnight, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
 import { parseRepxAnswer, repxOfAnswer } from "../lib/analysisResponse";
 import { layoutFromRepx, reportTitleOf, specFromRepx } from "../lib/repxViews";
 import { controlCount, CORRECTION_RULES, textToDraft } from "../lib/draftText";
@@ -648,8 +648,13 @@ export async function resolveModel(apiKey: string, signal?: AbortSignal): Promis
   const sawQuota = verdicts.includes("quota");
 
   if (sawQuota) {
+    // When it resets and what works meanwhile (2026-11-05), not billing:
+    // Forma is free, and its users are on the free tier by design.
+    const hours = Math.max(1, Math.round(msUntilPacificMidnight() / 3600000));
     throw new Error(
-      "Every model available to this key is over quota right now. Check your plan and billing in Google AI Studio, or try again later."
+      "Every model this key can use is over quota right now. A per-minute limit clears within a minute; " +
+      `the free daily allowance resets at midnight Pacific time, in about ${hours} hour${hours === 1 ? "" : "s"}. ` +
+      "Meanwhile a local AI or OpenRouter can design instead: choose one in Settings."
     );
   }
   throw new Error(

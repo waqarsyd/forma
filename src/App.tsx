@@ -4021,10 +4021,11 @@ export default function App() {
         return;
       }
 
+      // A spent quota is not overridden here (2026-11-05): `classifyGeminiError`
+      // already says when it resets and what works meanwhile, and this said
+      // "check your plan and billing" over it, to a user of a free tool.
       let friendlyMessage = err.message || 'An error occurred during analysis.';
-      if (friendlyMessage.includes('quota') || friendlyMessage.includes('429')) {
-        friendlyMessage = 'Your Gemini API key has hit its quota. Check your plan and billing in Google AI Studio.';
-      } else if (friendlyMessage.includes('Failed to fetch')) {
+      if (friendlyMessage.includes('Failed to fetch')) {
         friendlyMessage = 'Network error. Please check your internet connection.';
       }
 
