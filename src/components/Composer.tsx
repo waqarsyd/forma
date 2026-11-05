@@ -22,7 +22,7 @@
  * twice in a row. Owning the ref here would silently break that.
  */
 
-import { useLayoutEffect, useRef, type ChangeEventHandler, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEventHandler, type RefObject } from 'react';
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
 import {
@@ -31,10 +31,30 @@ import {
   IconClose,
   IconDoc,
   IconKey,
+  IconMic,
   IconPaperclip,
   IconTarget,
   IconWarn,
 } from './landing/icons';
+
+/** The browser's speech recognition, as much of it as the box uses. */
+interface Recognition {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+/** The constructor, where the browser has one (Chrome and Edge as `webkitSpeechRecognition`). */
+function speechRecognition(): (new () => Recognition) | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition;
+}
 
 /** A staged text-only upload — a `.repx`, or a PDF whose pages did not render. */
 export interface TextAttachmentGroup extends AttachmentGroup {
@@ -167,6 +187,48 @@ export default function Composer({
     promptRef.current?.focus();
   };
 
+  /*
+   * Speaking a message (2026-11-05), as ChatGPT's and Gemini's boxes take one.
+   * The browser's own speech recognition, so nothing is installed and nothing
+   * is paid for; offered only where the browser has it. What is heard is
+   * written into the box after whatever was typed, as it is heard, and is
+   * sent like anything typed. The site's Permissions-Policy lets this page,
+   * and nothing it frames, ask for the microphone; the browser asks first.
+   */
+  const Recognizer = speechRecognition();
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<Recognition | null>(null);
+  const toggleVoice = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      return;
+    }
+    if (!Recognizer) return;
+    const r = new Recognizer();
+    r.lang = navigator.language || 'en-US';
+    r.interimResults = true;
+    r.continuous = false;
+    const before = prompt.trim() ? `${prompt.replace(/\s+$/, '')} ` : '';
+    r.onresult = (event) => {
+      const heard = Array.from(event.results, (result) => result[0]?.transcript ?? '').join('');
+      onPromptChange(before + heard);
+    };
+    r.onend = () => {
+      recognitionRef.current = null;
+      setListening(false);
+      promptRef.current?.focus();
+    };
+    r.onerror = () => {
+      recognitionRef.current = null;
+      setListening(false);
+    };
+    recognitionRef.current = r;
+    setListening(true);
+    r.start();
+  };
+  // Leaving the workspace stops listening.
+  useEffect(() => () => recognitionRef.current?.stop(), []);
+
   return (
     <div className="wb-composer">
       {/* Staged intake. The artifact had no slot for these; they are absent
@@ -298,9 +360,22 @@ export default function Composer({
             }
           }}
           disabled={!hasApiKey}
-          placeholder={hasApiKey ? 'Describe changes…' : 'Add your API key to start'}
+          placeholder={listening ? 'Listening…' : hasApiKey ? 'Describe changes…' : 'Add your API key to start'}
           aria-label="Message"
         />
+        {hasApiKey && Recognizer && (
+          <button
+            type="button"
+            className={`wb-tool${listening ? ' wb-is-listening' : ''}`}
+            aria-label={listening ? 'Stop listening' : 'Speak your message'}
+            aria-pressed={listening}
+            title={listening ? 'Stop listening' : "Speak your message (your browser's speech recognition hears it)"}
+            onClick={toggleVoice}
+            disabled={isAnalyzing || isChatting}
+          >
+            <IconMic size={16} />
+          </button>
+        )}
         {!hasApiKey ? (
           /* Locked, the send button is the way in: it opens Settings at the
              key, so nothing has to be added under the box (2026-11-04). */

@@ -213,7 +213,15 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = Object.freeze(
   // Only the features worth naming. An exhaustive list ages badly -- browsers
   // add features faster than this file gets revisited -- and these three are
   // the ones a report designer has no business asking for.
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  //
+  // The microphone is this page's own since 2026-11-05 (`(self)`, never `*`):
+  // the chat box has a microphone, as ChatGPT's and Gemini's do, and the
+  // browser's speech recognition needs it. The browser still asks the person
+  // first, and the button is the only thing that starts it. Note what it
+  // costs: in Chrome the audio goes to Google to be heard, in Edge to
+  // Microsoft; nothing goes anywhere until the button is pressed. A frame
+  // from another origin still gets none, and the camera and location stay off.
+  'Permissions-Policy': 'camera=(), microphone=(self), geolocation=()',
 });
 
 export interface SecurityHeaderOptions {

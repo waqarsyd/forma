@@ -12,7 +12,7 @@
  * between a first-time visitor and a request that cannot succeed.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { createRef } from 'react';
 import Composer from './Composer';
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
@@ -232,6 +232,39 @@ describe('a clean composer', () => {
     );
     expect(screen.queryByLabelText('Stop')).toBeNull();
     expect(send().disabled).toBe(false);
+  });
+
+  // A spoken message (2026-11-05), as ChatGPT's and Gemini's boxes take one.
+  it('offers the microphone only where the browser hears speech, and writes what it hears after what was typed', () => {
+    expect(screen.queryByLabelText('Speak your message')).toBeNull();
+    const made: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; onresult: ((e: unknown) => void) | null; onend: (() => void) | null; lang: string }[] = [];
+    class FakeRecognition {
+      lang = '';
+      interimResults = false;
+      continuous = true;
+      onresult: ((e: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      start = vi.fn();
+      stop = vi.fn();
+      constructor() {
+        made.push(this);
+      }
+    }
+    vi.stubGlobal('webkitSpeechRecognition', FakeRecognition);
+    const onPromptChange = vi.fn();
+    draw({ prompt: 'Make the title', onPromptChange });
+    fireEvent.click(screen.getByLabelText('Speak your message'));
+    expect(made).toHaveLength(1);
+    expect(made[0].start).toHaveBeenCalled();
+    expect(screen.getByLabelText('Stop listening').getAttribute('aria-pressed')).toBe('true');
+    made[0].onresult?.({ results: [[{ transcript: 'bold and ' }], [{ transcript: 'blue' }]] });
+    expect(onPromptChange).toHaveBeenLastCalledWith('Make the title bold and blue');
+    fireEvent.click(screen.getByLabelText('Stop listening'));
+    expect(made[0].stop).toHaveBeenCalled();
+    act(() => made[0].onend?.());
+    expect(screen.getByLabelText('Speak your message').getAttribute('aria-pressed')).toBe('false');
+    vi.unstubAllGlobals();
   });
 
   // What is selected on the Preview is what "this" means (2026-11-05).

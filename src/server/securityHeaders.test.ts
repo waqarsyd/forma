@@ -52,9 +52,16 @@ describe('SECURITY_HEADERS', () => {
 
   it('turns off device APIs the app never uses', () => {
     const policy = SECURITY_HEADERS['Permissions-Policy'];
-    for (const feature of ['camera', 'microphone', 'geolocation']) {
+    for (const feature of ['camera', 'geolocation']) {
       expect(policy).toContain(`${feature}=()`);
     }
+  });
+
+  // The chat box's microphone (2026-11-05): this page's own, never a frame's.
+  it('lets the page itself, and nothing it frames, use the microphone', () => {
+    const policy = SECURITY_HEADERS['Permissions-Policy'];
+    expect(policy).toContain('microphone=(self)');
+    expect(policy).not.toMatch(/microphone=\*|microphone=\([^)]*(\*|https?:)/);
   });
 
   it('does not advertise the server framework', () => {

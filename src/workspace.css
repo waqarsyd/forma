@@ -832,6 +832,10 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   transition: color .15s ease, background .15s ease;
 }
 .wb-tool:hover { color: var(--ink); background: var(--track); }
+/* Listening to a spoken message (2026-11-05): the microphone in the accent,
+   breathing, until the browser stops hearing. */
+.wb-tool.wb-is-listening { color: var(--accent); background: var(--accent-wash); animation: wb-listen 1.2s ease-in-out infinite; }
+@keyframes wb-listen { 50% { box-shadow: 0 0 0 4px var(--accent-wash); } }
 
 /* The send button. A real 32px circle — it was an unstyled <button> for a while,
    which is why it rendered as a 31x21 rectangle with square corners. */

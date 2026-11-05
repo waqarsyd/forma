@@ -356,6 +356,13 @@ export const IconSave = (p: Props) => (
     <path d="M8 3v6h8V3M8 21v-6h8v6" />
   </Svg>
 );
+/* Speaking a message into the chat box (2026-11-05), as ChatGPT's and Gemini's. */
+export const IconMic = (p: Props) => (
+  <Svg {...p}>
+    <rect x="9" y="3" width="6" height="12" rx="3" />
+    <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+  </Svg>
+);
 /* Edit under the person's message (2026-11-05): a pencil, as ChatGPT's. */
 export const IconPencil = (p: Props) => (
   <Svg {...p}>
