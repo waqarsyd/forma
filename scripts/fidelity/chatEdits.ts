@@ -22,10 +22,17 @@ import { spawnSync } from 'node:child_process';
 import { analyzeReportDesign, chatReply, type ReportConfig } from '../../src/services/geminiService';
 import { applyEdits, EDIT_OPS, readReportOutcome, reportOutline, TOOL_LISTS } from '../../src/lib/agentEdit';
 
+/*
+ * Each edit changes something the report does not already have. The first
+ * run (2026-11-05) asked for a bold title and a right-aligned page number,
+ * which sales-by-region.repx already has, and the model rightly answered
+ * instead of editing; that is kept below as the "nothing to change" case.
+ */
 const REQUESTS: { text: string; expect: 'edit' | 'answer' | 'rebuild' }[] = [
-  { text: 'Make the report title bold.', expect: 'edit' },
-  { text: 'Right-align the page number in the footer.', expect: 'edit' },
+  { text: 'Make the subtitle bold.', expect: 'edit' },
+  { text: 'Centre the footer note.', expect: 'edit' },
   { text: 'Print it on A4 landscape.', expect: 'edit' },
+  { text: 'Make the report title bold.', expect: 'answer' },
   { text: 'Which fields does this report print?', expect: 'answer' },
   { text: 'Add a chart of sales by region at the end.', expect: 'rebuild' },
 ];
@@ -66,6 +73,8 @@ async function main(): Promise<number> {
       edits: outcome.edits.length,
       applied: done?.applied.length ?? 0,
       declined: done?.declined ?? [],
+      // The model's words about a made-up report: worth keeping to read why.
+      reply: outcome.reply,
       newTokens: answered.usage?.total ?? null,
     };
     if (old && request.expect === 'edit') {

@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changesMarkdown, checksMarkdown, describeChanges, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -85,6 +85,14 @@ describe('applyEdits: what the model asked for, made by splices', () => {
     expect(out.xml).toContain('TextAlignment="MiddleRight"');
     expect(repxColor('Navy')).toBe('Navy');
     expect(repxColor('rgb(1,2,3)')).toBeNull();
+  });
+
+  // Found by the first real-key run (2026-11-05): "centre the footer note" was refused.
+  it('reads an alignment however the model spells it, and still refuses none', () => {
+    expect(['center', 'Centre', 'centred', 'MiddleCenter', 'middle'].map(readAlign)).toEqual(['center', 'center', 'center', 'center', 'center']);
+    expect([readAlign('Right'), readAlign('TopLeft'), readAlign('end'), readAlign('justify'), readAlign(undefined)]).toEqual(['right', 'left', 'right', null, null]);
+    expect(edit({ op: 'align', control: 'title', align: 'centre' as 'center' }).xml).toContain('TextAlignment="MiddleCenter"');
+    expect(edit({ op: 'align', control: 'title', ...({ alignment: 'right' } as object) } as AgentEdit).xml).toContain('TextAlignment="MiddleRight"');
   });
 
   it("retypes and restyles a table's cell by row and cell, and declines a cell that prints a field", () => {

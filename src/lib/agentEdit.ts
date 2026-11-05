@@ -235,6 +235,21 @@ function priority(openTag: string, use: string): Record<string, string> {
 
 const H = { left: 'Left', center: 'Center', right: 'Right' } as const;
 
+/**
+ * An alignment as the model may write it (2026-11-05): the first real-key run
+ * asked to "centre the footer note" had its edit refused as "no alignment was
+ * given", the value not being one of the schema's three words. Any spelling
+ * of centre, a DevExpress value ("MiddleRight") or another casing is read; an
+ * edit that names none is still refused.
+ */
+export function readAlign(value: unknown): 'left' | 'center' | 'right' | null {
+  const v = typeof value === 'string' ? value.toLowerCase() : '';
+  if (/cent(er|re)|middle$|^center/.test(v) || v === 'middle') return 'center';
+  if (/right|end$/.test(v)) return 'right';
+  if (/left|start$/.test(v)) return 'left';
+  return null;
+}
+
 function alignment(openTag: string, vAlign: 'top' | 'middle' | 'bottom', align: 'left' | 'center' | 'right'): string {
   const current = /\sTextAlignment\s*=\s*"([^"]*)"/.exec(openTag)?.[1] ?? '';
   const vertical = /^(Top|Middle|Bottom)/.exec(current)?.[1] ?? { top: 'Top', middle: 'Middle', bottom: 'Bottom' }[vAlign];
@@ -261,8 +276,9 @@ function styleAttrs(e: AgentEdit, openTag: string, resolved: { fontFamily: strin
     return Object.keys(attrs).length ? attrs : 'no colour was given';
   }
   if (e.op === 'align') {
-    if (!e.align || !(e.align in H)) return 'no alignment was given';
-    return { TextAlignment: alignment(openTag, resolved.vAlign, e.align), ...priority(openTag, 'UseTextAlignment') };
+    const side = readAlign(e.align ?? (e as { alignment?: unknown }).alignment);
+    if (!side) return 'no alignment was given';
+    return { TextAlignment: alignment(openTag, resolved.vAlign, side), ...priority(openTag, 'UseTextAlignment') };
   }
   return 'not a style';
 }

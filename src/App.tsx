@@ -4781,6 +4781,20 @@ export default function App() {
             announceReady('Report ready');
             return;
           }
+          /*
+           * Edits made that change nothing: the report is already that way
+           * (2026-11-05, found by the first real-key run, which asked to bold
+           * a title that was bold). Said so, with no redesign offered.
+           */
+          if (done.applied.length) {
+            setMessages(prev => [...prev, {
+              id,
+              role: 'assistant',
+              text: ['Nothing needed changing: the report already reads that way.', agent.changesMarkdown([], done.declined, toolsDone)].filter(Boolean).join('\n\n'),
+            }]);
+            announceReady('Reply ready');
+            return;
+          }
           // Nothing could be made in place: say why, and ask before redesigning.
           setMessages(prev => [...prev, {
             id,
