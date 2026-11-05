@@ -539,6 +539,25 @@ describe('Export CSV', () => {
     vi.unstubAllGlobals();
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   });
+
+  // The chat's export tool (2026-11-05): made once per request, then reported done.
+  it('makes an export the chat asked for, once per request', () => {
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: vi.fn(() => 'blob:csv'), revokeObjectURL: vi.fn() }));
+    const clicked: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.download);
+    });
+    const done = vi.fn();
+    const request = { format: 'csv' as const, nonce: 7 };
+    const { rerender } = render(<ReportPreview repxContent={geometry} layout={null} title="Geometry Case" exportRequest={request} onExportRequestDone={done} />);
+    expect(clicked).toEqual(['Geometry_Case.csv']);
+    expect(done).toHaveBeenCalledTimes(1);
+    rerender(<ReportPreview repxContent={geometry} layout={null} title="Geometry Case" exportRequest={request} onExportRequestDone={done} />);
+    expect(clicked).toHaveLength(1);
+    click.mockRestore();
+    vi.unstubAllGlobals();
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  });
 });
 
 /*

@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,441 tests in 126 files** — under the `node` environment
+`npm test` runs Vitest over **2,445 tests in 126 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -84,7 +84,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
 | `components/OcrDialog` | 7 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run, low-confidence text listed and named or left out, a report built after the app's checks, a PDF page read at its resolution, and pages the chat box read already shown without reading them again |
-| `components/ReportPreview` | 29 | jsdom; since 2026-11-04 also Shift+click selection deleted and nudged as one step, Add label, a table cell retyped, a label retyped in one placement of a repeated band, and a declined edit saying why; since 2026-11-04 also the grouping field chosen above the paper, through the undo path and only where the pane edits; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle; a picture box drawn as its image zoomed into its box, and a dashed box naming what it would show when it has no image (2026-11-04) |
+| `components/ReportPreview` | 30 | since 2026-11-05 an export the chat asked for, made once; jsdom; since 2026-11-04 also Shift+click selection deleted and nudged as one step, Add label, a table cell retyped, a label retyped in one placement of a repeated band, and a declined edit saying why; since 2026-11-04 also the grouping field chosen above the paper, through the undo path and only where the pane edits; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle; a picture box drawn as its image zoomed into its box, and a dashed box naming what it would show when it has no image (2026-11-04) |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 14 | 4 from two `it(` sharing one loop; since 2026-11-05 the answer is the REPX as raw XML: unwrapped from a fence, a preamble or the old JSON shape, cut off told from malformed, an unfinished document with a normal finish kept |
 | `lib/aiProvider` | 7 | jsdom (storage); the workspace open only with the Gemini key in, whichever AI is chosen, and that AI ready (2026-11-05); which AI answers: Automatic as Gemini, key or no key, since Forma Offline went into it on 2026-11-05, and the retired Gemini and Forma Offline choices read as Automatic, ready only with what each provider needs, Forma's vision model found as a helper beside any AI or as the Local AI model itself and alone only then, the choice kept in localStorage and the OpenRouter key only in this tab's sessionStorage, an unknown provider ignored |
@@ -166,7 +166,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxSummaries` | 19 | totals with no running scope, which DevExpress prints blank; each fixture is a shape it was made to print |
 | `lib/repxTruncation` | 19 |  |
 | `lib/repxViews` | 12 | the Mockup, the Spec and the title read off the REPX (2026-11-05): a section per content band in print order, x from the paper's edge and the top margin in the first section, font sizes in report units, a field as `[Field]`, a picture cropped from the upload only before the Detail band, what DevExpress does not print left out; the title from `DisplayName`, the largest text before Detail, or the `Name` |
-| `lib/agentEdit` | 18 | the chat's edits to an open report (2026-11-05): the outline the model is shown, its answer checked before Forma acts on it, each edit made by splices and found by name, a font made bold keeping its family and size, a style priority set back, declines with their reasons, the paper and margins, the 40-edit limit, and what changed read off the file |
+| `lib/agentEdit` | 21 | since its first day also the tools the chat runs; the chat's edits to an open report (2026-11-05): the outline the model is shown, its answer checked before Forma acts on it, each edit made by splices and found by name, a font made bold keeping its family and size, a style priority set back, declines with their reasons, the paper and margins, the 40-edit limit, and what changed read off the file |
 | `lib/revisions` | 21 |  |
 | `lib/revisionStore` | 26 |  |
 | `lib/router` | 17 | jsdom |
@@ -203,7 +203,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,441 in 126 files** — and that total is the arithmetic sum of the column above
+**Total: 2,445 in 126 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -217,7 +217,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2323** against a real 2,441 and will talk you into
+A grep for `\bit(` answers **2327** against a real 2,445 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changesMarkdown, describeChanges, readReportOutcome, reportOutline, repxColor, MAX_EDITS, type AgentEdit } from './agentEdit';
+import { applyEdits, changesMarkdown, describeChanges, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -127,7 +127,32 @@ describe('applyEdits: what the model asked for, made by splices', () => {
 describe('readReportOutcome: the answer as Forma acts on it', () => {
   it('keeps an edit and its known edits, dropping an op Forma cannot make', () => {
     const out = readReportOutcome({ reply: 'Done.', action: 'edit', edits: [{ op: 'font', control: 'title', bold: true }, { op: 'chart' }, null] });
-    expect(out).toEqual({ reply: 'Done.', wantsReport: false, action: 'edit', edits: [{ op: 'font', control: 'title', bold: true }] });
+    expect(out).toEqual({ reply: 'Done.', wantsReport: false, action: 'edit', edits: [{ op: 'font', control: 'title', bold: true }], tools: [] });
+  });
+
+  // Forma's own actions (2026-11-05).
+  it('keeps a tool only when its name, pane or format is one Forma has, and runs none with a redesign', () => {
+    const out = readReportOutcome({
+      reply: 'Here it is.',
+      action: 'answer',
+      tools: [{ name: 'show', pane: 'preview' }, { name: 'show', pane: 'chart' }, { name: 'export', format: 'pdf' }, { name: 'export', format: 'odt' }, { name: 'print' }, { name: 'testData' }],
+    });
+    expect(out.tools).toEqual([{ name: 'show', pane: 'preview' }, { name: 'export', format: 'pdf' }, { name: 'testData' }]);
+    expect(readReportOutcome({ reply: 'Redesigning.', action: 'rebuild', tools: [{ name: 'designer' }] }).tools).toEqual([]);
+  });
+
+  it('reads an edit with no edits but a tool as an answer that acts, not a redesign', () => {
+    expect(readReportOutcome({ reply: '', action: 'edit', edits: [], tools: [{ name: 'export', format: 'csv' }] })).toMatchObject({ action: 'answer', wantsReport: false, reply: '' });
+  });
+
+  it('says what each tool did, under Done', () => {
+    expect([{ name: 'show', pane: 'repx' }, { name: 'testData' }, { name: 'export', format: 'xlsx' }, { name: 'designer' }].map((t) => toolLine(t as AgentTool))).toEqual([
+      'opened the REPX',
+      'filled the Preview with sample rows',
+      'exported it as XLSX',
+      'asked the DevExpress designer on this computer to open it',
+    ]);
+    expect(changesMarkdown([], [], ['opened the Preview'])).toBe('**Done**\n- opened the Preview');
   });
 
   it('reads a redesign as wanting a report, and an edit with nothing to make as a redesign', () => {

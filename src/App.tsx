@@ -221,6 +221,7 @@ import {
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
 import type { RepxAudit } from './lib/repxAudit';
+import type { AgentTool } from './lib/agentEdit';
 import {
   describedRequest,
   fixInstruction,
@@ -2098,6 +2099,17 @@ export default function App() {
    * a report from a session that no longer exists.
    */
   const [chatChanges, setChatChanges] = useState<Record<string, { before: DesignResult; after: DesignResult }>>({});
+  /** The chat's tools waiting for the render that applies the turn's edits (2026-11-05). */
+  const [pendingTools, setPendingTools] = useState<AgentTool[] | null>(null);
+  /** Runs them; assigned beside `showPlate`, where the handlers it calls are. */
+  const runToolsRef = useRef<((tools: AgentTool[]) => void) | null>(null);
+  useEffect(() => {
+    if (!pendingTools) return;
+    setPendingTools(null);
+    runToolsRef.current?.(pendingTools);
+  }, [pendingTools]);
+  /** An export the chat asked the Preview for, made once per nonce. */
+  const [exportRequest, setExportRequest] = useState<{ format: Exclude<AgentTool['format'], 'repx' | undefined>; nonce: number } | null>(null);
   /**
    * The sidebar's Search over the saved projects (2026-11-05), as ChatGPT's
    * searches its chats: null while closed, the text typed while open.
@@ -3458,7 +3470,10 @@ export default function App() {
   useEffect(() => {
     try {
       if (openProjectId) sessionStorage.setItem(OPEN_PROJECT_KEY, openProjectId);
-      else sessionStorage.removeItem(OPEN_PROJECT_KEY);
+      // Not while a restore still waits for its list: signed in, Firestore
+      // answers after this first runs, and a second reload meanwhile would
+      // find nothing to open.
+      else if (!restoreProjectId.current) sessionStorage.removeItem(OPEN_PROJECT_KEY);
     } catch {
       /* storage blocked: a reload starts empty, as before */
     }
@@ -4492,9 +4507,20 @@ export default function App() {
         const answered = await chatReply(history, config, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
-        }, outline && agent ? { outline, ops: agent.EDIT_OPS } : undefined);
+        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS } : undefined);
         // A report turn's answer is checked before anything is acted on.
         const outcome = agent ? agent.readReportOutcome(answered) : answered;
+        /*
+         * Forma's own actions the answer asked for (2026-11-05): queued, and
+         * run by the effect beside `showPlate` once the edits have rendered,
+         * so an export carries the report as edited. Each says what it did;
+         * sample rows need a report that prints a field.
+         */
+        const tools = agent ? outcome.tools ?? [] : [];
+        const toolsDone = agent
+          ? tools.map((t) => (t.name === 'testData' && boundFields.length === 0 ? 'no sample rows: the report prints no fields' : agent.toolLine(t)))
+          : [];
+        if (tools.length) setPendingTools(tools);
 
         if (open && agent && outcome.action === 'edit') {
           const done = agent.applyEdits(open.repxContent!, outcome.edits ?? []);
@@ -4508,7 +4534,7 @@ export default function App() {
             setMessages(prev => [...prev, {
               id,
               role: 'assistant',
-              text: [outcome.reply, agent.changesMarkdown(changes, done.declined)].filter(Boolean).join('\n\n'),
+              text: [outcome.reply, agent.changesMarkdown(changes, done.declined, toolsDone)].filter(Boolean).join('\n\n'),
             }]);
             return;
           }
@@ -4522,7 +4548,7 @@ export default function App() {
           setMessages(prev => [...prev, {
             id: nextMessageId(),
             role: 'assistant',
-            text: outcome.reply,
+            text: agent && toolsDone.length ? [outcome.reply, agent.changesMarkdown([], [], toolsDone)].filter(Boolean).join('\n\n') : outcome.reply,
           }]);
           return;
         } else {
@@ -5158,6 +5184,33 @@ export default function App() {
     const state = stateForPlate(next, { activeTab, specView });
     setActiveTab(state.activeTab);
     setSpecView(state.specView);
+  };
+
+  /*
+   * The chat's tools, run (2026-11-05), by the effect beside `pendingTools`.
+   * Assigned here, after the early returns above, because `showPlate` and the
+   * handlers it calls are; a hook here would not run on every render, which
+   * React refuses ("Rendered more hooks than during the previous render", the
+   * first draft's crash). It runs after the render that applied the turn's
+   * edits, so `downloadDesign` and the Preview's exports read the report as
+   * edited. An export other than the REPX is the Preview's to make, so the
+   * pane opens and is handed the request (`exportRequest`).
+   */
+  runToolsRef.current = (tools) => {
+    const PANE_PLATES: Record<string, Plate> = { mockup: 'proof', preview: 'print', data: 'data', spec: 'spec', repx: 'xml' };
+    tools.forEach((tool, i) => {
+      if (tool.name === 'show') showPlate(PANE_PLATES[tool.pane ?? 'preview'] ?? 'print');
+      else if (tool.name === 'testData') {
+        showPlate('print');
+        if (boundFields.length) void handleTestData();
+      } else if (tool.name === 'export') {
+        if (tool.format === 'repx') downloadDesign();
+        else if (tool.format) {
+          showPlate('print');
+          setExportRequest({ format: tool.format, nonce: Date.now() + i });
+        }
+      } else if (tool.name === 'designer') void openInDesigner();
+    });
   };
   const railBtn = (panel: RailPanel, label: string, icon: React.ReactNode) => (
     <button
@@ -5867,6 +5920,8 @@ export default function App() {
                       onTestData={handleTestData}
                       onClearTestData={() => setTestRows(null)}
                       testDataBusy={testDataBusy}
+                      exportRequest={exportRequest}
+                      onExportRequestDone={() => setExportRequest(null)}
                       /* Editing writes the REPX only. The layout and the spec
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not

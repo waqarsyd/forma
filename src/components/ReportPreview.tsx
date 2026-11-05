@@ -85,6 +85,14 @@ interface Props {
   onTestData?: () => void;
   onClearTestData?: () => void;
   testDataBusy?: boolean;
+  /**
+   * An export the chat asked for (2026-11-05, `lib/agentEdit.ts`'s tools):
+   * made once per `nonce`, as its button in the pane would make it, and then
+   * reported done so the request does not run again when the pane is next
+   * opened.
+   */
+  exportRequest?: { format: 'pdf' | 'csv' | 'xlsx' | 'docx' | 'rtf' | 'html' | 'png'; nonce: number } | null;
+  onExportRequestDone?: () => void;
 }
 
 export type TestRow = RecordValues;
@@ -960,7 +968,7 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [showBands, setShowBands] = useState(true);
@@ -1415,6 +1423,19 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       cancelled = true;
     };
   }, [exportKind, continuous, report, structure, title, download]);
+
+  // An export the chat asked for, made once (2026-11-05): see `exportRequest`.
+  const exportedNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!exportRequest || exportedNonce.current === exportRequest.nonce) return;
+    exportedNonce.current = exportRequest.nonce;
+    const { format } = exportRequest;
+    if (format === 'pdf') exportPdf();
+    else if (format === 'csv') exportCsv();
+    else if (format === 'xlsx') exportXlsx();
+    else setExportKind(format);
+    onExportRequestDone?.();
+  }, [exportRequest, exportPdf, exportCsv, exportXlsx, onExportRequestDone]);
 
   /*
    * A PDF of Forma's own writing, with the report's bookmarks as its outline

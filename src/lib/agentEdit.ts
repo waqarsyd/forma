@@ -374,33 +374,87 @@ function applyOne(xml: string, e: AgentEdit): EditResult {
   }
 }
 
+/*
+ * Forma's own actions, which the chat runs when asked (2026-11-05): show a
+ * pane, fill the Preview with sample rows, export, or open the DevExpress
+ * designer. They run after any edits, against the report those edits left.
+ */
+export const TOOL_NAMES = ['show', 'testData', 'export', 'designer'] as const;
+export const PANES = ['mockup', 'preview', 'data', 'spec', 'repx'] as const;
+export const EXPORT_FORMATS = ['repx', 'pdf', 'csv', 'xlsx', 'docx', 'rtf', 'html', 'png'] as const;
+export type ToolName = (typeof TOOL_NAMES)[number];
+export type Pane = (typeof PANES)[number];
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
+
+export interface AgentTool {
+  name: ToolName;
+  /** For `show`. */
+  pane?: Pane;
+  /** For `export`. */
+  format?: ExportFormat;
+}
+
+/** The lists the model's schema is built from, handed to `chatReply` with the outline. */
+export const TOOL_LISTS = { names: TOOL_NAMES, panes: PANES, formats: EXPORT_FORMATS } as const;
+
+const PANE_WORDS: Record<Pane, string> = { mockup: 'the Mockup', preview: 'the Preview', data: 'the Data tab', spec: 'the Spec', repx: 'the REPX' };
+
+/** What a tool did, a line for the reply. */
+export function toolLine(tool: AgentTool): string {
+  switch (tool.name) {
+    case 'show':
+      return `opened ${PANE_WORDS[tool.pane ?? 'preview']}`;
+    case 'testData':
+      return 'filled the Preview with sample rows';
+    case 'export':
+      return `exported it as ${(tool.format ?? 'repx').toUpperCase()}`;
+    case 'designer':
+      return 'asked the DevExpress designer on this computer to open it';
+  }
+}
+
+function isTool(t: unknown): t is AgentTool {
+  if (!t || typeof t !== 'object') return false;
+  const { name, pane, format } = t as AgentTool;
+  if (!(TOOL_NAMES as readonly string[]).includes(name)) return false;
+  if (name === 'show') return (PANES as readonly string[]).includes(pane ?? '');
+  if (name === 'export') return (EXPORT_FORMATS as readonly string[]).includes(format ?? '');
+  return true;
+}
+
 /** A report turn's answer, as `chatReply` hands it over and as Forma acts on it. */
 export interface ReportOutcome {
   reply: string;
   wantsReport: boolean;
   action: 'answer' | 'edit' | 'rebuild';
   edits: AgentEdit[];
+  /** Forma's own actions to run, with an answer or after edits; none with a redesign. */
+  tools: AgentTool[];
 }
 
 /**
  * A report turn's answer as Forma acts on it. An action the schema does not
  * name is read from what came with it: edits mean an edit, nothing means an
  * answer. An edit with no edits listed is a redesign, since the model meant
- * to change something it could not express. An edit is kept only when its op
- * is one Forma knows; `applyEdits` checks the rest.
+ * to change something it could not express, unless it came with tools to
+ * run, which is an answer that acts. An edit is kept only when its op is one
+ * Forma knows, a tool only when its name, pane or format is; `applyEdits`
+ * checks the rest.
  */
-export function readReportOutcome(parsed: { reply?: string; action?: string; edits?: unknown }): ReportOutcome {
+export function readReportOutcome(parsed: { reply?: string; action?: string; edits?: unknown; tools?: unknown }): ReportOutcome {
   const edits = (Array.isArray(parsed.edits) ? parsed.edits : []).filter(
     (e): e is AgentEdit => Boolean(e) && typeof e === 'object' && (EDIT_OPS as readonly string[]).includes((e as AgentEdit).op),
   );
+  const tools = (Array.isArray(parsed.tools) ? parsed.tools : []).filter(isTool).slice(0, 4);
   let action: ReportOutcome['action'] =
     parsed.action === 'answer' || parsed.action === 'edit' || parsed.action === 'rebuild' ? parsed.action : edits.length ? 'edit' : 'answer';
-  if (action === 'edit' && !edits.length) action = 'rebuild';
+  if (action === 'edit' && !edits.length) action = tools.length ? 'answer' : 'rebuild';
   return {
-    reply: parsed.reply || (action === 'answer' ? 'Sorry — I did not catch that.' : ''),
+    reply: parsed.reply || (action === 'answer' && !tools.length ? 'Sorry — I did not catch that.' : ''),
     wantsReport: action === 'rebuild',
     action,
     edits: action === 'edit' ? edits : [],
+    tools: action === 'rebuild' ? [] : tools,
   };
 }
 
@@ -494,10 +548,11 @@ export function describeChanges(before: string, after: string, limit = 10): stri
   return lines;
 }
 
-/** The reply's account of a change: what changed, and what was asked and not done. */
-export function changesMarkdown(changes: readonly string[], declined: readonly string[] = []): string {
+/** The reply's account of a turn: what changed, what was asked and not done, and what Forma did. */
+export function changesMarkdown(changes: readonly string[], declined: readonly string[] = [], done: readonly string[] = []): string {
   const parts: string[] = [];
   if (changes.length) parts.push(`**Changed**\n${changes.map((c) => `- ${c}`).join('\n')}`);
   if (declined.length) parts.push(`**Not changed**\n${declined.map((d) => `- ${d}`).join('\n')}`);
+  if (done.length) parts.push(`**Done**\n${done.map((d) => `- ${d}`).join('\n')}`);
   return parts.join('\n\n');
 }

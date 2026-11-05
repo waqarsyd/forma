@@ -38,7 +38,7 @@ import { resolveOverlaps } from "../lib/repxOverlaps";
 import { EXPRESSION_REFERENCE, checkExpression } from "../lib/expressions";
 // A type only: the edit library is App's to load on demand, and importing
 // it here put it and repxEdit in this chunk, over its budget (2026-11-05).
-import type { AgentEdit } from "../lib/agentEdit";
+import type { AgentEdit, AgentTool } from "../lib/agentEdit";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -701,6 +701,8 @@ export interface ChatOutcome {
   action?: 'answer' | 'edit' | 'rebuild';
   /** The edits, for `action: 'edit'`, as the model wrote them; `applyEdits` checks each. */
   edits?: AgentEdit[];
+  /** Forma's own actions to run, as the model wrote them; `readReportOutcome` checks each. */
+  tools?: AgentTool[];
 }
 
 /**
@@ -727,6 +729,8 @@ The edits, by "op", and the fields each reads:
 - delete: control. visible: control, visible.
 - add: a new label: band (its name or kind), text, x, y, and optionally width, height.
 - paper: paper (A4, Letter, Legal, A3, A5, Tabloid), landscape. margins: any of left, right, top, bottom.
+
+"tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows, which costs a request), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer).
 
 "reply": one or two sentences to the user, drawn as Markdown with no headings. For an edit, say briefly what you changed; Forma lists the changes itself, so do not list them. For a rebuild, say what Forma will redesign. Never claim a change you did not list.`;
 
@@ -789,6 +793,11 @@ function buildMockReportReply(userText: string, outline: string): ChatOutcome {
   if (first && colour) return edit(`Coloured \`${first}\` ${colour.toLowerCase()}.`, [{ op: 'color', control: first, foreColor: colour[0].toUpperCase() + colour.slice(1).toLowerCase() }]);
   const paper = /\b(A4|A3|Letter|Legal)\b/i.exec(text)?.[1];
   if (paper) return edit(`Set the paper to ${paper}.`, [{ op: 'paper', paper, landscape: /landscape/i.test(text) }]);
+  const format = /\bexport\b.*?\b(pdf|csv|xlsx|docx|rtf|html|png|repx)\b/i.exec(text)?.[1]?.toLowerCase();
+  if (format) return { ...answer(`Exporting it as ${format.toUpperCase()}.`), tools: [{ name: 'export', format: format as AgentTool['format'] }] };
+  if (/\bsample (data|rows)\b/i.test(text)) return { ...answer('Filling the Preview with sample rows.'), tools: [{ name: 'testData' }] };
+  const pane = /\bshow\b.*?\b(mockup|preview|data|spec|repx)\b/i.exec(text)?.[1]?.toLowerCase();
+  if (pane) return { ...answer(`Here is the ${pane}.`), tools: [{ name: 'show', pane: pane as AgentTool['pane'] }] };
   return { reply: 'Mock mode is on, so Forma will redesign the canned report for that.', wantsReport: true, action: 'rebuild', edits: [] };
 }
 
@@ -978,13 +987,17 @@ export async function chatReply(
   signal?: AbortSignal,
   onPartialReply?: (text: string) => void,
   /**
-   * The open report, as `reportOutline` writes it, and the edits Forma can
-   * make, `EDIT_OPS` (2026-11-05). With it the turn answers with an action and
-   * edits (`REPORT_CHAT_INSTRUCTIONS`), which `readReportOutcome` in
-   * `lib/agentEdit.ts` checks before anything is acted on; without it, a
-   * reply and whether a report is wanted, as before.
+   * The open report, as `reportOutline` writes it, the edits Forma can make,
+   * `EDIT_OPS`, and its own actions, `TOOL_LISTS` (2026-11-05). With it the
+   * turn answers with an action, edits and tools (`REPORT_CHAT_INSTRUCTIONS`),
+   * which `readReportOutcome` in `lib/agentEdit.ts` checks before anything is
+   * acted on; without it, a reply and whether a report is wanted, as before.
    */
-  report?: { outline: string; ops: readonly string[] },
+  report?: {
+    outline: string;
+    ops: readonly string[];
+    tools: { names: readonly string[]; panes: readonly string[]; formats: readonly string[] };
+  },
 ): Promise<ChatOutcome> {
   if (signal?.aborted) throw abortError();
 
@@ -1128,9 +1141,21 @@ ${transcript}`,
               reply: { type: Type.STRING },
               action: { type: Type.STRING, enum: ['answer', 'edit', 'rebuild'] },
               edits: { type: Type.ARRAY, items: editSchema },
+              tools: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    name: { type: Type.STRING, enum: [...report!.tools.names] },
+                    pane: { type: Type.STRING, enum: [...report!.tools.panes] },
+                    format: { type: Type.STRING, enum: [...report!.tools.formats] },
+                  },
+                  required: ['name'],
+                },
+              },
             },
             required: ['reply', 'action'],
-            propertyOrdering: ['reply', 'action', 'edits'],
+            propertyOrdering: ['reply', 'action', 'edits', 'tools'],
           }
         : {
             type: Type.OBJECT,
@@ -1303,7 +1328,7 @@ ${transcript}`,
   try {
     const parsed = JSON.parse(raw) as ChatOutcome;
     // As the model wrote it; `readReportOutcome` decides what it means.
-    if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits };
+    if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits, tools: parsed.tools };
     return {
       reply: parsed.reply || 'Sorry — I did not catch that.',
       wantsReport: Boolean(parsed.wantsReport),
