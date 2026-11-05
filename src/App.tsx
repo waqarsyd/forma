@@ -284,6 +284,7 @@ import { repeatedHeadingTables } from './lib/mockupRows';
 const RequestCard = lazy(() => import('./components/RequestCard'));
 const RequestLog = lazy(() => import('./components/RequestLog'));
 const SelectionToolbar = lazy(() => import('./components/SelectionToolbar'));
+const UsageSettings = lazy(() => import('./components/UsageSettings'));
 const WorkingDots = lazy(() => import('./components/ChatThread').then((m) => ({ default: m.WorkingDots })));
 const Composer = lazy(() => import('./components/Composer'));
 import type { OcrBuiltReport } from './components/OcrDialog';
@@ -6607,6 +6608,10 @@ export default function App() {
                 `sessionStorage` and the vault and must never travel with it. */}
             <div className="wb-modal-body">
               <div className="wb-modal-col">
+              {/* Usage today first, as Stitch's settings open with its daily credits (2026-11-05). */}
+              <Suspense fallback={null}>
+                <UsageSettings />
+              </Suspense>
               {/* What used to be chosen here is worked out for each request
                   since 2026-11-04 (lib/autoConfig.ts, lib/ocrScript.ts): the
                   DevExpress version, unit, paper, direction and data source,

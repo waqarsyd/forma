@@ -18,7 +18,16 @@
  * a working key with another working key, and hits the same wall.
  */
 import { describe, it, expect } from 'vitest';
-import { classifyGeminiError, isQuotaExhausted, parseRetryDelayMs , quotaKind, quotaWaitMs, msUntilPacificMidnight } from './geminiErrors';
+import { classifyGeminiError, dailyLimitOf, isQuotaExhausted, parseRetryDelayMs , quotaKind, quotaWaitMs, msUntilPacificMidnight } from './geminiErrors';
+
+// The day's limit Google states in a spent daily quota, for Settings' Usage today (2026-11-05).
+describe('dailyLimitOf', () => {
+  it("reads the day's limit from a daily quota, and nothing from a per-minute one or another error", () => {
+    expect(dailyLimitOf({ status: 429, message: "Quota exceeded for quota metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', limit: 20, model: gemini-2.5-flash" })).toBe(20);
+    expect(dailyLimitOf({ status: 429, message: "Quota exceeded for metric 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', limit: 10" })).toBeNull();
+    expect(dailyLimitOf({ status: 503, message: 'overloaded' })).toBeNull();
+  });
+});
 
 /** Shaped like what @google/genai throws. */
 const sdkError = (status: number | string | undefined, message: string) =>

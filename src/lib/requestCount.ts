@@ -52,6 +52,34 @@ export function requestsToday(storage: Pick<Storage, 'getItem'> | null = browser
   return storage ? { ...read(storage, now) } : {};
 }
 
+const LIMITS = 'forma:dailyLimits';
+
+/**
+ * Each model's daily request limit, as Google stated it when one ran out
+ * (2026-11-05, `dailyLimitOf` in geminiErrors.ts), for Settings' Usage
+ * today to draw a bar against, as Stitch's settings show its daily credits.
+ * Kept across days, since a free tier's limit is the same tomorrow.
+ */
+export function dailyLimits(storage: Pick<Storage, 'getItem'> | null = browserStorage()): Record<string, number> {
+  if (!storage) return {};
+  try {
+    const stored = JSON.parse(storage.getItem(LIMITS) ?? 'null');
+    return stored && typeof stored === 'object' ? Object.fromEntries(Object.entries(stored).filter(([, n]) => typeof n === 'number' && n > 0)) as Record<string, number> : {};
+  } catch {
+    return {};
+  }
+}
+
+/** A model's limit, as Google stated it. A storage that refuses changes nothing. */
+export function noteDailyLimit(model: string | undefined, limit: number | null, storage: Pick<Storage, 'getItem' | 'setItem'> | null = browserStorage()): void {
+  if (!model || !limit || !storage) return;
+  try {
+    storage.setItem(LIMITS, JSON.stringify({ ...dailyLimits(storage), [model]: limit }));
+  } catch {
+    /* storage blocked or full: the limit is a courtesy */
+  }
+}
+
 /** One more request to `model` today. A storage that refuses changes nothing. */
 export function noteRequest(model: string | undefined, storage: Pick<Storage, 'getItem' | 'setItem'> | null = browserStorage(), now: Date = new Date()): void {
   if (!model || !storage) return;

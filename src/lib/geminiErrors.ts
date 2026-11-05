@@ -134,6 +134,20 @@ export function quotaKind(error: any): 'daily' | 'per-minute' | 'unknown' {
 }
 
 /** Milliseconds until midnight Pacific time, when Google resets daily quotas. */
+/**
+ * The day's request limit Google named in a spent daily quota, as in
+ * "GenerateRequestsPerDayPerProjectPerModel-FreeTier, limit: 20", or null
+ * (2026-11-05). Settings' Usage today draws a bar against it once known:
+ * Forma does not guess a free tier's limits, it learns each one when Google
+ * states it.
+ */
+export function dailyLimitOf(error: any): number | null {
+  if (quotaKind(error) !== 'daily') return null;
+  const limit = /\blimit:\s*(\d+)/i.exec(`${error?.message || ''} ${JSON.stringify(error?.details ?? '')}`)?.[1];
+  const n = limit ? Number(limit) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export function msUntilPacificMidnight(now: Date = new Date()): number {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour12: false, hour: 'numeric', minute: 'numeric', second: 'numeric' })

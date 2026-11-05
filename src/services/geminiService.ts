@@ -1,6 +1,6 @@
 import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
-import { classifyGeminiError, isQuotaExhausted, isTruncatedStreamMessage, msUntilPacificMidnight, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
+import { classifyGeminiError, dailyLimitOf, isQuotaExhausted, isTruncatedStreamMessage, msUntilPacificMidnight, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
 import { parseRepxAnswer, repxOfAnswer } from "../lib/analysisResponse";
 import { layoutFromRepx, reportTitleOf, specFromRepx } from "../lib/repxViews";
 import { controlCount, CORRECTION_RULES, textToDraft } from "../lib/draftText";
@@ -36,7 +36,7 @@ import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runaw
 import { buildDescriptionBrief, type ReportDescriptionRequest, type ClarificationQuestion } from "../lib/promptToReport";
 import { resolveOverlaps } from "../lib/repxOverlaps";
 import { EXPRESSION_REFERENCE, checkExpression } from "../lib/expressions";
-import { noteRequest } from "../lib/requestCount";
+import { noteDailyLimit, noteRequest } from "../lib/requestCount";
 // A type only: the edit library is App's to load on demand, and importing
 // it here put it and repxEdit in this chunk, over its budget (2026-11-05).
 import type { AgentEdit, AgentTool } from "../lib/agentEdit";
@@ -1305,6 +1305,8 @@ ${transcript}`,
       const quota = isQuotaExhausted(err) && !pinnedModel;
       if (quota) {
         noteModelOverloaded(activeModel, Date.now(), quotaWaitMs(err));
+        // The limit Google named, for Settings' Usage today (2026-11-05).
+        noteDailyLimit(activeModel, dailyLimitOf(err));
       }
 
       /*
@@ -2520,6 +2522,8 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       const quota = isQuotaExhausted(error) && !pinnedModel;
       if (quota) {
         noteModelOverloaded(selectedModel, Date.now(), quotaWaitMs(error));
+        // The limit Google named, for Settings' Usage today (2026-11-05).
+        noteDailyLimit(selectedModel, dailyLimitOf(error));
       }
 
       // A model that loops on this page after its retries is treated like one

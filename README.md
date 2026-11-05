@@ -589,8 +589,9 @@ src/
                        it, the edits it asks for made in place, and what
                        changed, read off the file), shortcuts (ChatGPT's
                        keyboard shortcuts for the chat), requestCount
-                       (requests sent to each model today, for the
-                       chat box's model picker), modelTiers (that
+                       (requests sent to each model today, and the
+                       limits Google stated, for the chat box's model
+                       picker and Settings' Usage today), modelTiers (that
                        picker's Auto, Fast and Balanced, each naming
                        its model), dataFiles (CSV, JSON,
                        Excel, Word and the rest attached in the chat,

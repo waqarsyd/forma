@@ -1936,6 +1936,13 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .wb-ctx-menu button:hover { background: var(--track); }
 .wb-ctx-menu .wb-danger { color: var(--bad-ink); }
 
+/* Usage today in Settings (UsageSettings.tsx), as Stitch's daily credits. */
+.wb-usage { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.wb-usage li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; font-size: 12.5px; color: var(--ink); }
+.wb-usage-count { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+.wb-usage-bar { grid-column: 1 / -1; height: 5px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.wb-usage-bar i { display: block; height: 100%; border-radius: inherit; background: var(--ink-2); }
+
 /* Undo, Redo and the zoom at the bench's corner, as Stitch's. */
 .wb-float-corner { right: 16px; bottom: 16px; display: flex; align-items: center; gap: 8px; }
 .wb-corner {

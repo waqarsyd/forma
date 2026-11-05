@@ -1,6 +1,6 @@
 /** Requests sent to each model today, by the Pacific day (2026-11-05). */
 import { describe, it, expect } from 'vitest';
-import { noteRequest, pacificDay, requestsToday } from './requestCount';
+import { dailyLimits, noteDailyLimit, noteRequest, pacificDay, requestsToday } from './requestCount';
 
 const memory = () => {
   const data = new Map<string, string>();
@@ -11,6 +11,19 @@ describe('pacificDay', () => {
   it('is the calendar day in Pacific time, which changes eight hours after UTC midnight', () => {
     expect(pacificDay(new Date('2026-11-05T07:59:00Z'))).toBe('2026-11-04');
     expect(pacificDay(new Date('2026-11-05T08:01:00Z'))).toBe('2026-11-05');
+  });
+});
+
+// The limits Google states, for Settings' Usage today (2026-11-05).
+describe('dailyLimits and noteDailyLimit', () => {
+  it('keeps each model limit Google stated, across days, and ignores none', () => {
+    const store = memory();
+    noteDailyLimit('gemini-2.5-flash', 20, store);
+    noteDailyLimit('gemini-2.5-flash-lite', null, store);
+    noteDailyLimit(undefined, 50, store);
+    noteDailyLimit('gemini-flash-lite-latest', 1000, store);
+    expect(dailyLimits(store)).toEqual({ 'gemini-2.5-flash': 20, 'gemini-flash-lite-latest': 1000 });
+    expect(dailyLimits(null)).toEqual({});
   });
 });
 
