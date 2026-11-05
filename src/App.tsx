@@ -5615,7 +5615,6 @@ export default function App() {
                 still hears it, from the attributes below. */}
             {isAnalyzing && (
               <article className="wb-note" aria-live="polite">
-                <span className="wb-spine" />
                 <div>
                   <div className="wb-who">Forma</div>
                   <p

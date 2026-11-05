@@ -582,11 +582,11 @@
   color: var(--ok-ink);
 }
 
-/* Notes keep the spine-and-margin treatment — these are markup on a proof, not
-   chat — but the spine now uses the sheet's rule and accent. */
-.wb-note { display: grid; grid-template-columns: 3px 1fr; gap: 12px; }
-.wb-note .wb-spine { border-radius: 999px; background: var(--rule-strong); }
-.wb-note--me .wb-spine { background: var(--accent); }
+/* A note is its name and its words, with no strip beside it (2026-11-05, at
+   the owner's request): the accent bar beside the person's notes and the grey
+   one beside Forma's, the proof-markup "spine" kept from the artifact, went
+   once the column became a chat. `git log -S".wb-spine"` finds it. */
+.wb-note { display: block; }
 .wb-note .wb-who {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -595,7 +595,24 @@
   color: var(--ink-faint);
   margin-bottom: 5px;
 }
-.wb-note--me .wb-who { color: var(--accent); }
+/* The person's messages on the right, Forma's on the left (2026-11-05, at the
+   owner's request), as ChatGPT and Gemini set a conversation: the person's
+   words in a soft grey bubble no wider than most of the column, its
+   pictures, actions and name lined up on the right; Forma's replies stay
+   full width on the left, where a list or a table has room. An edit opens
+   across the column. The name is no longer the accent colour, which went
+   with the strips beside the notes. */
+.wb-note--me > div { display: flex; flex-direction: column; align-items: flex-end; }
+.wb-note--me .wb-plain {
+  max-width: 85%;
+  padding: 8px 14px;
+  border-radius: 16px;
+  background: var(--track);
+  color: var(--ink);
+}
+.wb-note--me .wb-attach-strip,
+.wb-note--me .wb-note-actions { justify-content: flex-end; }
+.wb-note--me .wb-edit { align-self: stretch; }
 .wb-note p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
 .wb-note p + p { margin-top: 8px; }
 /* The person's words as typed, line breaks kept; and a reply until its

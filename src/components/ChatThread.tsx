@@ -358,7 +358,6 @@ const ChatNote = memo(function ChatNote<R>({
   const editable = mine && !!onEdit && !!message.text && !message.images?.length;
   return (
     <article className={`wb-note${mine ? ' wb-note--me' : ''}`}>
-      <span className="wb-spine" />
       <div>
         <div className="wb-who">{mine ? 'You' : 'Forma'}</div>
         {editing ? (
@@ -621,7 +620,6 @@ export default function ChatThread<R>({
           placeholder sits above the progress card claiming a second job. */}
       {isChatting && !isAnalyzing && (
         <article className="wb-note" aria-live="polite">
-          <span className="wb-spine" />
           <div>
             <div className="wb-who">Forma</div>
             {/* The answer as it streams; until the first word, the dots. */}
