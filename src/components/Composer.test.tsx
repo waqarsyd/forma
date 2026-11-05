@@ -233,6 +233,15 @@ describe('a clean composer', () => {
     expect(screen.queryByLabelText('Stop')).toBeNull();
     expect(send().disabled).toBe(false);
   });
+
+  // A reply being written can be stopped too (2026-11-05), as ChatGPT's can.
+  it('turns the send into a Stop while a reply is written', () => {
+    const onStop = vi.fn();
+    draw({ isChatting: true, onStop });
+    expect(screen.queryByLabelText('Send note')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Stop'));
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('staged attachments', () => {

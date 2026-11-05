@@ -2235,6 +2235,16 @@ export default function App() {
   const [isChatting, setIsChatting] = useState(false);
   /** The assistant's answer as it streams in, before it becomes a real message. */
   const [streamingReply, setStreamingReply] = useState('');
+  /**
+   * The turn in flight before any generation (2026-11-05): a chat reply, the
+   * questions asked before a design, or a sent page being read. The
+   * composer's Stop aborts it, as it aborts a generation. Every await in such
+   * a turn checks its signal and, once aborted, touches no state: Stop has
+   * already put the composer back, and a new turn may be running.
+   */
+  const turnAbortRef = useRef<AbortController | null>(null);
+  /** The reply as streamed so far, which Stop keeps, as ChatGPT keeps it. */
+  const partialReplyRef = useRef('');
 
   useEffect(() => {
     // sessionStorage, not localStorage: the key is a live credential, and a
@@ -2972,7 +2982,7 @@ export default function App() {
    * is held as for any reply. The pages are kept for the review a reply built
    * from their text offers.
    */
-  const readSentPages = async (pages: readonly { src: string; meta: PreviewMeta }[]) => {
+  const readSentPages = async (pages: readonly { src: string; meta: PreviewMeta }[], signal?: AbortSignal) => {
     if (!pages.length) return [];
     setSentPages((prev) => {
       const next = { ...prev };
@@ -2982,10 +2992,15 @@ export default function App() {
     setIsChatting(true);
     setStreamingReply(readingNote(0, pages.length, 0));
     try {
-      return await readPages(pages, (page, of, progress) => setStreamingReply(readingNote(page, of, progress)));
+      return await readPages(pages, (page, of, progress) => {
+        if (!signal?.aborted) setStreamingReply(readingNote(page, of, progress));
+      });
     } finally {
-      setIsChatting(false);
-      setStreamingReply('');
+      // Stopped, the composer is already back and another turn may be running.
+      if (!signal?.aborted) {
+        setIsChatting(false);
+        setStreamingReply('');
+      }
     }
   };
 
@@ -3893,19 +3908,34 @@ export default function App() {
   // handleResume went with pause on 2026-11-04 (see RESUMED_RUN above). A
   // stopped run is sent again by sending the message again.
 
-  /** The composer's Stop, while a generation runs: the run is discarded. */
+  /**
+   * The composer's Stop. A generation is discarded. A chat reply, the
+   * questions asked before a design, or a sent page being read (2026-11-05)
+   * is abandoned, and a reply keeps what it had written so far, as ChatGPT's
+   * does; with nothing written, Forma answers "Stopped." as for a generation.
+   */
   const handleStop = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    if (isAnalyzing) {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      setIsAnalyzing(false);
+      setProgress(IDLE_PROGRESS);
+      if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
+      setMessages(prev => [...prev, {
+        id: nextMessageId(),
+        role: 'assistant',
+        text: 'Stopped.'
+      }]);
+      return;
     }
-    setIsAnalyzing(false);
-    setProgress(IDLE_PROGRESS);
-    if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
-    setMessages(prev => [...prev, {
-      id: nextMessageId(),
-      role: 'assistant',
-      text: 'Stopped.'
-    }]);
+    if (!isChatting) return;
+    turnAbortRef.current?.abort();
+    const partial = partialReplyRef.current.trim();
+    partialReplyRef.current = '';
+    setIsChatting(false);
+    setStreamingReply('');
+    setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: partial || 'Stopped.' }]);
   };
 
   /**
@@ -3984,6 +4014,9 @@ export default function App() {
     setError(null);
     const say = (text: string, attached?: DesignResult) =>
       setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text, ...(attached ? { result: attached } : {}) }]);
+    // Stop abandons the reading (2026-11-05): see turnAbortRef.
+    const turn = new AbortController();
+    turnAbortRef.current = turn;
     let read: { meta: PreviewMeta; read: ReadPage }[] = [];
     try {
       const [{ readSkeleton }, { skeletonToDesign, pageTextsOf }, { detectLayout }, { pageForImage }] = await Promise.all([
@@ -4007,11 +4040,13 @@ export default function App() {
             return readings;
           })().then((readings) => ({ readings }), (e: unknown) => ({ failed: e }))
         : Promise.resolve({ failed: new Error('no vision model is set up') });
-      read = await readSentPages(stagedForOcr);
+      read = await readSentPages(stagedForOcr, turn.signal);
+      if (turn.signal.aborted) return;
       const fromPages = readSources(read);
       detectFor({ metas: stagedMeta, pages: fromPages.pages, words: [message, fromPages.words].join('\n') });
       setIsChatting(true);
       const looked = await looking;
+      if (turn.signal.aborted) return;
       if ('failed' in looked) throw looked.failed;
       const [firstReading, ...laterReadings] = looked.readings;
       if (!firstReading?.skeleton) throw new Error('its answer had no page line');
@@ -4052,6 +4087,7 @@ export default function App() {
         newResult,
       );
     } catch (err: any) {
+      if (turn.signal.aborted) return;
       const why = err?.message || 'it did not answer';
       if (read.length) {
         const { buildFromRead } = await import('./lib/ocrAttach');
@@ -4067,8 +4103,10 @@ export default function App() {
       }
       say(`Forma's vision model could not read the page: ${why}.`);
     } finally {
-      setIsChatting(false);
-      setStreamingReply('');
+      if (!turn.signal.aborted) {
+        setIsChatting(false);
+        setStreamingReply('');
+      }
     }
   };
 
@@ -4167,10 +4205,15 @@ export default function App() {
     setAttachmentTexts([]);
     setUploadNotices([]);
 
+    // Stop abandons everything up to a generation (2026-11-05): see turnAbortRef.
+    const turn = new AbortController();
+    turnAbortRef.current = turn;
+
     // What OCR reads from the attached images goes with them, as a PDF's text
     // layer does (2026-11-01). It is read now, behind the scenes, with the
     // message already in the thread (2026-11-03).
-    const read = await readSentPages(stagedForOcr);
+    const read = await readSentPages(stagedForOcr, turn.signal);
+    if (turn.signal.aborted) return;
     const fromPages = readSources(read);
     detectFor({ texts: attachmentTexts, metas: stagedMeta, pages: fromPages.pages, words: [currentPrompt, fromPages.words].join('\n') });
     const readByOcr = await ocrAttachments(read);
@@ -4211,16 +4254,20 @@ export default function App() {
     // (2026-11-02): it is a report request in any reading, and the turn spent
     // one request of the key's free allowance saying so.
     if (!result && !isGenerationTurn(currentPreviews.length, currentTexts.length) && PLAIN_BUILD.test(currentPrompt)) {
-      await describeFromChat(currentPrompt);
+      await describeFromChat(currentPrompt, turn.signal);
       return;
     }
     if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
       setIsChatting(true);
       setStreamingReply('');
+      partialReplyRef.current = '';
       try {
         const history: ChatTurn[] = buildChatHistory(messages, currentPrompt);
         const { chatReply } = await loadGemini();
-        const outcome = await chatReply(history, config, undefined, setStreamingReply);
+        const outcome = await chatReply(history, config, turn.signal, (text) => {
+          partialReplyRef.current = text;
+          setStreamingReply(text);
+        });
 
         if (!outcome.wantsReport) {
           setMessages(prev => [...prev, {
@@ -4243,6 +4290,7 @@ export default function App() {
         // a question or two first if it leaves something open, then the brief.
         fromDescription = !result;
       } catch (err: any) {
+        if (turn.signal.aborted) return;
         console.error('Chat turn failed:', err);
         const message = isMissingApiKey(err)
           ? 'Add your Gemini API key to use the workspace.'
@@ -4254,13 +4302,16 @@ export default function App() {
         if (isMissingApiKey(err)) setIsConfigOpen(true);
         return;
       } finally {
-        setIsChatting(false);
-        setStreamingReply('');
+        partialReplyRef.current = '';
+        if (!turn.signal.aborted) {
+          setIsChatting(false);
+          setStreamingReply('');
+        }
       }
     }
 
     if (fromDescription) {
-      await describeFromChat(currentPrompt);
+      await describeFromChat(currentPrompt, turn.signal);
       return;
     }
 
@@ -4302,7 +4353,7 @@ export default function App() {
    * as a form; then the brief. A failure inside the clarification already
    * answers "ready", so the only way out without a generation is a key problem.
    */
-  const describeFromChat = async (message: string) => {
+  const describeFromChat = async (message: string, signal?: AbortSignal) => {
     const request = describedRequest(message);
     // Too little to design from, the dialog's Build button stayed disabled;
     // in the chat the same rule asks for more instead.
@@ -4317,7 +4368,8 @@ export default function App() {
     setIsChatting(true);
     try {
       const { clarifyReportRequest } = await loadGemini();
-      const outcome = await clarifyReportRequest(request, config);
+      const outcome = await clarifyReportRequest(request, config, signal);
+      if (signal?.aborted) return;
       if (!outcome.ready) {
         const id = nextMessageId();
         setMessages((prev) => [...prev, {
@@ -4330,13 +4382,15 @@ export default function App() {
         return;
       }
     } catch (err: any) {
+      if (signal?.aborted) return;
       const message = isMissingApiKey(err) ? 'Add your Gemini API key to use the workspace.' : err?.message || 'Could not reach the assistant.';
       setError(message);
       if (isMissingApiKey(err)) setIsConfigOpen(true);
       return;
     } finally {
-      setIsChatting(false);
+      if (!signal?.aborted) setIsChatting(false);
     }
+    if (signal?.aborted) return;
     await startDescribedGeneration(request);
   };
 

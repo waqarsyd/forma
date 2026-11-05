@@ -60,9 +60,10 @@ export interface ComposerProps {
   onPromptChange: (value: string) => void;
   onSend: () => void;
   /**
-   * Stops the generation in flight (2026-11-04). While one runs the send
-   * button is a Stop button, as in the chat apps people know; there is no
-   * pause, ring or percentage in the chat any more.
+   * Stops what is in flight (2026-11-04): a generation, and since 2026-11-05
+   * a chat reply, the questions asked before a design, or the reading of a
+   * sent page. While one runs the send button is a Stop button, as in the
+   * chat apps people know; there is no pause, ring or percentage in the chat.
    */
   onStop?: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -290,9 +291,10 @@ export default function Composer({
           <button className="wb-send" aria-label="Add your API key" title="Add your API key in Settings" onClick={onAddKey}>
             <IconKey size={15} />
           </button>
-        ) : isAnalyzing && onStop ? (
+        ) : (isAnalyzing || isChatting) && onStop ? (
           /* While a generation runs, the send button is its Stop (2026-11-04),
-             as in the chat apps people know. */
+             as in the chat apps people know; and while a reply is written
+             (2026-11-05), as ChatGPT's is. */
           <button className="wb-send wb-send--stop" aria-label="Stop" title="Stop" onClick={onStop}>
             <span className="wb-stop-square" aria-hidden="true" />
           </button>
