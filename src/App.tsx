@@ -243,6 +243,9 @@ import {
   nextMessageId,
   AFFIRMATIVE,
   answeredBy,
+  branchesForResend,
+  showBranch,
+  type ChatBranch,
   noteCountLabel,
   projectMatches,
   truncateFrom,
@@ -3367,10 +3370,14 @@ export default function App() {
         let imagesDropped = false;
 
         if (payload.messages.length + payload.result.length > CLOUD_SAVE_BUDGET_BYTES) {
-          payload = toFirestoreDocument(
-            { ...draft, messages: messages.map((m) => (m.images?.length ? { ...m, images: undefined } : m)) },
-            user.uid
-          );
+          // The earlier versions of a message carry pictures too (2026-11-05).
+          const withoutImages = (list: ChatMessage[]): ChatMessage[] =>
+            list.map((m) => ({
+              ...m,
+              images: undefined,
+              branches: m.branches?.map((b) => ({ ...b, images: undefined, tail: withoutImages(b.tail) })),
+            }));
+          payload = toFirestoreDocument({ ...draft, messages: withoutImages(messages) }, user.uid);
           imagesDropped = true;
         }
 
@@ -4125,9 +4132,11 @@ export default function App() {
     if (!asked) return;
     const pending = pendingClarifyRef.current;
     if (pending && messages.findIndex((m) => m.id === pending.messageId) >= messages.indexOf(asked)) pendingClarifyRef.current = null;
+    // The reply it replaces is kept as a version of the message (2026-11-05).
+    const versions = branchesForResend(messages, messages.indexOf(asked), asked.text);
     setMessages((prev) => truncateFrom(prev, asked.id));
     setError(null);
-    void handleGenerate(asked.text, asked);
+    void handleGenerate(asked.text, { images: asked.images, imageMeta: asked.imageMeta, ...versions });
   };
 
   /** A change the chat made, kept for its reply's Undo. */
@@ -4196,9 +4205,19 @@ export default function App() {
     if (at === -1 || messages[at].role !== 'user' || !text.trim()) return;
     const pending = pendingClarifyRef.current;
     if (pending && messages.findIndex((m) => m.id === pending.messageId) >= at) pendingClarifyRef.current = null;
+    // Its pictures go again, and the version it replaces is kept (2026-11-05).
+    const old = messages[at];
+    const versions = branchesForResend(messages, at, text.trim());
     setMessages((prev) => truncateFrom(prev, id));
     setError(null);
-    void handleGenerate(text.trim());
+    void handleGenerate(text.trim(), { images: old.images, imageMeta: old.imageMeta, ...versions });
+  };
+
+  /** Another version of one of the person's messages, with the conversation that followed it (2026-11-05). */
+  const handleShowVersion = (id: string, to: number) => {
+    if (isChatting || isAnalyzing) return;
+    pendingClarifyRef.current = null;
+    setMessages((prev) => showBranch(prev, prev.findIndex((m) => m.id === id), to));
   };
 
   /** One of the person's messages and Forma's answers to it, withdrawn (2026-11-04). See `withdrawTurn`. */
@@ -4359,7 +4378,10 @@ export default function App() {
    * is not kept on a message, so a PDF's pages are read again by OCR and a
    * `.repx` cannot be sent again.
    */
-  const handleGenerate = async (overridePrompt?: string, resend?: { images?: string[]; imageMeta?: PreviewMeta[] }) => {
+  const handleGenerate = async (
+    overridePrompt?: string,
+    resend?: { images?: string[]; imageMeta?: PreviewMeta[]; branches?: ChatBranch<DesignResult, PreviewMeta>[]; branch?: number },
+  ) => {
     /*
      * Refuse re-entry while a request is already in flight.
      *
@@ -4477,7 +4499,9 @@ export default function App() {
       role: 'user',
       text: currentPrompt, // Only use the prompt the user actually typed
       images: currentPreviews.length > 0 ? currentPreviews : undefined,
-      imageMeta: currentPreviews.length > 0 ? stagedMeta : undefined
+      imageMeta: currentPreviews.length > 0 ? stagedMeta : undefined,
+      // The versions it replaces, when it is an edit or Try again (2026-11-05).
+      ...(again && resend?.branches ? { branches: resend.branches, branch: resend.branch } : {}),
     };
 
     setMessages(prev => [...prev, newUserMsg]);
@@ -5603,6 +5627,7 @@ export default function App() {
             undoable={undoableIds}
             onUndo={handleUndo}
             onConfirm={(id, yes) => void handleConfirm(id, yes)}
+            onShowVersion={handleShowVersion}
             query={chatQuery ?? ''}
           >
             {/* Generation, as Forma's answer being written: three dots

@@ -701,6 +701,19 @@
    ChatGPT's, and a pressed rating wears the hover. */
 .wb-note-act.wb-note-icon { display: inline-grid; place-items: center; width: 24px; height: 22px; padding: 0; }
 .wb-note-act[aria-pressed="true"] { color: var(--ink); background: var(--track); }
+/* "‹ 1/2 ›" under a message with versions (2026-11-05), as ChatGPT's: the
+   chevron turned to point back and on. */
+.wb-note-foot { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 8px; }
+.wb-note-foot .wb-note-actions { margin-top: 6px; }
+.wb-versions { display: inline-flex; align-items: center; gap: 2px; margin-top: 6px; font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+.wb-versions button {
+  width: 20px; height: 20px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 999px; background: none; color: var(--ink-faint); cursor: pointer;
+}
+.wb-versions button:first-child svg { transform: rotate(90deg); }
+.wb-versions button:last-child svg { transform: rotate(-90deg); }
+.wb-versions button:hover:not(:disabled) { color: var(--ink); background: var(--track); }
+.wb-versions button:disabled { opacity: .35; cursor: default; }
 /* A reply whose change was taken back (2026-11-05). */
 .wb-note-done { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); padding: 1px 7px; }
 .wb-note-ask { font-size: 12px; color: var(--bad-ink); }

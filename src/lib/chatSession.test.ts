@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   AFFIRMATIVE,
   answeredBy,
+  branchesForResend,
+  showBranch,
   buildChatHistory,
   isGenerationTurn,
   markMessageError,
@@ -248,6 +250,44 @@ describe('messageMatches', () => {
 
   it('matches everything while nothing is typed', () => {
     expect(messageMatches(msg({ id: '1', text: 'x' }), '')).toBe(true);
+  });
+});
+
+/* The versions of a message sent again, as ChatGPT keeps them (2026-11-05). */
+describe('branchesForResend and showBranch', () => {
+  const thread = [
+    msg({ id: 'u1', text: 'an invoice' }),
+    msg({ id: 'a1', role: 'assistant', text: 'Built it.' }),
+    msg({ id: 'u2', text: 'make it blue', images: ['data:image/png;base64,AA'] }),
+    msg({ id: 'a2', role: 'assistant', text: 'Made it blue.' }),
+  ];
+
+  it('keeps the message replaced, with what followed it, and makes room for the new one', () => {
+    const { branches, branch } = branchesForResend(thread, 2, 'make it green');
+    expect(branch).toBe(1);
+    expect(branches.map((b) => b.text)).toEqual(['make it blue', 'make it green']);
+    expect(branches[0].tail.map((m) => m.id)).toEqual(['a2']);
+    // The pictures go with the new words, as the resend sends them.
+    expect(branches[1].images).toEqual(['data:image/png;base64,AA']);
+  });
+
+  it('goes back to an earlier version with its conversation, and forward again to the live one', () => {
+    const { branches, branch } = branchesForResend(thread, 2, 'make it green');
+    const edited = [...thread.slice(0, 2), msg({ id: 'u3', text: 'make it green', branches, branch }), msg({ id: 'a3', role: 'assistant', text: 'Made it green.' })];
+    const back = showBranch(edited, 2, 0);
+    expect(back.map((m) => m.text)).toEqual(['an invoice', 'Built it.', 'make it blue', 'Made it blue.']);
+    expect(back[2]).toMatchObject({ id: 'u3', branch: 0, images: ['data:image/png;base64,AA'] });
+    const forward = showBranch(back, 2, 1);
+    expect(forward.map((m) => m.text)).toEqual(['an invoice', 'Built it.', 'make it green', 'Made it green.']);
+  });
+
+  it('adds a third version beside the two, and changes nothing for a version that is not there', () => {
+    const first = branchesForResend(thread, 2, 'make it green');
+    const edited = [...thread.slice(0, 2), msg({ id: 'u3', text: 'make it green', ...first }), msg({ id: 'a3', role: 'assistant', text: 'Made it green.' })];
+    const second = branchesForResend(edited, 2, 'make it red');
+    expect(second.branches.map((b) => b.text)).toEqual(['make it blue', 'make it green', 'make it red']);
+    expect(second.branches[1].tail.map((m) => m.text)).toEqual(['Made it green.']);
+    expect(showBranch(edited, 2, 7)).toEqual(edited);
   });
 });
 

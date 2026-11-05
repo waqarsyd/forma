@@ -90,6 +90,52 @@ export interface ChatMessage<R = unknown, M = unknown> {
    * person has said yes or no, by the buttons or by typing.
    */
   confirm?: { prompt: string; answered?: 'yes' | 'no' };
+  /**
+   * The versions of one of the person's messages (2026-11-05), as ChatGPT
+   * keeps them: an edit, or Try again on the reply, sends the message again
+   * and keeps the one it replaced, with everything that followed it, so
+   * "‹ 1/2 ›" can go back. `branch` is the version showing; its entry in
+   * `branches` is refreshed from the live transcript whenever it is left.
+   */
+  branches?: ChatBranch<R, M>[];
+  branch?: number;
+}
+
+/** One version of a message: its words, its pictures, and the conversation that followed it. */
+export interface ChatBranch<R = unknown, M = unknown> {
+  text: string;
+  images?: string[];
+  imageMeta?: M[];
+  tail: ChatMessage<R, M>[];
+}
+
+/**
+ * The versions a message sent again carries: every earlier one, the one
+ * being replaced as it stands with what followed it, and a place for the new
+ * one, which is showing. `text` is the new words.
+ */
+export function branchesForResend<R, M>(messages: ReadonlyArray<ChatMessage<R, M>>, at: number, text: string): { branches: ChatBranch<R, M>[]; branch: number } {
+  const old = messages[at];
+  const live: ChatBranch<R, M> = { text: old.text, images: old.images, imageMeta: old.imageMeta, tail: messages.slice(at + 1) };
+  const prior = old.branches?.length ? old.branches.map((b, i) => (i === old.branch ? live : b)) : [live];
+  return { branches: [...prior, { text, images: old.images, imageMeta: old.imageMeta, tail: [] }], branch: prior.length };
+}
+
+/**
+ * Show another version of the message at `at`: the version showing is kept
+ * as it now stands, with what followed it, and the chosen one's words,
+ * pictures and conversation take its place. The report is not touched, as
+ * withdrawing does not touch it: the versions are of the conversation, and
+ * the reports each made are in Revisions. Unknown versions change nothing.
+ */
+export function showBranch<R, M>(messages: ReadonlyArray<ChatMessage<R, M>>, at: number, to: number): ChatMessage<R, M>[] {
+  const m = messages[at];
+  if (!m?.branches || m.branch === undefined || to === m.branch || !m.branches[to]) return [...messages];
+  const live: ChatBranch<R, M> = { text: m.text, images: m.images, imageMeta: m.imageMeta, tail: messages.slice(at + 1) };
+  const branches = m.branches.map((b, i) => (i === m.branch ? live : b));
+  const target = branches[to];
+  const shown: ChatMessage<R, M> = { ...m, text: target.text, images: target.images, imageMeta: target.imageMeta, branches, branch: to };
+  return [...messages.slice(0, at), shown, ...target.tail];
 }
 
 /** A typed yes to a question Forma asked: "yes", "ok", "go ahead", "do it", "redesign it". */

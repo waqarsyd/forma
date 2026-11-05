@@ -593,10 +593,29 @@ describe('editing and withdrawing a message', () => {
     expect(screen.getByText('a sales report')).toBeTruthy();
   });
 
-  it('does not offer editing a message sent with pictures, which an edit would not send again', () => {
+  // Since 2026-11-05 an edit sends the pictures again, so it is offered.
+  it('offers editing a message sent with pictures, which an edit sends again', () => {
     draw({ messages: [msg({ id: 'u', text: 'this scan', images: ['data:image/png;base64,AA'] })], onEdit: vi.fn(), onWithdraw: vi.fn() });
-    expect(screen.queryByLabelText('Edit')).toBeNull();
+    expect(screen.getByLabelText('Edit')).toBeTruthy();
     expect(screen.getByLabelText('Withdraw')).toBeTruthy();
+  });
+
+  // The versions an edit or a Try again keeps (2026-11-05), as ChatGPT shows them.
+  it('shows which version of a message is showing, and asks for the one before or after', () => {
+    const onShowVersion = vi.fn();
+    const branches = [{ text: 'make it blue', tail: [] }, { text: 'make it green', tail: [] }, { text: 'make it red', tail: [] }];
+    draw({ messages: [msg({ id: 'u', text: 'make it green', branches, branch: 1 })], onShowVersion });
+    const versions = screen.getByRole('group', { name: 'Versions of this message' });
+    expect(versions.textContent).toBe('2/3');
+    fireEvent.click(within(versions).getByLabelText('Previous version'));
+    expect(onShowVersion).toHaveBeenLastCalledWith('u', 0);
+    fireEvent.click(within(versions).getByLabelText('Next version'));
+    expect(onShowVersion).toHaveBeenLastCalledWith('u', 2);
+  });
+
+  it('draws no versions for a message that has only the one', () => {
+    draw({ messages: [msg({ id: 'u', text: 'an invoice' })], onShowVersion: vi.fn() });
+    expect(screen.queryByRole('group', { name: 'Versions of this message' })).toBeNull();
   });
 
   it('withdraws only once asked twice, and Keep changes nothing', () => {

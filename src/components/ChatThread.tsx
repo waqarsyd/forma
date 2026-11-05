@@ -22,7 +22,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import { messageMatches, searchParts, type ChatMessage } from '../lib/chatSession';
-import { IconArrowDown, IconCheck, IconCopy, IconPencil, IconRedo, IconThumbDown, IconThumbUp, IconTrash } from './landing/icons';
+import { IconArrowDown, IconCheck, IconChevronDown, IconCopy, IconPencil, IconRedo, IconThumbDown, IconThumbUp, IconTrash } from './landing/icons';
 
 /* Loaded on demand, as the Spec pane loads it: react-markdown brings the whole
    micromark tokenizer, and the eager bundle is budgeted (see Markdown.tsx). */
@@ -84,6 +84,8 @@ export interface ChatThreadProps<R> {
   onUndo?: (id: string) => void;
   /** The answer to a redesign a reply asks before making (2026-11-05): see `ChatMessage.confirm`. */
   onConfirm?: (id: string, yes: boolean) => void;
+  /** Another version of one of the person's messages, by its place (2026-11-05): see `ChatMessage.branches`. */
+  onShowVersion?: (id: string, to: number) => void;
   /** A transcript search: only the messages holding it are drawn, with each match marked. */
   query?: string;
   /** Forma's working line during a generation, rendered after the transcript. */
@@ -343,10 +345,12 @@ const ChatNote = memo(function ChatNote<R>({
   onRate,
   onUndo,
   onConfirm,
+  onShowVersion,
   query = '',
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
+  onShowVersion?: (id: string, to: number) => void;
   /** The latest of Forma's replies, whose actions show without pointing at it. */
   latest?: boolean;
   onConfirm?: (id: string, yes: boolean) => void;
@@ -364,9 +368,11 @@ const ChatNote = memo(function ChatNote<R>({
   const mine = message.role === 'user';
   const [editing, setEditing] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
-  // A message sent with pictures is not offered for editing: an edit sends
-  // the text again, and the pictures would not go with it.
-  const editable = mine && !!onEdit && !!message.text && !message.images?.length;
+  // A message sent with pictures is offered for editing too since 2026-11-05:
+  // an edit sends its pictures again with the new words. Until then it was
+  // not, because the pictures would not have gone.
+  const editable = mine && !!onEdit && !!message.text;
+  const versions = mine && message.branches && message.branches.length > 1 && message.branch !== undefined ? { at: message.branch, of: message.branches.length } : null;
   return (
     <article className={`wb-note${mine ? ' wb-note--me' : ''}`}>
       <div>
@@ -454,7 +460,23 @@ const ChatNote = memo(function ChatNote<R>({
           />
         )}
 
-        {mine && !editing && (
+        {/* One row under the bubble, as ChatGPT's: the versions, always shown,
+            then the icons, shown when pointed at. */}
+        {mine && !editing && <div className="wb-note-foot">
+        {/* The versions of this message, as ChatGPT shows them: an edit or a
+            Try again keeps the one it replaced, with what followed it. */}
+        {versions && onShowVersion && (
+          <div className="wb-versions" role="group" aria-label="Versions of this message">
+            <button type="button" aria-label="Previous version" disabled={retryDisabled || versions.at === 0} onClick={() => onShowVersion(message.id, versions.at - 1)}>
+              <IconChevronDown size={12} />
+            </button>
+            <span>{versions.at + 1}/{versions.of}</span>
+            <button type="button" aria-label="Next version" disabled={retryDisabled || versions.at === versions.of - 1} onClick={() => onShowVersion(message.id, versions.at + 1)}>
+              <IconChevronDown size={12} />
+            </button>
+          </div>
+        )}
+        {(
           withdrawing ? (
             <div className="wb-note-actions" role="group" aria-label="Withdraw this message">
               <span className="wb-note-ask">Withdraw this message and Forma's answer?</span>
@@ -492,6 +514,7 @@ const ChatNote = memo(function ChatNote<R>({
             </div>
           )
         )}
+        </div>}
       </div>
     </article>
   );
@@ -501,6 +524,7 @@ const ChatNote = memo(function ChatNote<R>({
   latest?: boolean;
   onUndo?: (id: string) => void;
   onConfirm?: (id: string, yes: boolean) => void;
+  onShowVersion?: (id: string, to: number) => void;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
@@ -526,6 +550,7 @@ export default function ChatThread<R>({
   undoable,
   onUndo,
   onConfirm,
+  onShowVersion,
   query = '',
   children,
 }: ChatThreadProps<R>) {
@@ -539,8 +564,9 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm, onShowVersion });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm, onShowVersion };
+  const showVersion = useCallback((id: string, to: number) => latest.current.onShowVersion?.(id, to), []);
   const undo = useCallback((id: string) => latest.current.onUndo?.(id), []);
   const confirm = useCallback((id: string, yes: boolean) => latest.current.onConfirm?.(id, yes), []);
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
@@ -638,6 +664,7 @@ export default function ChatThread<R>({
           latest={msg.id === lastReplyId}
           onUndo={onUndo && undoable?.has(msg.id) ? undo : undefined}
           onConfirm={onConfirm ? confirm : undefined}
+          onShowVersion={onShowVersion ? showVersion : undefined}
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}
