@@ -278,6 +278,28 @@ describe('a chat turn whose stream ends mid-object', () => {
     expect(outcome.reply).toBe('Recovered.');
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
+
+  /*
+   * Found with the owner's new key on 2026-11-05: one model's streams kept
+   * ending early, the turn stopped on it, and the user read the SDK's parser
+   * message. Another model is tried, as for an overload, and the last word is
+   * readable.
+   */
+  const cutOff = () => streamOf('data: {"candidates":[{"content":{"parts":[{"text":"{\\"reply\\":\\"par');
+
+  it('moves to the next model once its retries are spent, as an overload does', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+    const fetchMock = stubSequence(cutOff, cutOff, cutOff, () => reply('Answered by the fallback.'));
+    await expect(runTurn()).resolves.toMatchObject({ reply: 'Answered by the fallback.' });
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.slice(0, 3).every((u) => u.includes('model-a'))).toBe(true);
+    expect(urls[3]).toContain('model-b');
+  });
+
+  it('says the connection closed, not the parser message, once nothing is left', async () => {
+    stubSequence(cutOff);
+    await expect(runTurn()).rejects.toThrow(/connection to Google closed before the answer finished/);
+  });
 });
 
 describe('a chat turn that fails for a reason retrying cannot fix', () => {

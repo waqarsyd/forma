@@ -171,10 +171,21 @@ describe('a generation whose stream ends mid-object', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('stops after the retries and reports the failure', async () => {
+  it('stops after the retries and reports the failure readably, not as the SDK worded it', async () => {
     const fetchMock = stubSequence(truncated);
-    await expect(analyzeReportDesign('', parts, config)).rejects.toThrow();
+    await expect(analyzeReportDesign('', parts, config)).rejects.toThrow(/connection to Google closed before the answer finished/);
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  // Found with the owner's new key on 2026-11-05: four generations lost all three attempts this way on one model.
+  it('moves to the next model the key can call once its retries are spent', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+    const fetchMock = stubSequence(truncated, truncated, truncated, good);
+    const result = await analyzeReportDesign('', parts, config);
+    expect(result.layout.title).toBe('Recovered');
+    const urls = urlsOf(fetchMock);
+    expect(urls.slice(0, 3).every((u) => u.includes('model-a'))).toBe(true);
+    expect(urls[3]).toContain('model-b');
   });
 });
 

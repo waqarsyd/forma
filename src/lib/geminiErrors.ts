@@ -57,6 +57,26 @@ function isOverloadedMessage(status: unknown, message: string): boolean {
   );
 }
 
+/**
+ * A stream that stopped mid-object rather than a request that was refused.
+ *
+ * `Incomplete JSON segment at the end` comes from the SDK's SSE reader: the
+ * body ended holding text it could not split into events, a connection closed
+ * between two chunks or an error Google wrote into the stream out of step.
+ * Nothing about the request was wrong. Here since 2026-11-05, beside the other
+ * classifications, so the message a user reads once the retries and the other
+ * models are spent can be the readable one rather than the SDK's.
+ */
+export function isTruncatedStreamMessage(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes('incomplete json') ||
+    text.includes('unexpected end') ||
+    text.includes('network error') ||
+    text.includes('failed to fetch')
+  );
+}
+
 /** Is this the per-model rate limit rather than anything wrong with the key? */
 export function isQuotaExhausted(error: any): boolean {
   const message: string = error?.message || '';
@@ -198,6 +218,18 @@ export function classifyGeminiError(error: any): Error {
   if (isOverloadedMessage(status, message)) {
     return new Error(
       "Google's servers are busy and could not take this request, even after retrying. Nothing is wrong with your API key or your design — wait a minute and generate again."
+    );
+  }
+
+  /*
+   * Also reached only after the retries, and since 2026-11-05 after every
+   * other model the key can call. Found with the owner's new key, which could
+   * call one model, whose streams kept ending early: the user read "AI model
+   * error: Incomplete JSON segment at the end", which names a parser.
+   */
+  if (isTruncatedStreamMessage(message)) {
+    return new Error(
+      "The connection to Google closed before the answer finished, even after retrying. Nothing is wrong with your API key or your design — check your connection and try again in a minute."
     );
   }
 

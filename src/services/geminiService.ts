@@ -1,6 +1,6 @@
 import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
-import { classifyGeminiError, isQuotaExhausted, msUntilPacificMidnight, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
+import { classifyGeminiError, isQuotaExhausted, isTruncatedStreamMessage, msUntilPacificMidnight, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
 import { parseRepxAnswer, repxOfAnswer } from "../lib/analysisResponse";
 import { layoutFromRepx, reportTitleOf, specFromRepx } from "../lib/repxViews";
 import { controlCount, CORRECTION_RULES, textToDraft } from "../lib/draftText";
@@ -1006,16 +1006,12 @@ export function isOverloaded(error: any): boolean {
  * from this file: the connection ended between two chunks and the parser was
  * left holding half a JSON object. Nothing about the request was wrong, so the
  * same request is worth making again — the same argument as a 503, arriving
- * one layer lower. Observed twice in a row while chatting on 2026-09-05.
+ * one layer lower. Observed twice in a row while chatting on 2026-09-05. The
+ * pattern lives in lib/geminiErrors.ts since 2026-11-05, so the message shown
+ * once every retry is spent reads the same failure the same way.
  */
 export function isTruncatedStream(error: any): boolean {
-  const text = `${error?.message || ""}`.toLowerCase();
-  return (
-    text.includes("incomplete json") ||
-    text.includes("unexpected end") ||
-    text.includes("network error") ||
-    text.includes("failed to fetch")
-  );
+  return isTruncatedStreamMessage(`${error?.message || ""}`);
 }
 
 export async function chatReply(
@@ -1326,12 +1322,15 @@ ${transcript}`,
        * skips them, and the turn throws once nothing is left.
        */
       // A spent quota moves on too (2026-11-02), as the generation path's does:
-      // each model's free allowance is its own.
-      if ((isOverloaded(err) || quota) && !pinnedModel) {
+      // each model's free allowance is its own. So does a stream that kept
+      // ending early (2026-11-05), as the generation path's now does too.
+      const cut = isTruncatedStream(err);
+      if ((isOverloaded(err) || quota || cut) && !pinnedModel) {
         overloadedModels.push(activeModel);
         // Remembered across turns, briefly, so the next message does not start
         // by rediscovering this. See the cooldown note in `modelCache.ts`.
-        if (!quota) noteModelOverloaded(activeModel);
+        // A broken stream is not capacity, so it is not remembered.
+        if (!quota && !cut) noteModelOverloaded(activeModel);
         // The probed set when there is one. A turn that resolved its model
         // before the set was cached falls back to the raw preference list,
         // exactly as the generation path does.
@@ -1340,8 +1339,10 @@ ${transcript}`,
 
         if (next) {
           console.warn(
-            `Model "${activeModel}" stayed overloaded after ${MAX_CHAT_RETRIES} retries. ` +
-            `Falling back to "${next}" for this reply.`
+            cut
+              ? `The stream from "${activeModel}" kept ending early after ${MAX_CHAT_RETRIES} retries. Falling back to "${next}" for this reply.`
+              : `Model "${activeModel}" stayed overloaded after ${MAX_CHAT_RETRIES} retries. ` +
+                `Falling back to "${next}" for this reply.`
           );
           activeModel = next;
           onPartialReply?.('');
@@ -1356,7 +1357,7 @@ ${transcript}`,
       // A rate limit gets the purpose-written message rather than the
       // provider's multi-paragraph one, because it is the failure most likely
       // to be read by someone who has done nothing wrong.
-      throw isQuotaExhausted(err) ? classifyGeminiError(err) : asReadableError(err);
+      throw isQuotaExhausted(err) || cut ? classifyGeminiError(err) : asReadableError(err);
     }
   }
 
@@ -2527,12 +2528,17 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       // 2026-11-02, is one whose quota is spent: each Gemini model has its own
       // free allowance, and the owner's key ran out on gemini-2.5-flash while
       // the others it could call had theirs untouched.
-      if (isOverloaded(error) || runaway || quota) {
+      // So, since 2026-11-05, is one whose streams kept ending early through
+      // every retry: found with the owner's new key, where four generations in a
+      // row lost all three attempts that way on one model and stopped there.
+      const cut = isTruncatedStream(error);
+      if (isOverloaded(error) || runaway || quota || cut) {
         overloadedModels.push(selectedModel);
         // Also remembered briefly across requests, so the next generation does
         // not open by spending its retries on a model already known to be full.
-        // A loop is not capacity, so it is not remembered; a quota already was.
-        if (!runaway && !quota) noteModelOverloaded(selectedModel);
+        // A loop is not capacity, so it is not remembered; a quota already was;
+        // a broken stream is not capacity either.
+        if (!runaway && !quota && !cut) noteModelOverloaded(selectedModel);
         // The probed set when we have it. A tab that resolved its model before
         // this set was cached falls back to the raw preference list; if that
         // picks something the key cannot call, the 404 branch below re-detects
@@ -2547,8 +2553,10 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
                 `Falling back to "${next}" for this request.`
               : quota
                 ? `Model "${selectedModel}" is out of quota (${quotaKind(error)}). Falling back to "${next}", whose allowance is its own.`
-                : `Model "${selectedModel}" stayed overloaded after ${MAX_OVERLOAD_RETRIES} retries. ` +
-                  `Falling back to "${next}" for this request.`
+                : cut
+                  ? `The stream from "${selectedModel}" kept ending early after ${MAX_OUTPUT_RETRIES} retries. Falling back to "${next}" for this request.`
+                  : `Model "${selectedModel}" stayed overloaded after ${MAX_OVERLOAD_RETRIES} retries. ` +
+                    `Falling back to "${next}" for this request.`
           );
           selectedModel = next;
           overloadAttempts = 0;
@@ -2567,7 +2575,8 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
         }
 
         // Every model this key can use is out of quota: say which limit, and when.
-        if (quota) throw classifyGeminiError(error);
+        // Or its streams kept breaking: say that, not the SDK's parser message.
+        if (quota || cut) throw classifyGeminiError(error);
 
         // Every model this key can use is busy. Say so, and name them — "try
         // again" reads very differently when the user can see it was not one
