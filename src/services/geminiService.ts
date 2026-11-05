@@ -2460,7 +2460,15 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       }
       throw new Error("The AI's correction of Forma's draft could not be read. Try generating again.");
     }
-    if (reading.problems.length) console.warn(`Correction read with ${reading.problems.length} line(s) skipped: ${reading.problems.slice(0, 5).join('; ')}.`);
+    if (reading.problems.length) {
+      // Each skipped line quoted, so a format the model drifts into can be seen and read.
+      const lines = (text ?? '').split(/\r?\n/);
+      const quoted = reading.problems.map((p) => {
+        const n = /^line (\d+)/.exec(p)?.[1];
+        return n ? `${p} -- ${JSON.stringify(lines[Number(n) - 1]?.trim().slice(0, 120) ?? '')}` : p;
+      });
+      console.warn(`Correction read with ${reading.problems.length} line(s) skipped:\n  ${quoted.join('\n  ')}`);
+    }
     const design = skeletonToDesign(reading.skeleton, { texts: request.texts, title: request.title, readBy: request.readBy, given: reading.given, version: targetVersion });
     console.log(`Built the report from the corrected draft: ${controlCount(reading.skeleton)} controls in ${reading.skeleton.bands.length} bands.`);
     return { repxContent: design.repx };
