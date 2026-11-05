@@ -63,6 +63,15 @@ export function titleForRoute(path: string): string {
 }
 
 /**
+ * The tab's title while something finished in it unseen (2026-11-05): a
+ * report built or a reply written while the person was in another tab, so
+ * the tab strip says so. The route's title comes back when they return.
+ */
+export function readyTitle(what: 'Report ready' | 'Reply ready'): string {
+  return `✓ ${what} — Forma`;
+}
+
+/**
  * What a route asks the shell to show.
  *
  * `null` means *leave that piece of state alone*, and it is load-bearing rather

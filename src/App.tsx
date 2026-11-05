@@ -191,7 +191,8 @@ const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 import type { LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
-import { titleForRoute, viewForRoute } from './lib/routes';
+import { readyTitle, titleForRoute, viewForRoute } from './lib/routes';
+import { chatShortcutOf, shortcutText, type ChatShortcut } from './lib/shortcuts';
 /* App.tsx's own view state, extracted so it can be tested — see the header of
    each for the failure it was carrying while it lived here. */
 import { plateFor, stateForPlate, type Plate, type ActiveTab, type SpecView } from './lib/workspaceView';
@@ -1845,6 +1846,13 @@ export default function App() {
   useEffect(() => {
     if (!showWorkspace || showLogin) return;
     const onKey = (e: KeyboardEvent) => {
+      // The chat's shortcuts, ChatGPT's own (2026-11-05, lib/shortcuts.ts).
+      const chat = chatShortcutOf(e);
+      if (chat) {
+        e.preventDefault();
+        chatShortcutRef.current?.(chat);
+        return;
+      }
       if (isSidebarShortcut(e)) {
         e.preventDefault();
         toggleSidebar();
@@ -2138,6 +2146,8 @@ export default function App() {
   const [pendingTools, setPendingTools] = useState<AgentTool[] | null>(null);
   /** Runs them; assigned beside `showPlate`, where the handlers it calls are. */
   const runToolsRef = useRef<((tools: AgentTool[]) => void) | null>(null);
+  /** Does what a chat shortcut asks (2026-11-05, lib/shortcuts.ts); assigned beside `showPlate` too. */
+  const chatShortcutRef = useRef<((shortcut: ChatShortcut) => void) | null>(null);
   useEffect(() => {
     if (!pendingTools) return;
     setPendingTools(null);
@@ -2306,6 +2316,22 @@ export default function App() {
   const turnAbortRef = useRef<AbortController | null>(null);
   /** The reply as streamed so far, which Stop keeps, as ChatGPT keeps it. */
   const partialReplyRef = useRef('');
+  /*
+   * Something finished while the tab was hidden (2026-11-05): a report or a
+   * reply. The tab's title says so (`readyTitle`) until the person comes
+   * back, when the route's own title returns; the route effect stays the
+   * title's writer the rest of the time. Nothing happens in a visible tab.
+   */
+  const announceReady = useCallback((what: 'Report ready' | 'Reply ready') => {
+    if (typeof document === 'undefined' || !document.hidden) return;
+    document.title = readyTitle(what);
+    const back = () => {
+      if (document.hidden) return;
+      document.title = titleForRoute(currentPath());
+      document.removeEventListener('visibilitychange', back);
+    };
+    document.addEventListener('visibilitychange', back);
+  }, []);
 
   useEffect(() => {
     // sessionStorage, not localStorage: the key is a live credential, and a
@@ -4042,6 +4068,7 @@ export default function App() {
       };
       if (result && result.repxContent !== newResult.repxContent) rememberChange(newAssistantMsg.id, result, newResult);
       setMessages(prev => [...prev, newAssistantMsg]);
+      announceReady('Report ready');
       console.log(copy.done);
 
     } catch (err: any) {
@@ -4084,6 +4111,7 @@ export default function App() {
               text: fallbackReply(aiName, err?.message || friendlyMessage, made.source),
               result: drafted,
             }]);
+            announceReady('Report ready');
             return;
           }
         } catch (draftError) {
@@ -4644,6 +4672,7 @@ export default function App() {
               role: 'assistant',
               text: [outcome.reply, agent.changesMarkdown(changes, done.declined, toolsDone), brought].filter(Boolean).join('\n\n'),
             }]);
+            announceReady('Report ready');
             return;
           }
           // Nothing could be made in place: say why, and ask before redesigning.
@@ -4674,6 +4703,7 @@ export default function App() {
             role: 'assistant',
             text: agent && toolsDone.length ? [outcome.reply, agent.changesMarkdown([], [], toolsDone)].filter(Boolean).join('\n\n') : outcome.reply,
           }]);
+          announceReady('Reply ready');
           return;
         } else {
           // The user does want a report built or redesigned — fall through to
@@ -5320,6 +5350,21 @@ export default function App() {
    * edited. An export other than the REPX is the Preview's to make, so the
    * pane opens and is handed the request (`exportRequest`).
    */
+  /* ChatGPT's shortcuts (2026-11-05): a new report, the cursor to the chat
+     box, and the last reply on the clipboard, said as a notice beside Save. */
+  chatShortcutRef.current = (shortcut) => {
+    if (shortcut === 'newReport') {
+      flushAutosave();
+      handleClearChat();
+      showRailPanel('review');
+    } else if (shortcut === 'focusBox') {
+      document.querySelector<HTMLTextAreaElement>('.wb-composer [aria-label="Message"]')?.focus();
+    } else {
+      const last = [...messages].reverse().find((m) => m.role === 'assistant' && m.text);
+      if (last) void navigator.clipboard?.writeText(last.text).then(() => setSaveNotice('Copied the last reply.')).catch(() => undefined);
+    }
+  };
+
   runToolsRef.current = (tools) => {
     const PANE_PLATES: Record<string, Plate> = { mockup: 'proof', preview: 'print', data: 'data', spec: 'spec', repx: 'xml' };
     tools.forEach((tool, i) => {
@@ -5452,7 +5497,7 @@ export default function App() {
             magnifier sat above every panel. */}
         <button
           data-new-report
-          title="New report"
+          title={`New report (${shortcutText('newReport', navigator.platform)})`}
           aria-label="New report"
           onClick={() => { flushAutosave(); handleClearChat(); showRailPanel('review'); }}
         >

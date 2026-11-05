@@ -587,7 +587,8 @@ src/
                        corrected draft read back for Forma to build),
                        agentEdit (the open report as the chat's model sees
                        it, the edits it asks for made in place, and what
-                       changed, read off the file),
+                       changed, read off the file), shortcuts (ChatGPT's
+                       keyboard shortcuts for the chat),
                        geminiErrors (what the user is told when a
                        request fails), savedReport + accountData (the two
                        storage shapes and the document layout),

@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,462 tests in 126 files** — under the `node` environment
+`npm test` runs Vitest over **2,467 tests in 127 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -170,7 +170,8 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/revisions` | 21 |  |
 | `lib/revisionStore` | 26 |  |
 | `lib/router` | 17 | jsdom |
-| `lib/routes` | 16 |  |
+| `lib/routes` | 17 | since 2026-11-05 the title of a tab that finished something unseen |
+| `lib/shortcuts` | 4 | the chat's keyboard shortcuts, ChatGPT's own (2026-11-05): Ctrl+Shift+O, Shift+Esc and Ctrl+Shift+C read exactly, nothing else held, never mid-composition, and each written as a PC and a Mac write it |
 | `lib/runawayOutput` | 10 |  |
 | `lib/savedReport` | 38 | since 2026-11-05 the session signature the workspace saves on, and a project's name; jsdom |
 | `lib/skeletonRepx` | 11 | jsdom (`checkRepx`); a skeleton made a report again (milestone 6): written and read back through the Preview's parser as the same skeleton, caption lengths and A4's exact size aside; a file the app opens with no audit error; titles and captions in the words read inside their boxes, a placeholder where none was, "Total" in a footer; values bound to fields named after the caption over their column, totals summing that field at their band's scope; a date or a page number as the page showed; the empty Detail band DevExpress expects; the Mockup's sections and the spec; several pages' skeletons joined, the first page's bands kept and a later page's footers added where DevExpress prints them (2026-11-04) |
@@ -203,7 +204,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,462 in 126 files** — and that total is the arithmetic sum of the column above
+**Total: 2,467 in 127 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -217,7 +218,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2344** against a real 2,462 and will talk you into
+A grep for `\bit(` answers **2349** against a real 2,467 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

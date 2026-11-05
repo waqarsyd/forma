@@ -2,7 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ROUTES } from './router';
-import { ROUTE_TITLES, NOT_FOUND_TITLE, titleForRoute, viewForRoute, routesWithoutABranch } from './routes';
+import { ROUTE_TITLES, NOT_FOUND_TITLE, titleForRoute, viewForRoute, routesWithoutABranch, readyTitle } from './routes';
+
+/* A tab whose report or reply finished unseen says so (2026-11-05). */
+describe('readyTitle', () => {
+  it('names what is ready, in the titles\' own form', () => {
+    expect(readyTitle('Report ready')).toBe('✓ Report ready — Forma');
+    expect(readyTitle('Reply ready')).toBe('✓ Reply ready — Forma');
+    expect(readyTitle('Report ready').endsWith(titleForRoute('/workspace').slice('Workspace'.length))).toBe(true);
+  });
+});
 
 /**
  * A route needs three edits: `ROUTES`, a branch in the view mapping, and a
