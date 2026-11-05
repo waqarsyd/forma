@@ -5,6 +5,7 @@ import {
   branchesForResend,
   showBranch,
   messageTime,
+  conversationMarkdown,
   buildChatHistory,
   isGenerationTurn,
   markMessageError,
@@ -251,6 +252,28 @@ describe('messageMatches', () => {
 
   it('matches everything while nothing is typed', () => {
     expect(messageMatches(msg({ id: '1', text: 'x' }), '')).toBe(true);
+  });
+});
+
+/* The conversation exported as Markdown (2026-11-05). */
+describe('conversationMarkdown', () => {
+  it('writes the title, then each message under who said it and when, the person\'s words quoted and pictures counted', () => {
+    const md = conversationMarkdown(
+      [
+        msg({ id: '1793893080918-1', text: '# not a heading\nan invoice', images: ['a', 'b'] }),
+        msg({ id: '1793893080918-2', role: 'assistant', text: 'Built it.\n\n- with totals' }),
+        msg({ id: 'x', role: 'assistant', text: '' }),
+      ],
+      'Invoice',
+      () => 'Today, 10:42',
+    );
+    expect(md).toBe(
+      '# Invoice\n\n**You** · Today, 10:42\n\n> # not a heading\n> an invoice\n_(2 pictures attached)_\n\n**Forma** · Today, 10:42\n\nBuilt it.\n\n- with totals\n\n**Forma**\n',
+    );
+  });
+
+  it('names an untitled conversation', () => {
+    expect(conversationMarkdown([], '  ')).toBe('# Forma conversation\n');
   });
 });
 

@@ -187,6 +187,31 @@ export function messageTime(id: string): number | null {
 }
 
 /**
+ * The conversation as a Markdown file (2026-11-05), for the Chat column's
+ * Export: the report's name, then each message under who said it and when,
+ * Forma's replies as written (they are Markdown already), the person's
+ * words as a quote, so a heading or a list typed in a message stays text.
+ * Pictures are counted, not embedded: a file of base64 helps nobody read.
+ */
+export function conversationMarkdown(
+  messages: ReadonlyArray<{ id: string; role: 'user' | 'assistant'; text: string; images?: string[] }>,
+  title: string,
+  when: (ms: number) => string = (ms) => new Date(ms).toLocaleString(),
+): string {
+  const parts = [`# ${title.trim() || 'Forma conversation'}`, ''];
+  for (const m of messages) {
+    const at = messageTime(m.id);
+    parts.push(`**${m.role === 'user' ? 'You' : 'Forma'}**${at ? ` · ${when(at)}` : ''}`, '');
+    if (m.role === 'user') {
+      if (m.text.trim()) parts.push(m.text.split('\n').map((line) => `> ${line}`).join('\n'));
+    } else if (m.text.trim()) parts.push(m.text.trim());
+    if (m.images?.length) parts.push(`_(${m.images.length} ${m.images.length === 1 ? 'picture' : 'pictures'} attached)_`);
+    parts.push('');
+  }
+  return `${parts.join('\n').trimEnd()}\n`;
+}
+
+/**
  * Does this turn go to report generation rather than to a chat reply?
  *
  * An attachment — a page image, or text lifted out of a PDF or `.repx` — is an

@@ -254,6 +254,7 @@ import {
   answeredBy,
   branchesForResend,
   showBranch,
+  conversationMarkdown,
   type ChatBranch,
   noteCountLabel,
   projectMatches,
@@ -4338,6 +4339,20 @@ export default function App() {
     await runGeneration(words, [], [], INITIAL_RUN);
   };
 
+  /** The conversation downloaded as Markdown (2026-11-05, `conversationMarkdown`), named after the report. */
+  const exportConversation = () => {
+    const title = result?.title || savedReports.find((r) => r.id === openProjectId)?.name || 'Forma conversation';
+    const blob = new Blob([conversationMarkdown(messages, title, (ms) => formatSessionStamp(ms))], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'conversation'} - chat.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   /** A reply rated, or its rating taken back (2026-11-05). It stays with the message and goes nowhere else. */
   const handleRate = (id: string, rating: 'good' | 'bad' | undefined) => {
     setMessages((prev) => prev.map((m) => (m.id === id && m.role === 'assistant' ? { ...m, rating } : m)));
@@ -5723,6 +5738,19 @@ export default function App() {
             <h2 className="wb-col-title">Chat</h2>
             {/* Searching the transcript (2026-11-04): a field under the head,
                 opened from here, as the chat apps people know do it. */}
+            {/* The conversation as a Markdown file (2026-11-05), as Gemini
+                exports a chat: who said what and when, pictures counted. */}
+            {messages.length > 0 && (
+              <button
+                type="button"
+                className="wb-icon-btn wb-icon-btn--first"
+                title="Export the chat as a Markdown file"
+                aria-label="Export the chat"
+                onClick={exportConversation}
+              >
+                <IconDownload size={14} />
+              </button>
+            )}
             {messages.length > 0 && (
               <button
                 type="button"

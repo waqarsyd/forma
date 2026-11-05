@@ -734,6 +734,10 @@
 
 /* The transcript search: its field sits under the column head and the
    matches are marked in the messages. */
+/* Export and Search together at the right of the Chat head (2026-11-05),
+   not spread across it. */
+.wb-col-head .wb-icon-btn--first { margin-left: auto; }
+.wb-col-head .wb-icon-btn--first + .wb-icon-btn { margin-left: -6px; }
 .wb-icon-btn {
   align-self: center;
   width: 28px;
