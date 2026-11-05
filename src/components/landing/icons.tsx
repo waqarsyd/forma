@@ -356,6 +356,12 @@ export const IconSave = (p: Props) => (
     <path d="M8 3v6h8V3M8 21v-6h8v6" />
   </Svg>
 );
+/* Edit under the person's message (2026-11-05): a pencil, as ChatGPT's. */
+export const IconPencil = (p: Props) => (
+  <Svg {...p}>
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" />
+  </Svg>
+);
 /* What is selected on the Preview, above the chat box (2026-11-05). */
 export const IconTarget = (p: Props) => (
   <Svg strokeWidth={2} {...p}>

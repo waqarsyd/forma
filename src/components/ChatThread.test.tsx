@@ -468,9 +468,9 @@ describe('a clean chat', () => {
       onWithdraw: vi.fn(),
     });
     const [mine, forma] = document.querySelectorAll('.wb-note');
-    expect([...mine.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Edit', 'Withdraw']);
-    expect(within(forma as HTMLElement).queryByText('Edit')).toBeNull();
-    expect(within(forma as HTMLElement).queryByText('Withdraw')).toBeNull();
+    expect([...mine.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Copy', 'Edit', 'Withdraw']);
+    expect(within(forma as HTMLElement).queryByLabelText('Edit')).toBeNull();
+    expect(within(forma as HTMLElement).queryByLabelText('Withdraw')).toBeNull();
   });
 });
 
@@ -559,7 +559,7 @@ describe('editing and withdrawing a message', () => {
   it('edits in place and sends the changed text for that message', () => {
     const onEdit = vi.fn();
     draw({ messages: thread, onEdit, onWithdraw: vi.fn() });
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByLabelText('Edit'));
     const box = screen.getByLabelText('Edit your message') as HTMLTextAreaElement;
     expect(box.value).toBe('a sales report');
     fireEvent.change(box, { target: { value: 'a sales report by region' } });
@@ -571,7 +571,7 @@ describe('editing and withdrawing a message', () => {
   it('sends nothing for unchanged text, and Escape puts the message back', () => {
     const onEdit = vi.fn();
     draw({ messages: thread, onEdit });
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByLabelText('Edit'));
     expect((screen.getByText('Send') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(screen.getByLabelText('Edit your message'), { key: 'Enter' });
     expect(onEdit).not.toHaveBeenCalled();
@@ -581,26 +581,26 @@ describe('editing and withdrawing a message', () => {
 
   it('does not offer editing a message sent with pictures, which an edit would not send again', () => {
     draw({ messages: [msg({ id: 'u', text: 'this scan', images: ['data:image/png;base64,AA'] })], onEdit: vi.fn(), onWithdraw: vi.fn() });
-    expect(screen.queryByText('Edit')).toBeNull();
-    expect(screen.getByText('Withdraw')).toBeTruthy();
+    expect(screen.queryByLabelText('Edit')).toBeNull();
+    expect(screen.getByLabelText('Withdraw')).toBeTruthy();
   });
 
   it('withdraws only once asked twice, and Keep changes nothing', () => {
     const onWithdraw = vi.fn();
     draw({ messages: thread, onWithdraw });
-    fireEvent.click(screen.getByText('Withdraw'));
+    fireEvent.click(screen.getByLabelText('Withdraw'));
     expect(screen.getByText("Withdraw this message and Forma's answer?")).toBeTruthy();
     fireEvent.click(screen.getByText('Keep'));
     expect(onWithdraw).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText('Withdraw'));
+    fireEvent.click(screen.getByLabelText('Withdraw'));
     fireEvent.click(within(screen.getByRole('group', { name: 'Withdraw this message' })).getByText('Withdraw'));
     expect(onWithdraw).toHaveBeenCalledWith('u');
   });
 
   it('holds both while something runs', () => {
     draw({ messages: thread, onEdit: vi.fn(), onWithdraw: vi.fn(), isChatting: true });
-    expect((screen.getByText('Edit') as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByText('Withdraw') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Edit') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Withdraw') as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

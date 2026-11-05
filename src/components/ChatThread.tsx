@@ -22,7 +22,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import { messageMatches, searchParts, type ChatMessage } from '../lib/chatSession';
-import { IconCheck, IconCopy, IconRedo, IconThumbDown, IconThumbUp } from './landing/icons';
+import { IconCheck, IconCopy, IconPencil, IconRedo, IconThumbDown, IconThumbUp, IconTrash } from './landing/icons';
 
 /* Loaded on demand, as the Spec pane loads it: react-markdown brings the whole
    micromark tokenizer, and the eager bundle is budgeted (see Markdown.tsx). */
@@ -125,6 +125,33 @@ function MessageText({ text, query, markdown }: { text: string; query: string; m
 }
 
 /**
+ * Copy, under a reply and under the person's own message (2026-11-05): the
+ * message's own words on the clipboard, "Copied" for a moment, and nothing
+ * said when the browser refuses the clipboard.
+ */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      /* no clipboard here (an insecure page, a refusal): nothing to say */
+    }
+  };
+  return (
+    <button type="button" className="wb-note-act wb-note-icon" title={copied ? 'Copied' : 'Copy'} aria-label={copied ? 'Copied' : 'Copy'} onClick={() => void copy()}>
+      {copied ? <IconCheck size={11} /> : <IconCopy size={13} />}
+    </button>
+  );
+}
+
+/**
  * Copy, the rating and Try again under one of Forma's replies (2026-11-05).
  * Quiet until the reply is pointed at, except on the latest, as ChatGPT
  * shows them. Copy says "Copied" for a moment; a clipboard the browser
@@ -153,26 +180,10 @@ function ReplyActions({
   /** Present only while its change can still be taken back. */
   onUndo?: (id: string) => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1600);
-    return () => clearTimeout(t);
-  }, [copied]);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-    } catch {
-      /* no clipboard here (an insecure page, a refusal): nothing to say */
-    }
-  };
   const rate = (value: 'good' | 'bad') => onRate?.(id, rating === value ? undefined : value);
   return (
     <div className={`wb-note-actions${latest ? '' : ' wb-note-actions--quiet'}`} role="group" aria-label="This reply">
-      <button type="button" className="wb-note-act wb-note-icon" title={copied ? 'Copied' : 'Copy'} aria-label={copied ? 'Copied' : 'Copy'} onClick={() => void copy()}>
-        {copied ? <IconCheck size={11} /> : <IconCopy size={13} />}
-      </button>
+      <CopyButton text={text} />
       {onRate && (
         <>
           <button type="button" className="wb-note-act wb-note-icon" title="Good reply" aria-label="Good reply" aria-pressed={rating === 'good'} onClick={() => rate('good')}>
@@ -443,7 +454,7 @@ const ChatNote = memo(function ChatNote<R>({
           />
         )}
 
-        {mine && !editing && (editable || onWithdraw) && (
+        {mine && !editing && (
           withdrawing ? (
             <div className="wb-note-actions" role="group" aria-label="Withdraw this message">
               <span className="wb-note-ask">Withdraw this message and Forma's answer?</span>
@@ -463,15 +474,19 @@ const ChatNote = memo(function ChatNote<R>({
               </button>
             </div>
           ) : (
-            <div className="wb-note-actions wb-note-actions--quiet">
+            /* Icons on hover under the bubble, as ChatGPT and Gemini have them
+               (2026-11-05): Copy and Edit, and Withdraw, which they do not
+               have, as a bin. Words until then: EDIT and WITHDRAW. */
+            <div className="wb-note-actions wb-note-actions--quiet" role="group" aria-label="Your message">
+              {message.text && <CopyButton text={message.text} />}
               {editable && (
-                <button type="button" className="wb-note-act" disabled={retryDisabled} onClick={() => setEditing(true)}>
-                  Edit
+                <button type="button" className="wb-note-act wb-note-icon" title="Edit" aria-label="Edit" disabled={retryDisabled} onClick={() => setEditing(true)}>
+                  <IconPencil size={13} />
                 </button>
               )}
               {onWithdraw && (
-                <button type="button" className="wb-note-act" disabled={retryDisabled} onClick={() => setWithdrawing(true)}>
-                  Withdraw
+                <button type="button" className="wb-note-act wb-note-icon" title="Withdraw this message and Forma's answer" aria-label="Withdraw" disabled={retryDisabled} onClick={() => setWithdrawing(true)}>
+                  <IconTrash size={13} />
                 </button>
               )}
             </div>
