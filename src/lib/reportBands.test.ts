@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rootStructurePrompt, tableRowsRule, MOCKUP_ROW_CAP, type RootStructureOptions } from './reportBands';
+import { rootStructurePrompt, tableRowsRule, type RootStructureOptions } from './reportBands';
 
 const OPTS: RootStructureOptions = {
   page: { width: 850, height: 1100 },
@@ -82,28 +82,19 @@ describe('the banded default', () => {
 
   /**
    * The Detail row and the PageHeader heading row print directly above one
-   * another. Weights that disagree are the one table defect a preview cannot
-   * show, because the layout JSON draws a single table for both.
+   * another. Weights that disagree are the one table defect a mockup drawing a
+   * single table for both could not show.
    */
   it('ties the Detail row to the heading row it prints under', () => {
     expect(banded).toMatch(/SAME cell Weight values/i);
     expect(banded).toMatch(/heading table you put in PageHeader/i);
   });
 
-  it('maps the layout sections onto the bands, minus the margins', () => {
-    expect(banded).toMatch(/THE LAYOUT JSON MIRRORS THESE BANDS/i);
-    expect(banded).toMatch(/Do not emit margin bands as sections/i);
+  it('asks for no layout JSON, which Forma reads off the REPX since 2026-11-05', () => {
+    expect(banded).not.toMatch(/layout JSON|markdown specification/i);
   });
 });
 
-/**
- * The rule these sentences close ends by demanding every row of a repeating
- * region. That is right for the layout JSON and wrong for a banded Detail band —
- * which is the single reason the file can be bound to data at all. The sentence
- * therefore has to say both things about one region without contradicting
- * itself, and losing that distinction reintroduces the defect the band split
- * exists to fix.
- */
 /* A chart's title, axis titles and legend, from the source (2026-11-04). */
 describe('the chart block', () => {
   it('asks for the title, axis titles and legend in the serializer\'s own syntax and order', () => {
@@ -128,34 +119,11 @@ describe('tableRowsRule', () => {
     expect(rule).toMatch(/totals row goes in ReportFooter/i);
   });
 
-  it('keeps the mockup rows the split moves out of the Detail band', () => {
-    // The rows are not discarded by the split -- they move to the artifact whose
-    // job is showing the source. A version of this rule that dropped them from
-    // the layout too would look like the truncation bug.
+  it('asks for every column, and no rows for a mockup the AI no longer draws', () => {
+    // The cap on rows copied into the layout JSON went with the layout JSON on
+    // 2026-11-05: the Mockup is read off the REPX (lib/repxViews.ts).
     const rule = tableRowsRule();
     expect(rule).toMatch(/EVERY column/);
-    expect(rule).toMatch(/layout JSON and in the markdown specification/);
-  });
-
-  it('caps the mockup rows rather than asking for every one', () => {
-    // Added 2026-09-06. Output on a real invoice was 6,390 tokens, about half of
-    // it the two mockup artifacts, and a long job card repeats every row in the
-    // layout while the Detail band carries one. A cap keeps the rule's purpose:
-    // eight of forty does not read as truncation, one of eight does.
-    expect(tableRowsRule()).toContain(`first ${MOCKUP_ROW_CAP} data rows`);
-    expect(tableRowsRule()).not.toMatch(/EVERY row/);
-  });
-
-  it('says what to do on both sides of the cap', () => {
-    const rule = tableRowsRule();
-    // Under the cap nothing changes, which is most documents.
-    expect(rule).toMatch(/or fewer rows keeps all of them/i);
-    // Over it, take the first N rather than sampling or summarising.
-    expect(rule).toMatch(/reproduce the first \d+/i);
-  });
-
-  it('is a parameter, so the cap can be tuned without rewriting the sentence', () => {
-    expect(tableRowsRule(3)).toContain('first 3 data rows');
-    expect(tableRowsRule(40)).toContain('first 40 data rows');
+    expect(rule).not.toMatch(/layout JSON|markdown|data rows/);
   });
 });

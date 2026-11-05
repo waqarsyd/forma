@@ -70,6 +70,19 @@ export function buildFromRead(
   };
 }
 
+/**
+ * OCR's own layout of the pages read (2026-11-05): a picture of the source,
+ * every table with every row it read, made by no model. The audit checks the
+ * AI's REPX against it, so a grid the source has and the REPX lacks is still
+ * a finding now that the Mockup is read off the REPX itself. Null when
+ * nothing was read.
+ */
+export function sourceLayoutOf(pages: readonly { meta: PreviewMeta; read: ReadPage }[], unit: string, paper: string): ReportLayout | null {
+  if (!pages.length) return null;
+  const layout = detectLayout(pages.map(({ read }) => ({ ocr: read.ocr, page: pageForImage(read.ocr, unit, paper) })), { unit });
+  return layout.total ? layoutToReport(layout) : null;
+}
+
 /** A report Forma's box reader built, with the skeleton it read and how many titles and captions took OCR's words. */
 export interface ReaderBuiltReport {
   title: string;

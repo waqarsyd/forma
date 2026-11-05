@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,376 tests in 122 files** — under the `node` environment
+`npm test` runs Vitest over **2,386 tests in 123 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -86,7 +86,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/OcrDialog` | 7 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run, low-confidence text listed and named or left out, a report built after the app's checks, a PDF page read at its resolution, and pages the chat box read already shown without reading them again |
 | `components/ReportPreview` | 29 | jsdom; since 2026-11-04 also Shift+click selection deleted and nudged as one step, Add label, a table cell retyped, a label retyped in one placement of a repeated band, and a declined edit saying why; since 2026-11-04 also the grouping field chosen above the paper, through the undo path and only where the pane edits; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle; a picture box drawn as its image zoomed into its box, and a dashed box naming what it would show when it has no image (2026-11-04) |
 | `components/legalDisclosure` | 9 | 3 from one loop |
-| `lib/analysisResponse` | 16 | 4 from two `it(` sharing one loop |
+| `lib/analysisResponse` | 14 | 4 from two `it(` sharing one loop; since 2026-11-05 the answer is the REPX as raw XML: unwrapped from a fence, a preamble or the old JSON shape, cut off told from malformed, an unfinished document with a normal finish kept |
 | `lib/aiProvider` | 7 | jsdom (storage); the workspace open only with the Gemini key in, whichever AI is chosen, and that AI ready (2026-11-05); which AI answers: Automatic as Gemini, key or no key, since Forma Offline went into it on 2026-11-05, and the retired Gemini and Forma Offline choices read as Automatic, ready only with what each provider needs, Forma's vision model found as a helper beside any AI or as the Local AI model itself and alone only then, the choice kept in localStorage and the OpenRouter key only in this tab's sessionStorage, an unknown provider ignored |
 | `lib/announcements` | 7 |  |
 | `lib/autoConfig` | 13 | the settings Forma works out per request (2026-11-04): a report's version, unit, paper, orientation, direction and its stored procedure out of DevExpress's base64 data source; a PDF page's paper by its points; A4 and tabloid in words always, letter and legal only beside a paper word; the region's paper; right to left from the script; EXEC, CREATE PROCEDURE and "stored procedure"; the order report, page, words, learned, region |
@@ -137,7 +137,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/pdfWriter` | 5 | pdfjs warmed in a `beforeAll` since 2026-11-02, when its cold import timed the first case out in a full run; the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
 | `lib/promptSections` | 48 |  |
 | `lib/promptToReport` | 12 | the pure half of Prompt-to-Report; a description typed into the chat box, its fenced or CREATE TABLE schema taken as the data source |
-| `lib/reportBands` | 17 |  |
+| `lib/reportBands` | 14 | since 2026-11-05 no layout JSON or markdown asked for, and no row cap |
 | `lib/reportConfigStore` | 14 | since 2026-11-04 only the version and unit learned from the user's reports are kept, a version only as major and minor, and what earlier builds stored for the paper, header, footer, direction, procedure and OCR retired on the way in |
 | `lib/reportData` | 23 | 7 from one loop: every summary scope in every band of parity case s17, against DevExpress's own pages and groups; then sorting, group runs and filtering |
 | `lib/reportGeometry` | 43 |  |
@@ -164,6 +164,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxStyles` | 18 |  |
 | `lib/repxSummaries` | 19 | totals with no running scope, which DevExpress prints blank; each fixture is a shape it was made to print |
 | `lib/repxTruncation` | 19 |  |
+| `lib/repxViews` | 12 | the Mockup, the Spec and the title read off the REPX (2026-11-05): a section per content band in print order, x from the paper's edge and the top margin in the first section, font sizes in report units, a field as `[Field]`, a picture cropped from the upload only before the Detail band, what DevExpress does not print left out; the title from `DisplayName`, the largest text before Detail, or the `Name` |
 | `lib/revisions` | 21 |  |
 | `lib/revisionStore` | 26 |  |
 | `lib/router` | 17 | jsdom |
@@ -190,7 +191,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/compatClient` | 9 | local AI and OpenRouter in the shape of Gemini's SDK, against a fake OpenAI-compatible server: text and images as chat messages, the response schema as a JSON Schema, the answer read back in Gemini's words (`length` as `MAX_TOKENS`), a server refusing the schema asked for a JSON object then plain text, a streamed answer, a 429 keeping its status, the models offered (OpenRouter's free ones, image readers first), and `compatEndpoint` |
 | `services/embeddings` | 20 | SDK mocked, as `geminiService` is |
 | `services/formaVision` | 5 | Forma's vision model through the Local AI endpoint, against a stubbed server: the picture then the instruction at temperature 0, the answer read as a skeleton with its text kept, a page that is not an image refused before asking; the model known by the name it was imported under |
-| `services/generationRetry` | 14 | since 2026-11-04 a retry after a loop asked at temperature 0.4 and the retry of a truncated stream left at 0; since 2026-11-02 also a model out of its daily allowance left for the next, every model out named as a daily limit, and an answer cut off by its thinking asked once more with thinking capped, not when the user set a budget; the generation path's runaway and truncated-stream retries, against a stubbed stream |
+| `services/generationRetry` | 17 | since 2026-11-05 an answer that finishes before its REPX does made again, what it wrote kept once the retries are spent, and the Mockup, the Spec and the title read off the REPX; since 2026-11-04 a retry after a loop asked at temperature 0.4 and the retry of a truncated stream left at 0; since 2026-11-02 also a model out of its daily allowance left for the next, every model out named as a daily limit, and an answer cut off by its thinking asked once more with thinking capped, not when the user set a budget; the generation path's runaway and truncated-stream retries, against a stubbed stream |
 | `services/geminiService` | 38 | 7 of these come from one loop; since 2026-11-02 also the chat turn's instructions taking a written description as enough, and `generateSmall` turning thinking off for the small calls, asking a refusing model again with room, and not mistaking a rejected key for a refusal |
 | `services/keyVault` | 21 | jsdom |
 | `services/library` | 15 | storage and embedding injected |
@@ -199,7 +200,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,376 in 122 files** — and that total is the arithmetic sum of the column above
+**Total: 2,386 in 123 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -213,14 +214,14 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2258** against a real 2,376 and will talk you into
+A grep for `\bit(` answers **2268** against a real 2,386 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
 device names, `attachmentParts` six of its fourteen over malformed data URLs,
 `legalDisclosure` three of its nine over the disclosure table, `Composer` eight of its 35
 from **two** `it(` sharing one loop over the four conditions that must block a send,
-`analysisResponse` four of its sixteen from **two** `it(` sharing one loop over stop
+`analysisResponse` four of its fourteen from **two** `it(` sharing one loop over stop
 reasons — the shape `Composer` now also has — `reportData` seven of its 23 from one
 `it(` over the bands of parity case s17, `reportPreview` twenty-two of its 280 from five
 `it(`, one over the five c05 cases, one over the seven s19 nesting variants, one over four cross-tabs, one over s29a and s29b and an `it.each` over s55a to s55d,

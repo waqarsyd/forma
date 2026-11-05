@@ -1555,6 +1555,11 @@ type TeamPlan = {
   brief: string;
   members: TeamMember[];
   draft: (() => Promise<{ result: DesignResult; source: DraftSource } | null>) | null;
+  /**
+   * OCR's own layout of the source, which the audit checks the AI's REPX
+   * against (2026-11-05, `sourceLayoutOf`).
+   */
+  evidence?: ReportLayout | null;
 };
 
 const NO_TEAM: TeamPlan = { brief: '', members: [], draft: null };
@@ -3543,7 +3548,14 @@ export default function App() {
     const members: TeamMember[] = [];
     let brief = '';
     let draft: TeamPlan['draft'] = null;
-    if (input.read.length) members.push('ocr');
+    let evidence: ReportLayout | null = null;
+    if (input.read.length) {
+      members.push('ocr');
+      // OCR's own picture of the source, every row it read, for the audit
+      // to check the AI's REPX against (2026-11-05, lib/ocrAttach.ts).
+      const { sourceLayoutOf } = await import('./lib/ocrAttach');
+      evidence = sourceLayoutOf(input.read, config.unit, config.pageSize);
+    }
 
     const vision = input.firstImage ? visionModelOf(config) : null;
     if (vision && input.firstImage) {
@@ -3619,7 +3631,7 @@ export default function App() {
       }
       draft = async () => ({ result: (await offlineDesign(described, described.description)).result, source: 'offline' });
     }
-    return { brief, members, draft };
+    return { brief, members, draft, evidence };
   };
 
   const runGeneration = async (
@@ -3699,10 +3711,10 @@ export default function App() {
         currentPrompt,
         attachmentParts,
         config,
-        result ? { layout: result.layout, repxContent: result.repxContent, houseStyle } : undefined,
+        result ? { repxContent: result.repxContent, houseStyle } : undefined,
         signal,
         handleStreamProgress,
-        { ...(describeRequest ? { description: describeRequest } : {}), remembered, formaBrief: team.brief },
+        { ...(describeRequest ? { description: describeRequest } : {}), remembered, formaBrief: team.brief, evidence: team.evidence },
       );
 
       if (signal.aborted) {
@@ -3734,7 +3746,7 @@ export default function App() {
             fixInstruction(audit),
             [],
             config,
-            { layout: response.layout, repxContent: response.repxContent },
+            { repxContent: response.repxContent },
             signal,
             handleStreamProgress,
             { description: describeRequest },

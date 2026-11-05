@@ -4451,6 +4451,10 @@ export function addOverflowPages(pages: PreviewPage[], width: number, left: numb
  * than a number this module invented, so the preview repeats the band as many
  * times as the user's own document had rows. Synthetic test data can come
  * later; the honest count is already here.
+ *
+ * Since 2026-11-05 the layout is read off the REPX (lib/repxViews.ts), whose
+ * Detail band holds one row, so a new report takes the fallback until test
+ * data is in. A report saved before then still carries the AI's rows.
  */
 export function recordCountFromLayout(
   layout: { sections?: { type?: string; elements?: { type?: string; rows?: unknown[] }[] }[] } | null | undefined,

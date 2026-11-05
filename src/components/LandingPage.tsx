@@ -300,7 +300,7 @@ const LandingPage = ({
             <SectionHead
               eyebrow="Output"
               title="One request comes back as three finished things."
-              lede="Not a chat answer you have to interpret. A response schema forces the model to return all three together, so the mockup you look at and the XML you download describe the same report."
+              lede="Not a chat answer you have to interpret. The model writes the report file and nothing else; Forma reads the mockup and the specification out of that file, so all three describe the report you download, and none of your tokens go on writing it twice."
             />
 
             <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-13 [&>*]:min-w-0 lg:grid-cols-[296px_minmax(0,1fr)]">
@@ -309,7 +309,7 @@ const LandingPage = ({
                   {[
                     ['request', 'analyzeReportDesign()'],
                     ['attachments', '2 images · 1 text layer'],
-                    ['response schema', '{ markdown, layout, repxContent }'],
+                    ['answer', 'the .repx, as raw XML'],
                     ['temperature', '0'],
                   ].map(([k, v], i) => (
                     <div key={k} className={i ? 'mt-3.5 border-t border-outline-variant pt-3.5' : undefined}>
@@ -328,13 +328,13 @@ const LandingPage = ({
                     Icon: IconSpec,
                     title: 'Written specification',
                     ext: 'markdown',
-                    body: 'A component inventory in markdown — every element, its coordinates, its font, its borders. The document you would otherwise have written by hand before building anything.',
+                    body: 'A component inventory, band by band — every element, its coordinates, its font, the fields it prints, the totals and the grouping. Read out of the .repx itself, so it cannot describe a different report from the one you download.',
                   },
                   {
                     Icon: IconLayout,
                     title: 'Live layout mockup',
-                    ext: 'JSON',
-                    body: 'The layout drawn in the browser at true proportions, on a sheet that stays white in both light and dark themes — because a report does. What you check on screen is the file, not an approximation of it.',
+                    ext: 'bands',
+                    body: 'The report’s bands drawn in the browser at true proportions, on a sheet that stays white in both light and dark themes — because a report does. Drawn from the .repx, so what you check on screen is the file, not an approximation of it.',
                   },
                   {
                     Icon: IconCode,

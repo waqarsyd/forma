@@ -12,9 +12,11 @@ Turn a screenshot, a PDF, or an existing report into a real DevExpress `.repx` f
 
 Upload a design — a mockup, a scanned invoice, a photo of a printout, or a `.repx` you already have — and Forma returns three things in one pass:
 
-- a **markdown specification** of the layout,
-- an **in-browser mockup** drawn from a structured layout description, so you can see what it understood before you download anything,
-- **`repxContent`** — valid `XtraReportsLayoutSerializer` XML that saves as a `.repx` and opens directly in the DevExpress Report Designer.
+- **`repxContent`** — valid `XtraReportsLayoutSerializer` XML that saves as a `.repx` and opens directly in the DevExpress Report Designer,
+- an **in-browser mockup** of its bands, so you can see what it understood before you download anything,
+- a **specification**, band by band, of what it holds.
+
+The AI writes only the `.repx`; Forma reads the mockup and the specification out of it, so all three describe the file you download and your tokens are not spent writing it three times ([`src/lib/repxViews.ts`](src/lib/repxViews.ts), since 2026-11-05).
 
 ---
 
@@ -576,8 +578,11 @@ src/
                        its 19.6 kB prompt is not on every page load) and
                        modelCache (the session's resolved model — eager, because
                        a synchronous effect clears it),
-                       analysisResponse (is a failed generation truncated or
-                       malformed), geminiErrors (what the user is told when a
+                       analysisResponse (the REPX out of the AI's answer, and
+                       whether a failed one was cut off or malformed),
+                       repxViews (the Mockup, the Spec and the title read off
+                       the REPX, which the AI no longer writes),
+                       geminiErrors (what the user is told when a
                        request fails), savedReport + accountData (the two
                        storage shapes and the document layout),
                        tokenUsage (what a generation cost, formatted for the

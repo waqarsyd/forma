@@ -98,7 +98,8 @@ export function describeUsage(usage: TokenUsage | null | undefined): string | nu
   if (!usage) return null;
   const parts = [
     `Input ${usage.input.toLocaleString()} (the prompt and your attachments)`,
-    `Output ${usage.output.toLocaleString()} (the spec, the mockup and the REPX)`,
+    // The REPX alone since 2026-11-05; Forma reads the spec and the mockup off it.
+    `Output ${usage.output.toLocaleString()} (the REPX)`,
   ];
   if (usage.thinking > 0) {
     parts.push(

@@ -161,6 +161,11 @@ function biggestGrid(layout: ReportLayout | null | undefined): { rows: number; s
  *
  * The layout is optional: a report loaded from an old save may not have one, and
  * the structural checks are worth running either way.
+ *
+ * Since 2026-11-05 the AI writes no layout: the Mockup's is read off the REPX
+ * (lib/repxViews.ts) and cannot disagree with it. The generation passes OCR's
+ * own layout of the source instead (`sourceLayoutOf`), which is independent of
+ * the AI, so the grid checks keep their evidence where there was a picture.
  */
 export function auditRepx(xml: string | undefined | null, layout?: ReportLayout | null): RepxAudit {
   const text = xml ?? '';

@@ -60,10 +60,11 @@
  *   emitted-but-empty `ReportHeader` turns the margin lift off. That decline is
  *   correct — whitespace held as band height is a different edit — so the
  *   defence is the instruction to omit a band rather than emit it empty.
- * - The layout JSON keeps EVERY data row while the Detail band keeps one. That
- *   divergence is deliberate — the mockup is a picture of the source and the
- *   REPX is a bindable report — and both halves of it are stated in the prompt,
- *   because the rest of the prompt insists the two artifacts agree.
+ * - Until 2026-11-05 the AI also wrote a layout JSON for the Mockup, which kept
+ *   up to eight data rows while the Detail band kept one, and the prompt said
+ *   so on both sides. The AI now writes the REPX alone and the Mockup is read
+ *   off it (lib/repxViews.ts), so there is one artifact and no divergence to
+ *   explain.
  */
 
 import { ALL_SECTIONS, type PromptSection } from './promptSections';
@@ -104,7 +105,6 @@ const GROUPING_BLOCK = `          - GROUPING — ONLY WHEN THE DESIGN ACTUALLY G
             - EVERY aggregate needs a \`<Summary>\` with a \`Running\` scope. \`sumSum([Amount])\` with no \`<Summary>\`, or with one that has no \`Running\`, prints as an EMPTY cell in every band. That was measured by printing the file in DevExpress, not inferred. Never write \`Running="Group"\` in ReportFooter: there is no group there, and it prints "?".
             - Emit GroupFooter only if the design actually shows a per-group line. A GroupHeaderBand alone is normal and correct.
             - NESTED GROUPS — the rows break on two values at once, a region heading with category headings inside it — are one GroupHeaderBand per field, written OUTERMOST FIRST, and each carries a \`Level\`. The outermost gets the highest number and the innermost writes none, because 0 is the default and the serializer omits it. With two groups that means \`Level="1"\` on the outer header and nothing on the inner one. A GroupFooterBand carries the same \`Level\` as the header whose group it closes. DevExpress nests by \`Level\`, NOT by file order. With no \`Level\` every group is level 0, and the band written LATER becomes the outer group, so a report written outer-first without it prints inside out. That was measured by printing the file in DevExpress.
-            - In the layout JSON these are sections of \`"type": "group"\`, in the same position and order as the bands.
 
 `;
 
@@ -237,7 +237,7 @@ function bandedRootStructure(
             **a heading row with two or more rows of like-kind values aligned under the same columns IS repeating data**, and that block belongs in Detail as ONE row. Nothing else about the document changes that.
             - A form can, and usually does, contain repeating data. A job card, a worksheet, a delivery note and a service report are all forms whose middle is a grid of operations or items — that grid is the repeating data, and the fixed boxes around it are the ReportHeader. "It is a form" is NOT a reason to leave Detail out.
             - Ask it of the ROWS, not of the page. A single-record letter has no such block anywhere. A job card has one in the middle of it.
-            Only when NO block anywhere in the design passes that test — a certificate, a single-record letter, a title page — put the body in ReportHeader, leave Detail out, and say so in the markdown specification.
+            Only when NO block anywhere in the design passes that test — a certificate, a single-record letter, a title page — put the body in ReportHeader and leave Detail out.
             THE COST OF GETTING THIS WRONG IS THE WHOLE ARTIFACT. DevExpress treats DetailBand as a mandatory band. A report without one prints its content exactly once and CANNOT be bound to a data source, so it is a picture of the document rather than a report that can produce it for every record. The output still opens in the designer and still looks right, which is why this is stated at length instead of left to judgement.
 
 ${sections.includes('grouping') ? GROUPING_BLOCK : ''}${sections.includes('charts') ? CHARTS_BLOCK : ''}${sections.includes('parameters') ? PARAMETERS_BLOCK : ''}          - THE DETAIL BAND IS ONE ROW, NOT THE TABLE.
@@ -247,7 +247,7 @@ ${sections.includes('grouping') ? GROUPING_BLOCK : ''}${sections.includes('chart
             - Give that row the FIRST data row's text as placeholder content, so the row is recognisable in the designer.
             - Put it at y=0 inside the band.
             - Do NOT emit an XRTable containing every row. Do NOT repeat the data rows. Do NOT put the column headings in this band — they belong in PageHeader.
-            The remaining rows are not lost: they are what the data source will supply, and they still appear in full in the markdown specification and in the layout JSON.
+            The remaining rows are not lost: they are what the data source will supply.
 
           - COORDINATE FRAME — THE SINGLE MOST COMMON WAY THIS OUTPUT COMES OUT WRONG.
             A control's LocationFloat is measured from the TOP-LEFT OF ITS OWN BAND. Bands stack down the page in the order above, so a band's top edge is the sum of the heights of the bands before it.
@@ -258,9 +258,6 @@ ${sections.includes('grouping') ? GROUPING_BLOCK : ''}${sections.includes('chart
             - Set each band's HeightF to the real extent of the content you put in it, then check the sum: the emitted bands should account for the design's vertical space without exceeding ${page.height}.
             - Every control must still satisfy x + width <= ${page.width}.
             - Do NOT set non-zero Margins. Do NOT give the margin bands a height.
-
-          - THE LAYOUT JSON MIRRORS THESE BANDS.
-            The "sections" of the layout described below are the same bands in the same order — one section per content band you emit, named after it, with the same height, and with each element's y measured from that section's own top edge exactly as its LocationFloat is. Do not emit margin bands as sections. The ONE deliberate difference is the repeating data: the detail SECTION carries every row you can read, because the mockup is a picture of the source, while the Detail BAND carries one.
 `;
 }
 
@@ -278,36 +275,21 @@ export function rootStructurePrompt(
   return bandedRootStructure(options, sections);
 }
 
-/**
- * How many data rows of a repeating region the MOCKUP carries.
- *
- * The layout JSON and the markdown used to ask for every row the model could
- * read, which is why they are the expensive half of the response: a 40-line job
- * card repeats forty rows in the layout while the Detail band carries one.
- * Output on a real invoice was measured at 6,390 tokens on 2026-09-06, roughly
- * half of it the two mockup artifacts.
- *
- * A cap rather than a cut, and the distinction is the whole point. `every row`
- * exists to stop the preview reading as a truncation bug -- one row where the
- * source has eight looks like the report lost the data. Eight of forty does not
- * read that way; one of eight does. So the rule keeps its purpose at a fraction
- * of the cost, and the number is high enough that most documents are unaffected
- * -- a typical invoice has fewer than eight lines and is capped by nothing.
- *
- * Raising it is cheap and safe. LOWERING it below about five starts to look
- * like the failure it was written to prevent.
+/*
+ * MOCKUP_ROW_CAP went on 2026-11-05 (`git log -S"MOCKUP_ROW_CAP"`). It capped
+ * the rows the AI copied into the layout JSON and the markdown at eight, which
+ * were then most of what it wrote: on a real invoice on 2026-09-06, half of
+ * 6,390 output tokens. The AI writes neither now; the Mockup and the Spec are
+ * read off the REPX (lib/repxViews.ts).
  */
-export const MOCKUP_ROW_CAP = 8;
 
 /**
- * How many rows of a repeating region go into the REPX.
+ * How the rows of a repeating region go into the REPX.
  *
  * This sentence closes the rule under "AN ALIGNED, REPEATING REGION IS A TABLE",
- * which otherwise ends by demanding every row — correct for the flat shape and
- * for the layout JSON in both, and flatly wrong for a banded Detail band. The
- * two artifacts are required to agree everywhere else in the prompt, so the one
- * place they deliberately do not has to be said out loud.
+ * which reads like a demand for every row until it says where they go: the
+ * heading in PageHeader, ONE data row in Detail, the totals in ReportFooter.
  */
-export function tableRowsRule(rowCap: number = MOCKUP_ROW_CAP): string {
-  return `Reproduce EVERY column, and up to the first ${rowCap} data rows, in the layout JSON and in the markdown specification - the mockup is a picture of the source, so rows are capped rather than summarised, and a region with ${rowCap} or fewer rows keeps all of them. If the source has more, reproduce the first ${rowCap} and stop. In repxContent the same region is SPLIT ACROSS BANDS as described under ROOT STRUCTURE above: the heading row goes in PageHeader, ONE data row goes in Detail, and any totals row goes in ReportFooter. That is the one place the two artifacts are meant to differ, and it is why the file can be bound to data at all.`;
+export function tableRowsRule(): string {
+  return `Reproduce EVERY column. The region is SPLIT ACROSS BANDS as described under ROOT STRUCTURE above: the heading row goes in PageHeader, ONE data row goes in Detail, and any totals row goes in ReportFooter. That is why the file can be bound to data at all.`;
 }

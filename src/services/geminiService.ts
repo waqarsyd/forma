@@ -1,7 +1,8 @@
 import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError, isQuotaExhausted, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
-import { parseAnalysisResponse } from "../lib/analysisResponse";
+import { parseRepxAnswer, repxOfAnswer } from "../lib/analysisResponse";
+import { layoutFromRepx, reportTitleOf, specFromRepx } from "../lib/repxViews";
 import {
   cacheModel,
   cacheDailyModel,
@@ -28,7 +29,7 @@ import { repairPaper } from "../lib/repxPaper";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
-import { checkRepxComplete, extractRepxDocument } from "../lib/repxTruncation";
+import { checkRepxComplete } from "../lib/repxTruncation";
 import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runawayOutput";
 import { buildDescriptionBrief, type ReportDescriptionRequest, type ClarificationQuestion } from "../lib/promptToReport";
 import { resolveOverlaps } from "../lib/repxOverlaps";
@@ -653,7 +654,7 @@ export async function resolveModel(apiKey: string, signal?: AbortSignal): Promis
 
 /** Live progress while the model writes its answer. See `onProgress` below. */
 export interface StreamProgress {
-  /** Characters of JSON received so far. */
+  /** Characters of the answer received so far. */
   chars: number;
   /**
    * Best-effort 0-95. The total length is unknowable in advance, so this
@@ -665,10 +666,12 @@ export interface StreamProgress {
 }
 
 /**
- * Roughly the JSON length of a mid-sized report, used only to shape the curve
- * above. Being wrong makes the bar move faster or slower, never incorrect.
+ * Roughly the answer length of a mid-sized report, used only to shape the curve
+ * above. Being wrong makes the bar move faster or slower, never incorrect. It
+ * was 24,000 while the answer was JSON holding a spec and a layout beside the
+ * REPX; the REPX alone (2026-11-05) is about 8,000 on the benchmark's invoice.
  */
-const EXPECTED_RESPONSE_CHARS = 24_000;
+const EXPECTED_RESPONSE_CHARS = 9_000;
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
@@ -1692,6 +1695,12 @@ export interface GenerationOptions {
    * of those win. Empty, nothing is added.
    */
   formaBrief?: string;
+  /**
+   * Forma's own reading of the source (2026-11-05): OCR's layout of it, every
+   * table with every row read (`sourceLayoutOf`). The audit checks the REPX
+   * against it, the job the AI's own layout did until the AI stopped writing one.
+   */
+  evidence?: ReportLayout | null;
   /** Set on the one repeat of a request cut off by its thinking, so it is not repeated again. */
   thinkingCapped?: boolean;
 }
@@ -1707,7 +1716,7 @@ export async function analyzeReportDesign(
   prompt: string,
   imageParts: AttachmentPart[],
   config?: ReportConfig,
-  previousState?: { layout?: ReportLayout; repxContent?: string; houseStyle?: string },
+  previousState?: { repxContent?: string; houseStyle?: string },
   signal?: AbortSignal,
   onProgress?: (progress: StreamProgress) => void,
   options?: GenerationOptions,
@@ -1866,12 +1875,12 @@ export async function analyzeReportDesign(
    */
   const houseStyleContext = previousState?.houseStyle?.trim() ?? '';
 
+  // The REPX alone since 2026-11-05: the layout that used to precede it was a
+  // second, pretty-printed copy of the same report, and the AI no longer
+  // writes one to keep in step (lib/repxViews.ts).
   const previousContext = previousState ? `
   PREVIOUS REPORT STATE:
-  You are modifying an existing report. Here is the current layout structure:
-  ${JSON.stringify(previousState.layout, null, 2)}
-  
-  And the current REPX XML:
+  You are modifying an existing report. Here is its current REPX XML:
   ${previousState.repxContent}
   
   CRITICAL: You MUST preserve the entire existing structure from the PREVIOUS REPORT STATE. Only modify the specific parts requested in the USER INSTRUCTIONS. Do NOT remove sections, tables, or fields unless explicitly told to do so.
@@ -1902,7 +1911,6 @@ ${houseStyleContext}
   // Loaded here, not imported at the top: the SDK is only reachable from this
   // function and chatReply, and both refuse above if there is no key. See
   // src/lib/genai.ts.
-  const { Type } = await loadGenAI();
   const ai = await clientFor(config, currentApiKey);
 
   console.debug(`Initializing Gemini model with API key...`);
@@ -2016,22 +2024,22 @@ ${houseStyleContext}
           ${description
             ? `YOUR PRIMARY GOAL: A COMPLETE, WELL-LAID-OUT REPORT FROM A WRITTEN DESCRIPTION.
           ${buildDescriptionBrief(description)}
-          The generated REPX XML and layout JSON must describe the same report. Every rule below about units, bands, tables, fonts and syntax applies exactly as it would to a report reproduced from an image; only the source differs.`
+          Every rule below about units, bands, tables, fonts and syntax applies exactly as it would to a report reproduced from an image; only the source differs.`
             : `YOUR PRIMARY GOAL: EXACT PIXEL-PERFECT UI MATCH.
-          You must meticulously analyze the provided image(s) and recreate the EXACT layout, including every single table, column, row, label, border, and image placeholder. Do not skip any details. The generated REPX XML and layout JSON must be a 1:1 representation of the visual structure in the image.`}
+          You must meticulously analyze the provided image(s) and recreate the EXACT layout, including every single table, column, row, label, border, and image placeholder. Do not skip any details. The REPX XML must be a 1:1 representation of the visual structure in the image.`}
 
           SOURCE PRECEDENCE — READ THIS FIRST.
           Some attachments are text extracted directly from the uploaded file rather than read from an image: a PDF's own text layer, or the contents of an existing .repx. Where such text is provided it is EXACT and comes from the file itself.
           - Use those strings verbatim for Text= values. Do NOT re-read, re-spell or "correct" them from the page image.
           - Use their x/y/w/h numbers as the basis for LocationFloat and SizeF. They are already in this report's units (${reportUnit}, ${unitsPerInchForReport} per inch) with the origin at the top-left, so they need no conversion.
-          - **An extracted string's h is its font's em size, read out of the file — so it is that string's EXACT font size as well as its height.** Use it for that element's "fontSize" verbatim and do NOT re-estimate the size from the page image; convert it to points for Font= with the arithmetic under FONT SIZE IS ALWAYS IN POINTS. (An h of 0 means the extractor could not size that one string — only then read it from the image.)
+          - **An extracted string's h is its font's em size, read out of the file — so it is that string's EXACT font size as well as its height.** Convert it to points for Font= with the arithmetic under FONT SIZE IS ALWAYS IN POINTS, and do NOT re-estimate the size from the page image. (An h of 0 means the extractor could not size that one string — only then read it from the image.)
           - Use the page image for what the text layer cannot express: borders, rules, fills, logos, images, alignment and overall visual structure.
           - If the image and the extracted text disagree about a string or a position, the extracted text wins.
-          - **Text READ BY OCR is a third kind, and its header says so.** It was measured from the page image in the browser, not taken from the file. Use its x/y/w/h for LocationFloat and SizeF and its strings for Text= exactly as above, and its size (in points) for Font=, converting to the layout's fontSize. Where it lists a table, write one XRTable with those columns and rows, not a grid of labels. A string marked LOW CONFIDENCE may be misread: read that one from the image. Otherwise its positions and strings win over a fresh reading of the image.
+          - **Text READ BY OCR is a third kind, and its header says so.** It was measured from the page image in the browser, not taken from the file. Use its x/y/w/h for LocationFloat and SizeF and its strings for Text= exactly as above, and its size (in points) for Font=. Where it lists a table, write one XRTable with those columns and rows, not a grid of labels. A string marked LOW CONFIDENCE may be misread: read that one from the image. Otherwise its positions and strings win over a fresh reading of the image.
           - When an existing .repx is supplied, treat it as the base structure and preserve it, applying only the changes the user asks for.
 
           PHASE 1: SPATIAL MAPPING
-          Before generating the output, list elements and their exact coordinates and sizes (X, Y, Width, Height) in the markdown section.
+          Before writing the XML, work out every element's exact coordinates and size (X, Y, Width, Height). Do this as part of your reasoning: the answer itself is the XML and nothing else.
           - The report unit is ${reportUnit}: 1 inch = ${unitsPerInchForReport} units.
           - The page is ${pageSize}: ${page.width} x ${page.height} units.
           - The origin (0,0) is the TOP-LEFT CORNER OF THE PAPER, not of any margin or content area.
@@ -2040,7 +2048,7 @@ ${houseStyleContext}
           - The design's own whitespace is part of the design. If the artwork begins an inch in from the paper edge, its first element is at x=${Math.round(unitsPerInchForReport)}, and you must NOT also add a page margin — that would move it in twice.
 
           PHASE 2: DEVEXPRESS CHEAT SHEET (STRICT SYNTAX)
-          When generating the "repxContent" XML, you MUST use these exact structures:
+          When writing the REPX XML, you MUST use these exact structures:
           
 ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion }, sections)}
           - Labels: <Item1 Ref="1" ControlType="XRLabel" Name="label1" Text="My Text" LocationFloat="0,10" SizeF="200,30" Padding="2,2,0,0,100" />
@@ -2054,35 +2062,34 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
 ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks') ? BOOKMARKS_BLOCK : ''}${sections.includes('columns') ? COLUMNS_BLOCK : ''}${sections.includes('watermark') ? WATERMARK_BLOCK : ''}${sections.includes('sorting') ? SORTING_BLOCK : ''}${sections.includes('calculated') ? CALCULATED_BLOCK : ''}${sections.includes('rules') ? RULES_BLOCK : ''}${sections.includes('checkbox') ? CHECKBOX_BLOCK : ''}${sections.includes('crossband') ? CROSSBAND_BLOCK : ''}${sections.includes('containers') ? PANEL_BLOCK : ''}${sections.includes('shapes') ? SHAPES_BLOCK : ''}          Always use standard DevExpress.XtraReports.UI components. Ensure LocationFloat and SizeF use comma without spaces for numbers (e.g. "150.5,20.3").
 
           - AN ALIGNED, REPEATING REGION IS A TABLE. FINDING IT IS PART OF THE JOB.
-            Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into repxContent is settled at the end of this block.
+            Before you place a single label, look for the repeating structures. Wherever two or more rows share the same column positions, that region is a table — line items, schedules, price lists, specification grids, timesheets, statements, any list of things with the same fields. Emit it as real XRTable / XRTableRow / XRTableCell structure; how many of its rows go into the XML is settled at the end of this block.
             - **Visible rules are not required, and their absence is not evidence.** Columns that line up are the signal. A region drawn with no borders at all is still a table; so is one separated only by a single rule under the headings.
             - **A grid of XRLabels is always the wrong answer for such a region**, however exactly its coordinates match the source. It looks identical in a preview and is a failed report: those columns cannot be re-bound to data, resized, or repeated per record, which is the whole purpose of the file being a .repx instead of a picture.
             - Column widths are relative Weight values on the cells, not coordinates — a column twice as wide as its neighbour gets twice the Weight. **An XRTableCell has no LocationFloat and no SizeF**; do not compute them. The XRTable's own SizeF sets the width the weights are distributed across.
             - Carry the source's own formatting onto the cells: bold the header row, and give money, quantity and date columns a TextAlignment ending in Right if that is how they are set.
             - ${tableRowsRule()}
-            - The same region must be ONE "type": "table" element in the layout JSON, carrying the same rows and cells — see TABLES / GRIDS IN THE LAYOUT below. The two artifacts describe one report and must agree about where its tables are.
 
-          - APPEARANCE IS PART OF THE REPORT, NOT JUST OF THE PREVIEW.
-            Every visual property you put in the "layout" JSON must also appear on the matching control in repxContent. A .repx that has the right boxes in the right places but default styling is a failed reproduction — it is the file the user actually opens and prints.
-            - Font: <Font>Arial, 9.75pt, style=Bold</Font> as a child element, or Font="Arial, 9.75pt" as an attribute. Styles: style=Bold, style=Italic, style=Bold, Italic.
-            - **FONT SIZE IS ALWAYS IN POINTS (1/72"), NEVER IN REPORT UNITS.** It is one of exactly TWO things in the file that do not follow ReportUnit — the other is BorderWidth, below. Convert: points = layoutFontSize * 72 / ${unitsPerInchForReport}. A layout fontSize of 16 is ${(unitsToPoints(16, reportUnit)).toFixed(2)}pt, NOT 16pt. Writing the layout number straight into the Font makes every piece of text far too large while both files still look internally consistent.
-            - ForeColor="Black" or ForeColor="#1A2B3C" for text colour; BackColor for fills. Omit BackColor entirely when the area is white or transparent — do not paint every control white.
-            - TextAlignment="TopLeft" | "MiddleCenter" | "MiddleRight" | "BottomLeft" etc. — it combines the vertical and horizontal alignment from the layout into one value. Numeric and currency columns are almost always a *Right variant.
+          - APPEARANCE IS PART OF THE REPORT.
+            Every visual property of the source must appear on the matching control. A .repx that has the right boxes in the right places but default styling is a failed reproduction — it is the file the user actually opens and prints.
+            - Font: <Font>Arial, 9.75pt, style=Bold</Font> as a child element, or Font="Arial, 9.75pt" as an attribute. Styles: style=Bold, style=Italic, style=Bold, Italic. Bold any text visibly heavier than body text — titles, column headings, totals — and use the closest family you can identify.
+            - **FONT SIZE IS ALWAYS IN POINTS (1/72"), NEVER IN REPORT UNITS.** It is one of exactly TWO things in the file that do not follow ReportUnit — the other is BorderWidth, below. A size measured in report units converts as points = size * 72 / ${unitsPerInchForReport}: a size of 16 units is ${(unitsToPoints(16, reportUnit)).toFixed(2)}pt, NOT 16pt. Writing a unit number straight into the Font makes every piece of text far too large.
+            - **Measure the EM SIZE, not the ink.** This is the single most common way a reproduction comes out uniformly small. Capital letters stand only about 70% of the em size and lowercase about half of it, so a heading whose capitals measure 21 units is a 30-unit font, not a 21-unit one. Baseline to baseline of two consecutive lines in one paragraph is 1.15-1.25x the font size; or measure a capital and divide by 0.7. Then CHECK THE ANSWER: ordinary body text in a printed business document is 9-11pt (${bodyFontMinUnits}-${bodyFontMaxUnits} units). If the body text you measured comes out below that, you measured the ink and EVERY size is small by the same fraction — scale them all up together, keeping their ratios. A title must be visibly larger than body text.
+            - ForeColor="Black" or ForeColor="#1A2B3C" for text colour, sampled from the design; BackColor for fills. Omit BackColor entirely when the area is white or transparent — do not paint every control white.
+            - TextAlignment="TopLeft" | "MiddleCenter" | "MiddleRight" | "BottomLeft" etc. — it combines the vertical and horizontal alignment into one value. Numeric and currency columns are almost always a *Right variant.
             - Borders="None" | "All" | "Top, Bottom" | "Left, Right" (comma-separated sides), plus BorderColor="#RRGGBB" and BorderWidth="1" when the rule is not a hairline black. A heading underlined by a rule is Borders="Bottom", NOT Borders="All".
             - **BORDERWIDTH IS ALWAYS IN PIXELS, NEVER IN REPORT UNITS.** This is the second exception to ReportUnit, alongside font size. Write the pixel count you would use on screen — a hairline is BorderWidth="1" and a heavy rule is "2" or "3" — and do NOT scale it into ${reportUnit}. Scaling it the way you scale LocationFloat would turn a 1px rule into ${(unitsPerInchForReport / 96).toFixed(2)}, which is then read back as that many PIXELS and prints ${(unitsPerInchForReport / 96).toFixed(1)}x too thick.
-            - WordWrap="false" on single-line labels so they clip instead of reflowing, matching the "wrap" flag in the layout.
+            - WordWrap="false" on single-line labels so they clip instead of reflowing; leave it on for text that runs onto more than one line in the source.
+            - PICTURES: count every distinct piece of artwork — logo, photo, signature, stamp, icon — and emit one XRPictureBox for each, tightly bounding that one picture at its own position and size.
             - RightToLeft="Yes" on a control only if the report itself is RTL.
 
           ${configInstructions}
           ${previousContext}
           
-          Return a JSON object with three fields:
-          1. "markdown": A detailed written report specification (description, components, styles).
-          2. "layout": A structured representation of the visual layout for a UI preview mockup.
-          3. "repxContent": A complete, valid DevExpress REPX XML string representing the full report layout. Use standard DevExpress.XtraReports.UI components (Bands, XRLabel, XRTable, XRPictureBox, etc.).
-          
-          CRITICAL XML VALIDITY RULES FOR repxContent:
-          - The repxContent MUST be strictly valid XML.
+          ANSWER WITH THE REPX DOCUMENT AND NOTHING ELSE.
+          No JSON, no markdown fences, no explanation before or after it: start with <?xml and end with </XtraReportsLayoutSerializer>. Forma reads its own preview and specification out of this file, so the file is the whole answer. Put the report's title, as the source shows it, in a DisplayName attribute on the root element, for example DisplayName="Sales Invoice". Use standard DevExpress.XtraReports.UI components (Bands, XRLabel, XRTable, XRPictureBox, etc.).
+
+          CRITICAL XML VALIDITY RULES:
+          - The XML MUST be strictly valid.
           - **THE TAG NAME AND THE Ref ARE TWO DIFFERENT NUMBERS. NEVER MAKE THEM MATCH.** Get this wrong and the report opens with no error and its tables missing.
             - **The tag name ItemN is the element's POSITION IN ITS OWN COLLECTION, and it RESTARTS AT Item1 inside every single container.** Every <Bands>, <Controls>, <Rows>, <Cells> starts again from Item1: <Rows><Item1 ...><Item2 ...></Rows>, and inside each of those rows <Cells><Item1 ...><Item2 ...></Cells>. DevExpress finds a collection's members BY THIS NAME, so a <Cells> whose first child is Item14 contains no Item1 and is read as an EMPTY collection — the cells are discarded silently and the table vanishes.
             - **Ref is the opposite: ONE sequence for the whole document, and every value must be different.** Ref="0" on the root, then 1, 2, 3 ... to the last element, counting bands, controls, rows and cells together, never restarting. Two elements sharing a Ref are loaded as ONE object and the second one's content is DISCARDED SILENTLY.
@@ -2091,71 +2098,16 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
           - NEVER leave a string unclosed. Check every single quote.
           - If you need to use quotes, angle brackets, or ampersands inside an attribute value, use proper XML entities (e.g., &quot;, &apos;, &lt;, &gt;, &amp;).
           - Ensure all XML tags are properly closed.
-          - Do NOT include markdown formatting (like \`\`\`xml) inside the repxContent string itself, just the raw XML.
+          - Do NOT wrap the XML in markdown formatting (like \`\`\`xml); answer with the raw XML.
           - DEVEXPRESS EXPRESSIONS & STRINGS: If you use DevExpress Expressions (<ExpressionBindings><Item1 Expression="..."/></ExpressionBindings>), any string literals inside the expression MUST be enclosed in single quotes.
           - CRITICAL XML ESCAPING: If a string literal inside an expression contains a single quote (like "Don't"), you MUST escape it by doubling the single quote (e.g., Expression="'Don''t do this'"). BUT YOU MUST ALSO escape the outer XML double quotes and special characters like &lt; and &gt;.
           - If the user provides a barcode, use ControlType="XRBarCode". For Lines, use ControlType="XRLine".
           - EXACT COMPLETENESS: Do not skip ANY table cells, labels, or elements to save tokens. The output must be 100% complete and exhaustive.
           
-          The "layout" JSON must follow this structure. Its x, y, width and height are in the SAME ${reportUnit} units as the REPX, and are measured from the TOP-LEFT OF THEIR OWN SECTION — exactly like a control's LocationFloat inside its band, so the two artifacts carry the same numbers. "pageWidth" must be ${page.width}, matching the ROOT STRUCTURE.
-          {
-            "title": "Report Title",
-            "pageWidth": ${page.width},
-            "sections": [
-              {
-                "id": "section-1",
-                "name": "Section Name",
-                "type": "header" | "detail" | "footer" | "group",
-                "height": 150,
-                "elements": [
-                  { "id": "el-1", "type": "label" | "table" | "chart" | "gauge" | "image" | "line" | "barcode" | "checkbox", "content": "Text or description", "x": 10, "y": 10, "width": 200, "height": 30, "color": "#000000", "backgroundColor": "#ffffff", "fontSize": 12 }
-                ]
-              }
-            ]
-          }
-
-          LAYOUT VISUAL FIDELITY — THE MOCKUP IS RENDERED DIRECTLY FROM THIS JSON.
-          The "layout" is drawn on screen exactly as you describe it, so it must be a faithful visual copy of the source design, not a rough approximation. Fill in these optional fields on every element wherever the source shows them:
-          - "bold": true for any heavier/darker text — titles, column headings, totals. Do not guess; set it when the text is visibly heavier than body text.
-          - "italic": true for slanted text.
-          - "fontFamily": the closest family name you can identify, e.g. "Arial", "Times New Roman", "Courier New".
-          - "fontSize": the font's EM SIZE, in the same units as the rest of the layout — the number you would type into a font dialog, NOT the measured height of the letters. **This is the single most common way a reproduction comes out uniformly small.** Capital letters stand only about 70% of the em size and lowercase about half of it, so a heading whose capitals measure 21 units is a 30-unit font, not a 21-unit one. Measure it one of these two ways rather than off the ink:
-            - Baseline to baseline of two consecutive lines in the same paragraph is 1.15-1.25x the font size. Divide.
-            - Or measure the height of a capital letter and divide by 0.7.
-            Then CHECK THE ANSWER before you use it: ordinary body text in a printed business document is 9-11pt, which is ${bodyFontMinUnits}-${bodyFontMaxUnits} in these units. If the body text you have measured comes out below that, you have measured the ink and EVERY size in the report is small by the same fraction — scale them all up together, keeping their ratios. Match those ratios carefully too: a title must be visibly larger than body text.
-          - "color" and "backgroundColor": real hex values sampled from the design. Omit backgroundColor entirely when the area is plain white/transparent — do NOT emit "#ffffff" for everything.
-          - "textAlign" and "verticalAlign": how the text sits inside its own box. Numeric/currency columns are almost always "right".
-          - "wrap": true when the text runs onto more than one line in the source. Leave it false for single-line text so it clips instead of reflowing.
-          - Borders: use "borderTop" / "borderRight" / "borderBottom" / "borderLeft" individually. A heading underlined by a rule is "borderBottom": true — NOT a full box. Only use "hasBorder": true when all four sides are genuinely drawn. Set "borderColor" when the rule is not black.
-
-          TABLES / GRIDS IN THE LAYOUT — emit real structure, not decomposed labels.
-          For any grid, use a single element with "type": "table" and fill its "rows" array. Each row has "cells", and each cell has "content" plus optional "weight", "bold", "textAlign", "color", "backgroundColor". Mark heading rows with "isHeader": true. Use "weight" to express relative column widths and row heights (a column twice as wide as its neighbour gets twice the weight) — the renderer distributes them across the element's box, so you do NOT need to compute per-cell x/y coordinates. Reproduce EVERY row and EVERY column you can see, including the header row and any totals row. Do not invent placeholder rows and do not truncate long tables.
-
-          IMAGES AND LOGOS — detect each picture and return its bounding box.
-          FIRST, count the pictures. Scan the whole design and identify EVERY distinct piece of artwork separately: company logo, product photos, signatures, stamps, icons, QR/graphic marks. A design with four pictures must produce FOUR separate "image" elements, each positioned at its own x/y/width/height.
-
-          For each image element, perform OBJECT DETECTION on the supplied page image and return "box2d" — the 2D bounding box of THAT ONE picture, in your standard detection format:
-
-            "box2d": [ymin, xmin, ymax, xmax]
-
-          with all four values normalised to the 0-1000 range of the image, y before x, top-left origin. This is exactly the bounding-box format you use for object detection; produce it the same way here. Add "sourceImageIndex" when more than one file was supplied (0 = first).
-
-          Worked example — a logo in the top-left eighth of the page: "box2d": [30, 50, 110, 230].
-
-          These rules are strict, because a wrong box is worse than none:
-          - The box must TIGHTLY bound that single picture — its own edges, nothing else. No surrounding whitespace, captions, borders, or neighbouring content.
-          - NEVER return the whole frame. [0, 0, 1000, 1000] is always wrong, and so is any box covering most of the page. You are locating one picture inside the design, not describing the design.
-          - Every image element must have a DIFFERENT box. Two pictures must never share one, and boxes must not overlap.
-          - The box's shape must match the element's own shape. A square logo drawn at width 80 height 80 needs a roughly square box, not a full-width strip.
-          - If you cannot locate a specific picture confidently, OMIT "box2d" for that element but KEEP the element. An element with no box renders as a clean placeholder, which is correct and expected. A box covering the wrong area renders the entire design squashed into one small box, which is a visible defect.
-
-          Omit "box2d" entirely when the element is not present in any supplied image (for instance a placeholder you were asked to add).
-
-          CHARTS — set "chartType" to "bar", "line", "pie" or "area" to match the source, and put the approximate series values in "chartValues" so the drawn chart has the same shape as the original. Put the chart's own title in "chartTitle" and its axis titles in "chartXTitle" and "chartYTitle", in the source's words, only when the source shows them; they are the same words the REPX carries in the chart's <Titles> and axis titles.
-          - EXACT XML COMPLETENESS: The repxContent MUST be fully comprehensive. Do NOT skip sections, do NOT omit fields, do NOT output generic XML.
+          CHARTS — put the chart's own title in its <Titles> and its axis titles in the axis titles, in the source's words, only when the source shows them.
+          - EXACT XML COMPLETENESS: The XML MUST be fully comprehensive. Do NOT skip sections, do NOT omit fields, do NOT output generic XML.
           - DEVEXPRESS TABLES: every region identified under "AN ALIGNED, REPEATING REGION IS A TABLE" above MUST be a proper DevExpress \`<XRTable>\` / \`<XRTableRow>\` / \`<XRTableCell>\` in the XML, never a grid of labels. Position and size the \`<XRTable>\` itself with LocationFloat and SizeF so it covers the same box as the source; the rows and cells inside it take neither, only \`Weight\`. Use \`Borders="All"\` on the table when the source rules every cell, and the individual border sides when it does not.
           - LOCATIONS AND SIZES: Make **absolute sure** that components do not overlap incorrectly. Calculate the X and Y bounds correctly. LocationFloat expects X,Y and SizeF expects Width,Height. Do NOT add spaces after the comma.
-          - PREVIEW MOCKUP ACCURACY: In the JSON \`layout\`, represent every grid as ONE \`"table"\` element with a populated \`rows\`/\`cells\` array, as described under "TABLES / GRIDS IN THE LAYOUT" above. (Earlier revisions asked for grids to be decomposed into one \`"label"\` per cell because the preview could not draw real tables. It can now, so emit the real structure — it is both more accurate and far less error-prone than hand-computing every cell coordinate.)
 
           ${options?.formaBrief?.trim() ? `${options.formaBrief.trim()}\n\n` : ''}${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent), fromDescription: Boolean(description) })}` },
           ...imageParts,
@@ -2176,110 +2128,9 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       ...(typeof config?.thinkingBudget === "number"
         ? { thinkingConfig: { thinkingBudget: config.thinkingBudget } }
         : {}),
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          markdown: { type: Type.STRING },
-          repxContent: { type: Type.STRING },
-          layout: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              pageWidth: { type: Type.NUMBER },
-              sections: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    name: { type: Type.STRING },
-                    type: { type: Type.STRING, enum: ["header", "detail", "footer", "group"] },
-                    height: { type: Type.NUMBER },
-                    elements: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          id: { type: Type.STRING },
-                          type: { type: Type.STRING, enum: ["label", "table", "chart", "gauge", "image", "line", "barcode", "checkbox"] },
-                          content: { type: Type.STRING },
-                          x: { type: Type.NUMBER },
-                          y: { type: Type.NUMBER },
-                          width: { type: Type.NUMBER },
-                          height: { type: Type.NUMBER },
-                          color: { type: Type.STRING },
-                          backgroundColor: { type: Type.STRING },
-                          fontSize: { type: Type.NUMBER },
-                          textAlign: { type: Type.STRING, enum: ["left", "center", "right"] },
-                          hasBorder: { type: Type.BOOLEAN },
-                          bold: { type: Type.BOOLEAN },
-                          italic: { type: Type.BOOLEAN },
-                          fontFamily: { type: Type.STRING },
-                          verticalAlign: { type: Type.STRING, enum: ["top", "middle", "bottom"] },
-                          wrap: { type: Type.BOOLEAN },
-                          borderTop: { type: Type.BOOLEAN },
-                          borderRight: { type: Type.BOOLEAN },
-                          borderBottom: { type: Type.BOOLEAN },
-                          borderLeft: { type: Type.BOOLEAN },
-                          borderColor: { type: Type.STRING },
-                          chartType: { type: Type.STRING, enum: ["bar", "line", "pie", "area"] },
-                          chartValues: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-                          chartTitle: { type: Type.STRING },
-                          chartXTitle: { type: Type.STRING },
-                          chartYTitle: { type: Type.STRING },
-                          sourceImageIndex: { type: Type.NUMBER },
-                          box2d: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-                          sourceRect: {
-                            type: Type.OBJECT,
-                            properties: {
-                              x: { type: Type.NUMBER },
-                              y: { type: Type.NUMBER },
-                              width: { type: Type.NUMBER },
-                              height: { type: Type.NUMBER }
-                            },
-                            required: ["x", "y", "width", "height"]
-                          },
-                          rows: {
-                            type: Type.ARRAY,
-                            items: {
-                              type: Type.OBJECT,
-                              properties: {
-                                weight: { type: Type.NUMBER },
-                                isHeader: { type: Type.BOOLEAN },
-                                cells: {
-                                  type: Type.ARRAY,
-                                  items: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                      content: { type: Type.STRING },
-                                      weight: { type: Type.NUMBER },
-                                      bold: { type: Type.BOOLEAN },
-                                      textAlign: { type: Type.STRING, enum: ["left", "center", "right"] },
-                                      color: { type: Type.STRING },
-                                      backgroundColor: { type: Type.STRING }
-                                    },
-                                    required: ["content"]
-                                  }
-                                }
-                              },
-                              required: ["cells"]
-                            }
-                          }
-                        },
-                        required: ["id", "type", "content", "x", "y", "width", "height"]
-                      }
-                    }
-                  },
-                  required: ["id", "name", "type", "height", "elements"]
-                }
-              }
-            },
-            required: ["title", "pageWidth", "sections"]
-          }
-        },
-        required: ["markdown", "layout", "repxContent"]
-      }
+      // No responseSchema since 2026-11-05: the answer is the REPX as raw XML,
+      // which inside a JSON string would escape every attribute quote. Forma
+      // reads the Mockup, the Spec and the title out of it (lib/repxViews.ts).
     }
   });
 
@@ -2317,6 +2168,24 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
   while (true) {
     try {
       response = await requestFor(selectedModel, looped ? RUNAWAY_RETRY_TEMPERATURE : 0);
+      // An answer that finished while its document did not (2026-11-05). The
+      // REPX is the whole answer now, so this is the output failing, as a
+      // stream that ends early is, and the same request is made again. A
+      // cut-off at the output limit is not retried here: the same input hits
+      // the same limit, and the catch below caps the thinking for that.
+      if (
+        response.finishReason !== 'MAX_TOKENS' &&
+        !['SAFETY', 'PROHIBITED_CONTENT'].includes(response.finishReason ?? '') &&
+        !checkRepxComplete(repxOfAnswer(response.text)).complete &&
+        outputAttempts < MAX_OUTPUT_RETRIES
+      ) {
+        outputAttempts++;
+        console.warn(
+          `The answer from "${selectedModel}" finished before its REPX did (${checkRepxComplete(repxOfAnswer(response.text)).reason}). ` +
+          `Retrying the same request — attempt ${outputAttempts} of ${MAX_OUTPUT_RETRIES}.`
+        );
+        continue;
+      }
       break;
     } catch (error: any) {
       // Cancellation is never worth retrying.
@@ -2496,148 +2365,18 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
     console.error("Gemini returned an empty response. finishReason:", response.finishReason);
   }
 
-  /**
-   * Rewrite the REPX on its own, when the response finished but the XML did not.
-   *
-   * This is the quiet truncation: valid JSON, an intact `layout`, a readable
-   * markdown spec, and a `repxContent` that stops mid-attribute. Everything the
-   * app looks at says success, and the only broken artifact is the only one the
-   * user opens in DevExpress. See `lib/repxTruncation.ts`.
-   *
-   * Three things make the second request likely to fit where the first did not,
-   * and they are the reason this is a retry worth spending a request on rather
-   * than the same roll of the dice:
-   *
-   * - It writes ONE artifact. No markdown specification, no layout JSON — both
-   *   already exist and are correct — so the whole output budget goes to the XML.
-   * - It answers in raw XML, not XML escaped inside a JSON string. Every quote
-   *   in a DevExpress document is an attribute delimiter, and escaping them is
-   *   pure overhead on the artifact that ran out of room.
-   * - It transcribes rather than designs. The layout it is handed already
-   *   carries every position, size, font, colour, border and table cell, so
-   *   there is no measuring left to do.
-   *
-   * Deliberately no images: the layout is the specification now, and re-sending
-   * the page would put the expensive part of the first request back into the one
-   * meant to be cheap. One attempt only, and any failure leaves the original
-   * untouched — a dead REPX with a working mockup is worse than what we had, but
-   * an exception thrown here would lose the report entirely.
+  /*
+   * rewriteRepxFromLayout went on 2026-11-05 (`git log -S"rewriteRepxFromLayout"`).
+   * It rescued a REPX cut off inside a complete JSON answer by transcribing the
+   * layout the same answer carried. The answer is the REPX alone now, so there
+   * is no layout to rescue it from, and no JSON for the XML to end early
+   * inside: an unfinished document with a normal finish is retried as an output
+   * failure in the loop above, like a stream that ended early.
    */
-  const rewriteRepxFromLayout = async (result: AnalysisResponse): Promise<string | null> => {
-    if (signal?.aborted) return null;
-
-    const startedAt = Date.now();
-    // Same arrangement as requestFor: a controller of our own so a looping
-    // rewrite can be cut off, chained to the caller's signal.
-    const rewriteController = new AbortController();
-    if (signal?.aborted) rewriteController.abort();
-    else signal?.addEventListener("abort", () => rewriteController.abort(), { once: true });
-    try {
-      const stream = await ai.models.generateContentStream({
-        model: selectedModel,
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `You are writing ONE artifact: a complete DevExpress XtraReports .repx document.
-
-          A previous attempt produced this report's specification correctly but stopped part-way through the XML. The layout below is complete and correct — transcribe it, do not redesign it, and do not re-measure anything.
-
-          Output the XML and NOTHING else: no explanation, no markdown fences, no JSON. Start with <?xml and end with </XtraReportsLayoutSerializer>.
-${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion }, sections)}
-          - Each layout element becomes one control: "label" -> XRLabel, "table" -> XRTable with XRTableRow/XRTableCell (cells take Weight, never LocationFloat or SizeF), "image" -> XRPictureBox, "line" -> XRLine, "barcode" -> XRBarCode.
-          - x, y, width and height are already in ${reportUnit} and become LocationFloat="x,y" and SizeF="width,height", with no space after the comma.
-          - FONT SIZE IS IN POINTS, and the layout's fontSize is in report units: points = fontSize * 72 / ${unitsPerInchForReport}. Writing the layout number straight into Font makes every piece of text far too large.
-          - Carry every appearance property across: bold/italic into Font, color into ForeColor, backgroundColor into BackColor (omit it when the area is white), textAlign + verticalAlign into TextAlignment, the border flags into Borders, wrap into WordWrap.
-          - Include EVERY element of EVERY section. Completeness is the only thing that failed last time.
-          - The XML must be strictly valid: all attribute values double-quoted, all tags closed, &amp; &lt; &gt; &quot; escaped inside values.
-
-          THE LAYOUT TO TRANSCRIBE:
-          ${JSON.stringify(result.layout)}`,
-              },
-            ],
-          },
-        ],
-        config: {
-          abortSignal: rewriteController.signal,
-          temperature: 0,
-          maxOutputTokens: 65536,
-          // Matched to the main request rather than forced to 0. Disabling
-          // thinking is the obvious lever here — this is transcription, and the
-          // budget it frees is exactly what ran out — but some models refuse a
-          // zero budget, and an error would cost the repair entirely.
-          ...(typeof config?.thinkingBudget === "number"
-            ? { thinkingConfig: { thinkingBudget: config.thinkingBudget } }
-            : {}),
-        },
-      });
-
-      let text = "";
-      for await (const chunk of stream) {
-        if (signal?.aborted) throw abortError();
-        if (chunk.text) {
-          text += chunk.text;
-          // The rewrite is not retried -- the catch below keeps the original
-          // -- but a loop here would still cost minutes and tokens for nothing.
-          const verdict = detectRunaway(text);
-          if (verdict.runaway) {
-            rewriteController.abort();
-            throw new RunawayOutputError(text.length, verdict.fragment, verdict.repeats);
-          }
-        }
-        // The bar is already near the end of its travel; nudge it past where
-        // the stream left it (95) and let the character count show that
-        // something is still happening. The count is cumulative on purpose —
-        // `applyStreamProgress` shows `streamChars` raw, so restarting it at
-        // zero would run a real number backwards in front of the user.
-        onProgress?.({
-          chars: (rawText?.length ?? 0) + text.length,
-          percent: 97,
-          elapsedMs: Date.now() - startedAt,
-        });
-      }
-
-      const document = extractRepxDocument(text);
-      const check = checkRepxComplete(document);
-      if (!check.complete) {
-        console.warn(`REPX rewrite came back unfinished too (${check.reason}) — keeping the original.`);
-        return null;
-      }
-
-      console.log(`REPX rewritten from the layout: ${check.length} characters in ${Date.now() - startedAt}ms.`);
-      return document;
-    } catch (error: any) {
-      if (signal?.aborted || error?.name === "AbortError") throw error;
-      console.warn("REPX rewrite failed; keeping the original.", error);
-      return null;
-    }
-  };
 
   try {
-    const parsed = parseAnalysisResponse(rawText, response.finishReason);
-    // Carried onto the result so the status bar can show it. The console line
-    // above stays: it is the only record when a run fails before this point.
-    parsed.usage = response.usage ?? null;
-    console.log(`Successfully parsed Gemini response.`);
-
-    /**
-     * The model can finish the response and not the report. Nothing else in the
-     * pipeline notices: `parseAnalysisResponse` sees valid JSON, the mockup
-     * draws from the layout, and `checkRepx` only runs when the user tries to
-     * leave with the file. Catch it here, where there is still a request's worth
-     * of context and something can be done about it.
-     */
-    const completeness = checkRepxComplete(parsed.repxContent);
-    if (!completeness.complete) {
-      console.warn(
-        `The generated REPX is unfinished — ${completeness.reason}. ` +
-        `The response itself was complete (finishReason: ${response.finishReason ?? "none reported"}), ` +
-        `so the layout survived; rewriting the XML from it.`
-      );
-      const rewritten = await rewriteRepxFromLayout(parsed);
-      if (rewritten) parsed.repxContent = rewritten;
-    }
+    const parsed = parseRepxAnswer(rawText, response.finishReason);
+    console.log(`Successfully read the REPX answer.`);
 
     // First, because everything below assumes the document DevExpress will
     // load is the document we are looking at. A repeated Ref makes the loader
@@ -2853,7 +2592,12 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
     // still wrong after every repair has run. An error here means a repair
     // declined rather than that nobody looked, which is worth knowing about.
     // See `repxAudit.ts`; the UI shows the findings beside the REPX.
-    const audit = auditRepx(parsed.repxContent, parsed.layout);
+    //
+    // Checked against Forma's own reading of the source when there is one
+    // (OCR's layout of it): it is independent of the AI,
+    // which is what lets a grid it saw and the REPX lacks be a finding. The
+    // layout read off this REPX could never disagree with it.
+    const audit = auditRepx(parsed.repxContent, options?.evidence ?? null);
     if (audit.errors) {
       console.error(`REPX audit — ${audit.summary}.`);
     } else if (audit.warnings) {
@@ -2865,7 +2609,18 @@ ${rootStructurePrompt({ page, reportUnit, targetVersion, targetSerializerVersion
       console[finding.severity === 'error' ? 'error' : 'warn'](`  [${finding.code}] ${finding.message}`);
     }
 
-    return parsed;
+    // The Mockup, the Spec and the title, read off the finished REPX rather
+    // than written by the AI (2026-11-05, lib/repxViews.ts), so all three
+    // describe the file that is downloaded.
+    const title = reportTitleOf(parsed.repxContent);
+    return {
+      markdown: specFromRepx(parsed.repxContent, title),
+      layout: layoutFromRepx(parsed.repxContent, title),
+      repxContent: parsed.repxContent,
+      // Carried onto the result so the REPX pane can show it. The console line
+      // in requestFor stays: it is the only record when a run fails before here.
+      usage: response.usage ?? null,
+    };
   } catch (e) {
     if (rawText) {
       console.error("Failed to parse Gemini response", e);

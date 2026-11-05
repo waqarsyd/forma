@@ -70,13 +70,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, extname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { analyzeReportDesign, type ReportConfig } from '../../src/services/geminiService';
-import type { AnalysisResponse, AttachmentPart } from '../../src/lib/reportTypes';
+import type { AnalysisResponse, AttachmentPart, ReportLayout } from '../../src/lib/reportTypes';
 import { readCachedModel } from '../../src/lib/modelCache';
 import { importReports, retrieveHouseStyle } from '../../src/services/library';
 import { embedEntries, embedTexts } from '../../src/services/embeddings';
 import type { LibraryEntry } from '../../src/lib/embedStore';
 import { readsTheseFeatures, type BoxReaderModel } from '../../src/lib/boxReader';
-import { buildWithReader } from '../../src/lib/ocrAttach';
+import { buildWithReader, sourceLayoutOf } from '../../src/lib/ocrAttach';
 import { draftBrief } from '../../src/lib/formaTeam';
 import { readWithOcr } from '../model/ocrPages';
 import {
@@ -326,10 +326,10 @@ function attachmentFor(c: LoadedCase, rerender: boolean): AttachmentPart[] {
  * the reader declines the page, which the product would answer the same way.
  * The OCR works in the results folder, so no case directory gains files.
  */
-async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir: string): Promise<string> {
+async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir: string): Promise<{ brief: string; evidence: ReportLayout | null }> {
   let source = join(c.dir, c.file.source);
   if (extname(source).toLowerCase() === '.html') source = source.replace(/\.html$/i, '.png');
-  if (extname(source).toLowerCase() !== '.png' || !existsSync(source)) return '';
+  if (extname(source).toLowerCase() !== '.png' || !existsSync(source)) return { brief: '', evidence: null };
   const work = join(outDir, 'ocr');
   mkdirSync(work, { recursive: true });
   const name = `${c.name}.png`;
@@ -337,8 +337,11 @@ async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir
   const ocr = (await readWithOcr(work, [name], join(work, 'ocr.json'), 1, false))[name];
   const model = JSON.parse(readFileSync('assets/model/boxReader.json', 'utf8')) as BoxReaderModel;
   if (!readsTheseFeatures(model)) throw new Error('assets/model/boxReader.json is not one this version reads.');
-  const built = buildWithReader([{ meta: { uploadId: c.name, file: name }, read: { ocr, flagged: 0, lines: ocr.lines.length } }], model, paper);
-  return built ? draftBrief(built.skeleton, built.layout, unit, 'reader') : '';
+  const pages = [{ meta: { uploadId: c.name, file: name }, read: { ocr, flagged: 0, lines: ocr.lines.length } }];
+  const built = buildWithReader(pages, model, paper);
+  // OCR's own layout is the audit's evidence, as prepareTeam passes it (2026-11-05).
+  const evidence = sourceLayoutOf(pages, unit, paper);
+  return { brief: built ? draftBrief(built.skeleton, built.layout, unit, 'reader') : '', evidence };
 }
 
 function configFor(c: LoadedCase, key: string, opts: ReturnType<typeof parseArgs>): ReportConfig {
@@ -379,10 +382,10 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
   };
   try {
     const parts = attachmentFor(c, opts.rerender && run === 1);
-    const formaBrief = opts.brief ? await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir) : '';
+    const { brief: formaBrief, evidence } = opts.brief ? await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir) : { brief: '', evidence: null };
     if (opts.brief) console.log(`[${c.name}] box reader brief: ${formaBrief ? `${formaBrief.split('\n').length} lines` : 'none (not a PNG, or the reader declined the page)'}`);
     record.response = await capturingConsole(record.log, () =>
-      analyzeReportDesign(prompt, parts, config, undefined, undefined, undefined, formaBrief ? { formaBrief } : undefined),
+      analyzeReportDesign(prompt, parts, config, undefined, undefined, undefined, formaBrief ? { formaBrief, evidence } : undefined),
     );
   } catch (error: any) {
     record.error = error?.message ?? String(error);
@@ -492,7 +495,7 @@ async function houseEvaluation(records: RunRecord[], cases: LoadedCase[], key: s
     const c = cases.find((x) => x.name === r.case);
     if (!c) continue;
     const config = configFor(c, key, opts);
-    const previous = { layout: r.response.layout, repxContent: r.response.repxContent };
+    const previous = { repxContent: r.response.repxContent };
     for (const [i, instruction] of HOUSE_INSTRUCTIONS.entries()) {
       const log: string[] = [];
       try {

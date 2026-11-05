@@ -21,9 +21,12 @@ const KEY = 'test-key-not-a-real-credential';
 const config: ReportConfig = { customApiKey: KEY, version: '20.1', unit: 'HundredthsOfAnInch', pageSize: 'Letter' };
 const parts = [{ inlineData: { data: 'AAAA', mimeType: 'image/png' } }];
 
-/** A complete, valid response: the REPX is finished, so no rewrite request follows. */
+/**
+ * A complete, valid answer: since 2026-11-05 the answer is the REPX itself,
+ * and its DisplayName is the title Forma reads the Mockup's off.
+ */
 const REPX = `<?xml version="1.0" encoding="utf-8"?>
-<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100" Version="20.1">
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Recovered" ReportUnit="HundredthsOfAnInch" Margins="0, 0, 0, 0" PageWidth="850" PageHeight="1100" Version="20.1">
   <Bands>
     <Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="0" />
     <Item2 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="40">
@@ -35,15 +38,7 @@ const REPX = `<?xml version="1.0" encoding="utf-8"?>
   </Bands>
 </XtraReportsLayoutSerializer>`;
 
-const GOOD = JSON.stringify({
-  markdown: '# Recovered',
-  layout: {
-    title: 'Recovered',
-    pageWidth: 850,
-    sections: [{ id: 'detail', name: 'Detail', type: 'detail', height: 40, elements: [] }],
-  },
-  repxContent: REPX,
-});
+const GOOD = REPX;
 
 /** One server-sent event carrying a model chunk, as the SDK reads them. */
 const sse = (text: string, finishReason?: string) =>
@@ -67,7 +62,7 @@ const good = () => streamOf(sse(GOOD, 'STOP'));
 /** The loop the benchmark found: a response that starts well and then emits zeros until the ceiling. */
 const runaway = () =>
   streamOf(
-    sse('{"markdown":"# Customer List","layout":{"title":"Customer List","pageWidth":850,"sections":[]},"repxContent":"<Item1 Text=\\"Balance\\" Value=\\"1,240.5'),
+    sse('<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="0" DisplayName="Customer List"><Bands><Item1 Text="Balance" Value="1,240.5'),
     ...Array.from({ length: 12 }, () => sse('0'.repeat(Math.ceil(RUNAWAY_WINDOW / 4)))),
     sse('0'.repeat(Math.ceil(RUNAWAY_WINDOW / 4)), 'MAX_TOKENS'),
   );
@@ -180,6 +175,39 @@ describe('a generation whose stream ends mid-object', () => {
     const fetchMock = stubSequence(truncated);
     await expect(analyzeReportDesign('', parts, config)).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+/*
+ * The answer is the REPX alone since 2026-11-05, so an answer that finishes
+ * normally with its document unfinished is the output failing, as a stream
+ * that ends early is. Until then a REPX cut off inside a complete JSON answer
+ * was rewritten from the layout beside it, which no longer exists.
+ */
+describe('a generation whose answer finishes before its REPX does', () => {
+  const unfinished = () => streamOf(sse(REPX.slice(0, 400), 'STOP'));
+
+  it('makes the same request again, and the finished answer is the report', async () => {
+    const fetchMock = stubSequence(unfinished, good);
+    const result = await analyzeReportDesign('', parts, config);
+    expect(result.repxContent).toContain('Text="Recovered"');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps what it has once the retries are spent, for the audit to name', async () => {
+    const fetchMock = stubSequence(unfinished);
+    const result = await analyzeReportDesign('', parts, config);
+    expect(result.repxContent).toBe(REPX.slice(0, 400).trim());
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads the Mockup, the Spec and the title off the REPX', async () => {
+    stubSequence(good);
+    const result = await analyzeReportDesign('', parts, config);
+    expect(result.layout.title).toBe('Recovered');
+    expect(result.layout.sections.map((s) => s.name)).toEqual(['Detail, once per record']);
+    expect(result.layout.sections[0].elements[0]).toMatchObject({ type: 'label', content: 'Recovered', x: 0, y: 0, width: 200, height: 20 });
+    expect(result.markdown).toContain('A label "Recovered" at 0, 0, 200 x 20');
   });
 });
 

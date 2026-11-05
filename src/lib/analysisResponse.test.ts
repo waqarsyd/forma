@@ -11,115 +11,95 @@
  * and careful piece of work that could only ever be done once, by hand.
  *
  * The distinction it draws is the whole point. A truncated body is still a body:
- * the model wrote most of the report and was cut off mid-string, and the JSON is
- * unparseable exactly as it would be for nonsense. Only `finishReason` separates
+ * the model wrote most of the report and was cut off mid-tag, and the XML is
+ * unfinished exactly as it would be for nonsense. Only `finishReason` separates
  * ran-out-of-room from garbage, and getting it wrong is wrong twice over — it
  * blames the model for output that was fine as far as it got, and it tells the
  * user to try again, which for the same input fails the same way every time.
  *
+ * Since 2026-11-05 the answer is the REPX as raw XML, not a JSON object
+ * holding it beside a layout and a spec; these are the same cases over that.
+ *
  * Fixtures, no network, no key, no mocking.
  */
 import { describe, it, expect } from 'vitest';
-import { parseAnalysisResponse } from './analysisResponse';
+import { parseRepxAnswer, repxOfAnswer } from './analysisResponse';
 
-/** The shape observed from a real generation on 2026-08-27. */
-const VALID = JSON.stringify({
-  markdown: '# Quarterly Invoice\n\nA header band with the title, a detail band, and a page footer.',
-  layout: {
-    pageWidth: 850,
-    sections: [
-      { type: 'header', elements: [{ id: 'title', type: 'label', content: 'INVOICE', x: 20, y: 20, width: 400, height: 30 }] },
-      { type: 'detail', elements: [{ id: 'row', type: 'label', content: 'Item', x: 20, y: 60, width: 400, height: 20 }] },
-      { type: 'footer', elements: [] },
-    ],
-  },
-  repxContent: '<XtraReportsLayoutSerializer Ref="0" ReportUnit="HundredthsOfAnInch" PageWidth="850"><Bands /></XtraReportsLayoutSerializer>',
-});
+const DOCUMENT =
+  '<?xml version="1.0" encoding="utf-8"?>\n<XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v23.2" DisplayName="Quarterly Invoice" ReportUnit="HundredthsOfAnInch" PageWidth="850"><Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="20" /></Bands></XtraReportsLayoutSerializer>';
 
-/** The same payload cut off mid-string, as a MAX_TOKENS stop produces. */
-const TRUNCATED = VALID.slice(0, Math.floor(VALID.length * 0.62));
+/** The same answer cut off mid-tag, as a MAX_TOKENS stop produces. */
+const TRUNCATED = DOCUMENT.slice(0, Math.floor(DOCUMENT.length * 0.62));
 
-describe('parseAnalysisResponse — success', () => {
-  it('returns the parsed report', () => {
-    const parsed = parseAnalysisResponse(VALID, undefined);
-    expect(parsed.layout.sections).toHaveLength(3);
-    expect(parsed.repxContent).toContain('XtraReportsLayoutSerializer');
-    expect(parsed.markdown).toContain('Quarterly Invoice');
+describe('parseRepxAnswer — success', () => {
+  it('returns the document', () => {
+    expect(parseRepxAnswer(DOCUMENT, undefined).repxContent).toBe(DOCUMENT);
   });
 
-  it('tolerates surrounding whitespace', () => {
-    expect(parseAnalysisResponse(`\n\n  ${VALID}\n `, undefined).layout.sections).toHaveLength(3);
+  it('tolerates surrounding whitespace, a fence and a sentence of preamble', () => {
+    expect(parseRepxAnswer(`\n\n  ${DOCUMENT}\n `, undefined).repxContent).toBe(DOCUMENT);
+    expect(parseRepxAnswer(`Here is the report:\n\`\`\`xml\n${DOCUMENT}\n\`\`\``, 'STOP').repxContent).toBe(DOCUMENT);
   });
 
-  it('accepts a report whose finishReason is the ordinary STOP', () => {
-    expect(parseAnalysisResponse(VALID, 'STOP').layout.sections).toHaveLength(3);
+  it('takes the REPX out of an answer in the old JSON shape, as a local model may still write', () => {
+    const old = JSON.stringify({ markdown: '# Quarterly Invoice', layout: { sections: [] }, repxContent: DOCUMENT });
+    expect(repxOfAnswer(old)).toBe(DOCUMENT);
+    expect(parseRepxAnswer(old, 'STOP').repxContent).toBe(DOCUMENT);
   });
 });
 
-describe('parseAnalysisResponse — truncation is not malformity', () => {
+describe('parseRepxAnswer — truncation is not malformity', () => {
   it('says the report was cut off, not that the model returned nonsense', () => {
     // The regression this file exists for. Before 2026-08-26 this produced
     // "The AI returned a malformed report. Try generating again."
-    expect(() => parseAnalysisResponse(TRUNCATED, 'MAX_TOKENS')).toThrow(/cut off/i);
+    expect(() => parseRepxAnswer(TRUNCATED, 'MAX_TOKENS')).toThrow(/cut off/i);
   });
 
   it('does not tell the user to simply try again, because that would fail identically', () => {
     let message = '';
-    try { parseAnalysisResponse(TRUNCATED, 'MAX_TOKENS'); } catch (e: any) { message = e.message; }
+    try { parseRepxAnswer(TRUNCATED, 'MAX_TOKENS'); } catch (e: any) { message = e.message; }
     expect(message).toMatch(/simpler|fewer|split/i);
     expect(message).toMatch(/same limit|same way/i);
   });
 
   it('reports an empty body with MAX_TOKENS as too large, not as empty', () => {
-    expect(() => parseAnalysisResponse('', 'MAX_TOKENS')).toThrow(/too large/i);
+    expect(() => parseRepxAnswer('', 'MAX_TOKENS')).toThrow(/too large/i);
   });
 
-  it('still calls genuinely unparseable output malformed', () => {
-    // No finishReason to excuse it — this really is nonsense.
-    expect(() => parseAnalysisResponse('not json at all {{{', undefined)).toThrow(/malformed/i);
+  it('calls an answer with no report in it what it is', () => {
+    expect(() => parseRepxAnswer('not a report at all {{{', undefined)).toThrow(/without a report/i);
+    expect(() => parseRepxAnswer('{"markdown":"hi"}', 'STOP')).toThrow(/without a report/i);
   });
 
-  it('treats a truncated body with no finishReason as malformed', () => {
-    // Honest: without the signal there is nothing to distinguish the two, and
-    // guessing from the shape of the text would be worse than saying so.
-    expect(() => parseAnalysisResponse(TRUNCATED, undefined)).toThrow(/malformed/i);
+  it('returns an unfinished document with an ordinary finish, which the request loop has already retried', () => {
+    // The audit then names it `truncated`; refusing it here would lose what
+    // the model did write, with nothing better to offer.
+    expect(parseRepxAnswer(TRUNCATED, 'STOP').repxContent).toBe(TRUNCATED);
   });
 });
 
-describe('parseAnalysisResponse — blocked', () => {
+describe('parseRepxAnswer — blocked', () => {
   for (const reason of ['SAFETY', 'PROHIBITED_CONTENT']) {
     it(`explains a ${reason} stop on an empty body`, () => {
-      expect(() => parseAnalysisResponse('', reason)).toThrow(/safety filters/i);
+      expect(() => parseRepxAnswer('', reason)).toThrow(/safety filters/i);
     });
 
     it(`explains a ${reason} stop part-way through`, () => {
-      expect(() => parseAnalysisResponse(TRUNCATED, reason)).toThrow(/part-way|safety filters/i);
+      expect(() => parseRepxAnswer(TRUNCATED, reason)).toThrow(/part-way|safety filters/i);
     });
   }
 });
 
-describe('parseAnalysisResponse — empty and schema-valid-but-useless', () => {
+describe('parseRepxAnswer — empty', () => {
   it('rejects an empty body', () => {
-    expect(() => parseAnalysisResponse('', undefined)).toThrow(/empty response/i);
-    expect(() => parseAnalysisResponse('   ', undefined)).toThrow(/empty response/i);
-  });
-
-  it('rejects JSON that parses but has no layout', () => {
-    // This used to pass and surface much later as a render crash on a missing
-    // layout.sections, a long way from the cause.
-    expect(() => parseAnalysisResponse('{}', undefined)).toThrow(/malformed/i);
-    expect(() => parseAnalysisResponse('{"markdown":"hi"}', undefined)).toThrow(/malformed/i);
-    expect(() => parseAnalysisResponse('{"layout":{}}', undefined)).toThrow(/malformed/i);
-  });
-
-  it('rejects a layout whose sections are missing', () => {
-    expect(() => parseAnalysisResponse('{"layout":{"pageWidth":850}}', undefined)).toThrow(/malformed/i);
+    expect(() => parseRepxAnswer('', undefined)).toThrow(/empty response/i);
+    expect(() => parseRepxAnswer('   ', undefined)).toThrow(/empty response/i);
   });
 
   it('never throws an error with an empty message', () => {
     for (const [text, reason] of [['', undefined], ['{{{', undefined], ['', 'MAX_TOKENS'], [TRUNCATED, 'SAFETY']] as const) {
       let message = 'NOT THROWN';
-      try { parseAnalysisResponse(text as string, reason as string | undefined); } catch (e: any) { message = e.message; }
+      try { parseRepxAnswer(text as string, reason as string | undefined); } catch (e: any) { message = e.message; }
       expect(message.trim().length).toBeGreaterThan(0);
       expect(message).not.toBe('NOT THROWN');
     }

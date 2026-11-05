@@ -29,6 +29,12 @@
  *
  * So: no DOM, no dependencies, pure string work, and it runs at the moment the
  * response is parsed rather than at the moment the user tries to leave with it.
+ *
+ * Since 2026-11-05 the answer is the REPX as raw XML, not a JSON object, so
+ * the quiet truncation above has no complete JSON to hide inside: an answer
+ * that finishes with its document unfinished is retried as an output failure
+ * by the request loop, and `extractRepxDocument` unwraps every answer, not
+ * only a repair's.
  */
 
 /** Comments and the XML declaration, which carry no nesting. */
