@@ -582,18 +582,26 @@
   color: var(--ok-ink);
 }
 
-/* A note is its name and its words, with no strip beside it (2026-11-05, at
-   the owner's request): the accent bar beside the person's notes and the grey
-   one beside Forma's, the proof-markup "spine" kept from the artifact, went
-   once the column became a chat. `git log -S".wb-spine"` finds it. */
+/* A note is its words, with no strip beside it and no name above it
+   (2026-11-05, both at the owner's request): the accent bar beside the
+   person's notes and the grey one beside Forma's, the proof-markup "spine"
+   kept from the artifact, went once the column became a chat
+   (`git log -S".wb-spine"`), and then the "YOU" and "FORMA" above each note,
+   since the side a message sits on already says whose it is. The name stays
+   in the markup for a screen reader, which has no sides to go by, and is
+   hidden the standard way: clipped to nothing, never `display: none`, which
+   would hide it from the reader too. */
 .wb-note { display: block; }
 .wb-note .wb-who {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin-bottom: 5px;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 /* The person's messages on the right, Forma's on the left (2026-11-05, at the
    owner's request), as ChatGPT and Gemini set a conversation: the person's
