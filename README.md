@@ -299,8 +299,9 @@ src/
                        loaded on demand: ReportPreview, ReportMockup,
                        RepxViewer, DataBinding, the request card and log, the
                        selection toolbar, the command menu, the shortcuts
-                       list, the right-click menu (ControlMenu) and the zoom
-                       field, with overlays.css holding those menus' styles.
+                       list, the right-click menu (ControlMenu), the zoom
+                       field and the corner's help (HelpMenu), with
+                       overlays.css holding those menus' styles.
                        The files that are not components are useFocusTrap (a
                        shared hook), overlays.css and the tests:
                        legalDisclosure, which reads ContactPage and

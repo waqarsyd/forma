@@ -30,6 +30,7 @@ import {
   IconEye,
   IconEyeOff,
   IconFolder,
+  IconHelp,
   IconRedo,
   IconRedoStep,
   IconUndo,
@@ -281,6 +282,7 @@ const SelectionToolbar = lazy(() => import('./components/SelectionToolbar'));
 const UsageSettings = lazy(() => import('./components/UsageSettings'));
 const CommandMenu = lazy(() => import('./components/CommandMenu'));
 const ZoomField = lazy(() => import('./components/ZoomField'));
+const HelpMenu = lazy(() => import('./components/HelpMenu'));
 /* The Mockup and the REPX pane (2026-11-06), each drawn only with a report open. */
 const ReportMockup = lazy(() => import('./components/ReportMockup'));
 const RepxViewer = lazy(() => import('./components/RepxViewer'));
@@ -1040,6 +1042,8 @@ export default function App() {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isClean, setIsClean] = useState(false);
+  /** The corner's "?" menu (2026-11-06, components/HelpMenu.tsx). */
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const workspaceShortcutRef = useRef<((shortcut: WorkspaceShortcut) => boolean) | null>(null);
   const [showWorkspaceProfile, setShowWorkspaceProfile] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
@@ -2068,13 +2072,26 @@ export default function App() {
    *
    * The effect then re-applies the identical class, which is a no-op.
    */
-  const setTheme = useCallback((val: boolean) => {
-    skipThemeFade.current = circularThemeSwap(() => {
-      document.documentElement.classList.toggle('dark', val);
-      flushSync(() => setIsDarkMode(val));
-    });
+  /** Whether no theme was ever chosen, so the OS decides (the corner's "System", 2026-11-06). */
+  const [followsSystem, setFollowsSystem] = useState(() => {
     try {
-      localStorage.setItem('darkMode', JSON.stringify(val));
+      return localStorage.getItem('darkMode') === null;
+    } catch {
+      return true;
+    }
+  });
+  const setTheme = useCallback((val: boolean, remember = true) => {
+    // "System" when the system already agrees changes only what is remembered.
+    if (document.documentElement.classList.contains('dark') !== val) {
+      skipThemeFade.current = circularThemeSwap(() => {
+        document.documentElement.classList.toggle('dark', val);
+        flushSync(() => setIsDarkMode(val));
+      });
+    }
+    setFollowsSystem(!remember);
+    try {
+      if (remember) localStorage.setItem('darkMode', JSON.stringify(val));
+      else localStorage.removeItem('darkMode');
     } catch {
       /* storage disabled — the choice still applies for this session */
     }
@@ -5959,9 +5976,11 @@ export default function App() {
         )}
         {/* Undo, Redo and the zoom at the bench's corner (2026-11-05), as
             Stitch has them: one history for every change to the report
-            (`undoReport`), and on Preview its scale, with Fit as the start. */}
-        {result && (
-          <div className="wb-float wb-float-corner">
+            (`undoReport`), and on Preview its scale, with Fit as the start.
+            Since 2026-11-06 the corner is always there, for Stitch's "?" at
+            its end; the history and the zoom still come with a report. */}
+        <div className="wb-float wb-float-corner">
+          {result && (
             <div className="wb-corner" role="group" aria-label="History">
               <button type="button" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!historyDepth.back || isAnalyzing || isChatting} onClick={undoReport}>
                 <IconUndo size={15} />
@@ -5970,7 +5989,8 @@ export default function App() {
                 <IconRedoStep size={15} />
               </button>
             </div>
-            {plate === 'print' && (
+          )}
+            {result && plate === 'print' && (
               <div className="wb-corner" role="group" aria-label="Zoom">
                 <button type="button" aria-label="Zoom out" title="Zoom out (−)" disabled={previewScale <= 0.1} onClick={() => zoomPreview('out')}>
                   <IconMinus size={14} />
@@ -5990,8 +6010,25 @@ export default function App() {
                 </button>
               </div>
             )}
-          </div>
-        )}
+            <div className="wb-corner wb-corner-help">
+              <button type="button" data-help-toggle aria-label="Help" title="Help" aria-expanded={isHelpOpen} onClick={() => setIsHelpOpen((open) => !open)}>
+                <IconHelp size={16} />
+              </button>
+              {isHelpOpen && (
+                <Suspense fallback={null}>
+                  <HelpMenu
+                    theme={followsSystem ? 'system' : isDarkMode ? 'dark' : 'light'}
+                    onTheme={(choice) => {
+                      if (choice === 'system') setTheme(window.matchMedia('(prefers-color-scheme: dark)').matches, false);
+                      else setTheme(choice === 'dark');
+                    }}
+                    onShortcuts={() => setIsShortcutsOpen(true)}
+                    onClose={() => setIsHelpOpen(false)}
+                  />
+                </Suspense>
+              )}
+            </div>
+        </div>
       </main>
 
       {/* The status bar went on 2026-11-04, at the owner's request for a workspace

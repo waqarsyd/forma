@@ -341,6 +341,19 @@ export const IconMoon = (p: Props) => (
     <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5z" />
   </Svg>
 );
+/* The theme that follows the system, and the corner's help (2026-11-06), as Stitch's. */
+export const IconMonitor = (p: Props) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="12" rx="2" />
+    <path d="M8 20h8M12 16v4" />
+  </Svg>
+);
+export const IconHelp = (p: Props) => (
+  <Svg strokeWidth={2} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.8M12 17v.5" />
+  </Svg>
+);
 
 /* ---- workspace ----
    Added when the workspace moved off Material Symbols. Same 1.8 default weight
