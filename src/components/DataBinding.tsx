@@ -167,7 +167,7 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
           border: 1px solid var(--paper-rule, #d7dee7);
           background: var(--surface-container-lowest, #fff); color: inherit;
         }
-        .db-paste:focus-visible { outline: 2px solid var(--accent, #e8590c); outline-offset: 1px; }
+        .db-paste:focus-visible { outline: 2px solid var(--ink-2, #39424e); outline-offset: 1px; }
         .db-note { font-size: 12.5px; line-height: 1.5; opacity: .75; margin: 8px 0 0; }
         .db-warn { border-left: 3px solid var(--warn, #b45309); padding: 10px 14px; font-size: 13px; line-height: 1.55; }
         .db-ok { border-left: 3px solid var(--ok-ink, #1f6f49); padding: 10px 14px; font-size: 13px; }

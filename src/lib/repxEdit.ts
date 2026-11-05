@@ -303,6 +303,60 @@ export function deleteControl(xml: string, ref: ControlRef): EditResult {
   return { xml: out, applied: true, reason: `deleted ${control.type}${control.name ? ` "${control.name}"` : ''}` };
 }
 
+/**
+ * Duplicate a control beside itself (2026-11-05), as Stitch's Duplicate
+ * (Ctrl+D): the whole element copied to the end of its own collection,
+ * shifted down and right by 8 hundredths of an inch at its own `Dpi`. Every
+ * `Ref` in the copy is numbered past the file's highest, because two equal
+ * Refs make DevExpress's loader drop content without an error, and every
+ * `Name` in it is made unique (`labelTitle` -> `labelTitle1`, `label3` ->
+ * the next free `labelN`). A control that names a part of itself by
+ * `#Ref-N` (a chart's series, a cross-tab's cells) is declined rather than
+ * copied with a reference back into the original.
+ */
+export function duplicateControl(xml: string, ref: ControlRef): EditResult {
+  const control = locate(xml, ref);
+  if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
+  const el = elementAt(xml, control.openStart);
+  if (!el) return decline(xml, 'the control span does not look like an element; the REPX may have changed underneath');
+  const parent = parentOf(xml, el.start);
+  if (!parent || parent.name !== 'Controls') return decline(xml, `${control.name || control.type} is not in a band's controls`);
+  let copy = xml.slice(el.start, el.end);
+  if (/"#Ref-\d+"/.test(copy)) return decline(xml, `${control.name || control.type} refers to its own parts; copy it in the designer`);
+
+  let nextRef = Math.max(0, ...[...xml.matchAll(/\sRef="(\d+)"/g)].map((r) => Number(r[1]))) + 1;
+  copy = copy.replace(/(\sRef=")\d+(")/g, (_, a, b) => `${a}${nextRef++}${b}`);
+  const taken = new Set([...xml.matchAll(/\sName="([^"]*)"/g)].map((m) => m[1]));
+  let firstName = '';
+  copy = copy.replace(/(\sName=")([^"]*)(")/g, (_, a, name: string, b) => {
+    const base = name.replace(/\d+$/, '');
+    let n = 1;
+    while (taken.has(`${base}${n}`)) n++;
+    const fresh = `${base}${n}`;
+    taken.add(fresh);
+    if (!firstName) firstName = fresh;
+    return `${a}${fresh}${b}`;
+  });
+  const open = /^<[^>]*>/.exec(copy)![0];
+  const dpi = Number(/\sDpi="([\d.]+)"/.exec(open)?.[1] ?? 100);
+  const at = /\sLocationFloat="([-\d.]+),\s*([-\d.]+)"/.exec(open);
+  if (at) {
+    const step = 8 * (dpi / 100);
+    copy = withAttributes(open, { LocationFloat: `${unit(Number(at[1]) + step)}, ${unit(Number(at[2]) + step)}` }) + copy.slice(open.length);
+  }
+
+  const count = childrenIn(xml, parent.openEnd, parent.end).filter((c) => /^Item\d+$/.test(c.name)).length;
+  const item = `Item${count + 1}`;
+  copy = copy.replace(new RegExp(`^<${el.name}\\b`), `<${item}`);
+  if (!el.selfClosing) copy = copy.replace(new RegExp(`</${el.name}>$`), `</${item}>`);
+  const closeAt = parent.end - '</Controls>'.length;
+  return {
+    xml: xml.slice(0, closeAt) + copy + xml.slice(closeAt),
+    applied: true,
+    reason: `duplicated ${control.type}${control.name ? ` "${control.name}"` : ''} as "${firstName}"`,
+  };
+}
+
 /** A band's element in the file, by the name the parse gives it. */
 function bandElement(xml: string, name: string): Element | null {
   TAG.lastIndex = 0;

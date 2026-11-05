@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
-import { createRef } from 'react';
+import { createRef, useState } from 'react';
 import Composer from './Composer';
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 
@@ -277,6 +277,38 @@ describe('a clean composer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect([onSteer, onEditQueued, onCancelQueued].map((f) => f.mock.calls[0][0])).toEqual(['q1', 'q1', 'q1']);
+  });
+
+  // ↑ in an empty box brings back earlier messages (2026-11-05).
+  it('brings back earlier messages with the up arrow in an empty box, and goes forward with the down arrow', () => {
+    function Box() {
+      const [prompt, setPrompt] = useState('');
+      return (
+        <Composer
+          previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]}
+          onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null}
+          prompt={prompt} onPromptChange={setPrompt} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()}
+          hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} history={['first', 'second']}
+        />
+      );
+    }
+    render(<Box />);
+    const press = (key: string) => fireEvent.keyDown(field(), { key });
+    press('ArrowUp');
+    expect(field().value).toBe('second');
+    press('ArrowUp');
+    expect(field().value).toBe('first');
+    press('ArrowDown');
+    expect(field().value).toBe('second');
+    press('ArrowDown');
+    expect(field().value).toBe('');
+  });
+
+  it('leaves the up arrow to the text while the box holds what was typed', () => {
+    const onPromptChange = vi.fn();
+    draw({ prompt: 'typing', onPromptChange, history: ['first'] });
+    fireEvent.keyDown(field(), { key: 'ArrowUp' });
+    expect(onPromptChange).not.toHaveBeenCalled();
   });
 
   it('names a chosen tier in the box', () => {

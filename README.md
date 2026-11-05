@@ -272,6 +272,7 @@ src/
   main.tsx             entry point
   index.css            tokens, marketing pages, shared chrome (Tailwind v4, no config file)
   workspace.css        the workspace shell only — every `wb-` class lives here
+                       but the lazy menus', in components/overlays.css
   vite-env.d.ts        Vite's ambient types; the one file here not in
                        PascalCase.tsx / camelCase.ts form, because Vite names it
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
@@ -294,17 +295,22 @@ src/
                        one composer does both jobs, and which one is App.tsx's
                        decision, not this component's), and Markdown — which
                        is its own module so react-markdown can be lazy-loaded.
-                       Eight files here are not components: useFocusTrap (a
-                       shared hook) and seven tests — legalDisclosure, which
-                       reads ContactPage and index.html off disk, plus
-                       DataBinding, BatchPanel, ChatThread, Composer,
-                       AccountDialog and LibraryPanel, the only component
-                       render tests in the suite. AccountDialog's mocks Firebase and covers the
+                       The workspace's panes and menus are here too, each
+                       loaded on demand: ReportPreview, ReportMockup,
+                       RepxViewer, DataBinding, the request card and log, the
+                       selection toolbar, the command menu, the shortcuts
+                       list, the right-click menu (ControlMenu) and the zoom
+                       field, with overlays.css holding those menus' styles.
+                       The files that are not components are useFocusTrap (a
+                       shared hook), overlays.css and the tests:
+                       legalDisclosure, which reads ContactPage and
+                       index.html off disk, and the component render tests,
+                       the only ones outside lib/, services/ and server/.
+                       AccountDialog's mocks Firebase and covers the
                        surface — which control is enabled when, and what it
                        says when it fails; what a deletion actually removes is
                        proved separately in tests/accountDeletion.test.ts,
-                       against the emulator. They are the tests that live
-                       outside lib/, services/ and server/
+                       against the emulator
     landing/           figures used by the marketing pages: HeroScanner,
                        SheetRuler, StepFigures, VaultFigure,
                        AnnouncementDock, sections, icons

@@ -1,0 +1,83 @@
+/*
+ * The workspace's lazily loaded menus and panels (2026-11-06): the command
+ * menu and the shortcuts list, the right-click menu, the selection toolbar,
+ * the zoom field and Usage today. Each component that draws one imports this
+ * file, so Vite emits it beside their chunks and it loads with them, not with
+ * the entry stylesheet: scripts/check-bundle-size.mjs caps that one, and it
+ * was at 99.9% when these moved here from src/workspace.css. Everything in it
+ * is drawn inside .wb-root, whose tokens (--panel, --rule, --ink) it uses.
+ */
+
+/* The command menu (Ctrl+K) and the shortcuts dialog (?), as Stitch's. */
+.wb-cmd-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: center; align-items: flex-start; padding: 12vh 16px 16px; background: color-mix(in srgb, var(--ink) 18%, transparent); }
+.wb-cmd-backdrop--centre { align-items: center; padding-top: 16px; }
+.wb-cmd, .wb-keys { width: min(640px, 100%); border: 1px solid var(--rule); border-radius: 18px; background: var(--panel); box-shadow: var(--shadow-md); overflow: hidden; }
+.wb-cmd-search { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+.wb-cmd-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font-size: 15px; }
+.wb-root .wb-cmd-search input:focus-visible { outline: none; }
+.wb-cmd kbd, .wb-keys kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); padding: 2px 6px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel-2); }
+.wb-cmd-list { list-style: none; margin: 0; padding: 6px; max-height: min(420px, 60vh); overflow-y: auto; }
+.wb-cmd-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 10px; font-size: 13.5px; color: var(--ink); cursor: pointer; }
+.wb-cmd-list li[aria-selected='true'] { background: var(--track); }
+.wb-cmd-list .wb-cmd-none { color: var(--ink-faint); cursor: default; }
+.wb-keys { width: min(440px, 100%); }
+.wb-keys-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px 6px; }
+.wb-keys-head h2 { margin: 0; font-family: var(--display); font-size: 20px; }
+.wb-keys-body { max-height: min(560px, 72vh); overflow-y: auto; padding: 0 18px 16px; }
+.wb-keys h3 { margin: 14px 0 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); }
+.wb-keys dl { margin: 0; display: grid; gap: 8px; }
+.wb-keys dl > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; color: var(--ink); }
+.wb-keys dd { margin: 0; display: flex; gap: 4px; }
+
+/* The right-click menu on a control (ControlMenu.tsx), as Stitch's on a screen.
+   wb-cmenu, not wb-ctx: that is the selection toolbar's, and sharing it laid
+   this menu out as a row and squeezed the toolbar (2026-11-06). */
+.wb-cmenu-host { position: fixed; z-index: 70; }
+.wb-cmenu { list-style: none; margin: 0; padding: 5px; min-width: 210px; display: grid; border: 1px solid var(--rule); border-radius: 12px; background: var(--panel); box-shadow: var(--shadow-md); }
+.wb-cmenu li { position: relative; }
+.wb-cmenu .wb-cmenu-divide { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--rule); }
+.wb-cmenu button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 9px; border: 0; border-radius: 8px; background: none; color: var(--ink); font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
+.wb-cmenu button > span:first-child { flex: 1; }
+.wb-cmenu button:hover, .wb-cmenu button:focus-visible, .wb-cmenu button[aria-expanded='true'] { background: var(--track); outline: none; }
+.wb-cmenu button.is-danger { color: #c4314b; }
+.wb-cmenu kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+.wb-cmenu-more { color: var(--ink-faint); }
+.wb-cmenu-sub { position: absolute; left: 100%; top: -6px; padding-left: 4px; }
+
+/* The toolbar over a selection on Preview, in the bar's centre where the
+   pane switcher sits otherwise (SelectionToolbar.tsx), as Stitch's. */
+.wb-ctx { position: relative; display: flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); box-shadow: var(--shadow-sm); }
+.wb-ctx > button, .wb-ctx-what {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
+  border: 0; border-radius: 999px; background: none; color: var(--ink); font-size: 12.5px; cursor: pointer;
+}
+.wb-ctx > button:hover, .wb-ctx > button[aria-expanded='true'] { background: var(--track); }
+.wb-ctx-what { cursor: default; max-width: 180px; overflow: hidden; white-space: nowrap; color: var(--ink-2); font-family: var(--mono); font-size: 11px; }
+.wb-ctx-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 6; min-width: 190px; display: grid; padding: 6px;
+  border: 1px solid var(--rule); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-md);
+}
+.wb-ctx-menu--end { left: auto; right: 0; }
+.wb-ctx-menu button { padding: 8px 10px; border: 0; border-radius: 9px; background: none; color: var(--ink); font-size: 12.5px; text-align: left; cursor: pointer; }
+.wb-ctx-menu button:hover { background: var(--track); }
+.wb-ctx-menu .wb-danger { color: var(--bad-ink); }
+
+/* Usage today in Settings (UsageSettings.tsx), as Stitch's daily credits. */
+.wb-usage { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.wb-usage li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; font-size: 12.5px; color: var(--ink); }
+.wb-usage-count { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+.wb-usage-bar { grid-column: 1 / -1; height: 5px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.wb-usage-bar i { display: block; height: 100%; border-radius: inherit; background: var(--ink-2); }
+
+/* The percentage at the corner is a field you type a size into (ZoomField.tsx),
+   with Stitch's menu above it. */
+.wb-zoom { position: relative; display: inline-flex; }
+input.wb-corner-zoom { width: 52px; height: 30px; padding: 0 4px; border: 0; border-radius: 999px; background: none; color: var(--ink); text-align: center; cursor: text; }
+input.wb-corner-zoom:hover { background: var(--track); }
+.wb-root input.wb-corner-zoom:focus, .wb-root input.wb-corner-zoom:focus-visible { outline: none; background: var(--track); }
+.wb-zoom-menu {
+  position: absolute; right: -40px; bottom: calc(100% + 10px); z-index: 6; min-width: 168px; padding: 5px;
+  display: grid; border: 1px solid var(--rule); border-radius: 12px; background: var(--panel); box-shadow: var(--shadow-md);
+}
+.wb-corner .wb-zoom-menu button { width: 100%; height: auto; display: flex; justify-content: space-between; gap: 12px; padding: 7px 9px; border-radius: 8px; font-size: 12.5px; }
+.wb-zoom-menu kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }

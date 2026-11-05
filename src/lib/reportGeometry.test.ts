@@ -300,10 +300,12 @@ describe('resolveReportUnit / resolvePageSize', () => {
  * tree has to render.
  *
  * The status bar went on 2026-11-04, and the readout with it moved to the REPX
- * pane (`data-readout="units"` in `RepxViewer`), so the guard moved too.
+ * pane (`data-readout="units"` in `RepxViewer`), so the guard moved too. On
+ * 2026-11-06 `RepxViewer` left App.tsx for its own lazy file, and the guard
+ * followed it there.
  */
 describe('the units readout reads the unit table rather than restating it', () => {
-  const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const app = readFileSync(resolve(process.cwd(), 'src/components/RepxViewer.tsx'), 'utf8');
 
   /**
    * Comments are stripped before the literal check, because the first version of
@@ -330,7 +332,7 @@ describe('the units readout reads the unit table rather than restating it', () =
 
   it('derives the units-per-inch figure from unitsPerInch()', () => {
     expect(readout).toMatch(/unitsPerInch\(/);
-    expect(app).toMatch(/import\s*\{[^}]*\bunitsPerInch\b[^}]*\}\s*from\s*'\.\/lib\/reportGeometry'/);
+    expect(app).toMatch(/import\s*\{[^}]*\bunitsPerInch\b[^}]*\}\s*from\s*'\.\.\/lib\/reportGeometry'/);
   });
 
   it('states no units-per-inch figure as a literal', () => {

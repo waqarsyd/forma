@@ -205,7 +205,7 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
     >
       <style>{`
         .bp-root { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; border-radius: 14px; }
-        .bp-root.is-dragging { outline: 2px dashed var(--accent, #c2410c); outline-offset: 4px; background: var(--accent-wash, transparent); }
+        .bp-root.is-dragging { outline: 2px dashed var(--rule-strong, #8a94a3); outline-offset: 4px; background: var(--track, transparent); }
         .bp-at { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; opacity: .85; }
         .bp-at select { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 8px; border: 1px solid var(--rule-strong, #d7dee7); background: transparent; color: inherit; }
         .bp-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }

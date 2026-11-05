@@ -21,12 +21,10 @@ import { flushSync } from 'react-dom';
 import {
   IconAlert,
   IconCheck,
-  IconCheckCircle,
   IconChevronDown,
   IconChevronsLeft,
   IconChevronsRight,
   IconClose,
-  IconCopy,
   IconDownload,
   IconExternal,
   IconEye,
@@ -44,7 +42,6 @@ import {
   IconShieldCheck,
   IconSun,
   IconDoc,
-  IconImage,
   IconLayout,
   IconLogin,
   IconLogout,
@@ -83,9 +80,7 @@ import { Eyebrow } from './components/landing/sections';
  */
 import type {
   ReportLayout,
-  ReportElement,
   ReportConfig,
-  SourceRect,
   StreamProgress,
   ChatTurn,
   DraftRequest,
@@ -204,7 +199,8 @@ import type { LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
 import { readyTitle, titleForRoute, viewForRoute } from './lib/routes';
-import { chatShortcutOf, shortcutText, type ChatShortcut } from './lib/shortcuts';
+import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, type WorkspaceShortcut } from './lib/shortcuts';
+import type { Command } from './components/CommandMenu';
 /* App.tsx's own view state, extracted so it can be tested — see the header of
    each for the failure it was carrying while it lived here. */
 import { plateFor, stateForPlate, type Plate, type ActiveTab, type SpecView } from './lib/workspaceView';
@@ -231,7 +227,7 @@ import {
 } from './lib/revisionStore';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
 // whole app (and pdf.js, and Firebase) into a test run.
-import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
+import { checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
 import type { RepxAudit } from './lib/repxAudit';
 import type { AgentTool, FormatAction } from './lib/agentEdit';
@@ -244,7 +240,6 @@ import {
   type ClarificationAnswer,
   type ReportDescriptionRequest,
 } from './lib/promptToReport';
-import { sourceRectFor } from './lib/sourceRect';
 import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
@@ -268,8 +263,7 @@ import {
   type ChatMessage as ChatSessionMessage,
 } from './lib/chatSession';
 import { formatSessionStamp } from './lib/datetime';
-import { unitsToPx, pointsToUnits, pdfTopFromBaseline, unitsPerInch } from './lib/reportGeometry';
-import { repeatedHeadingTables } from './lib/mockupRows';
+import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
 // LogoPulse, the progress ring of the generation card, went with the card on
 // 2026-11-04 (the minimal workspace). Find that commit with
 // git log --diff-filter=D -- src/components/LogoPulse.tsx, and recover the file
@@ -285,6 +279,12 @@ const RequestCard = lazy(() => import('./components/RequestCard'));
 const RequestLog = lazy(() => import('./components/RequestLog'));
 const SelectionToolbar = lazy(() => import('./components/SelectionToolbar'));
 const UsageSettings = lazy(() => import('./components/UsageSettings'));
+const CommandMenu = lazy(() => import('./components/CommandMenu'));
+const ZoomField = lazy(() => import('./components/ZoomField'));
+/* The Mockup and the REPX pane (2026-11-06), each drawn only with a report open. */
+const ReportMockup = lazy(() => import('./components/ReportMockup'));
+const RepxViewer = lazy(() => import('./components/RepxViewer'));
+const ShortcutsDialog = lazy(() => import('./components/ShortcutsDialog'));
 const WorkingDots = lazy(() => import('./components/ChatThread').then((m) => ({ default: m.WorkingDots })));
 const Composer = lazy(() => import('./components/Composer'));
 import type { OcrBuiltReport } from './components/OcrDialog';
@@ -732,715 +732,7 @@ async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
   }
 }
 
-/* ------------------------------------------------------------------ *
- * REPX source viewer
- *
- * The "Specs & REPX" tab used to render only the markdown specification, so
- * the XML that Forma actually produces could never be inspected before it was
- * downloaded — a malformed report only revealed itself once DevExpress refused
- * to open it. This shows the real thing, checks that it parses, and lets it be
- * copied straight into the designer.
- * ------------------------------------------------------------------ */
-
-/*
- * Syntax colours for the REPX pane. Deliberately theme-INVARIANT: the pane sits
- * on `--code-bg`, which is dark in both themes (the same treatment the docs and
- * features pages give their code blocks), so a `dark:` variant would light the
- * text up against a background that never lightened. These are the former
- * dark-mode values, used unconditionally.
- */
-const XML_TOKEN_CLASS: Record<string, string> = {
-  tag: 'text-sky-400',
-  attr: 'text-violet-400',
-  value: 'text-emerald-400',
-  punct: 'text-[color:var(--code-ink-faint)]',
-  meta: 'text-[color:var(--code-ink-faint)] italic',
-};
-
-/** Clipboard write with a fallback for non-secure contexts (plain HTTP on a LAN IP). */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    /* fall through to the legacy path */
-  }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * `unit` and `audit` arrived here on 2026-11-04 with the status bar's removal:
- * the owner asked for a workspace as clean as the chat apps people know, so
- * the bar's readouts went, and the two worth keeping moved to the pane about
- * the file they describe: the scale it is built at, and what the REPX audit
- * still finds wrong (lib/repxAudit.ts), listed in full rather than as a count
- * with its findings in a tooltip.
- */
-const RepxViewer = ({
-  xml,
-  unit,
-  audit,
-  usage,
-}: {
-  xml: string;
-  unit?: string;
-  audit?: RepxAudit | null;
-  /** What the generation cost, when the model said (lib/tokenUsage.ts): a short line and its parts. */
-  usage?: { short: string; long: string | null } | null;
-}) => {
-  const [copied, setCopied] = useState(false);
-
-  const formatted = useMemo(() => formatXml(xml || ''), [xml]);
-  const status = useMemo(() => checkRepx(xml || ''), [xml]);
-  const lines = useMemo(() => formatted.split('\n'), [formatted]);
-
-  const handleCopy = async () => {
-    const ok = await copyText(xml);
-    if (!ok) return;
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
-  };
-
-  if (!xml?.trim()) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-        <IconWarn className="text-error" size={28} />
-        <p className="text-sm font-semibold text-on-surface">No REPX was generated for this report.</p>
-        <p className="text-xs text-on-surface-variant max-w-sm">
-          The model returned a specification but no DevExpress XML. Export will fall back to a
-          plain-text file. Try generating again.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-3 min-w-0">
-      {/* Status + actions */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div
-          className={`flex items-center gap-2 text-[11px] font-semibold px-3 py-1.5 rounded-full border ${
-            !status.ok
-              ? 'text-[color:var(--bad-ink)] border-[color:var(--bad-line)] bg-[color:var(--bad-wash)]'
-              : status.warnings.length
-                // Valid, opens fine, will not look like the design. A third
-                // state, because colouring it green hides the finding and
-                // colouring it red says the file is broken when it is not.
-                ? 'text-[color:var(--warn-ink,var(--bad-ink))] border-[color:var(--rule-strong)] bg-[color:var(--track)]'
-                : 'text-[color:var(--ok-ink)] border-[color:var(--ok-line)] bg-[color:var(--ok-wash)]'
-          }`}
-        >
-          {status.ok && !status.warnings.length ? <IconCheckCircle size={14} /> : <IconAlert size={14} />}
-          <span>{status.message}</span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Read from the same table the pipeline converts with, never
-              written out here: a literal "100/in" is right for the default
-              unit and silently wrong at 254 or 96. It lived in the status bar
-              until 2026-11-04; reportGeometry.test.ts guards it here. */}
-          <span className="text-[11px] text-on-surface-variant font-mono" data-readout="units">
-            {lines.length} lines · {xml.length.toLocaleString()} chars · units {unitsPerInch(unit)}/in
-          </span>
-          {usage && (
-            <span className="text-[11px] text-on-surface-variant font-mono" title={usage.long ?? undefined}>
-              {usage.short}
-            </span>
-          )}
-          <button
-            onClick={handleCopy}
-            className="u-tap u-transition-fast u-press u-focus-ring flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest text-[11px] font-semibold text-on-surface-variant rounded-full cursor-pointer"
-          >
-            {copied ? <IconCheck size={13} className="text-[color:var(--ok-ink)]" /> : <IconCopy size={13} />}
-            {copied ? 'Copied' : 'Copy XML'}
-          </button>
-        </div>
-      </div>
-
-      {/* What will not look like the design. Listed rather than counted: "3
-          elements do not fit" is not actionable, and the name of the control is
-          the thing that makes it findable in the designer. */}
-      {status.warnings.length > 0 && (
-        <ul className="flex flex-col gap-1.5 rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3">
-          {status.warnings.map((warning, i) => (
-            <li key={i} className="flex gap-2 text-[11.5px] leading-[1.5] text-on-surface-variant">
-              <span className="mt-[3px] shrink-0 text-[color:var(--ink-faint)]"><IconAlert size={12} /></span>
-              <span>{warning}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* What the REPX audit still finds after the repairs: silent when there
-          is nothing, which is the common case. */}
-      {audit && !audit.ok && (
-        <details className="wb-audit rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3" data-audit>
-          <summary className={`text-[11.5px] font-semibold cursor-pointer ${audit.errors ? 'text-[color:var(--bad-ink)]' : 'text-on-surface-variant'}`}>
-            {audit.errors > 0 && `${audit.errors} REPX error${audit.errors > 1 ? 's' : ''}`}
-            {audit.errors > 0 && audit.warnings > 0 && ', '}
-            {audit.warnings > 0 && `${audit.warnings} REPX warning${audit.warnings > 1 ? 's' : ''}`}
-          </summary>
-          <ul className="flex flex-col gap-1.5 mt-2">
-            {audit.findings.map((f, i) => (
-              <li key={i} className="flex gap-2 text-[11.5px] leading-[1.5] text-on-surface-variant">
-                <span className={`mt-[3px] shrink-0 ${f.severity === 'error' ? 'text-[color:var(--bad-ink)]' : 'text-[color:var(--ink-faint)]'}`}>
-                  <IconAlert size={12} />
-                </span>
-                <span>{f.message}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-
-      {/* Source */}
-      {/* The XML pane is one of the things the sheet's --code-* tokens exist for.
-          It used `bg-surface-container-lowest dark:bg-[#0d1117]` — white in light
-          mode with a hardcoded dark twin. It is now dark in both themes like the
-          docs and features code blocks, which is why nothing inside it may use a
-          token that flips: the gutter and the row hover are fixed values too. */}
-      <div className="rounded-xl border border-[color:var(--code-rule)] bg-[color:var(--code-bg)] overflow-auto max-h-[65vh]">
-        <pre className="text-[11px] leading-relaxed font-mono p-4 min-w-max text-[color:var(--code-ink)]">
-          {lines.map((line, i) => (
-            <div key={i} className="flex hover:bg-white/5">
-              <span className="select-none text-[color:var(--code-ink-faint)] pr-4 text-right tabular-nums shrink-0 w-10">
-                {i + 1}
-              </span>
-              <span className="whitespace-pre">
-                {tokenizeXml(line).map((tok, j) => (
-                  <span key={j} className={tok.kind ? XML_TOKEN_CLASS[tok.kind] : undefined}>
-                    {tok.text}
-                  </span>
-                ))}
-              </span>
-            </div>
-          ))}
-        </pre>
-      </div>
-    </div>
-  );
-};
-
-/**
- * Crop a fractional rectangle out of a data-URL image and return it as its own
- * data URL. Used to lift the real logo/artwork out of what the user uploaded,
- * rather than drawing a grey placeholder box for it.
- *
- * The model reports the rectangle in fractions (0..1) because it does not know
- * the file's true pixel size, so everything is multiplied up by naturalWidth /
- * naturalHeight here. Returns null on anything unexpected — a bad rect, a
- * non-image upload, a decode failure — and the caller falls back to the
- * placeholder rather than showing a broken image.
- */
-async function cropSourceRegion(
-  dataUrl: string,
-  rect: SourceRect,
-  /** Width/height of the element this will be drawn into, for the shape check. */
-  elementAspect?: number,
-  /** Element content, used only to name the offender in warnings. */
-  label = 'image'
-): Promise<string | null> {
-  try {
-    if (!dataUrl?.startsWith('data:image/')) return null;
-
-    const img = new Image();
-    img.src = dataUrl;
-    await img.decode();
-
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
-    if (!iw || !ih) return null;
-
-    /* --- Plausibility checks ---------------------------------------- *
-     * A design containing several pictures is where this goes wrong: the
-     * model returns one rectangle spanning most of the page, so a single
-     * picture box ends up showing the entire upload while the other picture
-     * elements come out empty. A wrong crop is worse than no crop, so an
-     * implausible rectangle falls back to the placeholder. */
-    const w = rect.width ?? 0;
-    const h = rect.height ?? 0;
-
-    if (w <= 0 || h <= 0) return null;
-
-    // Almost the whole page in one dimension, or over half its area, is not a
-    // logo — it is the model failing to isolate one.
-    if (w > 0.9 || h > 0.9 || w * h > 0.5) {
-      console.warn(
-        `Ignoring sourceRect for "${label}": it covers ${Math.round(w * 100)}%x${Math.round(h * 100)}% ` +
-        `of the source, which is the whole design rather than one picture.`
-      );
-      return null;
-    }
-
-    // Clamp into the image so a slightly over-reaching estimate still crops.
-    const sx = Math.max(0, Math.min(1, rect.x ?? 0)) * iw;
-    const sy = Math.max(0, Math.min(1, rect.y ?? 0)) * ih;
-    const sw = Math.min(iw - sx, Math.max(0, w) * iw);
-    const sh = Math.min(ih - sy, Math.max(0, h) * ih);
-
-    // A degenerate rect would produce an empty canvas; the placeholder is better.
-    if (sw < 2 || sh < 2) return null;
-
-    // The crop should be roughly the shape of the box it will be drawn into.
-    // A wildly different aspect means the rectangle is not this element's
-    // artwork — typically a full-width band grabbed for a small square logo.
-    if (elementAspect && elementAspect > 0) {
-      const cropAspect = sw / sh;
-      const ratio = cropAspect / elementAspect;
-      if (ratio > 4 || ratio < 0.25) {
-        console.warn(
-          `Ignoring sourceRect for "${label}": crop is ${cropAspect.toFixed(2)}:1 but the ` +
-          `element is ${elementAspect.toFixed(2)}:1 — the rectangle does not match this picture.`
-        );
-        return null;
-      }
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(sw);
-    canvas.height = Math.round(sh);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/png');
-  } catch {
-    return null;
-  }
-}
-
-/** Per-side borders, falling back to the legacy all-sides `hasBorder` flag. */
-function borderStyleFor(el: ReportElement): React.CSSProperties {
-  const colour = el.borderColor || 'rgba(0,0,0,0.15)';
-  const rule = `1px solid ${colour}`;
-
-  const anyPerSide =
-    el.borderTop || el.borderRight || el.borderBottom || el.borderLeft;
-
-  // Old layouts (and genuine full boxes) only carry hasBorder.
-  if (!anyPerSide) {
-    return el.hasBorder || el.type === 'table' || el.type === 'barcode'
-      ? { border: rule }
-      : {};
-  }
-
-  return {
-    borderTop: el.borderTop ? rule : undefined,
-    borderRight: el.borderRight ? rule : undefined,
-    borderBottom: el.borderBottom ? rule : undefined,
-    borderLeft: el.borderLeft ? rule : undefined,
-  };
-}
-
-/**
- * Draws one `type: "image"` element. Shows the real cropped artwork when the
- * model supplied a sourceRect and the originating upload is still available;
- * otherwise falls back to the icon placeholder used before.
- */
-const MockupImage = ({
-  el,
-  sourceImages,
-}: {
-  el: ReportElement;
-  sourceImages?: string[];
-}) => {
-  const [cropped, setCropped] = useState<string | null>(null);
-
-  const rect = sourceRectFor(el);
-  const source = sourceImages?.[el.sourceImageIndex ?? 0];
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!rect || !source) {
-      setCropped(null);
-      return;
-    }
-    const aspect = el.width && el.height ? el.width / el.height : undefined;
-    cropSourceRegion(source, rect, aspect, el.content || el.id).then((result) => {
-      if (!cancelled) setCropped(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [source, rect?.x, rect?.y, rect?.width, rect?.height]);
-
-  if (cropped) {
-    return (
-      <img
-        src={cropped}
-        alt={el.content}
-        className="w-full h-full"
-        style={{ objectFit: 'contain', objectPosition: 'center' }}
-      />
-    );
-  }
-
-  return (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-on-paper/5">
-      <IconImage size={24} className="text-on-paper/40" />
-      <span className="text-[10px] text-on-paper/60 mt-1 truncate px-1 max-w-full">{el.content}</span>
-    </div>
-  );
-};
-
-/** Draws a real grid from `rows`/`cells`, sized by relative weights. */
-const MockupTable = ({
-  el,
-  scaleFont,
-  skipFirstRow,
-}: {
-  el: ReportElement;
-  scaleFont: number;
-  /**
-   * Drop the heading row an earlier section already drew. Decided by
-   * `repeatedHeadingTables`, which explains why the row stays in the data and
-   * only the drawing changes.
-   */
-  skipFirstRow?: boolean;
-}) => {
-  const declared = el.rows || [];
-  const rows = skipFirstRow && declared.length > 1 ? declared.slice(1) : declared;
-
-  // Nothing to draw — an older layout, or the model omitted the rows. Show an
-  // empty ruled box rather than the invented "Data Row 1" placeholder, which
-  // used to make an empty result look like real content.
-  if (rows.length === 0) {
-    return (
-      <div className="w-full h-full flex items-center justify-center">
-        <span className="text-[10px] text-on-paper/40 truncate px-1">{el.content}</span>
-      </div>
-    );
-  }
-
-  const totalRowWeight = rows.reduce((sum, r) => sum + (r.weight || 1), 0);
-
-  return (
-    <div className="w-full h-full flex flex-col">
-      {rows.map((row, rIdx) => {
-        const cells = row.cells || [];
-        const totalCellWeight = cells.reduce((sum, c) => sum + (c.weight || 1), 0);
-
-        return (
-          <div
-            key={rIdx}
-            className="flex w-full overflow-hidden"
-            style={{
-              height: `${((row.weight || 1) / totalRowWeight) * 100}%`,
-              borderBottom: rIdx < rows.length - 1 ? '1px solid rgba(0,0,0,0.15)' : undefined,
-              backgroundColor: row.isHeader ? 'rgba(0,0,0,0.06)' : undefined,
-            }}
-          >
-            {cells.map((cell, cIdx) => (
-              <div
-                key={cIdx}
-                className="flex items-center px-1 overflow-hidden"
-                style={{
-                  width: `${((cell.weight || 1) / totalCellWeight) * 100}%`,
-                  borderRight: cIdx < cells.length - 1 ? '1px solid rgba(0,0,0,0.15)' : undefined,
-                  backgroundColor: cell.backgroundColor || undefined,
-                  color: cell.color || undefined,
-                  fontWeight: cell.bold || row.isHeader ? 700 : undefined,
-                  justifyContent:
-                    cell.textAlign === 'center' ? 'center' : cell.textAlign === 'right' ? 'flex-end' : 'flex-start',
-                  fontSize: el.fontSize ? `${el.fontSize * scaleFont}px` : undefined,
-                }}
-              >
-                <span className="truncate" style={{ textAlign: cell.textAlign || 'left' }}>
-                  {cell.content}
-                </span>
-              </div>
-            ))}
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-/**
- * A chart with the title and axis titles the source shows (2026-11-04), read
- * into the layout as the REPX carries them in its `<Titles>` and axes.
- */
-const MockupChart = ({ el }: { el: ReportElement }) => {
-  if (!el.chartTitle && !el.chartXTitle && !el.chartYTitle) return <MockupChartBody el={el} />;
-  return (
-    <div className="w-full h-full flex flex-col">
-      {el.chartTitle && <div className="text-center truncate" style={{ fontSize: 11 }}>{el.chartTitle}</div>}
-      <div className="flex-1 min-h-0 flex">
-        {el.chartYTitle && (
-          <div className="truncate text-center" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 9 }}>{el.chartYTitle}</div>
-        )}
-        <div className="flex-1 min-w-0"><MockupChartBody el={el} /></div>
-      </div>
-      {el.chartXTitle && <div className="text-center truncate" style={{ fontSize: 9 }}>{el.chartXTitle}</div>}
-    </div>
-  );
-};
-
-/** Draws a chart whose shape follows chartType/chartValues when supplied. */
-const MockupChartBody = ({ el }: { el: ReportElement }) => {
-  const values = el.chartValues?.length ? el.chartValues : [40, 70, 45, 90, 65, 80, 50];
-  const max = Math.max(...values, 1);
-  const pct = values.map((v) => Math.max(2, (v / max) * 100));
-  const kind = el.chartType || 'bar';
-
-  if (kind === 'pie') {
-    // Single-slice approximation: enough to read as a pie in a mockup.
-    const share = Math.round((values[0] / values.reduce((a, b) => a + b, 0)) * 100) || 25;
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-on-paper/4">
-        <div
-          className="rounded-full"
-          style={{
-            width: '80%',
-            aspectRatio: '1 / 1',
-            background: `conic-gradient(var(--color-primary, #3b82f6) 0% ${share}%, rgba(0,0,0,0.12) ${share}% 100%)`,
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (kind === 'line' || kind === 'area') {
-    const points = pct
-      .map((p, i) => `${(i / Math.max(1, pct.length - 1)) * 100},${100 - p}`)
-      .join(' ');
-    return (
-      <div className="w-full h-full bg-on-paper/4">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
-          {kind === 'area' && (
-            <polygon points={`0,100 ${points} 100,100`} fill="currentColor" opacity="0.25" />
-          )}
-          <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        </svg>
-      </div>
-    );
-  }
-
-  return (
-    <div className="w-full h-full flex items-end gap-1 px-2 pb-2 bg-on-paper/4">
-      {pct.map((h, i) => (
-        <div key={i} className="flex-1 bg-[color:var(--paper-accent-soft)] rounded-t-sm" style={{ height: `${h}%` }}></div>
-      ))}
-    </div>
-  );
-};
-
-const ReportMockup = ({
-  layout,
-  sourceImages,
-  reportUnit,
-}: {
-  layout: ReportLayout;
-  /** The user's uploaded images, so `sourceRect` crops can be resolved. */
-  sourceImages?: string[];
-  /**
-   * The `ReportUnit` the layout's numbers are in. Was a bare `0.96` at eight
-   * call sites — correct for the default (1/100" ÷ 1/96" = 0.96) and silently
-   * wrong for the other two units the config dialog offers.
-   *
-   * A report reloaded from history does not record the unit it was generated
-   * under, so this is the *current* setting; that only misreads a report made
-   * before the setting was changed, which is a far smaller wrong than being
-   * fixed to one unit forever.
-   */
-  reportUnit?: string;
-}) => {
-  const px = (value: number) => unitsToPx(value, reportUnit);
-  // The report page is an absolutely-positioned pixel grid (coordinates come
-  // straight from the REPX units), so it cannot reflow. Instead we measure the
-  // available width and scale the whole page down to fit — the geometry stays
-  // byte-identical, only the presentation shrinks.
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-
-  // The detail tables whose first row the PageHeader already drew. Computed
-  // once for the whole page because the answer depends on what sits above each
-  // table, which no single element can see.
-  const repeatedHeadings = useMemo(() => repeatedHeadingTables(layout), [layout]);
-
-  const pageWidth = px(layout.pageWidth || 850);
-  const pageHeight = Math.max(
-    px(1100),
-    layout.sections.reduce((sum, s) => sum + px(s.height || 100), 0),
-  );
-
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const measure = () => {
-      const available = el.clientWidth;
-      if (available > 0) setScale(Math.min(1, available / pageWidth));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [pageWidth]);
-
-  return (
-    /* The artifact's proof frame, applied to the component that owns the page:
-       1px --paper-rule, 4px radius, --shadow-lg, 760px measure, registration
-       marks. It is here rather than on a wrapper because ReportMockup already
-       draws a frame — nesting it inside the artifact's `.wb-proof` produced two
-       borders and two shadows, the same double-frame this canvas had before. */
-    <div className="wb-reg-marks bg-surface-container-lowest border border-[color:var(--paper-rule)] shadow-[var(--shadow-lg)] rounded-[4px] overflow-hidden w-full max-w-[760px] mx-auto font-sans flex flex-col">
-      {/* Report Page Area */}
-      <div className="p-3 sm:p-8 bg-surface relative overflow-hidden">
-        <div ref={viewportRef} className="w-full">
-          {/* Stage reserves the post-scale footprint so nothing overlaps.
-              Deliberately NOT transitioned: width/height are layout properties
-              and this updates on every resize tick. */}
-          <div
-            className="relative mx-auto"
-            style={{ width: pageWidth * scale, height: pageHeight * scale }}
-          >
-        {/* The Page */}
-        <div
-          className="bg-paper text-on-paper shadow-[var(--shadow-md)] absolute top-0 left-0 overflow-hidden ring-1 ring-[color:var(--paper-rule)]"
-          style={{
-            width: pageWidth,
-            minHeight: pageHeight,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-          }}
-        >
-          {layout.sections.map((section, sIdx) => (
-            <div
-              key={sIdx}
-              className="relative w-full"
-              style={{ height: px(section.height || 100) }}
-            >
-              {/* Elements */}
-              {section.elements.map((el, eIdx) => {
-                const isTable = el.type === 'table';
-                const isChart = el.type === 'chart';
-                const isGauge = el.type === 'gauge';
-                const isImage = el.type === 'image';
-                const isLine = el.type === 'line';
-                const isLabel = el.type === 'label';
-                const isBarcode = el.type === 'barcode';
-                const isCheckbox = el.type === 'checkbox';
-
-                const verticalAlign =
-                  el.verticalAlign === 'top'
-                    ? 'flex-start'
-                    : el.verticalAlign === 'bottom'
-                      ? 'flex-end'
-                      : 'center';
-
-                return (
-                  <div
-                    key={eIdx}
-                    // Everything inside the sheet is drawn against --paper, so
-                    // it uses paper-relative colours rather than the themed
-                    // tokens — the rendered report must look identical in both
-                    // themes, and a flipping token would invert or vanish here.
-                    className="absolute flex overflow-hidden"
-                    style={{
-                      left: px(el.x || 0),
-                      top: px(el.y || 0),
-                      width: px(el.width || 100),
-                      height: px(el.height || 20),
-                      backgroundColor: el.backgroundColor || 'transparent',
-                      color: el.color || 'inherit',
-                      // fontSize is in report units like every other number in
-                      // the layout — see the prompt. It is the REPX that has to
-                      // convert to points, not this.
-                      fontSize: el.fontSize ? `${px(el.fontSize)}px` : '12px',
-                      fontWeight: el.bold ? 700 : undefined,
-                      fontStyle: el.italic ? 'italic' : undefined,
-                      fontFamily: el.fontFamily || undefined,
-                      alignItems: verticalAlign,
-                      justifyContent: el.textAlign === 'center' ? 'center' : el.textAlign === 'right' ? 'flex-end' : 'flex-start',
-                      ...borderStyleFor(el),
-                    }}
-                  >
-                    {isLabel && (
-                      <span
-                        className={`px-1 w-full ${el.wrap ? 'whitespace-pre-wrap break-words' : 'truncate'}`}
-                        style={{ textAlign: el.textAlign || 'left' }}
-                      >
-                        {el.content}
-                      </span>
-                    )}
-
-                    {/* A checkbox draws its box and its caption, matching what
-                        the Preview draws from the REPX. The two panes answer
-                        different questions -- fidelity to the source here, the
-                        exported artifact there -- but a control present in one
-                        and missing from the other reads as a generation bug. */}
-                    {isCheckbox && (
-                      <span className="px-1 w-full flex items-center gap-[6px]">
-                        <span
-                          aria-hidden
-                          className="shrink-0 flex items-center justify-center border border-on-paper rounded-[2px]"
-                          style={{ width: 11, height: 11, fontSize: 9, lineHeight: 1 }}
-                        >
-                          {el.checked ? '✓' : ''}
-                        </span>
-                        <span className="truncate">{el.content}</span>
-                      </span>
-                    )}
-
-                    {isBarcode && (
-                      <div className="w-full h-full flex flex-col justify-between items-center opacity-70 p-1">
-                        <div className="w-full flex-1 flex gap-[2px] justify-center items-stretch">
-                          {Array.from({ length: 15 }).map((_, i) => (
-                            <div key={i} className="bg-on-paper" style={{ width: i % 3 === 0 ? '4px' : '2px' }}></div>
-                          ))}
-                        </div>
-                        <span className="text-[10px] truncate">{el.content}</span>
-                      </div>
-                    )}
-
-                    {isImage && <MockupImage el={el} sourceImages={sourceImages} />}
-
-                    {isLine && (
-                      <div className="w-full h-[1px] bg-on-paper/80"></div>
-                    )}
-
-                    {isTable && (
-                      <MockupTable
-                        el={el}
-                        scaleFont={unitsToPx(1, reportUnit)}
-                        skipFirstRow={repeatedHeadings.has(`${sIdx}:${eIdx}`)}
-                      />
-                    )}
-
-                    {isChart && <MockupChart el={el} />}
-
-                    {isGauge && (
-                      <div className="w-full h-full flex items-center justify-center rounded-full border-4 border-t-[color:var(--paper-accent)] border-r-[color:var(--paper-accent)] border-b-on-paper/10 border-l-on-paper/10 bg-on-paper/4">
-                        <span className="text-xs font-bold truncate px-1">{el.content}</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+/* The REPX viewer and the Mockup moved to components/RepxViewer.tsx and components/ReportMockup.tsx on 2026-11-06, lazy, to make room in the entry chunk. */
 
 // The PDF.js worker used to be configured here, at module scope, which is what
 // forced the engine into the eager bundle. loadPdfjs() now does it on the way
@@ -1740,6 +1032,15 @@ export default function App() {
   const [isCardCollapsed, setIsCardCollapsed] = useState(false);
   /** The controls the request picked in the log changed, outlined on Preview. */
   const [changedHighlight, setChangedHighlight] = useState<string[]>([]);
+  /*
+   * Stitch's command menu (Ctrl+K), its Shortcut Keys ("?") and its Zen mode
+   * (Ctrl+\), the clean screen, which hides everything but the report
+   * (2026-11-05). Their keys are `workspaceShortcutOf` in lib/shortcuts.ts.
+   */
+  const [isCommandOpen, setIsCommandOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isClean, setIsClean] = useState(false);
+  const workspaceShortcutRef = useRef<((shortcut: WorkspaceShortcut) => boolean) | null>(null);
   const [showWorkspaceProfile, setShowWorkspaceProfile] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   /* Bumped when the account panel changes the profile. `updateProfile` mutates
@@ -1892,6 +1193,14 @@ export default function App() {
   useEffect(() => {
     if (!showWorkspace || showLogin) return;
     const onKey = (e: KeyboardEvent) => {
+      // Stitch's: the command menu, the clean screen, the list and the zoom (2026-11-05).
+      const target = e.target as HTMLElement | null;
+      const typing = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+      const workspace = workspaceShortcutOf(e, typing);
+      if (workspace && workspaceShortcutRef.current?.(workspace)) {
+        e.preventDefault();
+        return;
+      }
       // The chat's shortcuts, ChatGPT's own (2026-11-05, lib/shortcuts.ts).
       const chat = chatShortcutOf(e);
       if (chat) {
@@ -5652,6 +4961,70 @@ export default function App() {
     }
   };
 
+  /** The Preview's zoom, from the corner's menu, the command menu and the keys (2026-11-05). */
+  const zoomPreview = (to: 'in' | 'out' | '100' | 'fit' | 'selection' | number) => {
+    // The page's own scale is the fit times the zoom; a size is asked of the
+    // scale, 10% to 400%, whatever the fit (a number is a typed percentage).
+    const fit = Math.max(0.01, previewScale / previewZoom);
+    const toScale = (scale: number) => setPreviewZoom(Math.min(4, Math.max(0.1, scale)) / fit);
+    if (to === 'in') toScale(previewScale * 1.25);
+    else if (to === 'out') toScale(previewScale / 1.25);
+    else if (to === 'fit') setPreviewZoom(1);
+    else if (to === '100') toScale(1);
+    else if (typeof to === 'number') toScale(to / 100);
+    else {
+      toScale(fit * 2);
+      setTimeout(() => document.querySelector('.rp-hit.is-selected')?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }), 120);
+    }
+  };
+  const mac = /mac|iphone|ipad/i.test(navigator.platform);
+  const keysFor = (s: string) => (mac ? s.replace(/Ctrl\+/g, '⌘').replace(/Shift\+/g, '⇧') : s);
+  workspaceShortcutRef.current = (shortcut) => {
+    if (shortcut === 'commands') setIsCommandOpen((open) => !open);
+    else if (shortcut === 'clean') setIsClean((clean) => !clean);
+    else if (shortcut === 'shortcuts') setIsShortcutsOpen(true);
+    else if (result && plate === 'print') zoomPreview(({ zoomIn: 'in', zoomOut: 'out', zoom100: '100', zoomFit: 'fit', zoomSelection: 'selection' } as const)[shortcut]);
+    else return false;
+    return true;
+  };
+  /** Everything the command menu offers, from what is open (2026-11-05, components/CommandMenu.tsx). */
+  const buildCommands = (): Command[] => {
+    const list: Command[] = [
+      { id: 'new', label: 'New report', keys: keysFor('Ctrl+Shift+O'), run: () => chatShortcutRef.current?.('newReport') },
+      { id: 'box', label: 'Cursor to the box', keys: keysFor('Shift+Esc'), run: () => chatShortcutRef.current?.('focusBox') },
+      { id: 'search', label: 'Search projects', run: openProjectSearch },
+      { id: 'settings', label: 'Settings', run: () => setIsConfigOpen(true) },
+      { id: 'keys', label: 'Keyboard shortcuts', keys: '?', run: () => setIsShortcutsOpen(true) },
+      { id: 'theme', label: isDarkMode ? 'Switch to the light theme' : 'Switch to the dark theme', run: () => setTheme(!isDarkMode) },
+      { id: 'sidebar', label: 'Show or hide the sidebar', keys: keysFor('Ctrl+B'), run: toggleSidebar },
+      { id: 'clean', label: isClean ? 'Leave the clean screen' : 'Clean screen', keys: keysFor('Ctrl+\\'), run: () => setIsClean((c) => !c) },
+    ];
+    if (requests.length) list.push({ id: 'card', label: isCardCollapsed ? 'Show the reply' : 'Fold the reply away', run: () => setIsCardCollapsed((c) => !c) });
+    if (result) {
+      const panes: [Plate, string][] = [['proof', 'Mockup'], ['print', 'Preview'], ['data', 'Data'], ['spec', 'Spec'], ['xml', 'REPX']];
+      list.push(...panes.map(([p, name]) => ({ id: `pane-${p}`, label: `Show the ${name}`, run: () => showPlate(p) })));
+      if (historyDepth.back) list.push({ id: 'undo', label: 'Undo', keys: keysFor('Ctrl+Z'), run: undoReport });
+      if (historyDepth.forward) list.push({ id: 'redo', label: 'Redo', keys: keysFor('Ctrl+Shift+Z'), run: redoReport });
+      list.push(
+        { id: 'save', label: 'Save the project', run: handleSaveReport },
+        { id: 'repx', label: 'Export the .repx', run: downloadDesign },
+        { id: 'designer', label: 'Open in the DevExpress designer', run: () => void openInDesigner() },
+      );
+      if (plate === 'print') {
+        list.push(
+          { id: 'zin', label: 'Zoom in', keys: '+', run: () => zoomPreview('in') },
+          { id: 'zout', label: 'Zoom out', keys: '−', run: () => zoomPreview('out') },
+          { id: 'z100', label: 'Zoom to 100%', keys: keysFor('Shift+0'), run: () => zoomPreview('100') },
+          { id: 'zfit', label: 'Zoom to fit', keys: keysFor('Shift+1'), run: () => zoomPreview('fit') },
+        );
+      }
+      const names = new Set([...(result.repxContent ?? '').matchAll(/ControlType="XR(?!TableRow|TableCell)\w+"[^>]*?\sName="([^"]+)"/g)].map((m) => m[1]));
+      for (const name of names) list.push({ id: `go-${name}`, label: `Go to ${name}`, run: () => { showPlate('print'); setChangedHighlight([name]); } });
+    }
+    for (const p of savedReports) if (p.id !== openProjectId) list.push({ id: `project-${p.id}`, label: `Open ${p.name}`, run: () => void handleLoadReport(p) });
+    return list;
+  };
+
   runToolsRef.current = (tools) => {
     const PANE_PLATES: Record<string, Plate> = { mockup: 'proof', preview: 'print', data: 'data', spec: 'spec', repx: 'xml' };
     tools.forEach((tool, i) => {
@@ -5709,6 +5082,7 @@ export default function App() {
          desktop choice: it is the open sidebar, on a phone. */
       data-rail={isRailExpanded || isStackedLayout ? 'wide' : undefined}
       data-drawer={isStackedLayout && isRailDrawerOpen ? 'open' : undefined}
+      data-clean={isClean ? 'true' : undefined}
     >
       {/* ============================================================ top bar
           Stacked only (CSS hides it above 880px): the menu button that opens
@@ -6299,7 +5673,9 @@ export default function App() {
                   {/* ReportMockup sits directly in the holder — it carries the
                       artifact's proof frame itself (see its root), so wrapping it
                       in `.wb-proof` would draw that frame twice. */}
-                  <ReportMockup layout={result.layout!} sourceImages={mockupSourceImages} reportUnit={openUnit} />
+                  <Suspense fallback={null}>
+                    <ReportMockup layout={result.layout!} sourceImages={mockupSourceImages} reportUnit={openUnit} />
+                  </Suspense>
                 </div>
               )}
 
@@ -6325,6 +5701,10 @@ export default function App() {
                       zoom={previewZoom}
                       onScaleChange={setPreviewScale}
                       resetSelection={selectionReset}
+                      onAddToChat={() => chatShortcutRef.current?.('focusBox')}
+                      onFormat={(action) => void formatSelection(action)}
+                      onFocusSelection={() => zoomPreview('selection')}
+                      onNotice={setSaveNotice}
                       /* Editing writes the REPX only. The layout and the spec
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not
@@ -6396,12 +5776,14 @@ export default function App() {
 
               {plate === 'xml' && (
                 <div className="wb-sheet wb-reg-marks">
-                  <RepxViewer
-                    xml={result.repxContent || ''}
-                    unit={openUnit}
-                    audit={repxAudit}
-                    usage={summariseUsage(result.usage) ? { short: summariseUsage(result.usage)!, long: describeUsage(result.usage) } : null}
-                  />
+                  <Suspense fallback={null}>
+                    <RepxViewer
+                      xml={result.repxContent || ''}
+                      unit={openUnit}
+                      audit={repxAudit}
+                      usage={summariseUsage(result.usage) ? { short: summariseUsage(result.usage)!, long: describeUsage(result.usage) } : null}
+                    />
+                  </Suspense>
                 </div>
               )}
             </>
@@ -6554,9 +5936,16 @@ export default function App() {
               if (item) setPrompt(item.text);
             }}
             onCancelQueued={(id) => setQueue((q) => q.filter((x) => x.id !== id))}
+            history={requests.map((r) => r.ask?.text ?? '').filter(Boolean)}
           />
           </Suspense>
         </div>
+        {/* The clean screen's way back, the one thing it leaves (2026-11-05). */}
+        {isClean && (
+          <button type="button" className="wb-clean-leave" onClick={() => setIsClean(false)}>
+            Clean screen · {keysFor('Ctrl+\\')} to leave
+          </button>
+        )}
         {/* Undo, Redo and the zoom at the bench's corner (2026-11-05), as
             Stitch has them: one history for every change to the report
             (`undoReport`), and on Preview its scale, with Fit as the start. */}
@@ -6572,13 +5961,20 @@ export default function App() {
             </div>
             {plate === 'print' && (
               <div className="wb-corner" role="group" aria-label="Zoom">
-                <button type="button" aria-label="Zoom out" title="Zoom out" disabled={previewZoom <= 0.25} onClick={() => setPreviewZoom((z) => Math.max(0.25, z / 1.25))}>
+                <button type="button" aria-label="Zoom out" title="Zoom out (−)" disabled={previewScale <= 0.1} onClick={() => zoomPreview('out')}>
                   <IconMinus size={14} />
                 </button>
-                <button type="button" className="wb-corner-zoom" title="Fit the page to the width" onClick={() => setPreviewZoom(1)}>
-                  {Math.round(previewScale * 100)}%
-                </button>
-                <button type="button" aria-label="Zoom in" title="Zoom in" disabled={previewZoom >= 4} onClick={() => setPreviewZoom((z) => Math.min(4, z * 1.25))}>
+                {/* The number is a field (2026-11-06): click it and type a size. */}
+                <Suspense fallback={<span className="wb-corner-zoom">{Math.round(previewScale * 100)}%</span>}>
+                  <ZoomField
+                    percent={Math.round(previewScale * 100)}
+                    onSet={(percent) => zoomPreview(percent)}
+                    onFit={() => zoomPreview('fit')}
+                    onSelection={previewSelection.length ? () => zoomPreview('selection') : undefined}
+                    mac={mac}
+                  />
+                </Suspense>
+                <button type="button" aria-label="Zoom in" title="Zoom in (+)" disabled={previewScale >= 4} onClick={() => zoomPreview('in')}>
                   <IconPlus size={14} />
                 </button>
               </div>
@@ -6611,6 +6007,16 @@ export default function App() {
             onBuild={handleOcrBuild}
             onClose={() => setOcrReview(null)}
           />
+        </Suspense>
+      )}
+      {isCommandOpen && (
+        <Suspense fallback={null}>
+          <CommandMenu commands={buildCommands()} onClose={() => setIsCommandOpen(false)} />
+        </Suspense>
+      )}
+      {isShortcutsOpen && (
+        <Suspense fallback={null}>
+          <ShortcutsDialog mac={mac} onClose={() => setIsShortcutsOpen(false)} />
         </Suspense>
       )}
       {isConfigOpen && (

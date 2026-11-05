@@ -19,6 +19,7 @@ import {
   deleteControl,
   addLabel,
   setCellText,
+  duplicateControl,
 } from './repxEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
@@ -247,6 +248,44 @@ describe('deleting a control', () => {
     expect(out.applied).toBe(false);
     expect(out.reason).toContain('#Ref-3');
     expect(out.xml).toBe(named);
+  });
+});
+
+// Stitch's Duplicate, Ctrl+D (2026-11-05): a copy beside the original, with its own Refs and names.
+describe('duplicating a control', () => {
+  it('copies it to the end of its band, shifted, with a fresh Ref and a free name, and keeps every attribute', () => {
+    const result = duplicateControl(report, TITLE);
+    expect(result.applied).toBe(true);
+    expect(result.reason).toBe('duplicated XRLabel "title" as "title1"');
+    const header = parseReportStructure(result.xml).bands[1].controls;
+    expect(header.map((c) => c.name)).toEqual(['title', 'subtitle', 'title1']);
+    expect(header[2]).toMatchObject({ x: 28, y: 28, text: 'INVOICE' });
+    expect(result.xml).toContain('<Item3 Ref="8" ControlType="XRLabel" Name="title1" Text="INVOICE" LocationFloat="28, 28" SizeF="400,40" Font="Arial, 14pt" Padding="2,2,0,0,100" StylePriority="UseFont" />');
+    // The original is untouched.
+    expect(result.xml).toContain('<Item1 Ref="3" ControlType="XRLabel" Name="title" Text="INVOICE" LocationFloat="20,20"');
+  });
+
+  it('renames every element inside a copied container, closes it under its new item name, and keeps every Ref unique', () => {
+    const table = report.replace(
+      '<Item1 Ref="6" ControlType="XRLabel" Name="line" Text="Widget" LocationFloat="0,0" SizeF="600,25" />',
+      '<Item1 Ref="6" ControlType="XRTable" Name="table1" LocationFloat="0,0" SizeF="600,25"><Rows><Item1 Ref="9" ControlType="XRTableRow" Name="tableRow1" Weight="1"><Cells><Item1 Ref="10" ControlType="XRTableCell" Name="tableCell1" Text="A" Weight="1" /></Cells></Item1></Rows></Item1>',
+    );
+    const result = duplicateControl(table, LINE);
+    expect(result.applied).toBe(true);
+    const refs = [...result.xml.matchAll(/\sRef="(\d+)"/g)].map((m) => m[1]);
+    expect(new Set(refs).size).toBe(refs.length);
+    expect(result.xml).toContain('Name="table2"');
+    expect(result.xml).toContain('Name="tableRow2"');
+    expect(result.xml).toContain('Name="tableCell2"');
+    expect(result.xml).toMatch(/<Item2 Ref="\d+" ControlType="XRTable"[\s\S]*<\/Item2>\s*<\/Controls>/);
+    expect(parseReportStructure(result.xml).bands[2].controls.map((c) => c.name)).toEqual(['table1', 'table2']);
+  });
+
+  it('declines a control that refers to its own parts by #Ref', () => {
+    const chart = report.replace('Name="line" Text="Widget"', 'Name="line" Text="Widget" Series="#Ref-6"');
+    const result = duplicateControl(chart, LINE);
+    expect(result.applied).toBe(false);
+    expect(result.xml).toBe(chart);
   });
 });
 

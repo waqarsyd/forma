@@ -59,7 +59,9 @@ import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt, oneLinePt, turnedL
 import { exportFileName, layoutContinuous, reportToCsv } from '../lib/csvExport';
 import { reportToXlsxFiles, xlsxOptionsOf } from '../lib/xlsxExport';
 import { buildZip } from '../lib/zip';
-import { moveControl, resizeControl, setControlText, overflowsBand, deleteControl, addLabel, setCellText, type ControlRef } from '../lib/repxEdit';
+import { moveControl, resizeControl, setControlText, overflowsBand, deleteControl, addLabel, setCellText, duplicateControl, type ControlRef } from '../lib/repxEdit';
+import type { FormatAction } from '../lib/agentEdit';
+import ControlMenu, { type MenuItem } from './ControlMenu';
 import type { ReportLayout } from '../lib/reportTypes';
 
 interface Props {
@@ -117,6 +119,17 @@ interface Props {
   zoom?: number;
   onScaleChange?: (scale: number) => void;
   resetSelection?: number;
+  /**
+   * The right-click menu's actions that are App's (2026-11-05, Stitch's menu
+   * on a screen): the selection into the chat (Ctrl+L), a format from the
+   * selection toolbar's menu, the zoom to the selection (F), and a short
+   * notice. Duplicate (Ctrl+D), Retype, Copy the name and Delete are the
+   * pane's own. See components/ControlMenu.tsx.
+   */
+  onAddToChat?: () => void;
+  onFormat?: (action: FormatAction) => void;
+  onFocusSelection?: () => void;
+  onNotice?: (text: string) => void;
 }
 
 export type TestRow = RecordValues;
@@ -992,7 +1005,7 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, onUndo, onRedo, zoom = 1, onScaleChange, resetSelection }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, onUndo, onRedo, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -1079,6 +1092,26 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     commit({ xml, applied: true, reason: refs.length === 1 ? reasons[0] : `${what} ${refs.length} controls` }, repxContent);
   };
 
+  /** The right-click menu, where it opened and on which placement of the control. */
+  const [menu, setMenu] = useState<{ x: number; y: number; at: string } | null>(null);
+  /** The copies a duplicate made, selected once the file holding them is parsed. */
+  const selectAfter = useRef<string[] | null>(null);
+  /** Duplicate the selection, last first so the indexes hold, and select the copies (Ctrl+D). */
+  const duplicateSelection = (refs: readonly ControlRef[]) => {
+    if (!repxContent || !refs.length) return;
+    let xml = repxContent;
+    const names: string[] = [];
+    for (const ref of [...refs].sort((a, b) => b.band - a.band || b.control - a.control)) {
+      const result = duplicateControl(xml, ref);
+      if (!result.applied) { commit(result, repxContent); return; }
+      xml = result.xml;
+      const name = / as "([^"]+)"$/.exec(result.reason)?.[1];
+      if (name) names.push(name);
+    }
+    selectAfter.current = names;
+    commit({ xml, applied: true, reason: refs.length === 1 ? `duplicated as ${names[0]}` : `duplicated ${refs.length} controls` }, repxContent);
+  };
+
   const undo = () => {
     const step = undoStack.current.pop();
     if (!step || !onEdit) return;
@@ -1147,6 +1180,16 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     reportSelection.current?.(selectionKey ? selectionKey.split('\n') : []);
   }, [selectionKey]);
   useEffect(() => () => reportSelection.current?.([]), []);
+  // The copies a duplicate made, selected as Stitch selects a duplicate.
+  useEffect(() => {
+    const names = selectAfter.current;
+    if (!names) return;
+    selectAfter.current = null;
+    const refs = structureBands.flatMap((b, band) => b.controls.flatMap((c, control) => (c.name && names.includes(c.name) ? [{ band, control }] : [])));
+    if (!refs.length) return;
+    setSelected(refs[0]);
+    setAlso(refs.slice(1));
+  }, [structureBands]);
   /** The `Ref` of the control that toggles Detail, when it has a drill-down. */
   const drillRef = structureBands.find((b) => b.kind === 'Detail')?.drillDown?.control;
   const watermark = structure.watermark;
@@ -1315,6 +1358,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         setAlso([]);
         return;
       }
+      // The right-click menu's keys (2026-11-05), Stitch's: Ctrl+D duplicates,
+      // Ctrl+L puts the selection in the chat, F zooms to it.
+      const mod = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
+      if (mod && event.key.toLowerCase() === 'd') { event.preventDefault(); duplicateSelection(chosen); return; }
+      if (mod && event.key.toLowerCase() === 'l' && onAddToChat) { event.preventDefault(); onAddToChat(); return; }
+      if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'f' && onFocusSelection) { event.preventDefault(); onFocusSelection(); return; }
       const step = event.shiftKey ? 10 : 1;
       const nudge: Record<string, [number, number]> = {
         ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
@@ -1754,7 +1803,21 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                               width: unitsToPx(control.width, report.unit),
                               height: unitsToPx(pc.height, report.unit),
                             }}
-                            onPointerDown={(e) => beginGesture(e, { band: bandIndex, control: c }, 'move')}
+                            onPointerDown={(e) => {
+                              // A right-click opens the menu (onContextMenu); it does not start a drag.
+                              if (e.button === 2) { e.stopPropagation(); return; }
+                              beginGesture(e, { band: bandIndex, control: c }, 'move');
+                            }}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const ref = { band: bandIndex, control: c };
+                              const inSelection = (selected && selected.band === ref.band && selected.control === ref.control) || also.some((a) => a.band === ref.band && a.control === ref.control);
+                              if (!inSelection) { setSelected(ref); setAlso([]); }
+                              setEditingText(null);
+                              setEditingCell(null);
+                              setMenu({ x: e.clientX, y: e.clientY, at: `${pageIndex}:${i}` });
+                            }}
                             onDoubleClick={(e) => {
                               e.stopPropagation();
                               if (control.type === 'XRTable' && control.rows.length) {
@@ -1935,15 +1998,17 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         .rp-problems p:last-child { margin: 0; }
 
         /* Editing chrome. Absolutely positioned over each control, transparent
-           until hovered so the report reads as a report at rest. */
+           until hovered so the report reads as a report at rest. Blue, as a
+           designer selects, never orange: the owner asked on 2026-11-06 for no
+           orange border anywhere in the workspace. */
         .rp-hit { position: absolute; cursor: move; outline: 1px solid transparent; }
-        .rp-hit:hover { outline-color: rgba(226, 89, 12, .5); }
-        .rp-hit.is-selected { outline: 1.5px solid #e8590c; }
+        .rp-hit:hover { outline-color: rgba(47, 111, 228, .45); }
+        .rp-hit.is-selected { outline: 1.5px solid #2f6fe4; }
         /* What the request picked in the log changed (2026-11-05), in Stitch's violet. */
         .rp-hit.is-changed:not(.is-selected) { outline: 2px solid #7c6be0; background: rgba(124, 107, 224, .08); }
         .rp-handle {
           position: absolute; right: -4px; bottom: -4px; width: 9px; height: 9px;
-          background: #e8590c; border: 1px solid #fff; border-radius: 1px;
+          background: #2f6fe4; border: 1px solid #fff; border-radius: 1px;
           cursor: nwse-resize;
         }
         /* Drill-down (s56): the toggle beside a group's label, in the margin as
@@ -1955,11 +2020,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           border: 1px solid #8a94a3; border-radius: 2px; background: #fff; color: #39424e;
           font: 600 10px/1 var(--font-code, monospace); cursor: pointer;
         }
-        .rp-drill:hover, .rp-drill:focus-visible { border-color: #e8590c; color: #e8590c; outline: none; }
+        .rp-drill:hover, .rp-drill:focus-visible { border-color: #2f6fe4; color: #2f6fe4; outline: none; }
         @media print { .rp-drill { display: none; } }
         .rp-textedit {
           position: absolute; z-index: 2; box-sizing: border-box;
-          border: 1.5px solid #e8590c; background: #fff; color: #111418;
+          border: 1.5px solid #2f6fe4; background: #fff; color: #111418;
           padding: 0 2px; font-family: inherit;
         }
         .rp-sel {
@@ -2250,6 +2315,50 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       <div ref={viewportRef} style={{ width: '100%' }} onPointerDown={() => setSelected(null)}>
         {renderPages(scale, editable, true)}
       </div>
+
+      {menu && selected && selectedControl && editable && (
+        <ControlMenu
+          x={menu.x}
+          y={menu.y}
+          label={selectionNames.length > 1 ? `${selectionNames.length} controls` : selectedControl.name || selectedControl.type}
+          onClose={() => setMenu(null)}
+          items={((): MenuItem[] => {
+            const chosen = [selected, ...also];
+            const items: MenuItem[] = [];
+            if (onAddToChat) items.push({ label: 'Add to chat', keys: 'Ctrl+L', run: onAddToChat });
+            if (chosen.length === 1 && selectedControl.type === 'XRLabel') {
+              items.push({ label: 'Retype', keys: 'Double-click', run: () => { setEditingAt(menu.at); setEditingText(selectedControl.text); } });
+            }
+            if (onFormat) {
+              items.push({
+                label: 'Format',
+                sub: ([['bold', 'Bold'], ['italic', 'Italic'], ['larger', 'Two points larger'], ['smaller', 'Two points smaller'], ['left', 'Align left'], ['center', 'Centre'], ['right', 'Align right']] as [FormatAction, string][])
+                  .map(([action, label]) => ({ label, run: () => onFormat(action) })),
+              });
+            }
+            items.push({ label: 'Duplicate', keys: 'Ctrl+D', divide: true, run: () => duplicateSelection(chosen) });
+            if (selectionNames.length) {
+              items.push({
+                label: selectionNames.length > 1 ? 'Copy the names' : 'Copy the name',
+                run: () => void navigator.clipboard?.writeText(selectionNames.join(', ')).then(() => onNotice?.(selectionNames.length > 1 ? 'Copied the names' : `Copied ${selectionNames[0]}`)).catch(() => undefined),
+              });
+            }
+            if (onFocusSelection) items.push({ label: 'Focus', keys: 'F', run: onFocusSelection });
+            items.push({
+              label: 'Delete',
+              keys: 'Del',
+              danger: true,
+              divide: true,
+              run: () => {
+                applyAll([...chosen].sort((a, b) => b.band - a.band || b.control - a.control), deleteControl, 'deleted');
+                setSelected(null);
+                setAlso([]);
+              },
+            });
+            return items;
+          })()}
+        />
+      )}
 
       {/* True size, outside the workspace tree, only while printing. */}
       {printing && createPortal(<div className="rp-print-host">{renderPages(1, false, false)}</div>, document.body)}

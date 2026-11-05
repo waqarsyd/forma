@@ -138,6 +138,12 @@ export interface ComposerProps {
   onSteer?: (id: string) => void;
   onEditQueued?: (id: string) => void;
   onCancelQueued?: (id: string) => void;
+  /**
+   * The person's earlier messages, oldest first (2026-11-05): ↑ in an empty
+   * box brings back the last, and again the one before, ↓ goes forward and
+   * back to an empty box, as a terminal's history and Stitch's box do.
+   */
+  history?: readonly string[];
 }
 
 /** A model's name as the picker shows it: "2.5-flash" for "gemini-2.5-flash". */
@@ -174,7 +180,10 @@ export default function Composer({
   onSteer,
   onEditQueued,
   onCancelQueued,
+  history = [],
 }: ComposerProps) {
+  /** Where ↑ has gone back to in `history`, or -1 while the box holds what was typed. */
+  const recall = useRef(-1);
   /* The model menu, open over the box; Escape or a click elsewhere closes it. */
   const [modelMenu, setModelMenu] = useState(false);
   const tiers = models ? modelTiers(models.choices) : [];
@@ -447,7 +456,10 @@ export default function Composer({
           className="wb-line"
           rows={1}
           value={prompt}
-          onChange={(e) => onPromptChange(e.target.value)}
+          onChange={(e) => {
+            recall.current = -1;
+            onPromptChange(e.target.value);
+          }}
           /* Enter sends; Shift+Enter starts a new line, as in any chat box. It
              did nothing until 2026-11-01, when this was an `<input>` that could
              not hold a newline; a description with a schema in it needs lines.
@@ -456,8 +468,18 @@ export default function Composer({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
+              recall.current = -1;
               if (canSend) onSend();
               else if (canQueue) onQueue?.(prompt.trim());
+            } else if (e.key === 'ArrowUp' && history.length && (prompt === '' || recall.current !== -1)) {
+              e.preventDefault();
+              recall.current = recall.current === -1 ? history.length - 1 : Math.max(0, recall.current - 1);
+              onPromptChange(history[recall.current]);
+            } else if (e.key === 'ArrowDown' && recall.current !== -1) {
+              e.preventDefault();
+              recall.current += 1;
+              if (recall.current >= history.length) recall.current = -1;
+              onPromptChange(recall.current === -1 ? '' : history[recall.current]);
             }
           }}
           /* An image pasted into the box is attached, as a dropped one is. */

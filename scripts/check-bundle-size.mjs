@@ -127,6 +127,13 @@ const BUDGETS = [
   // on demand from App.tsx, -13,264 B to 647,020 B (96.3%). Still above the
   // 93-94% band; the next cut is the same kind, more of the workspace out of
   // what every landing-page visitor downloads.
+  //
+  // Cut under again on 2026-11-06, at 664,823 B (98.9%) after Stitch's command
+  // menu, right-click menu, zoom field and clean screen (each body lazy, these
+  // were App's call sites). The cut was that kind: the Mockup (ReportMockup
+  // and its table, chart and picture helpers) and the REPX pane (RepxViewer)
+  // were components defined inside App.tsx; they are now their own lazy
+  // files, -13,496 B to 651,327 B (96.9%), and App.tsx is ~700 lines shorter.
   { prefix: 'index-', ext: '.js', max: 672_000, note: 'eager entry chunk + the genai chunk' },
   /*
    * The generation service, lazy as of 2026-09-04.
@@ -307,6 +314,14 @@ const BUDGETS = [
   // which is the 121,039 -> 120,567. More of the same layout is approved and
   // still to come (a selection toolbar, the corner's Undo, the queue), so
   // expect another raise naming those. 129_000 puts it at 93.5%.
+  //
+  // Not raised on 2026-11-06, at 128,926 B (99.9%): the stylesheet does have a
+  // cut, which the "no cut" sentence above missed. CSS a lazy component
+  // imports is emitted beside its chunk, not into this file, so the styles of
+  // the lazy menus and panels (the selection toolbar, the command menu and the
+  // shortcuts list, the right-click menu, the zoom field, Usage today) moved
+  // to src/components/overlays.css: 128,926 -> 123,655 B, and overlays-*.css
+  // is 5.2 kB of its own. The next lazy component's styles go there too.
   { prefix: 'index-', ext: '.css', max: 129_000, note: 'the whole stylesheet' },
   { prefix: 'pdf.worker-', ext: '.mjs', max: 2_250_000, note: 'pdfjs worker, lazy' },
   { prefix: 'pdf-', ext: '.js', max: 470_000, note: 'pdfjs entry, lazy' },

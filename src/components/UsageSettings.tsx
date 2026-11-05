@@ -11,6 +11,7 @@
 import { dailyLimits, requestsToday } from '../lib/requestCount';
 import { msUntilPacificMidnight } from '../lib/geminiErrors';
 import { displayModel } from '../lib/modelTiers';
+import './overlays.css';
 
 export default function UsageSettings({ now = new Date() }: { now?: Date }) {
   const used = requestsToday(undefined, now);

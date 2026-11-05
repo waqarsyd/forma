@@ -11,6 +11,7 @@
  * docs/notes/app-shell.md.
  */
 import { useEffect, useRef, useState } from 'react';
+import './overlays.css';
 import type { FormatAction } from '../lib/agentEdit';
 import { IconChevronDown, IconPencil, IconTarget } from './landing/icons';
 

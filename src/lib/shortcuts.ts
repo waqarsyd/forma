@@ -16,11 +16,41 @@
 /** The parts of a key event the shortcuts read. */
 export interface ShortcutKey {
   key: string;
+  /** The physical key ("Digit1"), for Shift+1 whatever the layout prints for it. */
+  code?: string;
   ctrlKey: boolean;
   metaKey: boolean;
   shiftKey: boolean;
   altKey: boolean;
   isComposing?: boolean;
+}
+
+/**
+ * The workspace's own shortcuts (2026-11-05), Google Stitch's: Ctrl+K (Cmd+K)
+ * opens the command menu, Ctrl+\ (Cmd+\) the clean screen, Stitch's Zen
+ * mode, and "?" the list of shortcuts. On Preview, + and - zoom, Shift+0 is
+ * 100%, Shift+1 the fit to the width and Shift+2 the selection. "?" and the
+ * zoom keys are bare letters, so the caller passes `typing` when the key
+ * went to a field, and they are then the field's.
+ */
+export type WorkspaceShortcut = 'commands' | 'clean' | 'shortcuts' | 'zoomIn' | 'zoomOut' | 'zoom100' | 'zoomFit' | 'zoomSelection';
+
+export function workspaceShortcutOf(e: ShortcutKey, typing: boolean): WorkspaceShortcut | null {
+  if (e.isComposing || e.altKey) return null;
+  const key = e.key.toLowerCase();
+  if (e.ctrlKey !== e.metaKey && !e.shiftKey) {
+    if (key === 'k') return 'commands';
+    if (key === '\\') return 'clean';
+    return null;
+  }
+  if (typing || e.ctrlKey || e.metaKey) return null;
+  if (key === '?') return 'shortcuts';
+  if (e.shiftKey && e.code === 'Digit0') return 'zoom100';
+  if (e.shiftKey && e.code === 'Digit1') return 'zoomFit';
+  if (e.shiftKey && e.code === 'Digit2') return 'zoomSelection';
+  if (key === '+' || key === '=') return 'zoomIn';
+  if (key === '-' && !e.shiftKey) return 'zoomOut';
+  return null;
 }
 
 export type ChatShortcut = 'newReport' | 'focusBox' | 'copyReply';
