@@ -730,6 +730,13 @@ export interface ChatOutcome {
   edits?: AgentEdit[];
   /** Forma's own actions to run, as the model wrote them; `readReportOutcome` checks each. */
   tools?: AgentTool[];
+  /**
+   * What the turn cost (2026-11-05), from the stream's usage metadata, null
+   * when the provider sent none. Read by the chat-edits measurement
+   * (`scripts/fidelity/chatEdits.ts`), which is what the token-saving claim
+   * of an edit in place rests on.
+   */
+  usage?: TokenUsage | null;
 }
 
 /**
@@ -1201,6 +1208,8 @@ ${transcript}`,
   let raw = '';
   let lastEmitted = '';
   let firstChunkAt = 0;
+  // The last usage metadata the stream carried: the turn's cost (2026-11-05).
+  let usageMetadata: Parameters<typeof readTokenUsage>[0] = null;
 
   /**
    * The whole turn is retryable, request and stream together.
@@ -1223,6 +1232,7 @@ ${transcript}`,
     raw = '';
     lastEmitted = '';
     firstChunkAt = 0;
+    usageMetadata = null;
 
     try {
       let stream;
@@ -1249,6 +1259,9 @@ ${transcript}`,
 
       for await (const chunk of stream) {
         if (signal?.aborted) throw abortError();
+        if ((chunk as { usageMetadata?: Parameters<typeof readTokenUsage>[0] }).usageMetadata) {
+          usageMetadata = (chunk as { usageMetadata?: Parameters<typeof readTokenUsage>[0] }).usageMetadata ?? null;
+        }
         if (!chunk.text) continue;
         if (!firstChunkAt) firstChunkAt = Date.now();
 
@@ -1355,13 +1368,15 @@ ${transcript}`,
   raw = raw.trim();
   if (!raw) throw new Error('The assistant did not respond. Try again.');
 
+  const usage = readTokenUsage(usageMetadata);
   try {
     const parsed = JSON.parse(raw) as ChatOutcome;
     // As the model wrote it; `readReportOutcome` decides what it means.
-    if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits, tools: parsed.tools };
+    if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits, tools: parsed.tools, usage };
     return {
       reply: parsed.reply || 'Sorry — I did not catch that.',
       wantsReport: Boolean(parsed.wantsReport),
+      usage,
     };
   } catch {
     // Never show the user raw JSON if the object arrived malformed — the
