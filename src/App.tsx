@@ -1732,6 +1732,8 @@ export default function App() {
    */
   const [shownRequestId, setShownRequestId] = useState<string | null>(null);
   const [isCardCollapsed, setIsCardCollapsed] = useState(false);
+  /** The controls the request picked in the log changed, outlined on Preview. */
+  const [changedHighlight, setChangedHighlight] = useState<string[]>([]);
   const [showWorkspaceProfile, setShowWorkspaceProfile] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   /* Bumped when the account panel changes the profile. `updateProfile` mutates
@@ -2184,6 +2186,7 @@ export default function App() {
   useEffect(() => {
     setShownRequestId(null);
     setIsCardCollapsed(false);
+    setChangedHighlight([]);
   }, [requestCount]);
   /**
    * The changes the chat made, each with the report before it, for the
@@ -3301,6 +3304,7 @@ export default function App() {
     // A new conversation owes no answers to the last one's questions.
     pendingClarifyRef.current = null;
     setShownRequestId(null);
+    setChangedHighlight([]);
     setOcrReview(null);
   };
 
@@ -5486,6 +5490,27 @@ export default function App() {
     setSpecView(state.specView);
   };
 
+  /**
+   * A request picked in the log (2026-11-05): shown in the card, and the
+   * controls its change touched outlined on Preview, as Stitch moves to and
+   * outlines the screens a request changed. Only a change made this session
+   * is known (`chatChanges`, kept for Undo); one from a reloaded project
+   * outlines nothing.
+   */
+  const showRequest = async (id: string) => {
+    setShownRequestId(id === requests[requests.length - 1]?.id ? null : id);
+    setIsCardCollapsed(false);
+    const change = requests.find((r) => r.id === id)?.replies.map((m) => chatChanges[m.id]).find(Boolean);
+    if (!change?.before.repxContent || !change.after.repxContent) {
+      setChangedHighlight([]);
+      return;
+    }
+    const { changedControls } = await import('./lib/agentEdit');
+    const names = changedControls(change.before.repxContent, change.after.repxContent);
+    setChangedHighlight(names);
+    if (names.length && result?.repxContent) showPlate('print');
+  };
+
   /*
    * The chat's tools, run (2026-11-05), by the effect beside `pendingTools`.
    * Assigned here, after the early returns above, because `showPlate` and the
@@ -6164,6 +6189,7 @@ export default function App() {
                       exportRequest={exportRequest}
                       onExportRequestDone={() => setExportRequest(null)}
                       onSelectionChange={setPreviewSelection}
+                      highlight={changedHighlight}
                       /* Editing writes the REPX only. The layout and the spec
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not
@@ -6326,10 +6352,7 @@ export default function App() {
                 requests={requests}
                 shownId={shownRequest?.id ?? null}
                 working={isAnalyzing || isChatting}
-                onShow={(id) => {
-                  setShownRequestId(id === requests[requests.length - 1]?.id ? null : id);
-                  setIsCardCollapsed(false);
-                }}
+                onShow={(id) => void showRequest(id)}
                 onExport={exportConversation}
               />
             </Suspense>

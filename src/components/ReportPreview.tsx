@@ -98,6 +98,12 @@ interface Props {
    * none once the pane closes (2026-11-05): the chat's "this" and "these".
    */
   onSelectionChange?: (names: string[]) => void;
+  /**
+   * The controls a request changed, by name, outlined while that request is
+   * the one picked in the request log (2026-11-05), as Stitch outlines the
+   * screens a request changed. The first is scrolled into view.
+   */
+  highlight?: readonly string[];
 }
 
 export type TestRow = RecordValues;
@@ -973,8 +979,16 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const highlightKey = (highlight ?? []).join('\n');
+  const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
+  // The first changed control into view, once per set of names.
+  useEffect(() => {
+    if (!highlightKey) return;
+    const t = setTimeout(() => viewportRef.current?.querySelector('.rp-hit.is-changed')?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 80);
+    return () => clearTimeout(t);
+  }, [highlightKey]);
   const [scale, setScale] = useState(1);
   const [showBands, setShowBands] = useState(true);
   const [selected, setSelected] = useState<ControlRef | null>(null);
@@ -1699,7 +1713,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                              handler on each shape would mean the gesture works
                              on a label and not on a table. */
                           <div
-                            className={`rp-hit${isSelected || (editing && also.some((a) => a.band === bandIndex && a.control === c)) ? ' is-selected' : ''}`}
+                            className={`rp-hit${isSelected || (editing && also.some((a) => a.band === bandIndex && a.control === c)) ? ' is-selected' : ''}${control.name && changedNames.has(control.name) ? ' is-changed' : ''}`}
                             style={{
                               // Over the control where it is drawn, which after
                               // growth and push-down need not be where the file
@@ -1894,6 +1908,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         .rp-hit { position: absolute; cursor: move; outline: 1px solid transparent; }
         .rp-hit:hover { outline-color: rgba(226, 89, 12, .5); }
         .rp-hit.is-selected { outline: 1.5px solid #e8590c; }
+        /* What the request picked in the log changed (2026-11-05), in Stitch's violet. */
+        .rp-hit.is-changed:not(.is-selected) { outline: 2px solid #7c6be0; background: rgba(124, 107, 224, .08); }
         .rp-handle {
           position: absolute; right: -4px; bottom: -4px; width: 9px; height: 9px;
           background: #e8590c; border: 1px solid #fff; border-radius: 1px;

@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, changedControls, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -33,6 +33,20 @@ const report = `<?xml version="1.0" encoding="utf-8"?>
 
 const control = (xml: string, name: string) => parseReportStructure(xml).bands.flatMap((b) => b.controls).find((c) => c.name === name)!;
 const edit = (...edits: AgentEdit[]) => applyEdits(report, edits);
+
+// What a request changed, outlined on Preview when it is picked in the log (2026-11-05).
+describe('changedControls', () => {
+  it('names the controls an edit added or changed, and nothing for no change or a removal', () => {
+    expect(changedControls(report, report)).toEqual([]);
+    expect(changedControls(report, edit({ op: 'align', control: 'title', align: 'right' }).xml)).toEqual(['title']);
+    const after = edit({ op: 'font', control: 'subtitle', bold: true }, { op: 'add', band: 'Detail', text: 'Thank you' }).xml;
+    const named = changedControls(report, after);
+    expect(named).toContain('subtitle');
+    expect(named.filter((n) => n !== 'subtitle')).toHaveLength(1);
+    expect(named).not.toContain('title');
+    expect(changedControls(report, edit({ op: 'delete', control: 'customer' }).xml)).toEqual([]);
+  });
+});
 
 describe('reportOutline: the report as the model is shown it', () => {
   const outline = reportOutline(report, { findings: ['A total prints blank.'] });

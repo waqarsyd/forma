@@ -286,6 +286,15 @@ describe('editing in the pane', () => {
   }
   const hits = () => [...document.querySelectorAll('.rp-hit')] as HTMLElement[];
 
+  // A request picked in the log outlines what it changed (2026-11-05).
+  it('outlines the controls named in highlight, and only those', () => {
+    render(<ReportPreview repxContent={editable} layout={null} title="Edit" onEdit={() => {}} highlight={['b', 't']} />);
+    // The Detail band prints once per record: a, b and t in every placement.
+    const flags = hits().map((h) => h.classList.contains('is-changed'));
+    expect(flags.length % 3).toBe(0);
+    for (let i = 0; i < flags.length; i += 3) expect(flags.slice(i, i + 3)).toEqual([false, true, true]);
+  });
+
   it('selects more with Shift+click, and deletes them all as one step', () => {
     const onEdit = vi.fn();
     render(<Holder onEdit={onEdit} />);

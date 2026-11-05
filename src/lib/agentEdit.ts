@@ -524,6 +524,34 @@ function controlsOf(xml: string): Map<string, Seen> {
 const named = (key: string) => (key.includes('@') ? key.split('@')[0] : `**${key}**`);
 
 /**
+ * The names of the controls `after` adds or changes against `before`
+ * (2026-11-05), for Preview to outline what a request changed when it is
+ * picked in the request log, as Stitch outlines the screens a request
+ * changed. Named controls only, and not removed ones: there is nothing left
+ * to outline.
+ */
+export function changedControls(before: string, after: string): string[] {
+  if (before === after) return [];
+  const a = controlsOf(before);
+  const out: string[] = [];
+  for (const [key, { c: now }] of controlsOf(after)) {
+    if (key.includes('@')) continue;
+    const was = a.get(key)?.c;
+    if (!was) {
+      out.push(key);
+      continue;
+    }
+    const [p, q] = [fileBox(was), fileBox(now)];
+    const differs =
+      was.text !== now.text || p.x !== q.x || p.y !== q.y || p.width !== q.width || p.height !== q.height ||
+      fontWords(was) !== fontWords(now) || JSON.stringify(was.appearance) !== JSON.stringify(now.appearance) ||
+      was.align !== now.align || was.visible !== now.visible || JSON.stringify(was.rows) !== JSON.stringify(now.rows);
+    if (differs) out.push(key);
+  }
+  return out;
+}
+
+/**
  * What differs between two reports, a line each, for a reply: controls added,
  * removed, retyped, moved, resized, restyled, aligned, hidden or shown, a
  * table's cells retyped, and the paper and margins. At most `limit` lines,
