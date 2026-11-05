@@ -22,7 +22,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import { messageMatches, searchParts, type ChatMessage } from '../lib/chatSession';
-import { IconCheck, IconCopy, IconPencil, IconRedo, IconThumbDown, IconThumbUp, IconTrash } from './landing/icons';
+import { IconArrowDown, IconCheck, IconCopy, IconPencil, IconRedo, IconThumbDown, IconThumbUp, IconTrash } from './landing/icons';
 
 /* Loaded on demand, as the Spec pane loads it: react-markdown brings the whole
    micromark tokenizer, and the eager bundle is budgeted (see Markdown.tsx). */
@@ -581,11 +581,31 @@ export default function ChatThread<R>({
    */
   const threadRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  /**
+   * Whether the reader has scrolled away from the latest message, as state,
+   * for the button that takes them back (2026-11-05), as ChatGPT and Gemini
+   * show one. Set only when it changes, so scrolling does not re-render the
+   * thread on every frame.
+   */
+  const [away, setAway] = useState(false);
+  /** Until this time, the smooth scroll the button started is on its way down, and the button stays hidden. */
+  const returningUntil = useRef(0);
 
   const notePinned = useCallback(() => {
     const el = threadRef.current;
     if (!el) return;
     pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight <= PIN_SLACK_PX;
+    if (Date.now() < returningUntil.current && !pinned.current) return;
+    setAway(!pinned.current);
+  }, []);
+
+  const toLatest = useCallback(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    pinned.current = true;
+    setAway(false);
+    returningUntil.current = Date.now() + 1000;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, []);
 
   useEffect(() => {
@@ -650,6 +670,15 @@ export default function ChatThread<R>({
       )}
 
       {children}
+
+      {/* Back to the latest message, while the reader is scrolled away from it
+          (2026-11-05), as in ChatGPT and Gemini. Sticky at the foot of the
+          scrolling column, so it stays over the conversation. */}
+      {away && (
+        <button type="button" className="wb-to-latest" title="Go to the latest message" aria-label="Go to the latest message" onClick={toLatest}>
+          <IconArrowDown size={14} />
+        </button>
+      )}
     </div>
   );
 }

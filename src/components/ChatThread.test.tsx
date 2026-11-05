@@ -361,6 +361,20 @@ describe('following the newest note', () => {
     expect(thread().scrollTop).toBe(1400);
   });
 
+  // Back to the latest message (2026-11-05), as ChatGPT and Gemini offer it.
+  it('offers a way back to the latest message only while scrolled away from it', () => {
+    render(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' })]} />);
+    expect(screen.queryByLabelText('Go to the latest message')).toBeNull();
+    layout(thread(), 1000, 300, 120);
+    fireEvent.scroll(thread());
+    const back = screen.getByLabelText('Go to the latest message');
+    const scrollTo = vi.fn();
+    thread().scrollTo = scrollTo;
+    fireEvent.click(back);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'smooth' });
+    expect(screen.queryByLabelText('Go to the latest message')).toBeNull();
+  });
+
   // The reply arrives a token at a time, so following it is what keeps the text
   // being written visible rather than just its first line.
   it('follows the streaming reply as it grows', () => {

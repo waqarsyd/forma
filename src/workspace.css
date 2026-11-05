@@ -493,6 +493,26 @@
 
 .wb-panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .wb-thread { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 18px; }
+/* Back to the latest message (2026-11-05): a round button over the foot of the
+   conversation while it is scrolled up, as ChatGPT's and Gemini's. */
+.wb-thread .wb-to-latest {
+  position: sticky;
+  bottom: 4px;
+  align-self: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-top: -50px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-2);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+.wb-thread .wb-to-latest:hover { color: var(--ink); background: var(--track); }
 
 /* search + lists */
 
