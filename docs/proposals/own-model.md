@@ -789,6 +789,29 @@ Fixing that means one of three changes: leave PARSER and RENDERER out of
 the Modelfile, ask with thinking off, or read `reasoning` when `content` is
 empty. None was made, because no vision model is wired into Forma.
 
+**The fix, checked (2026-11-04 and 05).** `84ae9ec` made the check import
+`forma-vision` with `qwen3.5:2b`'s template, renderer and parameters but not
+its parser, and a second import, `forma-vision-parsed`, with the parser,
+asked with thinking off. The first two runs after it (Versions 4 and 5)
+tested nothing: the notebook's one cell downloads `train_vision.py` from a
+commit pinned in its URL, `847d2c1`, not from `main`, and that pin had not
+moved. With the pin at `84ae9ec`, Version 6 ran on the CPU for 59 minutes:
+- llama.cpp answered both pages, 153 and 80 lines, as before.
+- `forma-vision` imported with vision listed and thinking not, and **Ollama
+  answered both pages as Forma asks**, each with its page line.
+- `forma-vision-parsed` listed thinking too, and answered with
+  `reasoning_effort: none` through the OpenAI endpoint and with
+  `think: false` through the native one.
+- **Ollama's answers are shorter than llama.cpp's** for the same pages: 39
+  lines against 153, and 30 against 80, and their first line names other
+  margins (100 at the top and 50 at the bottom, against 20 and 30). Both
+  were asked at temperature 0 with the same token cap, so the difference is
+  in how Ollama runs the model, its template or its sampling. Measure it
+  before Forma relies on Ollama for the vision model; llama.cpp is the
+  runtime that reads a page whole.
+
+So leaving the parser out works, and is what the Modelfile should do.
+
 ### Forma's box reader (2026-11-04)
 
 The owner's choice after the boxes run: "go with the CPU classifier
@@ -1066,9 +1089,10 @@ carry it.
    OCR's boxes it places 52.4% against OCR's 55.7%, and it puts 23% of
    boxes in the right band, so Forma's vision path does not ask it.
 3. ~~The Ollama check again, with the chat template~~: done 2026-11-04.
-   llama.cpp answers; Ollama generates, but into `reasoning` (see *The
-   deployment check on the boxes run's model*). Fix it before a vision
-   model is next wired in.
+   llama.cpp answers; Ollama generated into `reasoning`. ~~Fix it~~: done,
+   checked by Version 6 on 2026-11-05: without the qwen3.5 parser Ollama
+   answers both pages, though shorter than llama.cpp does (see *The
+   deployment check on the boxes run's model*).
 4. ~~More than one page per picture~~: done 2026-11-04. The vision model
    reads an upload's first page and, when there are more, its last, and
    `mergePageSkeletons` (`skeletonRepx.ts`) keeps the first page's bands
