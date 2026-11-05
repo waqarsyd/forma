@@ -181,7 +181,7 @@ describe('when sending is not possible', () => {
     expect(send().disabled).toBe(false);
     expect(field().disabled).toBe(false);
     // The owner's wording, 2026-11-05.
-    expect(field().placeholder).toBe('Describe changes…');
+    expect(field().placeholder).toBe('What would you like to change or create?');
   });
 });
 

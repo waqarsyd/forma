@@ -734,10 +734,6 @@
 
 /* The transcript search: its field sits under the column head and the
    matches are marked in the messages. */
-/* Export and Search together at the right of the Chat head (2026-11-05),
-   not spread across it. */
-.wb-col-head .wb-icon-btn--first { margin-left: auto; }
-.wb-col-head .wb-icon-btn--first + .wb-icon-btn { margin-left: -6px; }
 .wb-icon-btn {
   align-self: center;
   width: 28px;
@@ -790,26 +786,11 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 /* No rule above the box (2026-11-05, at the owner's request): it set the box
    in a band of its own under the conversation, where ChatGPT's and Gemini's
    boxes sit on the conversation's own ground. */
-.wb-composer { padding: 6px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
-/* The box floats over the conversation (2026-11-05, measured on Gemini with
-   REA): the messages run on behind it and fade into the column's ground, so
-   a line half under the box is seen faintly beside it, as Gemini's are. The
-   composer overlaps the thread's foot by its own height (`--composer-h`,
-   which Composer.tsx measures), over a fade from clear to nearly the ground;
-   the box itself stays opaque. The thread pads its foot by as much, so its
-   last message still scrolls clear of the box. */
-.wb-composer {
-  position: relative;
-  z-index: 2;
-  margin-top: calc(-1 * var(--composer-h, 0px));
-  padding-top: 18px;
-  background: linear-gradient(
-    to bottom,
-    transparent 0,
-    color-mix(in srgb, var(--panel-2) 82%, transparent) 18px,
-    color-mix(in srgb, var(--panel-2) 92%, transparent) 100%
-  );
-}
+/* The composer is the floating bar's since 2026-11-05 (see the floating
+   conversation at the foot of this file). Until then it overlapped the chat
+   column's thread by its own height, over a fade, as Gemini's box does;
+   `git log -S"margin-top: calc(-1 * var(--composer-h"` finds those rules. */
+.wb-composer { display: flex; flex-direction: column; gap: 10px; }
 
 /* One compact row, 44px tall. It was briefly a two-row card — text area over a
    tools row — which fixed the crushed send button but pushed the box to 94px and
@@ -1824,3 +1805,122 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .wb-clarify { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .wb-clarify-q { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
 .wb-clarify .wb-pill { align-self: flex-start; }
+
+/* =============================================================================
+   FORMA ADDITIONS - the conversation floats over the report (2026-11-05)
+
+   Google Stitch's workspace, measured in the owner's own signed-in Stitch: the
+   canvas fills the window, and the agent floats over it in separate pieces.
+   The card at the top left, about 280px wide, shows one request: the prompt in
+   a pill, the reply under it, a two-dot mark that folds it away. The log is
+   at the bottom left, and the box is a bar of its own at the foot, two rows,
+   with a soft glow on focus. Last in the file so it wins over the column
+   rules above, as the resizable column's block does. The floats pass clicks
+   through their empty corners; their children take them.
+   ============================================================================= */
+.wb-bench { position: relative; }
+.wb-float { position: absolute; z-index: 4; pointer-events: none; }
+.wb-float > * { pointer-events: auto; }
+.wb-bench-body { padding-bottom: 176px; }
+.wb-bench[data-card='open'] .wb-bench-body { padding-left: 344px; }
+.wb-reply, .wb-log {
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--panel-2) 90%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: var(--shadow-md);
+}
+
+.wb-float-card { top: 74px; left: 16px; width: 304px; max-height: calc(100% - 74px - 88px); display: flex; flex-direction: column; }
+.wb-reply { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; border-radius: 18px; overflow: hidden; }
+.wb-reply.wb-is-collapsed { flex: none; align-self: flex-start; width: 60px; height: 60px; display: grid; place-items: center; }
+.wb-reply-mark {
+  flex: none; align-self: flex-start; margin: 14px 14px 0; width: 36px; height: 20px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 0; border-radius: 999px; background: var(--ink); cursor: pointer;
+}
+.wb-reply-mark i { width: 6px; height: 6px; border-radius: 50%; background: var(--panel); }
+.wb-reply.wb-is-collapsed .wb-reply-mark { margin: 0; align-self: center; }
+.wb-reply.wb-is-working .wb-reply-mark i:last-child { animation: wb-breathe 1s ease-in-out infinite; }
+@keyframes wb-breathe { 50% { opacity: .25; } }
+
+.wb-ask { flex: none; margin: 12px 12px 0; padding: 8px 6px 8px 10px; border: 1px solid var(--rule); border-radius: 14px; background: var(--panel); }
+.wb-ask-line { display: flex; align-items: flex-start; gap: 6px; }
+.wb-ask-av {
+  flex: none; width: 20px; height: 20px; margin: 1px 2px 0 0; border-radius: 50%;
+  background: var(--ink-2); color: var(--panel); font-size: 9px; font-weight: 600; line-height: 20px; text-align: center;
+}
+.wb-ask-text { flex: 1; min-width: 0; margin: 0; padding-top: 2px; font-size: 13px; line-height: 1.45; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-ask.wb-is-open .wb-ask-text { white-space: pre-wrap; color: var(--ink); max-height: 30vh; overflow-y: auto; }
+.wb-ask-count { color: var(--ink-faint); }
+.wb-ask .wb-edit { flex: 1; min-width: 0; }
+.wb-ask.wb-is-open .wb-ask-more svg { transform: rotate(180deg); }
+.wb-ask-extra { display: grid; gap: 6px; margin-top: 8px; padding-left: 28px; }
+.wb-ask-error { margin: 8px 0 0; font-size: 12.5px; color: var(--bad-ink); }
+/* The replies, under the pill: no column padding for a box below them, and a
+   fade at the card's lower edge, as Stitch's reply fades. */
+.wb-reply .wb-thread {
+  padding: 12px 16px 24px; gap: 14px;
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 24px), transparent);
+}
+
+.wb-float-log { bottom: 16px; left: 16px; width: 304px; }
+.wb-log { border-radius: 16px; overflow: hidden; }
+.wb-log-head {
+  width: 100%; display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+  border: 0; background: none; color: var(--ink); font-size: 13.5px; cursor: pointer;
+}
+.wb-log-head > span:nth-of-type(1) { flex: 1; text-align: left; }
+.wb-log-count { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+.wb-log.wb-is-open .wb-log-head > svg:last-child { transform: rotate(180deg); }
+.wb-log-body { display: grid; gap: 6px; padding: 8px; border-bottom: 1px solid var(--rule); }
+.wb-log-tools { display: flex; align-items: center; gap: 6px; }
+.wb-log-tools input {
+  flex: 1; min-width: 0; height: 30px; padding: 0 12px;
+  border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); color: var(--ink); font-size: 12.5px;
+}
+.wb-log-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; display: grid; gap: 2px; }
+.wb-log-list button {
+  width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 0; border-radius: 999px; background: none; color: var(--ink); font-size: 13px; text-align: left; cursor: pointer;
+}
+.wb-log-list button:hover { background: var(--track); }
+.wb-log-list button[aria-current='true'] { background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.wb-log-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-log-mark { flex: none; width: 16px; display: grid; place-items: center; color: var(--ink-2); }
+.wb-log-mark--failed { color: var(--bad-ink); }
+.wb-log-none { padding: 8px 10px; font-size: 12.5px; color: var(--ink-faint); }
+.wb-spin { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink-faint); border-top-color: transparent; animation: wb-spin .8s linear infinite; }
+@keyframes wb-spin { to { transform: rotate(360deg); } }
+
+/* The box: centred at the foot of the report, between the card's column and
+   the right edge while there is a card, and two rows, as Stitch's bar. */
+.wb-float-bar { bottom: 16px; left: 50%; transform: translateX(-50%); width: min(640px, calc(100% - 672px)); display: flex; flex-direction: column; gap: 8px; }
+.wb-bench:not([data-card]) .wb-float-bar { width: min(640px, calc(100% - 48px)); }
+.wb-float-bar .wb-box {
+  display: grid; grid-template-columns: auto 1fr auto auto auto; align-items: center; row-gap: 4px;
+  padding: 12px 10px 8px 12px; border-radius: 22px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(14px); box-shadow: var(--shadow-md);
+}
+.wb-float-bar .wb-box textarea.wb-line { grid-column: 1 / -1; grid-row: 1; padding: 2px 4px; font-size: 14px; }
+.wb-float-bar .wb-box > .wb-tool:first-child { grid-column: 1; grid-row: 2; }
+.wb-float-bar .wb-box > .wb-model { grid-column: 3; grid-row: 2; }
+.wb-float-bar .wb-box > .wb-tool:not(:first-child) { grid-column: 4; grid-row: 2; }
+.wb-float-bar .wb-box > .wb-send { grid-column: 5; grid-row: 2; }
+/* Focus as Stitch's bar shows it: the edge turns a soft blue to violet. */
+.wb-float-bar .wb-box:not(.wb-is-locked):focus-within {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--panel), var(--panel)) padding-box,
+    linear-gradient(100deg, #93b4f5, #b8a6f2) border-box;
+}
+@media (min-width: 881px) and (max-width: 1240px) {
+  .wb-bench[data-card] .wb-float-bar { left: 336px; right: 16px; width: auto; transform: none; }
+}
+/* Stacked, the pieces follow the report in the page's own flow. */
+@media (max-width: 880px) {
+  .wb-float { position: static; transform: none; width: auto; max-height: none; margin: 8px 12px 0; }
+  .wb-float-card { max-height: 50vh; }
+  .wb-float-bar { margin-bottom: 12px; }
+  .wb-bench-body, .wb-bench[data-card='open'] .wb-bench-body { padding: 20px 12px 30px; }
+}

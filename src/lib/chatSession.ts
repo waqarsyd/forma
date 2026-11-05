@@ -341,6 +341,60 @@ export function projectMatches(project: { name: string; messages: readonly { tex
 }
 
 /**
+ * One request: what the person asked and Forma's answers to it, up to their
+ * next message (2026-11-05). The conversation is shown a request at a time,
+ * as Google Stitch's agent card shows it, with every request in a log
+ * beneath it; see *The conversation floats over the report* in app-shell.md.
+ * Its id is the asking message's, or the first reply's when Forma spoke
+ * first, as it does when a saved project opens on its own report.
+ */
+export interface ChatRequest<R = unknown, M = unknown> {
+  id: string;
+  ask: ChatMessage<R, M> | null;
+  replies: ChatMessage<R, M>[];
+}
+
+/** The transcript as requests, oldest first. Every message lands in exactly one. */
+export function requestsOf<R, M>(messages: ReadonlyArray<ChatMessage<R, M>>): ChatRequest<R, M>[] {
+  const requests: ChatRequest<R, M>[] = [];
+  for (const m of messages) {
+    if (m.role === 'user') requests.push({ id: m.id, ask: m, replies: [] });
+    else if (requests.length === 0) requests.push({ id: m.id, ask: null, replies: [m] });
+    else requests[requests.length - 1].replies.push(m);
+  }
+  return requests;
+}
+
+/**
+ * A request's line in the log: the first line of what was asked, the
+ * pictures it sent when it said nothing, or "Forma" when nobody asked.
+ */
+export function requestTitle(request: ChatRequest): string {
+  const ask = request.ask;
+  if (!ask) return 'Forma';
+  const line = ask.text.split('\n').find((l) => l.trim())?.trim();
+  if (line) return line;
+  const pictures = ask.images?.length ?? 0;
+  return pictures ? `${pictures} ${pictures === 1 ? 'picture' : 'pictures'}` : 'Your message';
+}
+
+/**
+ * Where a request stands, for its mark in the log: failed, waiting on the
+ * person (questions or a redesign to confirm), or answered.
+ */
+export function requestState(request: ChatRequest): 'failed' | 'waiting' | 'done' {
+  const all = [request.ask, ...request.replies].filter(Boolean) as ChatMessage[];
+  if (all.some((m) => m.error)) return 'failed';
+  if (request.replies.some((m) => (m.clarify && !m.clarify.answered) || (m.confirm && !m.confirm.answered))) return 'waiting';
+  return 'done';
+}
+
+/** Whether a request holds `query` in anything it says, for the log's search. */
+export function requestMatches(request: ChatRequest, query: string): boolean {
+  return [request.ask, ...request.replies].some((m) => !!m && messageMatches(m, query));
+}
+
+/**
  * The review column's own count, and the same wording on a saved project's row.
  *
  * Two call sites had this ternary written out; they are the kind that drift into

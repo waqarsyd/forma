@@ -419,7 +419,8 @@ export default function Composer({
             }
           }}
           disabled={!hasApiKey}
-          placeholder={listening ? 'Listening…' : hasApiKey ? 'Describe changes…' : 'Add your API key to start'}
+          // Stitch's question (2026-11-05), now the box sits under the report as its bar does.
+          placeholder={listening ? 'Listening…' : hasApiKey ? 'What would you like to change or create?' : 'Add your API key to start'}
           aria-label="Message"
         />
         {hasApiKey && models && (

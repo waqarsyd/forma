@@ -101,6 +101,12 @@ export interface ChatThreadProps<R> {
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   /** A transcript search: only the messages holding it are drawn, with each match marked. */
   query?: string;
+  /**
+   * Whether a reply being written shows here (2026-11-05). The card shows a
+   * request at a time, and an older one, read while a newer one runs, shows
+   * its own replies and not the new one's dots. True when absent.
+   */
+  showWorking?: boolean;
   /** Forma's working line during a generation, rendered after the transcript. */
   children?: ReactNode;
 }
@@ -144,7 +150,7 @@ function MessageText({ text, query, markdown }: { text: string; query: string; m
  * message's own words on the clipboard, "Copied" for a moment, and nothing
  * said when the browser refuses the clipboard.
  */
-function CopyButton({ text }: { text: string }) {
+export function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -232,7 +238,7 @@ function ReplyActions({
  * Editing a sent message, in place. Enter sends, Shift+Enter breaks the
  * line and Escape puts the message back, as in the composer.
  */
-function EditForm({ text, disabled, onSend, onCancel }: { text: string; disabled: boolean; onSend: (text: string) => void; onCancel: () => void }) {
+export function EditForm({ text, disabled, onSend, onCancel }: { text: string; disabled: boolean; onSend: (text: string) => void; onCancel: () => void }) {
   const [draft, setDraft] = useState(text);
   const changed = draft.trim().length > 0 && draft.trim() !== text.trim();
   return (
@@ -575,6 +581,7 @@ export default function ChatThread<R>({
   onShowVersion,
   usageOf,
   query = '',
+  showWorking = true,
   children,
 }: ChatThreadProps<R>) {
   /*
@@ -705,7 +712,7 @@ export default function ChatThread<R>({
           real build request runs the chat turn *and then* falls through to
           generation, so both flags are briefly true; without this the thinking
           placeholder sits above the progress card claiming a second job. */}
-      {isChatting && !isAnalyzing && (
+      {showWorking && isChatting && !isAnalyzing && (
         <article className="wb-note" aria-live="polite">
           <div>
             <div className="wb-who">Forma</div>

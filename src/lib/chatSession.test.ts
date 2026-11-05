@@ -13,11 +13,43 @@ import {
   messageMatches,
   noteCountLabel,
   projectMatches,
+  requestMatches,
+  requestState,
+  requestTitle,
+  requestsOf,
   searchParts,
   truncateFrom,
   withdrawTurn,
   type ChatMessage,
 } from './chatSession';
+
+/* The conversation a request at a time (2026-11-05), as Stitch's agent card shows it. */
+describe('requestsOf', () => {
+  it('groups each message of the person with the replies that follow it, oldest first', () => {
+    const m = (id: string, role: 'user' | 'assistant', text = id) => ({ id, role, text }) as ChatMessage;
+    const requests = requestsOf([m('a', 'assistant'), m('b', 'user'), m('c', 'assistant'), m('d', 'assistant'), m('e', 'user')]);
+    expect(requests.map((r) => [r.id, r.ask?.id ?? null, r.replies.map((x) => x.id)])).toEqual([
+      ['a', null, ['a']],
+      ['b', 'b', ['c', 'd']],
+      ['e', 'e', []],
+    ]);
+    expect(requestsOf([])).toEqual([]);
+  });
+
+  it("names a request by its first line, its pictures or Forma, and says where it stands", () => {
+    const ask = (over: Partial<ChatMessage>) => ({ id: 'q', ask: { id: 'q', role: 'user' as const, text: '', ...over }, replies: [] as ChatMessage[] });
+    expect(requestTitle(ask({ text: '\n  Make the total bold\nand more' }))).toBe('Make the total bold');
+    expect(requestTitle(ask({ images: ['x', 'y'] }))).toBe('2 pictures');
+    expect(requestTitle({ id: 'a', ask: null, replies: [] })).toBe('Forma');
+    const r = (reply: Partial<ChatMessage>) => ({ id: 'q', ask: null, replies: [{ id: 'r', role: 'assistant' as const, text: 'x', ...reply }] });
+    expect(requestState(r({}))).toBe('done');
+    expect(requestState(r({ error: 'no' }))).toBe('failed');
+    expect(requestState(r({ clarify: { questions: [{ id: '1', question: 'Paper?' }], answered: false } }))).toBe('waiting');
+    expect(requestState(r({ confirm: { prompt: 'p', answered: 'yes' } }))).toBe('done');
+    expect(requestMatches(r({ text: 'The Total is bold' }), 'total')).toBe(true);
+    expect(requestMatches(r({ text: 'nothing' }), 'total')).toBe(false);
+  });
+});
 
 /** A transcript entry with only the fields a given test cares about. */
 const msg = (over: Partial<ChatMessage> & { id: string }): ChatMessage => ({

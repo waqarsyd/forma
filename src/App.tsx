@@ -258,6 +258,7 @@ import {
   type ChatBranch,
   noteCountLabel,
   projectMatches,
+  requestsOf,
   truncateFrom,
   withdrawTurn,
   type ChatMessage as ChatSessionMessage,
@@ -273,8 +274,11 @@ import { repeatedHeadingTables } from './lib/mockupRows';
    the entry chunk every landing-page visitor downloads had reached 98.3% of
    its budget, half of that day's growth being the chat's own features. The
    working dots come from the same module, so all three are one chunk. See the
-   index- entry in scripts/check-bundle-size.mjs. */
-const ChatThread = lazy(() => import('./components/ChatThread'));
+   index- entry in scripts/check-bundle-size.mjs. Since the same evening the
+   conversation floats over the report a request at a time, as Google Stitch's
+   does: the card and the log draw it, the thread inside the card. */
+const RequestCard = lazy(() => import('./components/RequestCard'));
+const RequestLog = lazy(() => import('./components/RequestLog'));
 const WorkingDots = lazy(() => import('./components/ChatThread').then((m) => ({ default: m.WorkingDots })));
 const Composer = lazy(() => import('./components/Composer'));
 import type { OcrBuiltReport } from './components/OcrDialog';
@@ -1720,6 +1724,14 @@ export default function App() {
      puts saved projects and recent sessions in the second column rather than a
      drawer over the canvas. */
   const [railPanel, setRailPanel] = useState<RailPanel>('review');
+  /*
+   * The conversation a request at a time (2026-11-05), floating over the
+   * report as Google Stitch's agent card does: the request the card shows,
+   * null for the newest, and whether the card is folded to its mark. See *The
+   * conversation floats over the report* in docs/notes/app-shell.md.
+   */
+  const [shownRequestId, setShownRequestId] = useState<string | null>(null);
+  const [isCardCollapsed, setIsCardCollapsed] = useState(false);
   const [showWorkspaceProfile, setShowWorkspaceProfile] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   /* Bumped when the account panel changes the profile. `updateProfile` mutates
@@ -1854,6 +1866,8 @@ export default function App() {
     setRailPanel(panel);
     setIsReviewCollapsed(false);
     rememberReviewCollapsed(false);
+    // The chat has no column since 2026-11-05: choosing it opens the card.
+    if (panel === 'review') setIsCardCollapsed(false);
     // Choosing somewhere to go closes the drawer, as Gemini's does.
     setIsRailDrawerOpen(false);
   }, [rememberReviewCollapsed]);
@@ -2157,8 +2171,20 @@ export default function App() {
    * them. Answered by that message's form or by the next message typed.
    */
   const pendingClarifyRef = useRef<{ request: ReportDescriptionRequest; messageId: string } | null>(null);
-  /** The transcript search: null while closed, the text typed while open. */
-  const [chatQuery, setChatQuery] = useState<string | null>(null);
+  /*
+   * The transcript as requests (2026-11-05), for the card and the log. A new
+   * request shows itself and opens the card, as Stitch's does when a prompt
+   * is sent; the search the chat column's head had is the log's now.
+   */
+  const requests = useMemo(() => requestsOf(messages), [messages]);
+  const requestCount = requests.length;
+  // A request withdrawn while shown falls back to the newest.
+  const shownRequest = requests.find((r) => r.id === shownRequestId) ?? requests[requestCount - 1] ?? null;
+  const shownIsNewest = !shownRequest || shownRequest.id === requests[requestCount - 1]?.id;
+  useEffect(() => {
+    setShownRequestId(null);
+    setIsCardCollapsed(false);
+  }, [requestCount]);
   /**
    * The changes the chat made, each with the report before it, for the
    * reply's Undo (2026-11-05). Held in memory only: a saved project keeps its
@@ -3274,7 +3300,7 @@ export default function App() {
     setChatChanges({});
     // A new conversation owes no answers to the last one's questions.
     pendingClarifyRef.current = null;
-    setChatQuery(null);
+    setShownRequestId(null);
     setOcrReview(null);
   };
 
@@ -5534,7 +5560,8 @@ export default function App() {
          they are down there rather than at the top with everything else. */
       style={{
         '--wb-rail-w': `${railWidth}px`,
-        '--wb-review-w': isReviewCollapsed ? '0px' : `${appliedReviewWidth}px`,
+        // No column for the chat, which floats over the report (2026-11-05).
+        '--wb-review-w': isReviewCollapsed || railPanel === 'review' ? '0px' : `${appliedReviewWidth}px`,
       } as React.CSSProperties}
       data-resizing={isResizingReview ? 'true' : undefined}
       /* Stacked, the drawer always shows the labelled column, whatever the
@@ -5646,7 +5673,8 @@ export default function App() {
             not a section. Chevrons since 2026-11-04: the panel icon went to the
             sidebar's own toggle, which is where Gemini and ChatGPT put it, and
             two toggles wearing one icon would be guesswork. */}
-        <button
+        {/* Only for a panel the column shows: the chat has none since 2026-11-05. */}
+        {railPanel !== 'review' && <button
           data-toggle-panel
           title={isReviewCollapsed ? 'Show the side panel' : 'Hide the side panel'}
           aria-label={isReviewCollapsed ? 'Show the side panel' : 'Hide the side panel'}
@@ -5656,7 +5684,7 @@ export default function App() {
         >
           {isReviewCollapsed ? <IconChevronsRight size={19} /> : <IconChevronsLeft size={19} />}
           <span className="wb-rail-label">{isReviewCollapsed ? 'Show panel' : 'Hide panel'}</span>
-        </button>
+        </button>}
         <span className="wb-spacer" />
         <button title="Switch theme" aria-label="Switch theme" onClick={() => setTheme(!isDarkMode)}>
           {isDarkMode ? <IconSun size={18} /> : <IconMoon size={18} />}
@@ -5724,7 +5752,7 @@ export default function App() {
       {/* ============================================================ review */}
       <section
         id="wb-review-panel"
-        className={`wb-review wb-rise wb-rise-1${isReviewCollapsed ? ' wb-hidden' : ''}`}
+        className={`wb-review wb-rise wb-rise-1${isReviewCollapsed || railPanel === 'review' ? ' wb-hidden' : ''}`}
         aria-label="Session"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -5734,172 +5762,10 @@ export default function App() {
             ChatGPT, where they are always in reach. They sat here, as an orange
             "+ New report" pill and a magnifier above every panel. */}
 
-        {/* ------------------------------------------------ current session */}
-        <div className={`wb-panel-body${railPanel === 'review' ? '' : ' wb-hidden'}`}>
-          <div className="wb-col-head">
-            {/* `h2`, not a styled span. These four panel titles are the only
-                structure the workspace has below the report's `h1`, and a
-                screen-reader user navigating by heading found exactly one
-                landmark on the whole page — measured 2026-09-08 by walking the
-                rendered DOM, not by reading the markup. `.wb-col-title` states
-                its own font, weight and size and Tailwind's preflight zeroes
-                heading margins, so the element renders identically: semantics
-                with no visual change. Only one panel is in the layout at a
-                time; the others are `wb-hidden`, so no reader meets four. */}
-            {/* "Chat", and no count of notes beside it (2026-11-04): the column
-                is the conversation, as in the chat apps people know. It said
-                "Review" with "2 notes" until then. */}
-            <h2 className="wb-col-title">Chat</h2>
-            {/* Searching the transcript (2026-11-04): a field under the head,
-                opened from here, as the chat apps people know do it. */}
-            {/* The conversation as a Markdown file (2026-11-05), as Gemini
-                exports a chat: who said what and when, pictures counted. */}
-            {messages.length > 0 && (
-              <button
-                type="button"
-                className="wb-icon-btn wb-icon-btn--first"
-                title="Export the chat as a Markdown file"
-                aria-label="Export the chat"
-                onClick={exportConversation}
-              >
-                <IconDownload size={14} />
-              </button>
-            )}
-            {messages.length > 0 && (
-              <button
-                type="button"
-                className={`wb-icon-btn${chatQuery !== null ? ' wb-is-on' : ''}`}
-                title="Search the chat"
-                aria-label="Search the chat"
-                aria-expanded={chatQuery !== null}
-                onClick={() => setChatQuery((q) => (q === null ? '' : null))}
-              >
-                <IconSearch size={14} />
-              </button>
-            )}
-          </div>
-          {chatQuery !== null && messages.length > 0 && (
-            <div className="wb-chat-search">
-              <IconSearch size={13} />
-              <input
-                type="search"
-                value={chatQuery}
-                autoFocus
-                placeholder="Search the chat"
-                aria-label="Search the chat"
-                onChange={(e) => setChatQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') setChatQuery(null);
-                }}
-              />
-              <button type="button" title="Close the search" aria-label="Close the search" onClick={() => setChatQuery(null)}>
-                <IconClose size={13} />
-              </button>
-            </div>
-          )}
-
-          {/* Unverified means an address nobody has proved they can read. It is
-              a nudge, not a gate: nothing here is withheld until it is done,
-              because the account only ever holds this person's own reports and
-              locking them out of their own work would cost more than it buys.
-              Google accounts never see this — the popup already proved it. */}
-          {user && !user.emailVerified && user.providerData.some((p) => p.providerId === 'password') && (
-            <div style={{ padding: '12px 20px 0' }}>
-              <div className="wb-note-line wb-warn">
-                <span className="wb-ic"><IconWarn size={13} /></span>
-                <span>
-                  <b>Verify your email.</b> We sent a link when you created the account.{' '}
-                  <button
-                    type="button"
-                    onClick={() => setIsAccountOpen(true)}
-                    style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}
-                  >
-                    Send it again
-                  </button>
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* An empty column while the chat's chunk arrives, holding the
-              composer to the foot as the thread does. */}
-          <Suspense fallback={<div className="wb-thread" />}>
-          <ChatThread
-            messages={messages}
-            isChatting={isChatting}
-            isAnalyzing={isAnalyzing}
-            streamingReply={streamingReply}
-            onRetry={handleRetryMessage}
-            onOpenAttachment={setFullScreenImage}
-            onAnswer={handleClarifyAnswers}
-            onEdit={handleEditMessage}
-            onWithdraw={handleWithdrawMessage}
-            onRegenerate={handleRegenerate}
-            onRate={handleRate}
-            undoable={undoableIds}
-            onUndo={handleUndo}
-            onConfirm={(id, yes) => void handleConfirm(id, yes)}
-            onShowVersion={handleShowVersion}
-            // The lazy component loses its generic; the result is App's own DesignResult.
-            usageOf={(m) => summariseUsage((m.result as DesignResult | undefined)?.usage)}
-            query={chatQuery ?? ''}
-          >
-            {/* Generation, as Forma's answer being written: three dots
-                (2026-11-04). Until then a card held a progress ring, the step,
-                a percentage, a character count, pause and stop, and after 20
-                seconds a paragraph about the model thinking. The owner asked
-                for the chat to show the messages and the answers only, with
-                every step behind the scenes; Stop is the composer's button.
-                The progress is still measured honestly, and a screen reader
-                still hears it, from the attributes below. */}
-            {isAnalyzing && (
-              <article className="wb-note" aria-live="polite">
-                <div>
-                  <div className="wb-who">Forma</div>
-                  <p
-                    role="progressbar"
-                    aria-label="Forma is designing the report"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={Math.round(progress.percent)}
-                    aria-valuetext={teamStage ?? stepLabel(progress)}
-                  >
-                    <WorkingDots />
-                  </p>
-                </div>
-              </article>
-            )}
-          </ChatThread>
-          </Suspense>
-
-          <Suspense fallback={null}>
-          <Composer
-            previews={previews}
-            previewGroups={previewGroups}
-            previewMeta={previewMeta}
-            textGroups={textGroups}
-            onOpenAttachment={openAttachment}
-            onRemoveFile={removeFile}
-            onRemoveText={removeTextAttachment}
-            uploadNotices={uploadNotices}
-            error={error}
-            prompt={prompt}
-            onPromptChange={setPrompt}
-            onSend={handleGenerate}
-            onStop={handleStop}
-            fileInputRef={fileInputRef}
-            onFileChange={handleFileChange}
-            hasApiKey={hasApiKey}
-            onAddKey={() => setIsConfigOpen(true)}
-            isAnalyzing={isAnalyzing}
-            isChatting={isChatting}
-            isIngesting={isIngesting}
-            onPasteFiles={ingestFiles}
-            selection={result?.repxContent ? previewSelection : []}
-            models={modelPicker}
-          />
-          </Suspense>
-        </div>
+        {/* The chat's panel went on 2026-11-05: the conversation floats over the
+            report a request at a time, as Google Stitch's does (the card, the
+            log and the box at the end of the bench below). This column holds
+            the other panels; `git log -S"wb-chat-search"` finds the old one. */}
 
         {/* ------------------------------------------------- saved projects */}
           {/* Projects: every saved session, in one panel.
@@ -6181,7 +6047,17 @@ export default function App() {
       </section>
 
       {/* ============================================================= bench */}
-      <main className="wb-bench">
+      {/* The report fills the bench, and the conversation floats over it
+          (2026-11-05), as Google Stitch's canvas carries its agent: the card at
+          the top left, the log at the bottom left, the box at the foot. A file
+          dropped anywhere on it is attached, as on the chat column it replaced. */}
+      <main
+        className="wb-bench"
+        data-card={requests.length > 0 || isAnalyzing || isChatting ? (isCardCollapsed ? 'folded' : 'open') : undefined}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <div className="wb-bench-bar">
           <div className="wb-doc-id">
             <h1>{result?.title || 'Untitled report'}</h1>
@@ -6259,7 +6135,8 @@ export default function App() {
           </div>
         </div>
 
-        <div className="wb-bench-body">
+        {/* A click on the empty ground folds the card away, as on Stitch's canvas. */}
+        <div className="wb-bench-body" onClick={(e) => { if (e.target === e.currentTarget) setIsCardCollapsed(true); }}>
           {result ? (
             <>
               {plate === 'proof' && (
@@ -6377,13 +6254,135 @@ export default function App() {
                     looks identical. */}
                 <h2 style={{ marginTop: 22 }}>Ready to process</h2>
                 <p>
-                  Attach a design in the chat — a screenshot, a PDF, or an existing{' '}
+                  Attach a design in the box below — a screenshot, a PDF, or an existing{' '}
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>.repx</span> — or describe the
                   report you want, and it lands here.
                 </p>
               </div>
             </div>
           )}
+        </div>
+
+        {/* ------------------------------------------- the floating conversation */}
+        {(requests.length > 0 || isAnalyzing || isChatting) && (
+          <div className="wb-float wb-float-card">
+            <Suspense fallback={null}>
+              <RequestCard
+                request={shownRequest}
+                latest={shownIsNewest}
+                collapsed={isCardCollapsed}
+                onToggle={() => setIsCardCollapsed((folded) => !folded)}
+                initials={user ? initialsOf(user) : 'Y'}
+                isChatting={isChatting}
+                isAnalyzing={isAnalyzing}
+                streamingReply={streamingReply}
+                onRetry={handleRetryMessage}
+                onOpenAttachment={setFullScreenImage}
+                onAnswer={handleClarifyAnswers}
+                onEdit={handleEditMessage}
+                onWithdraw={handleWithdrawMessage}
+                onRegenerate={handleRegenerate}
+                onRate={handleRate}
+                undoable={undoableIds}
+                onUndo={handleUndo}
+                onConfirm={(id, yes) => void handleConfirm(id, yes)}
+                onShowVersion={handleShowVersion}
+                // The lazy component loses its generic; the result is App's own DesignResult.
+                usageOf={(m) => summariseUsage((m.result as DesignResult | undefined)?.usage)}
+              >
+                {/* Generation, as Forma's answer being written: three dots
+                    (2026-11-04). Until then a card held a progress ring, the step,
+                    a percentage, a character count, pause and stop, and after 20
+                    seconds a paragraph about the model thinking. The owner asked
+                    for the chat to show the messages and the answers only, with
+                    every step behind the scenes; Stop is the composer's button.
+                    The progress is still measured honestly, and a screen reader
+                    still hears it, from the attributes below. */}
+                {isAnalyzing && (
+                  <article className="wb-note" aria-live="polite">
+                    <div>
+                      <div className="wb-who">Forma</div>
+                      <p
+                        role="progressbar"
+                        aria-label="Forma is designing the report"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.round(progress.percent)}
+                        aria-valuetext={teamStage ?? stepLabel(progress)}
+                      >
+                        <WorkingDots />
+                      </p>
+                    </div>
+                  </article>
+                )}
+              </RequestCard>
+            </Suspense>
+          </div>
+        )}
+        {requests.length > 0 && (
+          <div className="wb-float wb-float-log">
+            <Suspense fallback={null}>
+              <RequestLog
+                requests={requests}
+                shownId={shownRequest?.id ?? null}
+                working={isAnalyzing || isChatting}
+                onShow={(id) => {
+                  setShownRequestId(id === requests[requests.length - 1]?.id ? null : id);
+                  setIsCardCollapsed(false);
+                }}
+                onExport={exportConversation}
+              />
+            </Suspense>
+          </div>
+        )}
+        <div className="wb-float wb-float-bar">
+          {/* Unverified means an address nobody has proved they can read. It is
+              a nudge, not a gate: nothing here is withheld until it is done,
+              because the account only ever holds this person's own reports and
+              locking them out of their own work would cost more than it buys.
+              Google accounts never see this — the popup already proved it. */}
+          {user && !user.emailVerified && user.providerData.some((p) => p.providerId === 'password') && (
+            <div className="wb-note-line wb-warn">
+              <span className="wb-ic"><IconWarn size={13} /></span>
+              <span>
+                <b>Verify your email.</b> We sent a link when you created the account.{' '}
+                <button
+                  type="button"
+                  onClick={() => setIsAccountOpen(true)}
+                  style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  Send it again
+                </button>
+              </span>
+            </div>
+          )}
+          <Suspense fallback={null}>
+          <Composer
+            previews={previews}
+            previewGroups={previewGroups}
+            previewMeta={previewMeta}
+            textGroups={textGroups}
+            onOpenAttachment={openAttachment}
+            onRemoveFile={removeFile}
+            onRemoveText={removeTextAttachment}
+            uploadNotices={uploadNotices}
+            error={error}
+            prompt={prompt}
+            onPromptChange={setPrompt}
+            onSend={handleGenerate}
+            onStop={handleStop}
+            fileInputRef={fileInputRef}
+            onFileChange={handleFileChange}
+            hasApiKey={hasApiKey}
+            onAddKey={() => setIsConfigOpen(true)}
+            isAnalyzing={isAnalyzing}
+            isChatting={isChatting}
+            isIngesting={isIngesting}
+            onPasteFiles={ingestFiles}
+            selection={result?.repxContent ? previewSelection : []}
+            models={modelPicker}
+          />
+          </Suspense>
         </div>
       </main>
 

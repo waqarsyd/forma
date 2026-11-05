@@ -297,7 +297,17 @@ const BUDGETS = [
   // chip, the bubbles on the right, the versions and the way back to the
   // latest message, and the sidebar's search. The single stylesheet has no
   // cut to make the way a chunk does. 120_000 puts it at 94.2%.
-  { prefix: 'index-', ext: '.css', max: 120_000, note: 'the whole stylesheet' },
+  //
+  // Raised to 129_000 the same night, a RAISE naming the growth, tripped at
+  // 120,567 B. 115,199 -> 121,039 B, +5,840 B, is hand-written workspace.css
+  // for the conversation floating over the report as Google Stitch's does
+  // (the owner's request): the reply card and its pill, the request log, the
+  // box as a two-row bar with its focus edge, and their stacked layout. The
+  // composer's overlap of the old chat column went with the column, -472 B,
+  // which is the 121,039 -> 120,567. More of the same layout is approved and
+  // still to come (a selection toolbar, the corner's Undo, the queue), so
+  // expect another raise naming those. 129_000 puts it at 93.5%.
+  { prefix: 'index-', ext: '.css', max: 129_000, note: 'the whole stylesheet' },
   { prefix: 'pdf.worker-', ext: '.mjs', max: 2_250_000, note: 'pdfjs worker, lazy' },
   { prefix: 'pdf-', ext: '.js', max: 470_000, note: 'pdfjs entry, lazy' },
   { prefix: 'Markdown-', ext: '.js', max: 175_000, note: 'react-markdown + remark-gfm, lazy' },
