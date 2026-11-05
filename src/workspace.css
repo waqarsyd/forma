@@ -1936,6 +1936,15 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .wb-ctx-menu button:hover { background: var(--track); }
 .wb-ctx-menu .wb-danger { color: var(--bad-ink); }
 
+/* The queue over the box (Composer.tsx), as Stitch's tray. */
+.wb-queue { display: grid; gap: 6px; }
+.wb-queue-head { padding: 0 8px; font-size: 11.5px; color: var(--ink-2); }
+.wb-queue-item {
+  display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 12px; font-size: 13px; color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 14px; background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(12px);
+}
+.wb-queue-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Usage today in Settings (UsageSettings.tsx), as Stitch's daily credits. */
 .wb-usage { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .wb-usage li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; font-size: 12.5px; color: var(--ink); }

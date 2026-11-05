@@ -253,6 +253,32 @@ describe('a clean composer', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
+  // The queue (2026-11-05), as Stitch's tray over its box.
+  it('queues what is sent while Forma works, by Enter or by the button', () => {
+    const onQueue = vi.fn();
+    const onSend = vi.fn();
+    draw({ isChatting: true, prompt: 'Then centre the note', onQueue, onSend, onStop: vi.fn() });
+    fireEvent.keyDown(field(), { key: 'Enter' });
+    expect(onQueue).toHaveBeenCalledWith('Then centre the note');
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Queue' }));
+    expect(onQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it('lists the queue over the box with Steer, Edit and Cancel, and stops while the box is empty', () => {
+    const onSteer = vi.fn();
+    const onEditQueued = vi.fn();
+    const onCancelQueued = vi.fn();
+    draw({ isAnalyzing: true, onStop: vi.fn(), onQueue: vi.fn(), queue: [{ id: 'q1', text: 'Make the total bold' }], onSteer, onEditQueued, onCancelQueued });
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+    const item = screen.getByRole('listitem');
+    expect(item.textContent).toContain('Make the total bold');
+    fireEvent.click(screen.getByRole('button', { name: /Steer/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect([onSteer, onEditQueued, onCancelQueued].map((f) => f.mock.calls[0][0])).toEqual(['q1', 'q1', 'q1']);
+  });
+
   it('names a chosen tier in the box', () => {
     draw({ models: { current: 'gemini-2.5-flash-lite', choices: [{ id: 'gemini-2.5-flash', used: 7 }, { id: 'gemini-2.5-flash-lite', used: 0 }], onChoose: () => {} } });
     expect(screen.getByTitle('The model the chat and reports use').textContent).toBe('Fast');

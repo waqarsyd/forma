@@ -28,16 +28,25 @@ import { groupLabel } from '../lib/attachments';
 import { modelTiers } from '../lib/modelTiers';
 import {
   IconAlert,
+  IconArrowRight,
   IconArrowUp,
   IconChevronDown,
   IconClose,
   IconDoc,
   IconKey,
   IconMic,
+  IconPencil,
   IconPlus,
   IconTarget,
+  IconTrash,
   IconWarn,
 } from './landing/icons';
+
+/** A message typed while Forma works, waiting its turn (2026-11-05). */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+}
 
 /** The browser's speech recognition, as much of it as the box uses. */
 interface Recognition {
@@ -118,6 +127,17 @@ export interface ComposerProps {
    * to each from this browser today. Absent for another AI.
    */
   models?: { current: string; choices: readonly { id: string; used: number }[]; onChoose: (id: string) => void } | null;
+  /**
+   * The queue (2026-11-05), as Stitch's tray over its box: a message sent
+   * while Forma works waits here, each with Steer (stop what runs and send
+   * this now), Edit (back into the box) and Cancel, and App sends the next
+   * when Forma is free. With `onQueue` absent, the box only stops.
+   */
+  queue?: readonly QueuedMessage[];
+  onQueue?: (text: string) => void;
+  onSteer?: (id: string) => void;
+  onEditQueued?: (id: string) => void;
+  onCancelQueued?: (id: string) => void;
 }
 
 /** A model's name as the picker shows it: "2.5-flash" for "gemini-2.5-flash". */
@@ -149,6 +169,11 @@ export default function Composer({
   onPasteFiles,
   selection = [],
   models,
+  queue = [],
+  onQueue,
+  onSteer,
+  onEditQueued,
+  onCancelQueued,
 }: ComposerProps) {
   /* The model menu, open over the box; Escape or a click elsewhere closes it. */
   const [modelMenu, setModelMenu] = useState(false);
@@ -190,6 +215,8 @@ export default function Composer({
   // without one. Nothing about an attachment holds the send (2026-11-03): its
   // text is read after the message goes, as a step of the run.
   const canSend = hasApiKey && !isAnalyzing && !isChatting && !isIngesting;
+  // While Forma works, words in the box queue rather than wait (2026-11-05).
+  const canQueue = hasApiKey && (isAnalyzing || isChatting) && !!onQueue && prompt.trim().length > 0;
 
   /*
    * Sending puts the caret back in the field, and this is not a nicety.
@@ -290,6 +317,26 @@ export default function Composer({
 
   return (
     <div className="wb-composer" ref={rootRef}>
+      {/* The queue (2026-11-05), as Stitch's tray over its box. */}
+      {queue.length > 0 && (
+        <div className="wb-queue" role="list" aria-label="Queued messages">
+          <div className="wb-queue-head">Queued · sends after this one</div>
+          {queue.map((q) => (
+            <div className="wb-queue-item" role="listitem" key={q.id}>
+              <span title={q.text}>{q.text}</span>
+              <button type="button" className="wb-tool" aria-label="Steer: stop what runs and send this now" title="Steer: stop what runs and send this now" onClick={() => onSteer?.(q.id)}>
+                <IconArrowRight size={14} />
+              </button>
+              <button type="button" className="wb-tool" aria-label="Edit" title="Edit" onClick={() => onEditQueued?.(q.id)}>
+                <IconPencil size={13} />
+              </button>
+              <button type="button" className="wb-tool" aria-label="Cancel" title="Cancel" onClick={() => onCancelQueued?.(q.id)}>
+                <IconTrash size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {/* Staged intake. The artifact had no slot for these; they are absent
           at rest, so the default view is unchanged. */}
       {previews.length > 0 && (
@@ -410,6 +457,7 @@ export default function Composer({
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               if (canSend) onSend();
+              else if (canQueue) onQueue?.(prompt.trim());
             }
           }}
           /* An image pasted into the box is attached, as a dropped one is. */
@@ -484,6 +532,11 @@ export default function Composer({
              key, so nothing has to be added under the box (2026-11-04). */
           <button className="wb-send" aria-label="Add your API key" title="Add your API key in Settings" onClick={onAddKey}>
             <IconKey size={15} />
+          </button>
+        ) : canQueue ? (
+          /* Words typed while Forma works go to the queue (2026-11-05). */
+          <button className="wb-send" aria-label="Queue" title="Queue: sends after this one" onClick={() => onQueue?.(prompt.trim())}>
+            <IconArrowUp size={15} />
           </button>
         ) : (isAnalyzing || isChatting) && onStop ? (
           /* While a generation runs, the send button is its Stop (2026-11-04),

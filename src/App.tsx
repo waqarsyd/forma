@@ -2366,6 +2366,21 @@ export default function App() {
   /** The assistant's answer as it streams in, before it becomes a real message. */
   const [streamingReply, setStreamingReply] = useState('');
   /*
+   * The queue (2026-11-05), as Stitch's tray over its box: what is sent while
+   * Forma works waits, in order, and the next goes the moment Forma is free.
+   * Its words only: anything attached stays in the box for the person to
+   * send. Steer puts one first and stops what runs, so it goes next.
+   */
+  const [queue, setQueue] = useState<{ id: string; text: string }[]>([]);
+  useEffect(() => {
+    if (isAnalyzing || isChatting || queue.length === 0) return;
+    const [next, ...rest] = queue;
+    setQueue(rest);
+    void handleGenerate(next.text);
+    // handleGenerate is read at the moment Forma is free; it is declared below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAnalyzing, isChatting, queue]);
+  /*
    * The model picker in the chat box (2026-11-05), as Gemini's: Auto, or one
    * of the models this key has answered for (`readCachedModelSet`, the probe's
    * own list, never a catalogue), with today's requests from this browser
@@ -3373,6 +3388,7 @@ export default function App() {
     pendingClarifyRef.current = null;
     setShownRequestId(null);
     setChangedHighlight([]);
+    setQueue([]);
     setOcrReview(null);
   };
 
@@ -3719,6 +3735,7 @@ export default function App() {
     setResult(report.result);
     setChatChanges({});
     setChangedHighlight([]);
+    setQueue([]);
     setPreviewZoom(1);
     setRevisions([]);
     setRailPanel('review');
@@ -6522,6 +6539,21 @@ export default function App() {
             onPasteFiles={ingestFiles}
             selection={result?.repxContent ? previewSelection : []}
             models={modelPicker}
+            queue={queue}
+            onQueue={(text) => {
+              setQueue((q) => [...q, { id: nextMessageId(), text }]);
+              setPrompt('');
+            }}
+            onSteer={(id) => {
+              setQueue((q) => [...q.filter((x) => x.id === id), ...q.filter((x) => x.id !== id)]);
+              handleStop();
+            }}
+            onEditQueued={(id) => {
+              const item = queue.find((x) => x.id === id);
+              setQueue((q) => q.filter((x) => x.id !== id));
+              if (item) setPrompt(item.text);
+            }}
+            onCancelQueued={(id) => setQueue((q) => q.filter((x) => x.id !== id))}
           />
           </Suspense>
         </div>
