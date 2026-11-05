@@ -69,6 +69,17 @@
 .wb-usage-bar { grid-column: 1 / -1; height: 5px; border-radius: 999px; background: var(--track); overflow: hidden; }
 .wb-usage-bar i { display: block; height: 100%; border-radius: inherit; background: var(--ink-2); }
 
+/* The request log (RequestLog.tsx), as Stitch's Agent log: Stop beside the
+   running request, and a long title sliding to its end while hovered. */
+.wb-log-list li { display: flex; align-items: center; gap: 2px; }
+.wb-log-list .wb-log-stop {
+  flex: none; width: 26px; height: 26px; padding: 0; display: grid; place-items: center;
+  border: 1px solid var(--rule); border-radius: 999px; color: var(--ink-2);
+}
+.wb-log-list .wb-log-stop:hover { color: var(--ink); background: var(--track); }
+.wb-log-text.is-scrolling { text-overflow: clip; }
+.wb-log-text.is-scrolling > span { display: inline-block; transform: translateX(var(--shift)); transition: transform var(--slide) linear .25s; }
+
 /* The percentage at the corner is a field you type a size into (ZoomField.tsx),
    with Stitch's menu above it. */
 .wb-zoom { position: relative; display: inline-flex; }

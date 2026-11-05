@@ -5606,15 +5606,9 @@ export default function App() {
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {/* The notice's own words (2026-11-04), not always "Saved": the
-                composer stopped repeating it, and "Restored the version from
-                10:15" or "8 sample rows generated" are not saves. */}
-            {saveNotice && (
-              <span className="wb-saved" role="status" title={saveNotice}>
-                <IconCheck size={13} />
-                <span className="wb-saved-text">{saveNotice}</span>
-              </span>
-            )}
+            {/* The notice left this bar for a toast at the bottom right
+                (2026-11-06): beside the selection toolbar it wrapped the bar
+                onto two lines. See `wb-toast` below. */}
             {/* "Saved" while the open session matches its last save (2026-11-05):
                 the workspace saves on its own after each turn, so the button is
                 there for the moment before that, and after a save that failed. */}
@@ -5854,6 +5848,8 @@ export default function App() {
                         aria-valuetext={teamStage ?? stepLabel(progress)}
                       >
                         <WorkingDots />
+                        {/* The task, never its steps (2026-11-06), as Stitch's "Creating prototype…". */}
+                        <span className="wb-task" aria-hidden="true">Designing the report…</span>
                       </p>
                     </div>
                   </article>
@@ -5871,6 +5867,7 @@ export default function App() {
                 working={isAnalyzing || isChatting}
                 onShow={(id) => void showRequest(id)}
                 onExport={exportConversation}
+                onStop={handleStop}
               />
             </Suspense>
           </div>
@@ -5945,6 +5942,20 @@ export default function App() {
           <button type="button" className="wb-clean-leave" onClick={() => setIsClean(false)}>
             Clean screen · {keysFor('Ctrl+\\')} to leave
           </button>
+        )}
+        {/* A notice in its own words (2026-11-04), not always "Saved":
+            "Restored the version from 10:15" or "8 sample rows generated" are
+            not saves. A toast at the bottom right since 2026-11-06, as Stitch's,
+            gone after four seconds or at its ×. */}
+        {saveNotice && (
+          <div className="wb-toast" role="status">
+            <IconCheck size={14} />
+            {/* An edit's own reason starts lower case ("duplicated as label2"). */}
+            <span>{saveNotice.charAt(0).toUpperCase() + saveNotice.slice(1)}</span>
+            <button type="button" aria-label="Dismiss" title="Dismiss" onClick={() => setSaveNotice(null)}>
+              <IconClose size={12} />
+            </button>
+          </div>
         )}
         {/* Undo, Redo and the zoom at the bench's corner (2026-11-05), as
             Stitch has them: one history for every change to the report

@@ -760,6 +760,8 @@ export default function ChatThread<R>({
             ) : (
               <p role="status" aria-label="Forma is working">
                 <WorkingDots />
+                {/* The task, never its steps (2026-11-06), as Stitch names its own. */}
+                <span className="wb-task" aria-hidden="true">Working on it…</span>
               </p>
             )}
           </div>

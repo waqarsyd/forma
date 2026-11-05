@@ -600,18 +600,19 @@
 
 .wb-empty { padding: 26px 20px; text-align: center; color: var(--ink-faint); font-size: 12.5px; }
 
-/* Saved state. A workspace has to say whether the work is safe before you start
-   something new, so this reads out rather than being implied by a button. */
-.wb-saved {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--ok-ink);
+/* A notice, as a toast at the bottom right above the corner's pills (2026-11-06,
+   Stitch's): it read out in the top bar until then, and wrapped that bar onto
+   two lines beside the selection toolbar. */
+.wb-toast {
+  position: fixed; right: 16px; bottom: 64px; z-index: 40; max-width: min(380px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 14px;
+  border: 1px solid var(--rule); border-radius: 12px; background: var(--panel); box-shadow: var(--shadow-md);
+  color: var(--ink); font-size: 13px;
 }
+.wb-toast > svg { flex: none; color: var(--ok-ink); }
+.wb-toast > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-toast > button { flex: none; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer; }
+.wb-toast > button:hover { background: var(--track); color: var(--ink); }
 
 /* A note is its words, with no strip beside it and no name above it
    (2026-11-05, both at the owner's request): the accent bar beside the
@@ -1062,6 +1063,8 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
    the composer's send button; the audit and the units readout are in the
    REPX pane. The old rules are in history: git log -S'wb-status'. */
 .wb-dots { display: inline-flex; align-items: center; gap: 4px; height: 18px; }
+/* The task beside the dots, as Stitch's "Creating prototype…": its name, never its steps. */
+.wb-task { margin-left: 10px; color: var(--ink-2); font-size: 12.5px; font-style: italic; }
 .wb-dots i {
   width: 6px;
   height: 6px;
@@ -1083,7 +1086,6 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 
 /* A notice in the bench's bar is a sentence now, not always "Saved": kept to
    one line, the whole of it in the title. */
-.wb-saved-text { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ------------------------------------------------------------- account */
 .wb-pop {
