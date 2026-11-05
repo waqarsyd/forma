@@ -111,10 +111,10 @@
    an anchor — nothing new, just a different element.
 
    The ported block's `.wb-signin-btn` was deliberately not used: it painted this
-   slot with the accent wash and ring, which is the avatar's treatment AND the
-   `aria-current` treatment for a selected rail section. An accent disc here read
-   as "signed in" and as "active" at once, which is exactly the confusion this
-   change fixes. It was kept in the verbatim block until the 2026-11-01 audit
+   slot with the accent wash and ring, which is the avatar's treatment AND was
+   then the `aria-current` treatment for a selected rail section (grey since
+   2026-11-05). An accent disc here read as "signed in" and as "active" at
+   once, which is exactly the confusion this change fixes. It was kept in the verbatim block until the 2026-11-01 audit
    removed it with the other rules nothing used (see the note below). */
 .wb-rail a:not(.wb-mark) {
   width: 38px;
@@ -441,10 +441,14 @@
 .wb-mark { margin-bottom: 14px; }
 
 .wb-rail button:hover { color: var(--ink); background: var(--track); }
+/* The selected section wears the hover's grey and the ink, with no colour and
+   no ring, as ChatGPT's selected item does (2026-11-05, measured in the
+   owner's Chrome: the same 5% grey for hover and selected, the text unchanged,
+   no border). It was the accent wash, text and ring until then, which the
+   owner found too loud on every selected item. */
 .wb-rail button[aria-current="true"] {
-  color: var(--accent);
-  background: var(--accent-wash);
-  border-color: var(--accent-line);
+  color: var(--ink);
+  background: var(--track);
 }
 .wb-rail .wb-spacer { flex: 1; }
 .wb-rail .wb-avatar {
@@ -1261,11 +1265,11 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
   }
 
   /* The accent disc moves from the button to the initials inside it, and the
-     button itself goes plain. It must not become a full-width accent-washed
-     pill: that is exactly what `aria-current` paints a selected section as, and
-     an account slot wearing the selected-section treatment is the confusion the
-     signed-out slot was already fixed for once. Disc means identity, here as
-     everywhere. 3px of padding puts it at x=13, where it sits in the narrow
+     button itself goes plain. It must not become a full-width washed pill:
+     that is what `aria-current` paints a selected section as (grey since
+     2026-11-05, the accent before), and an account slot wearing the
+     selected-section treatment is the confusion the signed-out slot was
+     already fixed for once. Disc means identity, here as everywhere. 3px of padding puts it at x=13, where it sits in the narrow
      rail. */
   .wb-shell[data-rail='wide'] .wb-rail .wb-avatar {
     width: 100%;

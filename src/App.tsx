@@ -5020,10 +5020,10 @@ export default function App() {
 
         {/*
           * Signed in: an accent disc with initials — that treatment means
-          * "identity". Signed out: a plain rail button, because the accent disc is
-          * ALSO what `aria-current` uses for the selected rail section, so an
-          * accent-washed circle here read as "signed in" and as "active" at the
-          * same time. Three meanings sharing one appearance is why this looked
+          * "identity". Signed out: a plain rail button, because the accent disc was
+          * ALSO what `aria-current` used for the selected rail section (grey
+          * since 2026-11-05), so an accent-washed circle here read as "signed
+          * in" and as "active" at the same time. Three meanings sharing one appearance is why this looked
           * like a logged-in avatar when nobody was logged in.
           *
           * Signed out it also navigates straight to /login rather than opening a
