@@ -283,6 +283,7 @@ const UsageSettings = lazy(() => import('./components/UsageSettings'));
 const CommandMenu = lazy(() => import('./components/CommandMenu'));
 const ZoomField = lazy(() => import('./components/ZoomField'));
 const HelpMenu = lazy(() => import('./components/HelpMenu'));
+const ExportPanel = lazy(() => import('./components/ExportPanel'));
 /* The Mockup and the REPX pane (2026-11-06), each drawn only with a report open. */
 const ReportMockup = lazy(() => import('./components/ReportMockup'));
 const RepxViewer = lazy(() => import('./components/RepxViewer'));
@@ -1527,8 +1528,10 @@ export default function App() {
   }, [pendingTools]);
   /** The controls selected on the Preview, by name: what the chat's "this" means (2026-11-05). */
   const [previewSelection, setPreviewSelection] = useState<string[]>([]);
-  /** An export the chat asked the Preview for, made once per nonce. */
-  const [exportRequest, setExportRequest] = useState<{ format: Exclude<AgentTool['format'], 'repx' | undefined>; nonce: number } | null>(null);
+  /** An export the chat or the Export panel asked the Preview for, made once per nonce. */
+  const [exportRequest, setExportRequest] = useState<{ format: Exclude<AgentTool['format'], 'repx' | undefined> | 'pdf-outline'; nonce: number } | null>(null);
+  /** The Export panel (2026-11-06, components/ExportPanel.tsx). */
+  const [isExportOpen, setIsExportOpen] = useState(false);
   /**
    * The sidebar's Search over the saved projects (2026-11-05), as ChatGPT's
    * searches its chats: null while closed, the text typed while open.
@@ -4705,7 +4708,7 @@ export default function App() {
             `Could not start the report designer on this machine. If your browser asked for permission, ` +
             `allow it and click again. If it did not ask at all, the handler is not registered yet — run ` +
             `RepxDesigner.exe --register once (no admin needed), or start RepxDesigner.exe --serve yourself. ` +
-            `Export .repx works regardless.`
+            `Export, then DevExpress report (.repx), works regardless.`
           );
           return;
         }
@@ -5668,10 +5671,35 @@ export default function App() {
               <IconExternal size={14} />
               {designerStarting ? 'Starting designer…' : 'Open in designer'}
             </button>
-            <button className="wb-pill wb-pill--accent" onClick={downloadDesign} disabled={!result}>
-              <IconDownload size={14} />
-              Export .repx
-            </button>
+            {/* Export opens every format in one panel (2026-11-06), as Stitch's
+                does; the .repx is its first row, and Ctrl+K's "Export the .repx"
+                still downloads it at once. */}
+            <span className="wb-export-anchor">
+              <button
+                className="wb-pill wb-pill--accent"
+                data-export-toggle
+                aria-expanded={isExportOpen}
+                onClick={() => setIsExportOpen((open) => !open)}
+                disabled={!result}
+              >
+                <IconDownload size={14} />
+                Export
+                <IconChevronDown size={13} />
+              </button>
+              {isExportOpen && result && (
+                <Suspense fallback={null}>
+                  <ExportPanel
+                    onRepx={downloadDesign}
+                    onDesigner={result.repxContent ? () => void openInDesigner() : undefined}
+                    onPrint={(format) => {
+                      showPlate('print');
+                      setExportRequest({ format, nonce: Date.now() });
+                    }}
+                    onClose={() => setIsExportOpen(false)}
+                  />
+                </Suspense>
+              )}
+            </span>
           </div>
         </div>
 

@@ -955,6 +955,11 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   /* Same translucent-plus-blur material as SiteHeader and the workspace bar. */
   background: color-mix(in srgb, var(--surface) 84%, transparent);
   backdrop-filter: blur(16px) saturate(1.5);
+  /* Above the report and the floating pieces (2026-11-06): the blur makes the
+     bar a stacking context of its own, so the Export panel and the selection
+     toolbar's menus, which drop from it, were drawn under the report. */
+  position: relative;
+  z-index: 6;
 }
 .wb-doc-id { display: flex; align-items: baseline; gap: 11px; min-width: 0; }
 .wb-doc-id h1 {

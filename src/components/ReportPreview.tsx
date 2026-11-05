@@ -93,7 +93,7 @@ interface Props {
    * reported done so the request does not run again when the pane is next
    * opened.
    */
-  exportRequest?: { format: 'pdf' | 'csv' | 'xlsx' | 'docx' | 'rtf' | 'html' | 'png'; nonce: number } | null;
+  exportRequest?: { format: 'pdf' | 'pdf-outline' | 'csv' | 'xlsx' | 'docx' | 'rtf' | 'html' | 'png'; nonce: number } | null;
   onExportRequestDone?: () => void;
   /**
    * The controls selected on the pane, by name, whenever that changes, and
@@ -1539,13 +1539,14 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     };
   }, [exportKind, continuous, report, structure, title, download]);
 
-  // An export the chat asked for, made once (2026-11-05): see `exportRequest`.
+  // An export the chat or the Export panel asked for, made once (2026-11-05): see `exportRequest`.
   const exportedNonce = useRef<number | null>(null);
   useEffect(() => {
     if (!exportRequest || exportedNonce.current === exportRequest.nonce) return;
     exportedNonce.current = exportRequest.nonce;
     const { format } = exportRequest;
     if (format === 'pdf') exportPdf();
+    else if (format === 'pdf-outline') setWritingPdf(true);
     else if (format === 'csv') exportCsv();
     else if (format === 'xlsx') exportXlsx();
     else setExportKind(format);
