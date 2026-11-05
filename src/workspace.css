@@ -750,7 +750,7 @@
   background: var(--panel);
   color: var(--ink-faint);
 }
-.wb-chat-search:focus-within { border-color: var(--accent); }
+.wb-chat-search:focus-within { border-color: var(--rule-strong); }
 .wb-chat-search input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--ink); outline: none; }
 /* The pill shows the focus, and its own button closes the search: the
    browser's ring and clear button inside it would be a second of each. */
@@ -820,7 +820,10 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   box-shadow: var(--shadow-sm), var(--inset-hi);
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-.wb-box:focus-within { border-color: var(--accent); box-shadow: var(--shadow-md); }
+/* Focus darkens the edge and lifts the shadow, with no orange (2026-11-05, at
+   the owner's request), as ChatGPT's box does; it was the accent. Focus stays
+   plainly visible, which is what the comment below depends on. */
+.wb-box:focus-within { border-color: var(--rule-strong); box-shadow: var(--shadow-md); }
 .wb-box .wb-line { flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* `.wb-line` was a static placeholder span in the artifact, so it was coloured
    like one. As a real input that rule painted everything the user *typed* in
