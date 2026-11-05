@@ -127,6 +127,16 @@ describe('what the AI writes back', () => {
     expect(back.given.fields.get(placeKey(0, 1))).toBe('Amount');
   });
 
+  it('forgives the borders and length a model drops once it has written the words, and an alignment as a word', () => {
+    const back = textToDraft('page Letter portrait 850 1100 75 75 75 75\nband PageHeader 20 0\nlabel caption 94 0 80 20 Arial:9b left "Company"\ntable caption 0 0 700 20 Arial:9b l\nrow caption 2 Arial:9b l "Contact" | caption 1 Arial:9b right "Balance"\nlabel caption 0 0 10 10 Arial:9 "No alignment"');
+    expect(back.problems).toEqual(['line 6: a control needs a kind, a role, four numbers, a font, an alignment, borders and a length']);
+    const [label, table] = back.skeleton!.bands[0].controls;
+    expect(label).toMatchObject({ align: 'left', borders: 0, chars: 7 });
+    expect(back.given.words.get(placeKey(0, 0))).toBe('Company');
+    expect(table.rows![0].map((c) => c.align)).toEqual(['left', 'right']);
+    expect(back.given.words.get(placeKey(0, 1, 0, 1))).toBe('Balance');
+  });
+
   it('takes words only for text and a field only for a value or a total', () => {
     const back = textToDraft('page Letter portrait 850 1100 75 75 75 75\nband Detail 20 0\nlabel value 0 0 100 20 Arial:9 l 0 0 "Chai" [Item]\nlabel caption 100 0 100 20 Arial:9 l 0 4 "Item" [Item]\nlabel decoration 200 0 100 20 - l 0 0 "x" fill=#ABCDEF fill=bad');
     expect(back.given.words.has(placeKey(0, 0))).toBe(false);

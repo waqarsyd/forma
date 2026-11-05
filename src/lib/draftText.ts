@@ -36,8 +36,10 @@
  * chose, the way the upload itself does, so it can.
  *
  * Reading is tolerant, as the skeleton's is: a line it cannot understand is
- * skipped and named in `problems`, a length left out is taken as 0, and a
- * total written as `sumSum([Amount])` still sums `[Amount]`.
+ * skipped and named in `problems`; a control's borders and length, or a
+ * cell's length, left out before its words are taken as 0; an alignment
+ * written as a word is read as its letter; and a total written as
+ * `sumSum([Amount])` still sums `[Amount]`.
  */
 import { fontToken, isBandKind, isControlKind, readCell, readControl, readPage } from './skeletonText';
 import { noneGiven, placeKey, type DraftGiven } from './skeletonRepx';
@@ -128,15 +130,19 @@ function readExtras(tokens: readonly string[], key: string, role: SkeletonRole, 
   }
 }
 
+const ALIGN_WORDS: Record<string, string> = { left: 'l', center: 'c', centre: 'c', middle: 'c', right: 'r' };
+
 /**
  * The plain tokens of a control or a cell, up to `count`, and what follows
- * them. A length left out before the extras is taken as 0.
+ * them. The trailing numbers a model drops once it has written the words,
+ * up to `missing` of them (a control's borders and length, a cell's length),
+ * are taken as 0, and an alignment written as a word as its letter.
  */
-function split(tokens: readonly string[], count: number): { base: string[]; extras: string[] } {
+function split(tokens: readonly string[], count: number, missing: number): { base: string[]; extras: string[] } {
   const first = tokens.findIndex(isExtra);
-  const plain = first < 0 ? [...tokens] : tokens.slice(0, first);
+  const plain = (first < 0 ? [...tokens] : tokens.slice(0, first)).map((t) => ALIGN_WORDS[t.toLowerCase()] ?? t);
   const extras = first < 0 ? [] : tokens.slice(first).filter(isExtra);
-  if (plain.length === count - 1) plain.push('0');
+  while (plain.length < count && plain.length >= count - missing) plain.push('0');
   return { base: plain.slice(0, count), extras };
 }
 
@@ -181,7 +187,7 @@ export function textToDraft(text: string): DraftReading {
       }
       const cells = [];
       for (const [k2, ct] of cellTokens.entries()) {
-        const { base, extras } = split(ct, 5);
+        const { base, extras } = split(ct, 5, 1);
         const cell = readCell(base);
         if (!cell) {
           problems.push(`${at}: cell ${k2 + 1} needs a role, a weight, a font, an alignment and a length`);
@@ -200,7 +206,7 @@ export function textToDraft(text: string): DraftReading {
         problems.push(`${at}: a control before any band`);
         continue;
       }
-      const { base, extras } = split(tokens, 10);
+      const { base, extras } = split(tokens, 10, 2);
       const control = readControl(base);
       if (!control) {
         problems.push(`${at}: a control needs a kind, a role, four numbers, a font, an alignment, borders and a length`);
