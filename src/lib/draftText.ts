@@ -43,7 +43,7 @@
  */
 import { fontToken, isBandKind, isControlKind, readCell, readControl, readPage } from './skeletonText';
 import { noneGiven, placeKey, type DraftGiven } from './skeletonRepx';
-import type { ReportSkeleton, SkeletonBand, SkeletonRole } from './reportSkeleton';
+import type { ReportSkeleton, SkeletonBand, SkeletonControl, SkeletonKind, SkeletonRole } from './reportSkeleton';
 
 const ALIGN = { left: 'l', center: 'c', right: 'r' } as const;
 const num = (v: number) => String(Math.round(v * 100) / 100);
@@ -101,8 +101,61 @@ export interface DraftReading {
 /** A quoted text, a bracketed field, a cell separator, or any other run of characters. */
 const TOKEN = /"(?:[^"\\]|\\.)*"|\[[^\]]*\]|\||[^\s|"[\]]+/g;
 
-const isExtra = (t: string) => t.startsWith('"') || t.startsWith('[') || /^(fill|ink)=/.test(t);
 const HEX = /^#[0-9a-fA-F]{6}$/;
+/** A bare colour counts too: an answer wrote a line's as `#002244`, with no `ink=`. */
+const isExtra = (t: string) => t.startsWith('"') || t.startsWith('[') || /^(fill|ink)=/.test(t) || HEX.test(t);
+
+const ROLE_WORDS: readonly SkeletonRole[] = ['title', 'caption', 'value', 'total', 'pageInfo', 'decoration'];
+
+/** The role a control written without one most likely plays. */
+const DEFAULT_ROLE: Record<SkeletonKind, SkeletonRole> = {
+  label: 'caption',
+  richText: 'caption',
+  checkbox: 'caption',
+  table: 'value',
+  pageInfo: 'pageInfo',
+  line: 'decoration',
+  picture: 'decoration',
+  panel: 'decoration',
+  shape: 'decoration',
+  barcode: 'decoration',
+  subreport: 'decoration',
+  chart: 'decoration',
+  other: 'decoration',
+};
+
+const FONT = /^([^:\s]+):(\d+(?:\.\d+)?)(b?)(i?)$/;
+
+/**
+ * A control written loosely: its kind and four numbers are all that is
+ * required, and everything after is taken where it can be recognised. The
+ * first measured answers (2026-11-05) wrote a line as `line 0 42 754 1 0 0 0
+ * #002244` and a table as `table 0 0 938 18 1 1 1 1 1 1`, with no role, font
+ * or alignment, since none means anything to a line; the strict reading
+ * dropped both, and with the table its rows, which is where the column
+ * headings went.
+ */
+function readLooseControl(tokens: readonly string[]): SkeletonControl | null {
+  const kind = tokens[0];
+  if (!isControlKind(kind)) return null;
+  const hasRole = ROLE_WORDS.includes(tokens[1] as SkeletonRole);
+  const role = hasRole ? (tokens[1] as SkeletonRole) : DEFAULT_ROLE[kind];
+  const at = hasRole ? 2 : 1;
+  const place = tokens.slice(at, at + 4);
+  if (place.length < 4 || !place.every(isNum)) return null;
+  const [x, y, w, h] = place.map(Number);
+  const rest = tokens.slice(at + 4).map((t) => ALIGN_WORDS[t.toLowerCase()] ?? t);
+  const fontAt = rest.findIndex((t) => t === '-' || FONT.test(t));
+  const f = fontAt >= 0 ? FONT.exec(rest[fontAt]) : null;
+  const font = f ? { family: f[1].replace(/_/g, ' '), size: Number(f[2]), bold: f[3] === 'b', italic: f[4] === 'i' } : null;
+  const alignAt = rest.findIndex((t) => t === 'l' || t === 'c' || t === 'r');
+  const align = alignAt >= 0 ? ({ l: 'left', c: 'center', r: 'right' } as const)[rest[alignAt] as 'l' | 'c' | 'r'] : 'left';
+  const after = alignAt >= 0 ? rest.slice(alignAt + 1).filter(isNum).map(Number) : [];
+  const borders = after[0] !== undefined && Number.isInteger(after[0]) && after[0] >= 0 && after[0] <= 15 ? after[0] : 0;
+  const control: SkeletonControl = { kind, role, x, y, w, h, font, align, borders, chars: after[1] ?? 0 };
+  if (kind === 'table') control.rows = [];
+  return control;
+}
 const isNum = (t: string | undefined) => t !== undefined && t !== '' && Number.isFinite(Number(t));
 
 /** Put what follows a control or a cell into `given`, as its role allows. */
@@ -120,7 +173,8 @@ function readExtras(tokens: readonly string[], key: string, role: SkeletonRole, 
       const field = t.slice(1, -1).trim();
       if (field && BOUND.includes(role)) given.fields.set(key, field);
     } else {
-      const [name, value] = t.split('=');
+      // A bare colour is the control's ink: a line's colour, or its text's.
+      const [name, value] = HEX.test(t) ? ['ink', t] : t.split('=');
       if (!HEX.test(value ?? '')) continue;
       const colours = given.colours.get(key) ?? {};
       if (name === 'fill') colours.fill = value.toUpperCase();
@@ -207,7 +261,7 @@ export function textToDraft(text: string): DraftReading {
         continue;
       }
       const { base, extras } = split(tokens, 10, 2);
-      const control = readControl(base);
+      const control = readControl(base) ?? readLooseControl(tokens.filter((t) => !isExtra(t)));
       if (!control) {
         problems.push(`${at}: a control needs a kind, a role, four numbers, a font, an alignment, borders and a length`);
         continue;
@@ -248,6 +302,14 @@ CONTROL ROLE X Y W H FONT ALIGN BORDERS LENGTH, then "words" or [Field], then fi
   A title or a caption carries its "words" in double quotes. A value or a total carries its [Field]: letters and digits, no spaces, named after its column heading or caption (Amount, UnitPrice, InvoiceNo).
 row CELL | CELL | ...   one line per row of the table just above it
   CELL: ROLE WEIGHT FONT ALIGN LENGTH, then "words" or [Field]. WEIGHT is the cell's share of the table's width.
+
+Every control line has every field, even where one means little to it, as in these:
+label caption 0 0 120 18 Arial:9b l 0 8 "Customer"
+label value 130 0 200 18 Arial:9 l 0 0 [CustomerName]
+line decoration 0 42 754 1 - l 0 0 ink=#002244
+picture decoration 600 0 150 60 - l 0 0
+table caption 0 0 700 20 Arial:9b l 4 0
+row caption 3 Arial:9b l 11 "Description" | caption 1 Arial:9b r 6 "Amount"
 
 WHAT A GOOD DRAFT IS:
 - Repeating rows (line items, a list of customers) are ONE record: a Detail band holding one table of ONE row of values, each with its [Field]. Their column headings are a PageHeader table of ONE row of captions with the same x, width and cell weights, so the columns line up. Never list the source's rows one by one.

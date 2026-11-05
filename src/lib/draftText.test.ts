@@ -129,11 +129,28 @@ describe('what the AI writes back', () => {
 
   it('forgives the borders and length a model drops once it has written the words, and an alignment as a word', () => {
     const back = textToDraft('page Letter portrait 850 1100 75 75 75 75\nband PageHeader 20 0\nlabel caption 94 0 80 20 Arial:9b left "Company"\ntable caption 0 0 700 20 Arial:9b l\nrow caption 2 Arial:9b l "Contact" | caption 1 Arial:9b right "Balance"\nlabel caption 0 0 10 10 Arial:9 "No alignment"');
-    expect(back.problems).toEqual(['line 6: a control needs a kind, a role, four numbers, a font, an alignment, borders and a length']);
+    // Even with no alignment at all, a label is read, as left-aligned.
+    expect(back.problems).toEqual([]);
+    expect(back.skeleton!.bands[0].controls[2]).toMatchObject({ kind: 'label', align: 'left', chars: 12 });
     const [label, table] = back.skeleton!.bands[0].controls;
     expect(label).toMatchObject({ align: 'left', borders: 0, chars: 7 });
     expect(back.given.words.get(placeKey(0, 0))).toBe('Company');
     expect(table.rows![0].map((c) => c.align)).toEqual(['left', 'right']);
+    expect(back.given.words.get(placeKey(0, 1, 0, 1))).toBe('Balance');
+  });
+
+  it('reads a line and a table written without role, font or alignment, as the first measured answers wrote them', () => {
+    // Quoted from the benchmark's log on 2026-11-05: the strict reading dropped
+    // both, and with the table its row of headings.
+    const back = textToDraft(
+      'page Letter portrait 850 1100 75 75 75 75\nband PageHeader 60 0\nline 0 42 754 1 0 0 0 #002244\ntable 0 0 938 18 1 1 1 1 1 1\nrow caption 0.5 Arial:8.5b l 8 "Customer" | caption 0.5 Arial:8.5b r 7 "Balance"',
+    );
+    expect(back.problems).toEqual([]);
+    const [line, table] = back.skeleton!.bands[0].controls;
+    expect(line).toMatchObject({ kind: 'line', role: 'decoration', x: 0, y: 42, w: 754, h: 1, font: null, align: 'left', borders: 0 });
+    expect(back.given.colours.get(placeKey(0, 0))).toEqual({ ink: '#002244' });
+    expect(table).toMatchObject({ kind: 'table', role: 'value', x: 0, y: 0, w: 938, h: 18 });
+    expect(table.rows).toHaveLength(1);
     expect(back.given.words.get(placeKey(0, 1, 0, 1))).toBe('Balance');
   });
 
