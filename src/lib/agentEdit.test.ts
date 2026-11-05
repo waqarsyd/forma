@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changedControls, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, changedControls, formatEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -33,6 +33,21 @@ const report = `<?xml version="1.0" encoding="utf-8"?>
 
 const control = (xml: string, name: string) => parseReportStructure(xml).bands.flatMap((b) => b.controls).find((c) => c.name === name)!;
 const edit = (...edits: AgentEdit[]) => applyEdits(report, edits);
+
+// The selection toolbar's Format menu (2026-11-05), made with the chat's own edits.
+describe('formatEdits', () => {
+  it('toggles bold over the selection, steps the size by two points, and aligns', () => {
+    expect(formatEdits(report, ['title', 'subtitle'], 'bold')).toEqual([
+      { op: 'font', control: 'title', bold: true },
+      { op: 'font', control: 'subtitle', bold: true },
+    ]);
+    const bold = applyEdits(report, formatEdits(report, ['title'], 'bold')).xml;
+    expect(formatEdits(bold, ['title'], 'bold')).toEqual([{ op: 'font', control: 'title', bold: false }]);
+    expect(formatEdits(report, ['title'], 'larger')).toEqual([{ op: 'font', control: 'title', size: 16 }]);
+    expect(control(applyEdits(report, formatEdits(report, ['title'], 'smaller')).xml, 'title').fontSize).toBe(12);
+    expect(formatEdits(report, ['title', 'nothing'], 'right')).toEqual([{ op: 'align', control: 'title', align: 'right' }]);
+  });
+});
 
 // What a request changed, outlined on Preview when it is picked in the log (2026-11-05).
 describe('changedControls', () => {

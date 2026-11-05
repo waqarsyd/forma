@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,496 tests in 131 files** — under the `node` environment
+`npm test` runs Vitest over **2,500 tests in 132 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -82,11 +82,12 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/Composer` | 36 | since 2026-11-05 the model picker; since 2026-11-05 a spoken message; since 2026-11-05 also the Preview's selection above the box; since 2026-11-05 the send is a Stop while a reply is written too; jsdom, 6 from one loop (the no-key case left it on 2026-11-02, when a missing key stopped locking the box; since 2026-11-05 one test locks it again with no key, sends nothing and offers the key button in place of the send); a clean composer (2026-11-04): nothing under the box with or without a key, and the send a Stop while a generation runs; the one chat box (2026-11-01): no separate Describe or OCR button, an attached image shown as the file alone and sent at once, its text read after the message goes (2026-11-03; until then its reading showed on its chip and held the send), a pasted image attached |
 | `components/RequestCard` | 3 | the conversation a request at a time (2026-11-05), as Stitch's agent card: the ask pinned in a pill and opened by its arrow, the card folded to its mark, Edit and Try again from the pill. jsdom |
 | `components/RequestLog` | 2 | every request beneath the card (2026-11-05), as Stitch's Agent log: the count folded, newest first with a mark each, picking one, the search and the export. jsdom |
+| `components/SelectionToolbar` | 2 | the toolbar over a selection on Preview (2026-11-05), as Stitch's: the selection named, Format from its menu, Edit text for one control only, Delete and Clear under More. jsdom |
 | `components/DataBinding` | 18 | jsdom |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
 | `components/OcrDialog` | 7 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run, low-confidence text listed and named or left out, a report built after the app's checks, a PDF page read at its resolution, and pages the chat box read already shown without reading them again |
-| `components/ReportPreview` | 31 | since 2026-11-05 the outline of what a request changed; since 2026-11-05 an export the chat asked for, made once; jsdom; since 2026-11-04 also Shift+click selection deleted and nudged as one step, Add label, a table cell retyped, a label retyped in one placement of a repeated band, and a declined edit saying why; since 2026-11-04 also the grouping field chosen above the paper, through the undo path and only where the pane edits; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle; a picture box drawn as its image zoomed into its box, and a dashed box naming what it would show when it has no image (2026-11-04) |
+| `components/ReportPreview` | 32 | since 2026-11-05 Ctrl+Z handed to the workspace's history; since 2026-11-05 the outline of what a request changed; since 2026-11-05 an export the chat asked for, made once; jsdom; since 2026-11-04 also Shift+click selection deleted and nudged as one step, Add label, a table cell retyped, a label retyped in one placement of a repeated band, and a declined edit saying why; since 2026-11-04 also the grouping field chosen above the paper, through the undo path and only where the pane edits; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle; a picture box drawn as its image zoomed into its box, and a dashed box naming what it would show when it has no image (2026-11-04) |
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 14 | 4 from two `it(` sharing one loop; since 2026-11-05 the answer is the REPX as raw XML: unwrapped from a fence, a preamble or the old JSON shape, cut off told from malformed, an unfinished document with a normal finish kept |
 | `lib/aiProvider` | 7 | jsdom (storage); the workspace open only with the Gemini key in, whichever AI is chosen, and that AI ready (2026-11-05); which AI answers: Automatic as Gemini, key or no key, since Forma Offline went into it on 2026-11-05, and the retired Gemini and Forma Offline choices read as Automatic, ready only with what each provider needs, Forma's vision model found as a helper beside any AI or as the Local AI model itself and alone only then, the choice kept in localStorage and the OpenRouter key only in this tab's sessionStorage, an unknown provider ignored |
@@ -168,7 +169,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxSummaries` | 19 | totals with no running scope, which DevExpress prints blank; each fixture is a shape it was made to print |
 | `lib/repxTruncation` | 19 |  |
 | `lib/repxViews` | 12 | the Mockup, the Spec and the title read off the REPX (2026-11-05): a section per content band in print order, x from the paper's edge and the top margin in the first section, font sizes in report units, a field as `[Field]`, a picture cropped from the upload only before the Detail band, what DevExpress does not print left out; the title from `DisplayName`, the largest text before Detail, or the `Name` |
-| `lib/agentEdit` | 26 | since 2026-11-05 changedControls, for the log's outline; since its first day also the tools the chat runs; the chat's edits to an open report (2026-11-05): the outline the model is shown, its answer checked before Forma acts on it, each edit made by splices and found by name, a font made bold keeping its family and size, a style priority set back, declines with their reasons, the paper and margins, the 40-edit limit, and what changed read off the file |
+| `lib/agentEdit` | 27 | since 2026-11-05 formatEdits, for the selection toolbar; since 2026-11-05 changedControls, for the log's outline; since its first day also the tools the chat runs; the chat's edits to an open report (2026-11-05): the outline the model is shown, its answer checked before Forma acts on it, each edit made by splices and found by name, a font made bold keeping its family and size, a style priority set back, declines with their reasons, the paper and margins, the 40-edit limit, and what changed read off the file |
 | `lib/revisions` | 21 |  |
 | `lib/revisionStore` | 26 |  |
 | `lib/router` | 17 | jsdom |
@@ -208,7 +209,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,496 in 131 files** — and that total is the arithmetic sum of the column above
+**Total: 2,500 in 132 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -222,7 +223,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2378** against a real 2,496 and will talk you into
+A grep for `\bit(` answers **2382** against a real 2,500 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

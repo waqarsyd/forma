@@ -523,6 +523,28 @@ function controlsOf(xml: string): Map<string, Seen> {
 
 const named = (key: string) => (key.includes('@') ? key.split('@')[0] : `**${key}**`);
 
+/** A choice in the selection toolbar's Format menu (2026-11-05). */
+export type FormatAction = 'bold' | 'italic' | 'larger' | 'smaller' | 'left' | 'center' | 'right';
+
+/**
+ * The edits a Format choice makes on the controls selected on Preview, by
+ * name (2026-11-05): the toolbar Stitch shows over a selection, made with
+ * the chat's own edits so a change is spliced exactly as the chat's are.
+ * Bold and italic turn on when any selected control is without, and off
+ * when all have it; larger and smaller step each control's own size by two
+ * points, from 9 when it names none, and never below 4.
+ */
+export function formatEdits(xml: string, names: readonly string[], action: FormatAction): AgentEdit[] {
+  const found = names.map((n) => findControl(xml, n)?.control).filter((c): c is NonNullable<typeof c> => !!c);
+  if (action === 'left' || action === 'center' || action === 'right') return found.map((c) => ({ op: 'align', control: c.name, align: action }));
+  if (action === 'bold' || action === 'italic') {
+    const on = found.some((c) => !c[action]);
+    return found.map((c) => ({ op: 'font', control: c.name, [action]: on }));
+  }
+  const step = action === 'larger' ? 2 : -2;
+  return found.map((c) => ({ op: 'font', control: c.name, size: Math.max(4, round((c.fontSize ?? 9) + step)) }));
+}
+
 /**
  * The names of the controls `after` adds or changes against `before`
  * (2026-11-05), for Preview to outline what a request changed when it is

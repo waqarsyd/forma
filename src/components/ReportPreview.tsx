@@ -104,6 +104,19 @@ interface Props {
    * screens a request changed. The first is scrolled into view.
    */
   highlight?: readonly string[];
+  /**
+   * The workspace's own history and zoom (2026-11-05), at the corner of the
+   * bench as Stitch's are: with `onUndo`, Ctrl+Z (and Ctrl+Shift+Z or Ctrl+Y
+   * with `onRedo`) go to App, which keeps one history for every change to the
+   * report, and the pane's own Undo button is not drawn. `zoom` multiplies
+   * the fit to the width, and `onScaleChange` reports the scale the pages are
+   * drawn at. A new `resetSelection` clears the selection.
+   */
+  onUndo?: () => void;
+  onRedo?: () => void;
+  zoom?: number;
+  onScaleChange?: (scale: number) => void;
+  resetSelection?: number;
 }
 
 export type TestRow = RecordValues;
@@ -979,7 +992,7 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, onUndo, onRedo, zoom = 1, onScaleChange, resetSelection }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -989,7 +1002,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     const t = setTimeout(() => viewportRef.current?.querySelector('.rp-hit.is-changed')?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 80);
     return () => clearTimeout(t);
   }, [highlightKey]);
-  const [scale, setScale] = useState(1);
+  /* The width the pages fit, times the workspace's zoom (2026-11-05). */
+  const [fitScale, setFitScale] = useState(1);
+  const scale = fitScale * zoom;
+  const reportScale = useRef(onScaleChange);
+  reportScale.current = onScaleChange;
+  useEffect(() => reportScale.current?.(scale), [scale]);
   const [showBands, setShowBands] = useState(true);
   const [selected, setSelected] = useState<ControlRef | null>(null);
   /*
@@ -998,6 +1016,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * stays the one the toolbar describes and the handle resizes.
    */
   const [also, setAlso] = useState<ControlRef[]>([]);
+  // Cleared from outside: the selection toolbar's Clear and Delete (2026-11-05).
+  useEffect(() => {
+    if (resetSelection === undefined) return;
+    setSelected(null);
+    setAlso([]);
+  }, [resetSelection]);
   const [editingText, setEditingText] = useState<string | null>(null);
   /*
    * Which placement of the label is being retyped, `page:band`. A Detail band
@@ -1152,7 +1176,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     if (!el) return;
     const measure = () => {
       const available = el.clientWidth;
-      if (available > 0) setScale(Math.min(1, available / pageW));
+      if (available > 0) setFitScale(Math.min(1, available / pageW));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -1267,9 +1291,16 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       // Typing in a field elsewhere on the page (a parameter, the chat) is not an edit of the report.
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+      if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'y' || (event.shiftKey && event.key.toLowerCase() === 'z'))) {
+        if (!onRedo) return;
+        event.preventDefault();
+        onRedo();
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
-        undo();
+        if (onUndo) onUndo();
+        else undo();
         return;
       }
       if (event.key === 'Escape') { setSelected(null); setAlso([]); return; }
@@ -2076,7 +2107,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             Delete
           </button>
         )}
-        {editable && (
+        {editable && !onUndo && (
           <button
             className="wb-pill wb-pill--outline"
             onClick={undo}

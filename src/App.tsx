@@ -33,6 +33,10 @@ import {
   IconEyeOff,
   IconFolder,
   IconRedo,
+  IconRedoStep,
+  IconUndo,
+  IconMinus,
+  IconPlus,
   IconStack,
   IconKey,
   IconMoon,
@@ -230,7 +234,7 @@ import {
 import { formatXml, tokenizeXml, checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
 import type { RepxAudit } from './lib/repxAudit';
-import type { AgentTool } from './lib/agentEdit';
+import type { AgentTool, FormatAction } from './lib/agentEdit';
 import {
   describedRequest,
   fixInstruction,
@@ -279,6 +283,7 @@ import { repeatedHeadingTables } from './lib/mockupRows';
    does: the card and the log draw it, the thread inside the card. */
 const RequestCard = lazy(() => import('./components/RequestCard'));
 const RequestLog = lazy(() => import('./components/RequestLog'));
+const SelectionToolbar = lazy(() => import('./components/SelectionToolbar'));
 const WorkingDots = lazy(() => import('./components/ChatThread').then((m) => ({ default: m.WorkingDots })));
 const Composer = lazy(() => import('./components/Composer'));
 import type { OcrBuiltReport } from './components/OcrDialog';
@@ -2959,6 +2964,68 @@ export default function App() {
    * Invoice Report" showed as EVERY row highlighted at once (2026-09-06).
    */
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  /*
+   * One history for every change to the report (2026-11-05), for the Undo
+   * and Redo at the bench's corner, as Stitch keeps them: a drag or retype on
+   * Preview, the selection toolbar's Format, the chat's edits and redesigns,
+   * a binding on the Data tab. Each change of the REPX keeps the report it
+   * replaced; Undo puts that back and keeps the one it left for Redo. A
+   * project opened, or New report, starts it again. Fifty steps, in memory:
+   * older versions are in Revisions.
+   */
+  const reportPast = useRef<DesignResult[]>([]);
+  const reportFuture = useRef<DesignResult[]>([]);
+  const lastReport = useRef<DesignResult | null>(null);
+  const movingInHistory = useRef(false);
+  const [historyDepth, setHistoryDepth] = useState({ back: 0, forward: 0 });
+  const noteHistory = () => setHistoryDepth({ back: reportPast.current.length, forward: reportFuture.current.length });
+  useEffect(() => {
+    const before = lastReport.current;
+    lastReport.current = result;
+    if (movingInHistory.current) {
+      movingInHistory.current = false;
+      noteHistory();
+      return;
+    }
+    if (!result) {
+      reportPast.current = [];
+      reportFuture.current = [];
+      noteHistory();
+      return;
+    }
+    if (!before?.repxContent || !result.repxContent || before.repxContent === result.repxContent) return;
+    reportPast.current = [...reportPast.current.slice(-49), before];
+    reportFuture.current = [];
+    noteHistory();
+  }, [result]);
+  /** A project opened: its history starts with it. */
+  const resetReportHistory = () => {
+    reportPast.current = [];
+    reportFuture.current = [];
+    lastReport.current = null;
+    noteHistory();
+  };
+  const undoReport = () => {
+    const back = reportPast.current.pop();
+    if (!back || !result) return;
+    reportFuture.current.push(result);
+    movingInHistory.current = true;
+    setResult(back);
+    setSaveNotice('Undone');
+  };
+  const redoReport = () => {
+    const forward = reportFuture.current.pop();
+    if (!forward || !result) return;
+    reportPast.current.push(result);
+    movingInHistory.current = true;
+    setResult(forward);
+    setSaveNotice('Redone');
+  };
+  /** The Preview's zoom over its fit to the width, and the scale it draws at (2026-11-05). */
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const [previewScale, setPreviewScale] = useState(1);
+  /** Bumped to clear the Preview's selection from the toolbar. */
+  const [selectionReset, setSelectionReset] = useState(0);
   /**
    * What the last save kept (`sessionSignature`, 2026-11-05): the ref for the
    * autosave's comparison, the state for the Save button's "Saved".
@@ -3647,8 +3714,11 @@ export default function App() {
     savedSignatureRef.current = signature;
     setSavedSignature(signature);
     setMessages(report.messages);
+    resetReportHistory();
     setResult(report.result);
     setChatChanges({});
+    setChangedHighlight([]);
+    setPreviewZoom(1);
     setRevisions([]);
     setRailPanel('review');
     openReportId.current = report.id;
@@ -5512,6 +5582,34 @@ export default function App() {
   };
 
   /*
+   * The selection toolbar (2026-11-05, components/SelectionToolbar.tsx): its
+   * edits are the chat's own, by control name, so each is spliced exactly as
+   * the chat's are and lands in the one history the corner's Undo walks.
+   */
+  const editSelection = async (make: (agent: typeof import('./lib/agentEdit'), xml: string) => import('./lib/agentEdit').AgentEdit[]) => {
+    if (!result?.repxContent || !previewSelection.length) return null;
+    const agent = await import('./lib/agentEdit');
+    const done = agent.applyEdits(result.repxContent, make(agent, result.repxContent));
+    if (!done.changed) {
+      setSaveNotice(done.declined[0] ?? 'Nothing needed changing');
+      return null;
+    }
+    setResult({ ...result, repxContent: done.xml });
+    setSaveNotice(done.applied.length === 1 ? done.applied[0] : `${done.applied.length} changes`);
+    return done;
+  };
+  const formatSelection = (action: FormatAction) => editSelection((agent, xml) => agent.formatEdits(xml, previewSelection, action));
+  const deleteSelection = async () => {
+    const done = await editSelection(() => previewSelection.map((control) => ({ op: 'delete' as const, control })));
+    if (done) setSelectionReset((n) => n + 1);
+  };
+  /** New words for one control are Forma's to write: the box, started for it. */
+  const askForText = (name: string) => {
+    setPrompt(`Change the text of ${name} to `);
+    requestAnimationFrame(() => (document.querySelector('textarea[aria-label="Message"]') as HTMLTextAreaElement | null)?.focus());
+  };
+
+  /*
    * The chat's tools, run (2026-11-05), by the effect beside `pendingTools`.
    * Assigned here, after the early returns above, because `showPlate` and the
    * handlers it calls are; a hook here would not run on every render, which
@@ -6089,7 +6187,21 @@ export default function App() {
             {result && <span className="wb-rev">{result.layout?.sections?.length ?? 0} bands</span>}
           </div>
 
-          {result && (
+          {/* With controls selected on Preview, their toolbar takes the pane
+              switcher's place (2026-11-05), as Stitch's appears at the top
+              centre over a selection; the switcher returns when it is cleared. */}
+          {result && plate === 'print' && previewSelection.length > 0 && (
+            <Suspense fallback={null}>
+              <SelectionToolbar
+                names={previewSelection}
+                onFormat={(action) => void formatSelection(action)}
+                onEditText={previewSelection.length === 1 ? () => askForText(previewSelection[0]) : undefined}
+                onDelete={() => void deleteSelection()}
+                onClear={() => setSelectionReset((n) => n + 1)}
+              />
+            </Suspense>
+          )}
+          {result && !(plate === 'print' && previewSelection.length > 0) && (
             <div className="wb-plates" role="tablist" aria-label="View">
               <button role="tab" aria-selected={plate === 'proof'} onClick={() => showPlate('proof')}>Mockup</button>
               {/* Between the picture and the file, because that is what it is:
@@ -6190,6 +6302,11 @@ export default function App() {
                       onExportRequestDone={() => setExportRequest(null)}
                       onSelectionChange={setPreviewSelection}
                       highlight={changedHighlight}
+                      onUndo={undoReport}
+                      onRedo={redoReport}
+                      zoom={previewZoom}
+                      onScaleChange={setPreviewScale}
+                      resetSelection={selectionReset}
                       /* Editing writes the REPX only. The layout and the spec
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not
@@ -6407,6 +6524,34 @@ export default function App() {
           />
           </Suspense>
         </div>
+        {/* Undo, Redo and the zoom at the bench's corner (2026-11-05), as
+            Stitch has them: one history for every change to the report
+            (`undoReport`), and on Preview its scale, with Fit as the start. */}
+        {result && (
+          <div className="wb-float wb-float-corner">
+            <div className="wb-corner" role="group" aria-label="History">
+              <button type="button" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!historyDepth.back || isAnalyzing || isChatting} onClick={undoReport}>
+                <IconUndo size={15} />
+              </button>
+              <button type="button" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled={!historyDepth.forward || isAnalyzing || isChatting} onClick={redoReport}>
+                <IconRedoStep size={15} />
+              </button>
+            </div>
+            {plate === 'print' && (
+              <div className="wb-corner" role="group" aria-label="Zoom">
+                <button type="button" aria-label="Zoom out" title="Zoom out" disabled={previewZoom <= 0.25} onClick={() => setPreviewZoom((z) => Math.max(0.25, z / 1.25))}>
+                  <IconMinus size={14} />
+                </button>
+                <button type="button" className="wb-corner-zoom" title="Fit the page to the width" onClick={() => setPreviewZoom(1)}>
+                  {Math.round(previewScale * 100)}%
+                </button>
+                <button type="button" aria-label="Zoom in" title="Zoom in" disabled={previewZoom >= 4} onClick={() => setPreviewZoom((z) => Math.min(4, z * 1.25))}>
+                  <IconPlus size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* The status bar went on 2026-11-04, at the owner's request for a workspace

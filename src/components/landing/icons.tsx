@@ -301,6 +301,19 @@ export const IconArrowRight = (p: Props) => (
     <path d="M5 12h13M13 6l6 6-6 6" />
   </Svg>
 );
+/* Undo and Redo as Stitch draws them at its canvas's corner (2026-11-05): a hooked arrow back and forward. */
+export const IconUndo = (p: Props) => (
+  <Svg {...p}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h11a5 5 0 0 1 0 10h-3" />
+  </Svg>
+);
+export const IconRedoStep = (p: Props) => (
+  <Svg {...p}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9a5 5 0 0 0 0 10h3" />
+  </Svg>
+);
 export const IconReplay = (p: Props) => (
   <Svg strokeWidth={2.4} {...p}>
     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />

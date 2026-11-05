@@ -295,6 +295,18 @@ describe('editing in the pane', () => {
     for (let i = 0; i < flags.length; i += 3) expect(flags.slice(i, i + 3)).toEqual([false, true, true]);
   });
 
+  // The workspace keeps one history at the bench's corner (2026-11-05).
+  it("hands Ctrl+Z and Ctrl+Shift+Z to the workspace's history, and draws no Undo of its own", () => {
+    const onUndo = vi.fn();
+    const onRedo = vi.fn();
+    render(<ReportPreview repxContent={editable} layout={null} title="Edit" onEdit={() => {}} onUndo={onUndo} onRedo={onRedo} />);
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'Z', ctrlKey: true, shiftKey: true });
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(onRedo).toHaveBeenCalledTimes(1);
+  });
+
   it('selects more with Shift+click, and deletes them all as one step', () => {
     const onEdit = vi.fn();
     render(<Holder onEdit={onEdit} />);

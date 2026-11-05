@@ -1907,6 +1907,9 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .wb-float-bar .wb-box > .wb-model { grid-column: 3; grid-row: 2; }
 .wb-float-bar .wb-box > .wb-tool:not(:first-child) { grid-column: 4; grid-row: 2; }
 .wb-float-bar .wb-box > .wb-send { grid-column: 5; grid-row: 2; }
+/* Its chips (an attachment, the Preview's selection) grey, as Stitch's, not the accent. */
+.wb-float-bar .wb-attach { border-color: var(--rule); background: color-mix(in srgb, var(--panel) 92%, transparent); }
+.wb-float-bar .wb-attach svg { color: var(--ink-2); }
 /* Focus as Stitch's bar shows it: the edge turns a soft blue to violet. */
 .wb-float-bar .wb-box:not(.wb-is-locked):focus-within {
   border-color: transparent;
@@ -1914,9 +1917,38 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
     linear-gradient(var(--panel), var(--panel)) padding-box,
     linear-gradient(100deg, #93b4f5, #b8a6f2) border-box;
 }
-@media (min-width: 881px) and (max-width: 1240px) {
-  .wb-bench[data-card] .wb-float-bar { left: 336px; right: 16px; width: auto; transform: none; }
+/* The toolbar over a selection on Preview, in the bar's centre where the
+   pane switcher sits otherwise (SelectionToolbar.tsx), as Stitch's. */
+.wb-ctx { position: relative; display: flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); box-shadow: var(--shadow-sm); }
+.wb-ctx > button, .wb-ctx-what {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
+  border: 0; border-radius: 999px; background: none; color: var(--ink); font-size: 12.5px; cursor: pointer;
 }
+.wb-ctx > button:hover, .wb-ctx > button[aria-expanded='true'] { background: var(--track); }
+.wb-ctx-what { cursor: default; max-width: 180px; overflow: hidden; white-space: nowrap; color: var(--ink-2); font-family: var(--mono); font-size: 11px; }
+.wb-ctx-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 6; min-width: 190px; display: grid; padding: 6px;
+  border: 1px solid var(--rule); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-md);
+}
+.wb-ctx-menu--end { left: auto; right: 0; }
+.wb-ctx-menu button { padding: 8px 10px; border: 0; border-radius: 9px; background: none; color: var(--ink); font-size: 12.5px; text-align: left; cursor: pointer; }
+.wb-ctx-menu button:hover { background: var(--track); }
+.wb-ctx-menu .wb-danger { color: var(--bad-ink); }
+
+/* Undo, Redo and the zoom at the bench's corner, as Stitch's. */
+.wb-float-corner { right: 16px; bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.wb-corner {
+  display: flex; align-items: center; padding: 2px; border: 1px solid var(--rule); border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(12px); box-shadow: var(--shadow-sm);
+}
+.wb-corner button { height: 30px; min-width: 30px; padding: 0 6px; display: grid; place-items: center; border: 0; border-radius: 999px; background: none; color: var(--ink); cursor: pointer; }
+.wb-corner button:hover:not(:disabled) { background: var(--track); }
+.wb-corner button:disabled { color: var(--ink-faint); cursor: default; }
+.wb-corner .wb-corner-zoom { min-width: 48px; font-family: var(--mono); font-size: 11px; }
+@media (min-width: 881px) and (max-width: 1240px) {
+  .wb-bench[data-card] .wb-float-bar { left: 336px; right: 236px; width: auto; transform: none; }
+}
+@media (max-width: 880px) { .wb-float-corner { justify-content: flex-end; } }
 /* Stacked, the pieces follow the report in the page's own flow. */
 @media (max-width: 880px) {
   .wb-float { position: static; transform: none; width: auto; max-height: none; margin: 8px 12px 0; }
