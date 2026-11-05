@@ -229,8 +229,33 @@ export default function Composer({
   // Leaving the workspace stops listening.
   useEffect(() => () => recognitionRef.current?.stop(), []);
 
+  /*
+   * The box floats over the conversation (2026-11-05), as Gemini's does: the
+   * messages scroll on behind it and fade out there, rather than ending at a
+   * band the box sits in. The box overlaps the foot of the thread by its own
+   * height, which it publishes to its column as `--composer-h`, and the
+   * thread pads its foot by as much so its last message can still scroll
+   * clear. Measured, because the box grows with a long message, staged
+   * files and a notice. Measured from offsetHeight, which a browser without
+   * ResizeObserver (jsdom) still reports once.
+   */
+  const rootRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    const column = el?.parentElement;
+    if (!el || !column) return;
+    const publish = () => column.style.setProperty('--composer-h', `${el.offsetHeight}px`);
+    publish();
+    const watch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null;
+    watch?.observe(el);
+    return () => {
+      watch?.disconnect();
+      column.style.removeProperty('--composer-h');
+    };
+  }, []);
+
   return (
-    <div className="wb-composer">
+    <div className="wb-composer" ref={rootRef}>
       {/* Staged intake. The artifact had no slot for these; they are absent
           at rest, so the default view is unchanged. */}
       {previews.length > 0 && (
