@@ -329,15 +329,46 @@ function ClarifyForm({
   onAnswer: (id: string, answers: ClarifyAnswer[]) => void;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>(() => Object.fromEntries(questions.map((q) => [q.id, q.suggestion ?? ''])));
+  /*
+   * One question at a time (2026-11-05), as Stitch's "Questions from Stitch"
+   * card asks them: each with Forma's suggestion to keep or change, Next, and
+   * Skip the rest, which keeps the suggestions for the rest; then, with more
+   * than one, a summary to change any answer before building. `step` past
+   * the last question is the summary.
+   */
+  const [step, setStep] = useState(0);
+  const finish = () => onAnswer(id, questions.map((q) => ({ id: q.id, question: q.question, answer: (answers[q.id] ?? '').trim() })));
+  const reviewing = step >= questions.length;
+  const last = step === questions.length - 1;
+  const single = questions.length === 1;
+  const q = questions[Math.min(step, questions.length - 1)];
   return (
     <form
       className="wb-clarify"
+      aria-label="Questions from Forma"
       onSubmit={(e) => {
         e.preventDefault();
-        onAnswer(id, questions.map((q) => ({ id: q.id, question: q.question, answer: (answers[q.id] ?? '').trim() })));
+        if (reviewing || single) finish();
+        else setStep((s) => s + 1);
       }}
     >
-      {questions.map((q) => (
+      <div className="wb-clarify-head">
+        <b>Questions from Forma</b>
+        <span>{reviewing ? 'Summary' : `${step + 1} of ${questions.length}`}</span>
+      </div>
+      {reviewing ? (
+        <ul className="wb-clarify-sum">
+          {questions.map((x, i) => (
+            <li key={x.id}>
+              <span>{x.question}</span>
+              <b>{answers[x.id]?.trim() || 'Forma decides'}</b>
+              <button type="button" className="wb-note-act" disabled={disabled} onClick={() => setStep(i)}>
+                Change
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
         <label key={q.id} className="wb-clarify-q">
           <span>{q.question}</span>
           <input
@@ -347,10 +378,17 @@ function ClarifyForm({
             disabled={disabled}
           />
         </label>
-      ))}
-      <button type="submit" className="wb-pill wb-pill--accent" disabled={disabled}>
-        Build the report
-      </button>
+      )}
+      <div className="wb-clarify-foot">
+        {!reviewing && !single && !last && (
+          <button type="button" className="wb-note-act" disabled={disabled} onClick={() => setStep(questions.length)}>
+            Skip the rest
+          </button>
+        )}
+        <button type="submit" className="wb-pill wb-pill--go" disabled={disabled}>
+          {reviewing || single ? 'Build the report' : last ? 'Review' : 'Next'}
+        </button>
+      </div>
     </form>
   );
 }

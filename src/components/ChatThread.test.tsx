@@ -430,25 +430,44 @@ describe('a report described in the chat', () => {
     expect(document.querySelector('.wb-note')).toBeNull();
   });
 
-  it('asks its questions as a form holding the suggestions, and hands up the answers', () => {
+  // One at a time since 2026-11-05, as Stitch's "Questions from Stitch" card.
+  const three = msg({
+    id: 'q',
+    role: 'assistant',
+    text: 'Before I design it, 3 questions.',
+    clarify: { answered: false, questions: [
+      { id: 'group', question: 'Group by what?', suggestion: 'Region' },
+      { id: 'total', question: 'Total of what?' },
+      { id: 'paper', question: 'Which paper?', suggestion: 'A4' },
+    ] },
+  });
+
+  it('skips the rest to the summary, keeping the suggestions, and builds from there', () => {
     const onAnswer = vi.fn();
-    const asking = msg({
-      id: 'q',
-      role: 'assistant',
-      text: 'Before I design it, 2 questions.',
-      clarify: { answered: false, questions: [
-        { id: 'group', question: 'Group by what?', suggestion: 'Region' },
-        { id: 'total', question: 'Total of what?' },
-      ] },
-    });
-    draw({ messages: [asking], onAnswer });
-    const group = screen.getByLabelText('Group by what?') as HTMLInputElement;
-    expect(group.value).toBe('Region');
+    draw({ messages: [three], onAnswer });
+    fireEvent.click(screen.getByRole('button', { name: 'Skip the rest' }));
+    expect(screen.getByText('Summary')).toBeTruthy();
+    expect(screen.getByText('Forma decides')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Build the report' }));
+    expect(onAnswer.mock.calls[0][1].map((a: { answer: string }) => a.answer)).toEqual(['Region', '', 'A4']);
+  });
+
+  it('asks its questions one at a time, each holding its suggestion, then a summary, and hands up the answers', () => {
+    const onAnswer = vi.fn();
+    draw({ messages: [three], onAnswer });
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+    expect((screen.getByLabelText('Group by what?') as HTMLInputElement).value).toBe('Region');
+    expect(screen.queryByLabelText('Total of what?')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     fireEvent.change(screen.getByLabelText('Total of what?'), { target: { value: 'Amount' } });
-    fireEvent.click(screen.getByText('Build the report'));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getByText('3 of 3')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Build the report' }));
     expect(onAnswer).toHaveBeenCalledWith('q', [
       { id: 'group', question: 'Group by what?', answer: 'Region' },
       { id: 'total', question: 'Total of what?', answer: 'Amount' },
+      { id: 'paper', question: 'Which paper?', answer: 'A4' },
     ]);
   });
 

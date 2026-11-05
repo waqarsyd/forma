@@ -1805,7 +1805,17 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
    .wb-attach-ocr rules removed that day. */
 .wb-clarify { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .wb-clarify-q { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
-.wb-clarify .wb-pill { align-self: flex-start; }
+/* One question at a time, as Stitch's card (2026-11-05): its head, a summary, and the buttons at its foot. */
+.wb-clarify { padding: 12px; border: 1px solid var(--rule); border-radius: 14px; background: var(--panel); }
+.wb-clarify-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+.wb-clarify-head span { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+.wb-clarify-sum { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12.5px; }
+.wb-clarify-sum li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; }
+.wb-clarify-sum span { grid-column: 1 / -1; color: var(--ink-2); }
+.wb-clarify-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.wb-clarify-foot .wb-pill { margin-left: auto; }
+.wb-pill--go { background: var(--ink); color: var(--panel); }
+.wb-pill--go:hover { background: var(--ink-2); color: var(--panel); }
 
 /* =============================================================================
    FORMA ADDITIONS - the conversation floats over the report (2026-11-05)
