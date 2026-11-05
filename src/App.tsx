@@ -284,6 +284,7 @@ const CommandMenu = lazy(() => import('./components/CommandMenu'));
 const ZoomField = lazy(() => import('./components/ZoomField'));
 const HelpMenu = lazy(() => import('./components/HelpMenu'));
 const ExportPanel = lazy(() => import('./components/ExportPanel'));
+const ProjectMenu = lazy(() => import('./components/ProjectMenu'));
 /* The Mockup and the REPX pane (2026-11-06), each drawn only with a report open. */
 const ReportMockup = lazy(() => import('./components/ReportMockup'));
 const RepxViewer = lazy(() => import('./components/RepxViewer'));
@@ -386,6 +387,27 @@ const MAX_TEXT_ITEMS_PER_PAGE = 400;
  * save that passes this check is not going to be rejected for size alone.
  */
 const CLOUD_SAVE_BUDGET_BYTES = 900_000;
+
+/**
+ * A project as its account document, inside that budget: whole when it fits,
+ * else without the uploaded pictures (the spec, layout and REPX are what
+ * matter), else null. Shared by the save and the title menu's Duplicate
+ * (2026-11-06), which writes a new document the same way.
+ */
+function cloudPayload(draft: SavedReport, uid: string): { payload: ReturnType<typeof toFirestoreDocument>; imagesDropped: boolean } | null {
+  const fits = (p: ReturnType<typeof toFirestoreDocument>) => p.messages.length + p.result.length <= CLOUD_SAVE_BUDGET_BYTES;
+  const whole = toFirestoreDocument(draft, uid);
+  if (fits(whole)) return { payload: whole, imagesDropped: false };
+  // The earlier versions of a message carry pictures too (2026-11-05).
+  const withoutImages = (list: ChatMessage[]): ChatMessage[] =>
+    list.map((m) => ({
+      ...m,
+      images: undefined,
+      branches: m.branches?.map((b) => ({ ...b, images: undefined, tail: withoutImages(b.tail) })),
+    }));
+  const lighter = toFirestoreDocument({ ...draft, messages: withoutImages(draft.messages) }, uid);
+  return fits(lighter) ? { payload: lighter, imagesDropped: true } : null;
+}
 
 /**
  * A non-visual attachment: a PDF's text layer, or the contents of a .repx.
@@ -1532,6 +1554,8 @@ export default function App() {
   const [exportRequest, setExportRequest] = useState<{ format: Exclude<AgentTool['format'], 'repx' | undefined> | 'pdf-outline'; nonce: number } | null>(null);
   /** The Export panel (2026-11-06, components/ExportPanel.tsx). */
   const [isExportOpen, setIsExportOpen] = useState(false);
+  /** The project's menu, opened from its title (2026-11-06, components/ProjectMenu.tsx). */
+  const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   /**
    * The sidebar's Search over the saved projects (2026-11-05), as ChatGPT's
    * searches its chats: null while closed, the text typed while open.
@@ -2910,25 +2934,12 @@ export default function App() {
         // the spec, layout and REPX — and say plainly that the images were left
         // behind. A saved report without its source thumbnails still reopens and
         // still exports; a failed save leaves the user with nothing.
-        let payload = toFirestoreDocument(draft, user.uid);
-        let imagesDropped = false;
-
-        if (payload.messages.length + payload.result.length > CLOUD_SAVE_BUDGET_BYTES) {
-          // The earlier versions of a message carry pictures too (2026-11-05).
-          const withoutImages = (list: ChatMessage[]): ChatMessage[] =>
-            list.map((m) => ({
-              ...m,
-              images: undefined,
-              branches: m.branches?.map((b) => ({ ...b, images: undefined, tail: withoutImages(b.tail) })),
-            }));
-          payload = toFirestoreDocument({ ...draft, messages: withoutImages(messages) }, user.uid);
-          imagesDropped = true;
-        }
-
-        if (payload.messages.length + payload.result.length > CLOUD_SAVE_BUDGET_BYTES) {
+        const fitted = cloudPayload(draft, user.uid);
+        if (!fitted) {
           fail('This project is too large to sync to your account. It is still open here, and "Save Project" while signed out keeps it on this device.');
           return;
         }
+        const { payload, imagesDropped } = fitted;
 
         await sdk.setDoc(docRef, payload);
         saved();
@@ -3143,6 +3154,53 @@ export default function App() {
       return;
     }
     setSavedReports(updated);
+  };
+
+  /**
+   * The open project copied as a new one (2026-11-06, the title's menu, as
+   * Stitch's Duplicate): what is on screen now, not its last save, kept where
+   * a save would keep it. The copy is listed; the original stays open.
+   */
+  const duplicateProject = async () => {
+    const source = savedReports.find((r) => r.id === openProjectId);
+    if (!source) return;
+    const copy: SavedReport = {
+      id: Date.now().toString(),
+      name: `Copy of ${source.name}`.slice(0, 120),
+      timestamp: new Date().toISOString(),
+      messages,
+      result,
+    };
+    if (user) {
+      try {
+        const fitted = cloudPayload(copy, user.uid);
+        if (!fitted) {
+          setError('This project is too large to copy into your account.');
+          return;
+        }
+        const { sdk, paths, db } = await loadFirebase();
+        await sdk.setDoc(paths.reportDocRef(db, user.uid, copy.id), fitted.payload);
+        setSaveNotice(`Duplicated as ${copy.name}`);
+      } catch (err) {
+        reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${copy.id}`, 'That project could not be duplicated in your account. Try again in a moment.');
+      }
+      return;
+    }
+    const updated = [copy, ...savedReports];
+    const outcome = saveReportsLocally(updated);
+    if (!outcome.ok) {
+      setError(outcome.message);
+      return;
+    }
+    setSavedReports(updated);
+    setSaveNotice(`Duplicated as ${copy.name}`);
+  };
+  /** The open project deleted from the title's menu, and a new report started in its place. */
+  const deleteOpenProject = () => {
+    if (!openProjectId) return;
+    const id = openProjectId;
+    handleClearChat();
+    removeReports([id]);
   };
 
   const REMOVE_FADE_MS = 190;
@@ -5595,7 +5653,35 @@ export default function App() {
       >
         <div className="wb-bench-bar">
           <div className="wb-doc-id">
-            <h1>{result?.title || 'Untitled report'}</h1>
+            {/* The title opens the project's menu (2026-11-06), as Stitch's
+                project name does. A saved project shows its name, the one the
+                projects list shows, so a rename is seen where it was made. */}
+            <h1>
+              <button
+                type="button"
+                className="wb-title-btn"
+                data-project-toggle
+                aria-haspopup="menu"
+                aria-expanded={isProjectMenuOpen}
+                title="Rename, duplicate, download or delete this project"
+                onClick={() => setIsProjectMenuOpen((open) => !open)}
+              >
+                <span>{savedReports.find((r) => r.id === openProjectId)?.name || result?.title || 'Untitled report'}</span>
+                <IconChevronDown size={15} />
+              </button>
+            </h1>
+            {isProjectMenuOpen && (
+              <Suspense fallback={null}>
+                <ProjectMenu
+                  name={savedReports.find((r) => r.id === openProjectId)?.name || result?.title || 'Untitled report'}
+                  onRename={openProjectId && savedReports.some((r) => r.id === openProjectId) ? (name) => void handleRenameProject(openProjectId, name) : undefined}
+                  onDuplicate={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => void duplicateProject() : undefined}
+                  onDownload={result?.repxContent ? downloadDesign : undefined}
+                  onDelete={openProjectId && savedReports.some((r) => r.id === openProjectId) ? deleteOpenProject : undefined}
+                  onClose={() => setIsProjectMenuOpen(false)}
+                />
+              </Suspense>
+            )}
             {result && <span className="wb-rev">{result.layout?.sections?.length ?? 0} bands</span>}
           </div>
 

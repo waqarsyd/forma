@@ -961,7 +961,17 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   position: relative;
   z-index: 6;
 }
-.wb-doc-id { display: flex; align-items: baseline; gap: 11px; min-width: 0; }
+.wb-doc-id { position: relative; display: flex; align-items: baseline; gap: 11px; min-width: 0; }
+/* The title is the project menu's button (2026-11-06, ProjectMenu.tsx), as Stitch's project name. */
+.wb-title-btn {
+  /* No negative side margins: they narrowed the margin box the h1 sizes to,
+     and the name was cut short with room to spare. */
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; margin: -3px 0; padding: 3px 4px;
+  border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer;
+}
+.wb-title-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-title-btn > svg { flex: none; color: var(--ink-faint); }
+.wb-title-btn:hover, .wb-title-btn[aria-expanded='true'] { background: var(--track); }
 .wb-doc-id h1 {
   margin: 0;
   font-family: var(--display);

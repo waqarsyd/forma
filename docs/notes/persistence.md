@@ -19,6 +19,8 @@ That divergence is *on disk only*. The `onSnapshot` handler converts back on rea
 1. over budget → re-serialise with `images` stripped from every message, and set `imagesDropped`;
 2. still over budget → don't write at all; tell the user the project is too large to sync and that saving while signed out keeps it on this device.
 
+Those two steps are `cloudPayload` in `App.tsx` since 2026-11-06, shared by the save and the title menu's **Duplicate**, which writes the open session as a new project the same way (a new id, "Copy of …", where a save would keep it). The copy carries the conversation and the report, not the original's revisions, which stay with the original's id.
+
 A saved report without its source thumbnails still reopens and still exports, so keeping the spec, layout and REPX is strictly better than losing the save. The signed-out `localStorage` path has no such budget. If you add anything to the saved payload, it lands inside this budget — and remember `firestore.rules` must gain the field too.
 
 **Saving updates the open project, and happens on its own (2026-11-05).** One of the chat gaps the owner asked to be built: the conversation was lost on a reload unless Save had been pressed, and every press of Save minted a new `reportId`, so saving twice listed the project twice. `handleSaveReport` became **`persistProject(quiet)`**, the one save path, and:

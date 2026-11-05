@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,535 tests in 138 files** — under the `node` environment
+`npm test` runs Vitest over **2,538 tests in 139 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -86,6 +86,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/UsageSettings` | 2 | Usage today at the top of Settings (2026-11-05), as Stitch's daily credits: requests by model, most first, a bar only against a limit Google stated, the time to the reset, and the empty day. jsdom |
 | `components/CommandMenu` | 4 | the command menu, Ctrl+K (2026-11-06), as Stitch's: narrowed by every word typed, the arrows and Enter running the highlighted command, the empty answer and Escape; and the shortcuts list beside it, by group, with Cmd on a Mac and Ctrl on a PC. jsdom |
 | `components/ExportPanel` | 3 | every way out in one panel (2026-11-06), as Stitch's Export: the .repx from its first row, each print format asked of the Preview by its own name, the designer greyed for a report with no XML, and Escape. jsdom |
+| `components/ProjectMenu` | 3 | the open project's menu from its title (2026-11-06), as Stitch's: Rename in place and nothing sent for an unchanged name, a Delete that asks once and Keep, Duplicate and Download, and what an unsaved project cannot do greyed. jsdom |
 | `components/HelpMenu` | 3 | the corner's "?" (2026-11-06), as Stitch's: the theme in force marked and the one chosen handed back, What's new opening on the newest note, the shortcuts closing the menu, help and feedback in a new tab, the line that Forma can make mistakes, and Escape. jsdom |
 | `components/ZoomField` | 6 | the zoom's number as a field you type a size into (2026-11-06, the owner's request): 150 and 150% alike inside 10% to 400%, nothing set when nothing changed, Escape putting the number back, the arrows stepping by ten, Stitch's 100% / Fit / Selection, and a choice from the menu kept over the size typed before it, the bug the owner's Chrome found. jsdom |
 | `components/DataBinding` | 18 | jsdom |
@@ -215,7 +216,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,535 in 138 files** — and that total is the arithmetic sum of the column above
+**Total: 2,538 in 139 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -229,7 +230,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2417** against a real 2,535 and will talk you into
+A grep for `\bit(` answers **2420** against a real 2,538 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

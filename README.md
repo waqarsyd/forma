@@ -300,8 +300,9 @@ src/
                        RepxViewer, DataBinding, the request card and log, the
                        selection toolbar, the command menu, the shortcuts
                        list, the right-click menu (ControlMenu), the zoom
-                       field, the corner's help (HelpMenu) and the Export
-                       panel (ExportPanel), with
+                       field, the corner's help (HelpMenu), the Export
+                       panel (ExportPanel) and the title's project menu
+                       (ProjectMenu), with
                        overlays.css holding those menus' styles.
                        The files that are not components are useFocusTrap (a
                        shared hook), overlays.css and the tests:
