@@ -87,8 +87,12 @@ for (const file of staged) {
  * alone would fire on three legitimate places -- the public Firebase config, the
  * illustrative fake in VaultFigure.tsx, and an input placeholder -- so the
  * signal is an *assignment* to a key-shaped name, not the prefix on its own.
+ *
+ * Two formats since 2026-11-05: Google AI Studio now also issues Gemini keys
+ * that start `AQ.` and run to about 53 characters. The owner's new key was one,
+ * and this pattern, which knew only `AIzaSy`, would have let it be committed.
  */
-const SECRET = /(GEMINI_API_KEY|GOOGLE_API_KEY|apiKey)\s*[:=]\s*["'`]?AIzaSy[A-Za-z0-9_-]{10}/;
+const SECRET = /(GEMINI_API_KEY|GOOGLE_API_KEY|apiKey)\s*[:=]\s*["'`]?(AIzaSy[A-Za-z0-9_-]{10}|AQ\.[A-Za-z0-9_-]{20})/;
 const SKIP_BINARY = /\.(png|jpe?g|webp|ico|pdf|woff2?|ttf|zip|gz)$/i;
 for (const file of staged) {
   if (SKIP_BINARY.test(file) || file === 'package-lock.json' || !existsSync(file)) continue;

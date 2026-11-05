@@ -6482,7 +6482,7 @@ export default function App() {
                         className="wb-ctl"
                         id="cfg-key"
                         type={showApiKey ? 'text' : 'password'}
-                        placeholder="AIzaSy…"
+                        placeholder="AIza… or AQ.…"
                         style={{ paddingRight: 38 }}
                         value={config.customApiKey || ''}
                         onChange={(e) => setConfig({ ...config, customApiKey: e.target.value })}
