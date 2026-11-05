@@ -821,6 +821,14 @@ and says which band each text is in and what role it plays. It is two
 small networks, learned on this server's CPU and shipped as
 `assets/model/boxReader.json`: 7,552 weights, 68,705 bytes.
 
+**Since 2026-11-05 its draft is what the AI corrects.** The owner asked for
+Forma to draft and the AI to correct, so a first generation from a picture
+sends the reader's draft (or the vision model's) in a compact text form,
+`lib/draftText.ts`, and the AI answers with the corrected draft instead of
+designing the REPX; Forma builds the report from it. Built as it stands,
+with no AI, the draft scores 7/14 and 11/16 on the benchmark's cases. See
+*Forma drafts, the AI corrects* in `docs/notes/gemini.md`.
+
 How it reads a page (`src/lib/boxReader.ts`):
 - **Lines.** The texts are grouped into the lines they print on.
 - **A band per line.** The line network weighs 33 features of each line:

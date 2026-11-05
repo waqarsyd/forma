@@ -81,6 +81,7 @@ import type {
   SourceRect,
   StreamProgress,
   ChatTurn,
+  DraftRequest,
 } from './services/geminiService';
 import { loadGemini, isMissingApiKey } from './lib/geminiClient';
 import { effectiveProvider, isVisionOnly, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
@@ -1560,6 +1561,12 @@ type TeamPlan = {
    * against (2026-11-05, `sourceLayoutOf`).
    */
   evidence?: ReportLayout | null;
+  /**
+   * Forma's draft of the page, for the AI to correct rather than design the
+   * report from nothing (2026-11-05, lib/draftText.ts). Null without a picture
+   * whose layout the vision model or the box reader read.
+   */
+  correct?: DraftRequest | null;
 };
 
 const NO_TEAM: TeamPlan = { brief: '', members: [], draft: null };
@@ -3549,6 +3556,7 @@ export default function App() {
     let brief = '';
     let draft: TeamPlan['draft'] = null;
     let evidence: ReportLayout | null = null;
+    let correct: DraftRequest | null = null;
     if (input.read.length) {
       members.push('ocr');
       // OCR's own picture of the source, every row it read, for the audit
@@ -3585,6 +3593,8 @@ export default function App() {
           : [];
         const design = skeletonToDesign(reading.skeleton, { texts, title: first.file.replace(/\.[^.]+$/, '') });
         brief = draftBrief(reading.skeleton, design.layout, config.unit);
+        const { draftToText } = await import('./lib/draftText');
+        correct = { text: draftToText(reading.skeleton, design.used), texts, title: design.title, readBy: "Forma's vision model, corrected by the AI" };
         members.push('vision');
         const visionResult: DesignResult = { content: design.markdown, timestamp: new Date(), title: design.title, layout: design.layout, repxContent: design.repx, usage: null };
         draft = async () => ({ result: visionResult, source: 'vision' });
@@ -3599,8 +3609,9 @@ export default function App() {
     if (!draft && input.read.length) {
       const built = await readerBuild(input.read);
       if (built && !signal.aborted) {
-        const { draftBrief } = await import('./lib/formaTeam');
+        const [{ draftBrief }, { draftToText }] = await Promise.all([import('./lib/formaTeam'), import('./lib/draftText')]);
         brief = draftBrief(built.skeleton, built.layout, config.unit, 'reader');
+        correct = { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title, readBy: "Forma's box reader, corrected by the AI" };
         members.push('reader');
         const readerResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
         draft = async () => ({ result: readerResult, source: 'reader' });
@@ -3631,7 +3642,7 @@ export default function App() {
       }
       draft = async () => ({ result: (await offlineDesign(described, described.description)).result, source: 'offline' });
     }
-    return { brief, members, draft, evidence };
+    return { brief, members, draft, evidence, correct };
   };
 
   const runGeneration = async (
@@ -3714,7 +3725,15 @@ export default function App() {
         result ? { repxContent: result.repxContent, houseStyle } : undefined,
         signal,
         handleStreamProgress,
-        { ...(describeRequest ? { description: describeRequest } : {}), remembered, formaBrief: team.brief, evidence: team.evidence },
+        {
+          ...(describeRequest ? { description: describeRequest } : {}),
+          remembered,
+          formaBrief: team.brief,
+          evidence: team.evidence,
+          // Forma drafts and the AI corrects, on a first generation from a
+          // picture (2026-11-05); the service designs as before otherwise.
+          draft: result ? null : team.correct ?? null,
+        },
       );
 
       if (signal.aborted) {
@@ -3789,7 +3808,9 @@ export default function App() {
 
       // Add assistant message, with who took part when more than the AI did.
       const credits = team.members.length
-        ? await import('./lib/formaTeam').then(m => m.teamLine([...team.members, 'ai', 'checks'], aiName)).catch(() => '')
+        ? await import('./lib/formaTeam')
+            .then(m => m.teamLine([...team.members, ...(response.fromDraft ? (['corrector', 'builder'] as const) : (['ai', 'checks'] as const))], aiName))
+            .catch(() => '')
         : '';
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),

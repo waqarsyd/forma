@@ -162,7 +162,8 @@ export function textToSkeleton(text: string): SkeletonReading {
   return { skeleton: { ...page, bands }, problems };
 }
 
-function readControl(t: string[]): SkeletonControl | null {
+/** One control line's tokens, or null; shared with lib/draftText.ts, which adds words after them. */
+export function readControl(t: string[]): SkeletonControl | null {
   const font = readFont(t[6] ?? '');
   if (t.length !== 10 || !ROLES.includes(t[1] as SkeletonRole) || !t.slice(2, 6).every(isNum) || font === undefined || !ALIGN_BACK[t[7]] || !isNum(t[8]) || !isNum(t[9])) return null;
   const [x, y, w, h] = t.slice(2, 6).map(Number);
@@ -175,13 +176,32 @@ function readControl(t: string[]): SkeletonControl | null {
 function readRow(body: string): SkeletonCell[] | null {
   const cells: SkeletonCell[] = [];
   for (const part of body ? body.split('|') : []) {
-    const c = part.trim().split(/\s+/);
-    const font = readFont(c[2] ?? '');
-    if (c.length !== 5 || !ROLES.includes(c[0] as SkeletonRole) || !isNum(c[1]) || font === undefined || !ALIGN_BACK[c[3]] || !isNum(c[4])) return null;
-    cells.push({ role: c[0] as SkeletonRole, weight: Number(c[1]), font, align: ALIGN_BACK[c[3]], chars: Number(c[4]) });
+    const cell = readCell(part.trim().split(/\s+/));
+    if (!cell) return null;
+    cells.push(cell);
   }
   return cells;
 }
+
+/** One cell's five tokens, or null; shared with lib/draftText.ts. */
+export function readCell(c: string[]): SkeletonCell | null {
+  const font = readFont(c[2] ?? '');
+  if (c.length !== 5 || !ROLES.includes(c[0] as SkeletonRole) || !isNum(c[1]) || font === undefined || !ALIGN_BACK[c[3]] || !isNum(c[4])) return null;
+  return { role: c[0] as SkeletonRole, weight: Number(c[1]), font, align: ALIGN_BACK[c[3]], chars: Number(c[4]) };
+}
+
+/** A page line's tokens as the skeleton's page, or null; shared with lib/draftText.ts. */
+export function readPage(t: string[]): Omit<ReportSkeleton, 'bands'> | null {
+  if (t.length !== 9 || t[0] !== 'page' || !PAPERS.includes(t[1]) || (t[2] !== 'portrait' && t[2] !== 'landscape') || !t.slice(3).every(isNum)) return null;
+  const [w, h, top, bottom, left, right] = t.slice(3).map(Number);
+  return { paper: t[1], landscape: t[2] === 'landscape', width: w, height: h, margins: { top, bottom, left, right } };
+}
+
+/** Whether a word is a band kind a skeleton names. */
+export const isBandKind = (word: string): word is BandKind => BANDS.includes(word as BandKind);
+
+/** Whether a word is a control kind a skeleton names. */
+export const isControlKind = (word: string): word is SkeletonKind => KINDS.includes(word as SkeletonKind);
 
 /**
  * The skeleton with each band as tall as it prints. DevExpress prints a band

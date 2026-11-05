@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,386 tests in 123 files** — under the `node` environment
+`npm test` runs Vitest over **2,401 tests in 125 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -103,13 +103,14 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/dataSource` | 29 |  |
 | `lib/datetime` | 12 |  |
 | `lib/designerBridge` | 38 | 8 from one loop |
+| `lib/draftText` | 9 | jsdom (`checkRepx`); Forma's draft as the AI corrects it (2026-11-05): written line by line with its words, fields, groups and colours and read back exactly; words with spaces, quotes and a bar; a length left out, a total written as `sumSum([Amount])` and a fence forgiven; words only for text and a field only for a value or a total; what cannot be read skipped and named; the report built from it carrying them, in the version asked for, a file the designer opens; the rules naming every band and role |
 | `lib/embedStore` | 20 |  |
 | `lib/exportItems` | 4 | the RTF, DOCX and HTML exports read back against DevExpress's of s54a: every frame's page and twips, a section per page, every HTML cell's place in the grid; and RTF text escaping |
 | `lib/expressions` | 8 | the expression reference and the check a generated one is held to, including that an aggregate in a column prints blank |
 | `lib/fidelity` | 18 | the benchmark's scorer; the runner under `scripts/fidelity/` is not in the suite |
 | `lib/folderDrop` | 9 | the batch panel's folders and drops: a folder read to its end past the reader's first batch of 100, what the batch takes by type or name, path order, the 500 cap |
 | `lib/formaModel` | 12 | Forma's own model over made-up reports: a skeleton keeps the structure and every text's role and none of its words, the paper named either way up, the feature vector; a Crystal Reports layout (`skeletonFromLayout`) named, margined and titled as a parsed report is, with unknown kinds, roles and non-finite numbers held to the vocabulary; `categoryOf` naming a generic category and never the folder; the house style by role, two kinds of report with their categories, the archetype a request names ranked first, the same clusters every time; `unexpectedStrings` empty and naming what is slipped in; and the shipped `assets/model/formaModel.json` holding no string outside its vocabulary |
-| `lib/formaTeam` | 9 | Forma's team: the vision model's draft told to the AI in the report's own unit, with OCR's words, bound values and totals named, a long text cut and the boxes capped, and the image said to win; the box reader's draft said to be the box reader's; the house style told as defaults, nothing when it holds nothing, and the shipped model's style read; who took part named in order; why the AI did not answer in a few words, and what the stand-in draft was made from |
+| `lib/formaTeam` | 10 | since 2026-11-05 the reply naming the AI as correcting Forma's draft and Forma as building the report; Forma's team: the vision model's draft told to the AI in the report's own unit, with OCR's words, bound values and totals named, a long text cut and the boxes capped, and the image said to win; the box reader's draft said to be the box reader's; the house style told as defaults, nothing when it holds nothing, and the shipped model's style read; who took part named in order; why the AI did not answer in a few words, and what the stand-in draft was made from |
 | `lib/firebaseClient` | 4 | the auth and Firestore halves of the loader against mocks, and the imports that would undo the split against the source |
 | `lib/geminiClient` | 6 |  |
 | `lib/handwriting` | 5 | handwriting read again by TrOCR: only the lines Tesseract read below 70, each cut with room around its ink, put back as one word over the line, a line read as nothing kept |
@@ -189,6 +190,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `server/staticCache` | 10 |  |
 | `services/chatRetry` | 10 |  |
 | `services/compatClient` | 9 | local AI and OpenRouter in the shape of Gemini's SDK, against a fake OpenAI-compatible server: text and images as chat messages, the response schema as a JSON Schema, the answer read back in Gemini's words (`length` as `MAX_TOKENS`), a server refusing the schema asked for a JSON object then plain text, a streamed answer, a 429 keeping its status, the models offered (OpenRouter's free ones, image readers first), and `compatEndpoint` |
+| `services/draftCorrection` | 5 | Forma drafts and the AI corrects, against a stubbed network (2026-11-05): the rules, the draft and the picture sent, not the mega-prompt or OCR's text, thinking at `DRAFT_THINKING_BUDGET` unless the user set one; the report built from the answer; an answer that is no draft refused; a refinement or another unit designing as before |
 | `services/embeddings` | 20 | SDK mocked, as `geminiService` is |
 | `services/formaVision` | 5 | Forma's vision model through the Local AI endpoint, against a stubbed server: the picture then the instruction at temperature 0, the answer read as a skeleton with its text kept, a page that is not an image refused before asking; the model known by the name it was imported under |
 | `services/generationRetry` | 17 | since 2026-11-05 an answer that finishes before its REPX does made again, what it wrote kept once the retries are spent, and the Mockup, the Spec and the title read off the REPX; since 2026-11-04 a retry after a loop asked at temperature 0.4 and the retry of a truncated stream left at 0; since 2026-11-02 also a model out of its daily allowance left for the next, every model out named as a daily limit, and an answer cut off by its thinking asked once more with thinking capped, not when the user set a budget; the generation path's runaway and truncated-stream retries, against a stubbed stream |
@@ -200,7 +202,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,386 in 123 files** — and that total is the arithmetic sum of the column above
+**Total: 2,401 in 125 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -214,7 +216,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2268** against a real 2,386 and will talk you into
+A grep for `\bit(` answers **2283** against a real 2,401 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

@@ -3,6 +3,8 @@ import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError, isQuotaExhausted, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
 import { parseRepxAnswer, repxOfAnswer } from "../lib/analysisResponse";
 import { layoutFromRepx, reportTitleOf, specFromRepx } from "../lib/repxViews";
+import { controlCount, CORRECTION_RULES, textToDraft } from "../lib/draftText";
+import { skeletonToDesign, type PageText } from "../lib/skeletonRepx";
 import {
   cacheModel,
   cacheDailyModel,
@@ -1701,9 +1703,35 @@ export interface GenerationOptions {
    * against it, the job the AI's own layout did until the AI stopped writing one.
    */
   evidence?: ReportLayout | null;
+  /**
+   * Forma's draft of the page for the AI to correct, instead of designing the
+   * report from nothing (2026-11-05, lib/draftText.ts). Used for a first
+   * generation from a picture; a refinement or a description designs as before.
+   */
+  draft?: DraftRequest | null;
   /** Set on the one repeat of a request cut off by its thinking, so it is not repeated again. */
   thinkingCapped?: boolean;
 }
+
+/** Forma's draft of a page, as the AI corrects it and Forma builds the report from it. */
+export interface DraftRequest {
+  /** The draft in lib/draftText.ts's format. */
+  text: string;
+  /** The page's texts as OCR read them, for any place the corrected draft gives no words. */
+  texts: PageText[];
+  /** The report's name when no title is read. */
+  title: string;
+  /** What read the layout, for the spec. */
+  readBy: string;
+}
+
+/**
+ * How long the AI may think over a draft, unless the user set a budget. A
+ * correction is a smaller task than a design, and thinking was the largest
+ * share of a design's tokens on 2026-11-05; 2,048 held the benchmark's scores
+ * on the full design the same day (gemini.md). Measured against, not assumed.
+ */
+export const DRAFT_THINKING_BUDGET = 2048;
 
 /** A generation's output limit, which thinking shares (Gemini 2.5). */
 const GENERATION_OUTPUT_LIMIT = 65536;
@@ -1800,6 +1828,16 @@ export async function analyzeReportDesign(
     instruction: description ? `${description.description} ${prompt}` : prompt,
   });
   if (sections.length < ALL_SECTIONS.length) console.info(describeSections(sections));
+
+  // Forma drafts and the AI corrects, for a first generation from a picture
+  // (2026-11-05, lib/draftText.ts). A refinement edits a REPX and a
+  // description has no page to draft from, so both design as before. Forma's
+  // builder writes hundredths of an inch, so a report in another unit does too.
+  const draft =
+    options?.draft?.text.trim() && !previousState?.repxContent && !description && resolveReportUnit(config?.unit) === 'HundredthsOfAnInch'
+      ? options.draft
+      : null;
+  if (draft) console.log(`Asking the AI to correct Forma's draft (${draft.text.split('\n').length} lines), not to design the report.`);
 
   /**
    * The page the model is told to map onto, derived rather than hardcoded.
@@ -2014,7 +2052,40 @@ ${houseStyleContext}
     return { text, finishReason, usage: readTokenUsage(usage) };
   };
 
-  const buildRequest = (modelName: string, abortSignal: AbortSignal | undefined = signal, temperature = 0) => ({
+  /**
+   * The request that corrects Forma's draft: the rules of its format, the
+   * user's own words and remembered preferences, the draft, and the pictures
+   * alone. Not the mega-prompt, and not OCR's text, which the draft carries.
+   */
+  const correctionRequest = (modelName: string, abortSignal: AbortSignal | undefined, temperature: number) => ({
+    model: modelName,
+    contents: [
+      {
+        parts: [
+          {
+            text: `${CORRECTION_RULES}
+
+${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: false, fromDescription: false })}
+
+FORMA'S DRAFT:
+${draft!.text}`,
+          },
+          ...imageParts.filter((part) => 'inlineData' in part),
+        ],
+      },
+    ],
+    config: {
+      abortSignal,
+      temperature,
+      maxOutputTokens: 65536,
+      thinkingConfig: { thinkingBudget: typeof config?.thinkingBudget === 'number' ? config.thinkingBudget : DRAFT_THINKING_BUDGET },
+    },
+  });
+
+  const buildRequest = (modelName: string, abortSignal: AbortSignal | undefined = signal, temperature = 0) =>
+    draft ? correctionRequest(modelName, abortSignal, temperature) : designRequest(modelName, abortSignal, temperature);
+
+  const designRequest = (modelName: string, abortSignal: AbortSignal | undefined = signal, temperature = 0) => ({
     model: modelName,
     contents: [
       {
@@ -2174,6 +2245,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       // cut-off at the output limit is not retried here: the same input hits
       // the same limit, and the catch below caps the thinking for that.
       if (
+        !draft &&
         response.finishReason !== 'MAX_TOKENS' &&
         !['SAFETY', 'PROHIBITED_CONTENT'].includes(response.finishReason ?? '') &&
         !checkRepxComplete(repxOfAnswer(response.text)).complete &&
@@ -2374,9 +2446,29 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
    * failure in the loop above, like a stream that ended early.
    */
 
+  /**
+   * The corrected draft, built into a REPX by Forma (skeletonRepx.ts): its
+   * words and fields where the AI wrote them, OCR's where it did not, and the
+   * version asked for. An answer with no page line or no controls is not a
+   * correction, and says so rather than building an empty report.
+   */
+  const buildCorrection = (text: string | undefined, finishReason: string | undefined, request: DraftRequest): { repxContent: string } => {
+    const reading = textToDraft(text ?? '');
+    if (!reading.skeleton || !controlCount(reading.skeleton)) {
+      if (finishReason === 'MAX_TOKENS') {
+        throw new Error('The correction of Forma\'s draft was cut off before it finished. Try generating again, or upload fewer pages at once.');
+      }
+      throw new Error("The AI's correction of Forma's draft could not be read. Try generating again.");
+    }
+    if (reading.problems.length) console.warn(`Correction read with ${reading.problems.length} line(s) skipped: ${reading.problems.slice(0, 5).join('; ')}.`);
+    const design = skeletonToDesign(reading.skeleton, { texts: request.texts, title: request.title, readBy: request.readBy, given: reading.given, version: targetVersion });
+    console.log(`Built the report from the corrected draft: ${controlCount(reading.skeleton)} controls in ${reading.skeleton.bands.length} bands.`);
+    return { repxContent: design.repx };
+  };
+
   try {
-    const parsed = parseRepxAnswer(rawText, response.finishReason);
-    console.log(`Successfully read the REPX answer.`);
+    const parsed = draft ? buildCorrection(rawText, response.finishReason, draft) : parseRepxAnswer(rawText, response.finishReason);
+    console.log(draft ? `Successfully read the corrected draft.` : `Successfully read the REPX answer.`);
 
     // First, because everything below assumes the document DevExpress will
     // load is the document we are looking at. A repeated Ref makes the loader
@@ -2620,6 +2712,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       // Carried onto the result so the REPX pane can show it. The console line
       // in requestFor stays: it is the only record when a run fails before here.
       usage: response.usage ?? null,
+      ...(draft ? { fromDraft: true } : {}),
     };
   } catch (e) {
     if (rawText) {

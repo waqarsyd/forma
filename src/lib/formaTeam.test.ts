@@ -137,6 +137,12 @@ describe('the replies', () => {
     );
   });
 
+  it('says the AI corrected Forma\'s draft and Forma built the report, when it did (2026-11-05)', () => {
+    expect(teamLine(['ocr', 'reader', 'corrector', 'builder'], 'Gemini')).toBe(
+      "OCR read the words, Forma's box reader put each in its band, Gemini corrected Forma's draft and Forma built the report from it and checked it.",
+    );
+  });
+
   it('says why the AI did not answer in a few words, and what the draft was made from', () => {
     expect(failureReason('429 RESOURCE_EXHAUSTED: You exceeded your current quota.')).toBe('its free quota is used up for now');
     expect(failureReason('TypeError: Failed to fetch')).toBe('it could not be reached');

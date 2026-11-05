@@ -15,7 +15,7 @@ import { layoutToRepx, layoutToReport, ocrSummary, reportNameFor, validateOcrRep
 import { imageDpi, pageForImage } from './reportGeometry';
 import type { ReportSkeleton } from './reportSkeleton';
 import type { ReportLayout } from './reportTypes';
-import { mergePageSkeletons, pageTextsOf, skeletonToDesign } from './skeletonRepx';
+import { mergePageSkeletons, pageTextsOf, skeletonToDesign, type DraftGiven, type PageText } from './skeletonRepx';
 
 /** A page read: the OCR, and how many of its texts hold a word read without confidence. */
 export interface ReadPage {
@@ -92,6 +92,9 @@ export interface ReaderBuiltReport {
   skeleton: ReportSkeleton;
   read: number;
   placeholders: number;
+  /** The first page's texts as read, and the words and fields the build used: what a draft for the AI is written from (2026-11-05). */
+  texts: PageText[];
+  used: DraftGiven;
 }
 
 /**
@@ -123,12 +126,23 @@ export function buildWithReader(
     if (last && last.labels.length + last.tables.length) skeletons.push(readDetectedPage(model, last).skeleton);
   }
   const skeleton = mergePageSkeletons(skeletons[0], ...skeletons.slice(1));
+  const texts = pageTextsOf(first);
   const design = skeletonToDesign(skeleton, {
-    texts: pageTextsOf(first),
+    texts,
     title: pages[0].meta.file.replace(/\.[^.]+$/, '') || 'Report read by OCR',
     readBy: "Forma's box reader, from the text OCR read",
   });
-  return { title: design.title, repxContent: design.repx, layout: design.layout, markdown: design.markdown, skeleton, read: design.read, placeholders: design.placeholders };
+  return {
+    title: design.title,
+    repxContent: design.repx,
+    layout: design.layout,
+    markdown: design.markdown,
+    skeleton,
+    read: design.read,
+    placeholders: design.placeholders,
+    texts,
+    used: design.used,
+  };
 }
 
 /**

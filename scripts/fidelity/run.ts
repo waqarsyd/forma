@@ -27,6 +27,9 @@
  *                     scripts/fidelity/house holds made-up ones)
  *   --brief           send Forma's box reader's brief with each picture, as
  *                     the app has since 2026-11-04 (readerBriefFor, below)
+ *   --draft           ask the AI to correct Forma's draft of each picture and
+ *                     build the report from it, as the app has since
+ *                     2026-11-05 (lib/draftText.ts)
  *
  * What it measures and why is the doc comment of src/lib/fidelity.ts. This file
  * is the part that cannot live in the suite: it spends the owner's quota, takes
@@ -69,7 +72,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { analyzeReportDesign, type ReportConfig } from '../../src/services/geminiService';
+import { analyzeReportDesign, type DraftRequest, type ReportConfig } from '../../src/services/geminiService';
 import type { AnalysisResponse, AttachmentPart, ReportLayout } from '../../src/lib/reportTypes';
 import { readCachedModel } from '../../src/lib/modelCache';
 import { importReports, retrieveHouseStyle } from '../../src/services/library';
@@ -78,6 +81,7 @@ import type { LibraryEntry } from '../../src/lib/embedStore';
 import { readsTheseFeatures, type BoxReaderModel } from '../../src/lib/boxReader';
 import { buildWithReader, sourceLayoutOf } from '../../src/lib/ocrAttach';
 import { draftBrief } from '../../src/lib/formaTeam';
+import { draftToText } from '../../src/lib/draftText';
 import { readWithOcr } from '../model/ocrPages';
 import {
   checkFidelity,
@@ -160,6 +164,7 @@ function parseArgs(argv: string[]) {
     keyFromClipboard: false,
     house: '',
     brief: false,
+    draft: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -181,6 +186,7 @@ function parseArgs(argv: string[]) {
       case '--key-from-clipboard': opts.keyFromClipboard = true; break;
       case '--house': opts.house = next(); break;
       case '--brief': opts.brief = true; break;
+      case '--draft': opts.draft = true; break;
       default: throw new Error(`Unknown option ${a}`);
     }
   }
@@ -326,10 +332,10 @@ function attachmentFor(c: LoadedCase, rerender: boolean): AttachmentPart[] {
  * the reader declines the page, which the product would answer the same way.
  * The OCR works in the results folder, so no case directory gains files.
  */
-async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir: string): Promise<{ brief: string; evidence: ReportLayout | null }> {
+async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir: string): Promise<{ brief: string; evidence: ReportLayout | null; draft: DraftRequest | null }> {
   let source = join(c.dir, c.file.source);
   if (extname(source).toLowerCase() === '.html') source = source.replace(/\.html$/i, '.png');
-  if (extname(source).toLowerCase() !== '.png' || !existsSync(source)) return { brief: '', evidence: null };
+  if (extname(source).toLowerCase() !== '.png' || !existsSync(source)) return { brief: '', evidence: null, draft: null };
   const work = join(outDir, 'ocr');
   mkdirSync(work, { recursive: true });
   const name = `${c.name}.png`;
@@ -341,7 +347,9 @@ async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir
   const built = buildWithReader(pages, model, paper);
   // OCR's own layout is the audit's evidence, as prepareTeam passes it (2026-11-05).
   const evidence = sourceLayoutOf(pages, unit, paper);
-  return { brief: built ? draftBrief(built.skeleton, built.layout, unit, 'reader') : '', evidence };
+  // Forma's draft for the AI to correct, as prepareTeam writes it (--draft, 2026-11-05).
+  const draft = built ? { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title, readBy: "Forma's box reader, corrected by the AI" } : null;
+  return { brief: built ? draftBrief(built.skeleton, built.layout, unit, 'reader') : '', evidence, draft };
 }
 
 function configFor(c: LoadedCase, key: string, opts: ReturnType<typeof parseArgs>): ReportConfig {
@@ -382,10 +390,13 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
   };
   try {
     const parts = attachmentFor(c, opts.rerender && run === 1);
-    const { brief: formaBrief, evidence } = opts.brief ? await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir) : { brief: '', evidence: null };
+    const team = opts.brief || opts.draft ? await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir) : { brief: '', evidence: null, draft: null };
+    const { brief: formaBrief, evidence } = team;
+    const draft = opts.draft ? team.draft : null;
+    if (opts.draft) console.log(`[${c.name}] Forma's draft: ${draft ? `${draft.text.split('\n').length} lines, ${draft.text.length} characters` : 'none (not a PNG, or the reader declined the page)'}`);
     if (opts.brief) console.log(`[${c.name}] box reader brief: ${formaBrief ? `${formaBrief.split('\n').length} lines` : 'none (not a PNG, or the reader declined the page)'}`);
     record.response = await capturingConsole(record.log, () =>
-      analyzeReportDesign(prompt, parts, config, undefined, undefined, undefined, formaBrief ? { formaBrief, evidence } : undefined),
+      analyzeReportDesign(prompt, parts, config, undefined, undefined, undefined, formaBrief || draft ? { formaBrief, evidence, draft } : undefined),
     );
   } catch (error: any) {
     record.error = error?.message ?? String(error);

@@ -46,6 +46,25 @@ export interface PageText {
   h: number;
 }
 
+/**
+ * What a draft says outright, by place (`placeKey`), over what the reading
+ * would give (2026-11-05, lib/draftText.ts): the AI that corrects Forma's
+ * draft writes each text's words and each value's field, and a fill or ink
+ * the reading cannot see.
+ */
+export interface DraftGiven {
+  /** A title's or caption's words. */
+  words: Map<string, string>;
+  /** The field a value prints or a total sums. */
+  fields: Map<string, string>;
+  /** A group header's fields, by band index. */
+  groups: Map<number, string[]>;
+  /** A control's fill and text colour, as `#RRGGBB`. */
+  colours: Map<string, { fill?: string; ink?: string }>;
+}
+
+export const noneGiven = (): DraftGiven => ({ words: new Map(), fields: new Map(), groups: new Map(), colours: new Map() });
+
 export interface SkeletonDesign {
   title: string;
   repx: string;
@@ -56,6 +75,8 @@ export interface SkeletonDesign {
   /** How many titles and captions took their text from the reading, and how many kept a placeholder. */
   read: number;
   placeholders: number;
+  /** The words, fields and groups the report was written with, by place: what a draft of it says. */
+  used: DraftGiven;
 }
 
 const BAND_TYPE: Partial<Record<BandKind, string>> = {
@@ -245,22 +266,31 @@ const overlap = (a: { left: number; right: number }, b: { left: number; right: n
 
 const key = (p: Pick<Place, 'band' | 'control' | 'row' | 'cell'>) => `${p.band}:${p.control}:${p.row}:${p.cell}`;
 
+/** A place's key: band and control by index, and a table cell's row and cell, -1 for a control's own. */
+export const placeKey = (band: number, control: number, row = -1, cell = -1) => key({ band, control, row, cell });
+
 /**
  * The report a skeleton describes, its words from `texts` where they were read.
  * `title` names the report when no title was read. `readBy` names what read
- * the layout, for the spec: the vision model unless said otherwise.
+ * the layout, for the spec: the vision model unless said otherwise. `given`
+ * says words, fields, groups and colours outright, over the reading
+ * (2026-11-05). `version` is the DevExpress version to write, 20.1 unless said.
  */
-export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly PageText[]; title?: string; readBy?: string } = {}): SkeletonDesign {
+export function skeletonToDesign(
+  k: ReportSkeleton,
+  options: { texts?: readonly PageText[]; title?: string; readBy?: string; given?: DraftGiven; version?: string } = {},
+): SkeletonDesign {
   const texts = options.texts ?? [];
   const places = placesOf(k);
+  const given = options.given ?? noneGiven();
 
-  // The words of each title and caption, read where the page printed them.
+  // The words of each title and caption: the draft's, else read where the page printed them.
   const words = new Map<string, string>();
   let read = 0;
   let placeholders = 0;
   for (const p of places) {
     if (p.role !== 'title' && p.role !== 'caption') continue;
-    const found = p.box ? textIn(texts, p.box) : '';
+    const found = given.words.get(key(p))?.trim() || (p.box ? textIn(texts, p.box) : '');
     if (found) read++;
     else placeholders++;
     const kind = k.bands[p.band].kind;
@@ -278,8 +308,20 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
     fields.push(name);
     return name;
   };
+  // A field the draft names is the data's own name, so it is kept as written,
+  // however many places print it: a group header's [Region] and a record's.
+  const named = (place: Place) => {
+    const f = fieldFromCaption(given.fields.get(key(place)) ?? '');
+    if (f && !fields.includes(f)) fields.push(f);
+    return f;
+  };
   const values = places.filter((p) => p.role === 'value');
   for (const v of values) {
+    const own = named(v);
+    if (own) {
+      fieldOf.set(key(v), own);
+      continue;
+    }
     const above = captions
       .filter((c) => c.box === null || v.box === null || c.box.y < v.box.y)
       .map((c) => ({ c, o: overlap(c, v) }))
@@ -289,6 +331,11 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
   }
   // A total sums the value in its column; one with none above it gets a field of its own.
   for (const t of places.filter((p) => p.role === 'total')) {
+    const own = named(t);
+    if (own) {
+      fieldOf.set(key(t), own);
+      continue;
+    }
     const under = values
       .map((v) => ({ v, o: overlap(v, t) }))
       .filter((x) => x.o > 0)
@@ -313,6 +360,7 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
   const sections: ReportSection[] = [];
   const unitSize = (f: SkeletonFont | null) => (f ? Math.round(pointsToUnits(f.size, 'HundredthsOfAnInch') * 100) / 100 : undefined);
   let groupCount = 0;
+  const usedGroups = new Map<number, string[]>();
 
   k.bands.forEach((b, bi) => {
     const type = BAND_TYPE[b.kind];
@@ -322,9 +370,19 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
     b.controls.forEach((c, ci) => {
       const item = `Item${controls.length + 1}`;
       const at = ` LocationFloat="${n(c.x)},${n(c.y)}" SizeF="${n(c.w)},${n(c.h)}"`;
-      const look = `${fontAttr(c.font)}${bordersAttr(c.borders)}`;
+      // A fill or ink the draft names; the reading sees neither (2026-11-05).
+      const paint = given.colours.get(placeKey(bi, ci)) ?? {};
+      const colours = `${paint.fill ? ` BackColor="${attr(paint.fill)}"` : ''}${paint.ink ? ` ForeColor="${attr(paint.ink)}"` : ''}`;
+      const look = `${fontAttr(c.font)}${bordersAttr(c.borders)}${colours}`;
       const name = `${c.kind}${bi + 1}_${ci + 1}`;
-      const flags = { borderTop: !!(c.borders & 1), borderRight: !!(c.borders & 2), borderBottom: !!(c.borders & 4), borderLeft: !!(c.borders & 8) };
+      const flags = {
+        borderTop: !!(c.borders & 1),
+        borderRight: !!(c.borders & 2),
+        borderBottom: !!(c.borders & 4),
+        borderLeft: !!(c.borders & 8),
+        ...(paint.fill ? { backgroundColor: paint.fill } : {}),
+        ...(paint.ink ? { color: paint.ink } : {}),
+      };
       const typeface = c.font ? { fontSize: unitSize(c.font), bold: c.font.bold, italic: c.font.italic, fontFamily: c.font.family } : {};
       const element = (type2: ReportElement['type'], shown: string): ReportElement => ({
         id: name,
@@ -402,7 +460,7 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
           elements.push(element('chart', ''));
           return;
         case 'panel':
-          controls.push(`<${item} Ref="${next()}" ControlType="XRPanel" Name="${name}"${at}${bordersAttr(c.borders)} />`);
+          controls.push(`<${item} Ref="${next()}" ControlType="XRPanel" Name="${name}"${at}${bordersAttr(c.borders)}${colours} />`);
           elements.push(element('label', ''));
           return;
         case 'shape':
@@ -420,9 +478,11 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
 
     // A group header groups by the fields of the values it prints, or by a field of its own.
     let groupXml = '';
-    if (b.kind === 'GroupHeader' && b.groupFields > 0) {
+    const groupNames = (given.groups.get(bi) ?? []).map(fieldFromCaption).filter(Boolean);
+    if (b.kind === 'GroupHeader' && (b.groupFields > 0 || groupNames.length)) {
       const own = places.filter((p) => p.band === bi && p.role === 'value').map((p) => fieldOf.get(key(p))!);
-      const names = Array.from({ length: b.groupFields }, (_, i) => own[i] ?? `Group${++groupCount}`);
+      const names = groupNames.length ? groupNames : Array.from({ length: b.groupFields }, (_, i) => own[i] ?? `Group${++groupCount}`);
+      usedGroups.set(bi, names);
       groupXml = `<GroupFields>${names.map((f, i) => `<Item${i + 1} Ref="${next()}" FieldName="${attr(f)}" />`).join('')}</GroupFields>`;
     }
     const height = b.kind === 'TopMargin' ? k.margins.top : b.kind === 'BottomMargin' ? k.margins.bottom : b.height;
@@ -441,11 +501,13 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
   const bandItems = bandsXml.map((b, i) => b.xml.replace(/^<Band/, `<Item${i + 1}`).replace(/<\/Band>$/, `</Item${i + 1}>`));
   const name = fieldFromCaption(title) || 'VisionReport';
   const m = k.margins;
+  // The version asked for, as the AI's own REPX would carry it (X.Y.3.0, gemini.md).
+  const v = /^\d{2}\.\d$/.test(options.version ?? '') ? options.version! : '20.1';
   const xml =
     '<?xml version="1.0" encoding="utf-8"?>\n' +
-    `<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a"` +
-    ` Name="${attr(name)}" ReportUnit="HundredthsOfAnInch" Margins="${n(m.left)}, ${n(m.right)}, ${n(m.top)}, ${n(m.bottom)}"` +
-    ` PageWidth="${n(k.width)}" PageHeight="${n(k.height)}" Version="20.1" Font="Arial, 9pt"><Bands>${bandItems.join('')}</Bands></XtraReportsLayoutSerializer>`;
+    `<XtraReportsLayoutSerializer SerializerVersion="${v}.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v${v}, Version=${v}.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a"` +
+    ` Name="${attr(name)}" DisplayName="${attr(title)}" ReportUnit="HundredthsOfAnInch" Margins="${n(m.left)}, ${n(m.right)}, ${n(m.top)}, ${n(m.bottom)}"` +
+    ` PageWidth="${n(k.width)}" PageHeight="${n(k.height)}" Version="${v}" Font="Arial, 9pt"><Bands>${bandItems.join('')}</Bands></XtraReportsLayoutSerializer>`;
   let repx = xml;
   for (const pass of [ensureUniqueRefs, repairDpi, repairPaper]) {
     const r = pass(repx);
@@ -469,5 +531,15 @@ export function skeletonToDesign(k: ReportSkeleton, options: { texts?: readonly 
       : 'Bind real data in the Data tab. The positions are the model\'s reading of the picture; check them in the Preview.',
   ].join('\n');
 
-  return { title, repx, layout: { title, pageWidth: k.width, sections }, markdown, fields, read, placeholders };
+  const usedFields = new Map(places.filter((p) => fieldOf.has(key(p))).map((p) => [key(p), fieldOf.get(key(p))!] as const));
+  return {
+    title,
+    repx,
+    layout: { title, pageWidth: k.width, sections },
+    markdown,
+    fields,
+    read,
+    placeholders,
+    used: { words, fields: usedFields, groups: usedGroups, colours: given.colours },
+  };
 }

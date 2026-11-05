@@ -40,8 +40,12 @@ import type { ReportSkeleton, SkeletonRole } from './reportSkeleton';
 import type { ReportElement, ReportLayout } from './reportTypes';
 import { unitsPerInch } from './reportGeometry';
 
-/** The parts of Forma a request can draw on, in the order they act. */
-export type TeamMember = 'ocr' | 'vision' | 'reader' | 'house' | 'memory' | 'ai' | 'checks';
+/**
+ * The parts of Forma a request can draw on, in the order they act. Since
+ * 2026-11-05 the AI either designs the report (`ai`) or corrects Forma's
+ * draft (`corrector`), and in the second case Forma builds it (`builder`).
+ */
+export type TeamMember = 'ocr' | 'vision' | 'reader' | 'house' | 'memory' | 'ai' | 'corrector' | 'builder' | 'checks';
 
 /** Who read a draft's layout: the vision model from the picture, or the box reader from OCR's texts (boxReader.ts). */
 export type LayoutReader = 'vision' | 'reader';
@@ -164,12 +168,14 @@ const ROLES: Record<TeamMember, string> = {
   house: "Forma's own model gave the house style",
   memory: 'your remembered preferences were applied',
   ai: '',
+  corrector: '',
+  builder: 'Forma built the report from it and checked it',
   checks: 'Forma checked and repaired the result',
 };
 
 /** One sentence naming who did what, for the reply under a report. */
 export function teamLine(members: readonly TeamMember[], aiName: string): string {
-  const parts = members.map((m) => (m === 'ai' ? `${aiName} designed the report` : ROLES[m]));
+  const parts = members.map((m) => (m === 'ai' ? `${aiName} designed the report` : m === 'corrector' ? `${aiName} corrected Forma's draft` : ROLES[m]));
   if (parts.length < 2) return '';
   const text = `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}.`;
   return text.charAt(0).toUpperCase() + text.slice(1);

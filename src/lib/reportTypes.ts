@@ -151,6 +151,8 @@ export interface AnalysisResponse {
    * rather than a zero in that case -- see `lib/tokenUsage.ts`.
    */
   usage?: TokenUsage | null;
+  /** True when the AI corrected Forma's draft and Forma built the report (2026-11-05, lib/draftText.ts). */
+  fromDraft?: boolean;
 }
 
 import type { TokenUsage } from './tokenUsage';
