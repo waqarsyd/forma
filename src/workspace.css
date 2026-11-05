@@ -737,7 +737,10 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 }
 .wb-attach svg { color: var(--accent); }
 
-.wb-composer { border-top: 1px solid var(--rule); padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+/* No rule above the box (2026-11-05, at the owner's request): it set the box
+   in a band of its own under the conversation, where ChatGPT's and Gemini's
+   boxes sit on the conversation's own ground. */
+.wb-composer { padding: 6px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
 
 /* One compact row, 44px tall. It was briefly a two-row card — text area over a
    tools row — which fixed the crushed send button but pushed the box to 94px and
