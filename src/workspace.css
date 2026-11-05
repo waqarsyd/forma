@@ -717,6 +717,8 @@
 .wb-versions button:last-child svg { transform: rotate(-90deg); }
 .wb-versions button:hover:not(:disabled) { color: var(--ink); background: var(--track); }
 .wb-versions button:disabled { opacity: .35; cursor: default; }
+/* When a message was made and what a reply cost, quiet beside its icons (2026-11-05). */
+.wb-note-meta { font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; color: var(--ink-faint); padding: 0 4px; white-space: nowrap; }
 /* A reply whose change was taken back (2026-11-05). */
 .wb-note-done { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); padding: 1px 7px; }
 .wb-note-ask { font-size: 12px; color: var(--bad-ink); }

@@ -539,6 +539,21 @@ describe("actions on Forma's replies", () => {
     expect(within(actions('a2')).getByText('Undone')).toBeTruthy();
   });
 
+  // When it was made and what it cost (2026-11-05), read off the id and from App.
+  it("says when a reply was made and what it cost, and when the person's message was sent", () => {
+    const at = new Date();
+    at.setHours(10, 42, 0, 0);
+    const id = `${at.getTime()}-1`;
+    draw({
+      messages: [msg({ id: `${at.getTime()}-0`, text: 'an invoice' }), msg({ id, role: 'assistant', text: 'Built it.' })],
+      usageOf: (m) => (m.id === id ? '23.4k tokens' : null),
+    });
+    const metas = [...document.querySelectorAll('.wb-note-meta')].map((m) => m.textContent);
+    expect(metas).toHaveLength(2);
+    expect(metas[0]).toMatch(/^Today, /);
+    expect(metas[1]).toMatch(/^Today, .+ · 23\.4k tokens$/);
+  });
+
   // A redesign asked before it is made (2026-11-05).
   it('asks before a redesign with Redesign and Not now, and says Not redesigned after a no', () => {
     const onConfirm = vi.fn();

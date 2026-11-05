@@ -21,7 +21,18 @@
 
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
-import { messageMatches, searchParts, type ChatMessage } from '../lib/chatSession';
+import { messageMatches, messageTime, searchParts, type ChatMessage } from '../lib/chatSession';
+import { formatSessionStamp } from '../lib/datetime';
+
+/**
+ * When a message was made, and what a reply cost (2026-11-05), quiet beside
+ * its icons: "Today, 10:42 · 23.4k tokens". The time is read off the id; the
+ * cost from `usageOf`, which App answers from the report the reply built.
+ */
+function noteMeta(id: string, usage: string | null | undefined): string {
+  const at = messageTime(id);
+  return [at ? formatSessionStamp(at) : '', usage ?? ''].filter(Boolean).join(' · ');
+}
 import { IconArrowDown, IconCheck, IconChevronDown, IconCopy, IconPencil, IconRedo, IconThumbDown, IconThumbUp, IconTrash } from './landing/icons';
 
 /* Loaded on demand, as the Spec pane loads it: react-markdown brings the whole
@@ -86,6 +97,8 @@ export interface ChatThreadProps<R> {
   onConfirm?: (id: string, yes: boolean) => void;
   /** Another version of one of the person's messages, by its place (2026-11-05): see `ChatMessage.branches`. */
   onShowVersion?: (id: string, to: number) => void;
+  /** What a reply cost, as words ("23.4k tokens"), or null; shown beside its time (2026-11-05). */
+  usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   /** A transcript search: only the messages holding it are drawn, with each match marked. */
   query?: string;
   /** Forma's working line during a generation, rendered after the transcript. */
@@ -166,6 +179,7 @@ function ReplyActions({
   latest,
   disabled,
   undone,
+  meta,
   onRegenerate,
   onRate,
   onUndo,
@@ -175,6 +189,8 @@ function ReplyActions({
   rating?: 'good' | 'bad';
   latest: boolean;
   disabled: boolean;
+  /** Its time and cost, quiet at the end of the row. */
+  meta?: string;
   /** Its change was taken back. */
   undone?: boolean;
   onRegenerate?: (id: string) => void;
@@ -207,6 +223,7 @@ function ReplyActions({
         </button>
       )}
       {undone && <span className="wb-note-done">Undone</span>}
+      {meta && <span className="wb-note-meta">{meta}</span>}
     </div>
   );
 }
@@ -346,11 +363,13 @@ const ChatNote = memo(function ChatNote<R>({
   onUndo,
   onConfirm,
   onShowVersion,
+  usageOf,
   query = '',
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
   onShowVersion?: (id: string, to: number) => void;
+  usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   /** The latest of Forma's replies, whose actions show without pointing at it. */
   latest?: boolean;
   onConfirm?: (id: string, yes: boolean) => void;
@@ -454,6 +473,7 @@ const ChatNote = memo(function ChatNote<R>({
             latest={latest}
             disabled={retryDisabled}
             undone={message.undone}
+            meta={noteMeta(message.id, usageOf?.(message))}
             onRegenerate={onRegenerate}
             onRate={onRate}
             onUndo={onUndo}
@@ -500,6 +520,7 @@ const ChatNote = memo(function ChatNote<R>({
                (2026-11-05): Copy and Edit, and Withdraw, which they do not
                have, as a bin. Words until then: EDIT and WITHDRAW. */
             <div className="wb-note-actions wb-note-actions--quiet" role="group" aria-label="Your message">
+              {noteMeta(message.id, null) && <span className="wb-note-meta">{noteMeta(message.id, null)}</span>}
               {message.text && <CopyButton text={message.text} />}
               {editable && (
                 <button type="button" className="wb-note-act wb-note-icon" title="Edit" aria-label="Edit" disabled={retryDisabled} onClick={() => setEditing(true)}>
@@ -525,6 +546,7 @@ const ChatNote = memo(function ChatNote<R>({
   onUndo?: (id: string) => void;
   onConfirm?: (id: string, yes: boolean) => void;
   onShowVersion?: (id: string, to: number) => void;
+  usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
@@ -551,6 +573,7 @@ export default function ChatThread<R>({
   onUndo,
   onConfirm,
   onShowVersion,
+  usageOf,
   query = '',
   children,
 }: ChatThreadProps<R>) {
@@ -564,8 +587,9 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm, onShowVersion });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm, onShowVersion };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm, onShowVersion, usageOf });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm, onShowVersion, usageOf };
+  const usage = useCallback((m: ChatMessage<R, PreviewMeta>) => latest.current.usageOf?.(m) ?? null, []);
   const showVersion = useCallback((id: string, to: number) => latest.current.onShowVersion?.(id, to), []);
   const undo = useCallback((id: string) => latest.current.onUndo?.(id), []);
   const confirm = useCallback((id: string, yes: boolean) => latest.current.onConfirm?.(id, yes), []);
@@ -665,6 +689,7 @@ export default function ChatThread<R>({
           onUndo={onUndo && undoable?.has(msg.id) ? undo : undefined}
           onConfirm={onConfirm ? confirm : undefined}
           onShowVersion={onShowVersion ? showVersion : undefined}
+          usageOf={usageOf ? usage : undefined}
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}

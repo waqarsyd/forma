@@ -5662,6 +5662,8 @@ export default function App() {
             onUndo={handleUndo}
             onConfirm={(id, yes) => void handleConfirm(id, yes)}
             onShowVersion={handleShowVersion}
+            // The lazy component loses its generic; the result is App's own DesignResult.
+            usageOf={(m) => summariseUsage((m.result as DesignResult | undefined)?.usage)}
             query={chatQuery ?? ''}
           >
             {/* Generation, as Forma's answer being written: three dots

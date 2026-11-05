@@ -4,6 +4,7 @@ import {
   answeredBy,
   branchesForResend,
   showBranch,
+  messageTime,
   buildChatHistory,
   isGenerationTurn,
   markMessageError,
@@ -250,6 +251,21 @@ describe('messageMatches', () => {
 
   it('matches everything while nothing is typed', () => {
     expect(messageMatches(msg({ id: '1', text: 'x' }), '')).toBe(true);
+  });
+});
+
+/* When a message was made, read off its id (2026-11-05). */
+describe('messageTime', () => {
+  it('reads the time a new id and an old bare-time id start with', () => {
+    expect(messageTime('1793893080918-4')).toBe(1793893080918);
+    expect(messageTime('1756000000000')).toBe(1756000000000);
+    expect(messageTime(nextMessageId())).not.toBeNull();
+  });
+
+  it('answers null for an id that does not start with a time', () => {
+    expect(messageTime('u1')).toBeNull();
+    expect(messageTime('42-1')).toBeNull();
+    expect(messageTime('')).toBeNull();
   });
 });
 

@@ -176,6 +176,17 @@ export function nextMessageId(): string {
 }
 
 /**
+ * When a message was made, read off its id (2026-11-05): `nextMessageId`
+ * puts the time first, and saved reports from before it used the bare time,
+ * so every message has one without a field of its own. Null for an id that
+ * does not start with a plausible time.
+ */
+export function messageTime(id: string): number | null {
+  const ms = Number(/^\d{12,13}/.exec(id)?.[0]);
+  return ms > 1e12 && ms < 4102444800000 ? ms : null;
+}
+
+/**
  * Does this turn go to report generation rather than to a chat reply?
  *
  * An attachment — a page image, or text lifted out of a PDF or `.repx` — is an
