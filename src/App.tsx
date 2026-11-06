@@ -4272,7 +4272,8 @@ export default function App() {
           setStreamingReply(text);
         }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS } : undefined);
         // A report turn's answer is checked before anything is acted on.
-        const outcome = agent ? agent.readReportOutcome(answered) : answered;
+        // With the message, so an alignment sent with no side takes the one asked for.
+        const outcome = agent ? agent.readReportOutcome(answered, currentPrompt) : answered;
         /*
          * Forma's own actions the answer asked for (2026-11-05): queued, and
          * run by the effect beside `showPlate` once the edits have rendered,
@@ -5880,6 +5881,8 @@ export default function App() {
                       onFormat={(action) => void formatSelection(action)}
                       onFocusSelection={() => zoomPreview('selection')}
                       onNotice={setSaveNotice}
+                      // Every format is in the Export panel (2026-11-06); no second row of them here.
+                      exportButtons={false}
                       /* Editing writes the REPX only. The layout and the spec
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not

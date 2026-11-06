@@ -410,7 +410,12 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
     }
   }
   record.elapsedMs = Date.now() - startedAt.getTime();
-  record.model = readCachedModel();
+  // The model that answered, as the service's timing line names it, not the
+  // one detection picked: a model out of its daily quota falls back to the
+  // next, and the scorecard credited the first with the second's work until
+  // 2026-11-06 (2.5 Flash named, Flash-Lite answering).
+  const answered = [...record.log].reverse().map((line) => /Generation timing .*\(model: ([^,)]+)/.exec(line)?.[1]).find(Boolean);
+  record.model = answered ?? readCachedModel();
   score(record, c.file.expect);
   return record;
 }

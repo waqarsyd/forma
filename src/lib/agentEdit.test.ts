@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changedControls, formatEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, changedControls, formatEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -206,6 +206,19 @@ describe('readReportOutcome: the answer as Forma acts on it', () => {
     expect(readReportOutcome({ reply: 'Moved it.', action: 'do', edits: [{ op: 'move', control: 'a', x: 1 }] }).action).toBe('edit');
     expect(readReportOutcome({ reply: 'It has two bands.' }).action).toBe('answer');
     expect(readReportOutcome({ reply: 'Two bands.', action: 'answer', edits: [{ op: 'delete', control: 'a' }] }).edits).toEqual([]);
+  });
+
+  // The second real-key run (2026-11-06): "Centre the footer note." came back as an align with no side.
+  it('gives an alignment sent with no side the one the request names, and only that one', () => {
+    const sideless = { reply: 'Centred it.', action: 'edit', edits: [{ op: 'align', control: 'labelFooter' }] };
+    expect(readReportOutcome(sideless, 'Centre the footer note.').edits).toEqual([{ op: 'align', control: 'labelFooter', align: 'center' }]);
+    expect(readReportOutcome(sideless, 'Put the page number on the right.').edits[0]).toMatchObject({ align: 'right' });
+    // Two sides, or none, name nothing; and a side the model gave is kept.
+    expect(readReportOutcome(sideless, 'Move it from the left to the right.').edits[0]).not.toHaveProperty('align');
+    expect(readReportOutcome(sideless).edits[0]).not.toHaveProperty('align');
+    expect(readReportOutcome({ ...sideless, edits: [{ op: 'align', control: 'a', align: 'left' }] }, 'centre it').edits[0]).toMatchObject({ align: 'left' });
+    expect(sideNamed('Make it centred')).toBe('center');
+    expect(sideNamed('Copyright notice')).toBeNull();
   });
 });
 

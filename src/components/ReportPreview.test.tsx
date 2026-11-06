@@ -579,6 +579,23 @@ describe('Export CSV', () => {
     vi.unstubAllGlobals();
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   });
+
+  // The workspace's Export panel has every format (2026-11-06): no second row of them on the pane.
+  it('draws no export buttons when told not to, and still makes an export asked for', () => {
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: vi.fn(() => 'blob:csv'), revokeObjectURL: vi.fn() }));
+    const clicked: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.download);
+    });
+    render(<ReportPreview repxContent={geometry} layout={null} title="Geometry Case" exportButtons={false} exportRequest={{ format: 'csv', nonce: 8 }} />);
+    expect(screen.queryByText('Export CSV')).toBeNull();
+    expect(screen.queryByText('Export PDF')).toBeNull();
+    expect(screen.queryByLabelText('Export in another format')).toBeNull();
+    expect(clicked).toEqual(['Geometry_Case.csv']);
+    click.mockRestore();
+    vi.unstubAllGlobals();
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  });
 });
 
 /*

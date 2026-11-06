@@ -130,6 +130,12 @@ interface Props {
   onFormat?: (action: FormatAction) => void;
   onFocusSelection?: () => void;
   onNotice?: (text: string) => void;
+  /**
+   * The pane's own export buttons (2026-11-06). Off in the workspace, whose
+   * Export panel offers every format and reaches these exports through
+   * `exportRequest`; on where nothing else offers them, a shared report's page.
+   */
+  exportButtons?: boolean;
 }
 
 export type TestRow = RecordValues;
@@ -1005,7 +1011,7 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, onUndo, onRedo, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, onUndo, onRedo, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -2207,6 +2213,10 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             </button>
           )
         )}
+        {/* The exports, here only where nothing else offers them (a shared
+            report's page): the workspace's Export panel has every format
+            since 2026-11-06, and the owner asked for the duplicates to go. */}
+        {exportButtons && (<>
         <button
           className="wb-pill wb-pill--outline"
           onClick={exportPdf}
@@ -2246,6 +2256,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           <option value="html">HTML</option>
           <option value="png">Image (PNG)</option>
         </select>
+        </>)}
       </div>
 
       {/* Parameters are asked BEFORE the report prints, so they belong above

@@ -438,6 +438,27 @@ this report in our house style") is the next measurement; the owner's free daily
 allowance ran out first. A held-out real report remains the stronger test, and needs
 the owner's say-so to send one.
 
+*Measured on 2026-11-06*, both cases, both instructions, the first passes being that
+morning's `--draft` run on 2.5 Flash (`--replay` re-scored them, so only the refines
+were requests). The house style read off the three made-up reports was Verdana 8pt:
+
+| case | instruction | refined as today | refined with the house style |
+|---|---|---|---|
+| customer-list | Tidy up the formatting, keeping its content | 0% Verdana, median 9pt | 0% Verdana, median 9pt |
+| customer-list | Restyle this report in our house style | 0% Verdana, median 9pt | **50% Verdana, median 8.5pt** |
+| invoice-ruled | Tidy up the formatting, keeping its content | 0% Verdana, median 9pt | 0% Verdana, median 9pt |
+| invoice-ruled | Restyle this report in our house style | 0% Verdana, median 9pt | **100% Verdana, median 8pt** |
+
+So the block does what it is for **when the request asks for the house style**, and
+nothing when it does not: without the library the model has no way to know what "our
+house style" is, and with it, it moved one report halfway and the other all the way. A
+generic tidy-up ignores it, which is arguably right (nothing asked for the house), and
+means the block earns its tokens only on the requests that name it. Two caveats: the
+last refine, the invoice restyled with the block, ran on Flash-Lite after 2.5 Flash's
+daily allowance on the owner's new key ran out, so the 100% is Flash-Lite's; and these
+are made-up reports, chosen by the owner so that no company report reaches Google. A
+held-out real report is still the stronger test, and still needs their say-so.
+
 ## Open questions
 
 1. How large is the real library? Everything above assumes hundreds. Thousands changes

@@ -462,10 +462,31 @@ export interface ReportOutcome {
  * Forma knows, a tool only when its name, pane or format is; `applyEdits`
  * checks the rest.
  */
-export function readReportOutcome(parsed: { reply?: string; action?: string; edits?: unknown; tools?: unknown }): ReportOutcome {
-  const edits = (Array.isArray(parsed.edits) ? parsed.edits : []).filter(
-    (e): e is AgentEdit => Boolean(e) && typeof e === 'object' && (EDIT_OPS as readonly string[]).includes((e as AgentEdit).op),
-  );
+/**
+ * The one side a request names, or null (2026-11-06): "centre the footer"
+ * is centre; a request naming two sides, or none, names nothing.
+ */
+export function sideNamed(message: string): 'left' | 'center' | 'right' | null {
+  const words = message.toLowerCase();
+  const sides = new Set<'left' | 'center' | 'right'>();
+  if (/\b(centre|center|centred|centered|centring|centering|middle)\b/.test(words)) sides.add('center');
+  if (/\bright\b/.test(words)) sides.add('right');
+  if (/\bleft\b/.test(words)) sides.add('left');
+  return sides.size === 1 ? [...sides][0] : null;
+}
+
+/**
+ * The answer read and checked. With `message`, an alignment edit the model
+ * sent with no side takes the one the request names (2026-11-06): the second
+ * real-key run asked to "centre the footer note", the model answered with an
+ * align edit and no `align` (the schema cannot require it for that op alone),
+ * and the edit was declined, which offered a whole redesign for a centring.
+ */
+export function readReportOutcome(parsed: { reply?: string; action?: string; edits?: unknown; tools?: unknown }, message?: string): ReportOutcome {
+  const named = message ? sideNamed(message) : null;
+  const edits = (Array.isArray(parsed.edits) ? parsed.edits : [])
+    .filter((e): e is AgentEdit => Boolean(e) && typeof e === 'object' && (EDIT_OPS as readonly string[]).includes((e as AgentEdit).op))
+    .map((e) => (e.op === 'align' && named && !readAlign(e.align ?? (e as { alignment?: unknown }).alignment) ? { ...e, align: named } : e));
   const tools = (Array.isArray(parsed.tools) ? parsed.tools : []).filter(isTool).slice(0, 4);
   let action: ReportOutcome['action'] =
     parsed.action === 'answer' || parsed.action === 'edit' || parsed.action === 'rebuild' ? parsed.action : edits.length ? 'edit' : 'answer';

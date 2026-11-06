@@ -64,7 +64,7 @@ async function main(): Promise<number> {
   for (const request of REQUESTS) {
     const history = [{ role: 'user' as const, text: request.text }];
     const answered = await chatReply(history, config, undefined, undefined, { outline, ops: EDIT_OPS, tools: TOOL_LISTS });
-    const outcome = readReportOutcome(answered);
+    const outcome = readReportOutcome(answered, request.text);
     const done = outcome.action === 'edit' ? applyEdits(report, outcome.edits) : null;
     const row: Record<string, unknown> = {
       request: request.text,
