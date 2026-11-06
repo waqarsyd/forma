@@ -80,11 +80,15 @@ export default function ZoomField({ percent, onSet, onFit, onSelection, mac }: P
           e.stopPropagation();
         }}
       />
+      {/* Choices for the pointer while the field is typed in; the keyboard has
+          their shortcuts, which each states (2026-11-06, the workspace audit):
+          it said role="menu" and no key could reach its items, the field
+          losing focus, and the menu with it, on Tab. */}
       {draft !== null && (
-        <span className="wb-zoom-menu" role="menu" aria-label="Zoom">
-          <button type="button" role="menuitem" onMouseDown={choose(() => onSet(100))}><span>100%</span><kbd>{shift}0</kbd></button>
-          <button type="button" role="menuitem" onMouseDown={choose(onFit)}><span>Fit</span><kbd>{shift}1</kbd></button>
-          {onSelection && <button type="button" role="menuitem" onMouseDown={choose(onSelection)}><span>Selection</span><kbd>{shift}2</kbd></button>}
+        <span className="wb-zoom-menu" role="group" aria-label="Zoom to">
+          <button type="button" tabIndex={-1} aria-keyshortcuts="Shift+0" onMouseDown={choose(() => onSet(100))}><span>100%</span><kbd>{shift}0</kbd></button>
+          <button type="button" tabIndex={-1} aria-keyshortcuts="Shift+1" onMouseDown={choose(onFit)}><span>Fit</span><kbd>{shift}1</kbd></button>
+          {onSelection && <button type="button" tabIndex={-1} aria-keyshortcuts="Shift+2" onMouseDown={choose(onSelection)}><span>Selection</span><kbd>{shift}2</kbd></button>}
         </span>
       )}
     </span>

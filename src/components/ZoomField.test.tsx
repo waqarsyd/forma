@@ -69,7 +69,7 @@ describe('ZoomField', () => {
     render(<ZoomField percent={93} onSet={onSet} onFit={vi.fn()} mac={false} />);
     field().focus();
     fireEvent.change(field(), { target: { value: '150' } });
-    fireEvent.mouseDown(screen.getByRole('menuitem', { name: /100%/ }));
+    fireEvent.mouseDown(screen.getByRole('button', { name: /100%/ }));
     expect(onSet.mock.calls).toEqual([[100]]);
   });
 
@@ -80,12 +80,12 @@ describe('ZoomField', () => {
     render(<ZoomField percent={93} onSet={onSet} onFit={onFit} onSelection={onSelection} mac={false} />);
     expect(screen.queryByRole('menu')).toBeNull();
     fireEvent.focus(field());
-    fireEvent.mouseDown(screen.getByRole('menuitem', { name: /100%/ }));
+    fireEvent.mouseDown(screen.getByRole('button', { name: /100%/ }));
     expect(onSet).toHaveBeenCalledWith(100);
     fireEvent.focus(field());
-    fireEvent.mouseDown(screen.getByRole('menuitem', { name: /Fit/ }));
+    fireEvent.mouseDown(screen.getByRole('button', { name: /Fit/ }));
     expect(onFit).toHaveBeenCalled();
     fireEvent.focus(field());
-    expect(screen.getByRole('menuitem', { name: /Selection/ }).textContent).toContain('Shift+2');
+    expect(screen.getByRole('button', { name: /Selection/ }).textContent).toContain('Shift+2');
   });
 });

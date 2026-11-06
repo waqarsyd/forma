@@ -13,6 +13,7 @@ import { useEffect, useRef } from 'react';
 import { IconClose, IconDownload, IconExternal } from './landing/icons';
 import './overlays.css';
 import { useLayer } from './useLayer';
+import { useReturnFocus } from './useMenuKeys';
 
 /** What the Preview can be asked to export; 'pdf-outline' is the PDF Forma writes itself. */
 export type PrintFormat = 'pdf' | 'pdf-outline' | 'xlsx' | 'csv' | 'docx' | 'rtf' | 'html' | 'png';
@@ -41,6 +42,8 @@ export default function ExportPanel({ onRepx, onDesigner, onPrint, onClose }: Pr
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useLayer(onClose, true, 'export');
+  // Focus back to Export when it closes (2026-11-06).
+  useReturnFocus(box);
   // Once, as it opens (2026-11-06). The focus sat in an effect that re-ran
   // with every new `onClose`, which App passes inline, so each render of the
   // workspace (a toast, the tip, the autosave) took the focus back to the

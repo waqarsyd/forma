@@ -19,6 +19,7 @@ import './overlays.css';
 import type { FormatAction } from '../lib/agentEdit';
 import { IconChevronDown, IconPencil, IconTarget } from './landing/icons';
 import { useLayer } from './useLayer';
+import { useMenuKeys } from './useMenuKeys';
 
 export interface SelectionToolbarProps {
   /** What it calls each selected control: its name, or its type when it has none. */
@@ -55,6 +56,11 @@ export default function SelectionToolbar({ names, onFormat, onEditText, onCopy, 
   }, [menu]);
   // Escape closes the open menu and leaves the selection (lib/layers.ts).
   useLayer(() => setMenu(null), menu !== null, 'selection-menu');
+  // Each menu's arrow keys, and focus back to its button (2026-11-06).
+  const formatRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useMenuKeys(formatRef, menu === 'format');
+  useMenuKeys(moreRef, menu === 'more');
   const pick = (run: () => void) => {
     setMenu(null);
     run();
@@ -77,7 +83,7 @@ export default function SelectionToolbar({ names, onFormat, onEditText, onCopy, 
         More <IconChevronDown size={12} />
       </button>
       {menu === 'format' && (
-        <div className="wb-ctx-menu" role="menu" aria-label="Format">
+        <div className="wb-ctx-menu" role="menu" aria-label="Format" ref={formatRef}>
           {FORMAT.map((f) => (
             <button key={f.action} type="button" role="menuitem" onClick={() => pick(() => onFormat(f.action))}>
               {f.label}
@@ -86,7 +92,7 @@ export default function SelectionToolbar({ names, onFormat, onEditText, onCopy, 
         </div>
       )}
       {menu === 'more' && (
-        <div className="wb-ctx-menu wb-ctx-menu--end" role="menu" aria-label="More">
+        <div className="wb-ctx-menu wb-ctx-menu--end" role="menu" aria-label="More" ref={moreRef}>
           {onCopy && (
             <button type="button" role="menuitem" onClick={() => pick(onCopy)}>
               {names.length === 1 ? 'Copy the name' : 'Copy the names'}

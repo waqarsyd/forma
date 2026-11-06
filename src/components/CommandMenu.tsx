@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import './overlays.css';
 import { IconSearch } from './landing/icons';
 import { useLayer } from './useLayer';
+import { useReturnFocus } from './useMenuKeys';
 
 export interface Command {
   id: string;
@@ -33,6 +34,9 @@ export default function CommandMenu({ commands, onClose }: { commands: readonly 
   const shown = matchCommands(commands, query);
   // Escape closes it, and only it (lib/layers.ts); 'commands' lets Ctrl+K close it too.
   useLayer(onClose, true, 'commands');
+  // Focus back to where it was when the menu opened (2026-11-06).
+  const box = useRef<HTMLDivElement>(null);
+  useReturnFocus(box);
   useEffect(() => setAt(0), [query]);
   useEffect(() => {
     listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' });
@@ -44,7 +48,7 @@ export default function CommandMenu({ commands, onClose }: { commands: readonly 
   };
   return (
     <div className="wb-cmd-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="wb-cmd" role="dialog" aria-modal="true" aria-label="Command menu">
+      <div className="wb-cmd" role="dialog" aria-modal="true" aria-label="Command menu" ref={box}>
         <div className="wb-cmd-search">
           <IconSearch size={16} />
           <input
@@ -55,6 +59,8 @@ export default function CommandMenu({ commands, onClose }: { commands: readonly 
             role="combobox"
             aria-expanded="true"
             aria-controls="wb-cmd-list"
+            // Which option the arrows are on, for a screen reader (2026-11-06).
+            aria-activedescendant={shown[at] ? `wb-cmd-opt-${at}` : undefined}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') { e.preventDefault(); setAt((i) => Math.min(shown.length - 1, i + 1)); }
@@ -66,7 +72,7 @@ export default function CommandMenu({ commands, onClose }: { commands: readonly 
         </div>
         <ul className="wb-cmd-list" id="wb-cmd-list" role="listbox" aria-label="Commands" ref={listRef}>
           {shown.map((c, i) => (
-            <li key={c.id} role="option" aria-selected={i === at} onMouseEnter={() => setAt(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => run(c)}>
+            <li key={c.id} id={`wb-cmd-opt-${i}`} role="option" aria-selected={i === at} onMouseEnter={() => setAt(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => run(c)}>
               <span>{c.label}</span>
               {c.keys && <kbd>{c.keys}</kbd>}
             </li>

@@ -12,12 +12,12 @@
  * this weighs on App's entry chunk: App passes who is signed in, the report,
  * and how to make sure the project is saved, since a share names its project.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { loadFirebase } from '../lib/firebaseClient';
 import { isEmail, makeShareId, shareDocument, shareLink, withInvitee, type ShareAccess, type ShareDocument, type SharedReport } from '../lib/shares';
 import { IconClose } from './landing/icons';
 import './overlays.css';
-import { useLayer } from './useLayer';
+import { useFocusTrap } from './useFocusTrap';
 
 interface Props {
   user: { uid: string; email: string | null } | null;
@@ -41,7 +41,11 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
   const [typed, setTyped] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
 
-  useLayer(onClose, true, 'share');
+  // A modal's keyboard (2026-11-06, the workspace audit): focus into it, Tab
+  // kept inside, Escape (its layer), and focus back to Share. It said
+  // aria-modal and did none of it.
+  const dialog = useRef<HTMLElement>(null);
+  useFocusTrap(dialog, onClose);
 
   // The project's share, if it has one; saving the project first when it is not saved.
   useEffect(() => {
@@ -153,7 +157,7 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
   const link = share ? shareLink(window.location.origin, share.id) : null;
   return (
     <div className="wb-cmd-backdrop wb-cmd-backdrop--centre" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <section className="wb-share" role="dialog" aria-modal="true" aria-labelledby="wb-share-title">
+      <section className="wb-share" role="dialog" aria-modal="true" aria-labelledby="wb-share-title" ref={dialog} tabIndex={-1}>
         <div className="wb-share-head">
           <h2 id="wb-share-title">Share "{name}"</h2>
           <button type="button" className="wb-share-close" aria-label="Close" onClick={onClose}>

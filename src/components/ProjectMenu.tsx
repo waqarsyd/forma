@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import './overlays.css';
 import { useLayer } from './useLayer';
+import { useMenuKeys } from './useMenuKeys';
 
 interface Props {
   name: string;
@@ -38,6 +39,8 @@ export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, ar
     return () => document.removeEventListener('pointerdown', away, true);
   }, [onClose]);
   useLayer(onClose, true, 'project');
+  // Its keys, and focus back to the title (2026-11-06); not while a field is open in it.
+  useMenuKeys(box, renaming === null && !confirming);
   const run = (action: () => void) => () => {
     onClose();
     action();

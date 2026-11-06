@@ -201,6 +201,7 @@ import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, t
 import { hasOpenLayer, topLayer } from './lib/layers';
 import { initialsOf } from './lib/initials';
 import { useLayer } from './components/useLayer';
+import { useMenuKeys } from './components/useMenuKeys';
 import type { Command } from './components/CommandMenu';
 import { TIP_INTERVAL_MS, WORKING_TIPS, forPlatform, tipAt } from './lib/workingTips';
 /* App.tsx's own view state, extracted so it can be tested — see the header of
@@ -1334,8 +1335,10 @@ export default function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  // Escape closes the account menu, as every other menu here (lib/layers.ts).
+  // Escape closes the account menu, as every other menu here (lib/layers.ts),
+  // and its arrow keys move between its items, focus going back to the avatar.
   useLayer(() => setShowWorkspaceProfile(false), showWorkspaceProfile, 'account-menu');
+  useMenuKeys(workspaceProfileRef, showWorkspaceProfile);
 
   /**
    * Route -> view state, and back/forward support.

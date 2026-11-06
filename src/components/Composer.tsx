@@ -27,6 +27,7 @@ import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
 import { modelTiers } from '../lib/modelTiers';
 import { useLayer } from './useLayer';
+import { useMenuKeys } from './useMenuKeys';
 import {
   IconAlert,
   IconArrowRight,
@@ -201,6 +202,8 @@ export default function Composer({
     return () => document.removeEventListener('mousedown', away);
   }, [modelMenu]);
   useLayer(() => setModelMenu(false), modelMenu, 'model-menu');
+  // Its arrow keys, and focus back to the model button (2026-11-06).
+  useMenuKeys(modelMenuRef, modelMenu);
   /*
    * One condition, read by the button *and* the keyboard.
    *

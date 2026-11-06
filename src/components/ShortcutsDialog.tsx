@@ -6,9 +6,10 @@
  * `lib/shortcuts.ts`, `lib/sidebar.ts`, the Preview and the box; this is
  * their one list, so a new shortcut is a new row here too.
  */
+import { useRef } from 'react';
 import './overlays.css';
 import { IconClose } from './landing/icons';
-import { useLayer } from './useLayer';
+import { useFocusTrap } from './useFocusTrap';
 
 type Row = [label: string, keys: string[]];
 
@@ -66,13 +67,15 @@ export function shortcutGroups(mac: boolean): { title: string; rows: Row[] }[] {
 }
 
 export default function ShortcutsDialog({ onClose, mac }: { onClose: () => void; mac: boolean }) {
-  useLayer(onClose, true, 'shortcuts');
+  // A modal's keyboard (2026-11-06): focus in, Tab kept inside, Escape, and focus back.
+  const dialog = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialog, onClose);
   return (
     <div className="wb-cmd-backdrop wb-cmd-backdrop--centre" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="wb-keys" role="dialog" aria-modal="true" aria-labelledby="wb-keys-title">
+      <div className="wb-keys" role="dialog" aria-modal="true" aria-labelledby="wb-keys-title" ref={dialog} tabIndex={-1}>
         <div className="wb-keys-head">
           <h2 id="wb-keys-title">Keyboard shortcuts</h2>
-          <button type="button" className="wb-pill wb-pill--round" aria-label="Close" onClick={onClose} autoFocus>
+          <button type="button" className="wb-pill wb-pill--round" aria-label="Close" onClick={onClose}>
             <IconClose size={16} />
           </button>
         </div>
