@@ -1498,6 +1498,17 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * DevExpress's own files. Laid out from the same report, rows and parameter
    * values the pane shows, so the file holds what the reader sees.
    */
+  /**
+   * Why the last export was not written, said under the bar rather than only
+   * in the console. The PDF writer's alone until 2026-11-06 (the workspace
+   * audit): Word, RTF, HTML and the image failed in silence, and a CSV or
+   * Excel export that threw took the pane down with it.
+   */
+  const [exportNote, setExportNote] = useState<string | null>(null);
+  const failed = (what: string, err: unknown) => {
+    console.error(`Forma could not write the ${what}.`, err);
+    setExportNote(`Forma could not write the ${what}${err instanceof Error && err.message ? `: ${err.message}` : '.'}`);
+  };
   const download = useCallback((data: BlobPart, type: string, extension: string) => {
     const url = URL.createObjectURL(new Blob([data], { type }));
     const a = document.createElement('a');
@@ -1509,8 +1520,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     URL.revokeObjectURL(url);
   }, [title]);
   const exportCsv = useCallback(() => {
-    const count = records?.length ? records.length : recordCountFromLayout(layout);
-    download(reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues, drillToggled }), 'text/csv;charset=utf-8', 'csv');
+    setExportNote(null);
+    try {
+      const count = records?.length ? records.length : recordCountFromLayout(layout);
+      download(reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues, drillToggled }), 'text/csv;charset=utf-8', 'csv');
+    } catch (err) {
+      failed('CSV file', err);
+    }
   }, [structure, records, layout, paramValues, drillToggled, download]);
 
   /*
@@ -1521,20 +1537,25 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * as its grown text, and DevExpress's rows were.
    */
   const exportXlsx = useCallback(() => {
-    const count = records?.length ? records.length : recordCountFromLayout(layout);
-    // The file's own Excel options (row 74): one sheet, a sheet per page, or a
-    // workbook per page, which goes as one .zip since a page cannot hand over
-    // several files at once.
-    const xlsx = xlsxOptionsOf(repxContent);
-    const files = reportToXlsxFiles(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled }, xlsx);
-    if (files.length === 1) {
-      download(files[0].bytes as BlobPart, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
-      return;
+    setExportNote(null);
+    try {
+      const count = records?.length ? records.length : recordCountFromLayout(layout);
+      // The file's own Excel options (row 74): one sheet, a sheet per page, or a
+      // workbook per page, which goes as one .zip since a page cannot hand over
+      // several files at once.
+      const xlsx = xlsxOptionsOf(repxContent);
+      const files = reportToXlsxFiles(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled }, xlsx);
+      if (files.length === 1) {
+        download(files[0].bytes as BlobPart, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
+        return;
+      }
+      // Numbered as DevExpress numbered its files: report1.xlsx, report2.xlsx.
+      const base = exportFileName(title, 'xlsx').replace(/\.xlsx$/, '');
+      const zip = buildZip(files.map((x) => ({ name: `${base}${x.number}.xlsx`, content: x.bytes })), new Date(), { keepPaths: true });
+      if (zip.bytes) download(zip.bytes as BlobPart, 'application/zip', 'zip');
+    } catch (err) {
+      failed('Excel workbook', err);
     }
-    // Numbered as DevExpress numbered its files: report1.xlsx, report2.xlsx.
-    const base = exportFileName(title, 'xlsx').replace(/\.xlsx$/, '');
-    const zip = buildZip(files.map((x) => ({ name: `${base}${x.number}.xlsx`, content: x.bytes })), new Date(), { keepPaths: true });
-    if (zip.bytes) download(zip.bytes as BlobPart, 'application/zip', 'zip');
   }, [structure, records, layout, paramValues, measure, drillToggled, repxContent, title, download]);
 
   /*
@@ -1583,7 +1604,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           download(reportToDocx(laid, structure, pictures) as BlobPart, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx');
         }
       } catch (err) {
-        console.error('Forma could not write the export.', err);
+        if (!cancelled) failed(({ docx: 'Word file', rtf: 'RTF file', html: 'HTML page', png: 'image' } as const)[exportKind], err);
       } finally {
         if (!cancelled) setExportKind(null);
       }
@@ -1599,12 +1620,15 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     if (!exportRequest || exportedNonce.current === exportRequest.nonce) return;
     exportedNonce.current = exportRequest.nonce;
     const { format } = exportRequest;
+    // Taken: the request is cleared at once, and the export says for itself
+    // if it fails (`exportNote`).
+    onExportRequestDone?.();
+    setExportNote(null);
     if (format === 'pdf') exportPdf();
     else if (format === 'pdf-outline') setWritingPdf(true);
     else if (format === 'csv') exportCsv();
     else if (format === 'xlsx') exportXlsx();
     else setExportKind(format);
-    onExportRequestDone?.();
   }, [exportRequest, exportPdf, exportCsv, exportXlsx, onExportRequestDone]);
 
   /*
@@ -1616,13 +1640,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * uses the PDF standard ones.
    */
   const [writingPdf, setWritingPdf] = useState(false);
-  /** Why the last PDF was not written, shown under the buttons rather than only in the console. */
-  const [pdfNote, setPdfNote] = useState<string | null>(null);
   const pdfHostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!writingPdf) return;
     let cancelled = false;
-    setPdfNote(null);
+    setExportNote(null);
     (async () => {
       try {
         await document.fonts?.ready;
@@ -1645,7 +1667,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         if (!cancelled) download(blob, 'application/pdf', 'pdf');
       } catch (err) {
         console.error('Forma could not write the PDF.', err);
-        if (!cancelled) setPdfNote(err instanceof Error && err.message ? err.message : 'Forma could not write the PDF.');
+        if (!cancelled) setExportNote(err instanceof Error && err.message ? err.message : 'Forma could not write the PDF.');
       } finally {
         if (!cancelled) setWritingPdf(false);
       }
@@ -2373,9 +2395,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         </div>
       )}
 
-      {pdfNote && (
-        <div className="rp-problems" role="status">
-          <p>{pdfNote}</p>
+      {exportNote && (
+        <div className="rp-problems" role="alert">
+          <p>{exportNote}</p>
         </div>
       )}
 

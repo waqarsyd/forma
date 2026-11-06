@@ -868,6 +868,10 @@ body {
     --bad-wash: rgba(186, 26, 26, .09);
     --bad-line: rgba(186, 26, 26, .34);
     --bad-ink:  #ba1a1a;
+    /* A warning's words (2026-11-06): the REPX pane's "valid with warnings"
+       chip read an undefined --warn-ink and fell back to the error red its
+       own comment says it must not be. Ink only, never a border. */
+    --warn-ink: #8a5a00;
 
     /* Theme-invariant, like --paper / --on-paper: the rule around a drawn
        sheet must not flip with the theme any more than the sheet does. */
@@ -981,6 +985,7 @@ body {
     --bad-wash: rgba(255, 109, 109, .12);
     --bad-line: rgba(255, 109, 109, .34);
     --bad-ink:  #ff8a8a;
+    --warn-ink: #f0c674;
 
     --code-bg: #040910;
     --code-rule: #121c2b;
