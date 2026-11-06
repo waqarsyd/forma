@@ -6580,7 +6580,7 @@ export default function App() {
                   language of a picture as it reads it. Ask in the chat for anything else.
                 </p>
                 {detectedRef.current && (
-                  <ul className="wb-hint wb-auto-list" aria-label="Worked out for the last request">
+                  <ul className="wb-hint" aria-label="Worked out for the last request">
                     {detectedRef.current.reasons.map((reason) => <li key={reason}>{reason}</li>)}
                   </ul>
                 )}
@@ -6825,7 +6825,6 @@ export default function App() {
                 return uploadId && reviewable.has(uploadId) ? (
                   <button
                     type="button"
-                    className="wb-lightbox-text"
                     onClick={() => {
                       setFullScreenImage(null);
                       setOcrReview(uploadId);

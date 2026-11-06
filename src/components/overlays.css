@@ -39,7 +39,7 @@
 .wb-cmenu button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 9px; border: 0; border-radius: 8px; background: none; color: var(--ink); font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 .wb-cmenu button > span:first-child { flex: 1; }
 .wb-cmenu button:hover, .wb-cmenu button:focus-visible, .wb-cmenu button[aria-expanded='true'] { background: var(--track); outline: none; }
-.wb-cmenu button.is-danger { color: #c4314b; }
+.wb-cmenu button.is-danger { color: var(--bad-ink); }
 .wb-cmenu kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
 .wb-cmenu-more { color: var(--ink-faint); }
 .wb-cmenu-sub { position: absolute; left: 100%; top: -6px; padding-left: 4px; }
@@ -104,7 +104,7 @@
 .wb-share-access { display: grid; gap: 4px; }
 .wb-share-access small { color: var(--ink-faint); }
 .wb-share-foot { display: flex; justify-content: flex-end; margin-top: 6px; }
-.wb-share-stop { color: #c4314b; }
+.wb-share-stop { color: var(--bad-ink); }
 .wb-share-problem { color: var(--bad-ink) !important; }
 .wb-share-note { font-size: 12px; color: var(--ink-faint) !important; }
 
@@ -163,7 +163,7 @@
 }
 .wb-project-menu > button:hover:not(:disabled), .wb-project-confirm button:hover, .wb-project-rename button:hover { background: var(--track); }
 .wb-project-menu > button:disabled { color: var(--ink-faint); cursor: default; }
-.wb-project-menu .is-danger { color: #c4314b; }
+.wb-project-menu .is-danger { color: var(--bad-ink); }
 .wb-project-menu .is-danger:disabled { color: var(--ink-faint); }
 .wb-project-rename { display: flex; gap: 4px; padding: 3px; }
 .wb-project-rename input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--panel); color: var(--ink); font-size: 13px; }

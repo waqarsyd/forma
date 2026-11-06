@@ -14,7 +14,7 @@
  * (2026-11-03, lib/formaTeam.ts).
  */
 import { useEffect, useRef, useState } from 'react';
-import { IconAlert, IconCheck } from './landing/icons';
+import { IconAlert, IconCheck, IconChevronDown } from './landing/icons';
 import { aiReady, DEFAULT_LOCAL_URL, isVisionOnly, OPENROUTER_URL, PROVIDER_NAMES, PROVIDERS, type AiProvider } from '../lib/aiProvider';
 import type { ReportConfig } from '../services/geminiService';
 
@@ -89,6 +89,9 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
                 </option>
               ))}
             </select>
+            {/* The chevron `.wb-sel .wb-caret` draws, which the field had no
+                markup for, so it read as a text field (2026-11-06). */}
+            <IconChevronDown size={14} className="wb-caret" />
           </span>
         ) : (
           <input className="wb-ctl" id={id} type="text" placeholder={provider === 'local' ? 'e.g. qwen2.5vl:7b' : 'e.g. a model ending :free'} value={value || ''} onChange={(e) => set(e.target.value)} autoComplete="off" spellCheck={false} />

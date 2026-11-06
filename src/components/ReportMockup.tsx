@@ -287,7 +287,9 @@ const MockupChartBody = ({ el }: { el: ReportElement }) => {
           style={{
             width: '80%',
             aspectRatio: '1 / 1',
-            background: `conic-gradient(var(--color-primary, #3b82f6) 0% ${share}%, rgba(0,0,0,0.12) ${share}% 100%)`,
+            // The paper's accent, as the bars use (index.css): --color-primary
+            // changed with the app's theme, and paper does not (2026-11-06).
+            background: `conic-gradient(var(--paper-accent, #3b82f6) 0% ${share}%, rgba(0,0,0,0.12) ${share}% 100%)`,
           }}
         />
       </div>

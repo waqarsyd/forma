@@ -2129,19 +2129,21 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         .rp-param {
           display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px;
           padding: 3px 9px; border-radius: 999px;
-          border: 1px solid var(--paper-rule, #d7dee7);
+          /* The bench's rule, not the paper's (2026-11-06): the pills sit on
+             the bench, and the paper's light hairline vanished on it in dark. */
+          border: 1px solid var(--rule-strong, #d7dee7);
         }
         .rp-param small { font-family: var(--font-code, monospace); font-size: 10px; opacity: .55; }
         .rp-param em { font-style: normal; font-family: var(--font-code, monospace); font-size: 11px; opacity: .8; }
         .rp-param input {
           font-family: var(--font-code, monospace); font-size: 11px; width: 11ch;
-          padding: 0 2px; border: 0; border-bottom: 1px solid var(--paper-rule, #d7dee7);
+          padding: 0 2px; border: 0; border-bottom: 1px solid var(--rule-strong, #d7dee7);
           background: transparent; color: inherit;
         }
         .rp-param input:focus { outline: none; border-bottom-color: currentColor; }
         .rp-param select {
           font-family: var(--font-code, monospace); font-size: 11px; max-width: 18ch;
-          padding: 0 2px; border: 0; border-bottom: 1px solid var(--paper-rule, #d7dee7);
+          padding: 0 2px; border: 0; border-bottom: 1px solid var(--rule-strong, #d7dee7);
           background: transparent; color: inherit; cursor: pointer;
         }
         @media print { .rp-params { display: none !important; } }

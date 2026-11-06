@@ -467,6 +467,12 @@
   margin-top: 4px;
 }
 .wb-root :focus-visible { outline: 2px solid color-mix(in srgb, var(--ink) 45%, transparent); outline-offset: 2px; }
+/* The marketing pages' focus ring is an orange shadow; in the workspace the
+   grey outline above is the ring (2026-11-06): Copy XML and the account
+   dialog's links drew both, the orange ring outside the grey. */
+.wb-root .u-focus-ring:focus-visible { box-shadow: none; }
+/* A quote in the Spec or a reply: a grey edge in the workspace, the docs pages keeping their orange (2026-11-06). */
+.wb-root .markdown-body blockquote { border-left-color: var(--rule-strong); }
 
 /* --------------------------------------------------------------- review */
 .wb-review { background: var(--panel-2); border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
@@ -748,7 +754,7 @@
   color: var(--ink-faint);
   cursor: pointer;
 }
-.wb-icon-btn:hover, .wb-icon-btn.wb-is-on { color: var(--ink); border-color: var(--rule); background: var(--track); }
+.wb-icon-btn:hover { color: var(--ink); border-color: var(--rule); background: var(--track); }
 .wb-chat-search {
   display: flex;
   align-items: center;
@@ -784,6 +790,9 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   color: var(--ink-2);
 }
 .wb-attach svg { color: var(--accent); }
+/* The chips in a row that wraps (2026-11-06): the class had no rule, and two
+   chips sat against each other with nothing between them. */
+.wb-chip-row { display: flex; flex-wrap: wrap; gap: 0 6px; }
 
 /* No rule above the box (2026-11-05, at the owner's request): it set the box
    in a band of its own under the conversation, where ChatGPT's and Gemini's
@@ -1224,10 +1233,10 @@ select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
   color: var(--ink-faint);
 }
 .wb-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
-/* The Describe-a-report dialog: a row of predefined-prompt pills that wraps,
-   and a multi-line field that keeps the control's chrome. */
+/* A row of pills that wraps: the OCR dialog's pages. `textarea.wb-area` went
+   on 2026-11-06 with nothing left using it, the Describe dialog it styled
+   having gone on 2026-11-01. */
 .wb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-family: var(--body); }
 .wb-checkrow { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink); cursor: pointer; }
 .wb-checkrow input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .wb-keyrow { display: flex; gap: 8px; align-items: flex-start; }
@@ -1812,15 +1821,16 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .wb-ocr-box.is-flagged { border-color: #ba1a1a; background: rgba(186, 26, 26, .16); }
 .wb-ocr-box.is-ignored { border: 1px dashed rgba(0, 0, 0, .35); background: none; }
 .wb-ocr-box.is-focus { outline: 2px solid var(--ink-2); outline-offset: 2px; z-index: 1; }
-.wb-ocr-table { position: absolute; border: 1.5px solid rgba(254, 107, 0, .55); pointer-events: none; }
-.wb-ocr-col { position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(254, 107, 0, .45); }
+/* A detected table and its columns in the selection's blue, not orange (2026-11-06, the owner's rule). */
+.wb-ocr-table { position: absolute; border: 1.5px solid rgba(47, 111, 228, .55); pointer-events: none; }
+.wb-ocr-col { position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(47, 111, 228, .45); }
 .wb-ocr-wait { display: grid; place-items: center; min-height: 240px; padding: 20px; border: 1px dashed var(--rule-strong); border-radius: 10px; font-size: 13px; color: var(--ink-faint); text-align: center; }
 .wb-ocr-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--ink-faint); }
 .wb-ocr-key { display: inline-block; width: 12px; height: 9px; margin-left: 8px; border: 1px solid rgba(15, 157, 107, .55); background: rgba(15, 157, 107, .10); }
 .wb-ocr-key:first-child { margin-left: 0; }
 .wb-ocr-key.is-flagged { border-color: #ba1a1a; background: rgba(186, 26, 26, .16); }
 .wb-ocr-key.is-ignored { border-style: dashed; border-color: var(--ink-faint); background: none; }
-.wb-ocr-key.is-table { border: 1.5px solid rgba(254, 107, 0, .55); background: none; }
+.wb-ocr-key.is-table { border: 1.5px solid rgba(47, 111, 228, .55); background: none; }
 .wb-ocr-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .wb-ocr-runs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 13px; }
 .wb-ocr-run-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

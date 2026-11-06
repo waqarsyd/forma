@@ -414,7 +414,7 @@ export default function Composer({
       )}
       {selection.length > 0 && (
         <div className="wb-chip-row">
-          <span className="wb-attach wb-attach--selection" role="status" title="Selected on the Preview: “this” in your message means it">
+          <span className="wb-attach" role="status" title="Selected on the Preview: “this” in your message means it">
             <IconTarget size={12} />
             {selection.length === 1 ? selection[0] : `${selection.length} controls: ${selection.join(', ')}`}
           </span>
