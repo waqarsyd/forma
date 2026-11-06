@@ -80,6 +80,45 @@
 .wb-log-text.is-scrolling { text-overflow: clip; }
 .wb-log-text.is-scrolling > span { display: inline-block; transform: translateX(var(--shift)); transition: transform var(--slide) linear .25s; }
 
+/* The Share dialog (ShareDialog.tsx), as Stitch's. */
+.wb-share { width: min(480px, 100%); border: 1px solid var(--rule); border-radius: 18px; background: var(--panel); box-shadow: var(--shadow-md); }
+.wb-share-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 18px 4px; }
+.wb-share-head h2 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--display); font-size: 18px; color: var(--ink); }
+.wb-share-close { flex: none; width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer; }
+.wb-share-close:hover { background: var(--track); color: var(--ink); }
+.wb-share-body { display: grid; gap: 8px; padding: 8px 18px 18px; font-size: 13px; color: var(--ink); }
+.wb-share-body > p { margin: 0; line-height: 1.5; color: var(--ink-2); }
+.wb-share-body > .wb-pill { justify-self: start; }
+.wb-share-body h3 { margin: 10px 0 0; font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); }
+.wb-share-add, .wb-share-link { display: flex; gap: 6px; }
+.wb-share-add input, .wb-share-link input, .wb-share-access select {
+  flex: 1; min-width: 0; height: 34px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); color: var(--ink); font-size: 13px;
+}
+.wb-root .wb-share input:focus-visible, .wb-root .wb-share select:focus-visible { outline: none; border-color: var(--ink-2); }
+.wb-share-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.wb-share-people li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 2px; }
+.wb-share-people li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-share-people small { color: var(--ink-faint); }
+.wb-share-people button, .wb-share-linkbtn, .wb-share-stop { padding: 4px 8px; border: 0; border-radius: 8px; background: none; color: var(--ink-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.wb-share-people button:hover, .wb-share-linkbtn:hover, .wb-share-stop:hover { background: var(--track); color: var(--ink); }
+.wb-share-linkbtn { padding: 0 2px; text-decoration: underline; }
+.wb-share-access { display: grid; gap: 4px; }
+.wb-share-access small { color: var(--ink-faint); }
+.wb-share-foot { display: flex; justify-content: flex-end; margin-top: 6px; }
+.wb-share-stop { color: #c4314b; }
+.wb-share-problem { color: var(--bad-ink) !important; }
+.wb-share-note { font-size: 12px; color: var(--ink-faint) !important; }
+
+/* A shared report opened from its link (SharedReportPage.tsx). */
+.wb-shared { min-height: 100vh; background: var(--surface); }
+.wb-shared-bar { display: flex; align-items: center; gap: 16px; padding: 12px 22px; border-bottom: 1px solid var(--rule); background: var(--panel); }
+.wb-shared-bar h1 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--display); font-size: 18px; color: var(--ink); }
+.wb-shared-home { display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; }
+.wb-shared-body { max-width: 1000px; margin: 0 auto; padding: 28px 22px 60px; }
+.wb-shared-say { max-width: 560px; margin: 8vh auto 0; text-align: center; color: var(--ink-2); font-size: 14px; line-height: 1.55; }
+.wb-shared-say h1 { margin: 0 0 10px; font-family: var(--display); font-size: 24px; color: var(--ink); }
+.wb-shared-say .wb-pill { margin-top: 10px; }
+
 /* A star and thumbs beside the title (RateReport.tsx), as Stitch's on a screen. */
 .wb-rate { display: inline-flex; align-items: center; gap: 1px; align-self: center; }
 .wb-rate button { width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--ink-faint); cursor: pointer; }

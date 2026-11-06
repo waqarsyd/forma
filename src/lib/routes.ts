@@ -57,9 +57,23 @@ export const ROUTE_TITLES: Record<string, string> = {
  */
 export const NOT_FOUND_TITLE = 'Page not found — Forma';
 
+/**
+ * The share id a path names, `/s/{id}` (2026-11-06, a report shared from the
+ * workspace; lib/shares.ts builds the link). Here rather than in lib/shares
+ * because App reads it on every route and this module is already in the entry
+ * chunk; importing lib/shares there would put all of sharing in it.
+ */
+export function sharedReportId(path: string): string | null {
+  const m = /^\/s\/([A-Za-z0-9_-]{16,64})$/.exec(path);
+  return m ? m[1] : null;
+}
+
+/** A shared report's tab, before its own name is known. */
+export const SHARED_REPORT_TITLE = 'Shared report — Forma';
+
 /** The title for a path. Anything unknown is named as such, not disguised. */
 export function titleForRoute(path: string): string {
-  return ROUTE_TITLES[path] ?? NOT_FOUND_TITLE;
+  return ROUTE_TITLES[path] ?? (sharedReportId(path) ? SHARED_REPORT_TITLE : NOT_FOUND_TITLE);
 }
 
 /**
@@ -123,6 +137,9 @@ export function viewForRoute(path: string): RouteView {
     case '/privacy':
       return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: path, notFound: false };
     default:
+      // A shared report (2026-11-06): a page of its own, and signing in from
+      // it comes back to it, since that is how a restricted share is opened.
+      if (sharedReportId(path)) return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: path, notFound: false };
       // Not a route. `lastViewPath` stays `/` so signing in from here returns
       // somewhere that exists, rather than back to the typo.
       return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: '/', notFound: true };

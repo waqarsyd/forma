@@ -480,8 +480,8 @@ export default function AccountDialog({
               <div className="wb-note-line wb-warn">
                 <span className="wb-ic"><IconAlert size={13} /></span>
                 <span>
-                  <b>This cannot be undone.</b> Your saved projects and the encrypted copy of your API key are
-                  deleted with the account. Reports kept only in this browser are not touched.
+                  <b>This cannot be undone.</b> Your saved projects, every report you shared and the encrypted copy
+                  of your API key are deleted with the account. Reports kept only in this browser are not touched.
                 </span>
               </div>
 

@@ -31,9 +31,12 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  query,
+  where,
   type CollectionReference,
   type DocumentReference,
   type Firestore,
+  type Query,
 } from 'firebase/firestore';
 
 /** Everything for one account hangs off `users/{uid}`. */
@@ -70,6 +73,25 @@ export const VERSIONS_COLLECTION = 'versions';
  * be able to find it.
  */
 export const VAULT_DOC_ID = 'geminiKey';
+
+/**
+ * Shared copies of reports (2026-11-06, lib/shares.ts), top level because
+ * people other than the owner read them. Each names its owner and the project
+ * it came from, and **is removed with that project and with the account**:
+ * a share left behind is a copy of someone's report still readable by
+ * whoever holds its link, after they asked for it to be gone.
+ */
+export const SHARES_COLLECTION = 'shares';
+
+export function shareDocRef(db: Firestore, shareId: string): DocumentReference {
+  return doc(db, SHARES_COLLECTION, shareId);
+}
+
+/** The owner's shares, of one project or of all of them; the rules allow `list` only by a query naming the owner. */
+export function ownedShares(db: Firestore, uid: string, reportId?: string): Query {
+  const owned = where('ownerId', '==', uid);
+  return reportId ? query(collection(db, SHARES_COLLECTION), owned, where('reportId', '==', reportId)) : query(collection(db, SHARES_COLLECTION), owned);
+}
 
 export function reportsCollectionRef(db: Firestore, uid: string): CollectionReference {
   return collection(db, USERS_COLLECTION, uid, REPORTS_COLLECTION);
@@ -121,6 +143,10 @@ export async function deleteReportAndVersions(
   uid: string,
   reportId: string,
 ): Promise<void> {
+  // Its shared copies first (2026-11-06): they are readable by others, so a
+  // deleted project must not leave one behind.
+  const shares = await getDocs(ownedShares(db, uid, reportId));
+  await Promise.all(shares.docs.map((entry) => deleteDoc(entry.ref)));
   const versions = await getDocs(versionsCollectionRef(db, uid, reportId));
   await Promise.all(versions.docs.map((entry) => deleteDoc(entry.ref)));
   await deleteDoc(reportDocRef(db, uid, reportId));
@@ -149,6 +175,10 @@ export async function deleteAccountData(db: Firestore, uid: string): Promise<voi
   // an account that no longer exists, addressable by nobody -- the precise
   // outcome the ordering in `deleteAccountAndData` exists to avoid.
   await Promise.all(reports.docs.map((entry) => deleteReportAndVersions(db, uid, entry.id)));
+  // And any share whose project had already gone (2026-11-06): nothing else
+  // would ever find it once the account does.
+  const shares = await getDocs(ownedShares(db, uid));
+  await Promise.all(shares.docs.map((entry) => deleteDoc(entry.ref)));
 
   await deleteDoc(vaultDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the stored key while deleting the account:', error);

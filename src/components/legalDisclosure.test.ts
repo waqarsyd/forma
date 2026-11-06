@@ -199,7 +199,11 @@ describe('privacy policy discloses every third party in the path', () => {
    */
   it('states a count that matches what actually leaves the browser', () => {
     const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six'];
-    const flows = 2 + (indexHtml.includes('fonts.googleapis.com') ? 1 : 0);
+    // Three since 2026-11-06: opening a shared report's link, signed out,
+    // reads that report from Firestore (SharedReportPage.tsx). The flow is
+    // read off the router, so removing the shared page takes it out again.
+    const sharedPage = read('src/lib/routes.ts').includes('export function sharedReportId');
+    const flows = 2 + (sharedPage ? 1 : 0) + (indexHtml.includes('fonts.googleapis.com') ? 1 : 0);
 
     expect(
       legal,
@@ -267,9 +271,14 @@ describe('the legal copy and its date change together', () => {
      always drawn, and has been since the `forma-repx://` launch path was added
      — the probe decides what a click does, not whether the button exists. The
      deletion note also knew only about removing projects one at a time, not
-     about Clear all. Both substantive, so the date moved with them. */
-  const EXPECTED_COPY_HASH = 'ae2ee9277bf5';
-  const EXPECTED_UPDATED = '8 September 2026';
+     about Clear all. Both substantive, so the date moved with them.
+
+     Moved again on 2026-11-06 for sharing: a shared copy is stored and
+     readable by others, opening a shared link signed out reaches the
+     database (the closed set went from two to three), and deleting a project
+     or an account removes its shares. Substantive, so the date moved. */
+  const EXPECTED_COPY_HASH = 'd1b344bcec21';
+  const EXPECTED_UPDATED = '6 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);

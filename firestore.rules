@@ -146,6 +146,64 @@ service cloud.firestore {
         && existing().userId == request.auth.uid;
     }
 
+    // Validation Blueprint for a shared report (2026-11-06, the Share dialog).
+    //
+    // A COPY, written by its owner, never their saved project: users/{uid}
+    // stays owner-only whatever is shared. Pinned with hasOnly + hasAll like
+    // the others, so the one collection anyone may read cannot be repurposed
+    // as storage. `id` is the document id, `ownerId` the writer, and
+    // `reportId` the project it was shared from (its own owner-scoped id).
+    // `emails` are the people invited, lower-cased by the client; rules cannot
+    // walk a list, so only its length is bounded.
+    function isValidShare(data, shareId) {
+      return data.keys().hasOnly(['id', 'ownerId', 'reportId', 'name', 'result', 'access', 'emails', 'timestamp'])
+        && data.keys().hasAll(['id', 'ownerId', 'reportId', 'name', 'result', 'access', 'emails', 'timestamp'])
+        && data.id == shareId
+        && data.ownerId == request.auth.uid
+        && isValidId(data.reportId)
+        && data.name is string && data.name.size() <= 256
+        && data.result is string && data.result.size() <= 1000000
+        && data.access in ['restricted', 'link']
+        && data.emails is list && data.emails.size() <= 50
+        && data.timestamp is number && data.timestamp > 0 && data.timestamp < 4102444800000;
+    }
+
+    // Shared reports. Read by its owner; by anyone at all when its access is
+    // 'link' (the random id is the secret, as "anyone with the link" says);
+    // and otherwise only by a signed-in account whose VERIFIED email is in
+    // `emails`. The verification is load-bearing: an email-and-password
+    // account can be created with any address unverified, so without it
+    // anyone could read a restricted share by signing up as an invitee.
+    //
+    // `list` only for the owner's own, which the app needs to find the share
+    // of a project and to delete a project's or an account's shares; the
+    // query must say ownerId == the caller, or Firestore refuses it.
+    match /shares/{shareId} {
+      allow get: if isValidId(shareId) && (
+        resource.data.access == 'link'
+        || (isSignedIn() && resource.data.ownerId == request.auth.uid)
+        || (isSignedIn()
+          && request.auth.token.email_verified == true
+          && request.auth.token.email.lower() in resource.data.emails)
+      );
+
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(shareId)
+        && isValidShare(incoming(), shareId);
+
+      allow update: if isSignedIn()
+        && isValidId(shareId)
+        && existing().ownerId == request.auth.uid
+        && isValidShare(incoming(), shareId)
+        && incoming().reportId == existing().reportId;
+
+      allow delete: if isSignedIn()
+        && isValidId(shareId)
+        && existing().ownerId == request.auth.uid;
+    }
+
     // A report's revision history.
     //
     // Its own subcollection because a saved report is size-budgeted at 900 kB

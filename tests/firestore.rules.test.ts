@@ -17,7 +17,7 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import fs from 'node:fs';
 
 const ALICE = 'alice-uid';
@@ -59,8 +59,10 @@ beforeAll(async () => {
     projectId: 'forma-rules-test',
     firestore: {
       rules: fs.readFileSync('firestore.rules', 'utf8'),
-      host: '127.0.0.1',
-      port: 8080,
+      // Where `firebase emulators:exec` started it, which it tells this process;
+      // 8080, as firebase.json sets it, when run some other way (2026-11-06).
+      host: (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':')[0],
+      port: Number((process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':')[1]),
     },
   });
 });
@@ -82,6 +84,71 @@ const seed = (path: string[], data: unknown) =>
   testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), path.join('/')), data as any);
   });
+
+/** Exactly what lib/shares.ts's shareDocument writes (2026-11-06). */
+const validShare = (id: string, owner: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  ownerId: owner,
+  reportId: 'r1',
+  name: 'Quarterly Invoice',
+  result: '{"title":"Quarterly Invoice","repxContent":"<x/>"}',
+  access: 'restricted',
+  emails: ['bob@example.com'],
+  timestamp: Date.now(),
+  ...extra,
+});
+const SHARE = 'Sh4r3dR3p0rtIdOfTwentyTwo';
+/** Bob signed in with an email address, verified or not. */
+const bobWithEmail = (email: string, verified: boolean) =>
+  testEnv.authenticatedContext(BOB, { email, email_verified: verified }).firestore();
+
+describe('shares (2026-11-06)', () => {
+  it('lets the owner create a share, and nobody else create one in their name', async () => {
+    await assertSucceeds(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE)));
+    await assertFails(setDoc(doc(bobDb(), 'shares', 'AnotherShareIdOfTwentyTwo'), validShare('AnotherShareIdOfTwentyTwo', ALICE)));
+    await assertFails(setDoc(doc(anonDb(), 'shares', 'ThirdShareIdOfTwentyTwoX'), validShare('ThirdShareIdOfTwentyTwoX', ALICE)));
+  });
+
+  it('pins the shape: no extra field, a known access, the id it is filed under', async () => {
+    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { userId: ALICE })));
+    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { access: 'public' })));
+    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare('SomeOtherId', ALICE)));
+    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { emails: 'bob@example.com' })));
+  });
+
+  it('lets anyone read a link share, signed in or not', async () => {
+    await seed(['shares', SHARE], validShare(SHARE, ALICE, { access: 'link', emails: [] }));
+    await assertSucceeds(getDoc(doc(anonDb(), 'shares', SHARE)));
+    await assertSucceeds(getDoc(doc(bobDb(), 'shares', SHARE)));
+  });
+
+  it('lets only the owner and a verified invitee read a restricted share, whatever the letter case', async () => {
+    await seed(['shares', SHARE], validShare(SHARE, ALICE));
+    await assertSucceeds(getDoc(doc(aliceDb(), 'shares', SHARE)));
+    await assertFails(getDoc(doc(anonDb(), 'shares', SHARE)));
+    await assertFails(getDoc(doc(bobDb(), 'shares', SHARE)));
+    await assertSucceeds(getDoc(doc(bobWithEmail('Bob@Example.com', true), 'shares', SHARE)));
+    // An email-and-password account can claim any address until it is verified.
+    await assertFails(getDoc(doc(bobWithEmail('bob@example.com', false), 'shares', SHARE)));
+    await assertFails(getDoc(doc(bobWithEmail('carol@example.com', true), 'shares', SHARE)));
+  });
+
+  it("lists the owner's own shares only, by a query that says so", async () => {
+    await seed(['shares', SHARE], validShare(SHARE, ALICE));
+    await assertSucceeds(getDocs(query(collection(aliceDb(), 'shares'), where('ownerId', '==', ALICE), where('reportId', '==', 'r1'))));
+    await assertFails(getDocs(query(collection(bobDb(), 'shares'), where('ownerId', '==', ALICE))));
+    await assertFails(getDocs(collection(aliceDb(), 'shares')));
+  });
+
+  it('lets the owner update and delete a share, but not move it to another project or owner', async () => {
+    await seed(['shares', SHARE], validShare(SHARE, ALICE));
+    await assertSucceeds(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { access: 'link' })));
+    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { reportId: 'r2' })));
+    await assertFails(setDoc(doc(bobDb(), 'shares', SHARE), validShare(SHARE, BOB)));
+    await assertFails(deleteDoc(doc(bobDb(), 'shares', SHARE)));
+    await assertSucceeds(deleteDoc(doc(aliceDb(), 'shares', SHARE)));
+  });
+});
 
 describe('global deny', () => {
   it('refuses a path no rule matches, even when signed in', async () => {

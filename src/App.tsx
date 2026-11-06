@@ -199,7 +199,7 @@ const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 import type { LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
-import { readyTitle, titleForRoute, viewForRoute } from './lib/routes';
+import { readyTitle, sharedReportId, titleForRoute, viewForRoute } from './lib/routes';
 import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, type WorkspaceShortcut } from './lib/shortcuts';
 import type { Command } from './components/CommandMenu';
 import { TIP_INTERVAL_MS, WORKING_TIPS, forPlatform, tipAt } from './lib/workingTips';
@@ -288,6 +288,9 @@ const ExportPanel = lazy(() => import('./components/ExportPanel'));
 const ProjectMenu = lazy(() => import('./components/ProjectMenu'));
 const HomeStart = lazy(() => import('./components/HomeStart'));
 const RateReport = lazy(() => import('./components/RateReport'));
+/* Sharing (2026-11-06): the dialog, and the page a shared link opens. */
+const ShareDialog = lazy(() => import('./components/ShareDialog'));
+const SharedReportPage = lazy(() => import('./components/SharedReportPage'));
 /* The Mockup and the REPX pane (2026-11-06), each drawn only with a report open. */
 const ReportMockup = lazy(() => import('./components/ReportMockup'));
 const RepxViewer = lazy(() => import('./components/RepxViewer'));
@@ -1562,6 +1565,8 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   /** The project's menu, opened from its title (2026-11-06, components/ProjectMenu.tsx). */
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
+  /** The Share dialog (2026-11-06, components/ShareDialog.tsx). */
+  const [isShareOpen, setIsShareOpen] = useState(false);
   /**
    * The sidebar's Search over the saved projects (2026-11-05), as ChatGPT's
    * searches its chats: null while closed, the text typed while open.
@@ -4842,7 +4847,15 @@ export default function App() {
               replace. The gap is one same-origin request for at most 41 kB, and
               the effect below has usually fetched it before the click. */}
           <Suspense fallback={null}>
-          {isNotFound ? (
+          {sharedReportId(currentRoute) ? (
+          /* A report shared from the workspace, opened from its link (2026-11-06). */
+          <SharedReportPage
+            id={sharedReportId(currentRoute)!}
+            user={user ? { uid: user.uid, email: user.email } : null}
+            onSignIn={() => navigate('/login')}
+            onHome={() => navigate('/')}
+          />
+        ) : isNotFound ? (
           <NotFoundPage
             onEnterWorkspace={() => {
               navigate('/workspace');
@@ -5787,6 +5800,13 @@ export default function App() {
               <IconExternal size={14} />
               {designerStarting ? 'Starting designer…' : 'Open in designer'}
             </button>
+            {/* Share, as Stitch's beside its Export (2026-11-06): a copy of the
+                report for people added by email or anyone with the link. */}
+            <button className="wb-pill wb-pill--outline" onClick={() => setIsShareOpen(true)} disabled={!result?.repxContent}>
+              Share
+            </button>
+            {/* Its dialog is drawn with the command menu, not here: the bar's blur
+                makes it the containing block of anything fixed inside it. */}
             {/* Export opens every format in one panel (2026-11-06), as Stitch's
                 does; the .repx is its first row, and Ctrl+K's "Export the .repx"
                 still downloads it at once. */}
@@ -6243,6 +6263,26 @@ export default function App() {
       {isShortcutsOpen && (
         <Suspense fallback={null}>
           <ShortcutsDialog mac={mac} onClose={() => setIsShortcutsOpen(false)} />
+        </Suspense>
+      )}
+      {isShareOpen && result && (
+        <Suspense fallback={null}>
+          <ShareDialog
+            user={user ? { uid: user.uid, email: user.email } : null}
+            name={savedReports.find((r) => r.id === openProjectId)?.name || result.title || 'Untitled report'}
+            report={result}
+            ensureSaved={async () => {
+              if (!openReportId.current || !savedReports.some((r) => r.id === openReportId.current)) await persistProject(true);
+              return openReportId.current;
+            }}
+            onSignIn={() => {
+              setIsShareOpen(false);
+              navigate('/login');
+            }}
+            onNotice={setSaveNotice}
+            onFailure={(err, path, message) => reportFirestoreFailure(err, OperationType.WRITE, path, message)}
+            onClose={() => setIsShareOpen(false)}
+          />
         </Suspense>
       )}
       {isConfigOpen && (

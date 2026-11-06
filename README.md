@@ -303,8 +303,9 @@ src/
                        field, the corner's help (HelpMenu), the Export
                        panel (ExportPanel), the title's project menu
                        (ProjectMenu), the star and thumbs beside it
-                       (RateReport) and the empty workspace's home
-                       (HomeStart), with
+                       (RateReport), the empty workspace's home
+                       (HomeStart), the Share dialog (ShareDialog) and the
+                       page a shared link opens (SharedReportPage), with
                        overlays.css holding those menus' styles.
                        The files that are not components are useFocusTrap (a
                        shared hook), overlays.css and the tests:
@@ -603,7 +604,8 @@ src/
                        the workspace), workingTips (the tip above the box
                        while Forma works), startingPoints (the empty
                        workspace's starting points and recent projects),
-                       requestCount
+                       shares (a shared report's copy, link and invitees,
+                       as firestore.rules pins them), requestCount
                        (requests sent to each model today, and the
                        limits Google stated, for the chat box's model
                        picker and Settings' Usage today), modelTiers (that

@@ -31,7 +31,7 @@ import { Eyebrow } from './landing/sections';
  * Corrected, along with the deletion note, which knew about deleting projects
  * one at a time and not about Clear all.
  */
-const UPDATED = '8 September 2026';
+const UPDATED = '6 November 2026';
 
 type Section = { heading: string; paragraphs: string[] };
 
@@ -87,7 +87,7 @@ const PRIVACY: Section[] = [
     heading: 'The short version',
     paragraphs: [
       'Forma collects as little as it can. There are no analytics, no advertising, no tracking pixels and no third-party scripts watching what you do. Nothing is sold or shared with anyone for marketing.',
-      'Signed out, two things leave your machine and no others: the request you send to Google with your own API key, and, only if you use the contact form, the message you type into it. Simply opening a page sends nothing to anyone. Who receives each of those is set out under “Who else is involved” below.',
+      'Signed out, three things leave your machine and no others: the request you send to Google with your own API key; only if you use the contact form, the message you type into it; and, only if you open a link to a report someone shared, a request to Google’s database for that report. Simply opening any other page sends nothing to anyone. Who receives each of those is set out under “Who else is involved” below.',
       'Your machine, not your browser, is the boundary that sentence draws, and the difference is deliberate. The workspace asks 127.0.0.1 whether the optional designer companion is running — a request that leaves the browser and reaches nothing but your own computer. It carries no information about you, and the terms describe it under “What Forma is”.',
     ],
   },
@@ -96,6 +96,7 @@ const PRIVACY: Section[] = [
     paragraphs: [
       'Your email address and, if you give one, a display name. These are held by Google Firebase Authentication, which runs the sign-in.',
       'Projects you choose to save: the report title, the conversation in the review panel, the generated specification, layout and XML, and any images you attached. These live in Google Firestore under your account, and the security rules only allow that account to read them.',
+      'Reports you choose to share: a copy of the report’s title, layout and XML — not the conversation, and not your images — with the email addresses you add to it. It lives in Google Firestore, and the security rules let it be read by you, by the people you add once they sign in with that address verified, or, if you choose it, by anyone who has the link. It stays until you stop sharing it or delete the project or your account. Forma sends no email to the people you add.',
       'If you opt in to encrypted sync, an encrypted copy of your Gemini API key. It is encrypted in your browser with a passphrase that never leaves it, so the stored copy is unreadable to anyone who does not know the passphrase — including the operator.',
     ],
   },
@@ -116,7 +117,7 @@ const PRIVACY: Section[] = [
   {
     heading: 'Who else is involved',
     paragraphs: [
-      'Google Firebase provides authentication and the database. Google Gemini generates the report, called directly from your browser with your key. Neither is contacted while you are signed out: opening a page — this one included — sends nothing to either of them. Once you are signed in, your browser does talk to Google on every load, first to check your session is still valid and then to fetch your saved projects, and it holds a connection open so changes to them arrive as they happen.',
+      'Google Firebase provides authentication and the database. Google Gemini generates the report, called directly from your browser with your key. Neither is contacted while you are signed out: opening a page — this one included — sends nothing to either of them, except a link to a shared report, which asks the database for that report. Once you are signed in, your browser does talk to Google on every load, first to check your session is still valid and then to fetch your saved projects, and it holds a connection open so changes to them arrive as they happen.',
       'One other is involved, and only if you act. The contact form is delivered by FormSubmit, which receives the name, email address, subject and message you type into that form and forwards them on as email — only when you press send, only from that one page, and nothing else about you goes with it.',
       'The typefaces used to come from Google Fonts, which meant Google saw the IP address and browser of anyone who opened Forma at all, whether or not they ever signed in or generated anything. They are served from Forma’s own server as of 30 August 2026, so that no longer happens.',
       'Files you upload are prepared in your browser — resized, rendered, parsed — before anything is sent.',
@@ -125,8 +126,8 @@ const PRIVACY: Section[] = [
   {
     heading: 'Deleting your data',
     paragraphs: [
-      'Account settings in the workspace has a Delete account action. It removes your saved projects and the encrypted copy of your key along with the account itself. It cannot be undone.',
-      'Individual projects can be deleted from the Projects panel, one at a time or all at once with Clear all, which asks you to confirm first.',
+      'Account settings in the workspace has a Delete account action. It removes your saved projects, every report you shared and the encrypted copy of your key along with the account itself. It cannot be undone.',
+      'Individual projects can be deleted from the Projects panel, one at a time or all at once with Clear all, which asks you to confirm first. Deleting a project also stops sharing it, and Stop sharing in the Share dialog removes the shared copy on its own.',
     ],
   },
   {

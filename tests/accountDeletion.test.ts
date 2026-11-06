@@ -41,6 +41,8 @@ import {
   versionsCollectionRef,
   VAULT_DOC_ID,
   VERSIONS_COLLECTION,
+  SHARES_COLLECTION,
+  shareDocRef,
 } from '../src/lib/accountData';
 
 const ALICE = 'alice-uid';
@@ -70,8 +72,10 @@ beforeAll(async () => {
     projectId: 'forma-deletion-test',
     firestore: {
       rules: fs.readFileSync('firestore.rules', 'utf8'),
-      host: '127.0.0.1',
-      port: 8080,
+      // Where `firebase emulators:exec` started it, which it tells this process;
+      // 8080, as firebase.json sets it, when run some other way (2026-11-06).
+      host: (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':')[0],
+      port: Number((process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':')[1]),
     },
   });
 });
@@ -277,6 +281,62 @@ describe('deleting an account takes every history with it', () => {
 
     expect(await countVersions(ALICE, 'r1')).toBe(0);
     expect(await countVersions(BOB, 'r1')).toBe(2);
+  });
+});
+
+/**
+ * Shared copies (2026-11-06). Unlike everything above they live outside
+ * users/{uid}, at the top level, because other people read them; so nothing
+ * about the account's own paths would find them, and a share left behind is
+ * a copy of someone's report still readable by whoever holds its link.
+ */
+const validShare = (id: string, owner: string, reportId: string) => ({
+  id,
+  ownerId: owner,
+  reportId,
+  name: 'Quarterly Invoice',
+  result: '{"title":"Q","repxContent":"<x/>"}',
+  access: 'link',
+  emails: [],
+  timestamp: Date.now(),
+});
+
+const shareExists = async (id: string): Promise<boolean> => {
+  let exists: boolean | null = null;
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    exists = (await getDoc(doc(ctx.firestore(), SHARES_COLLECTION, id))).exists();
+  });
+  return exists as unknown as boolean;
+};
+
+describe('shared copies go with what they were shared from', () => {
+  it("deleting a project removes its shares, and no other project's", async () => {
+    await seedReportWithHistory(ALICE, 'r1', 1);
+    await seed(['users', ALICE, 'reports', 'r2'], validReport('r2', ALICE));
+    await seed([SHARES_COLLECTION, 'ShareOfR1xxxxxxxxxxxxx'], validShare('ShareOfR1xxxxxxxxxxxxx', ALICE, 'r1'));
+    await seed([SHARES_COLLECTION, 'ShareOfR2xxxxxxxxxxxxx'], validShare('ShareOfR2xxxxxxxxxxxxx', ALICE, 'r2'));
+
+    await deleteReportAndVersions(asUser(ALICE), ALICE, 'r1');
+
+    expect(await shareExists('ShareOfR1xxxxxxxxxxxxx')).toBe(false);
+    expect(await shareExists('ShareOfR2xxxxxxxxxxxxx')).toBe(true);
+  });
+
+  it("deleting an account removes every share it made, even one whose project is gone, and nobody else's", async () => {
+    await seed(['users', ALICE, 'reports', 'r1'], validReport('r1', ALICE));
+    await seed([SHARES_COLLECTION, 'AliceShareOfR1xxxxxxxx'], validShare('AliceShareOfR1xxxxxxxx', ALICE, 'r1'));
+    await seed([SHARES_COLLECTION, 'AliceShareOrphanxxxxxx'], validShare('AliceShareOrphanxxxxxx', ALICE, 'gone'));
+    await seed([SHARES_COLLECTION, 'BobSharexxxxxxxxxxxxxx'], validShare('BobSharexxxxxxxxxxxxxx', BOB, 'r1'));
+
+    await deleteAccountData(asUser(ALICE), ALICE);
+
+    expect(await shareExists('AliceShareOfR1xxxxxxxx')).toBe(false);
+    expect(await shareExists('AliceShareOrphanxxxxxx')).toBe(false);
+    expect(await shareExists('BobSharexxxxxxxxxxxxxx')).toBe(true);
+  });
+
+  it('pins the shares path the rules match', () => {
+    expect(shareDocRef(asUser(ALICE), 'abc').path).toBe('shares/abc');
   });
 });
 

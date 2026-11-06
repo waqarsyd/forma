@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ROUTES } from './router';
-import { ROUTE_TITLES, NOT_FOUND_TITLE, titleForRoute, viewForRoute, routesWithoutABranch, readyTitle } from './routes';
+import { ROUTE_TITLES, NOT_FOUND_TITLE, SHARED_REPORT_TITLE, titleForRoute, viewForRoute, routesWithoutABranch, readyTitle } from './routes';
 
 /* A tab whose report or reply finished unseen says so (2026-11-05). */
 describe('readyTitle', () => {
@@ -155,5 +155,14 @@ describe('viewForRoute', () => {
 
   it('marks no real route as not found', () => {
     for (const route of ROUTES) expect(viewForRoute(route).notFound).toBe(false);
+  });
+
+  // A shared report's link (2026-11-06): its own page, and signing in comes back to it.
+  it('opens /s/{id} as a shared report, named as one, and a malformed one as nowhere', () => {
+    const path = '/s/Sh4r3dR3p0rtIdOfTwentyTwo';
+    expect(viewForRoute(path)).toEqual({ showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: path, notFound: false });
+    expect(titleForRoute(path)).toBe(SHARED_REPORT_TITLE);
+    expect(viewForRoute('/s/short').notFound).toBe(true);
+    expect(titleForRoute('/s/short')).toBe(NOT_FOUND_TITLE);
   });
 });
