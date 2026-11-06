@@ -1422,11 +1422,12 @@ export default function App() {
   const previousUidRef = useRef<string | null>(null);
   /**
    * The auth subscription is set up once, so it cannot close over
-   * `handleClearChat` directly — it would capture the first render's copy and go
-   * stale. The ref is refreshed after every render, below where that handler is
-   * defined.
+   * `forgetSignedOut` directly — it would capture the first render's copy and
+   * go stale. The ref is refreshed after every render, below where that
+   * handler is defined. It held `handleClearChat` until 2026-11-06, so a
+   * sign-out in another tab cleared the conversation and kept every key.
    */
-  const handleClearChatRef = useRef<((keep?: 'save' | 'drop') => void) | null>(null);
+  const forgetSignedOutRef = useRef<(() => void) | null>(null);
 
   /**
    * The loaded Firebase surface, or `null` until it arrives.
@@ -1481,10 +1482,7 @@ export default function App() {
         // A sign-out that happened elsewhere still has to leave this tab clean:
         // the uploads, extracted document text, transcript and generated report
         // all belong to the account that just left.
-        if (wasSignedIn) {
-          handleClearChatRef.current?.('drop');
-          setRailPanel('review');
-        }
+        if (wasSignedIn) forgetSignedOutRef.current?.();
       }
     });
     return () => unsubscribe();
@@ -2809,11 +2807,6 @@ export default function App() {
     setOcrReview(null);
   };
 
-  // Keeps the once-registered auth listener pointing at the current handler.
-  useEffect(() => {
-    handleClearChatRef.current = handleClearChat;
-  });
-
   /**
    * Firestore failures used to vanish. `handleFirestoreError` logs and then
    * re-throws, and both call sites are `catch` blocks in async handlers with
@@ -2911,22 +2904,12 @@ export default function App() {
     }
   };
 
-  /**
-   * Put the panel that shows notices back on screen.
-   *
-   * `saveNotice` and `error` both render in the Composer, which lives in the
-   * Review panel — so a save attempted from the **Projects** panel reported
-   * into a `wb-hidden` subtree. Measured 2026-09-08: on failure the message was
-   * in the DOM at 0x0 with `onScreen=false`, and since a failed save also adds
-   * no card, the user got no card and no message. Silence, from the panel you
-   * are most likely to be on while managing saved projects.
-   *
-   * Only the failure paths call this. A *successful* save from the Projects
-   * panel already announces itself the best way it can — the new row appears
-   * in the list the user is looking at — and yanking the panel away from them
-   * to show a confirmation they do not need would be worse than the bug.
-   */
-  const revealSaveFailure = () => setRailPanel('review');
+  /* `revealSaveFailure` went on 2026-11-06 (the workspace audit). It put the
+     chat column back on screen when a save failed, because the error rendered
+     in a composer that column hid (measured 2026-09-08). The composer floats
+     over the report now and is always seen, so all it still did was pull the
+     person off Projects, Revisions, Batch or the library whenever a quiet
+     autosave failed. */
 
   /** A report the user keeps teaches the memory its style, never its words (lib/memory.ts). */
   const rememberKept = (repx: string | undefined) => {
@@ -2953,9 +2936,11 @@ export default function App() {
     quiet: boolean,
     /** The session to keep, when it is not the one on screen: a run cut short by leaving it. */
     session: { messages: ChatMessage[]; result: DesignResult | null } = { messages, result },
-  ) => {
+  ): Promise<boolean> => {
+    // True once the project is kept (2026-11-06): Share asks, and shared a
+    // project whose save had failed, which the account did not hold.
     const { messages: kept, result: report } = session;
-    if (!report && kept.length === 0) return;
+    if (!report && kept.length === 0) return false;
     if (!quiet) rememberKept(report?.repxContent);
     const reportId = openReportId.current ?? Date.now().toString();
     const ts = Date.now();
@@ -2968,7 +2953,6 @@ export default function App() {
       if (quiet && autosaveFailedFor.current === reportId) return;
       autosaveFailedFor.current = reportId;
       setError(quiet ? `Forma could not save this conversation on its own. ${message}` : message);
-      revealSaveFailure();
     };
     const saved = () => {
       autosaveFailedFor.current = null;
@@ -3008,8 +2992,8 @@ export default function App() {
         // still exports; a failed save leaves the user with nothing.
         const fitted = cloudPayload(draft, user.uid);
         if (!fitted) {
-          fail('This project is too large to sync to your account. It is still open here, and "Save Project" while signed out keeps it on this device.');
-          return;
+          fail('This project is too large to sync to your account. It is still open here, and Save while signed out keeps it on this device.');
+          return false;
         }
         const { payload, imagesDropped } = fitted;
 
@@ -3032,12 +3016,13 @@ export default function App() {
               : 'Saved to your projects.') + historyNote
           );
         }
+        return true;
       } catch (err) {
-        if (quiet && autosaveFailedFor.current === reportId) return;
+        if (quiet && autosaveFailedFor.current === reportId) return false;
         autosaveFailedFor.current = reportId;
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${reportId}`,
           'That project could not be saved to your account. It is still open here — try again in a moment.');
-        revealSaveFailure();
+        return false;
       }
     } else {
       // The write happens before the state update, not inside it: a failing
@@ -3050,12 +3035,13 @@ export default function App() {
 
       if (!outcome.ok) {
         fail(outcome.message);
-        return;
+        return false;
       }
 
       setSavedReports(updated);
       saved();
       if (!quiet) setSaveNotice('Saved on this device. Sign in to sync across devices.');
+      return true;
     }
   };
 
@@ -3379,6 +3365,35 @@ export default function App() {
     }
   };
 
+  /**
+   * What a sign-out leaves behind: nothing that was theirs. Signing out must
+   * not leave a live credential for the next person at this browser. The
+   * encrypted copy in Firestore is untouched — signing back in and entering
+   * the passphrase restores it. The OpenRouter key too (2026-11-06, the
+   * workspace audit): it stayed in sessionStorage. And the same for a
+   * sign-out made in another tab, which until then cleared the conversation
+   * and none of the keys.
+   *
+   * The credential was never the only thing worth clearing. The workspace also
+   * holds the signed-out user's *documents*: uploaded page images, text lifted
+   * out of their PDFs, the chat transcript and the generated report. All of it
+   * used to survive sign-out and sit there for whoever used the browser next.
+   */
+  const forgetSignedOut = () => {
+    setConfig((prev) => ({ ...prev, customApiKey: '', openRouterKey: '' }));
+    clearSessionKey();
+    setPassphrase('');
+    setPassphraseConfirm('');
+    setVaultRecord(null);
+    setVaultNotice(null);
+    setKeyCheck(null);
+    handleClearChat('drop');
+    setRailPanel('review');
+  };
+  useEffect(() => {
+    forgetSignedOutRef.current = forgetSignedOut;
+  });
+
   const handleLogOut = async () => {
     try {
       await (await loadAuth()).service.logOut();
@@ -3386,23 +3401,7 @@ export default function App() {
       console.error(err);
     }
     setUser(null);
-    // Signing out must not leave a live credential behind for the next person at
-    // this browser. The encrypted copy in Firestore is untouched — signing back
-    // in and entering the passphrase restores it.
-    setConfig((prev) => ({ ...prev, customApiKey: '' }));
-    clearSessionKey();
-    setPassphrase('');
-    setPassphraseConfirm('');
-    setVaultRecord(null);
-    setVaultNotice(null);
-    setKeyCheck(null);
-
-    // The credential was never the only thing worth clearing. The workspace also
-    // holds the signed-out user's *documents*: uploaded page images, text lifted
-    // out of their PDFs, the chat transcript and the generated report. All of it
-    // used to survive sign-out and sit there for whoever used the browser next.
-    handleClearChat('drop');
-    setRailPanel('review');
+    forgetSignedOut();
 
     setSavedReports(loadReportsLocally<ChatMessage, DesignResult>());
   };
@@ -6395,7 +6394,12 @@ export default function App() {
             name={savedReports.find((r) => r.id === openProjectId)?.name || result.title || 'Untitled report'}
             report={result}
             ensureSaved={async () => {
-              if (!openReportId.current || !savedReports.some((r) => r.id === openReportId.current)) await persistProject(true);
+              // Only a project that was kept (2026-11-06): the id was returned
+              // even when the save failed, and a share named a project the
+              // account did not hold.
+              if (!openReportId.current || !savedReports.some((r) => r.id === openReportId.current)) {
+                if (!(await persistProject(true))) return null;
+              }
               return openReportId.current;
             }}
             onSignIn={() => {

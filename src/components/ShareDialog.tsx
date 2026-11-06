@@ -79,13 +79,19 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
     // would save and query again for nothing.
   }, [user?.uid]);
 
-  /** Write the shared copy with these settings: creating it, changing who may open it, or updating it. */
-  const save = async (nextAccess: ShareAccess, nextEmails: string[], notice: string) => {
-    if (!user || !reportId) return;
+  /**
+   * Write the shared copy with these settings: creating it, changing who may
+   * open it, or updating it. False when it was not written, so a change the
+   * dialog already showed can be put back (2026-11-06, the workspace audit):
+   * a removal that failed showed the person gone while the share still let
+   * them in.
+   */
+  const save = async (nextAccess: ShareAccess, nextEmails: string[], notice: string): Promise<boolean> => {
+    if (!user || !reportId) return false;
     const doc = shareDocument({ id: share?.id ?? makeShareId(), ownerId: user.uid, reportId, name, report, access: nextAccess, emails: nextEmails });
     if (!doc) {
       setProblem('This report is too large to share.');
-      return;
+      return false;
     }
     setBusy(true);
     try {
@@ -94,11 +100,25 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
       setShare(doc);
       setProblem(null);
       onNotice(notice);
+      return true;
     } catch (err) {
       onFailure(err, `shares/${doc.id}`, 'That report could not be shared. Try again in a moment.');
+      return false;
     } finally {
       setBusy(false);
     }
+  };
+  /** Show a change at once, and put the old settings back if it is not written. */
+  const change = (nextAccess: ShareAccess, nextEmails: string[], notice: string) => {
+    const before = { access, emails };
+    setAccess(nextAccess);
+    setEmails(nextEmails);
+    if (!share) return;
+    void save(nextAccess, nextEmails, notice).then((ok) => {
+      if (ok) return;
+      setAccess(before.access);
+      setEmails(before.emails);
+    });
   };
 
   const stop = async () => {
@@ -122,20 +142,13 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
       if (typed.trim()) setProblem(isEmail(typed) ? 'That address is already here.' : 'That does not look like an email address.');
       return;
     }
-    setEmails(next);
     setTyped('');
     setProblem(null);
-    if (share) void save(access, next, 'Added them');
+    change(access, next, 'Added them');
   };
-  const remove = (email: string) => {
-    const next = emails.filter((e) => e !== email);
-    setEmails(next);
-    if (share) void save(access, next, 'Removed them');
-  };
-  const changeAccess = (next: ShareAccess) => {
-    setAccess(next);
-    if (share) void save(next, emails, next === 'link' ? 'Anyone with the link can open it' : 'Only the people added can open it');
-  };
+  const remove = (email: string) => change(access, emails.filter((e) => e !== email), 'Removed them');
+  const changeAccess = (next: ShareAccess) =>
+    change(next, emails, next === 'link' ? 'Anyone with the link can open it' : 'Only the people added can open it');
 
   const link = share ? shareLink(window.location.origin, share.id) : null;
   return (

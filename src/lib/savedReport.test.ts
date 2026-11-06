@@ -272,8 +272,8 @@ describe('projectName', () => {
  * into React rather than becoming a message.
  *
  * The cloud path already refuses an oversized project with an explanation — and
- * that explanation says *"Save Project while signed out keeps it on this
- * device"*, pointing the user at the path that threw.
+ * that explanation says *"Save while signed out keeps it on this device"*,
+ * pointing the user at the path that threw.
  */
 describe('saveReportsLocally', () => {
   const big = (mb: number): SavedReportLike =>

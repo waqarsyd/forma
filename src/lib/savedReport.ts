@@ -185,8 +185,9 @@ export type LocalSaveOutcome = { ok: true } | { ok: false; message: string };
  * `QuotaExceededError: The 5000000-code unit storage quota has been exceeded`.
  * Because the call sat inside a `setSavedReports` updater, the exception
  * escaped into React instead of becoming a message — and the signed-in path
- * that refuses an oversized project points the user here, saying "Save Project
- * while signed out keeps it on this device".
+ * that refuses an oversized project points the user here, saying "Save while
+ * signed out keeps it on this device" ("Save Project" until 2026-11-06, the
+ * button's name before it became Save).
  *
  * On failure the previously stored list is left exactly as it was. A save that
  * cannot complete must not also destroy what was already there — that would

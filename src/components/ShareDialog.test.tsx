@@ -75,6 +75,20 @@ describe('ShareDialog', () => {
     await waitFor(() => expect(screen.queryByLabelText('Link to the shared report')).toBeNull());
   });
 
+  // The workspace audit, 2026-11-06: a removal that failed showed the person
+  // gone while the share still let them in.
+  it('puts a person back when their removal could not be written', async () => {
+    const existing = { id: 'Sh4r3dR3p0rtIdOfTwentyTwo', ownerId: 'alice', reportId: 'r1', name: 'Invoice', result: '{}', access: 'restricted', emails: ['bob@example.com'], timestamp: 1_790_000_000_000 };
+    sdk.getDocs.mockResolvedValue({ docs: [{ data: () => existing }] });
+    sdk.setDoc.mockRejectedValue(new Error('offline'));
+    const p = props();
+    render(<ShareDialog {...p} />);
+    await waitFor(() => expect(screen.getByText('bob@example.com')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bob@example.com' }));
+    await waitFor(() => expect(p.onFailure).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText('bob@example.com')).toBeTruthy());
+  });
+
   it('says when what was typed is not an address', async () => {
     render(<ShareDialog {...props()} />);
     await waitFor(() => expect(screen.getByLabelText('Add people by email')).toBeTruthy());
