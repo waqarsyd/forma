@@ -42,6 +42,17 @@ describe('ProjectMenu', () => {
     expect(h.onDelete).toHaveBeenCalledTimes(1);
   });
 
+  // Ctrl+K's "Rename the project…" and "Delete the project…" (2026-11-06).
+  it('opens at Rename\'s field or at Delete\'s question when asked to', () => {
+    render(<ProjectMenu name="Invoice" {...handlers()} start="rename" />);
+    expect((screen.getByLabelText('Project name') as HTMLInputElement).value).toBe('Invoice');
+    cleanup();
+    const h = handlers();
+    render(<ProjectMenu name="Invoice" {...h} start="delete" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(h.onDelete).toHaveBeenCalledTimes(1);
+  });
+
   it('duplicates and archives, offers no download (Export has it), and greys what an unsaved project cannot do', () => {
     const h = handlers();
     render(<ProjectMenu name="Invoice" {...h} />);

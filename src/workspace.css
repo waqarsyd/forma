@@ -995,6 +995,8 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-title-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-title-btn > svg { flex: none; color: var(--ink-faint); }
 .wb-title-btn:hover, .wb-title-btn[aria-expanded='true'] { background: var(--track); }
+/* An unsaved session's title is a name, not a menu (2026-11-06). */
+.wb-title-plain, .wb-title-plain:hover { cursor: default; background: none; }
 .wb-doc-id h1 {
   margin: 0;
   font-family: var(--display);

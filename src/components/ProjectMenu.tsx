@@ -22,12 +22,14 @@ interface Props {
   archived?: boolean;
   onDelete?: () => void;
   onClose: () => void;
+  /** Opened at Rename's field, or at Delete's question, as Ctrl+K's "Rename…" and "Delete…" open it (2026-11-06). */
+  start?: 'rename' | 'delete';
 }
 
-export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, archived = false, onDelete, onClose }: Props) {
+export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, archived = false, onDelete, onClose, start }: Props) {
   const box = useRef<HTMLDivElement>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(start === 'rename' && onRename ? name : null);
+  const [confirming, setConfirming] = useState(start === 'delete' && !!onDelete);
   useEffect(() => {
     const away = (e: PointerEvent) => {
       if (!box.current?.contains(e.target as Node) && !(e.target as Element | null)?.closest?.('[data-project-toggle]')) onClose();

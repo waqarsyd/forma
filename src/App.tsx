@@ -25,6 +25,7 @@ import {
   IconChevronsLeft,
   IconChevronsRight,
   IconClose,
+  IconCopy,
   IconDownload,
   IconEye,
   IconEyeOff,
@@ -887,10 +888,11 @@ const INITIAL_RUN: RunCopy = {
   start: 'Starting report generation process.',
   request: 'Sending request to Gemini API...',
   done: 'Report layout updated successfully.',
+  // No "on the right" (2026-11-06, the workspace audit): the views are the
+  // tabs over the report, which is open in front of the reader, and the reply
+  // says itself what changed and what the checks found.
   assistant: (fromPrompt) =>
-    fromPrompt
-      ? "I've updated the report layout based on your instructions. You can view the UI preview and specifications on the right."
-      : "I've generated the report layout based on your provided images. You can view the UI preview and specifications on the right.",
+    fromPrompt ? "I've updated the report from your instructions." : "I've built the report from your pictures.",
 };
 
 /** Prompt-to-Report: a description and no attachment. See lib/promptToReport.ts. */
@@ -899,8 +901,9 @@ const DESCRIBE_RUN: RunCopy = {
   request: 'Sending the description to Gemini API...',
   done: 'Report designed from the description.',
   assistant: () =>
-    // The REPX pane, not the status bar, which went on 2026-11-04 and this line did not follow.
-    "I've designed the report from your description. You can view the UI preview and specifications on the right, and the REPX pane says what the audit still found.",
+    // The checks are the reply's own "Checked" line since 2026-11-05; the
+    // pointer at the REPX pane and "on the right" went on 2026-11-06.
+    "I've designed the report from your description.",
 };
 
 /**
@@ -1580,6 +1583,8 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   /** The project's menu, opened from its title (2026-11-06, components/ProjectMenu.tsx). */
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
+  /** Where the project's menu opens when Ctrl+K opened it: at Rename, or at Delete's question (2026-11-06). */
+  const [projectMenuStart, setProjectMenuStart] = useState<'rename' | 'delete' | undefined>(undefined);
   /** The Share dialog (2026-11-06, components/ShareDialog.tsx). */
   const [isShareOpen, setIsShareOpen] = useState(false);
   /**
@@ -3311,15 +3316,18 @@ export default function App() {
    * Stitch's Duplicate): what is on screen now, not its last save, kept where
    * a save would keep it. The copy is listed; the original stays open.
    */
-  const duplicateProject = async () => {
-    const source = savedReports.find((r) => r.id === openProjectId);
+  const duplicateProject = async (id: string | null = openProjectId) => {
+    const source = savedReports.find((r) => r.id === id);
     if (!source) return;
+    // The open project as it is on screen; another, from the list's row
+    // (2026-11-06), as it was saved.
+    const open = source.id === openProjectId;
     const copy: SavedReport = {
       id: Date.now().toString(),
       name: `Copy of ${source.name}`.slice(0, 120),
       timestamp: new Date().toISOString(),
-      messages,
-      result,
+      messages: open ? messages : source.messages,
+      result: open ? result : source.result,
     };
     if (user) {
       try {
@@ -5295,6 +5303,13 @@ export default function App() {
         { id: 'repx', label: 'Export the .repx', run: downloadDesign },
         { id: 'designer', label: 'Open in the DevExpress designer', run: () => void openInDesigner() },
       );
+      /* What has a button and had no command (2026-11-06, the workspace
+         audit): every format, Share, the project's menu, the pin, Test data. */
+      for (const [format, name] of [['pdf', 'PDF'], ['pdf-outline', 'PDF with outline'], ['xlsx', 'Excel workbook'], ['csv', 'CSV'], ['docx', 'Word document'], ['rtf', 'RTF'], ['html', 'HTML page'], ['png', 'image']] as const) {
+        list.push({ id: `export-${format}`, label: `Export as ${name}`, run: () => { showPlate('print'); setExportRequest({ format, nonce: Date.now() }); } });
+      }
+      if (result.repxContent) list.push({ id: 'share', label: 'Share the report', run: () => setIsShareOpen(true) });
+      if (boundFields.length) list.push({ id: 'testdata', label: 'Fill the Preview with test data', run: () => { showPlate('print'); void handleTestData(); } });
       if (plate === 'print') {
         list.push(
           { id: 'zin', label: 'Zoom in', keys: '+', run: () => zoomPreview('in') },
@@ -5302,11 +5317,46 @@ export default function App() {
           { id: 'z100', label: 'Zoom to 100%', keys: keysFor('Shift+0'), run: () => zoomPreview('100') },
           { id: 'zfit', label: 'Zoom to fit', keys: keysFor('Shift+1'), run: () => zoomPreview('fit') },
         );
+        if (previewSelection.length) list.push({ id: 'zsel', label: 'Zoom to the selection', keys: keysFor('Shift+2'), run: () => zoomPreview('selection') });
       }
       const names = new Set([...(result.repxContent ?? '').matchAll(/ControlType="XR(?!TableRow|TableCell)\w+"[^>]*?\sName="([^"]+)"/g)].map((m) => m[1]));
       for (const name of names) list.push({ id: `go-${name}`, label: `Go to ${name}`, run: () => { showPlate('print'); setChangedHighlight([name]); } });
     }
-    for (const p of savedReports) if (p.id !== openProjectId) list.push({ id: `project-${p.id}`, label: `Open ${p.name}`, run: () => void handleLoadReport(p) });
+    if (messages.some((m) => m.role === 'assistant')) {
+      list.push(
+        { id: 'copyreply', label: 'Copy the last reply', keys: keysFor('Ctrl+Shift+C'), run: () => chatShortcutRef.current?.('copyReply') },
+        { id: 'chatmd', label: 'Export the chat as Markdown', run: exportConversation },
+      );
+    }
+    if (openProjectId && savedReports.some((r) => r.id === openProjectId)) {
+      const id = openProjectId;
+      list.push(
+        { id: 'rename', label: 'Rename the project…', run: () => { setProjectMenuStart('rename'); setIsProjectMenuOpen(true); } },
+        { id: 'duplicate', label: 'Duplicate the project', run: () => void duplicateProject() },
+        { id: 'pin', label: pinnedProjects.includes(id) ? 'Unpin the project' : 'Pin the project', run: () => togglePinned(id) },
+        { id: 'archive', label: archivedProjects.includes(id) ? 'Bring the project back from the archive' : 'Archive the project', run: () => toggleArchived(id) },
+        { id: 'delete', label: 'Delete the project…', run: () => { setProjectMenuStart('delete'); setIsProjectMenuOpen(true); } },
+      );
+    }
+    list.push(
+      { id: 'p-projects', label: 'Show your projects', run: () => showRailPanel('projects') },
+      { id: 'p-revisions', label: 'Show the Revisions panel', run: () => showRailPanel('revisions') },
+      { id: 'p-batch', label: 'Show the Batch panel', run: () => showRailPanel('batch') },
+      { id: 'p-library', label: 'Show the report library', run: () => showRailPanel('library') },
+      ...(user
+        ? [
+            { id: 'account', label: 'Account settings', run: () => setIsAccountOpen(true) },
+            { id: 'signout', label: 'Sign out', run: () => void handleLogOut() },
+          ]
+        : [{ id: 'signin', label: 'Sign in', run: () => navigate('/login') }]),
+    );
+    // Each project named with when it was last saved, so two of one name can
+    // be told apart, and an archived one says so (2026-11-06).
+    for (const p of savedReports) {
+      if (p.id === openProjectId) continue;
+      const archived = archivedProjects.includes(p.id) ? ', archived' : '';
+      list.push({ id: `project-${p.id}`, label: `Open ${p.name} (${formatSessionStamp(p.timestamp)}${archived})`, run: () => void handleLoadReport(p) });
+    }
     return list;
   };
 
@@ -5711,6 +5761,14 @@ export default function App() {
                         >
                           <IconPencil size={14} />
                         </button>
+                        {/* As the title's menu has it (2026-11-06, the workspace audit). */}
+                        <button
+                          aria-label={`Duplicate ${report.name}`}
+                          title="Duplicate"
+                          onClick={(e) => { e.stopPropagation(); void duplicateProject(report.id); }}
+                        >
+                          <IconCopy size={14} />
+                        </button>
                         <button
                           aria-label={archived ? `Unarchive ${report.name}` : `Archive ${report.name}`}
                           title={archived ? 'Back to projects' : 'Archive (on this device)'}
@@ -5869,19 +5927,26 @@ export default function App() {
             {/* The title opens the project's menu (2026-11-06), as Stitch's
                 project name does. A saved project shows its name, the one the
                 projects list shows, so a rename is seen where it was made. */}
+            {/* A menu only for a saved project, the one its items act on
+                (2026-11-06, the workspace audit): before, it opened four
+                disabled items over the empty home. */}
             <h1>
-              <button
-                type="button"
-                className="wb-title-btn"
-                data-project-toggle
-                aria-haspopup="menu"
-                aria-expanded={isProjectMenuOpen}
-                title="Rename, duplicate, download or delete this project"
-                onClick={() => setIsProjectMenuOpen((open) => !open)}
-              >
-                <span>{savedReports.find((r) => r.id === openProjectId)?.name || result?.title || 'Untitled report'}</span>
-                <IconChevronDown size={15} />
-              </button>
+              {openProjectId && savedReports.some((r) => r.id === openProjectId) ? (
+                <button
+                  type="button"
+                  className="wb-title-btn"
+                  data-project-toggle
+                  aria-haspopup="menu"
+                  aria-expanded={isProjectMenuOpen}
+                  title="Rename, duplicate, archive or delete this project"
+                  onClick={() => setIsProjectMenuOpen((open) => !open)}
+                >
+                  <span>{savedReports.find((r) => r.id === openProjectId)?.name || result?.title || 'Untitled report'}</span>
+                  <IconChevronDown size={15} />
+                </button>
+              ) : (
+                <span className="wb-title-btn wb-title-plain"><span>{result?.title || 'Untitled report'}</span></span>
+              )}
             </h1>
             {isProjectMenuOpen && (
               <Suspense fallback={null}>
@@ -5891,8 +5956,9 @@ export default function App() {
                   onDuplicate={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => void duplicateProject() : undefined}
                   onArchive={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => toggleArchived(openProjectId) : undefined}
                   archived={!!openProjectId && archivedProjects.includes(openProjectId)}
+                  start={projectMenuStart}
                   onDelete={openProjectId && savedReports.some((r) => r.id === openProjectId) ? deleteOpenProject : undefined}
-                  onClose={() => setIsProjectMenuOpen(false)}
+                  onClose={() => { setIsProjectMenuOpen(false); setProjectMenuStart(undefined); }}
                 />
               </Suspense>
             )}
@@ -5920,6 +5986,10 @@ export default function App() {
             </div>
           )}
 
+          {/* Nothing to save, share or export on the empty home, so no buttons
+              there, greyed (2026-11-06, the workspace audit), as Stitch's
+              bar holds none until there is a screen. */}
+          {(result || messages.length > 0) && (
           <div className="wb-bar-actions">
             {/* The notice left this bar for a toast at the bottom right
                 (2026-11-06): beside the selection toolbar it wrapped the bar
@@ -5979,6 +6049,7 @@ export default function App() {
               )}
             </span>
           </div>
+          )}
         </div>
 
         {/* The report and what floats over it, under the bar (2026-11-06): the
@@ -6314,7 +6385,9 @@ export default function App() {
             onEditQueued={(id) => {
               const item = queue.find((x) => x.id === id);
               setQueue((q) => q.filter((x) => x.id !== id));
-              if (item) setPrompt(item.text);
+              // What was being typed stays, under the queued words (2026-11-06,
+              // the workspace audit): Edit replaced it, and it was lost.
+              if (item) setPrompt((typed) => (typed.trim() ? `${item.text}\n${typed}` : item.text));
             }}
             onCancelQueued={(id) => setQueue((q) => q.filter((x) => x.id !== id))}
             history={requests.map((r) => r.ask?.text ?? '').filter(Boolean)}
