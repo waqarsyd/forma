@@ -32,12 +32,21 @@ export interface ShortcutKey {
  * 100%, Shift+1 the fit to the width and Shift+2 the selection. "?" and the
  * zoom keys are bare letters, so the caller passes `typing` when the key
  * went to a field, and they are then the field's.
+ *
+ * Undo and redo are here since 2026-11-06 (the workspace audit): Ctrl+Z,
+ * and Ctrl+Shift+Z or Ctrl+Y, on every pane, as the corner's buttons work on
+ * every pane. Only the Preview read them until then. In a field they are the
+ * field's own.
  */
-export type WorkspaceShortcut = 'commands' | 'clean' | 'shortcuts' | 'zoomIn' | 'zoomOut' | 'zoom100' | 'zoomFit' | 'zoomSelection';
+export type WorkspaceShortcut = 'commands' | 'clean' | 'shortcuts' | 'undo' | 'redo' | 'zoomIn' | 'zoomOut' | 'zoom100' | 'zoomFit' | 'zoomSelection';
 
 export function workspaceShortcutOf(e: ShortcutKey, typing: boolean): WorkspaceShortcut | null {
   if (e.isComposing || e.altKey) return null;
   const key = e.key.toLowerCase();
+  if (e.ctrlKey !== e.metaKey && !typing) {
+    if (key === 'z') return e.shiftKey ? 'redo' : 'undo';
+    if (key === 'y' && !e.shiftKey) return 'redo';
+  }
   if (e.ctrlKey !== e.metaKey && !e.shiftKey) {
     if (key === 'k') return 'commands';
     if (key === '\\') return 'clean';

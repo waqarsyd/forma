@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import './overlays.css';
 import type { FormatAction } from '../lib/agentEdit';
 import { IconChevronDown, IconPencil, IconTarget } from './landing/icons';
+import { useLayer } from './useLayer';
 
 export interface SelectionToolbarProps {
   names: readonly string[];
@@ -42,16 +43,11 @@ export default function SelectionToolbar({ names, onFormat, onEditText, onDelete
     const away = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setMenu(null);
     };
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null);
-    };
     document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('mousedown', away);
-      document.removeEventListener('keydown', escape);
-    };
+    return () => document.removeEventListener('mousedown', away);
   }, [menu]);
+  // Escape closes the open menu and leaves the selection (lib/layers.ts).
+  useLayer(() => setMenu(null), menu !== null, 'selection-menu');
   const pick = (run: () => void) => {
     setMenu(null);
     run();

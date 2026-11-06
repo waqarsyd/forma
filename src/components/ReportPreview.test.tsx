@@ -295,16 +295,40 @@ describe('editing in the pane', () => {
     for (let i = 0; i < flags.length; i += 3) expect(flags.slice(i, i + 3)).toEqual([false, true, true]);
   });
 
-  // The workspace keeps one history at the bench's corner (2026-11-05).
-  it("hands Ctrl+Z and Ctrl+Shift+Z to the workspace's history, and draws no Undo of its own", () => {
-    const onUndo = vi.fn();
-    const onRedo = vi.fn();
-    render(<ReportPreview repxContent={editable} layout={null} title="Edit" onEdit={() => {}} onUndo={onUndo} onRedo={onRedo} />);
+  // The workspace keeps one history at the bench's corner (2026-11-05), and
+  // reads Ctrl+Z itself on every pane (2026-11-06).
+  it('keeps no history of its own when the workspace keeps it: no Undo, and Ctrl+Z is left alone', () => {
+    const onEdit = vi.fn();
+    render(<ReportPreview repxContent={editable} layout={null} title="Edit" onEdit={onEdit} historyElsewhere />);
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    fireEvent.pointerDown(hits()[0]);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(onEdit).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
-    fireEvent.keyDown(window, { key: 'Z', ctrlKey: true, shiftKey: true });
-    expect(onUndo).toHaveBeenCalledTimes(1);
-    expect(onRedo).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenCalledTimes(1);
+  });
+
+  // Keys meant for a menu or a dialog are not edits (2026-11-06, the workspace audit).
+  it('leaves the arrows and Delete alone while a menu or dialog is open, or when they went to one', async () => {
+    const { addLayer } = await import('../lib/layers');
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    fireEvent.pointerDown(hits()[0]);
+    const release = addLayer({ id: 'share', close: () => undefined });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    release();
+    expect(onEdit).not.toHaveBeenCalled();
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    const item = document.createElement('button');
+    menu.appendChild(item);
+    document.body.appendChild(menu);
+    fireEvent.keyDown(item, { key: 'ArrowDown' });
+    menu.remove();
+    expect(onEdit).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    expect(onEdit).toHaveBeenCalledTimes(1);
   });
 
   it('selects more with Shift+click, and deletes them all as one step', () => {

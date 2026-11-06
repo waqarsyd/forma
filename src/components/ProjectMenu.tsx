@@ -9,6 +9,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import './overlays.css';
+import { useLayer } from './useLayer';
 
 interface Props {
   name: string;
@@ -27,16 +28,10 @@ export default function ProjectMenu({ name, onRename, onDuplicate, onDownload, o
     const away = (e: PointerEvent) => {
       if (!box.current?.contains(e.target as Node) && !(e.target as Element | null)?.closest?.('[data-project-toggle]')) onClose();
     };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
     document.addEventListener('pointerdown', away, true);
-    document.addEventListener('keydown', key);
-    return () => {
-      document.removeEventListener('pointerdown', away, true);
-      document.removeEventListener('keydown', key);
-    };
+    return () => document.removeEventListener('pointerdown', away, true);
   }, [onClose]);
+  useLayer(onClose, true, 'project');
   const run = (action: () => void) => () => {
     onClose();
     action();

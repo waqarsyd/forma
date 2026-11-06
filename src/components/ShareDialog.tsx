@@ -17,6 +17,7 @@ import { loadFirebase } from '../lib/firebaseClient';
 import { isEmail, makeShareId, shareDocument, shareLink, withInvitee, type ShareAccess, type ShareDocument, type SharedReport } from '../lib/shares';
 import { IconClose } from './landing/icons';
 import './overlays.css';
+import { useLayer } from './useLayer';
 
 interface Props {
   user: { uid: string; email: string | null } | null;
@@ -40,13 +41,7 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
   const [typed, setTyped] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => {
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', escape);
-    return () => document.removeEventListener('keydown', escape);
-  }, [onClose]);
+  useLayer(onClose, true, 'share');
 
   // The project's share, if it has one; saving the project first when it is not saved.
   useEffect(() => {

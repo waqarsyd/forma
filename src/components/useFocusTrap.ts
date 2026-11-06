@@ -1,4 +1,5 @@
 import { RefObject, useEffect, useRef } from 'react';
+import { addLayer } from '../lib/layers';
 
 /**
  * The keyboard contract every modal in this app owes a keyboard user: focus
@@ -54,12 +55,10 @@ export function useFocusTrap(
     const returnFocusTo = document.activeElement as HTMLElement | null;
     node?.focus();
 
+    // Escape is the layer's (2026-11-06, lib/layers.ts), so it closes this
+    // dialog only when nothing opened over it is open.
+    const releaseLayer = addLayer({ id: 'dialog', close: () => closeRef.current() });
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeRef.current();
-        return;
-      }
       if (e.key !== 'Tab' || !node) return;
 
       const focusable = Array.from(
@@ -82,6 +81,7 @@ export function useFocusTrap(
 
     document.addEventListener('keydown', onKey);
     return () => {
+      releaseLayer();
       document.removeEventListener('keydown', onKey);
       // Back to the control that opened it, not to nowhere.
       returnFocusTo?.focus?.();

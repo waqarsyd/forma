@@ -22,7 +22,15 @@ describe('workspaceShortcutOf', () => {
     expect(workspaceShortcutOf(press('-'), false)).toBe('zoomOut');
     expect(workspaceShortcutOf(press('?', { shiftKey: true }), true)).toBeNull();
     expect(workspaceShortcutOf(press('-'), true)).toBeNull();
-    expect(workspaceShortcutOf(press('z', { ctrlKey: true }), false)).toBeNull();
+  });
+
+  it('reads Ctrl+Z as undo and Ctrl+Shift+Z or Ctrl+Y as redo, and leaves them to a field', () => {
+    expect(workspaceShortcutOf(press('z', { ctrlKey: true }), false)).toBe('undo');
+    expect(workspaceShortcutOf(press('Z', { metaKey: true, shiftKey: true }), false)).toBe('redo');
+    expect(workspaceShortcutOf(press('y', { ctrlKey: true }), false)).toBe('redo');
+    expect(workspaceShortcutOf(press('z', { ctrlKey: true }), true)).toBeNull();
+    expect(workspaceShortcutOf(press('y', { ctrlKey: true, shiftKey: true }), false)).toBeNull();
+    expect(workspaceShortcutOf(press('z'), false)).toBeNull();
   });
 });
 

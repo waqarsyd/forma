@@ -4,13 +4,15 @@
  * designer beside it, then each format the Preview prints to. A print format
  * opens Preview and asks it for the export, as the chat's export tool does
  * (`exportRequest`), because only the Preview has the pages laid out. The
- * Preview keeps its own buttons too. Escape, a click elsewhere or the close
+ * workspace's Preview draws no export buttons of its own (2026-11-06); a
+ * shared report's page keeps them. Escape, a click elsewhere or the close
  * button shuts it; choosing a row runs it and shuts it. See *The
  * conversation floats over the report* in docs/notes/app-shell.md.
  */
 import { useEffect, useRef } from 'react';
 import { IconClose, IconDownload, IconExternal } from './landing/icons';
 import './overlays.css';
+import { useLayer } from './useLayer';
 
 /** What the Preview can be asked to export; 'pdf-outline' is the PDF Forma writes itself. */
 export type PrintFormat = 'pdf' | 'pdf-outline' | 'xlsx' | 'csv' | 'docx' | 'rtf' | 'html' | 'png';
@@ -36,21 +38,21 @@ interface Props {
 
 export default function ExportPanel({ onRepx, onDesigner, onPrint, onClose }: Props) {
   const box = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useLayer(onClose, true, 'export');
+  // Once, as it opens (2026-11-06). The focus sat in an effect that re-ran
+  // with every new `onClose`, which App passes inline, so each render of the
+  // workspace (a toast, the tip, the autosave) took the focus back to the
+  // first row: Tab to Excel, then Enter, downloaded the .repx.
   useEffect(() => {
+    box.current?.querySelector<HTMLButtonElement>('.wb-export-row')?.focus({ preventScroll: true });
     const away = (e: PointerEvent) => {
-      if (!box.current?.contains(e.target as Node) && !(e.target as Element | null)?.closest?.('[data-export-toggle]')) onClose();
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (!box.current?.contains(e.target as Node) && !(e.target as Element | null)?.closest?.('[data-export-toggle]')) closeRef.current();
     };
     document.addEventListener('pointerdown', away, true);
-    document.addEventListener('keydown', key);
-    box.current?.querySelector<HTMLButtonElement>('.wb-export-row')?.focus({ preventScroll: true });
-    return () => {
-      document.removeEventListener('pointerdown', away, true);
-      document.removeEventListener('keydown', key);
-    };
-  }, [onClose]);
+    return () => document.removeEventListener('pointerdown', away, true);
+  }, []);
   const run = (action: () => void) => () => {
     onClose();
     action();

@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ANNOUNCEMENTS } from '../lib/announcements';
 import { IconChevronDown, IconExternal, IconMonitor, IconMoon, IconSun } from './landing/icons';
 import './overlays.css';
+import { useLayer } from './useLayer';
 
 export type ThemeChoice = 'light' | 'system' | 'dark';
 
@@ -36,16 +37,10 @@ export default function HelpMenu({ theme, onTheme, onShortcuts, onClose }: Props
       // The "?" that opened it toggles it itself.
       if (!box.current?.contains(e.target as Node) && !(e.target as Element | null)?.closest?.('[data-help-toggle]')) onClose();
     };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
     document.addEventListener('pointerdown', away, true);
-    document.addEventListener('keydown', key);
-    return () => {
-      document.removeEventListener('pointerdown', away, true);
-      document.removeEventListener('keydown', key);
-    };
+    return () => document.removeEventListener('pointerdown', away, true);
   }, [onClose]);
+  useLayer(onClose, true, 'help');
   return (
     <div className="wb-help" ref={box} role="dialog" aria-label="Help">
       <div className="wb-help-theme" role="radiogroup" aria-label="Theme">

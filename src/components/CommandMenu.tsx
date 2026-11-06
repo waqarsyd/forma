@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import './overlays.css';
 import { IconSearch } from './landing/icons';
+import { useLayer } from './useLayer';
 
 export interface Command {
   id: string;
@@ -30,6 +31,8 @@ export default function CommandMenu({ commands, onClose }: { commands: readonly 
   const [at, setAt] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
   const shown = matchCommands(commands, query);
+  // Escape closes it, and only it (lib/layers.ts); 'commands' lets Ctrl+K close it too.
+  useLayer(onClose, true, 'commands');
   useEffect(() => setAt(0), [query]);
   useEffect(() => {
     listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' });
@@ -57,7 +60,6 @@ export default function CommandMenu({ commands, onClose }: { commands: readonly 
               if (e.key === 'ArrowDown') { e.preventDefault(); setAt((i) => Math.min(shown.length - 1, i + 1)); }
               else if (e.key === 'ArrowUp') { e.preventDefault(); setAt((i) => Math.max(0, i - 1)); }
               else if (e.key === 'Enter') { e.preventDefault(); run(shown[at]); }
-              else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
             }}
           />
           <kbd>Esc</kbd>

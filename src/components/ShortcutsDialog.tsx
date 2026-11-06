@@ -6,9 +6,9 @@
  * `lib/shortcuts.ts`, `lib/sidebar.ts`, the Preview and the box; this is
  * their one list, so a new shortcut is a new row here too.
  */
-import { useEffect } from 'react';
 import './overlays.css';
 import { IconClose } from './landing/icons';
+import { useLayer } from './useLayer';
 
 type Row = [label: string, keys: string[]];
 
@@ -40,9 +40,14 @@ export function shortcutGroups(mac: boolean): { title: string; rows: Row[] }[] {
       rows: [
         ['Undo', [mod, 'Z']],
         ['Redo', [mod, '⇧', 'Z']],
+        ...(mac ? [] : [['Redo, the other way', ['Ctrl', 'Y']] as Row]),
         ['Select more', ['⇧', 'Click']],
         ['Nudge the selection', ['↑ ↓ ← →']],
+        ['Nudge it ten units', ['⇧', '↑ ↓ ← →']],
+        ['Duplicate the selection', [mod, 'D']],
+        ['Put the selection in the chat', [mod, 'L']],
         ['Delete the selection', ['Delete']],
+        ['Clear the selection', ['Esc']],
         ['Retype a label or a cell', ['Double-click']],
       ],
     },
@@ -54,19 +59,14 @@ export function shortcutGroups(mac: boolean): { title: string; rows: Row[] }[] {
         ['Zoom to 100%', ['⇧', '0']],
         ['Zoom to fit', ['⇧', '1']],
         ['Zoom to the selection', ['⇧', '2']],
+        ['Focus on the selection', ['F']],
       ],
     },
   ];
 }
 
 export default function ShortcutsDialog({ onClose, mac }: { onClose: () => void; mac: boolean }) {
-  useEffect(() => {
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', escape);
-    return () => document.removeEventListener('keydown', escape);
-  }, [onClose]);
+  useLayer(onClose, true, 'shortcuts');
   return (
     <div className="wb-cmd-backdrop wb-cmd-backdrop--centre" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="wb-keys" role="dialog" aria-modal="true" aria-labelledby="wb-keys-title">

@@ -26,6 +26,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ChangeEventHandler, 
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
 import { modelTiers } from '../lib/modelTiers';
+import { useLayer } from './useLayer';
 import {
   IconAlert,
   IconArrowRight,
@@ -193,16 +194,10 @@ export default function Composer({
     const away = (e: MouseEvent) => {
       if (!modelMenuRef.current?.contains(e.target as Node)) setModelMenu(false);
     };
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setModelMenu(false);
-    };
     document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('mousedown', away);
-      document.removeEventListener('keydown', escape);
-    };
+    return () => document.removeEventListener('mousedown', away);
   }, [modelMenu]);
+  useLayer(() => setModelMenu(false), modelMenu, 'model-menu');
   /*
    * One condition, read by the button *and* the keyboard.
    *

@@ -62,6 +62,7 @@ import { buildZip } from '../lib/zip';
 import { moveControl, resizeControl, setControlText, overflowsBand, deleteControl, addLabel, setCellText, duplicateControl, type ControlRef } from '../lib/repxEdit';
 import type { FormatAction } from '../lib/agentEdit';
 import ControlMenu, { type MenuItem } from './ControlMenu';
+import { hasOpenLayer, isOutsideReport } from '../lib/layers';
 import type { ReportLayout } from '../lib/reportTypes';
 
 interface Props {
@@ -108,14 +109,14 @@ interface Props {
   highlight?: readonly string[];
   /**
    * The workspace's own history and zoom (2026-11-05), at the corner of the
-   * bench as Stitch's are: with `onUndo`, Ctrl+Z (and Ctrl+Shift+Z or Ctrl+Y
-   * with `onRedo`) go to App, which keeps one history for every change to the
-   * report, and the pane's own Undo button is not drawn. `zoom` multiplies
-   * the fit to the width, and `onScaleChange` reports the scale the pages are
-   * drawn at. A new `resetSelection` clears the selection.
+   * bench as Stitch's are. With `historyElsewhere`, App keeps one history for
+   * every change to the report and reads Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y on
+   * every pane (2026-11-06, lib/shortcuts.ts); the pane keeps none and draws
+   * no Undo. Without it, the pane keeps its own and its Undo button. `zoom`
+   * multiplies the fit to the width, and `onScaleChange` reports the scale
+   * the pages are drawn at. A new `resetSelection` clears the selection.
    */
-  onUndo?: () => void;
-  onRedo?: () => void;
+  historyElsewhere?: boolean;
   zoom?: number;
   onScaleChange?: (scale: number) => void;
   resetSelection?: number;
@@ -1011,7 +1012,7 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, onUndo, onRedo, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -1072,8 +1073,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     if (!result.applied) setEditNote(result.reason);
     if (!result.applied || !onEdit) return;
     setEditNote(null);
-    undoStack.current.push({ xml: previous, reason: result.reason });
-    setUndoDepth(undoStack.current.length);
+    // None kept when the workspace keeps the history: this one was never
+    // read there, and held a full copy of the file per edit (2026-11-06).
+    if (!historyElsewhere) {
+      undoStack.current.push({ xml: previous, reason: result.reason });
+      setUndoDepth(undoStack.current.length);
+    }
     onEdit(result.xml, result.reason);
   };
 
@@ -1267,8 +1272,10 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     setEditingText(null);
     setEditingCell(null);
     // One undo entry per gesture, recorded before the first frame of it.
-    undoStack.current.push({ xml: repxContent, reason: mode === 'move' ? 'move' : 'resize' });
-    setUndoDepth(undoStack.current.length);
+    if (!historyElsewhere) {
+      undoStack.current.push({ xml: repxContent, reason: mode === 'move' ? 'move' : 'resize' });
+      setUndoDepth(undoStack.current.length);
+    }
     gesture.current = {
       ref,
       mode,
@@ -1340,16 +1347,15 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       // Typing in a field elsewhere on the page (a parameter, the chat) is not an edit of the report.
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-      if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'y' || (event.shiftKey && event.key.toLowerCase() === 'z'))) {
-        if (!onRedo) return;
+      // Nor is a key that went to a menu, a dialog or the conversation, or one
+      // anything open over the report took (2026-11-06, lib/layers.ts): the
+      // arrows that moved through the right-click menu also moved the control,
+      // and Delete with the Share dialog open deleted it.
+      if (event.defaultPrevented || hasOpenLayer() || isOutsideReport(target)) return;
+      // Undo is the workspace's when it keeps the history (App reads Ctrl+Z on every pane).
+      if (!historyElsewhere && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
         event.preventDefault();
-        onRedo();
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-        event.preventDefault();
-        if (onUndo) onUndo();
-        else undo();
+        undo();
         return;
       }
       if (event.key === 'Escape') { setSelected(null); setAlso([]); return; }
@@ -2179,7 +2185,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             Delete
           </button>
         )}
-        {editable && !onUndo && (
+        {editable && !historyElsewhere && (
           <button
             className="wb-pill wb-pill--outline"
             onClick={undo}

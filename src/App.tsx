@@ -201,6 +201,8 @@ import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
 import { readyTitle, sharedReportId, titleForRoute, viewForRoute } from './lib/routes';
 import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, type WorkspaceShortcut } from './lib/shortcuts';
+import { hasOpenLayer, topLayer } from './lib/layers';
+import { useLayer } from './components/useLayer';
 import type { Command } from './components/CommandMenu';
 import { TIP_INTERVAL_MS, WORKING_TIPS, forPlatform, tipAt } from './lib/workingTips';
 /* App.tsx's own view state, extracted so it can be tested — see the header of
@@ -1233,6 +1235,17 @@ export default function App() {
       const target = e.target as HTMLElement | null;
       const typing = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
       const workspace = workspaceShortcutOf(e, typing);
+      // With a menu, panel or dialog open, its keys are its own (2026-11-06,
+      // lib/layers.ts): Ctrl+K over Settings opened the command menu on top,
+      // and the Escape that closed it closed Settings too. Ctrl+K still
+      // closes the command menu it opened.
+      if (hasOpenLayer()) {
+        if (workspace === 'commands' && topLayer()?.id === 'commands') {
+          e.preventDefault();
+          setIsCommandOpen(false);
+        }
+        return;
+      }
       if (workspace && workspaceShortcutRef.current?.(workspace)) {
         e.preventDefault();
         return;
@@ -1309,6 +1322,9 @@ export default function App() {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      // Not the avatar that opened it (2026-11-06): its own click toggles it,
+      // and closing here first made that click open it again.
+      if ((event.target as Element | null)?.closest?.('.wb-avatar')) return;
       if (workspaceProfileRef.current && !workspaceProfileRef.current.contains(event.target as Node)) {
         setShowWorkspaceProfile(false);
       }
@@ -1316,6 +1332,8 @@ export default function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+  // Escape closes the account menu, as every other menu here (lib/layers.ts).
+  useLayer(() => setShowWorkspaceProfile(false), showWorkspaceProfile, 'account-menu');
 
   /**
    * Route -> view state, and back/forward support.
@@ -4708,10 +4726,10 @@ export default function App() {
    * but the viewer covers the screen and Escape is what a full-bleed overlay is
    * expected to answer to.
    */
+  useLayer(() => setFullScreenImage(null), !!fullScreenImage, 'image');
   useEffect(() => {
     if (!fullScreenImage) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setFullScreenImage(null);
       // Arrows page through a multi-page upload. Clamped rather than wrapping:
       // wrapping makes it impossible to tell page 1 from page 6 of 6 without
       // reading the counter.
@@ -5191,6 +5209,15 @@ export default function App() {
     if (shortcut === 'commands') setIsCommandOpen((open) => !open);
     else if (shortcut === 'clean') setIsClean((clean) => !clean);
     else if (shortcut === 'shortcuts') setIsShortcutsOpen(true);
+    // On every pane, as the corner's buttons (2026-11-06), and not while
+    // Forma works, when those are disabled.
+    else if (shortcut === 'undo' || shortcut === 'redo') {
+      if (!result || isAnalyzing || isChatting) return false;
+      if (shortcut === 'undo') undoReport();
+      else redoReport();
+    }
+    // The selection's zoom wants a selection (2026-11-06); it zoomed to twice the fit without one.
+    else if (shortcut === 'zoomSelection' && !previewSelection.length) return false;
     else if (result && plate === 'print') zoomPreview(({ zoomIn: 'in', zoomOut: 'out', zoom100: '100', zoomFit: 'fit', zoomSelection: 'selection' } as const)[shortcut]);
     else return false;
     return true;
@@ -5977,8 +6004,7 @@ export default function App() {
                       onExportRequestDone={() => setExportRequest(null)}
                       onSelectionChange={setPreviewSelection}
                       highlight={changedHighlight}
-                      onUndo={undoReport}
-                      onRedo={redoReport}
+                      historyElsewhere
                       zoom={previewZoom}
                       onScaleChange={setPreviewScale}
                       resetSelection={selectionReset}

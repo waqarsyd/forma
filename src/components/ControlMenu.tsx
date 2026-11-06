@@ -11,6 +11,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './overlays.css';
 import { createPortal } from 'react-dom';
+import { useLayer } from './useLayer';
 
 export interface MenuItem {
   label: string;
@@ -78,23 +79,21 @@ export default function ControlMenu({ x, y, items, onClose, label = 'Control' }:
     if (!r) return;
     setAt({ left: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)), top: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) });
   }, [x, y]);
+  // Escape closes it and leaves the selection; the arrows it uses do not
+  // reach the Preview, which holds back while a layer is open (lib/layers.ts).
+  useLayer(onClose, true, 'control-menu');
   useEffect(() => {
     const away = (e: Event) => {
       if (!box.current?.contains(e.target as Node)) onClose();
     };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
-    };
     // The wheel, not `scroll`: the selection that opening the menu makes moves
     // the layout, and a scroll event from that closed the menu as it opened.
     document.addEventListener('pointerdown', away, true);
-    document.addEventListener('keydown', key, true);
     document.addEventListener('wheel', away, { capture: true, passive: true });
     window.addEventListener('blur', onClose);
     window.addEventListener('resize', onClose);
     return () => {
       document.removeEventListener('pointerdown', away, true);
-      document.removeEventListener('keydown', key, true);
       document.removeEventListener('wheel', away, { capture: true });
       window.removeEventListener('blur', onClose);
       window.removeEventListener('resize', onClose);
