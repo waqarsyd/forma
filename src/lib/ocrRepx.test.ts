@@ -8,7 +8,7 @@
  * nothing lost, and printed every text where the layout put it.
  */
 import { describe, expect, it } from 'vitest';
-import { layoutToRepx, layoutToReport, ocrSummary, validateOcrRepx } from './ocrRepx';
+import { layoutToRepx, layoutToReport, ocrSummary, reportNameFor, validateOcrRepx } from './ocrRepx';
 import { parseReportStructure } from './reportPreview';
 import type { DetectedLayout, DetectedText } from './ocrLayout';
 
@@ -30,6 +30,15 @@ const layout: DetectedLayout = {
     { width: 850, height: 1100, margins: { left: 50, right: 50, top: 50, bottom: 50 }, ignored: [], labels: [t('Page two', 60, 60)], tables: [] },
   ],
 };
+
+// Beside the function since 2026-11-06; it was tested through OcrDialog's re-export.
+describe('reportNameFor', () => {
+  it('makes a report Name DevExpress accepts out of a file name', () => {
+    expect(reportNameFor('invoice scan.pdf')).toBe('invoicescan');
+    expect(reportNameFor('2024-03 receipt.png')).toBe('Ocr202403receipt');
+    expect(reportNameFor('Bill_of_Lading.jpeg')).toBe('Bill_of_Lading');
+  });
+});
 
 describe('layoutToRepx', () => {
   const xml = layoutToRepx(layout, { name: 'OcrTable' });

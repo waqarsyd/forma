@@ -945,7 +945,8 @@ y_top = pageHeight − (baseline + height)`}
                   the very trap the panel exists to remove.
                 </Def>
                 <Def t="Nudging is not a revision">
-                  Dragging or retyping a control on the Preview pane has its own undo, one step per gesture.
+                  Dragging or retyping a control on the Preview is undone with Undo at the corner of the report, or
+                  Ctrl+Z, one step per gesture.
                   Recording those here would bury the three or four versions you actually want under forty
                   small adjustments.
                 </Def>

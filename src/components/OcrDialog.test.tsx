@@ -14,7 +14,7 @@ import type { OcrLine, OcrPage } from '../lib/ocr';
 const recognizePage = vi.fn();
 vi.mock('../lib/ocr', () => ({ recognizePage: (...args: unknown[]) => recognizePage(...args) }));
 
-import OcrDialog, { reportNameFor, type OcrPageSource } from './OcrDialog';
+import OcrDialog, { type OcrPageSource } from './OcrDialog';
 
 /** A line of words, each `[text, x0, x1, confidence]`, nine pixels of ink from `y`. */
 function line(y: number, ...words: [string, number, number, number?][]): OcrLine {
@@ -141,12 +141,5 @@ describe('the review the chat box opens', () => {
     expect(screen.getByText('Close')).toBeTruthy();
     fireEvent.click(button('Build .repx'));
     expect(onBuild).toHaveBeenCalledTimes(1);
-  });
-});
-describe('reportNameFor', () => {
-  it('makes a report Name DevExpress accepts out of a file name', () => {
-    expect(reportNameFor('invoice scan.pdf')).toBe('invoicescan');
-    expect(reportNameFor('2024-03 receipt.png')).toBe('Ocr202403receipt');
-    expect(reportNameFor('Bill_of_Lading.jpeg')).toBe('Bill_of_Lading');
   });
 });

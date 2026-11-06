@@ -324,7 +324,8 @@ interface DesignResult {
   layout?: ReportLayout;
   repxContent?: string;
   /**
-   * What the generation cost, for the status bar.
+   * What the generation cost, for the REPX pane's readout and beside the
+   * reply's time (the status bar it was for went on 2026-11-04).
    *
    * Optional and often absent: a report restored from a save or from the
    * revision history never had a request of its own, and the mock path makes
@@ -608,8 +609,11 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
           }
         } else if (n === 1) {
           out.notices.push(
-            `"${name}" has no text layer — it looks like a scan, so its text is being read with OCR in your browser, ` +
-            `to place every string where it was printed. Its chip shows how far that has got.`
+            // When it is sent, behind the scenes (2026-11-03); the chip that
+            // showed how far it had got went then, and this note with it on
+            // 2026-11-06 (the workspace audit).
+            `"${name}" has no text layer — it looks like a scan, so its text is read with OCR in your browser ` +
+            `when you send it, to place every string where it was printed.`
           );
         }
       }
@@ -1014,10 +1018,9 @@ export default function App() {
   const savedReportsRef = useRef(savedReports);
   savedReportsRef.current = savedReports;
   const [user, setUser] = useState<User | null>(null);
-  // Below md the chat and canvas panes cannot sit side by side (the sidebar
-  // alone is wider than a 375px viewport), so they become tabs. At md+ this
-  // value is ignored and both panes render.
-  const [isDragging, setIsDragging] = useState(false);
+  // `isDragging` went on 2026-11-06 (the workspace audit): set on every drag
+  // over the bench and read by nothing since the tabs it once drove below md
+  // went with the port; the comment above it still described them.
   /**
    * Save confirmation. This used to be a native `alert()` — modal, unstyled, and
    * the only thing in the app that broke out of its own visual language. It
@@ -1724,13 +1727,12 @@ export default function App() {
 
 
   /**
-   * Whether an AI model is set up to answer: Gemini with a key, a local AI with
-   * a model, or OpenRouter with a key and a model (lib/aiProvider.ts). Chat,
-   * generation and refinement check it; without one, the chat box hands words
-   * to Forma's own model and images to OCR. Until 2026-11-02 it was the Gemini
-   * key alone, and the whole workspace's gate.
+   * Whether the workspace is open to work: the Gemini key, whichever AI is
+   * chosen (2026-11-05, `workspaceOpen` in lib/aiProvider.ts). Without it the
+   * box is locked and its button opens Settings at the key. From 2026-11-02
+   * to 2026-11-05 the box handed words to Forma's own model and images to OCR
+   * without one; that went, and this comment kept saying it until 2026-11-06.
    */
-  // The Gemini key opens the workspace, whichever AI is chosen (2026-11-05).
   const hasApiKey = workspaceOpen(config);
   /** The Gemini key field's own state, whichever provider answers. */
   const hasGeminiKey = Boolean(config.customApiKey?.trim());
@@ -2098,8 +2100,8 @@ export default function App() {
    * left is the wiring: stop the simulation, and fold the chunk in.
    *
    * The update is functional, so this cannot read a stale copy of the state and
-   * needs no dependencies. Shared by handleGenerate and handleResume, which is
-   * what stops the two drifting apart.
+   * needs no dependencies. One handler for every run (`runGeneration`); it
+   * was shared with handleResume until pause went on 2026-11-04.
    */
   const handleStreamProgress = useCallback((chunk: StreamProgress) => {
     if (loadingIntervalRef.current) {
@@ -2794,26 +2796,15 @@ export default function App() {
     return ocrTexts(read, unit, pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}` }));
   };
 
+  // Over the bench a drop is allowed, and a file dropped on it is attached.
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!isDragging) setIsDragging(true);
-  };
-
-  // dragleave fires when crossing into a child element too, so only clear the
-  // state once the pointer has actually left the drop zone's bounds.
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-      setIsDragging(false);
-    }
   };
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(false);
     await ingestFiles(Array.from(e.dataTransfer.files));
   };
 
@@ -3510,20 +3501,19 @@ export default function App() {
   ) : null;
 
   /**
-   * The generation run itself: ticker, request, result, transcript, error
-   * handling, teardown.
+   * `runGeneration`, after `offlineDesign` below: the generation run itself,
+   * ticker, request, result, transcript, error handling, teardown.
    *
-   * This is the single copy of what `handleGenerate` and `handleResume` used to
-   * do twice. Everything either of them needs to vary is in `copy`; everything
-   * that has to stay in step — above all the `catch`, which is the error path
-   * for a call that can 404, 429, 503, hang, abort, or return truncated
-   * `repxContent` — is here once and cannot drift again.
+   * It is the single copy of what `handleGenerate` and `handleResume` used to
+   * do twice (resume went with pause on 2026-11-04). What a run varies is in
+   * `copy`; everything that has to stay in step — above all the `catch`,
+   * which is the error path for a call that can 404, 429, 503, hang, abort,
+   * or return truncated `repxContent` — is there once and cannot drift.
    *
-   * The caller owns the *setup* that genuinely differs: the initial run adds a
-   * user message and may take a chat turn first, and the resume carries the
-   * progress bar's current step across instead of starting from zero.
+   * The caller owns the setup: a message adds itself to the transcript and
+   * may take a chat turn first, and a description passes its request.
    */
-  /** A report Forma's own model designs from a description, with no AI: the chat box with no key, and the stand-in when the AI fails. */
+  /** A report Forma's own model designs from a description, with no AI: the stand-in when the AI fails (the chat box with no key used it until 2026-11-05). */
   const offlineDesign = async (request: ReportDescriptionRequest, message: string) => {
     const [offline, { loadFormaModel }, { parseDataSource }, { readMemory, preferencesOf }] = await Promise.all([
       import('./lib/offlineGenerator'),
@@ -5610,7 +5600,6 @@ export default function App() {
         className={`wb-review wb-rise wb-rise-1${isReviewCollapsed || railPanel === 'review' ? ' wb-hidden' : ''}`}
         aria-label="Session"
         onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         {/* New report and Search are the sidebar's since 2026-11-05, as in
@@ -5922,7 +5911,6 @@ export default function App() {
         className="wb-bench"
         data-card={requests.length > 0 || isAnalyzing || isChatting ? (isCardCollapsed ? 'folded' : 'open') : undefined}
         onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         <div className="wb-bench-bar">

@@ -94,7 +94,7 @@ export default function RevisionsPanel({ revisions, current, persisted, onRestor
           Every generation, refinement and binding pass is kept here, with what it changed —
           so a refinement that made the report worse is one click from being undone.
           <br /><br />
-          Nudging a control is not a revision; the Preview pane has its own undo for that.
+          Nudging a control is not a revision; Undo at the corner of the report takes it back.
           {' '}
           {persisted
             ? `Saving the project keeps the last ${MAX_PERSISTED_REVISIONS}.`

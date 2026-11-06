@@ -78,8 +78,9 @@ function stageLabel(stage: string): string {
 
 const pageName = (meta: PreviewMeta) => (meta.page ? `${meta.file}, page ${meta.page}` : meta.file);
 
-/** Moved to lib/ocrRepx.ts on 2026-11-02, so the chat box's offline build names a report the same way; re-exported for this dialog's callers. */
-export { reportNameFor };
+/* `reportNameFor` moved to lib/ocrRepx.ts on 2026-11-02; the re-export kept
+   here for "this dialog's callers" had none but its test, and went on
+   2026-11-06 (the workspace audit) with the test moving beside the function. */
 
 export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, preread }: OcrDialogProps) {
   const initialRuns = (): PageRun[] => pages.map((_, i) => (preread?.[i] ? { status: 'done', ocr: preread[i]! } : { status: 'waiting' }));
