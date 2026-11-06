@@ -1,11 +1,13 @@
 /**
  * What can be done to the open project, from its title (2026-11-06), as
- * Google Stitch's main menu offers Duplicate, Download and Delete beside its
- * project's name: Rename in place, Duplicate, Download the .repx, and Delete,
- * which asks once in the menu itself before it does anything. Rename,
- * Duplicate and Delete need a saved project, since they act on what is kept;
- * App passes them only then. Escape or a click elsewhere closes it. See *The
- * conversation floats over the report* in docs/notes/app-shell.md.
+ * Google Stitch's main menu offers Duplicate and Delete beside its project's
+ * name: Rename in place, Duplicate, Archive, and Delete, which asks once in
+ * the menu itself before it does anything. They act on what is kept, so App
+ * opens the menu only for a saved project. Download the .repx left it in the
+ * workspace audit of the same day, being the Export panel's first row, and
+ * Archive joined it, which only the projects list offered. Escape or a click
+ * elsewhere closes it. See *The conversation floats over the report* in
+ * docs/notes/app-shell.md.
  */
 import { useEffect, useRef, useState } from 'react';
 import './overlays.css';
@@ -15,12 +17,14 @@ interface Props {
   name: string;
   onRename?: (name: string) => void;
   onDuplicate?: () => void;
-  onDownload?: () => void;
+  /** Archive or bring back; `archived` says which this is. */
+  onArchive?: () => void;
+  archived?: boolean;
   onDelete?: () => void;
   onClose: () => void;
 }
 
-export default function ProjectMenu({ name, onRename, onDuplicate, onDownload, onDelete, onClose }: Props) {
+export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, archived = false, onDelete, onClose }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -55,7 +59,7 @@ export default function ProjectMenu({ name, onRename, onDuplicate, onDownload, o
         <button type="button" role="menuitem" disabled={!onRename} onClick={() => setRenaming(name)}>Rename</button>
       )}
       <button type="button" role="menuitem" disabled={!onDuplicate} onClick={onDuplicate ? run(onDuplicate) : undefined}>Duplicate</button>
-      <button type="button" role="menuitem" disabled={!onDownload} onClick={onDownload ? run(onDownload) : undefined}>Download the .repx</button>
+      <button type="button" role="menuitem" disabled={!onArchive} onClick={onArchive ? run(onArchive) : undefined}>{archived ? 'Bring back from the archive' : 'Archive'}</button>
       {confirming && onDelete ? (
         <div className="wb-project-confirm" role="group" aria-label="Delete this project?">
           <span>Delete this project?</span>

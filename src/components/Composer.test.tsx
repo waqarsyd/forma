@@ -37,7 +37,8 @@ const draw = (props: Partial<React.ComponentProps<typeof Composer>> = {}) =>
       onRemoveText={vi.fn()}
       uploadNotices={[]}
       error={null}
-      prompt=""
+      // Something to send: an empty box does not send (2026-11-06).
+      prompt="An invoice"
       onPromptChange={vi.fn()}
       onSend={vi.fn()}
       fileInputRef={createRef<HTMLInputElement>()}
@@ -52,6 +53,36 @@ const draw = (props: Partial<React.ComponentProps<typeof Composer>> = {}) =>
 
 const field = () => screen.getByLabelText('Message') as HTMLTextAreaElement;
 const send = () => screen.getByLabelText('Send note') as HTMLButtonElement;
+
+// The workspace audit, 2026-11-06: as ChatGPT's and Gemini's, the button waits for words or a file.
+describe('an empty box', () => {
+  it('does not send, by the button or by Enter, until it holds words or a file', () => {
+    const onSend = vi.fn();
+    const { rerender } = draw({ prompt: '   ', onSend });
+    expect(send().disabled).toBe(true);
+    fireEvent.keyDown(field(), { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+    rerender(
+      <Composer previews={['data:image/png;base64,AA']} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="" onPromptChange={vi.fn()} onSend={onSend} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} />,
+    );
+    expect(send().disabled).toBe(false);
+  });
+
+  it('keeps Stop beside Queue while Forma works and words are typed', () => {
+    const onStop = vi.fn();
+    draw({ isAnalyzing: true, onStop, onQueue: vi.fn() });
+    expect(screen.getByLabelText('Queue')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Stop'));
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the error line away at its close', () => {
+    const onDismissError = vi.fn();
+    draw({ error: 'Network error.', onDismissError });
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onDismissError).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('sending', () => {
   it('sends on click', () => {
@@ -231,7 +262,8 @@ describe('a clean composer', () => {
       />,
     );
     expect(screen.queryByLabelText('Stop')).toBeNull();
-    expect(send().disabled).toBe(false);
+    // Back to Send, which waits for something to send (2026-11-06).
+    expect(send().disabled).toBe(true);
   });
 
   // The model in the box, as Gemini's (2026-11-05), named as Stitch's tiers since that evening.

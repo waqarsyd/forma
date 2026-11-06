@@ -33,7 +33,7 @@ function noteMeta(id: string, usage: string | null | undefined): string {
   const at = messageTime(id);
   return [at ? formatSessionStamp(at) : '', usage ?? ''].filter(Boolean).join(' · ');
 }
-import { IconArrowDown, IconCheck, IconChevronDown, IconCopy, IconPencil, IconRedo, IconThumbDown, IconThumbUp, IconTrash } from './landing/icons';
+import { IconArrowDown, IconCheck, IconCopy, IconRedo, IconThumbDown, IconThumbUp } from './landing/icons';
 
 /* Loaded on demand, as the Spec pane loads it: react-markdown brings the whole
    micromark tokenizer, and the eager bundle is budgeted (see Markdown.tsx). */
@@ -71,14 +71,6 @@ export interface ChatThreadProps<R> {
    */
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
   /**
-   * The person's own messages can be edited and withdrawn (2026-11-04). An
-   * edit sends the changed text again from that message on, as Try again
-   * does; a withdrawal takes the message and Forma's answers to it out of
-   * the transcript. Absent, neither is offered.
-   */
-  onEdit?: (id: string, text: string) => void;
-  onWithdraw?: (id: string) => void;
-  /**
    * Under each of Forma's replies (2026-11-05), as ChatGPT has them: Copy,
    * always; a rating, which stays with the message; and Try again, which
    * sends the message the reply answered again. Absent, those two are not
@@ -95,8 +87,6 @@ export interface ChatThreadProps<R> {
   onUndo?: (id: string) => void;
   /** The answer to a redesign a reply asks before making (2026-11-05): see `ChatMessage.confirm`. */
   onConfirm?: (id: string, yes: boolean) => void;
-  /** Another version of one of the person's messages, by its place (2026-11-05): see `ChatMessage.branches`. */
-  onShowVersion?: (id: string, to: number) => void;
   /** What a reply cost, as words ("23.4k tokens"), or null; shown beside its time (2026-11-05). */
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   /** A transcript search: only the messages holding it are drawn, with each match marked. */
@@ -402,19 +392,15 @@ const ChatNote = memo(function ChatNote<R>({
   onRetry,
   onOpenAttachment,
   onAnswer,
-  onEdit,
-  onWithdraw,
   onRegenerate,
   onRate,
   onUndo,
   onConfirm,
-  onShowVersion,
   usageOf,
   query = '',
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
-  onShowVersion?: (id: string, to: number) => void;
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   /** The latest of Forma's replies, whose actions show without pointing at it. */
   latest?: boolean;
@@ -424,37 +410,23 @@ const ChatNote = memo(function ChatNote<R>({
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
-  onEdit?: (id: string, text: string) => void;
-  onWithdraw?: (id: string) => void;
   onRegenerate?: (id: string) => void;
   onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
   query?: string;
 }) {
+  /*
+   * The person's message is drawn plainly, with its Copy. Its Edit, Withdraw
+   * and versions are the card's pill (RequestCard.tsx), which holds what was
+   * asked; this thread holds Forma's replies. Both drew them until 2026-11-06
+   * (the workspace audit), and this copy was never reached, the card passing
+   * the replies alone.
+   */
   const mine = message.role === 'user';
-  const [editing, setEditing] = useState(false);
-  const [withdrawing, setWithdrawing] = useState(false);
-  // A message sent with pictures is offered for editing too since 2026-11-05:
-  // an edit sends its pictures again with the new words. Until then it was
-  // not, because the pictures would not have gone.
-  const editable = mine && !!onEdit && !!message.text;
-  const versions = mine && message.branches && message.branches.length > 1 && message.branch !== undefined ? { at: message.branch, of: message.branches.length } : null;
   return (
     <article className={`wb-note${mine ? ' wb-note--me' : ''}`}>
       <div>
         <div className="wb-who">{mine ? 'You' : 'Forma'}</div>
-        {editing ? (
-          <EditForm
-            text={message.text}
-            disabled={retryDisabled}
-            onSend={(text) => {
-              setEditing(false);
-              onEdit?.(message.id, text);
-            }}
-            onCancel={() => setEditing(false)}
-          />
-        ) : (
-          message.text && <MessageText text={message.text} query={query} markdown={!mine} />
-        )}
+        {message.text && <MessageText text={message.text} query={query} markdown={!mine} />}
         {message.clarify && !message.clarify.answered && onAnswer && (
           <ClarifyForm id={message.id} questions={message.clarify.questions} disabled={retryDisabled} onAnswer={onAnswer} />
         )}
@@ -526,62 +498,15 @@ const ChatNote = memo(function ChatNote<R>({
           />
         )}
 
-        {/* One row under the bubble, as ChatGPT's: the versions, always shown,
-            then the icons, shown when pointed at. */}
-        {mine && !editing && <div className="wb-note-foot">
-        {/* The versions of this message, as ChatGPT shows them: an edit or a
-            Try again keeps the one it replaced, with what followed it. */}
-        {versions && onShowVersion && (
-          <div className="wb-versions" role="group" aria-label="Versions of this message">
-            <button type="button" aria-label="Previous version" disabled={retryDisabled || versions.at === 0} onClick={() => onShowVersion(message.id, versions.at - 1)}>
-              <IconChevronDown size={12} />
-            </button>
-            <span>{versions.at + 1}/{versions.of}</span>
-            <button type="button" aria-label="Next version" disabled={retryDisabled || versions.at === versions.of - 1} onClick={() => onShowVersion(message.id, versions.at + 1)}>
-              <IconChevronDown size={12} />
-            </button>
-          </div>
-        )}
-        {(
-          withdrawing ? (
-            <div className="wb-note-actions" role="group" aria-label="Withdraw this message">
-              <span className="wb-note-ask">Withdraw this message and Forma's answer?</span>
-              <button
-                type="button"
-                className="wb-note-act wb-danger"
-                disabled={retryDisabled}
-                onClick={() => {
-                  setWithdrawing(false);
-                  onWithdraw?.(message.id);
-                }}
-              >
-                Withdraw
-              </button>
-              <button type="button" className="wb-note-act" onClick={() => setWithdrawing(false)}>
-                Keep
-              </button>
-            </div>
-          ) : (
-            /* Icons on hover under the bubble, as ChatGPT and Gemini have them
-               (2026-11-05): Copy and Edit, and Withdraw, which they do not
-               have, as a bin. Words until then: EDIT and WITHDRAW. */
+        {/* One row under the bubble, as ChatGPT's: when it was sent and Copy, shown when pointed at. */}
+        {mine && (
+          <div className="wb-note-foot">
             <div className="wb-note-actions wb-note-actions--quiet" role="group" aria-label="Your message">
               {noteMeta(message.id, null) && <span className="wb-note-meta">{noteMeta(message.id, null)}</span>}
               {message.text && <CopyButton text={message.text} />}
-              {editable && (
-                <button type="button" className="wb-note-act wb-note-icon" title="Edit" aria-label="Edit" disabled={retryDisabled} onClick={() => setEditing(true)}>
-                  <IconPencil size={13} />
-                </button>
-              )}
-              {onWithdraw && (
-                <button type="button" className="wb-note-act wb-note-icon" title="Withdraw this message and Forma's answer" aria-label="Withdraw" disabled={retryDisabled} onClick={() => setWithdrawing(true)}>
-                  <IconTrash size={13} />
-                </button>
-              )}
             </div>
-          )
+          </div>
         )}
-        </div>}
       </div>
     </article>
   );
@@ -591,13 +516,10 @@ const ChatNote = memo(function ChatNote<R>({
   latest?: boolean;
   onUndo?: (id: string) => void;
   onConfirm?: (id: string, yes: boolean) => void;
-  onShowVersion?: (id: string, to: number) => void;
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
-  onEdit?: (id: string, text: string) => void;
-  onWithdraw?: (id: string) => void;
   onRegenerate?: (id: string) => void;
   onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
   query?: string;
@@ -611,14 +533,11 @@ export default function ChatThread<R>({
   onRetry,
   onOpenAttachment,
   onAnswer,
-  onEdit,
-  onWithdraw,
   onRegenerate,
   onRate,
   undoable,
   onUndo,
   onConfirm,
-  onShowVersion,
   usageOf,
   query = '',
   showWorking = true,
@@ -634,10 +553,9 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm, onShowVersion, usageOf });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onEdit, onWithdraw, onRegenerate, onRate, onUndo, onConfirm, onShowVersion, usageOf };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onConfirm, usageOf });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onConfirm, usageOf };
   const usage = useCallback((m: ChatMessage<R, PreviewMeta>) => latest.current.usageOf?.(m) ?? null, []);
-  const showVersion = useCallback((id: string, to: number) => latest.current.onShowVersion?.(id, to), []);
   const undo = useCallback((id: string) => latest.current.onUndo?.(id), []);
   const confirm = useCallback((id: string, yes: boolean) => latest.current.onConfirm?.(id, yes), []);
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
@@ -646,8 +564,6 @@ export default function ChatThread<R>({
     []
   );
   const answer = useCallback((id: string, answers: ClarifyAnswer[]) => latest.current.onAnswer?.(id, answers), []);
-  const edit = useCallback((id: string, text: string) => latest.current.onEdit?.(id, text), []);
-  const withdraw = useCallback((id: string) => latest.current.onWithdraw?.(id), []);
   const regenerate = useCallback((id: string) => latest.current.onRegenerate?.(id), []);
   const rate = useCallback((id: string, rating: 'good' | 'bad' | undefined) => latest.current.onRate?.(id, rating), []);
 
@@ -735,13 +651,10 @@ export default function ChatThread<R>({
           latest={msg.id === lastReplyId}
           onUndo={onUndo && undoable?.has(msg.id) ? undo : undefined}
           onConfirm={onConfirm ? confirm : undefined}
-          onShowVersion={onShowVersion ? showVersion : undefined}
           usageOf={usageOf ? usage : undefined}
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}
-          onEdit={onEdit ? edit : undefined}
-          onWithdraw={onWithdraw ? withdraw : undefined}
           onRegenerate={onRegenerate ? regenerate : undefined}
           onRate={onRate ? rate : undefined}
           query={searching ? query : ''}

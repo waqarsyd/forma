@@ -5,13 +5,16 @@
  * for where it stands. Picking one shows it in the card, and Preview outlines
  * the controls it changed. The transcript search and the Markdown export,
  * which sat in the chat column's head until the column went, live here.
- * Since 2026-11-06, as Stitch's: the running request has a Stop beside it,
- * and a title too long for its row scrolls sideways while it is hovered.
- * See *The conversation floats over the report* in docs/notes/app-shell.md.
+ * Since 2026-11-06, as Stitch's, a title too long for its row scrolls
+ * sideways while it is hovered. The running request had a Stop beside it the
+ * same day, a second Stop beside the box's; the workspace audit left the box's
+ * alone, which now stays while words are typed. A search marks what it found
+ * in the card too (`query`, App passes it on). See *The conversation floats
+ * over the report* in docs/notes/app-shell.md.
  */
 import { useState, type CSSProperties } from 'react';
 import { requestMatches, requestState, requestTitle, type ChatRequest } from '../lib/chatSession';
-import { IconAlert, IconCheckCircle, IconChevronDown, IconClose, IconDownload, IconInfo, IconStack } from './landing/icons';
+import { IconAlert, IconCheckCircle, IconChevronDown, IconDownload, IconInfo, IconStack } from './landing/icons';
 import './overlays.css';
 
 /** A title that does not fit its row slides to its end while hovered, at 40 px a second. */
@@ -42,13 +45,17 @@ export interface RequestLogProps {
   onShow: (id: string) => void;
   /** The conversation as a Markdown file. */
   onExport?: () => void;
-  /** Stops the running request, from its row, as the box's Stop does. */
-  onStop?: () => void;
+  /** The words searched for, told to App so the card marks them too (2026-11-06). */
+  onQuery?: (query: string) => void;
 }
 
-export default function RequestLog({ requests, shownId, working, onShow, onExport, onStop }: RequestLogProps) {
+export default function RequestLog({ requests, shownId, working, onShow, onExport, onQuery }: RequestLogProps) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQueryState] = useState('');
+  const setQuery = (next: string) => {
+    setQueryState(next);
+    onQuery?.(next);
+  };
   const newestId = requests[requests.length - 1]?.id;
   const shown = [...requests].reverse().filter((r) => requestMatches(r, query));
   return (
@@ -83,11 +90,6 @@ export default function RequestLog({ requests, shownId, working, onShow, onExpor
                     </span>
                     <Title text={requestTitle(r)} />
                   </button>
-                  {state === 'working' && onStop && (
-                    <button type="button" className="wb-log-stop" aria-label="Stop this request" title="Stop" onClick={onStop}>
-                      <IconClose size={12} />
-                    </button>
-                  )}
                 </li>
               );
             })}

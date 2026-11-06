@@ -45,17 +45,14 @@ describe('RequestLog', () => {
     expect(screen.getByRole('button', { name: 'Export the chat' })).toBeTruthy();
   });
 
-  // Stitch's cancel beside its running task (2026-11-06).
-  it('puts a Stop beside the running request only, and stops it', () => {
-    const onStop = vi.fn();
-    const { rerender } = render(<RequestLog requests={requests} shownId="c" working onShow={() => {}} onStop={onStop} />);
+  // The workspace audit, 2026-11-06: the box's Stop is the one Stop, and the
+  // search reaches the card, which App marks with what is passed on.
+  it('draws no Stop of its own, and passes the search on', () => {
+    const onQuery = vi.fn();
+    render(<RequestLog requests={requests} shownId="c" working onShow={() => {}} onQuery={onQuery} />);
     fireEvent.click(screen.getByRole('button', { name: /Requests/ }));
-    const stops = screen.getAllByRole('button', { name: 'Stop this request' });
-    expect(stops).toHaveLength(1);
-    expect(stops[0].closest('li')?.textContent).toContain('Make the total bold');
-    fireEvent.click(stops[0]);
-    expect(onStop).toHaveBeenCalledTimes(1);
-    rerender(<RequestLog requests={requests} shownId="c" working={false} onShow={() => {}} onStop={onStop} />);
-    expect(screen.queryByRole('button', { name: 'Stop this request' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Stop/ })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Search requests'), { target: { value: 'total' } });
+    expect(onQuery).toHaveBeenLastCalledWith('total');
   });
 });

@@ -37,12 +37,9 @@ import {
   IconPlus,
   IconStack,
   IconKey,
-  IconMoon,
   IconSearch,
   IconShieldCheck,
-  IconSun,
   IconDoc,
-  IconLayout,
   IconLogin,
   IconLogout,
   IconMenu,
@@ -288,7 +285,7 @@ const HelpMenu = lazy(() => import('./components/HelpMenu'));
 const ExportPanel = lazy(() => import('./components/ExportPanel'));
 const ProjectMenu = lazy(() => import('./components/ProjectMenu'));
 const HomeStart = lazy(() => import('./components/HomeStart'));
-const RateReport = lazy(() => import('./components/RateReport'));
+const PinProject = lazy(() => import('./components/PinProject'));
 /* Sharing (2026-11-06): the dialog, and the page a shared link opens. */
 const ShareDialog = lazy(() => import('./components/ShareDialog'));
 const SharedReportPage = lazy(() => import('./components/SharedReportPage'));
@@ -2464,6 +2461,12 @@ export default function App() {
   /** Bumped to clear the Preview's selection from the toolbar. */
   const [selectionReset, setSelectionReset] = useState(0);
   /**
+   * What the request log is searching for (2026-11-06, the workspace audit):
+   * the card marks it in its replies, as the chat column's search did. The
+   * log searched its titles only, and the thread's marking was never reached.
+   */
+  const [logQuery, setLogQuery] = useState('');
+  /**
    * The REPX the Preview itself last wrote. Any other change to the file (a
    * chat edit, Undo, a restore, another project) clears the Preview's
    * selection (2026-11-06): it is held as band and control indexes, and after
@@ -3164,6 +3167,7 @@ export default function App() {
     setChangedHighlight([]);
     setQueue([]);
     setTestRows(null);
+    setLogQuery('');
     activeDescribeRef.current = undefined;
     pendingClarifyRef.current = null;
     detectedRef.current = null;
@@ -5269,7 +5273,14 @@ export default function App() {
       { id: 'search', label: 'Search projects', run: openProjectSearch },
       { id: 'settings', label: 'Settings', run: () => setIsConfigOpen(true) },
       { id: 'keys', label: 'Keyboard shortcuts', keys: '?', run: () => setIsShortcutsOpen(true) },
-      { id: 'theme', label: isDarkMode ? 'Switch to the light theme' : 'Switch to the dark theme', run: () => setTheme(!isDarkMode) },
+      // The three the corner's "?" offers, less the one in force (2026-11-06).
+      ...([
+        ['light', 'Light theme', () => setTheme(false)],
+        ['dark', 'Dark theme', () => setTheme(true)],
+        ['system', 'Theme that follows the system', () => setTheme(window.matchMedia('(prefers-color-scheme: dark)').matches, false)],
+      ] as const)
+        .filter(([choice]) => choice !== (followsSystem ? 'system' : isDarkMode ? 'dark' : 'light'))
+        .map(([choice, label, run]) => ({ id: `theme-${choice}`, label, run })),
       { id: 'sidebar', label: 'Show or hide the sidebar', keys: keysFor('Ctrl+B'), run: toggleSidebar },
       { id: 'clean', label: isClean ? 'Leave the clean screen' : 'Clean screen', keys: keysFor('Ctrl+\\'), run: () => setIsClean((c) => !c) },
     ];
@@ -5321,7 +5332,10 @@ export default function App() {
       aria-current={railPanel === panel}
       title={label}
       aria-label={label}
-      onClick={() => showRailPanel(panel)}
+      // The open panel's own button closes it again (2026-11-06, the workspace
+      // audit), as a sidebar's sections do in Gemini and ChatGPT: the rail's
+      // "Chat" item did only that, under a name that opened no chat.
+      onClick={() => showRailPanel(railPanel === panel && !isReviewCollapsed ? 'review' : panel)}
     >
       {icon}
       {/* Present in every state and hidden by CSS while the rail is narrow —
@@ -5445,7 +5459,6 @@ export default function App() {
           <span className="wb-rail-label">Search</span>
         </button>
 
-        {railBtn('review', 'Chat', <IconLayout size={19} />)}
         {railBtn('projects', 'Saved projects', <IconFolder size={19} />)}
         {railBtn('revisions', 'Revisions', <IconRedo size={19} />)}
         {railBtn('batch', 'Batch', <IconStack size={19} />)}
@@ -5475,10 +5488,10 @@ export default function App() {
           <span className="wb-rail-label">{isReviewCollapsed ? 'Show panel' : 'Hide panel'}</span>
         </button>}
         <span className="wb-spacer" />
-        <button title="Switch theme" aria-label="Switch theme" onClick={() => setTheme(!isDarkMode)}>
-          {isDarkMode ? <IconSun size={18} /> : <IconMoon size={18} />}
-          <span className="wb-rail-label">{isDarkMode ? 'Light theme' : 'Dark theme'}</span>
-        </button>
+        {/* The theme is the corner's "?" menu's, Light, System or Dark, as
+            Gemini keeps it under Settings and help (2026-11-06, the workspace
+            audit): the rail's toggle beside it could only flip light and dark,
+            and left System whenever it was pressed. */}
 
         {/*
           * Signed in: an accent disc with initials — that treatment means
@@ -5876,29 +5889,21 @@ export default function App() {
                   name={savedReports.find((r) => r.id === openProjectId)?.name || result?.title || 'Untitled report'}
                   onRename={openProjectId && savedReports.some((r) => r.id === openProjectId) ? (name) => void handleRenameProject(openProjectId, name) : undefined}
                   onDuplicate={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => void duplicateProject() : undefined}
-                  onDownload={result?.repxContent ? downloadDesign : undefined}
+                  onArchive={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => toggleArchived(openProjectId) : undefined}
+                  archived={!!openProjectId && archivedProjects.includes(openProjectId)}
                   onDelete={openProjectId && savedReports.some((r) => r.id === openProjectId) ? deleteOpenProject : undefined}
                   onClose={() => setIsProjectMenuOpen(false)}
                 />
               </Suspense>
             )}
             {result && <span className="wb-rev">{result.layout?.sections?.length ?? 0} bands</span>}
-            {/* A star and thumbs on the report (2026-11-06), as Stitch's on a screen. */}
-            {result && (() => {
-              const saved = !!openProjectId && savedReports.some((r) => r.id === openProjectId);
-              const maker = [...messages].reverse().find((m) => m.role === 'assistant' && m.result);
-              if (!saved && !maker) return null;
-              return (
-                <Suspense fallback={null}>
-                  <RateReport
-                    starred={saved && pinnedProjects.includes(openProjectId!)}
-                    onStar={saved ? () => togglePinned(openProjectId!) : undefined}
-                    rating={maker?.rating}
-                    onRate={maker ? (rating) => handleRate(maker.id, rating) : undefined}
-                  />
-                </Suspense>
-              );
-            })()}
+            {/* The project's pin, the list's own (2026-11-06); the thumbs are the
+                reply's, under it, as ChatGPT's and Gemini's are. */}
+            {result && openProjectId && savedReports.some((r) => r.id === openProjectId) && (
+              <Suspense fallback={null}>
+                <PinProject pinned={pinnedProjects.includes(openProjectId)} onPin={() => togglePinned(openProjectId)} />
+              </Suspense>
+            )}
           </div>
 
           {/* The panes stay whatever is selected (2026-11-06): the selection's
@@ -6130,6 +6135,7 @@ export default function App() {
                 // put them all in the entry chunk (+3 kB, measured).
                 projects={savedReports}
                 archived={archivedProjects}
+                showRecent={!(railPanel === 'projects' && !isReviewCollapsed)}
                 // The lazy component loses its generic, so the project is looked up by id.
                 onOpen={(p) => {
                   const report = savedReports.find((r) => r.id === p.id);
@@ -6189,6 +6195,8 @@ export default function App() {
                 onUndo={handleUndo}
                 onConfirm={(id, yes) => void handleConfirm(id, yes)}
                 onShowVersion={handleShowVersion}
+                // The log's search, marked in the card's replies too (2026-11-06).
+                query={logQuery}
                 // The lazy component loses its generic; the result is App's own DesignResult.
                 usageOf={(m) => summariseUsage((m.result as DesignResult | undefined)?.usage)}
               >
@@ -6227,12 +6235,14 @@ export default function App() {
           <div className="wb-float wb-float-log">
             <Suspense fallback={null}>
               <RequestLog
+                // A search of one project's requests is not another's.
+                key={openProjectId ?? 'new'}
                 requests={requests}
                 shownId={shownRequest?.id ?? null}
                 working={isAnalyzing || isChatting}
                 onShow={(id) => void showRequest(id)}
                 onExport={exportConversation}
-                onStop={handleStop}
+                onQuery={setLogQuery}
               />
             </Suspense>
           </div>
@@ -6277,6 +6287,7 @@ export default function App() {
             onRemoveText={removeTextAttachment}
             uploadNotices={uploadNotices}
             error={error}
+            onDismissError={() => setError(null)}
             prompt={prompt}
             onPromptChange={setPrompt}
             onSend={handleGenerate}

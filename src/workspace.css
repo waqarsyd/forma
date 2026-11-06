@@ -1278,6 +1278,9 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .wb-note-line.wb-ok .wb-ic { background: color-mix(in srgb, var(--ok-ink) 16%, transparent); color: var(--ok-ink); }
 .wb-note-line.wb-warn { border-color: var(--rule); background: var(--accent-wash); }
 .wb-note-line.wb-warn .wb-ic { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+/* The error line's close (2026-11-06). */
+.wb-note-close { flex: none; margin-left: auto; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer; }
+.wb-note-close:hover { background: var(--track); color: var(--ink); }
 .wb-note-line b { color: var(--ink); font-weight: 600; }
 
 .wb-hidden { display: none !important; }
@@ -1965,6 +1968,8 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .wb-float-bar .wb-box > .wb-model { grid-column: 3; grid-row: 2; }
 .wb-float-bar .wb-box > .wb-tool:not(:first-child) { grid-column: 4; grid-row: 2; }
 .wb-float-bar .wb-box > .wb-send { grid-column: 5; grid-row: 2; }
+/* Stop and Queue together while Forma works and words are typed (2026-11-06). */
+.wb-float-bar .wb-box > .wb-send-pair { grid-column: 5; grid-row: 2; display: flex; gap: 6px; }
 /* Its chips (an attachment, the Preview's selection) grey, as Stitch's, not the accent. */
 .wb-float-bar .wb-attach { border-color: var(--rule); background: color-mix(in srgb, var(--panel) 92%, transparent); }
 .wb-float-bar .wb-attach svg { color: var(--ink-2); }

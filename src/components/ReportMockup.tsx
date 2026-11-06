@@ -12,6 +12,7 @@ import { IconImage } from './landing/icons';
 import { sourceRectFor } from '../lib/sourceRect';
 import { unitsToPx } from '../lib/reportGeometry';
 import { repeatedHeadingTables } from '../lib/mockupRows';
+import { useFitScale } from './useFitScale';
 
 /**
  * Crop a fractional rectangle out of a data-URL image and return it as its own
@@ -344,7 +345,6 @@ const ReportMockup = ({
   // available width and scale the whole page down to fit — the geometry stays
   // byte-identical, only the presentation shrinks.
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
 
   // The detail tables whose first row the PageHeader already drew. Computed
   // once for the whole page because the answer depends on what sits above each
@@ -357,18 +357,8 @@ const ReportMockup = ({
     layout.sections.reduce((sum, s) => sum + px(s.height || 100), 0),
   );
 
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const measure = () => {
-      const available = el.clientWidth;
-      if (available > 0) setScale(Math.min(1, available / pageWidth));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [pageWidth]);
+  // The fit to the width, shared with the Preview (useFitScale.ts, 2026-11-06).
+  const scale = useFitScale(viewportRef, pageWidth);
 
   return (
     /* The artifact's proof frame, applied to the component that owns the page:

@@ -13,7 +13,8 @@
  * The replies are drawn by `ChatThread`, so every reply keeps what it had:
  * Markdown, Copy, the rating, Try again, Undo, the questions and the redesign
  * buttons. What the person asked is drawn here, as the pill, with its own
- * Copy, Edit, Withdraw, versions and pictures behind the arrow.
+ * Copy, Edit, Withdraw, versions and pictures behind the arrow; the thread's
+ * own copy of those went in the workspace audit (2026-11-06).
  */
 import { useState } from 'react';
 import ChatThread, { CopyButton, EditForm, type AttachmentView, type ChatThreadProps } from './ChatThread';
@@ -31,6 +32,15 @@ export interface RequestCardProps<R> extends Omit<ChatThreadProps<R>, 'messages'
   onToggle: () => void;
   /** The person's initials, for the pill; "Y", for you, signed out. */
   initials?: string;
+  /**
+   * The pill's own: an edit sends the changed text again from that message
+   * on, as Try again does; a withdrawal takes the message and Forma's answers
+   * to it out of the transcript; a version is another the message had (see
+   * `ChatMessage.branches`). Only the pill offers them since 2026-11-06.
+   */
+  onEdit?: (id: string, text: string) => void;
+  onWithdraw?: (id: string) => void;
+  onShowVersion?: (id: string, to: number) => void;
 }
 
 /** What the person asked, pinned at the top of the card. */
@@ -226,7 +236,7 @@ export default function RequestCard<R>({
               "go to latest" arrow and whether it follows the latest, carried
               over to another request picked in the log. */}
           <ChatThread
-            key={request?.id ?? 'none'}
+            key={`thread-${request?.id ?? 'none'}`}
             {...thread}
             messages={request?.replies ?? []}
             isChatting={isChatting}

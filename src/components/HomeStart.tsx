@@ -24,10 +24,15 @@ interface Props<P extends Project> {
   onOpen: (project: P) => void;
   onAllProjects: () => void;
   onPick: (point: StartingPoint) => void;
+  /**
+   * False while the Projects panel is open beside it (2026-11-06, the
+   * workspace audit): the two lists of the same projects stood side by side.
+   */
+  showRecent?: boolean;
 }
 
-export default function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick }: Props<P>) {
-  const recent = recentProjects(projects, archived);
+export default function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick, showRecent = true }: Props<P>) {
+  const recent = showRecent ? recentProjects(projects, archived) : [];
   return (
     <section className={`wb-home${recent.length ? ' has-recent' : ''}`} aria-label="Start a report">
       {recent.length > 0 && (

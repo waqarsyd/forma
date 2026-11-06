@@ -88,6 +88,8 @@ export interface ComposerProps {
   /** Problems with what was attached or sent: the only notes the composer shows. */
   uploadNotices: string[];
   error: string | null;
+  /** Puts the error line away (2026-11-06). */
+  onDismissError?: () => void;
 
   prompt: string;
   onPromptChange: (value: string) => void;
@@ -162,6 +164,7 @@ export default function Composer({
   onRemoveText,
   uploadNotices,
   error,
+  onDismissError,
   prompt,
   onPromptChange,
   onSend,
@@ -218,7 +221,11 @@ export default function Composer({
   // it was before 2026-11-02, when for three days Forma's own model answered
   // without one. Nothing about an attachment holds the send (2026-11-03): its
   // text is read after the message goes, as a step of the run.
-  const canSend = hasApiKey && !isAnalyzing && !isChatting && !isIngesting;
+  // And something to send (2026-11-06, the workspace audit), as ChatGPT's and
+  // Gemini's buttons wait for words or a file: an empty box sent, and was
+  // answered with an error line.
+  const hasContent = prompt.trim().length > 0 || previews.length > 0 || textGroups.length > 0;
+  const canSend = hasApiKey && !isAnalyzing && !isChatting && !isIngesting && hasContent;
   // While Forma works, words in the box queue rather than wait (2026-11-05).
   const canQueue = hasApiKey && (isAnalyzing || isChatting) && !!onQueue && prompt.trim().length > 0;
 
@@ -419,10 +426,18 @@ export default function Composer({
           <span>{uploadNotices.join(' · ')}</span>
         </div>
       )}
+      {/* Errors here, with a close (2026-11-06, the workspace audit), and
+          confirmations as toasts at the corner: the line had no way to put it
+          away short of the next message. */}
       {error && (
         <div className="wb-note-line wb-warn" role="alert">
           <span className="wb-ic"><IconAlert size={13} /></span>
           <span>{error}</span>
+          {onDismissError && (
+            <button type="button" className="wb-note-close" aria-label="Dismiss" title="Dismiss" onClick={onDismissError}>
+              <IconClose size={12} />
+            </button>
+          )}
         </div>
       )}
 
@@ -555,10 +570,19 @@ export default function Composer({
             <IconKey size={15} />
           </button>
         ) : canQueue ? (
-          /* Words typed while Forma works go to the queue (2026-11-05). */
-          <button className="wb-send" aria-label="Queue" title="Queue: sends after this one" onClick={() => onQueue?.(prompt.trim())}>
-            <IconArrowUp size={15} />
-          </button>
+          /* Words typed while Forma works go to the queue (2026-11-05), and
+             Stop stays beside it (2026-11-06, the workspace audit): it went
+             the moment anything was typed, and the box is its one place now. */
+          <span className="wb-send-pair">
+            {onStop && (
+              <button className="wb-send wb-send--stop" aria-label="Stop" title="Stop" onClick={onStop}>
+                <span className="wb-stop-square" aria-hidden="true" />
+              </button>
+            )}
+            <button className="wb-send" aria-label="Queue" title="Queue: sends after this one" onClick={() => onQueue?.(prompt.trim())}>
+              <IconArrowUp size={15} />
+            </button>
+          </span>
         ) : (isAnalyzing || isChatting) && onStop ? (
           /* While a generation runs, the send button is its Stop (2026-11-04),
              as in the chat apps people know; and while a reply is written

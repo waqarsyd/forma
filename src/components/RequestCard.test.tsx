@@ -71,3 +71,70 @@ describe('RequestCard', () => {
     expect(onEdit).toHaveBeenCalledWith('q1', 'Make the total red');
   });
 });
+
+/*
+ * The pill's own controls (2026-11-04, and the pill's alone since 2026-11-06,
+ * when the workspace audit removed the thread's copy of them, which the card
+ * never reached). Moved here from ChatThread.test.tsx with them.
+ */
+describe("the pill's edit, withdraw and versions", () => {
+  const open = () => fireEvent.click(screen.getByRole('button', { name: 'Show the whole message' }));
+
+  it('sends nothing for unchanged text, and Escape puts the message back', () => {
+    const onEdit = vi.fn();
+    draw({ onEdit });
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByLabelText('Edit your message'), { key: 'Enter' });
+    expect(onEdit).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByLabelText('Edit your message'), { key: 'Escape' });
+    expect(screen.queryByLabelText('Edit your message')).toBeNull();
+  });
+
+  it('offers editing a message sent with pictures, which an edit sends again', () => {
+    draw({ onEdit: vi.fn(), onWithdraw: vi.fn(), request: { id: 'q1', ask: { ...ask, images: ['data:image/png;base64,AA'] }, replies: [] } });
+    open();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Withdraw' })).toBeTruthy();
+  });
+
+  it('shows which version of a message is showing, and asks for the one before or after', () => {
+    const onShowVersion = vi.fn();
+    const branches = [{ text: 'make it blue', tail: [] }, { text: 'make it green', tail: [] }, { text: 'make it red', tail: [] }];
+    draw({ onShowVersion, request: { id: 'q1', ask: { ...ask, text: 'make it green', branches, branch: 1 }, replies: [] } });
+    open();
+    const versions = screen.getByRole('group', { name: 'Versions of this message' });
+    expect(versions.textContent).toBe('2/3');
+    fireEvent.click(screen.getByLabelText('Previous version'));
+    expect(onShowVersion).toHaveBeenLastCalledWith('q1', 0);
+    fireEvent.click(screen.getByLabelText('Next version'));
+    expect(onShowVersion).toHaveBeenLastCalledWith('q1', 2);
+  });
+
+  it('draws no versions for a message that has only the one', () => {
+    draw({ onShowVersion: vi.fn() });
+    open();
+    expect(screen.queryByRole('group', { name: 'Versions of this message' })).toBeNull();
+  });
+
+  it('withdraws only once asked twice, and Keep changes nothing', () => {
+    const onWithdraw = vi.fn();
+    draw({ onWithdraw });
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+    expect(screen.getByText("Withdraw this message and Forma's answer?")).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(onWithdraw).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Withdraw' }).find((b) => b.closest('[aria-label="Withdraw this message"]'))!);
+    expect(onWithdraw).toHaveBeenCalledWith('q1');
+  });
+
+  it('holds both while something runs', () => {
+    draw({ onEdit: vi.fn(), onWithdraw: vi.fn(), isChatting: true });
+    open();
+    expect((screen.getByRole('button', { name: 'Edit' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Withdraw' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});

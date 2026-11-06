@@ -494,16 +494,12 @@ describe('a clean chat', () => {
     expect([...document.querySelectorAll('.wb-note button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Copy']);
   });
 
-  it("offers editing and withdrawing on the person's messages, never on Forma's", () => {
-    draw({
-      messages: [msg({ id: 'u', role: 'user', text: 'a sales report' }), msg({ id: 'a', role: 'assistant', text: 'Built it.' })],
-      onEdit: vi.fn(),
-      onWithdraw: vi.fn(),
-    });
+  // Edit and Withdraw are the card's pill's alone since 2026-11-06 (RequestCard.test.tsx).
+  it("draws the person's message with Copy, and no Edit or Withdraw, which are the card's pill's", () => {
+    draw({ messages: [msg({ id: 'u', role: 'user', text: 'a sales report' }), msg({ id: 'a', role: 'assistant', text: 'Built it.' })] });
     const [mine, forma] = document.querySelectorAll('.wb-note');
-    expect([...mine.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Copy', 'Edit', 'Withdraw']);
+    expect([...mine.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Copy']);
     expect(within(forma as HTMLElement).queryByLabelText('Edit')).toBeNull();
-    expect(within(forma as HTMLElement).queryByLabelText('Withdraw')).toBeNull();
   });
 });
 
@@ -600,76 +596,8 @@ describe("actions on Forma's replies", () => {
   });
 });
 
-/** A sent message, edited or withdrawn (2026-11-04). */
-describe('editing and withdrawing a message', () => {
-  const thread = [msg({ id: 'u', role: 'user', text: 'a sales report' }), msg({ id: 'a', role: 'assistant', text: 'Built it.' })];
-
-  it('edits in place and sends the changed text for that message', () => {
-    const onEdit = vi.fn();
-    draw({ messages: thread, onEdit, onWithdraw: vi.fn() });
-    fireEvent.click(screen.getByLabelText('Edit'));
-    const box = screen.getByLabelText('Edit your message') as HTMLTextAreaElement;
-    expect(box.value).toBe('a sales report');
-    fireEvent.change(box, { target: { value: 'a sales report by region' } });
-    fireEvent.click(screen.getByText('Send'));
-    expect(onEdit).toHaveBeenCalledWith('u', 'a sales report by region');
-    expect(screen.queryByLabelText('Edit your message')).toBeNull();
-  });
-
-  it('sends nothing for unchanged text, and Escape puts the message back', () => {
-    const onEdit = vi.fn();
-    draw({ messages: thread, onEdit });
-    fireEvent.click(screen.getByLabelText('Edit'));
-    expect((screen.getByText('Send') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.keyDown(screen.getByLabelText('Edit your message'), { key: 'Enter' });
-    expect(onEdit).not.toHaveBeenCalled();
-    fireEvent.keyDown(screen.getByLabelText('Edit your message'), { key: 'Escape' });
-    expect(screen.getByText('a sales report')).toBeTruthy();
-  });
-
-  // Since 2026-11-05 an edit sends the pictures again, so it is offered.
-  it('offers editing a message sent with pictures, which an edit sends again', () => {
-    draw({ messages: [msg({ id: 'u', text: 'this scan', images: ['data:image/png;base64,AA'] })], onEdit: vi.fn(), onWithdraw: vi.fn() });
-    expect(screen.getByLabelText('Edit')).toBeTruthy();
-    expect(screen.getByLabelText('Withdraw')).toBeTruthy();
-  });
-
-  // The versions an edit or a Try again keeps (2026-11-05), as ChatGPT shows them.
-  it('shows which version of a message is showing, and asks for the one before or after', () => {
-    const onShowVersion = vi.fn();
-    const branches = [{ text: 'make it blue', tail: [] }, { text: 'make it green', tail: [] }, { text: 'make it red', tail: [] }];
-    draw({ messages: [msg({ id: 'u', text: 'make it green', branches, branch: 1 })], onShowVersion });
-    const versions = screen.getByRole('group', { name: 'Versions of this message' });
-    expect(versions.textContent).toBe('2/3');
-    fireEvent.click(within(versions).getByLabelText('Previous version'));
-    expect(onShowVersion).toHaveBeenLastCalledWith('u', 0);
-    fireEvent.click(within(versions).getByLabelText('Next version'));
-    expect(onShowVersion).toHaveBeenLastCalledWith('u', 2);
-  });
-
-  it('draws no versions for a message that has only the one', () => {
-    draw({ messages: [msg({ id: 'u', text: 'an invoice' })], onShowVersion: vi.fn() });
-    expect(screen.queryByRole('group', { name: 'Versions of this message' })).toBeNull();
-  });
-
-  it('withdraws only once asked twice, and Keep changes nothing', () => {
-    const onWithdraw = vi.fn();
-    draw({ messages: thread, onWithdraw });
-    fireEvent.click(screen.getByLabelText('Withdraw'));
-    expect(screen.getByText("Withdraw this message and Forma's answer?")).toBeTruthy();
-    fireEvent.click(screen.getByText('Keep'));
-    expect(onWithdraw).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByLabelText('Withdraw'));
-    fireEvent.click(within(screen.getByRole('group', { name: 'Withdraw this message' })).getByText('Withdraw'));
-    expect(onWithdraw).toHaveBeenCalledWith('u');
-  });
-
-  it('holds both while something runs', () => {
-    draw({ messages: thread, onEdit: vi.fn(), onWithdraw: vi.fn(), isChatting: true });
-    expect((screen.getByLabelText('Edit') as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByLabelText('Withdraw') as HTMLButtonElement).disabled).toBe(true);
-  });
-});
+/* Editing and withdrawing a message, and its versions, are tested on the card's
+   pill (RequestCard.test.tsx) since 2026-11-06: the thread's copy went. */
 
 /* Forma's replies as Markdown, the person's words as typed (2026-11-05). */
 describe('what a message says', () => {

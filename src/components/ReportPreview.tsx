@@ -63,6 +63,7 @@ import { moveControl, resizeControl, setControlText, overflowsBand, deleteContro
 import type { FormatAction } from '../lib/agentEdit';
 import ControlMenu, { type MenuItem } from './ControlMenu';
 import SelectionToolbar from './SelectionToolbar';
+import { observeFit } from './useFitScale';
 import { hasOpenLayer, isOutsideReport } from '../lib/layers';
 import { copyText } from '../lib/clipboard';
 import type { ReportLayout } from '../lib/reportTypes';
@@ -1253,17 +1254,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
 
   const pageW = unitsToPx(report.page.width, report.unit);
 
+  // The fit to the width, shared with the Mockup (useFitScale.ts, 2026-11-06).
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
-    const measure = () => {
-      const available = el.clientWidth;
-      if (available > 0) setFitScale(Math.min(1, available / pageW));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
+    return observeFit(el, pageW, setFitScale);
   }, [pageW]);
 
   const inches = (units: number) => (units / unitsPerInch(report.unit)).toFixed(2);
