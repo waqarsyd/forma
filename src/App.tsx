@@ -1410,7 +1410,7 @@ export default function App() {
    * stale. The ref is refreshed after every render, below where that handler is
    * defined.
    */
-  const handleClearChatRef = useRef<(() => void) | null>(null);
+  const handleClearChatRef = useRef<((keep?: 'save' | 'drop') => void) | null>(null);
 
   /**
    * The loaded Firebase surface, or `null` until it arrives.
@@ -1466,7 +1466,7 @@ export default function App() {
         // the uploads, extracted document text, transcript and generated report
         // all belong to the account that just left.
         if (wasSignedIn) {
-          handleClearChatRef.current?.();
+          handleClearChatRef.current?.('drop');
           setRailPanel('review');
         }
       }
@@ -2415,6 +2415,19 @@ export default function App() {
   /** Bumped to clear the Preview's selection from the toolbar. */
   const [selectionReset, setSelectionReset] = useState(0);
   /**
+   * The REPX the Preview itself last wrote. Any other change to the file (a
+   * chat edit, Undo, a restore, another project) clears the Preview's
+   * selection (2026-11-06): it is held as band and control indexes, and after
+   * such a change the same indexes can name another control, which Delete
+   * would then remove.
+   */
+  const previewEditedXml = useRef<string | null>(null);
+  useEffect(() => {
+    if (result?.repxContent === previewEditedXml.current) return;
+    previewEditedXml.current = null;
+    setSelectionReset((n) => n + 1);
+  }, [result?.repxContent]);
+  /**
    * What the last save kept (`sessionSignature`, 2026-11-05): the ref for the
    * autosave's comparison, the state for the Save button's "Saved".
    */
@@ -2744,7 +2757,13 @@ export default function App() {
     await ingestFiles(Array.from(e.dataTransfer.files));
   };
 
-  const handleClearChat = () => {
+  /**
+   * A new, empty session. `keep` is what happens to the one being left (see
+   * `leaveSession`): New report and a batch result keep it, deleting the open
+   * project and signing out drop it.
+   */
+  const handleClearChat = (keep: 'save' | 'drop' = 'save') => {
+    leaveSession(keep);
     setResult(null);
     openReportId.current = null;
     setOpenProjectId(null);
@@ -2904,12 +2923,17 @@ export default function App() {
    * report's style is taught only by a Save the person chose. A failure says
    * so once per project rather than after every turn.
    */
-  const persistProject = async (quiet: boolean) => {
-    if (!result && messages.length === 0) return;
-    if (!quiet) rememberKept(result?.repxContent);
+  const persistProject = async (
+    quiet: boolean,
+    /** The session to keep, when it is not the one on screen: a run cut short by leaving it. */
+    session: { messages: ChatMessage[]; result: DesignResult | null } = { messages, result },
+  ) => {
+    const { messages: kept, result: report } = session;
+    if (!report && kept.length === 0) return;
+    if (!quiet) rememberKept(report?.repxContent);
     const reportId = openReportId.current ?? Date.now().toString();
     const ts = Date.now();
-    const signature = sessionSignature(messages, result);
+    const signature = sessionSignature(kept, report);
     // Saving makes this the open project, so the list marks the row it just
     // created rather than nothing.
     openReportId.current = reportId;
@@ -2922,6 +2946,9 @@ export default function App() {
     };
     const saved = () => {
       autosaveFailedFor.current = null;
+      // A session left while this was saving is not the one the Save button
+      // now speaks for (2026-11-06): its signature would mark the next one saved.
+      if (openReportId.current !== reportId) return;
       savedSignatureRef.current = signature;
       setSavedSignature(signature);
     };
@@ -2932,10 +2959,10 @@ export default function App() {
     // on whether it was saved signed in. See src/lib/savedReport.ts.
     const draft: SavedReport = {
       id: reportId,
-      name: projectName(savedReports.find((r) => r.id === reportId)?.name, result?.title, messages.find((m) => m.role === 'user' && m.text)?.text || prompt),
+      name: projectName(savedReports.find((r) => r.id === reportId)?.name, report?.title, kept.find((m) => m.role === 'user' && m.text)?.text || prompt),
       timestamp: new Date(ts).toISOString(),
-      messages,
-      result,
+      messages: kept,
+      result: report,
     };
 
     if (user) {
@@ -3044,6 +3071,70 @@ export default function App() {
     pendingAutosave.current = null;
     pending.run();
   };
+  /** Drops a waiting automatic save: the session it belongs to is being deleted or signed out of. */
+  const dropAutosave = () => {
+    const pending = pendingAutosave.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingAutosave.current = null;
+  };
+
+  /** Which session is open, counted, so work that answers late can tell it is no longer wanted. */
+  const sessionId = useRef(0);
+
+  /**
+   * The open session left for another (2026-11-06, the workspace audit): New
+   * report, a project or a batch result opened, the open project deleted, a
+   * sign-out. Until then each of those cleared what it remembered to, and none
+   * stopped a run: a report or reply still on its way landed in the session
+   * opened next and was saved under its id, a batch result was saved over the
+   * project open before it, and the last project's revisions and undo history
+   * stayed to be restored onto the next.
+   *
+   * Whatever is running stops first. `save` keeps the session as it stands, a
+   * run cut short marked as stopped as Stop marks it; `drop` keeps nothing,
+   * for a project being deleted and for a sign-out, so one person's work is
+   * never saved where the next person signs in. Then everything that belonged
+   * to it goes: its history, revisions, the changes its replies can undo, the
+   * queue, a description's brief, the settings worked out for its request, a
+   * selection on the Preview, an open Export panel or Share dialog.
+   */
+  const leaveSession = (keep: 'save' | 'drop') => {
+    if (keep === 'save' && (isAnalyzing || isChatting) && messages.length) {
+      dropAutosave();
+      const partial = partialReplyRef.current.trim();
+      void persistProject(true, {
+        messages: [...messages, { id: nextMessageId(), role: 'assistant', text: partial || 'Stopped.' }],
+        result,
+      });
+    } else if (keep === 'save') {
+      flushAutosave();
+    } else {
+      dropAutosave();
+    }
+    sessionId.current += 1;
+    abortControllerRef.current?.abort();
+    turnAbortRef.current?.abort();
+    if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
+    partialReplyRef.current = '';
+    setIsAnalyzing(false);
+    setIsChatting(false);
+    setStreamingReply('');
+    setProgress(IDLE_PROGRESS);
+    resetReportHistory();
+    setRevisions([]);
+    setChatChanges({});
+    setChangedHighlight([]);
+    setQueue([]);
+    setTestRows(null);
+    activeDescribeRef.current = undefined;
+    pendingClarifyRef.current = null;
+    detectedRef.current = null;
+    setIsExportOpen(false);
+    setIsShareOpen(false);
+    setSelectionReset((n) => n + 1);
+    setPreviewZoom(1);
+  };
 
   /*
    * A reload opens the project that was open (2026-11-05), as a reloaded chat
@@ -3083,20 +3174,19 @@ export default function App() {
    * one way a revision list can be actively misleading rather than merely empty.
    */
   const handleLoadReport = async (report: SavedReport) => {
-    // The session being left keeps its last turn (2026-11-05), and the one
-    // opened is already saved as it is.
-    flushAutosave();
+    // The session being left keeps its last turn (2026-11-05) and stops what
+    // it was doing (2026-11-06, `leaveSession`); the one opened is already
+    // saved as it is.
+    leaveSession('save');
     const signature = sessionSignature(report.messages, report.result);
     savedSignatureRef.current = signature;
     setSavedSignature(signature);
     setMessages(report.messages);
-    resetReportHistory();
     setResult(report.result);
-    setChatChanges({});
-    setChangedHighlight([]);
-    setQueue([]);
-    setPreviewZoom(1);
-    setRevisions([]);
+    // What is typed or attached in the box stays, as before: it may be meant
+    // for the project being opened.
+    setError(null);
+    setShownRequestId(null);
     setRailPanel('review');
     openReportId.current = report.id;
     setOpenProjectId(report.id);
@@ -3217,15 +3307,16 @@ export default function App() {
   /** The open project deleted from the title's menu, and a new report started in its place. */
   const deleteOpenProject = () => {
     if (!openProjectId) return;
-    const id = openProjectId;
-    handleClearChat();
-    removeReports([id]);
+    removeReports([openProjectId]);
   };
 
   const REMOVE_FADE_MS = 190;
 
   const removeReports = (ids: string[]) => {
     if (ids.length === 0) return;
+    // The open project among them is closed first, and not saved on its way
+    // out (2026-11-06): left open, its next save wrote it back under its id.
+    if (openReportId.current && ids.includes(openReportId.current)) handleClearChat('drop');
     setLeavingReportIds((prev) => [...prev, ...ids]);
     window.setTimeout(() => {
       ids.forEach((id) => void handleDeleteReport(id));
@@ -3284,7 +3375,7 @@ export default function App() {
     // holds the signed-out user's *documents*: uploaded page images, text lifted
     // out of their PDFs, the chat transcript and the generated report. All of it
     // used to survive sign-out and sit there for whoever used the browser next.
-    handleClearChat();
+    handleClearChat('drop');
     setRailPanel('review');
 
     setSavedReports(loadReportsLocally<ChatMessage, DesignResult>());
@@ -3682,6 +3773,8 @@ export default function App() {
         text: [credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)), changed, checked].filter(Boolean).join('\n\n'),
         result: newResult
       };
+      // The two imports above are a wait: a session left meanwhile is not this one.
+      if (signal.aborted) return;
       if (result && result.repxContent !== newResult.repxContent) rememberChange(newAssistantMsg.id, result, newResult);
       setMessages(prev => [...prev, newAssistantMsg]);
       announceReady('Report ready');
@@ -3717,6 +3810,7 @@ export default function App() {
           const made = await team.draft();
           if (made && !signal.aborted) {
             const { fallbackReply } = await import('./lib/formaTeam');
+            if (signal.aborted) return;
             const drafted = { ...made.result, repxContent: asConfigured(made.result.repxContent ?? '') };
             setResult(drafted);
             recordRevision("Forma's own draft", drafted);
@@ -3993,6 +4087,7 @@ export default function App() {
       const [firstReading, ...laterReadings] = looked.readings;
       if (!firstReading?.skeleton) throw new Error('its answer had no page line');
       const { mergePageSkeletons } = await import('./lib/skeletonRepx');
+      if (turn.signal.aborted) return;
       const reading = {
         skeleton: mergePageSkeletons(firstReading.skeleton, ...laterReadings.flatMap((r) => (r.skeleton ? [r.skeleton] : []))),
         problems: looked.readings.flatMap((r) => r.problems),
@@ -4036,6 +4131,7 @@ export default function App() {
         const { unit, pageSize } = effectiveConfig();
         const built = buildFromRead(read, unit, pageSize);
         const banded = await readerBuild(read);
+        if (turn.signal.aborted) return;
         if (banded || built) {
           say(`Forma's vision model could not read the page (${why}), so the report was built from the text OCR read.`);
           if (banded) handleReaderBuild(banded, built);
@@ -4208,6 +4304,7 @@ export default function App() {
     const fromPages = readSources(read);
     detectFor({ texts: stagedTexts, metas: stagedMeta, pages: fromPages.pages, words: [currentPrompt, fromPages.words].join('\n') });
     const readByOcr = await ocrAttachments(read);
+    if (turn.signal.aborted) return;
     const currentTexts = [...stagedTexts, ...readByOcr];
     if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
     const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage, lastImage } : undefined;
@@ -4271,6 +4368,7 @@ export default function App() {
           partialReplyRef.current = text;
           setStreamingReply(text);
         }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS } : undefined);
+        if (turn.signal.aborted) return;
         // A report turn's answer is checked before anything is acted on.
         // With the message, so an alignment sent with no side takes the one asked for.
         const outcome = agent ? agent.readReportOutcome(answered, currentPrompt) : answered;
@@ -4297,6 +4395,7 @@ export default function App() {
             const changes = agent.describeChanges(open.repxContent!, done.xml);
             // Whatever the edit brought that the checks find, said here (2026-11-05).
             const { auditRepx } = await import('./lib/repxAudit');
+            if (turn.signal.aborted) return;
             const brought = agent.checksMarkdown(auditRepx(done.xml, open.layout).findings, auditRepx(open.repxContent!, open.layout).findings);
             setMessages(prev => [...prev, {
               id,
@@ -4388,6 +4487,7 @@ export default function App() {
       await describeFromChat(currentPrompt, turn.signal);
       return;
     }
+    if (turn.signal.aborted) return;
 
     setIsAnalyzing(true);
     setProgress(startProgress());
@@ -4544,6 +4644,8 @@ export default function App() {
     }
     setTestDataBusy(true);
     setError(null);
+    // Rows that arrive after another session opened are not its rows (2026-11-06).
+    const session = sessionId.current;
     try {
       const { generateTestData } = await loadGemini();
       const rows = await generateTestData(
@@ -4552,6 +4654,7 @@ export default function App() {
         20,
         config,
       );
+      if (sessionId.current !== session) return;
       setTestRows(rows);
       setSaveNotice(`${rows.length} sample rows generated for the preview.`);
     } catch (err: any) {
@@ -5056,7 +5159,6 @@ export default function App() {
      box, and the last reply on the clipboard, said as a notice beside Save. */
   chatShortcutRef.current = (shortcut) => {
     if (shortcut === 'newReport') {
-      flushAutosave();
       handleClearChat();
       showRailPanel('review');
     } else if (shortcut === 'focusBox') {
@@ -5267,7 +5369,7 @@ export default function App() {
           data-new-report
           title={`New report (${shortcutText('newReport', navigator.platform)})`}
           aria-label="New report"
-          onClick={() => { flushAutosave(); handleClearChat(); showRailPanel('review'); }}
+          onClick={() => { handleClearChat(); showRailPanel('review'); }}
         >
           <IconCompose size={19} />
           <span className="wb-rail-label">New report</span>
@@ -5610,8 +5712,11 @@ export default function App() {
                 onOpen={(item) => {
                   const full = batchResults.current.get(item.id);
                   if (!full) return;
+                  // A new, unsaved session, never the project that was open
+                  // (2026-11-06): it used to keep that project's id, so the
+                  // next save wrote the batch report over it.
+                  handleClearChat();
                   setResult(full);
-                  setMessages([]);
                   showRailPanel('review');
                 }}
               />
@@ -5888,6 +5993,7 @@ export default function App() {
                          Mockup is for — nudging a control in the file does not
                          change what was uploaded. */
                       onEdit={(xml, reason) => {
+                        previewEditedXml.current = xml;
                         setResult({ ...result, repxContent: xml });
                         setSaveNotice(reason);
                       }}
