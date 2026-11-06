@@ -124,6 +124,10 @@ describe('the OCR dialog', () => {
     await waitFor(() => expect(signal).toBeDefined());
     fireEvent.click(button('Stop'));
     expect(signal?.aborted).toBe(true);
+    // And the dialog is not left waiting (2026-11-06): it says it stopped and offers the read again.
+    expect(screen.getByRole('alert').textContent).toMatch(/^Stopped: 1 of 1 page was not read/);
+    expect(button('Try again')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
   });
 });
 

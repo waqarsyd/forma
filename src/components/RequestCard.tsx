@@ -222,7 +222,11 @@ export default function RequestCard<R>({
               onRetry={onRetry}
             />
           )}
+          {/* One thread per request (2026-11-06): its scroll state, the
+              "go to latest" arrow and whether it follows the latest, carried
+              over to another request picked in the log. */}
           <ChatThread
+            key={request?.id ?? 'none'}
             {...thread}
             messages={request?.replies ?? []}
             isChatting={isChatting}

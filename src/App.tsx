@@ -201,6 +201,7 @@ import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './li
 import { readyTitle, sharedReportId, titleForRoute, viewForRoute } from './lib/routes';
 import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, type WorkspaceShortcut } from './lib/shortcuts';
 import { hasOpenLayer, topLayer } from './lib/layers';
+import { initialsOf } from './lib/initials';
 import { useLayer } from './components/useLayer';
 import type { Command } from './components/CommandMenu';
 import { TIP_INTERVAL_MS, WORKING_TIPS, forPlatform, tipAt } from './lib/workingTips';
@@ -858,11 +859,6 @@ const RAIL_EXPANDED_WIDTH = SIDEBAR_OPEN_WIDTH;
  * Initials for the rail's account button. Two letters at most — the artifact's
  * avatar is a 30px disc and a third glyph does not fit at that size.
  */
-function initialsOf(user: { displayName?: string | null; email?: string | null }): string {
-  const source = (user.displayName || user.email || '?').trim();
-  const parts = source.split(/[\s@._-]+/).filter(Boolean);
-  return parts.slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
-}
 
 /**
  * The only things that differed between a first generation and a resumed one.
@@ -1008,6 +1004,14 @@ export default function App() {
   const [savedReports, setSavedReports] = useState<SavedReport[]>(
     () => loadReportsLocally<ChatMessage, DesignResult>()
   );
+  /**
+   * The list as it is now, for a save scheduled earlier (2026-11-06, the
+   * workspace audit): the autosave's closure held the list from when it was
+   * scheduled, so a rename made in that moment was written back to the old
+   * name, and a local save rebuilt the list without whatever changed since.
+   */
+  const savedReportsRef = useRef(savedReports);
+  savedReportsRef.current = savedReports;
   const [user, setUser] = useState<User | null>(null);
   // Below md the chat and canvas panes cannot sit side by side (the sidebar
   // alone is wider than a 375px viewport), so they become tabs. At md+ this
@@ -1858,8 +1862,19 @@ export default function App() {
    */
   const configSnapshotRef = useRef<ReportConfig | null>(null);
 
+  /**
+   * What Forma remembered when Settings opened (2026-11-06, the workspace
+   * audit). Memory writes as it is edited, so Close without saving put the
+   * config back and left "Forget everything" done; it is put back too.
+   */
+  const memorySnapshotRef = useRef<import('./lib/memory').MemoryState | null>(null);
   useEffect(() => {
-    if (isConfigOpen) configSnapshotRef.current = config;
+    if (isConfigOpen) {
+      configSnapshotRef.current = config;
+      void import('./lib/memory').then((m) => { memorySnapshotRef.current = m.readMemory(); }).catch(() => undefined);
+    } else {
+      memorySnapshotRef.current = null;
+    }
     // `config` intentionally omitted: the snapshot must be the value as it was
     // when the panel opened, not follow edits made while it is open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1868,6 +1883,9 @@ export default function App() {
   const dismissConfigWithoutSaving = () => {
     if (configSnapshotRef.current) setConfig(configSnapshotRef.current);
     configSnapshotRef.current = null;
+    const memory = memorySnapshotRef.current;
+    if (memory) void import('./lib/memory').then((m) => m.writeMemory(memory)).catch(() => undefined);
+    memorySnapshotRef.current = null;
     setIsConfigOpen(false);
   };
 
@@ -2027,9 +2045,14 @@ export default function App() {
   // both, but only ever rendered the specification.
   const [specView, setSpecView] = useState<SpecView>('spec');
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('darkMode');
-    if (saved !== null) {
-      return JSON.parse(saved);
+    // Guarded as every other read of storage here (2026-11-06, the workspace
+    // audit): in a profile that blocks storage, or with a mangled value, the
+    // whole app threw on its first render.
+    try {
+      const saved = localStorage.getItem('darkMode');
+      if (saved !== null) return JSON.parse(saved) === true;
+    } catch {
+      /* storage blocked or unreadable: the system decides */
     }
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
@@ -2161,7 +2184,9 @@ export default function App() {
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = (e: MediaQueryListEvent) => {
-      if (localStorage.getItem('darkMode') === null) setIsDarkMode(e.matches);
+      let chosen: string | null = null;
+      try { chosen = localStorage.getItem('darkMode'); } catch { /* blocked: follow the system */ }
+      if (chosen === null) setIsDarkMode(e.matches);
     };
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
@@ -2969,7 +2994,7 @@ export default function App() {
     // on whether it was saved signed in. See src/lib/savedReport.ts.
     const draft: SavedReport = {
       id: reportId,
-      name: projectName(savedReports.find((r) => r.id === reportId)?.name, report?.title, kept.find((m) => m.role === 'user' && m.text)?.text || prompt),
+      name: projectName(savedReportsRef.current.find((r) => r.id === reportId)?.name, report?.title, kept.find((m) => m.role === 'user' && m.text)?.text || prompt),
       timestamp: new Date(ts).toISOString(),
       messages: kept,
       result: report,
@@ -3030,7 +3055,7 @@ export default function App() {
       // the exception into React rather than in front of the user. Deciding
       // first also means the list never shows a project that was not stored.
       // The project replaces its own earlier save and goes to the top.
-      const updated = [draft, ...savedReports.filter((r) => r.id !== reportId)];
+      const updated = [draft, ...savedReportsRef.current.filter((r) => r.id !== reportId)];
       const outcome = saveReportsLocally(updated);
 
       if (!outcome.ok) {
@@ -3856,6 +3881,9 @@ export default function App() {
       setError(friendlyMessage);
     } finally {
       if (!signal.aborted) {
+        // Done, before the half second the bar takes to finish (2026-11-06):
+        // Stop in that half second wrote "Stopped." under a finished report.
+        if (abortControllerRef.current?.signal === signal) abortControllerRef.current = null;
         setProgress(finishProgress);
         setTimeout(() => {
           setIsAnalyzing(false);
@@ -3877,12 +3905,14 @@ export default function App() {
    */
   const handleStop = () => {
     if (isAnalyzing) {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      const running = abortControllerRef.current;
       setIsAnalyzing(false);
       setProgress(IDLE_PROGRESS);
       if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
+      // A run that already finished has nothing to stop and nothing to say.
+      if (!running) return;
+      running.abort();
+      abortControllerRef.current = null;
       setMessages(prev => [...prev, {
         id: nextMessageId(),
         role: 'assistant',
@@ -5714,6 +5744,7 @@ export default function App() {
                 revisions={revisions}
                 current={result?.repxContent}
                 persisted={!!user}
+                busy={isAnalyzing || isChatting}
                 onRestore={(revision) => {
                   /* Restoring is itself a change worth recording, so the
                      version being left is not lost by returning to an older
@@ -5959,9 +5990,16 @@ export default function App() {
                   {/* ReportMockup sits directly in the holder — it carries the
                       artifact's proof frame itself (see its root), so wrapping it
                       in `.wb-proof` would draw that frame twice. */}
-                  <Suspense fallback={null}>
-                    <ReportMockup layout={result.layout!} sourceImages={mockupSourceImages} reportUnit={openUnit} />
-                  </Suspense>
+                  {/* Said, not thrown (2026-11-06): a result with no layout took
+                      the whole app down with it, there being no error boundary
+                      short of the app's. */}
+                  {result.layout ? (
+                    <Suspense fallback={null}>
+                      <ReportMockup layout={result.layout} sourceImages={mockupSourceImages} reportUnit={openUnit} />
+                    </Suspense>
+                  ) : (
+                    <p className="wb-empty">This report has no layout to draw a mockup from. Preview shows it as it prints.</p>
+                  )}
                 </div>
               )}
 

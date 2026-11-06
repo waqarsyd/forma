@@ -21,7 +21,7 @@
  * status bar uses for a single report. `batchQueue.ts` owns those states; this
  * file owns the running of them.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createQueue, nextPending, markRunning, markDone, markFailed,
   cancelPending, retryUnfinished, summarise, verdict, outputName,
@@ -148,6 +148,12 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
     abortRef.current = null;
     setRunning(false);
   }, [ready, onNeedKey, runOne, parallel]);
+
+  // Leaving the workspace stops a batch (2026-11-06, the workspace audit).
+  // The panel stays mounted while its column is hidden, so this is only the
+  // workspace going (the logo, a marketing page), after which the workers
+  // went on spending the key's quota for a queue nobody could see.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const stop = () => {
     abortRef.current?.abort();

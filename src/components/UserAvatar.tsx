@@ -1,4 +1,5 @@
 import { User } from 'firebase/auth';
+import { initialsOf } from '../lib/initials';
 
 interface UserAvatarProps {
   user: User;
@@ -29,16 +30,9 @@ interface UserAvatarProps {
  * privacy question above.
  */
 export default function UserAvatar({ user }: UserAvatarProps) {
-  const initials = user.displayName
-    ? user.displayName
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .substring(0, 2)
-        .toUpperCase()
-    : user.email
-    ? user.email[0].toUpperCase()
-    : 'U';
+  // The workspace's own rule (lib/initials.ts), so the header and the
+  // workspace show the same letters (2026-11-06).
+  const initials = initialsOf(user);
 
   return (
     <div

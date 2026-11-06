@@ -13,7 +13,7 @@
  * Forma's vision model can be named as a helper to any of them
  * (2026-11-03, lib/formaTeam.ts).
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconAlert, IconCheck } from './landing/icons';
 import { aiReady, DEFAULT_LOCAL_URL, isVisionOnly, OPENROUTER_URL, PROVIDER_NAMES, PROVIDERS, type AiProvider } from '../lib/aiProvider';
 import type { ReportConfig } from '../services/geminiService';
@@ -34,22 +34,34 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
   const [models, setModels] = useState<{ id: string; vision: boolean }[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // A list belongs to the provider it was found for (2026-11-06, the
+  // workspace audit): Local AI's models, found while OpenRouter was chosen,
+  // were listed under OpenRouter with their note.
+  const providerNow = useRef(provider);
+  providerNow.current = provider;
+  useEffect(() => {
+    setModels(null);
+    setNote(null);
+  }, [provider]);
 
   const find = async () => {
+    const asked = provider;
     setFinding(true);
     setNote(null);
     try {
       const { listModels } = await import('../services/compatClient');
       const found =
-        provider === 'local'
+        asked === 'local'
           ? await listModels({ kind: 'local', baseUrl: (config.localUrl || DEFAULT_LOCAL_URL).replace(/\/+$/, '') })
           : await listModels({ kind: 'openrouter', baseUrl: OPENROUTER_URL, apiKey: config.openRouterKey?.trim() });
+      if (providerNow.current !== asked) return;
       setModels(found);
       setNote(found.length ? `${found.length} model${found.length === 1 ? '' : 's'} found${found.some((m) => m.vision) ? ', those that read images first' : ''}.` : 'No models found.');
     } catch (err) {
+      if (providerNow.current !== asked) return;
       setModels(null);
       setNote(
-        provider === 'local'
+        asked === 'local'
           ? `Could not reach ${config.localUrl || DEFAULT_LOCAL_URL}. Is the server running, and does it allow this site? For Ollama set OLLAMA_ORIGINS to this address; in LM Studio turn on CORS. (${err instanceof Error ? err.message : String(err)})`
           : `Could not list OpenRouter's models: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -68,6 +80,8 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
           <span className="wb-sel">
             <select className="wb-ctl" id={id} value={value || ''} onChange={(e) => set(e.target.value)}>
               <option value="">Choose a model</option>
+              {/* The model already chosen stays chosen when the list lacks it (2026-11-06). */}
+              {value && !models.some((m) => m.id === value) && <option value={value}>{value}</option>}
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.id}

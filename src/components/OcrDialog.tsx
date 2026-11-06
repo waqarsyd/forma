@@ -60,6 +60,9 @@ export interface OcrDialogProps {
   preread?: readonly (OcrPage | null | undefined)[];
 }
 
+/** A page left unread by Stop. */
+const STOPPED = 'stopped';
+
 type PageRun =
   | { status: 'waiting' }
   | { status: 'reading'; stage: string; progress: number }
@@ -146,7 +149,14 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
     [layout],
   );
 
-  const stop = () => controller.current?.abort();
+  // Stopped, the pages not read are finished as stopped (2026-11-06, the
+  // workspace audit): the page being read stayed "reading" and the rest
+  // "waiting", so Build stayed disabled, Stop did nothing more and Try again
+  // never showed, and the only way out was to close the dialog.
+  const stop = () => {
+    controller.current?.abort();
+    setRuns((all) => all.map((r) => (r.status === 'done' || r.status === 'failed' ? r : { status: 'failed', error: STOPPED })));
+  };
   const retry = () => {
     setRuns(initialRuns());
     setProblems(null);
@@ -251,7 +261,9 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
               {!finished && <p className="wb-hint">The first run loads the OCR engine from this site, about 7 MB, once. Nothing leaves your browser.</p>}
               {finished && failed > 0 && (
                 <p className="wb-hint" role="alert">
-                  {failed === pages.length ? 'No page could be read. ' : `${failed} of ${pages.length} pages could not be read and are left out. `}
+                  {runs.some((r) => r.status === 'failed' && r.error === STOPPED)
+                    ? `Stopped: ${failed} of ${pages.length} ${pages.length === 1 ? 'page was' : 'pages were'} not read. `
+                    : failed === pages.length ? 'No page could be read. ' : `${failed} of ${pages.length} pages could not be read and are left out. `}
                   <button className="wb-ocr-link" type="button" onClick={retry}>Try again</button>
                 </p>
               )}

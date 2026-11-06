@@ -29,9 +29,15 @@ interface Props {
    */
   persisted?: boolean;
   onRestore: (revision: Revision) => void;
+  /**
+   * While Forma works (2026-11-06, the workspace audit), as the corner's Undo
+   * and Redo are then: a version restored during a run was written over when
+   * the run landed.
+   */
+  busy?: boolean;
 }
 
-export default function RevisionsPanel({ revisions, current, persisted, onRestore }: Props) {
+export default function RevisionsPanel({ revisions, current, persisted, onRestore, busy = false }: Props) {
   /*
    * Each row is compared with the one BELOW it — the state it replaced — which
    * is what "what did this step do" means. The last row has nothing below it
@@ -102,7 +108,7 @@ export default function RevisionsPanel({ revisions, current, persisted, onRestor
               <span>
                 {i === 0 && currentIsNewest
                   ? <span className="rv-current">current</span>
-                  : <button className="rv-mini" onClick={() => onRestore(revision)}>Restore</button>}
+                  : <button className="rv-mini" disabled={busy} title={busy ? 'After Forma finishes' : undefined} onClick={() => onRestore(revision)}>Restore</button>}
               </span>
               <span className="rv-meta">
                 {formatSessionStamp(revision.at)}

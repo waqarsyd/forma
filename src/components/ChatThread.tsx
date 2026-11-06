@@ -257,8 +257,10 @@ export function EditForm({ text, disabled, onSend, onCancel }: { text: string; d
         autoFocus
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') onCancel();
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+          // Not while an input method composes (2026-11-06): its Enter accepts
+          // a candidate, and sent the edit early. The box already checked.
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             if (changed && !disabled) onSend(draft.trim());
           }

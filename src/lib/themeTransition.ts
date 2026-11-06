@@ -33,6 +33,7 @@ import { DURATION, EASE } from './motion';
 interface ViewTransition {
   ready: Promise<void>;
   finished: Promise<void>;
+  skipTransition?: () => void;
 }
 type StartViewTransition = (callback: () => void) => ViewTransition;
 
@@ -118,6 +119,34 @@ export function circularThemeSwap(swap: () => void): boolean {
          hidden. The DOM change has already been applied either way, so there is
          nothing to repair and nothing worth logging. */
     });
+
+  /*
+   * A click made during the wipe (2026-11-06, the workspace audit). While a
+   * view transition runs the browser hit-tests the root element only, so a
+   * click on a button then reached <html> and did nothing: switch the theme,
+   * press "?" at once, and no menu opened. Measured in Chrome, and
+   * `pointer-events: none` on ::view-transition did not change it. Such a
+   * click ends the wipe and goes on to the control under the pointer.
+   */
+  const forward = (e: MouseEvent) => {
+    if (e.target !== document.documentElement) return;
+    e.preventDefault();
+    e.stopPropagation();
+    transition.skipTransition?.();
+    const { clientX: x, clientY: y } = e;
+    requestAnimationFrame(() => {
+      // Dispatched rather than `.click()`: what is under the pointer is often
+      // a button's icon, an SVG element, which has no click method.
+      const under = document.elementFromPoint(x, y);
+      if (under && under !== document.documentElement) {
+        under.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+      }
+    });
+  };
+  document.addEventListener('click', forward, true);
+  transition.finished
+    .catch(() => undefined)
+    .finally(() => document.removeEventListener('click', forward, true));
 
   return true;
 }

@@ -128,6 +128,35 @@ describe('circularThemeSwap', () => {
     expect(swap).toHaveBeenCalledOnce();
   });
 
+  // The workspace audit, 2026-11-06: during the wipe the browser hands every
+  // click to <html>, so a button pressed then did nothing.
+  it('ends the wipe on a click made during it, and passes the click to the control under the pointer', async () => {
+    let finish: () => void = () => undefined;
+    const skipTransition = vi.fn(() => finish());
+    const start = vi.fn((cb: () => void) => {
+      cb();
+      return { ready: Promise.resolve(), finished: new Promise<void>((ok) => { finish = ok; }), skipTransition };
+    });
+    (document as { startViewTransition?: unknown }).startViewTransition = start;
+    vi.stubGlobal('matchMedia', mq(false));
+    document.documentElement.animate = vi.fn() as never;
+    const button = document.createElement('button');
+    const pressed = vi.fn();
+    button.addEventListener('click', pressed);
+    document.body.appendChild(button);
+    // jsdom has no elementFromPoint; the browser's answers the button.
+    (document as { elementFromPoint?: unknown }).elementFromPoint = () => button;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0; });
+
+    circularThemeSwap(() => undefined);
+    document.documentElement.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 5, clientY: 5 }));
+
+    expect(skipTransition).toHaveBeenCalledOnce();
+    expect(pressed).toHaveBeenCalledOnce();
+    delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+    button.remove();
+  });
+
   it('survives a transition that is skipped', async () => {
     // A second click, or the page being hidden, rejects `ready`. The DOM change
     // has already been applied, so this must not throw or double-apply.

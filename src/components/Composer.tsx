@@ -461,6 +461,10 @@ export default function Composer({
              `preventDefault` on Enter keeps the newline out of the message
              whether or not the send is allowed. */
           onKeyDown={(e) => {
+            // A place in another project's history is no place in this one
+            // (2026-11-06): ten requests back in one, then ↑ in a project of
+            // three, recalled nothing and left the box uncontrolled.
+            if (recall.current >= history.length) recall.current = -1;
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               recall.current = -1;
@@ -469,12 +473,12 @@ export default function Composer({
             } else if (e.key === 'ArrowUp' && history.length && (prompt === '' || recall.current !== -1)) {
               e.preventDefault();
               recall.current = recall.current === -1 ? history.length - 1 : Math.max(0, recall.current - 1);
-              onPromptChange(history[recall.current]);
+              onPromptChange(history[recall.current] ?? '');
             } else if (e.key === 'ArrowDown' && recall.current !== -1) {
               e.preventDefault();
               recall.current += 1;
               if (recall.current >= history.length) recall.current = -1;
-              onPromptChange(recall.current === -1 ? '' : history[recall.current]);
+              onPromptChange(recall.current === -1 ? '' : history[recall.current] ?? '');
             }
           }}
           /* An image pasted into the box is attached, as a dropped one is. */

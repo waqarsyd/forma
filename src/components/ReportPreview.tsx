@@ -1963,7 +1963,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                                   setEditingText(null);
                                 }}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') { e.currentTarget.blur(); }
+                                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.currentTarget.blur(); }
                                   // Escape abandons the edit rather than
                                   // committing it, which is what Escape means
                                   // everywhere else in this app.
@@ -1996,7 +1996,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                                   setEditingCell(null);
                                 }}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') e.currentTarget.blur();
+                                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur();
                                   if (e.key === 'Escape') setEditingCell(null);
                                   e.stopPropagation();
                                 }}

@@ -57,7 +57,7 @@ export default function MemorySettings() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && draft.trim()) {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && draft.trim()) {
               save({ ...state, memories: [...state.memories, memoryFrom(draft, 'settings')] });
               setDraft('');
             }

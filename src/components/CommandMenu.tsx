@@ -59,7 +59,7 @@ export default function CommandMenu({ commands, onClose }: { commands: readonly 
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') { e.preventDefault(); setAt((i) => Math.min(shown.length - 1, i + 1)); }
               else if (e.key === 'ArrowUp') { e.preventDefault(); setAt((i) => Math.max(0, i - 1)); }
-              else if (e.key === 'Enter') { e.preventDefault(); run(shown[at]); }
+              else if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); run(shown[at]); }
             }}
           />
           <kbd>Esc</kbd>
