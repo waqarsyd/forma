@@ -286,6 +286,7 @@ const ZoomField = lazy(() => import('./components/ZoomField'));
 const HelpMenu = lazy(() => import('./components/HelpMenu'));
 const ExportPanel = lazy(() => import('./components/ExportPanel'));
 const ProjectMenu = lazy(() => import('./components/ProjectMenu'));
+const HomeStart = lazy(() => import('./components/HomeStart'));
 /* The Mockup and the REPX pane (2026-11-06), each drawn only with a report open. */
 const ReportMockup = lazy(() => import('./components/ReportMockup'));
 const RepxViewer = lazy(() => import('./components/RepxViewer'));
@@ -5924,6 +5925,32 @@ export default function App() {
                 </div>
               )}
             </>
+          ) : messages.length === 0 && !isAnalyzing && !isChatting ? (
+            /* Nothing said and nothing built: the home (2026-11-06), as
+               Stitch's, with the recent projects and the starting points. */
+            <Suspense fallback={null}>
+              <HomeStart
+                // The projects whole: lib/startingPoints, which picks the recent
+                // ones, holds the six descriptions too, and importing it here
+                // put them all in the entry chunk (+3 kB, measured).
+                projects={savedReports}
+                archived={archivedProjects}
+                // The lazy component loses its generic, so the project is looked up by id.
+                onOpen={(p) => {
+                  const report = savedReports.find((r) => r.id === p.id);
+                  if (report) void handleLoadReport(report);
+                }}
+                onAllProjects={() => showRailPanel('projects')}
+                onPick={(point) => {
+                  setPrompt(point.text);
+                  requestAnimationFrame(() => {
+                    const box = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]');
+                    box?.focus();
+                    box?.setSelectionRange(box.value.length, box.value.length);
+                  });
+                }}
+              />
+            </Suspense>
           ) : (
             <div className="wb-proof-holder wb-rise wb-rise-2">
               <div className="wb-sheet wb-reg-marks">

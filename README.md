@@ -301,8 +301,9 @@ src/
                        selection toolbar, the command menu, the shortcuts
                        list, the right-click menu (ControlMenu), the zoom
                        field, the corner's help (HelpMenu), the Export
-                       panel (ExportPanel) and the title's project menu
-                       (ProjectMenu), with
+                       panel (ExportPanel), the title's project menu
+                       (ProjectMenu) and the empty workspace's home
+                       (HomeStart), with
                        overlays.css holding those menus' styles.
                        The files that are not components are useFocusTrap (a
                        shared hook), overlays.css and the tests:
@@ -599,7 +600,9 @@ src/
                        changed, read off the file), shortcuts (ChatGPT's
                        keyboard shortcuts for the chat, and Stitch's for
                        the workspace), workingTips (the tip above the box
-                       while Forma works), requestCount
+                       while Forma works), startingPoints (the empty
+                       workspace's starting points and recent projects),
+                       requestCount
                        (requests sent to each model today, and the
                        limits Google stated, for the chat box's model
                        picker and Settings' Usage today), modelTiers (that

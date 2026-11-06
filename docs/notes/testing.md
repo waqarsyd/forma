@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,541 tests in 140 files** — under the `node` environment
+`npm test` runs Vitest over **2,545 tests in 142 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -88,6 +88,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/ExportPanel` | 3 | every way out in one panel (2026-11-06), as Stitch's Export: the .repx from its first row, each print format asked of the Preview by its own name, the designer greyed for a report with no XML, and Escape. jsdom |
 | `components/ProjectMenu` | 3 | the open project's menu from its title (2026-11-06), as Stitch's: Rename in place and nothing sent for an unchanged name, a Delete that asks once and Keep, Duplicate and Download, and what an unsaved project cannot do greyed. jsdom |
 | `components/HelpMenu` | 3 | the corner's "?" (2026-11-06), as Stitch's: the theme in force marked and the one chosen handed back, What's new opening on the newest note, the shortcuts closing the menu, help and feedback in a new tab, the line that Forma can make mistakes, and Escape. jsdom |
+| `components/HomeStart` | 2 | the empty workspace as a home (2026-11-06), as Stitch's: a recent project opened and All projects, the starting point picked handed back, and no project list when there is none. jsdom |
 | `components/ZoomField` | 6 | the zoom's number as a field you type a size into (2026-11-06, the owner's request): 150 and 150% alike inside 10% to 400%, nothing set when nothing changed, Escape putting the number back, the arrows stepping by ten, Stitch's 100% / Fit / Selection, and a choice from the menu kept over the size typed before it, the bug the owner's Chrome found. jsdom |
 | `components/DataBinding` | 18 | jsdom |
 | `components/LibraryPanel` | 17 | jsdom |
@@ -182,6 +183,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/routes` | 17 | since 2026-11-05 the title of a tab that finished something unseen |
 | `lib/shortcuts` | 6 | since 2026-11-06 Stitch's too, Ctrl+K, Ctrl+Backslash, ? and the zoom keys by the physical key, left to a field being typed in; the chat's keyboard shortcuts, ChatGPT's own (2026-11-05): Ctrl+Shift+O, Shift+Esc and Ctrl+Shift+C read exactly, nothing else held, never mid-composition, and each written as a PC and a Mac write it |
 | `lib/workingTips` | 3 | the tip above the box while Forma works (2026-11-06), as Stitch's: distinct sentences short enough for one line, walked from a starting point and wrapping round, and Ctrl written as the Command key on a Mac |
+| `lib/startingPoints` | 2 | the empty workspace's starting points (2026-11-06), the six removed on 2026-11-05 back word for word with a one-line gist each, and the recent projects newest first with the archived left out |
 | `lib/requestCount` | 4 | since 2026-11-05 the limits Google stated; requests sent to each Gemini model today (2026-11-05): the Pacific day, a count per model that starts again at zero the next day, and storage that will not read or write |
 | `lib/modelTiers` | 3 | the box's model menu as named tiers (2026-11-05), as Stitch names its two: a model's id read as a person would, Fast as the first Flash-Lite and Balanced the first Flash in the probe's order, a tier with no model left out |
 | `lib/dataFiles` | 7 | data files attached in the chat (2026-11-05): the kinds taken, quoted CSV, a CSV and a JSON array as fields and first rows, a workbook's first sheet with shared strings, a deflated Word document read through the zip reader, and what a bad file says |
@@ -217,7 +219,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,541 in 140 files** — and that total is the arithmetic sum of the column above
+**Total: 2,545 in 142 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -231,7 +233,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2423** against a real 2,541 and will talk you into
+A grep for `\bit(` answers **2427** against a real 2,545 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
