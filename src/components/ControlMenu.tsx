@@ -74,10 +74,16 @@ function MenuList({ items, onDone, label, autoFocus, onBack }: { items: MenuItem
 export default function ControlMenu({ x, y, items, onClose, label = 'Control' }: { x: number; y: number; items: MenuItem[]; onClose: () => void; label?: string }) {
   const box = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState({ left: x, top: y });
+  /** Which way a submenu opens: to the left, or upward, where to the right or downward would leave the window (2026-11-06). */
+  const [flip, setFlip] = useState({ left: false, up: false });
   useLayoutEffect(() => {
     const r = box.current?.getBoundingClientRect();
     if (!r) return;
-    setAt({ left: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)), top: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) });
+    const left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8));
+    const top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8));
+    setAt({ left, top });
+    // A submenu is about as wide as the menu and as tall as its seven rows.
+    setFlip({ left: left + r.width * 2 + 8 > window.innerWidth, up: top + r.height + 120 > window.innerHeight });
   }, [x, y]);
   // Escape closes it and leaves the selection; the arrows it uses do not
   // reach the Preview, which holds back while a layer is open (lib/layers.ts).
@@ -100,7 +106,12 @@ export default function ControlMenu({ x, y, items, onClose, label = 'Control' }:
     };
   }, [onClose]);
   return createPortal(
-    <div ref={box} className="wb-cmenu-host" style={{ left: at.left, top: at.top }} onContextMenu={(e) => e.preventDefault()}>
+    <div
+      ref={box}
+      className={`wb-cmenu-host${flip.left ? ' wb-cmenu--left' : ''}${flip.up ? ' wb-cmenu--up' : ''}`}
+      style={{ left: at.left, top: at.top }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <MenuList items={items} onDone={onClose} label={label} autoFocus />
     </div>,
     // Inside the workspace's root, whose tokens (--panel, --rule, --ink) the

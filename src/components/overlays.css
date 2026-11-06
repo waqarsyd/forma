@@ -43,6 +43,9 @@
 .wb-cmenu kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
 .wb-cmenu-more { color: var(--ink-faint); }
 .wb-cmenu-sub { position: absolute; left: 100%; top: -6px; padding-left: 4px; }
+/* Near the window's right or bottom edge the submenu opens the other way (2026-11-06). */
+.wb-cmenu--left .wb-cmenu-sub { left: auto; right: 100%; padding-left: 0; padding-right: 4px; }
+.wb-cmenu--up .wb-cmenu-sub { top: auto; bottom: -6px; }
 
 /* The toolbar over a selection on Preview, in the bar's centre where the
    pane switcher sits otherwise (SelectionToolbar.tsx), as Stitch's. */

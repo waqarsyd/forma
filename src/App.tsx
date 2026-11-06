@@ -26,7 +26,6 @@ import {
   IconChevronsRight,
   IconClose,
   IconDownload,
-  IconExternal,
   IconEye,
   IconEyeOff,
   IconFolder,
@@ -4896,6 +4895,10 @@ export default function App() {
    */
   const openInDesigner = async () => {
     if (!result?.repxContent) return;
+    // Once at a time (2026-11-06): the Export panel's row and Ctrl+K could
+    // start a second launch while the first waited, and whichever finished
+    // first cleared "starting" for both.
+    if (designerStarting) return;
     if (blockedByInvalidRepx()) return;
 
     try {
@@ -4906,6 +4909,8 @@ export default function App() {
       if (!designerReady) {
         setError(null);
         setDesignerStarting(true);
+        // Said as it starts, the bar's own button and its "Starting designer…" having gone.
+        setSaveNotice('Starting the DevExpress designer…');
         launchDesigner();
         const started = await waitForDesigner();
         setDesignerStarting(false);
@@ -5880,7 +5885,7 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div className="wb-bar-actions">
             {/* The notice left this bar for a toast at the bottom right
                 (2026-11-06): beside the selection toolbar it wrapped the bar
                 onto two lines. See `wb-toast` below. */}
@@ -5888,7 +5893,7 @@ export default function App() {
                 the workspace saves on its own after each turn, so the button is
                 there for the moment before that, and after a save that failed. */}
             <button
-              className="wb-pill wb-pill--outline"
+              className="wb-pill wb-pill--outline wb-save"
               onClick={handleSaveReport}
               disabled={(!result && messages.length === 0) || savedSignature === currentSignature}
               title={savedSignature === currentSignature && (result || messages.length)
@@ -5898,34 +5903,10 @@ export default function App() {
               {savedSignature === currentSignature && (result || messages.length) ? <IconCheck size={14} /> : <IconSave size={14} />}
               {savedSignature === currentSignature && (result || messages.length) ? 'Saved' : 'Save'}
             </button>
-            {/* Always in the bar, beside Save and Export, and disabled rather
-                than absent when the local companion is not answering — see
-                designerBridge.ts for the ping. It used to render only once
-                `designerReady`, which made the feature invisible to everyone
-                who had not already installed the companion: nothing on screen
-                said the capability existed, so nobody went looking for it. The
-                detection still decides whether it can be *clicked*; what
-                changed is that it no longer decides whether anyone can find
-                out. `title` carries the reason, so a greyed pill is never a
-                dead end. */}
-            <button
-              className="wb-pill wb-pill--outline"
-              onClick={openInDesigner}
-              // Only the report gates this now. Whether the companion happens to
-              // be running is no longer the user's problem to solve before
-              // clicking — see `openInDesigner`, which starts it.
-              disabled={!result?.repxContent || designerStarting}
-              title={
-                !result?.repxContent
-                  ? 'This report has no DevExpress XML to open'
-                  : designerReady
-                    ? 'Open this report in the DevExpress designer on this machine'
-                    : 'Start the DevExpress designer on this machine and open this report in it'
-              }
-            >
-              <IconExternal size={14} />
-              {designerStarting ? 'Starting designer…' : 'Open in designer'}
-            </button>
+            {/* Open in designer is the Export panel's second row (2026-11-06,
+                the owner's choice in the workspace audit): the bar's own button
+                was the same action beside it, and its "Starting designer…"
+                widened the bar onto two lines while it waited. */}
             {/* Share, as Stitch's beside its Export (2026-11-06): a copy of the
                 report for people added by email or anyone with the link. */}
             <button className="wb-pill wb-pill--outline" onClick={() => setIsShareOpen(true)} disabled={!result?.repxContent}>
@@ -5952,7 +5933,7 @@ export default function App() {
                 <Suspense fallback={null}>
                   <ExportPanel
                     onRepx={downloadDesign}
-                    onDesigner={result.repxContent ? () => void openInDesigner() : undefined}
+                    onDesigner={result.repxContent && !designerStarting ? () => void openInDesigner() : undefined}
                     onPrint={(format) => {
                       showPlate('print');
                       setExportRequest({ format, nonce: Date.now() });
@@ -5965,6 +5946,11 @@ export default function App() {
           </div>
         </div>
 
+        {/* The report and what floats over it, under the bar (2026-11-06): the
+            floats are placed from here, not from the bench, so the card's top
+            follows the bar whatever its height; pinned 74px from the bench's
+            top, it went under a bar that wrapped. */}
+        <div className="wb-stage">
         {/* A click on the empty ground folds the card away, as on Stitch's canvas. */}
         <div className="wb-bench-body" onClick={(e) => { if (e.target === e.currentTarget) setIsCardCollapsed(true); }}>
           {result ? (
@@ -6293,26 +6279,27 @@ export default function App() {
             Clean screen · {keysFor('Ctrl+\\')} to leave
           </button>
         )}
-        {/* A notice in its own words (2026-11-04), not always "Saved":
-            "Restored the version from 10:15" or "8 sample rows generated" are
-            not saves. A toast at the bottom right since 2026-11-06, as Stitch's,
-            gone after four seconds or at its ×. */}
-        {saveNotice && (
-          <div className="wb-toast" role="status">
-            <IconCheck size={14} />
-            {/* An edit's own reason starts lower case ("duplicated as label2"). */}
-            <span>{saveNotice.charAt(0).toUpperCase() + saveNotice.slice(1)}</span>
-            <button type="button" aria-label="Dismiss" title="Dismiss" onClick={() => setSaveNotice(null)}>
-              <IconClose size={12} />
-            </button>
-          </div>
-        )}
         {/* Undo, Redo and the zoom at the bench's corner (2026-11-05), as
             Stitch has them: one history for every change to the report
             (`undoReport`), and on Preview its scale, with Fit as the start.
             Since 2026-11-06 the corner is always there, for Stitch's "?" at
             its end; the history and the zoom still come with a report. */}
         <div className="wb-float wb-float-corner">
+          {/* A notice in its own words (2026-11-04), not always "Saved":
+              "Restored the version from 10:15" or "8 sample rows generated" are
+              not saves. A toast above the corner since 2026-11-06, as Stitch's,
+              gone after four seconds or at its ×; inside the corner, so the
+              corner's menus open over it rather than under it. */}
+          {saveNotice && (
+            <div className="wb-toast" role="status">
+              <IconCheck size={14} />
+              {/* An edit's own reason starts lower case ("duplicated as label2"). */}
+              <span>{saveNotice.charAt(0).toUpperCase() + saveNotice.slice(1)}</span>
+              <button type="button" aria-label="Dismiss" title="Dismiss" onClick={() => setSaveNotice(null)}>
+                <IconClose size={12} />
+              </button>
+            </div>
+          )}
           {result && (
             <div className="wb-corner" role="group" aria-label="History">
               <button type="button" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!historyDepth.back || isAnalyzing || isChatting} onClick={undoReport}>
@@ -6361,6 +6348,7 @@ export default function App() {
                 </Suspense>
               )}
             </div>
+        </div>
         </div>
       </main>
 

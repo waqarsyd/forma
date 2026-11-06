@@ -600,11 +600,12 @@
 
 .wb-empty { padding: 26px 20px; text-align: center; color: var(--ink-faint); font-size: 12.5px; }
 
-/* A notice, as a toast at the bottom right above the corner's pills (2026-11-06,
-   Stitch's): it read out in the top bar until then, and wrapped that bar onto
-   two lines beside the selection toolbar. */
+/* A notice, as a toast above the corner's pills (2026-11-06, Stitch's): it
+   read out in the top bar until then, and wrapped that bar onto two lines
+   beside the selection toolbar. Drawn inside the corner, under its menus,
+   which it covered while it was fixed over the whole page at z-index 40. */
 .wb-toast {
-  position: fixed; right: 16px; bottom: 64px; z-index: 40; max-width: min(380px, calc(100vw - 32px));
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 1; width: max-content; max-width: min(380px, calc(100vw - 32px));
   display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 14px;
   border: 1px solid var(--rule); border-radius: 12px; background: var(--panel); box-shadow: var(--shadow-md);
   color: var(--ink); font-size: 13px;
@@ -961,7 +962,29 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   position: relative;
   z-index: 6;
 }
-.wb-doc-id { position: relative; display: flex; align-items: baseline; gap: 11px; min-width: 0; }
+/* One row in every common width (2026-11-06, the workspace audit): the title
+   gives way first, and the panes and the actions never do. The bar wrapped
+   whenever a selection, a panel or "Starting designer…" widened it, and moved
+   the buttons under the pointer. It may still wrap in a bench too narrow for
+   both, which the floats now follow (`.wb-stage`). */
+.wb-doc-id { position: relative; display: flex; align-items: baseline; gap: 11px; min-width: 0; flex: 0 1 auto; }
+.wb-doc-id h1 { min-width: 0; }
+.wb-bench-bar > .wb-plates, .wb-bar-actions { flex: none; }
+.wb-bar-actions { display: flex; align-items: center; gap: 10px; }
+/* Save and Saved at one width, so the bar does not move when it flips. */
+.wb-save { min-width: 88px; justify-content: center; }
+/* No wrapping, so the title shrinks first: a wrapping row breaks by each item's
+   full width before anything shrinks, and wrapped with room to spare. Only a
+   bench too narrow for the panes and the actions together wraps. */
+.wb-bench { container: bench / inline-size; }
+.wb-bench-bar { flex-wrap: nowrap; }
+@container bench (max-width: 860px) {
+  .wb-bench-bar .wb-rev { display: none; }
+  .wb-bench-bar .wb-plates button { padding: 5px 10px; }
+}
+@container bench (max-width: 720px) {
+  .wb-bench-bar { flex-wrap: wrap; }
+}
 /* The title is the project menu's button (2026-11-06, ProjectMenu.tsx), as Stitch's project name. */
 .wb-title-btn {
   /* No negative side margins: they narrowed the margin box the h1 sizes to,
@@ -1847,6 +1870,10 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
    through their empty corners; their children take them.
    ============================================================================= */
 .wb-bench { position: relative; }
+/* The report and its floats, under the bar (2026-11-06): the floats are placed
+   from here, so the card's top follows the bar whatever its height. The bar's
+   width, not the window's, decides where the box goes (`stage` below). */
+.wb-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; container: stage / inline-size; }
 .wb-float { position: absolute; z-index: 4; pointer-events: none; }
 .wb-float > * { pointer-events: auto; }
 .wb-bench-body { padding-bottom: 176px; }
@@ -1858,7 +1885,7 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
   box-shadow: var(--shadow-md);
 }
 
-.wb-float-card { top: 74px; left: 16px; width: 304px; max-height: calc(100% - 74px - 88px); display: flex; flex-direction: column; }
+.wb-float-card { top: 16px; left: 16px; width: 304px; max-height: calc(100% - 16px - 88px); display: flex; flex-direction: column; }
 .wb-reply { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; border-radius: 18px; overflow: hidden; }
 .wb-reply.wb-is-collapsed { flex: none; align-self: flex-start; width: 60px; height: 60px; display: grid; place-items: center; }
 .wb-reply-mark {
@@ -1981,14 +2008,28 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 .wb-corner button:hover:not(:disabled) { background: var(--track); }
 .wb-corner button:disabled { color: var(--ink-faint); cursor: default; }
 .wb-corner .wb-corner-zoom { min-width: 48px; font-family: var(--mono); font-size: 11px; }
-@media (min-width: 881px) and (max-width: 1240px) {
-  .wb-bench[data-card] .wb-float-bar { left: 336px; right: 236px; width: auto; transform: none; }
+/* The box between the card's column and the corner, by the stage's width, not
+   the window's (2026-11-06): with the sidebar and a panel open, a window-keyed
+   rule left the box 170px wide, or 28, under the corner's "?". Where the two
+   cannot share the foot, the box rises above the corner's row and takes the
+   width, and the toast sits beside the corner. */
+@container stage (max-width: 1311px) {
+  .wb-bench[data-card] .wb-float-bar { left: 336px; right: 256px; width: auto; transform: none; }
 }
-@media (max-width: 880px) { .wb-float-corner { justify-content: flex-end; } }
+@container stage (max-width: 1151px) {
+  .wb-bench:not([data-card]) .wb-float-bar { left: 16px; right: 256px; width: auto; transform: none; }
+}
+@container stage (max-width: 900px) {
+  .wb-bench[data-card] .wb-float-bar, .wb-bench:not([data-card]) .wb-float-bar { right: 16px; bottom: 62px; }
+  .wb-float-corner .wb-toast { right: calc(100% + 10px); bottom: 0; }
+  .wb-bench-body { padding-bottom: 224px; }
+}
+@media (max-width: 880px) { .wb-float-corner { justify-content: flex-end; position: relative; } }
 /* Stacked, the pieces follow the report in the page's own flow. */
 @media (max-width: 880px) {
   .wb-float { position: static; transform: none; width: auto; max-height: none; margin: 8px 12px 0; }
   .wb-float-card { max-height: 50vh; }
   .wb-float-bar { margin-bottom: 12px; }
+  .wb-float-corner .wb-toast { right: 0; bottom: calc(100% + 10px); }
   .wb-bench-body, .wb-bench[data-card='open'] .wb-bench-body { padding: 20px 12px 30px; }
 }
