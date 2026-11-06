@@ -287,6 +287,7 @@ const HelpMenu = lazy(() => import('./components/HelpMenu'));
 const ExportPanel = lazy(() => import('./components/ExportPanel'));
 const ProjectMenu = lazy(() => import('./components/ProjectMenu'));
 const HomeStart = lazy(() => import('./components/HomeStart'));
+const RateReport = lazy(() => import('./components/RateReport'));
 /* The Mockup and the REPX pane (2026-11-06), each drawn only with a report open. */
 const ReportMockup = lazy(() => import('./components/ReportMockup'));
 const RepxViewer = lazy(() => import('./components/RepxViewer'));
@@ -5696,6 +5697,22 @@ export default function App() {
               </Suspense>
             )}
             {result && <span className="wb-rev">{result.layout?.sections?.length ?? 0} bands</span>}
+            {/* A star and thumbs on the report (2026-11-06), as Stitch's on a screen. */}
+            {result && (() => {
+              const saved = !!openProjectId && savedReports.some((r) => r.id === openProjectId);
+              const maker = [...messages].reverse().find((m) => m.role === 'assistant' && m.result);
+              if (!saved && !maker) return null;
+              return (
+                <Suspense fallback={null}>
+                  <RateReport
+                    starred={saved && pinnedProjects.includes(openProjectId!)}
+                    onStar={saved ? () => togglePinned(openProjectId!) : undefined}
+                    rating={maker?.rating}
+                    onRate={maker ? (rating) => handleRate(maker.id, rating) : undefined}
+                  />
+                </Suspense>
+              );
+            })()}
           </div>
 
           {/* With controls selected on Preview, their toolbar takes the pane

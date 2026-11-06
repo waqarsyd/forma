@@ -341,6 +341,12 @@ export const IconMoon = (p: Props) => (
     <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5z" />
   </Svg>
 );
+/* The report's star (2026-11-06), as Stitch's on a screen; filled by CSS when on. */
+export const IconStar = (p: Props) => (
+  <Svg {...p}>
+    <path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z" />
+  </Svg>
+);
 /* The theme that follows the system, and the corner's help (2026-11-06), as Stitch's. */
 export const IconMonitor = (p: Props) => (
   <Svg {...p}>

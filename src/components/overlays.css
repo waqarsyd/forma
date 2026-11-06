@@ -80,6 +80,13 @@
 .wb-log-text.is-scrolling { text-overflow: clip; }
 .wb-log-text.is-scrolling > span { display: inline-block; transform: translateX(var(--shift)); transition: transform var(--slide) linear .25s; }
 
+/* A star and thumbs beside the title (RateReport.tsx), as Stitch's on a screen. */
+.wb-rate { display: inline-flex; align-items: center; gap: 1px; align-self: center; }
+.wb-rate button { width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--ink-faint); cursor: pointer; }
+.wb-rate button:hover { background: var(--track); color: var(--ink-2); }
+.wb-rate button.is-on { color: var(--ink); }
+.wb-rate button.is-on path { fill: currentColor; }
+
 /* The empty workspace as a home (HomeStart.tsx), as Stitch's: recent projects
    on the left, a heading and the starting points in the middle. */
 .wb-home { width: 100%; max-width: 980px; margin: 4vh auto 0; display: grid; gap: 36px; align-items: start; }

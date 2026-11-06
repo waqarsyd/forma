@@ -302,7 +302,8 @@ src/
                        list, the right-click menu (ControlMenu), the zoom
                        field, the corner's help (HelpMenu), the Export
                        panel (ExportPanel), the title's project menu
-                       (ProjectMenu) and the empty workspace's home
+                       (ProjectMenu), the star and thumbs beside it
+                       (RateReport) and the empty workspace's home
                        (HomeStart), with
                        overlays.css holding those menus' styles.
                        The files that are not components are useFocusTrap (a
