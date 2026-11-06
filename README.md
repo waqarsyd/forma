@@ -282,8 +282,10 @@ src/
                        OcrDialog (the review the image viewer opens: the text
                        OCR read, its detected layout drawn over the source,
                        and Build .repx with no model),
-                       ProviderSettings (which AI answers, in Settings: Forma
-                       Offline, Gemini, a local AI or OpenRouter's free models),
+                       ProviderSettings (which AI answers, in Settings:
+                       Automatic, which is Gemini, a local AI or OpenRouter's
+                       free models; Forma Offline went into Automatic on
+                       2026-11-05),
                        MemorySettings (what Forma remembers, to switch off,
                        change or forget),
                        ChatThread
@@ -302,13 +304,17 @@ src/
                        list, the right-click menu (ControlMenu), the zoom
                        field, the corner's help (HelpMenu), the Export
                        panel (ExportPanel), the title's project menu
-                       (ProjectMenu), the star and thumbs beside it
-                       (RateReport), the empty workspace's home
+                       (ProjectMenu), the pin beside it (PinProject), the
+                       empty workspace's home
                        (HomeStart), the Share dialog (ShareDialog) and the
                        page a shared link opens (SharedReportPage), with
                        overlays.css holding those menus' styles.
-                       The files that are not components are useFocusTrap (a
-                       shared hook), overlays.css and the tests:
+                       The files that are not components are the shared
+                       hooks (useFocusTrap; useLayer, which puts a menu or
+                       dialog on the Escape stack; useMenuKeys, a menu's
+                       arrow keys and focus return; useFitScale, the zoom
+                       that fits a page to its pane), overlays.css and the
+                       tests:
                        legalDisclosure, which reads ContactPage and
                        index.html off disk, and the component render tests,
                        the only ones outside lib/, services/ and server/.
@@ -613,6 +619,11 @@ src/
                        its model), dataFiles (CSV, JSON,
                        Excel, Word and the rest attached in the chat,
                        read in the browser as the report's data),
+                       layers (the stack of open menus and dialogs, so one
+                       Escape closes only the topmost and keys meant for
+                       one stay there), clipboard (every Copy, with a
+                       fallback for plain HTTP), initials (the avatar's
+                       letters),
                        geminiErrors (what the user is told when a
                        request fails), savedReport + accountData (the two
                        storage shapes and the document layout),
