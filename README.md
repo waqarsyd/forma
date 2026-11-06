@@ -597,7 +597,9 @@ src/
                        agentEdit (the open report as the chat's model sees
                        it, the edits it asks for made in place, and what
                        changed, read off the file), shortcuts (ChatGPT's
-                       keyboard shortcuts for the chat), requestCount
+                       keyboard shortcuts for the chat, and Stitch's for
+                       the workspace), workingTips (the tip above the box
+                       while Forma works), requestCount
                        (requests sent to each model today, and the
                        limits Google stated, for the chat box's model
                        picker and Settings' Usage today), modelTiers (that

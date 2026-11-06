@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,538 tests in 139 files** — under the `node` environment
+`npm test` runs Vitest over **2,541 tests in 140 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -181,6 +181,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/router` | 17 | jsdom |
 | `lib/routes` | 17 | since 2026-11-05 the title of a tab that finished something unseen |
 | `lib/shortcuts` | 6 | since 2026-11-06 Stitch's too, Ctrl+K, Ctrl+Backslash, ? and the zoom keys by the physical key, left to a field being typed in; the chat's keyboard shortcuts, ChatGPT's own (2026-11-05): Ctrl+Shift+O, Shift+Esc and Ctrl+Shift+C read exactly, nothing else held, never mid-composition, and each written as a PC and a Mac write it |
+| `lib/workingTips` | 3 | the tip above the box while Forma works (2026-11-06), as Stitch's: distinct sentences short enough for one line, walked from a starting point and wrapping round, and Ctrl written as the Command key on a Mac |
 | `lib/requestCount` | 4 | since 2026-11-05 the limits Google stated; requests sent to each Gemini model today (2026-11-05): the Pacific day, a count per model that starts again at zero the next day, and storage that will not read or write |
 | `lib/modelTiers` | 3 | the box's model menu as named tiers (2026-11-05), as Stitch names its two: a model's id read as a person would, Fast as the first Flash-Lite and Balanced the first Flash in the probe's order, a tier with no model left out |
 | `lib/dataFiles` | 7 | data files attached in the chat (2026-11-05): the kinds taken, quoted CSV, a CSV and a JSON array as fields and first rows, a workbook's first sheet with shared strings, a deflated Word document read through the zip reader, and what a bad file says |
@@ -216,7 +217,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,538 in 139 files** — and that total is the arithmetic sum of the column above
+**Total: 2,541 in 140 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -230,7 +231,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2420** against a real 2,538 and will talk you into
+A grep for `\bit(` answers **2423** against a real 2,541 and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

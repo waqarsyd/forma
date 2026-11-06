@@ -202,6 +202,7 @@ import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './li
 import { readyTitle, titleForRoute, viewForRoute } from './lib/routes';
 import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, type WorkspaceShortcut } from './lib/shortcuts';
 import type { Command } from './components/CommandMenu';
+import { TIP_INTERVAL_MS, WORKING_TIPS, forPlatform, tipAt } from './lib/workingTips';
 /* App.tsx's own view state, extracted so it can be tested — see the header of
    each for the failure it was carrying while it lived here. */
 import { plateFor, stateForPlate, type Plate, type ActiveTab, type SpecView } from './lib/workspaceView';
@@ -1067,6 +1068,9 @@ export default function App() {
   const [isClean, setIsClean] = useState(false);
   /** The corner's "?" menu (2026-11-06, components/HelpMenu.tsx). */
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  /** The tip above the box while Forma works: a random first one, then the next every few seconds. */
+  const tipStart = useRef(Math.floor(Math.random() * WORKING_TIPS.length));
+  const [tipStep, setTipStep] = useState(0);
   const workspaceShortcutRef = useRef<((shortcut: WorkspaceShortcut) => boolean) | null>(null);
   const [showWorkspaceProfile, setShowWorkspaceProfile] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
@@ -2014,6 +2018,14 @@ export default function App() {
   // The elapsed-time clock went with the status bar on 2026-11-04. It set state
   // every 100 ms of a generation, re-rendering the whole app ten times a second
   // for a number in the bottom bar.
+
+  // The next tip every few seconds while Forma works (2026-11-06, lib/workingTips.ts).
+  const isWorking = isAnalyzing || isChatting;
+  useEffect(() => {
+    if (!isWorking) return;
+    const id = window.setInterval(() => setTipStep((s) => s + 1), TIP_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [isWorking]);
 
   // Save confirmations are transient — they replace an alert the user had to
   // dismiss, so they must not need dismissing either.
@@ -6004,6 +6016,14 @@ export default function App() {
           </div>
         )}
         <div className="wb-float wb-float-bar">
+          {/* A tip while Forma works (2026-11-06, lib/workingTips.ts), as Stitch
+              shows one above its bar during a task. The owner chose it knowing
+              it adds a line to the minimal workspace of 2026-11-04. */}
+          {(isAnalyzing || isChatting) && (
+            <p className="wb-tip" key={tipStep}>
+              Tip: {forPlatform(tipAt(tipStart.current, tipStep), mac)}
+            </p>
+          )}
           {/* Unverified means an address nobody has proved they can read. It is
               a nudge, not a gate: nothing here is withheld until it is done,
               because the account only ever holds this person's own reports and

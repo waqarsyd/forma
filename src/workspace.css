@@ -1924,6 +1924,9 @@ textarea.wb-area { resize: vertical; min-height: 96px; line-height: 1.45; font-f
 /* The box: centred at the foot of the report, between the card's column and
    the right edge while there is a card, and two rows, as Stitch's bar. */
 .wb-float-bar { bottom: 16px; left: 50%; transform: translateX(-50%); width: min(640px, calc(100% - 672px)); display: flex; flex-direction: column; gap: 8px; }
+/* A tip above the box while Forma works (2026-11-06), as Stitch's: quiet, one line, fading in. */
+.wb-tip { margin: 0; text-align: center; font-size: 12px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: wb-tip-in .4s ease both; }
+@keyframes wb-tip-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .wb-bench:not([data-card]) .wb-float-bar { width: min(640px, calc(100% - 48px)); }
 .wb-float-bar .wb-box {
   display: grid; grid-template-columns: auto 1fr auto auto auto; align-items: center; row-gap: 4px;
