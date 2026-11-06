@@ -4,10 +4,14 @@
  * (Generate, Modify, Preview, More). Forma's acts on the controls selected:
  * Format (bold, italic, larger, smaller, the three alignments), Edit text,
  * which puts "Change the text of …" in the box for Forma, and More (copy
- * the names, delete, clear the selection). It takes the place of the pane
- * switcher in the bench's bar while something is selected, as the study the
- * owner approved proposed. App makes the edits; see `formatEdits` in
- * lib/agentEdit.ts and *The conversation floats over the report* in
+ * the names, delete, clear the selection). The Preview draws it, floating
+ * over the top of the report (2026-11-06, the owner's choice in the
+ * workspace audit): it took the place of the pane switcher in the bench's
+ * bar until then, which hid the panes while something was selected and
+ * wrapped the bar onto two lines, moving the page under the pointer. Copy
+ * and Delete are the Preview's own, by the selection itself, as its menu's
+ * and the Delete key's are; Format and Edit text are App's (`formatEdits`
+ * in lib/agentEdit.ts). See *The conversation floats over the report* in
  * docs/notes/app-shell.md.
  */
 import { useEffect, useRef, useState } from 'react';
@@ -17,10 +21,13 @@ import { IconChevronDown, IconPencil, IconTarget } from './landing/icons';
 import { useLayer } from './useLayer';
 
 export interface SelectionToolbarProps {
+  /** What it calls each selected control: its name, or its type when it has none. */
   names: readonly string[];
   onFormat: (action: FormatAction) => void;
   /** Absent for several controls: retyping is one control's. */
   onEditText?: () => void;
+  /** Absent when no selected control has a name to copy. */
+  onCopy?: () => void;
   onDelete: () => void;
   onClear: () => void;
 }
@@ -35,7 +42,7 @@ const FORMAT: { action: FormatAction; label: string }[] = [
   { action: 'right', label: 'Align right' },
 ];
 
-export default function SelectionToolbar({ names, onFormat, onEditText, onDelete, onClear }: SelectionToolbarProps) {
+export default function SelectionToolbar({ names, onFormat, onEditText, onCopy, onDelete, onClear }: SelectionToolbarProps) {
   const [menu, setMenu] = useState<'format' | 'more' | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -80,17 +87,11 @@ export default function SelectionToolbar({ names, onFormat, onEditText, onDelete
       )}
       {menu === 'more' && (
         <div className="wb-ctx-menu wb-ctx-menu--end" role="menu" aria-label="More">
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() =>
-              pick(() => {
-                navigator.clipboard?.writeText(names.join(', ')).catch(() => {});
-              })
-            }
-          >
-            {names.length === 1 ? 'Copy the name' : 'Copy the names'}
-          </button>
+          {onCopy && (
+            <button type="button" role="menuitem" onClick={() => pick(onCopy)}>
+              {names.length === 1 ? 'Copy the name' : 'Copy the names'}
+            </button>
+          )}
           <button type="button" role="menuitem" onClick={() => pick(onClear)}>
             Clear the selection
           </button>

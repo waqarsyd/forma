@@ -331,6 +331,33 @@ describe('editing in the pane', () => {
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
 
+  // The workspace audit, 2026-11-06: pressing a member of the group kept it
+  // twice, and a Delete then took an unselected control as well.
+  it('keeps a group whole when one of it is pressed, so Delete takes exactly the group', () => {
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    fireEvent.pointerDown(hits()[0]);
+    fireEvent.pointerDown(hits()[1], { shiftKey: true });
+    fireEvent.pointerDown(hits()[1]);
+    fireEvent.pointerUp(window);
+    expect(screen.getByText('2 selected')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    const [xml, reason] = onEdit.mock.calls[onEdit.mock.calls.length - 1];
+    expect(reason).toBe('deleted 2 controls');
+    expect(xml).not.toContain('Name="a"');
+    expect(xml).not.toContain('Name="b"');
+    expect(xml).toContain('Name="t"');
+  });
+
+  it('clears the whole selection when the paper is pressed', () => {
+    const { container } = render(<Holder onEdit={vi.fn()} />);
+    fireEvent.pointerDown(hits()[0]);
+    fireEvent.pointerDown(hits()[1], { shiftKey: true });
+    fireEvent.pointerDown(container.querySelector('.rp-pages')!);
+    expect(container.querySelectorAll('.rp-hit.is-selected, .rp-hit.is-also').length).toBe(0);
+    expect(screen.queryByText('2 selected')).toBeNull();
+  });
+
   it('selects more with Shift+click, and deletes them all as one step', () => {
     const onEdit = vi.fn();
     render(<Holder onEdit={onEdit} />);

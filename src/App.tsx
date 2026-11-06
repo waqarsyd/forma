@@ -281,7 +281,6 @@ import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
    does: the card and the log draw it, the thread inside the card. */
 const RequestCard = lazy(() => import('./components/RequestCard'));
 const RequestLog = lazy(() => import('./components/RequestLog'));
-const SelectionToolbar = lazy(() => import('./components/SelectionToolbar'));
 const UsageSettings = lazy(() => import('./components/UsageSettings'));
 const CommandMenu = lazy(() => import('./components/CommandMenu'));
 const ZoomField = lazy(() => import('./components/ZoomField'));
@@ -2383,14 +2382,26 @@ export default function App() {
   const reportFuture = useRef<DesignResult[]>([]);
   const lastReport = useRef<DesignResult | null>(null);
   const movingInHistory = useRef(false);
+  /** Set by an edit on Preview, which keeps its own step (`pushHistory`), a drag one step in all. */
+  const previewStep = useRef(false);
   const [historyDepth, setHistoryDepth] = useState({ back: 0, forward: 0 });
   const noteHistory = () => setHistoryDepth({ back: reportPast.current.length, forward: reportFuture.current.length });
+  const pushHistory = (report: DesignResult | null) => {
+    if (!report?.repxContent) return;
+    reportPast.current = [...reportPast.current.slice(-49), report];
+    reportFuture.current = [];
+    noteHistory();
+  };
   useEffect(() => {
     const before = lastReport.current;
     lastReport.current = result;
     if (movingInHistory.current) {
       movingInHistory.current = false;
       noteHistory();
+      return;
+    }
+    if (previewStep.current) {
+      previewStep.current = false;
       return;
     }
     if (!result) {
@@ -2400,9 +2411,7 @@ export default function App() {
       return;
     }
     if (!before?.repxContent || !result.repxContent || before.repxContent === result.repxContent) return;
-    reportPast.current = [...reportPast.current.slice(-49), before];
-    reportFuture.current = [];
-    noteHistory();
+    pushHistory(before);
   }, [result]);
   /** A project opened: its history starts with it. */
   const resetReportHistory = () => {
@@ -5153,10 +5162,6 @@ export default function App() {
     return done;
   };
   const formatSelection = (action: FormatAction) => editSelection((agent, xml) => agent.formatEdits(xml, previewSelection, action));
-  const deleteSelection = async () => {
-    const done = await editSelection(() => previewSelection.map((control) => ({ op: 'delete' as const, control })));
-    if (done) setSelectionReset((n) => n + 1);
-  };
   /** New words for one control are Forma's to write: the box, started for it. */
   const askForText = (name: string) => {
     setPrompt(`Change the text of ${name} to `);
@@ -5861,21 +5866,9 @@ export default function App() {
             })()}
           </div>
 
-          {/* With controls selected on Preview, their toolbar takes the pane
-              switcher's place (2026-11-05), as Stitch's appears at the top
-              centre over a selection; the switcher returns when it is cleared. */}
-          {result && plate === 'print' && previewSelection.length > 0 && (
-            <Suspense fallback={null}>
-              <SelectionToolbar
-                names={previewSelection}
-                onFormat={(action) => void formatSelection(action)}
-                onEditText={previewSelection.length === 1 ? () => askForText(previewSelection[0]) : undefined}
-                onDelete={() => void deleteSelection()}
-                onClear={() => setSelectionReset((n) => n + 1)}
-              />
-            </Suspense>
-          )}
-          {result && !(plate === 'print' && previewSelection.length > 0) && (
+          {/* The panes stay whatever is selected (2026-11-06): the selection's
+              toolbar floats over the report, drawn by the Preview. */}
+          {result && (
             <div className="wb-plates" role="tablist" aria-label="View">
               <button role="tab" aria-selected={plate === 'proof'} onClick={() => showPlate('proof')}>Mockup</button>
               {/* Between the picture and the file, because that is what it is:
@@ -6005,6 +5998,7 @@ export default function App() {
                       onSelectionChange={setPreviewSelection}
                       highlight={changedHighlight}
                       historyElsewhere
+                      onEditText={askForText}
                       zoom={previewZoom}
                       onScaleChange={setPreviewScale}
                       resetSelection={selectionReset}
@@ -6018,8 +6012,14 @@ export default function App() {
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not
                          change what was uploaded. */
-                      onEdit={(xml, reason) => {
+                      onEdit={(xml, reason, continues) => {
                         previewEditedXml.current = xml;
+                        // One step of the history per edit, and per drag
+                        // (2026-11-06): its later frames continue the step its
+                        // first opened, which the effect below would have made
+                        // a step each.
+                        if (!continues) pushHistory(result);
+                        previewStep.current = true;
                         setResult({ ...result, repxContent: xml });
                         setSaveNotice(reason);
                       }}

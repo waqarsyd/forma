@@ -15,6 +15,8 @@ import { useMemo, useState } from 'react';
 import { formatXml, tokenizeXml, checkRepx } from '../lib/repx';
 import type { RepxAudit } from '../lib/repxAudit';
 import { unitsPerInch } from '../lib/reportGeometry';
+// With a fallback for a page that is not a secure context (plain HTTP on a LAN address).
+import { copyText } from '../lib/clipboard';
 import { IconAlert, IconCheck, IconCheckCircle, IconCopy, IconWarn } from './landing/icons';
 
 /*
@@ -32,30 +34,6 @@ const XML_TOKEN_CLASS: Record<string, string> = {
   meta: 'text-[color:var(--code-ink-faint)] italic',
 };
 
-/** Clipboard write with a fallback for non-secure contexts (plain HTTP on a LAN IP). */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    /* fall through to the legacy path */
-  }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * `unit` and `audit` arrived here on 2026-11-04 with the status bar's removal:

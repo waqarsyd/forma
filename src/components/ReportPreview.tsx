@@ -62,7 +62,9 @@ import { buildZip } from '../lib/zip';
 import { moveControl, resizeControl, setControlText, overflowsBand, deleteControl, addLabel, setCellText, duplicateControl, type ControlRef } from '../lib/repxEdit';
 import type { FormatAction } from '../lib/agentEdit';
 import ControlMenu, { type MenuItem } from './ControlMenu';
+import SelectionToolbar from './SelectionToolbar';
 import { hasOpenLayer, isOutsideReport } from '../lib/layers';
+import { copyText } from '../lib/clipboard';
 import type { ReportLayout } from '../lib/reportTypes';
 
 interface Props {
@@ -75,7 +77,8 @@ interface Props {
    * which is what the print portal wants and what a loaded report gets before
    * anything is selected.
    */
-  onEdit?: (xml: string, reason: string) => void;
+  /** `continues` is true for a drag's frames after its first: the same step of the history. */
+  onEdit?: (xml: string, reason: string, continues?: boolean) => void;
   /**
    * AI-generated sample rows, keyed by bound field name. When present the
    * Detail band prints once per row with each bound cell showing that row's
@@ -117,6 +120,11 @@ interface Props {
    * the pages are drawn at. A new `resetSelection` clears the selection.
    */
   historyElsewhere?: boolean;
+  /**
+   * Edit text on the floating toolbar, for one named control: App starts
+   * "Change the text of …" in the box so Forma writes the words.
+   */
+  onEditText?: (name: string) => void;
   zoom?: number;
   onScaleChange?: (scale: number) => void;
   resetSelection?: number;
@@ -185,6 +193,8 @@ type Gesture = {
   mirrored: boolean;
   /** The rest of a multiple selection, moved by the same amount (2026-11-04). */
   others: { ref: ControlRef; originX: number; originY: number; mirrored: boolean; dpiScale: number }[];
+  /** Whether a frame of it has been written yet: the frames after the first continue the same step. */
+  written: boolean;
 } | null;
 
 /** Bands the reader should be able to tell apart on screen. */
@@ -319,7 +329,7 @@ function ChartPicture({ model, width, height, extras }: { model: ChartModel; wid
           {text(plot.x - 6, yOf(t), String(t), 'end')}
         </g>
       ))}
-      {model.arguments.map((a) => text(xOf(a), plot.y + plot.h + 12, a, 'middle'))}
+      {model.arguments.map((a, i) => <React.Fragment key={i}>{text(xOf(a), plot.y + plot.h + 12, a, 'middle')}</React.Fragment>)}
       {extras?.axisX && text(plot.x + plot.w / 2, plot.y + plot.h + 28, extras.axisX, 'middle')}
       {extras?.axisY && (
         <text x={10} y={plot.y + plot.h / 2} fontSize={label} fontFamily={CHART_FONT} textAnchor="middle" dominantBaseline="middle" fill="#3c3c3c" transform={`rotate(-90 10 ${plot.y + plot.h / 2})`}>{extras.axisY}</text>
@@ -1012,7 +1022,7 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -1121,6 +1131,24 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     }
     selectAfter.current = names;
     commit({ xml, applied: true, reason: refs.length === 1 ? `duplicated as ${names[0]}` : `duplicated ${refs.length} controls` }, repxContent);
+  };
+
+  /**
+   * The selection deleted, as one step: the Delete key's, the right-click
+   * menu's and the floating toolbar's, by the selection itself (2026-11-06).
+   * The toolbar's went through App by name until then, and skipped a control
+   * with none; the pane drew a Delete of its own beside it.
+   */
+  const deleteSelected = () => {
+    if (!selected) return;
+    applyAll([selected, ...also].sort((a, b) => b.band - a.band || b.control - a.control), deleteControl, 'deleted');
+    setSelected(null);
+    setAlso([]);
+  };
+  /** The selected controls' names on the clipboard, saying so; the menu's and the toolbar's. */
+  const copyNames = (names: readonly string[]) => {
+    if (!names.length) return;
+    void copyText(names.join(', ')).then((ok) => onNotice?.(ok ? (names.length > 1 ? 'Copied the names' : `Copied ${names[0]}`) : 'The browser did not allow copying'));
   };
 
   const undo = () => {
@@ -1254,6 +1282,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     if (!control) return;
     event.preventDefault();
     event.stopPropagation();
+    // A retype still open is finished first, and this press does nothing else
+    // (2026-11-06): the drag would start from the file before the new words,
+    // and its first move wrote them away.
+    if (editingText !== null || editingCell !== null) {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      return;
+    }
     const same = (a: ControlRef) => a.band === ref.band && a.control === ref.control;
     // Shift+click adds a control to the selection or takes it away, and drags nothing.
     if (mode === 'move' && event.shiftKey && selected) {
@@ -1265,9 +1300,13 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       }
       return;
     }
-    // A drag on one of several selected moves them all; anywhere else starts over.
-    const group = mode === 'move' && (selected && same(selected) || also.some(same)) ? [selected!, ...also].filter((a) => !same(a)) : [];
-    if (!group.length) setAlso([]);
+    // A drag on one of several selected moves them all; anywhere else starts
+    // over. The rest of the group stays selected beside the one pressed
+    // (2026-11-06): `also` kept the pressed control too, so a Delete then
+    // removed it twice, the second time taking the next control in its band.
+    const chosen = selected ? [selected, ...also] : also;
+    const group = mode === 'move' && chosen.some(same) ? chosen.filter((a) => !same(a)) : [];
+    setAlso(group);
     setSelected(ref);
     setEditingText(null);
     setEditingCell(null);
@@ -1294,6 +1333,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         const c = structureBands[r.band]?.controls[r.control];
         return c ? [{ ref: r, originX: c.fileX ?? c.x, originY: c.y, mirrored: c.fileX !== undefined, dpiScale: c.dpiScale ?? 1 }] : [];
       }),
+      written: false,
     };
   };
 
@@ -1327,7 +1367,12 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           if (next.applied) result = { ...next, reason: `moved ${g.others.length + 1} controls` };
         }
       }
-      if (result.applied) onEdit(result.xml, result.reason);
+      if (!result.applied) return;
+      // Every frame after the first continues the same step, so one drag is
+      // one Undo in the workspace's history (2026-11-06): each frame was a
+      // step of its own, and fifty of them pushed every earlier change out.
+      onEdit(result.xml, result.reason, g.written);
+      g.written = true;
     };
     const onUp = () => { gesture.current = null; };
     window.addEventListener('pointermove', onMove);
@@ -1364,10 +1409,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       // Delete takes the whole selection, last first so the indexes still hold.
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
-        const order = [...chosen].sort((a, b) => b.band - a.band || b.control - a.control);
-        applyAll(order, deleteControl, 'deleted');
-        setSelected(null);
-        setAlso([]);
+        deleteSelected();
         return;
       }
       // The right-click menu's keys (2026-11-05), Stitch's: Ctrl+D duplicates,
@@ -1975,14 +2017,24 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     <div className="rp-root">
       <style>{`
         /* Paper is paper in both themes: a printed report must not change with
-           the app's colour scheme, the same rule the mockup follows. */
-        .rp-root { --rp-ink: #111418; --rp-paper: #fff; }
+           the app's colour scheme, the same rule the mockup follows. On the
+           page as well as the pane (2026-11-06): the print, PDF and export
+           hosts are portaled to the body, outside .rp-root, where the two were
+           undefined, so in dark mode a label with no colour of its own was
+           written in the theme's near-white onto white paper. */
+        .rp-page, .rp-root { --rp-ink: #111418; --rp-paper: #fff; }
         .rp-bar {
           display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
           margin-bottom: 14px; font-size: 12px;
         }
         .rp-stat { font-family: var(--font-code, monospace); letter-spacing: .04em; text-transform: uppercase; opacity: .7; }
-        .rp-pages { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+        /* safe: a page zoomed wider than the bench overflows to the right only,
+           where it scrolls; centred, its left part went past the scroller's
+           start and could not be reached (2026-11-06, 600px of it at 300%). */
+        .rp-pages { display: flex; flex-direction: column; align-items: safe center; gap: 22px; }
+        /* The selection's toolbar, floating over the top of the report: height 0, so it moves nothing. */
+        .rp-float-tools { position: sticky; top: 8px; height: 0; z-index: 6; display: flex; justify-content: center; }
+        .rp-float-tools > .wb-ctx { align-self: flex-start; }
         .rp-page-wrap { display: flex; flex-direction: column; gap: 6px; }
         .rp-caption {
           font-family: var(--font-code, monospace); font-size: 10px; letter-spacing: .1em;
@@ -2003,8 +2055,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           font-family: var(--font-code, monospace);
         }
         .rp-band-rule { position: absolute; left: 0; right: 0; top: 0; border-top: 1px dashed rgba(59,90,140,.35); }
+        /* A grey edge, not amber: no orange or amber border in the workspace (the owner, 2026-11-06). */
         .rp-problems {
-          border-left: 3px solid var(--warn, #b45309); padding: 10px 14px; margin-bottom: 16px;
+          border-left: 3px solid var(--rule, #d7dee9); padding: 10px 14px; margin-bottom: 16px;
           font-size: 13px; line-height: 1.5;
         }
         .rp-problems p { margin: 0 0 6px; }
@@ -2014,7 +2067,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
            until hovered so the report reads as a report at rest. Blue, as a
            designer selects, never orange: the owner asked on 2026-11-06 for no
            orange border anywhere in the workspace. */
-        .rp-hit { position: absolute; cursor: move; outline: 1px solid transparent; }
+        /* touch-action: a drag on a touch screen moves the control rather than scrolling the page. */
+        .rp-hit { position: absolute; cursor: move; outline: 1px solid transparent; touch-action: none; }
         .rp-hit:hover { outline-color: rgba(47, 111, 228, .45); }
         .rp-hit.is-selected { outline: 1.5px solid #2f6fe4; }
         /* What the request picked in the log changed (2026-11-05), in Stitch's violet. */
@@ -2022,7 +2076,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         .rp-handle {
           position: absolute; right: -4px; bottom: -4px; width: 9px; height: 9px;
           background: #2f6fe4; border: 1px solid #fff; border-radius: 1px;
-          cursor: nwse-resize;
+          cursor: nwse-resize; touch-action: none;
         }
         /* Drill-down (s56): the toggle beside a group's label, in the margin as
            DevExpress's viewer draws it. Viewer chrome, so no export or print
@@ -2040,9 +2094,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           border: 1.5px solid #2f6fe4; background: #fff; color: #111418;
           padding: 0 2px; font-family: inherit;
         }
+        /* One line whatever it says, so selecting moves nothing below it (2026-11-06). */
         .rp-sel {
           font-family: var(--font-code, monospace); font-size: 11px;
           letter-spacing: .04em; opacity: .8;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 0;
         }
         .rp-sel b { font-weight: 600; }
         .rp-over { color: var(--warn, #b45309); }
@@ -2132,7 +2188,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             {selectedControl
               ? <>
                   <b>{selectedControl.type}</b>
-                  {selectedControl.name ? ` ${selectedControl.name}` : ''}
+                  {/* The floating toolbar names it; said here only without one (2026-11-06). */}
+                  {selectedControl.name && !onFormat ? ` ${selectedControl.name}` : ''}
                   {' · '}{Math.round(selectedControl.x)},{Math.round(selectedControl.y)}
                   {' · '}{Math.round(selectedControl.width)}×{Math.round(selectedControl.height)}
                   {/* Said rather than prevented. A control dragged past its
@@ -2155,8 +2212,16 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             onClick={() => {
               if (!repxContent) return;
               // Beside the selection, under it in its band; else at the top of the records.
+              // In the band's own numbers (2026-11-06): a panel's child is placed
+              // inside its panel, and a mirrored right-to-left one is drawn at the
+              // other side, so its drawn x and y put the label elsewhere.
               const bandIndex = selected?.band ?? Math.max(0, structureBands.findIndex((b) => b.kind === 'Detail'));
-              const below = selectedControl ? { x: selectedControl.x, y: selectedControl.y + selectedControl.height + 4 } : { x: 0, y: 0 };
+              const below = selectedControl
+                ? {
+                    x: (selectedControl.fileX ?? selectedControl.x) + selectedControl.offsetX,
+                    y: selectedControl.y + selectedControl.offsetY + selectedControl.height + 4,
+                  }
+                : { x: 0, y: 0 };
               const count = structureBands[bandIndex]?.controls.length ?? 0;
               const result = addLabel(repxContent, bandIndex, below.x, below.y);
               commit(result, repxContent);
@@ -2171,17 +2236,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             Add label
           </button>
         )}
-        {editable && selected && (
-          <button
-            className="wb-pill wb-pill--outline"
-            onClick={() => {
-              const order = [selected, ...also].sort((a, b) => b.band - a.band || b.control - a.control);
-              applyAll(order, deleteControl, 'deleted');
-              setSelected(null);
-              setAlso([]);
-            }}
-            title="Delete the selected controls (Delete key)"
-          >
+        {/* No Delete of its own while the floating toolbar has one (2026-11-06). */}
+        {editable && selected && !onFormat && (
+          <button className="wb-pill wb-pill--outline" onClick={deleteSelected} title="Delete the selected controls (Delete key)">
             Delete
           </button>
         )}
@@ -2330,7 +2387,29 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         </div>
       )}
 
-      <div ref={viewportRef} style={{ width: '100%' }} onPointerDown={() => setSelected(null)}>
+      {/* The selection's toolbar floats over the top of the report (2026-11-06,
+          the owner's choice): it took the pane switcher's place in the bench's
+          bar, which hid the panes while something was selected and wrapped the
+          bar, moving the page under the pointer. Height 0, so it pushes nothing. */}
+      {editable && onFormat && selected && (
+        <div className="rp-float-tools">
+          <SelectionToolbar
+            names={[selected, ...also].map((r) => {
+              const c = structureBands[r.band]?.controls[r.control];
+              return c?.name || c?.type || 'control';
+            })}
+            onFormat={onFormat}
+            onEditText={onEditText && !also.length && selectedControl?.name ? () => onEditText(selectedControl.name!) : undefined}
+            onCopy={selectionNames.length ? () => copyNames(selectionNames) : undefined}
+            onDelete={deleteSelected}
+            onClear={() => { setSelected(null); setAlso([]); }}
+          />
+        </div>
+      )}
+
+      {/* The paper clears the whole selection (2026-11-06): it cleared the
+          first control only, and the rest stayed outlined. */}
+      <div ref={viewportRef} style={{ width: '100%' }} onPointerDown={() => { setSelected(null); setAlso([]); }}>
         {renderPages(scale, editable, true)}
       </div>
 
@@ -2356,23 +2435,10 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             }
             items.push({ label: 'Duplicate', keys: 'Ctrl+D', divide: true, run: () => duplicateSelection(chosen) });
             if (selectionNames.length) {
-              items.push({
-                label: selectionNames.length > 1 ? 'Copy the names' : 'Copy the name',
-                run: () => void navigator.clipboard?.writeText(selectionNames.join(', ')).then(() => onNotice?.(selectionNames.length > 1 ? 'Copied the names' : `Copied ${selectionNames[0]}`)).catch(() => undefined),
-              });
+              items.push({ label: selectionNames.length > 1 ? 'Copy the names' : 'Copy the name', run: () => copyNames(selectionNames) });
             }
             if (onFocusSelection) items.push({ label: 'Focus', keys: 'F', run: onFocusSelection });
-            items.push({
-              label: 'Delete',
-              keys: 'Del',
-              danger: true,
-              divide: true,
-              run: () => {
-                applyAll([...chosen].sort((a, b) => b.band - a.band || b.control - a.control), deleteControl, 'deleted');
-                setSelected(null);
-                setAlso([]);
-              },
-            });
+            items.push({ label: 'Delete', keys: 'Del', danger: true, divide: true, run: deleteSelected });
             return items;
           })()}
         />

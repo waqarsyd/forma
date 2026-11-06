@@ -176,7 +176,8 @@ export function updateControl(
  * of problem after generation; this is the interactive equivalent.
  */
 export function overflowsBand(control: PreviewControl, bandHeight: number): boolean {
-  return control.y + control.height > bandHeight + 0.5;
+  // A panel's child is placed inside its panel; the band holds the panel's offset too (2026-11-06).
+  return control.y + (control.offsetY ?? 0) + control.height > bandHeight + 0.5;
 }
 
 /*
@@ -322,7 +323,14 @@ export function duplicateControl(xml: string, ref: ControlRef): EditResult {
   const parent = parentOf(xml, el.start);
   if (!parent || parent.name !== 'Controls') return decline(xml, `${control.name || control.type} is not in a band's controls`);
   let copy = xml.slice(el.start, el.end);
-  if (/"#Ref-\d+"/.test(copy)) return decline(xml, `${control.name || control.type} refers to its own parts; copy it in the designer`);
+  // Declined only when it names one of its own parts by Ref, which the fresh
+  // Refs below would leave pointing at the original's. A link out of it, as
+  // every formatting rule is (`Value="#Ref-N"`), stays as it is: the copy
+  // follows the same rule. Until 2026-11-06 any link declined it.
+  const own = new Set([...copy.matchAll(/\sRef="(\d+)"/g)].map((m) => m[1]));
+  if ([...copy.matchAll(/"#Ref-(\d+)"/g)].some((m) => own.has(m[1]))) {
+    return decline(xml, `${control.name || control.type} refers to its own parts; copy it in the designer`);
+  }
 
   let nextRef = Math.max(0, ...[...xml.matchAll(/\sRef="(\d+)"/g)].map((r) => Number(r[1]))) + 1;
   copy = copy.replace(/(\sRef=")\d+(")/g, (_, a, b) => `${a}${nextRef++}${b}`);

@@ -287,6 +287,14 @@ describe('duplicating a control', () => {
     expect(result.applied).toBe(false);
     expect(result.xml).toBe(chart);
   });
+
+  // A formatting rule is a link out of the control (2026-11-06, the workspace audit).
+  it('copies a control that links to something outside it, such as its formatting rule, and keeps the link', () => {
+    const ruled = report.replace('Name="line" Text="Widget"', 'Name="line" Text="Widget" FormattingRules="#Ref-99"');
+    const result = duplicateControl(ruled, LINE);
+    expect(result.applied).toBe(true);
+    expect(result.xml.match(/FormattingRules="#Ref-99"/g)).toHaveLength(2);
+  });
 });
 
 describe('adding a label', () => {
