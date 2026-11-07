@@ -153,3 +153,21 @@ export const PROVIDER_NAMES: Record<AiProvider | EffectiveProvider, string> = {
   local: 'Local AI',
   openrouter: 'OpenRouter',
 };
+
+/**
+ * Which model answers when it is not Gemini's (2026-11-07, agent audit item
+ * 74), for the box, where Gemini has its model picker: the box said nothing
+ * with Local AI or OpenRouter, so whether the answer came from the model the
+ * person chose was a question for Settings. `label` is short enough for the
+ * box ("llama-3.3-70b-instruct" for "meta-llama/llama-3.3-70b-instruct:free"),
+ * the provider's name when no model is set. Null for Gemini.
+ */
+export function answeringModel(
+  config: Pick<ReportConfig, 'provider' | 'localModel' | 'openRouterModel'>,
+): { provider: string; model: string; label: string } | null {
+  const which = effectiveProvider(config);
+  if (which === 'gemini') return null;
+  const model = ((which === 'local' ? config.localModel : config.openRouterModel) ?? '').trim();
+  const label = model.replace(/^[^/]+\//, '').replace(/:free$/, '');
+  return { provider: PROVIDER_NAMES[which], model, label: label || PROVIDER_NAMES[which] };
+}

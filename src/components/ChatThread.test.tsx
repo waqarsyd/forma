@@ -96,9 +96,11 @@ describe('memoised rows still call the current callbacks', () => {
 describe('the reply being written', () => {
   // Three dots and no words before the first token (2026-11-04): the chat shows
   // that Forma is working, not what it is doing behind the scenes.
-  it('shows working dots before the first token arrives, named for a screen reader', () => {
+  it('shows working dots before the first token arrives, with the task in words', () => {
     draw({ isChatting: true });
-    expect(screen.getByRole('status', { name: 'Forma is working' }).querySelectorAll('.wb-dots i')).toHaveLength(3);
+    const working = document.querySelector('.wb-working')!;
+    expect(working.querySelectorAll('.wb-dots i')).toHaveLength(3);
+    expect(working.textContent).toBe('Working on it…');
   });
 
   it('shows the text streamed so far once there is some', () => {
@@ -107,9 +109,13 @@ describe('the reply being written', () => {
     expect(document.querySelector('.wb-dots')).toBeNull();
   });
 
-  it('announces itself politely', () => {
-    draw({ isChatting: true });
-    expect(document.querySelector('[aria-live="polite"]')).toBeTruthy();
+  // Agent audit item 7: a region mounted with its content is not announced, and a
+  // streamed reply in one is read a few words at a time; the card's region speaks.
+  it('is not a live region of its own, while it streams or while it waits', () => {
+    const { rerender } = draw({ isChatting: true });
+    expect(document.querySelector('[aria-live]')).toBeNull();
+    rerender(<ChatThread messages={[]} isChatting isAnalyzing={false} streamingReply="Forma supports PNG" />);
+    expect(document.querySelector('[aria-live]')).toBeNull();
   });
 
   /*
@@ -314,6 +320,17 @@ describe('a report described in the chat', () => {
     cleanup();
     draw({ messages: [msg({ id: 'q', role: 'assistant', text: 'One question.', clarify: { answered: false, questions } })], onAnswer: vi.fn(), isAnalyzing: true });
     expect((screen.getByText('Build the report') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // Agent audit item 59: Next swapped the field for another and focus fell to the page.
+  it('moves the keyboard to the next question, its suggestion selected, and to Build the report at the summary, but not on first draw', () => {
+    draw({ messages: [three], onAnswer: vi.fn() });
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    const total = screen.getByLabelText('Total of what?') as HTMLInputElement;
+    expect(document.activeElement).toBe(total);
+    fireEvent.click(screen.getByRole('button', { name: 'Skip the rest' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Build the report' }));
   });
 });
 

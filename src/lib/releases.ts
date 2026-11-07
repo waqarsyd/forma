@@ -81,6 +81,12 @@ export const RELEASES: Release[] = [
     summary:
       'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'improved', area: 'workspace', text: 'On a phone the message box stays at the foot of the screen and the reply card is a sheet over the report, so the report keeps its room.' },
+      { kind: 'improved', area: 'workspace', text: 'A screen reader now hears when Forma starts, and what came of a request when it ends: a reply, a report ready, a question or a failure.' },
+      { kind: 'improved', area: 'workspace', text: 'The keyboard stays where you are: after Stop, queueing, an edit or a withdrawal it is back in the box, and Forma’s questions move it from one to the next.' },
+      { kind: 'fixed', area: 'workspace', text: 'Speaking a message stops when you send or start typing, so nothing heard afterwards refills the box, and the mic says your browser sends the sound to its own speech service.' },
+      { kind: 'improved', area: 'workspace', text: 'A tab in the background says when a question is waiting for you or a request failed, not only when something is ready.' },
+      { kind: 'improved', area: 'workspace', text: 'With Local AI or OpenRouter the box shows which model answers, and opens Settings to change it.' },
       { kind: 'improved', area: 'workspace', text: 'Each project keeps its own unsent message, as a chat app keeps a draft per chat, and messages waiting in the queue survive a reload.' },
       { kind: 'fixed', area: 'workspace', text: 'Words queued while a file is attached now take the file with them, and the queue says how many go.' },
       { kind: 'improved', area: 'workspace', text: 'When it was sent, the versions, Edit and Withdraw sit under your message, no longer hidden behind its arrow.' },

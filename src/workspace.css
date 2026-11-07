@@ -619,6 +619,8 @@
    hidden the standard way: clipped to nothing, never `display: none`, which
    would hide it from the reader too. */
 .wb-note { display: block; }
+/* The card's status region (2026-11-07, agent audit item 7), hidden the same way. */
+.wb-reply-said,
 .wb-note .wb-who {
   position: absolute;
   width: 1px;
@@ -1900,12 +1902,26 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   .wb-float-corner .wb-toast { right: calc(100% + 10px); bottom: 0; }
   .wb-bench-body { padding-bottom: 224px; }
 }
-@media (max-width: 880px) { .wb-float-corner { justify-content: flex-end; position: relative; } }
-/* Stacked, the pieces follow the report in the page's own flow. */
+@media (max-width: 880px) { .wb-float-corner { justify-content: flex-end; } }
+/* On a phone (2026-11-07, agent audit item 34), as the chat apps and Stitch
+   are there: the box stays at the foot of the screen, the report scrolls in
+   the space above it, and the card is a sheet over the report's lower part,
+   above the log, folded with its mark. Until then every piece was stacked
+   under the report in the page's flow, so the report's pane shrank to what
+   the card, the log, the box and the corner left of the screen, often a
+   sliver. The heights come from the box's own (`--composer-h`, published on
+   the bench): the log sits on the box, the card on the log. The open log
+   takes the card's place, as a phone has no room for both. */
 @media (max-width: 880px) {
-  .wb-float { position: static; transform: none; width: auto; max-height: none; margin: 8px 12px 0; }
-  .wb-float-card { max-height: 50vh; }
-  .wb-float-bar { margin-bottom: 12px; }
-  .wb-float-corner .wb-toast { right: 0; bottom: calc(100% + 10px); }
+  .wb-float { position: static; transform: none; width: auto; max-height: none; margin: 0; }
+  .wb-float-bar { padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--rule); background: var(--surface); }
+  .wb-float.wb-float-log { position: absolute; left: 8px; right: 8px; bottom: calc(var(--composer-h, 110px) + 26px); width: auto; }
+  .wb-float.wb-float-card { position: absolute; left: 8px; right: 8px; top: auto; bottom: calc(var(--composer-h, 110px) + 94px); width: auto; max-height: min(55%, 460px); }
+  .wb-bench[data-log='open'] .wb-float-card { display: none; }
+  .wb-float.wb-float-corner { position: absolute; top: 8px; right: 8px; bottom: auto; }
+  .wb-float-corner .wb-toast { right: 0; top: calc(100% + 10px); bottom: auto; }
+  /* What the sheet covers is seen by folding it with its mark, as Stitch's
+     sheet folds; a padding to scroll clear of it would count toward the
+     pane's least height and push the box off the screen. */
   .wb-bench-body, .wb-bench[data-card='open'] .wb-bench-body { padding: 20px 12px 30px; }
 }

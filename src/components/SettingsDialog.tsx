@@ -55,6 +55,8 @@ export interface SettingsDialogProps {
   /** What the last request worked out, and why (lib/autoConfig.ts); null before the first. */
   workedOut: string[] | null;
   onClose: () => void;
+  /** The section to open at: AI, from the box's model label (agent audit item 74); otherwise General, or the key when there is none. */
+  start?: SettingsSection;
 }
 
 /** A line under a setting: what happened, or what to know. */
@@ -67,8 +69,8 @@ function Note({ notice }: { notice: Notice }) {
   );
 }
 
-export default function SettingsDialog({ config, onChange, user, workedOut, onClose }: SettingsDialogProps) {
-  const [section, setSection] = useState<SettingsSection>(() => (config.customApiKey?.trim() ? 'general' : 'key'));
+export default function SettingsDialog({ config, onChange, user, workedOut, onClose, start }: SettingsDialogProps) {
+  const [section, setSection] = useState<SettingsSection>(() => start ?? (config.customApiKey?.trim() ? 'general' : 'key'));
 
   /* ---- The Gemini key ---- */
   const key = config.customApiKey || '';

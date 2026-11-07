@@ -11,6 +11,12 @@ describe('readyTitle', () => {
     expect(readyTitle('Reply ready')).toBe('✓ Reply ready — Forma');
     expect(readyTitle('Report ready').endsWith(titleForRoute('/workspace').slice('Workspace'.length))).toBe(true);
   });
+
+  // Agent audit item 63: a tab waiting on the person, or one whose request failed, says so too.
+  it('says a question is waiting, or a request failed, as plainly', () => {
+    expect(readyTitle('Question waiting')).toBe('? A question for you — Forma');
+    expect(readyTitle('Request failed')).toBe('! Request failed — Forma');
+  });
 });
 
 /**

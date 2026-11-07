@@ -16,6 +16,7 @@ import {
   messageMatches,
   noteCountLabel,
   projectMatches,
+  requestAnnouncement,
   requestMatches,
   requestState,
   requestTitle,
@@ -376,6 +377,27 @@ describe('conversationMarkdown', () => {
     expect(md).toContain('> Group by what? Region\n> Total of what? Amount');
     expect(md).toContain('That needs a redesign.\n\n_Not redesigned._');
     expect(md).toContain('1. Which paper?\n\n_Not answered._');
+  });
+});
+
+/* What a screen reader hears when a request settles (2026-11-07, agent audit item 7). */
+describe('requestAnnouncement', () => {
+  const ask = msg({ id: 'u', text: 'an invoice' });
+  it('says a failure in its own words, and the questions or the redesign Forma is waiting on', () => {
+    expect(requestAnnouncement({ id: 'u', ask: { ...ask, error: 'Google was busy.' }, replies: [] })).toBe('The request failed. Google was busy.');
+    const questions = [{ id: 'a', question: 'Group by what?' }, { id: 'b', question: 'Which paper?' }];
+    expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'Two questions.', clarify: { answered: false, questions } })] })).toBe('Forma has 2 questions for you.');
+    expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'One question.', clarify: { answered: false, questions: questions.slice(0, 1) } })] })).toBe('Forma has a question for you.');
+    expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'That needs a redesign.', confirm: { prompt: 'x' } })] })).toBe('Forma asks whether to redesign the report.');
+  });
+
+  it("says a report is ready, or the start of a reply, its Markdown taken out and long words cut", () => {
+    expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'Built **it**.', result: {} })] })).toBe('The report is ready. Built it.');
+    expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: '## Done\n\n- `Total` is bold\n\n```xml\n<x/>\n```' })] })).toBe('Forma replied: Done - Total is bold');
+    const long = requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'word '.repeat(60) })] });
+    expect(long.length).toBeLessThanOrEqual('Forma replied: '.length + 158);
+    expect(long.endsWith('word…')).toBe(true);
+    expect(requestAnnouncement({ id: 'u', ask, replies: [] })).toBe('');
   });
 });
 

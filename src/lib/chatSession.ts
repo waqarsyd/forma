@@ -478,6 +478,35 @@ export function requestState(request: ChatRequest): 'failed' | 'waiting' | 'done
   return 'done';
 }
 
+/**
+ * What a screen reader hears when a request settles (2026-11-07, agent audit
+ * item 7), said once in the card's status region: a failure in its own words,
+ * the questions or the redesign Forma is waiting on, a report built, or the
+ * start of a reply, its Markdown taken out. Finished replies were never
+ * announced: the only live regions were mounted with their contents, which
+ * screen readers skip, and went the moment the reply landed.
+ */
+export function requestAnnouncement(request: ChatRequest): string {
+  const all = [request.ask, ...request.replies].filter(Boolean) as ChatMessage[];
+  const failed = all.find((m) => m.error)?.error;
+  if (failed) return `The request failed. ${failed}`;
+  const reply = request.replies[request.replies.length - 1];
+  if (!reply) return '';
+  if (reply.clarify && !reply.clarify.answered) {
+    const n = reply.clarify.questions.length;
+    return n === 1 ? 'Forma has a question for you.' : `Forma has ${n} questions for you.`;
+  }
+  if (reply.confirm && !reply.confirm.answered) return 'Forma asks whether to redesign the report.';
+  const words = reply.text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[*_`#>|[\]]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const said = words.length > 160 ? `${words.slice(0, 157).replace(/\s+\S*$/, '')}…` : words;
+  if (reply.result) return said ? `The report is ready. ${said}` : 'The report is ready.';
+  return said ? `Forma replied: ${said}` : 'Forma replied.';
+}
+
 /** Whether a request holds `query` in anything it says, for the log's search. */
 export function requestMatches(request: ChatRequest, query: string): boolean {
   return [request.ask, ...request.replies].some((m) => !!m && messageMatches(m, query));

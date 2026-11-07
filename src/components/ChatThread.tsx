@@ -359,6 +359,27 @@ function ClarifyForm({
   const last = step === questions.length - 1;
   const single = questions.length === 1;
   const q = questions[Math.min(step, questions.length - 1)];
+  /*
+   * The keyboard's focus follows the step (2026-11-07, agent audit item 59):
+   * Next, Skip the rest and Change swapped the field under it for another,
+   * and focus fell to the top of the page. The next question's field takes
+   * it, its words selected so typing replaces the suggestion; the summary's
+   * Build the report takes it there. Not on the first draw, which would
+   * pull focus from the box to a question nobody has looked at yet.
+   */
+  const fieldRef = useRef<HTMLInputElement>(null);
+  const goRef = useRef<HTMLButtonElement>(null);
+  // The step last focused for, so a remount (React's strict mode runs effects twice) is not a move.
+  const focusedStep = useRef(step);
+  useEffect(() => {
+    if (focusedStep.current === step) return;
+    focusedStep.current = step;
+    if (reviewing) goRef.current?.focus();
+    else {
+      fieldRef.current?.focus();
+      fieldRef.current?.select();
+    }
+  }, [step, reviewing]);
   return (
     <form
       className="wb-clarify"
@@ -389,6 +410,7 @@ function ClarifyForm({
         <label key={q.id} className="wb-clarify-q">
           <span>{q.question}</span>
           <input
+            ref={fieldRef}
             className="wb-ctl"
             value={answers[q.id] ?? ''}
             onChange={(e) => setAnswers((all) => ({ ...all, [q.id]: e.target.value }))}
@@ -402,7 +424,7 @@ function ClarifyForm({
             Skip the rest
           </button>
         )}
-        <button type="submit" className="wb-pill wb-pill--go" disabled={disabled}>
+        <button ref={goRef} type="submit" className="wb-pill wb-pill--go" disabled={disabled}>
           {reviewing || single ? 'Build the report' : last ? 'Review' : 'Next'}
         </button>
       </div>
@@ -651,18 +673,22 @@ export default function ChatThread<R>({
           real build request runs the chat turn *and then* falls through to
           generation, so both flags are briefly true; without this the thinking
           placeholder sits above the progress card claiming a second job. */}
+      {/* No live region of its own since 2026-11-07 (agent audit item 7):
+          one mounted with its content is not announced, and a streamed reply
+          in one is read a few words at a time. The card's status region says
+          when Forma starts and what it answered (RequestCard.tsx). */}
       {showWorking && isChatting && !isAnalyzing && (
-        <article className="wb-note" aria-live="polite">
+        <article className="wb-note">
           <div>
             <div className="wb-who">Forma</div>
             {/* The answer as it streams; until the first word, the dots. */}
             {streamingReply ? (
               <MessageText text={streamingReply} query="" markdown />
             ) : (
-              <p role="status" aria-label="Forma is working">
+              <p className="wb-working">
                 <WorkingDots />
                 {/* The task, never its steps (2026-11-06), as Stitch names its own. */}
-                <span className="wb-task" aria-hidden="true">Working on it…</span>
+                <span className="wb-task">Working on it…</span>
               </p>
             )}
           </div>

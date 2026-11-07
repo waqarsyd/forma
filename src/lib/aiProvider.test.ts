@@ -4,7 +4,7 @@
  * localStorage and sessionStorage; this must stay line 1.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { aiReady, DEFAULT_LOCAL_URL, effectiveProvider, isVisionOnly, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './aiProvider';
+import { aiReady, answeringModel, DEFAULT_LOCAL_URL, effectiveProvider, isVisionOnly, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './aiProvider';
 import type { ReportConfig } from '../services/geminiService';
 
 const base: ReportConfig = { version: '20.1', unit: 'HundredthsOfAnInch', pageSize: 'A4' };
@@ -76,5 +76,15 @@ describe('the kept settings', () => {
       localStorage.setItem('forma.aiProvider', JSON.stringify({ provider }));
       expect(readProviderSettings().provider).toBe('auto');
     }
+  });
+});
+
+/* Which model answers when it is not Gemini's, for the box (2026-11-07, agent audit item 74). */
+describe('answeringModel', () => {
+  it('names Local AI and OpenRouter by their model, short, and Gemini by nothing', () => {
+    expect(answeringModel({ provider: 'auto' })).toBeNull();
+    expect(answeringModel({ provider: 'local', localModel: 'llama3.1:8b' })).toEqual({ provider: 'Local AI', model: 'llama3.1:8b', label: 'llama3.1:8b' });
+    expect(answeringModel({ provider: 'openrouter', openRouterModel: 'meta-llama/llama-3.3-70b-instruct:free' })).toEqual({ provider: 'OpenRouter', model: 'meta-llama/llama-3.3-70b-instruct:free', label: 'llama-3.3-70b-instruct' });
+    expect(answeringModel({ provider: 'local', localModel: '  ' })).toEqual({ provider: 'Local AI', model: '', label: 'Local AI' });
   });
 });

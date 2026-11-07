@@ -16,10 +16,10 @@
  * Copy, Edit, Withdraw, versions and pictures behind the arrow; the thread's
  * own copy of those went in the workspace audit (2026-11-06).
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ChatThread, { CopyButton, EditForm, Marked, type AttachmentView, type ChatThreadProps } from './ChatThread';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
-import { messageTime, requestTitle, type ChatMessage, type ChatRequest } from '../lib/chatSession';
+import { messageTime, requestAnnouncement, requestTitle, type ChatMessage, type ChatRequest } from '../lib/chatSession';
 import { formatSessionStamp } from '../lib/datetime';
 import { IconChevronDown, IconPencil, IconTrash } from './landing/icons';
 
@@ -46,6 +46,38 @@ export interface RequestCardProps<R> extends Omit<ChatThreadProps<R>, 'messages'
   onRetry: (id: string) => void;
   /** A picture sent with the request, opened in the viewer. */
   onOpenAttachment: (view: AttachmentView) => void;
+  /**
+   * A turn under way from its first step to its last (App's `turnBusy`), so
+   * what is announced waits for its end rather than for a pause between its
+   * steps, as between a picture read and the chat asked.
+   */
+  busy?: boolean;
+}
+
+/**
+ * The card's one status region (2026-11-07, agent audit item 7): mounted
+ * empty and kept, so a screen reader hears "Forma is working on it." when a
+ * request starts and, when it settles, what came of it (`requestAnnouncement`).
+ * Each announcement is a new child, so the same words said twice are said.
+ */
+function useAnnouncement<R>(request: ChatRequest<R, PreviewMeta> | null, latest: boolean, working: boolean) {
+  const [said, setSaid] = useState({ text: '', n: 0 });
+  const wasWorking = useRef(false);
+  useEffect(() => {
+    if (!latest || !request) return;
+    if (working) {
+      if (!wasWorking.current) {
+        wasWorking.current = true;
+        setSaid((s) => ({ text: 'Forma is working on it.', n: s.n + 1 }));
+      }
+      return;
+    }
+    if (!wasWorking.current) return;
+    wasWorking.current = false;
+    const text = requestAnnouncement(request as ChatRequest);
+    if (text) setSaid((s) => ({ text, n: s.n + 1 }));
+  }, [request, latest, working]);
+  return said;
 }
 
 /** What the person asked, pinned at the top of the card. */
@@ -213,14 +245,19 @@ export default function RequestCard<R>({
   onShowVersion,
   onOpenAttachment,
   onRetry,
+  busy = false,
   children,
   ...thread
 }: RequestCardProps<R>) {
+  const said = useAnnouncement(request, latest, isChatting || isAnalyzing || busy);
   return (
     <section
       className={`wb-reply${collapsed ? ' wb-is-collapsed' : ''}${latest && (isChatting || isAnalyzing) ? ' wb-is-working' : ''}`}
       aria-label="Forma's reply"
     >
+      <div className="wb-reply-said" role="status" aria-live="polite">
+        {said.text ? <span key={said.n}>{said.text}</span> : null}
+      </div>
       {/* Stitch's two-dot mark: it folds the card to itself and opens it again. */}
       <button
         type="button"

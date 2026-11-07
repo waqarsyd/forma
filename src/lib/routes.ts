@@ -77,12 +77,20 @@ export function titleForRoute(path: string): string {
   return ROUTE_TITLES[path] ?? (sharedReportId(path) ? SHARED_REPORT_TITLE : NOT_FOUND_TITLE);
 }
 
+/** What finished unseen: a report, a reply, a question for the person, or a failure. */
+export type ReadyWhat = 'Report ready' | 'Reply ready' | 'Question waiting' | 'Request failed';
+
 /**
  * The tab's title while something finished in it unseen (2026-11-05): a
  * report built or a reply written while the person was in another tab, so
  * the tab strip says so. The route's title comes back when they return.
+ * Since 2026-11-07 (agent audit item 63) a question waiting and a request
+ * that failed say so too: the title changed for success only, so a tab
+ * waiting on the person looked as idle as one with nothing to do.
  */
-export function readyTitle(what: 'Report ready' | 'Reply ready'): string {
+export function readyTitle(what: ReadyWhat): string {
+  if (what === 'Question waiting') return '? A question for you — Forma';
+  if (what === 'Request failed') return '! Request failed — Forma';
   return `✓ ${what} — Forma`;
 }
 

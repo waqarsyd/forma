@@ -424,6 +424,80 @@ describe('a clean composer', () => {
     vi.unstubAllGlobals();
   });
 
+  // Agent audit items 35 and 77: listening ends on send and on typing, says where the sound goes, and works while Forma does.
+  it('stops listening when the message goes or the person types, drops what it hears after, and says where the sound goes', () => {
+    const made: { stop: ReturnType<typeof vi.fn>; onresult: ((e: unknown) => void) | null }[] = [];
+    class FakeRecognition {
+      lang = '';
+      interimResults = false;
+      continuous = true;
+      onresult: ((e: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      start = vi.fn();
+      stop = vi.fn();
+      constructor() {
+        made.push(this);
+      }
+    }
+    vi.stubGlobal('webkitSpeechRecognition', FakeRecognition);
+    const onPromptChange = vi.fn();
+    const onSend = vi.fn();
+    const { unmount } = draw({ prompt: 'A sales report', onPromptChange, onSend });
+    expect(screen.getByLabelText('Speak your message').getAttribute('title')).toMatch(/sends the sound to its own speech service/);
+    fireEvent.click(screen.getByLabelText('Speak your message'));
+    expect(screen.getByRole('status').textContent).toMatch(/Your browser sends what you say to its own speech service/);
+    expect(field().getAttribute('aria-describedby')).toBeTruthy();
+    fireEvent.click(send());
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(made[0].stop).toHaveBeenCalled();
+    onPromptChange.mockClear();
+    made[0].onresult?.({ results: [[{ transcript: 'heard late' }]] });
+    expect(onPromptChange).not.toHaveBeenCalled();
+    // Typing ends it too.
+    fireEvent.click(screen.getByLabelText('Speak your message'));
+    fireEvent.change(field(), { target: { value: 'typed' } });
+    expect(made[1].stop).toHaveBeenCalled();
+    expect(screen.getByLabelText('Speak your message').getAttribute('aria-pressed')).toBe('false');
+    unmount();
+    // Not held while Forma works: spoken words queue as typed ones do.
+    draw({ isChatting: true, onStop: vi.fn(), onQueue: vi.fn() });
+    expect((screen.getByLabelText('Speak your message') as HTMLButtonElement).disabled).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  // Agent audit item 59: Stop and Queue leave the keyboard in the box, not on the page.
+  it('keeps the caret in the box after Stop and after queueing', () => {
+    const onStop = vi.fn();
+    const onQueue = vi.fn();
+    draw({ isAnalyzing: true, onStop, onQueue, prompt: 'and make it bold' });
+    fireEvent.click(screen.getByRole('button', { name: 'Queue' }));
+    expect(onQueue).toHaveBeenCalledWith('and make it bold');
+    expect(document.activeElement).toBe(field());
+    (screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement).focus();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(field());
+  });
+
+  // Agent audit item 73: a notice about a file is announced, and read with the box.
+  it('announces a notice about a file and ties it to the box', () => {
+    draw({ uploadNotices: ['huge.pdf is over 20 MB and was not attached'] });
+    const notice = screen.getByRole('status');
+    expect(notice.textContent).toContain('huge.pdf is over 20 MB');
+    expect(field().getAttribute('aria-describedby')).toBe(notice.id);
+  });
+
+  // Agent audit item 74: Local AI and OpenRouter say which model answers, where Gemini has its picker.
+  it("names the model another AI answers with, and opens Settings to change it", () => {
+    const onChooseAi = vi.fn();
+    draw({ models: null, answering: { provider: 'OpenRouter', model: 'meta-llama/llama-3.3-70b-instruct:free', label: 'llama-3.3-70b-instruct' }, onChooseAi });
+    const label = screen.getByRole('button', { name: /OpenRouter, meta-llama\/llama-3\.3-70b-instruct:free/ });
+    expect(label.textContent).toBe('llama-3.3-70b-instruct');
+    fireEvent.click(label);
+    expect(onChooseAi).toHaveBeenCalledTimes(1);
+  });
+
   // What is selected on the Preview is what "this" means (2026-11-05).
   it('shows the controls selected on the Preview above the box, and nothing with none', () => {
     const { rerender } = draw({ selection: ['title'] });

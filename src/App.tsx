@@ -80,7 +80,8 @@ import type {
   DraftRequest,
 } from './services/geminiService';
 import { loadGemini, isMissingApiKey } from './lib/geminiClient';
-import { effectiveProvider, isVisionOnly, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
+import { answeringModel, effectiveProvider, isVisionOnly, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
+import type { SettingsSection } from './components/SettingsDialog';
 import type { DraftSource, TeamMember } from './lib/formaTeam';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
 import { clearCachedModel, readCachedModelSet } from './lib/modelCache';
@@ -184,7 +185,7 @@ const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 import type { LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl, scrollToHash } from './lib/router';
-import { readyTitle, sharedReportId, titleForRoute, viewForRoute } from './lib/routes';
+import { readyTitle, sharedReportId, titleForRoute, viewForRoute, type ReadyWhat } from './lib/routes';
 import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, type WorkspaceShortcut } from './lib/shortcuts';
 import { hasOpenLayer, topLayer } from './lib/layers';
 import { initialsOf } from './lib/initials';
@@ -251,6 +252,7 @@ import {
   noteCountLabel,
   projectMatches,
   requestsOf,
+  requestState,
   truncateFrom,
   withdrawTurn,
   type ChatMessage as ChatSessionMessage,
@@ -1013,6 +1015,17 @@ export default function App() {
    * "Edit text" and a starting point replaced an unsent draft.
    */
   const addToBox = (text: string) => setPrompt((typed) => (typed.trim() ? `${typed.replace(/\s+$/, '')}\n${text}` : text));
+  /**
+   * The keyboard's focus to the end of the box, after the next paint: where
+   * it goes when what held it goes away, an edit sent or a message
+   * withdrawn (agent audit item 59), and after words put in the box.
+   */
+  const focusBox = () =>
+    requestAnimationFrame(() => {
+      const box = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]');
+      box?.focus();
+      box?.setSelectionRange(box.value.length, box.value.length);
+    });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // Through the validating reader. A bare JSON.parse here threw during the very
   // first render on a corrupted entry, taking the whole application to the error
@@ -1617,6 +1630,8 @@ export default function App() {
 
   const [error, setError] = useState<string | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  /** The Settings section to open at, from the box's model label (agent audit item 74). */
+  const [configStart, setConfigStart] = useState<SettingsSection | undefined>(undefined);
   /**
    * The questions a typed description is waiting on (Prompt-to-Report in the
    * chat, 2026-11-01): the request they belong to and the message that asks
@@ -1952,16 +1967,44 @@ export default function App() {
    * back, when the route's own title returns; the route effect stays the
    * title's writer the rest of the time. Nothing happens in a visible tab.
    */
-  const announceReady = useCallback((what: 'Report ready' | 'Reply ready') => {
+  const titleBack = useRef<(() => void) | null>(null);
+  const announceReady = useCallback((what: ReadyWhat) => {
     if (typeof document === 'undefined' || !document.hidden) return;
     document.title = readyTitle(what);
+    if (titleBack.current) return;
     const back = () => {
       if (document.hidden) return;
       document.title = titleForRoute(currentPath());
       document.removeEventListener('visibilitychange', back);
+      titleBack.current = null;
     };
+    titleBack.current = back;
     document.addEventListener('visibilitychange', back);
   }, []);
+  /*
+   * How a turn ended, read in one place when it ends (2026-11-07, agent audit
+   * item 63): a question waiting or a request that failed changes the title
+   * too, and a report or an edit reads as "Report ready", a reply as "Reply
+   * ready". Five success paths called `announceReady` each, and none of the
+   * others did.
+   */
+  const wasWorking = useRef(false);
+  useEffect(() => {
+    if (isAnalyzing || isChatting || turnBusy) {
+      wasWorking.current = true;
+      return;
+    }
+    if (!wasWorking.current) return;
+    wasWorking.current = false;
+    const last = requests[requests.length - 1];
+    if (!last) return;
+    const state = requestState(last);
+    announceReady(
+      state === 'failed' ? 'Request failed'
+        : state === 'waiting' ? 'Question waiting'
+          : last.replies.some((r) => r.result || chatChanges[r.id]) ? 'Report ready' : 'Reply ready',
+    );
+  }, [isAnalyzing, isChatting, turnBusy, requests, chatChanges, announceReady]);
 
   useEffect(() => {
     // sessionStorage, not localStorage: the key is a live credential, and a
@@ -2636,15 +2679,16 @@ export default function App() {
     [sentPages, ocrRuns],
   );
 
-  /** What the reply says while pages are read. */
-  const readingNote = (page: number, of: number, progress: number) =>
-    `Reading the text on your page${of > 1 ? `s (${page + 1} of ${of})` : ''}… ${Math.round(progress * 100)}%`;
-
   /**
    * Read the staged pages behind the scenes, after the message is in the
-   * thread: the reply placeholder says how far it has got, and the composer
-   * is held as for any reply. The pages are kept for the review a reply built
-   * from their text offers.
+   * thread: the reply shows the working dots, as any reply does, and the
+   * composer is held as for any reply. The pages are kept for the review a
+   * reply built from their text offers.
+   *
+   * Dots only since 2026-11-07 (agent audit item 60): the placeholder said
+   * "Reading the text on your pages (1 of 3)… 45%", the one place a step and
+   * a percentage still reached the chat after the owner asked for every step
+   * to stay behind the scenes (2026-11-04).
    */
   const readSentPages = async (pages: readonly { src: string; meta: PreviewMeta }[], signal?: AbortSignal) => {
     if (!pages.length) return [];
@@ -2654,11 +2698,9 @@ export default function App() {
       return next;
     });
     setIsChatting(true);
-    setStreamingReply(readingNote(0, pages.length, 0));
+    setStreamingReply('');
     try {
-      return await readPages(pages, (page, of, progress) => {
-        if (!signal?.aborted) setStreamingReply(readingNote(page, of, progress));
-      });
+      return await readPages(pages);
     } finally {
       // Stopped, the composer is already back and another turn may be running.
       if (!signal?.aborted) {
@@ -3929,7 +3971,6 @@ export default function App() {
       if (signal.aborted) return;
       if (open && open.repxContent !== newResult.repxContent) rememberChange(newAssistantMsg.id, open, newResult);
       setMessages(prev => [...prev, newAssistantMsg]);
-      announceReady('Report ready');
       console.log(copy.done);
 
     } catch (err: any) {
@@ -3979,7 +4020,6 @@ export default function App() {
               text: fallbackReply(aiName, err?.cause?.message || err?.message || friendlyMessage, made.source),
               result: drafted,
             }]);
-            announceReady('Report ready');
             return;
           }
         } catch (draftError) {
@@ -4864,7 +4904,6 @@ export default function App() {
                 brought,
               ].filter(Boolean).join('\n\n'),
             })]);
-            announceReady('Report ready');
             return;
           }
           /*
@@ -4880,7 +4919,6 @@ export default function App() {
               ...offered,
               text: ['Nothing needed changing: the report already reads that way.', agent.changesMarkdown([], [...done.declined, ...toolsRefused], toolsDone)].filter(Boolean).join('\n\n'),
             })]);
-            announceReady('Reply ready');
             return;
           }
           /*
@@ -4919,7 +4957,6 @@ export default function App() {
             ...offered,
             text: agent && (toolsDone.length || toolsRefused.length) ? [outcome.reply, agent.changesMarkdown([], toolsRefused, toolsDone)].filter(Boolean).join('\n\n') : outcome.reply,
           })]);
-          announceReady('Reply ready');
           return;
         } else {
           // The user does want a report built or redesigned — fall through to
@@ -5666,7 +5703,7 @@ export default function App() {
   /** New words for one control are Forma's to write: the box, started for it. */
   const askForText = (name: string) => {
     addToBox(`Change the text of ${name} to `);
-    requestAnimationFrame(() => (document.querySelector('textarea[aria-label="Message"]') as HTMLTextAreaElement | null)?.focus());
+    focusBox();
   };
 
   /*
@@ -6691,11 +6728,7 @@ export default function App() {
                 onAllProjects={() => showRailPanel('projects')}
                 onPick={(point) => {
                   addToBox(point.text);
-                  requestAnimationFrame(() => {
-                    const box = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]');
-                    box?.focus();
-                    box?.setSelectionRange(box.value.length, box.value.length);
-                  });
+                  focusBox();
                 }}
               />
             </Suspense>
@@ -6730,12 +6763,21 @@ export default function App() {
                 initials={user ? initialsOf(user) : 'Y'}
                 isChatting={isChatting}
                 isAnalyzing={isAnalyzing}
+                busy={turnBusy}
                 streamingReply={streamingReply}
                 onRetry={handleRetryMessage}
                 onOpenAttachment={setFullScreenImage}
                 onAnswer={handleClarifyAnswers}
-                onEdit={handleEditMessage}
-                onWithdraw={handleWithdrawMessage}
+                // The edit form and a withdrawn pill go away under the
+                // keyboard's focus; it goes to the box (agent audit item 59).
+                onEdit={(id, text) => {
+                  handleEditMessage(id, text);
+                  focusBox();
+                }}
+                onWithdraw={(id) => {
+                  handleWithdrawMessage(id);
+                  focusBox();
+                }}
                 onRegenerate={handleRegenerate}
                 onRate={handleRate}
                 undoable={undoableIds}
@@ -6764,7 +6806,8 @@ export default function App() {
                     The progress is still measured honestly, and a screen reader
                     still hears it, from the attributes below. */}
                 {isAnalyzing && (
-                  <article className="wb-note" aria-live="polite">
+                  // Not a live region (agent audit item 7): the card's status region announces.
+                  <article className="wb-note">
                     <div>
                       <div className="wb-who">Forma</div>
                       <p
@@ -6863,6 +6906,12 @@ export default function App() {
             onPasteFiles={ingestFiles}
             selection={result?.repxContent ? previewSelection : []}
             models={modelPicker}
+            // Local AI's or OpenRouter's model, where Gemini's picker is (agent audit item 74).
+            answering={answeringModel(config)}
+            onChooseAi={() => {
+              setConfigStart('ai');
+              setIsConfigOpen(true);
+            }}
             queue={queue.map((q) => ({ id: q.id, text: q.text, files: queuedFiles(q), dropped: q.dropped }))}
             onQueue={(text) => {
               // The files in the box go with the words (agent audit item 71):
@@ -7068,7 +7117,11 @@ export default function App() {
             onChange={(changes) => setConfig((prev) => ({ ...prev, ...changes }))}
             user={user ? { uid: user.uid } : null}
             workedOut={detectedRef.current?.reasons ?? null}
-            onClose={() => setIsConfigOpen(false)}
+            start={configStart}
+            onClose={() => {
+              setIsConfigOpen(false);
+              setConfigStart(undefined);
+            }}
           />
         </Suspense>
       )}

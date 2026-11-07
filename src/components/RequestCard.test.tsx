@@ -120,6 +120,23 @@ describe('RequestCard', () => {
     expect(onOpenAttachment).toHaveBeenCalledWith({ srcs: pages, index: 0, file: 'invoice.pdf' });
   });
 
+  // Agent audit item 7: one region, mounted empty and kept, says when Forma starts and what came of it.
+  it('announces when Forma starts and what came of the request, once it ends', () => {
+    const asked: typeof request = { id: 'q1', ask, replies: [] };
+    const props = { latest: true, collapsed: false, onToggle: () => {}, isAnalyzing: false, streamingReply: '', onRetry: () => {}, onOpenAttachment: () => {} };
+    const { rerender } = render(<RequestCard<unknown> {...props} request={asked} isChatting={false} />);
+    const region = screen.getByRole('status');
+    expect(region.textContent).toBe('');
+    rerender(<RequestCard<unknown> {...props} request={asked} isChatting />);
+    expect(region.textContent).toBe('Forma is working on it.');
+    // A pause between a turn's steps is not its end.
+    rerender(<RequestCard<unknown> {...props} request={asked} isChatting={false} busy />);
+    expect(region.textContent).toBe('Forma is working on it.');
+    rerender(<RequestCard<unknown> {...props} request={request} isChatting={false} />);
+    expect(region.textContent).toBe('Forma replied: Both are changed in place.');
+    expect(screen.getByRole('status')).toBe(region);
+  });
+
   // Agent audit item 30: a request the log found by its question marks it there, and hides no reply.
   it('marks a search in what was asked, and still shows the replies', () => {
     draw({ query: 'total' });

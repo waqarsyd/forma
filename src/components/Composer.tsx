@@ -22,7 +22,7 @@
  * twice in a row. Owning the ref here would silently break that.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type ChangeEventHandler, type RefObject } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEventHandler, type RefObject } from 'react';
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
 import { modelTiers } from '../lib/modelTiers';
@@ -137,6 +137,13 @@ export interface ComposerProps {
    */
   models?: { current: string; choices: readonly { id: string; used: number }[]; onChoose: (id: string) => void } | null;
   /**
+   * The AI that answers when it is not Gemini (2026-11-07, agent audit item
+   * 74): Local AI or OpenRouter and its model (`answeringModel`), shown where
+   * Gemini's picker is. `onChooseAi` opens Settings, where it is chosen.
+   */
+  answering?: { provider: string; model: string; label: string } | null;
+  onChooseAi?: () => void;
+  /**
    * The queue (2026-11-05), as Stitch's tray over its box: a message sent
    * while Forma works waits here, each with Steer (stop what runs and send
    * this now), Edit (back into the box) and Cancel, and App sends the next
@@ -191,6 +198,8 @@ export default function Composer({
   onPasteFiles,
   selection = [],
   models,
+  answering,
+  onChooseAi,
   queue = [],
   onQueue,
   onSteer,
@@ -271,6 +280,7 @@ export default function Composer({
   }, [prompt]);
 
   const sendAndKeepFocus = () => {
+    stopListening();
     onSend();
     promptRef.current?.focus();
   };
@@ -286,9 +296,24 @@ export default function Composer({
   const Recognizer = speechRecognition();
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<Recognition | null>(null);
+  /*
+   * Listening ends when the message goes or the person types (2026-11-07,
+   * agent audit item 35). It went on after a send, and what it heard next
+   * refilled the emptied box; typed words were overwritten by the next thing
+   * heard. A recognizer let go is no longer `recognitionRef.current`, so a
+   * result it delivers after being stopped is dropped.
+   */
+  const stopListening = () => {
+    const r = recognitionRef.current;
+    if (!r) return;
+    recognitionRef.current = null;
+    setListening(false);
+    r.stop();
+  };
   const toggleVoice = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      stopListening();
+      promptRef.current?.focus();
       return;
     }
     if (!Recognizer) return;
@@ -298,15 +323,18 @@ export default function Composer({
     r.continuous = false;
     const before = prompt.trim() ? `${prompt.replace(/\s+$/, '')} ` : '';
     r.onresult = (event) => {
+      if (recognitionRef.current !== r) return;
       const heard = Array.from(event.results, (result) => result[0]?.transcript ?? '').join('');
       onPromptChange(before + heard);
     };
     r.onend = () => {
+      if (recognitionRef.current !== r) return;
       recognitionRef.current = null;
       setListening(false);
       promptRef.current?.focus();
     };
     r.onerror = () => {
+      if (recognitionRef.current !== r) return;
       recognitionRef.current = null;
       setListening(false);
     };
@@ -316,6 +344,22 @@ export default function Composer({
   };
   // Leaving the workspace stops listening.
   useEffect(() => () => recognitionRef.current?.stop(), []);
+  /** Stop, then the keyboard's focus back in the box, where the Stop button that held it was (agent audit item 59). */
+  const stopAndKeepFocus = () => {
+    onStop?.();
+    promptRef.current?.focus();
+  };
+  /** Queued words leave the box; the caret stays in it for the next (item 59), and listening ends (item 35). */
+  const queueAndKeepFocus = () => {
+    stopListening();
+    onQueue?.(prompt.trim());
+    promptRef.current?.focus();
+  };
+  /** The notices and the error line, read with the box by a screen reader (agent audit item 73). */
+  const noticeId = useId();
+  const errorId = useId();
+  const listenId = useId();
+  const describedBy = [uploadNotices.length ? noticeId : '', error ? errorId : '', listening ? listenId : ''].filter(Boolean).join(' ') || undefined;
 
   /*
    * The box floats over the conversation (2026-11-05), as Gemini's does: the
@@ -461,17 +505,29 @@ export default function Composer({
           </span>
         </div>
       )}
+      {/* Announced as they come, and read with the box (2026-11-07, agent
+          audit item 73): a file refused or cut short said so silently, in a
+          line nothing tied to the field the person was typing in. */}
       {uploadNotices.length > 0 && (
-        <div className="wb-note-line wb-warn">
+        <div className="wb-note-line wb-warn" role="status" id={noticeId}>
           <span className="wb-ic"><IconWarn size={13} /></span>
           <span>{uploadNotices.join(' · ')}</span>
+        </div>
+      )}
+      {/* While the mic listens, where the sound goes (2026-11-07, agent audit
+          item 77): the browser's speech recognition sends it to the browser
+          maker's speech service, which nothing said. */}
+      {listening && (
+        <div className="wb-note-line" role="status" id={listenId}>
+          <span className="wb-ic"><IconMic size={13} /></span>
+          <span>Listening. Your browser sends what you say to its own speech service to turn it into words.</span>
         </div>
       )}
       {/* Errors here, with a close (2026-11-06, the workspace audit), and
           confirmations as toasts at the corner: the line had no way to put it
           away short of the next message. */}
       {error && (
-        <div className="wb-note-line wb-warn" role="alert">
+        <div className="wb-note-line wb-warn" role="alert" id={errorId}>
           <span className="wb-ic"><IconAlert size={13} /></span>
           <span>{error}</span>
           {onDismissError && (
@@ -509,6 +565,8 @@ export default function Composer({
           value={prompt}
           onChange={(e) => {
             recall.current = -1;
+            // Typing ends listening, so the next thing heard does not overwrite it (item 35).
+            stopListening();
             onPromptChange(e.target.value);
           }}
           /* Enter sends; Shift+Enter starts a new line, as in any chat box. It
@@ -532,8 +590,8 @@ export default function Composer({
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               recall.current = -1;
-              if (canSend) onSend();
-              else if (canQueue) onQueue?.(prompt.trim());
+              if (canSend) sendAndKeepFocus();
+              else if (canQueue) queueAndKeepFocus();
             } else if (e.key === 'ArrowUp' && history.length && (prompt === '' || recall.current !== -1)) {
               e.preventDefault();
               recall.current = recall.current === -1 ? history.length - 1 : Math.max(0, recall.current - 1);
@@ -557,7 +615,26 @@ export default function Composer({
           // Stitch's question (2026-11-05), now the box sits under the report as its bar does.
           placeholder={listening ? 'Listening…' : hasApiKey ? 'What would you like to change or create?' : 'Add your API key to start'}
           aria-label="Message"
+          aria-describedby={describedBy}
         />
+        {/* Which model answers when it is not Gemini's (2026-11-07, agent
+            audit item 74): Gemini has its picker here, and Local AI and
+            OpenRouter said nothing. Their model is chosen in Settings, which
+            this opens. */}
+        {hasApiKey && !models && answering && (
+          <div className="wb-model">
+            <button
+              type="button"
+              className="wb-model-pick"
+              title={`${answering.provider} answers${answering.model ? ` with ${answering.model}` : ''}. Change it in Settings.`}
+              aria-label={`${answering.provider}${answering.model ? `, ${answering.model}` : ''}: change the AI in Settings`}
+              onClick={onChooseAi}
+              disabled={!onChooseAi}
+            >
+              {answering.label}
+            </button>
+          </div>
+        )}
         {hasApiKey && models && (
           <div className="wb-model" ref={modelMenuRef}>
             <button
@@ -605,9 +682,9 @@ export default function Composer({
             className={`wb-tool${listening ? ' wb-is-listening' : ''}`}
             aria-label={listening ? 'Stop listening' : 'Speak your message'}
             aria-pressed={listening}
-            title={listening ? 'Stop listening' : "Speak your message (your browser's speech recognition hears it)"}
+            title={listening ? 'Stop listening' : 'Speak your message. Your browser sends the sound to its own speech service to turn it into words.'}
             onClick={toggleVoice}
-            disabled={isAnalyzing || isChatting}
+            // Not held while Forma works (agent audit item 35): words spoken then queue as typed ones do.
           >
             <IconMic size={16} />
           </button>
@@ -624,11 +701,11 @@ export default function Composer({
              the moment anything was typed, and the box is its one place now. */
           <span className="wb-send-pair">
             {onStop && (
-              <button className="wb-send wb-send--stop" aria-label="Stop" title="Stop" onClick={onStop}>
+              <button className="wb-send wb-send--stop" aria-label="Stop" title="Stop" onClick={stopAndKeepFocus}>
                 <span className="wb-stop-square" aria-hidden="true" />
               </button>
             )}
-            <button className="wb-send" aria-label="Queue" title="Queue: sends after this one" onClick={() => onQueue?.(prompt.trim())}>
+            <button className="wb-send" aria-label="Queue" title="Queue: sends after this one" onClick={queueAndKeepFocus}>
               <IconArrowUp size={15} />
             </button>
           </span>
@@ -636,7 +713,7 @@ export default function Composer({
           /* While a generation runs, the send button is its Stop (2026-11-04),
              as in the chat apps people know; and while a reply is written
              (2026-11-05), as ChatGPT's is. */
-          <button className="wb-send wb-send--stop" aria-label="Stop" title="Stop" onClick={onStop}>
+          <button className="wb-send wb-send--stop" aria-label="Stop" title="Stop" onClick={stopAndKeepFocus}>
             <span className="wb-stop-square" aria-hidden="true" />
           </button>
         ) : (
