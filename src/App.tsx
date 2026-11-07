@@ -86,12 +86,15 @@ import type { DraftSource, TeamMember } from './lib/formaTeam';
 import { clearCachedModel, readCachedModelSet } from './lib/modelCache';
 import { requestsToday } from './lib/requestCount';
 import { cacheKeyForSession, readSessionKey, clearSessionKey, purgeLegacyPlaintextKey } from './services/keyVault';
+import { startKeyHandoff } from './lib/keyHandoff';
+import { askToKeepStorage } from './lib/storagePersist';
 /* Only DURATION survives here. The workspace's motion is now the artifact's own
    CSS keyframes and transitions, so the Framer Motion presets it used to import
    are unused — see the note in CLAUDE.md about this being a deliberate departure
    for this surface. */
 import { useTheme } from './components/useTheme';
 import { useLinkNavigation } from './components/useLinkNavigation';
+import ErrorBoundary from './components/ErrorBoundary';
 import { forgetSession } from './lib/signOut';
 // @ts-ignore
 /* Firebase arrives on demand — see lib/firebaseClient.ts for why, and for what
@@ -1679,6 +1682,36 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reportFirestoreFailure only sets state and logs
   }, [user, firebase]);
 
+  /**
+   * Every saved project in one .zip (2026-11-08, site audit items 59 and
+   * 66, lib/projectExport.ts): from the account in full when signed in, from
+   * this browser otherwise. Resolves to how many went in.
+   */
+  const exportAllProjects = async (): Promise<number> => {
+    let projects: SavedReport[];
+    if (user) {
+      const { sdk, paths, db } = await loadFirebase();
+      const snapshot = await sdk.getDocs(paths.reportsCollectionRef(db, user.uid));
+      projects = snapshot.docs.map((d) => fromFirestoreDocument<ChatMessage, DesignResult>(d.data()));
+    } else {
+      projects = loadReportsLocally<ChatMessage, DesignResult>();
+    }
+    if (!projects.length) return 0;
+    const [{ buildZip }, { projectExportEntries, exportFileName }] = await Promise.all([import('./lib/zip'), import('./lib/projectExport')]);
+    const now = new Date();
+    const { bytes, reason } = buildZip(projectExportEntries(projects, now), now);
+    if (!bytes) throw new Error(`The projects could not be packed: ${reason}.`);
+    const url = URL.createObjectURL(new Blob([bytes.slice()], { type: 'application/zip' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = exportFileName(now);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return projects.length;
+  };
+
   /** A listed project with its content, fetched when the list holds only its index entry. */
   const fullReport = async (listed: SavedReport): Promise<SavedReport | null> => {
     if (!listed.stub) return listed;
@@ -2076,6 +2109,27 @@ export default function App() {
       clearCachedModel();
     }
   }, [config.customApiKey]);
+
+  /*
+   * A new tab gets the keys from a Forma tab already open (2026-11-08, site
+   * audit item 105, lib/keyHandoff.ts): this tab answers one that asks, and
+   * asks once if it has no key. A key this tab already has is kept.
+   */
+  const keysRef = useRef({ gemini: config.customApiKey, openRouter: config.openRouterKey });
+  keysRef.current = { gemini: config.customApiKey, openRouter: config.openRouterKey };
+  useEffect(
+    () =>
+      startKeyHandoff({
+        getKeys: () => keysRef.current,
+        onKeys: (keys) =>
+          setConfig((prev) =>
+            prev.customApiKey
+              ? prev
+              : { ...prev, customApiKey: keys.gemini ?? '', openRouterKey: prev.openRouterKey || keys.openRouter || '' },
+          ),
+      }),
+    [],
+  );
 
   /* The encrypted copy of the key (services/keyVault.ts), checking the key,
      and clearing it from this tab live in Settings since its redesign of
@@ -3057,6 +3111,9 @@ export default function App() {
 
       setSavedReports(updated);
       saved();
+      // Ask the browser to keep it (site audit item 60, lib/storagePersist.ts),
+      // once a session, now that there is something on this device to keep.
+      void askToKeepStorage();
       if (!quiet) setSaveNotice('Saved on this device. Sign in to sync across devices.');
       return true;
     }
@@ -6580,9 +6637,11 @@ export default function App() {
                       the whole app down with it, there being no error boundary
                       short of the app's. */}
                   {result.layout ? (
+                    <ErrorBoundary area="the mockup">
                     <Suspense fallback={null}>
                       <ReportMockup layout={result.layout} sourceImages={mockupSourceImages} reportUnit={openUnit} />
                     </Suspense>
+                    </ErrorBoundary>
                   ) : (
                     <p className="wb-empty">This report has no layout to draw a mockup from. Preview shows it as it prints.</p>
                   )}
@@ -6593,6 +6652,9 @@ export default function App() {
                 <div className="wb-proof-holder wb-rise wb-rise-2">
                   {/* Lazy for its own sake: the pane is workspace-only and the
                       marketing pages were just taken off the entry chunk. */}
+                  {/* An area of its own (2026-11-08, site audit item 64): a fault in a
+                      pane leaves the conversation and the sidebar working. */}
+                  <ErrorBoundary area="the Preview">
                   <Suspense fallback={null}>
                     <ReportPreview
                       repxContent={result.repxContent}
@@ -6634,11 +6696,13 @@ export default function App() {
                       }}
                     />
                   </Suspense>
+                  </ErrorBoundary>
                 </div>
               )}
 
               {plate === 'data' && (
                 <div className="wb-sheet wb-reg-marks">
+                  <ErrorBoundary area="the Data view">
                   <Suspense fallback={null}>
                     <DataBinding
                       repxContent={result.repxContent}
@@ -6666,6 +6730,7 @@ export default function App() {
                       }}
                     />
                   </Suspense>
+                  </ErrorBoundary>
                 </div>
               )}
 
@@ -6687,7 +6752,9 @@ export default function App() {
                         <div style={{ whiteSpace: 'pre-wrap' }}>{result.content}</div>
                       }
                     >
-                      <Markdown>{result.content}</Markdown>
+                      <ErrorBoundary area="the spec">
+                        <Markdown>{result.content}</Markdown>
+                      </ErrorBoundary>
                     </Suspense>
                   </div>
                 </div>
@@ -6695,6 +6762,7 @@ export default function App() {
 
               {plate === 'xml' && (
                 <div className="wb-sheet wb-reg-marks">
+                  <ErrorBoundary area="the REPX view">
                   <Suspense fallback={null}>
                     <RepxViewer
                       xml={result.repxContent || ''}
@@ -6703,6 +6771,7 @@ export default function App() {
                       usage={summariseUsage(result.usage) ? { short: summariseUsage(result.usage)!, long: describeUsage(result.usage) } : null}
                     />
                   </Suspense>
+                  </ErrorBoundary>
                 </div>
               )}
             </>
@@ -6749,6 +6818,7 @@ export default function App() {
         {/* ------------------------------------------- the floating conversation */}
         {(requests.length > 0 || isAnalyzing || isChatting) && (
           <div className="wb-float wb-float-card">
+            <ErrorBoundary area="the conversation">
             <Suspense fallback={null}>
               <RequestCard
                 request={shownRequest}
@@ -6822,6 +6892,7 @@ export default function App() {
                 )}
               </RequestCard>
             </Suspense>
+            </ErrorBoundary>
           </div>
         )}
         {requests.length > 0 && (
@@ -7102,6 +7173,7 @@ export default function App() {
             user={user ? { uid: user.uid } : null}
             workedOut={detectedRef.current?.reasons ?? null}
             start={configStart}
+            onExportProjects={exportAllProjects}
             onClose={() => {
               setIsConfigOpen(false);
               setConfigStart(undefined);

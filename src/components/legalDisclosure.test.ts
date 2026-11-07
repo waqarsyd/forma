@@ -307,8 +307,11 @@ describe('the legal copy and its date change together', () => {
      batch SF added the skip link and the contrast to that statement, which
      moves the hash and not the date. So did batch SH's reCAPTCHA paragraph,
      which the policy shows only once App Check has a key (lib/appCheck.ts):
-     the words a reader sees today did not change. */
-  const EXPECTED_COPY_HASH = '13ab553c1708';
+     the words a reader sees today did not change. Batch SI changed them the
+     same day (the key reaching a new tab, the request to keep local
+     projects, the download of every project), which is substantive, but
+     the date is already that day's. */
+  const EXPECTED_COPY_HASH = '2286dea54e91';
   const EXPECTED_UPDATED = '8 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

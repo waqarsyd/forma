@@ -81,6 +81,7 @@ export const RELEASES: Release[] = [
     summary:
       'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'new', area: 'workspace', text: 'Settings, under General, downloads every project you have saved as one .zip and shows which version of Forma you are using. A new Forma tab gets your key from one already open, a part of the workspace that fails no longer takes the rest with it, and its Report this problem opens an issue with the details filled in.' },
       { kind: 'improved', area: 'workspace', text: 'Signed in, your projects list loads its names alone and fetches a project when you open it, instead of downloading every project in full; an autosave no longer sends the whole project to your other open tabs.' },
       { kind: 'improved', area: 'site', text: 'Sharing a report needs a verified email address, and an account can share up to 100 reports at once. New passwords are at least eight characters, and the Docs explain how to end a session somewhere else. On the website the workspace no longer reaches for the designer companion on your computer, which some browsers asked permission for.' },
       { kind: 'improved', area: 'site', text: 'The home page and the other public pages load about a quarter less code: the workspace now loads only when you open it. Pages you have visited open again without a connection, and a notice says when you are offline and when you are back.' },
@@ -341,16 +342,28 @@ export function searchForFilter(filter: ReleaseFilter): string {
   return s ? `?${s}` : '';
 }
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/*
+ * Dates in the reader's own language and order (2026-11-08, site audit item
+ * 104): they were spelled with an English month list, "7 November 2026" for
+ * everyone. `locale` is left undefined in the app so the browser's is used,
+ * and given only by the tests, to pin a format. Read in UTC, because an ISO
+ * date names a day, not a moment, and a reader west of Greenwich would
+ * otherwise see the day before.
+ */
+const utcDay = (iso: string): number => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return Date.UTC(y, (m || 1) - 1, d || 1);
+};
 
 /** Releases by month, newest first, each month with its anchor id and its name. */
-export function releasesByMonth(releases: readonly Release[]): { id: string; label: string; releases: Release[] }[] {
+export function releasesByMonth(releases: readonly Release[], locale?: string): { id: string; label: string; releases: Release[] }[] {
+  const monthName = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' });
   const months: { id: string; label: string; releases: Release[] }[] = [];
   for (const r of releases) {
     const id = r.date.slice(0, 7);
     let month = months.find((m) => m.id === id);
     if (!month) {
-      month = { id, label: `${MONTHS[Number(id.slice(5, 7)) - 1]} ${id.slice(0, 4)}`, releases: [] };
+      month = { id, label: monthName.format(utcDay(`${id}-01`)), releases: [] };
       months.push(month);
     }
     month.releases.push(r);
@@ -358,10 +371,9 @@ export function releasesByMonth(releases: readonly Release[]): { id: string; lab
   return months;
 }
 
-/** A date as the page shows it: 7 November 2026. */
-export function readableDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  return `${d} ${MONTHS[m - 1]} ${y}`;
+/** A date as the page shows it: 7 November 2026 in English, as the reader's language writes it elsewhere. */
+export function readableDate(iso: string, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(utcDay(iso));
 }
 
 const escapeXml = (s: string): string =>

@@ -9,6 +9,7 @@ Turn a screenshot, a PDF, or an existing report into a real DevExpress `.repx` f
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](package.json)
 
 [![checks](https://img.shields.io/github/actions/workflow/status/waqarsyd/forma/checks.yml?branch=main&label=checks)](https://github.com/waqarsyd/forma/actions)
+[![live site](https://img.shields.io/github/actions/workflow/status/waqarsyd/forma/live.yml?branch=main&label=live%20site)](https://github.com/waqarsyd/forma/actions/workflows/live.yml)
 
 Upload a design — a mockup, a scanned invoice, a photo of a printout, or a `.repx` you already have — and Forma returns three things in one pass:
 
@@ -616,7 +617,13 @@ src/
                        (what the chat box keeps as a memory, sends straight
                        to a design, or reads as an answer), composerStore
                        (an unsent draft per project, and the queue, kept in
-                       the tab over a reload), passwordPolicy (the
+                       the tab over a reload), buildInfo (which build runs,
+                       for Settings and a problem report), problemReport (a
+                       GitHub issue prefilled when an area fails),
+                       projectExport (every saved project in one .zip),
+                       storagePersist (asking the browser to keep local
+                       projects), keyHandoff (the keys reaching a new
+                       tab), passwordPolicy (the
                        shortest password a form accepts), authDomain and
                        appCheck (sign-in on the site's own host and App
                        Check, prepared and off until the owner's console
@@ -875,7 +882,8 @@ The site audit of 2026-11-07 left these prepared in the repository and waiting f
 3. **A password policy** (item 61): *Firebase console → Authentication → Settings → Password policy*, minimum 8. The forms already ask for 8 (`src/lib/passwordPolicy.ts`); this makes Firebase refuse fewer.
 4. **App Check** (item 56): the four steps in [`src/lib/appCheck.ts`](src/lib/appCheck.ts). Setting its key adds reCAPTCHA to the CSP and the privacy policy by itself; enforce only after a week of metrics.
 5. **Google sign-in on Forma's own address** (item 98): add each site's `https://<site>.web.app/__/auth/handler` to the OAuth client's redirect URIs, then list the hosts in [`src/lib/authDomain.ts`](src/lib/authDomain.ts). That also turns on the redirect fallback when a browser blocks the pop-up.
-6. **Log the deploy and push tools out of the shared Windows profile** (item 58): `npx firebase logout` and `gh auth logout` on the shared server, and log in again only for the minutes a deploy needs.
+6. **Back the database up now and then** (item 66): the free plan has no managed backup. [`scripts/backup.mjs`](scripts/backup.mjs) writes every Firestore document as one JSON line to a folder outside the repository, with a service account key and the Admin SDK installed for the run only; its header has the three steps. Each person can also download their own projects from Settings, under General.
+7. **Log the deploy and push tools out of the shared Windows profile** (item 58): `npx firebase logout` and `gh auth logout` on the shared server, and log in again only for the minutes a deploy needs.
 
 If you would rather run the Express bundle than a static host, it needs a platform with a card on file (Cloud Run, Railway, Fly) or one that sleeps (Render's free tier, ~30–60 s cold start). The advantage is that `securityHeaders.ts` stays the only copy of the policy.
 

@@ -228,7 +228,7 @@ function pagesAndCrawlers(): Plugin {
         server: { middlewareMode: true, hmr: false, ws: false, watch: null },
         optimizeDeps: { noDiscovery: true, include: [] },
         appType: 'custom',
-        define: { __FORMA_ASSETS__: 'undefined' },
+        define: { __FORMA_ASSETS__: 'undefined', __FORMA_BUILD__: 'undefined' },
       });
       try {
         const { PRERENDERED, renderRoute } = (await ssr.ssrLoadModule('/src/prerender.tsx')) as {
@@ -386,8 +386,10 @@ export default defineConfig(() => {
       versionMeta(),
       pagesAndCrawlers(),
     ],
-    // The served sets' paths, for src/lib/assetPaths.ts (site audit item 91).
+    // The served sets' paths, for src/lib/assetPaths.ts (site audit item 91),
+    // and which build this is, for src/lib/buildInfo.ts (item 103).
     define: {
+      __FORMA_BUILD__: JSON.stringify({ commit: commitOf(), date: new Date().toISOString().slice(0, 10) }),
       __FORMA_ASSETS__: JSON.stringify({
         ocr: `/ocr/${VERSIONS.ocr}/`,
         pdfFonts: `/pdf-fonts/${VERSIONS.pdfFonts}/`,

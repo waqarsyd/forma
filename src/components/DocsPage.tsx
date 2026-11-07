@@ -88,6 +88,27 @@ const KBD =
 
 const FAQS: Array<{ q: string; a: ReactNode }> = [
   {
+    // 2026-11-08, site audit item 104: said, rather than left to be found out.
+    q: 'Is Forma in my language?',
+    a: (
+      <p>
+        Its own words are English for now. Dates follow your browser&apos;s language; OCR reads English, Arabic,
+        Urdu, Hindi, French, German and Spanish; and a report in a right-to-left language comes out right to
+        left.
+      </p>
+    ),
+  },
+  {
+    q: 'How do I take all my projects with me?',
+    a: (
+      <p>
+        Settings, under General, has Download all: every project you saved, in one .zip, each as its conversation
+        and report and as a .repx to open in the designer. Signed out, it is also the copy to keep, since a browser
+        may clear what a site stores to free space.
+      </p>
+    ),
+  },
+  {
     q: 'Does Forma cost anything to use?',
     a: (
       <p>
@@ -549,6 +570,11 @@ export default function DocsPage({
                   erases it when the tab closes — a guarantee a page-unload handler cannot make, because it
                   never fires on a crash or a force-quit.
                 </Def>
+                <Def t="A new tab">
+                  A Forma tab you open while another is open gets the key from it, inside this browser, so you
+                  do not paste it again; when the last Forma tab closes, it is gone. Settings, under Gemini key,
+                  turns this off.
+                </Def>
                 <Def t="Durable copy">
                   <strong className="font-semibold text-on-surface">Opt-in, encrypted.</strong> If you want
                   the key on more than one machine, it is encrypted in your browser under a passphrase you
@@ -594,8 +620,8 @@ export default function DocsPage({
                 <Def t="OpenRouter">
                   OpenRouter's free models, with a key of your own from openrouter.ai.{' '}
                   <strong className="font-semibold text-on-surface">Find free models</strong> lists them once the key
-                  is in. Free models have daily limits, and their providers may log requests. The key is held for
-                  this tab only, as the Gemini key is.
+                  is in. Free models have daily limits, and their providers may log requests. The key is held in
+                  your open Forma tabs only, as the Gemini key is.
                 </Def>
                 <Def t="A vision model">
                   Optional, on Ollama or LM Studio: Forma's own vision model reads a picture's layout and OCR places
@@ -1359,6 +1385,21 @@ y_top = pageHeight − (baseline + height)`}
                   Google says the limit lasts, so the next request starts on another model your key can reach.
                   The allowance is between you and Google — Forma has no quota to share, since it uses no key of
                   its own.
+                </Def>
+                <Def t="Is it down?">
+                  Forma&apos;s live site is checked every three hours, and the{' '}
+                  <a href="https://github.com/waqarsyd/forma/actions/workflows/live.yml" target="_blank" rel="noopener" className={LINK}>
+                    latest check
+                  </a>{' '}
+                  says whether it passed. An outage of the AI or of sign-in is often Google&apos;s: see the{' '}
+                  <a href="https://aistudio.google.com/status" target="_blank" rel="noopener" className={LINK}>
+                    Gemini API status
+                  </a>{' '}
+                  and the{' '}
+                  <a href="https://status.firebase.google.com" target="_blank" rel="noopener" className={LINK}>
+                    Firebase status
+                  </a>
+                  .
                 </Def>
                 <Def t="Model overloaded">
                   Google's capacity for that model is momentarily exhausted. Forma retries it with a growing

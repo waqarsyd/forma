@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,819 tests in 168 files** — under the `node` environment
+`npm test` runs Vitest over **2,827 tests in 172 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -131,6 +131,10 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/csvExport` | 6 | CSV export; three expectations are DevExpress's own exported files, byte for byte |
 | `lib/dataSource` | 29 |  |
 | `lib/datetime` | 12 |  |
+| `lib/keyHandoff` | 3 | the keys reaching a new tab (2026-11-08, site audit item 105): a tab with no key asks and one with a key answers, neither does when turned off, and the setting is on until turned off |
+| `lib/problemReport` | 2 | which build runs and a problem report (items 103 and 64): the short commit and the day, the commit's link, and an issue prefilled with the area, the error, the build and the page without its query |
+| `lib/projectExport` | 1 | every saved project in one .zip (items 59 and 66): each as JSON, its .repx beside it, and a README |
+| `lib/storagePersist` | 2 | asking the browser to keep local projects (item 60): once, not when it already does, and no where it cannot |
 | `lib/authDomain` | 3 | sign-in's domain and App Check, prepared and off (2026-11-08, site audit items 98 and 56): the page's own host only once listed, a redirect only where it can come back, and neither adding an origin to the CSP while off |
 | `lib/serviceWorker` | 4 | the offline worker (2026-11-08, site audit item 55): pages from the network first, hashed files from the cache, the handwriting model, the worker itself and Firebase's paths left to the network, and the source it writes parsing with the same routing rule |
 | `lib/signOut` | 3 | what a sign-out removes from the tab (2026-11-08, the site audit's batch SG), shared by the public site and App: every session key and nothing else, storage that throws, and each key spelled as the module that writes it |
@@ -245,7 +249,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,819 in 168 files** — and that total is the arithmetic sum of the column above
+**Total: 2,827 in 172 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -259,7 +263,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2671** against a real 2,819 (2026-11-08, after the site audit's batch SH and its projects index, which added no loop; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2679** against a real 2,827 (2026-11-08, after the site audit's batch SI, which added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

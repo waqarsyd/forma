@@ -35,6 +35,9 @@ import SectionedDialog, { type DialogSection } from './SectionedDialog';
 import UsageSettings from './UsageSettings';
 import ProviderSettings from './ProviderSettings';
 import MemorySettings from './MemorySettings';
+import { versionLabel, versionUrl } from '../lib/buildInfo';
+import { isStorageKept } from '../lib/storagePersist';
+import { keysAcrossTabs, setKeysAcrossTabs } from '../lib/keyHandoff';
 
 export type SettingsSection = 'general' | 'ai' | 'key' | 'memory';
 
@@ -57,6 +60,8 @@ export interface SettingsDialogProps {
   onClose: () => void;
   /** The section to open at: AI, from the box's model label (agent audit item 74); otherwise General, or the key when there is none. */
   start?: SettingsSection;
+  /** Every saved project as a .zip; resolves to how many went in (site audit item 59). */
+  onExportProjects?: () => Promise<number>;
 }
 
 /** A line under a setting: what happened, or what to know. */
@@ -69,11 +74,41 @@ function Note({ notice }: { notice: Notice }) {
   );
 }
 
-export default function SettingsDialog({ config, onChange, user, workedOut, onClose, start }: SettingsDialogProps) {
+export default function SettingsDialog({ config, onChange, user, workedOut, onClose, start, onExportProjects }: SettingsDialogProps) {
   const [section, setSection] = useState<SettingsSection>(() => start ?? (config.customApiKey?.trim() ? 'general' : 'key'));
+
+  /* ---- Your projects ---- */
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<Notice | null>(null);
+  const [storageKept, setStorageKept] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void isStorageKept().then((kept) => alive && setStorageKept(kept));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const exportProjects = async () => {
+    if (!onExportProjects) return;
+    setExporting(true);
+    setExportNote(null);
+    try {
+      const count = await onExportProjects();
+      setExportNote(
+        count
+          ? { tone: 'ok', text: `Downloaded ${count} ${count === 1 ? 'project' : 'projects'}.` }
+          : { tone: 'ok', text: 'There are no saved projects to download yet.' },
+      );
+    } catch (err) {
+      setExportNote({ tone: 'error', text: err instanceof Error ? err.message : 'The projects could not be packed.' });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   /* ---- The Gemini key ---- */
   const key = config.customApiKey || '';
+  const [acrossTabs, setAcrossTabs] = useState(() => keysAcrossTabs());
   const [showKey, setShowKey] = useState(false);
   const [checking, setChecking] = useState(false);
   const [keyNote, setKeyNote] = useState<Notice | null>(null);
@@ -222,6 +257,48 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
                   </ul>
                 )}
               </div>
+
+              {/* Everything you saved, in one file (2026-11-08, site audit items
+                  59 and 60): there was no way to take it away, and a browser
+                  may clear what a signed-out person keeps here. */}
+              {onExportProjects && (
+                <div className="wb-set-row is-stack">
+                  <div className="wb-set-text">
+                    <h4 className="wb-set-label">Your projects</h4>
+                    <p>
+                      Every project you have saved{user ? ' to your account' : ' on this device'}, in one .zip: each conversation and
+                      report, and the .repx to open in the designer.{' '}
+                      {user
+                        ? 'They are kept in your account.'
+                        : storageKept
+                          ? 'This browser keeps them until you clear its data.'
+                          : 'Kept in this browser, which may clear them to free space; download them, or sign in to keep them in an account.'}
+                    </p>
+                  </div>
+                  <div className="wb-set-actions">
+                    <button type="button" className="wb-pill wb-pill--outline" disabled={exporting} onClick={() => void exportProjects()}>
+                      {exporting ? 'Packing…' : 'Download all (.zip)'}
+                    </button>
+                  </div>
+                  {exportNote && <Note notice={exportNote} />}
+                </div>
+              )}
+
+              {/* Which build this is (2026-11-08, site audit item 103, lib/buildInfo.ts). */}
+              <div className="wb-set-row">
+                <div className="wb-set-text">
+                  <h4 className="wb-set-label">Version</h4>
+                  <p>
+                    {versionUrl() ? (
+                      <a href={versionUrl()!} target="_blank" rel="noopener">{versionLabel()}</a>
+                    ) : (
+                      versionLabel()
+                    )}
+                    {' · '}
+                    <a href="/changelog">What&apos;s new</a>
+                  </p>
+                </div>
+              </div>
             </>
           )}
 
@@ -286,6 +363,28 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
                   )}
                 </div>
                 {keyNote && <Note notice={keyNote} />}
+              </div>
+
+              {/* The keys to a new tab (2026-11-08, site audit item 105, lib/keyHandoff.ts). */}
+              <div className="wb-set-row">
+                <div className="wb-set-text">
+                  <label className="wb-set-label" htmlFor="wb-set-tabs">Give the key to new Forma tabs</label>
+                  <p>
+                    A Forma tab you open while another is open gets the key from it, so you do not paste it again. It stays in your
+                    open tabs only, and goes when the last one closes.
+                  </p>
+                </div>
+                <input
+                  id="wb-set-tabs"
+                  type="checkbox"
+                  role="switch"
+                  className="wb-set-switch"
+                  checked={acrossTabs}
+                  onChange={(e) => {
+                    setKeysAcrossTabs(e.target.checked);
+                    setAcrossTabs(e.target.checked);
+                  }}
+                />
               </div>
 
               {canUseVault && (

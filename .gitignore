@@ -121,6 +121,13 @@ key.txt
 *apikey*
 *api-key*
 secrets.json
+# A Firebase service account key, as the console names it, for
+# scripts/backup.mjs (2026-11-08): it reads and writes the whole database,
+# so it belongs outside the repository, and this refuses it if it lands here.
+*firebase-adminsdk*.json
+service-account*.json
+# And the backup itself, should one be pointed here by mistake.
+forma-firestore-*.ndjson
 
 # Firebase CLI/emulator working files. `firestore-debug.log` and
 # `firebase-debug.log` are already covered by *.log above; `.firebase/` holds

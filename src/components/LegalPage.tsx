@@ -143,13 +143,13 @@ const PRIVACY: Section[] = [
   {
     heading: 'Your API keys',
     paragraphs: [
-      'Your Gemini key, and an OpenRouter key if you use one, are held for the browser tab you are working in and erased when that tab closes. Neither is written to disk in readable form or sent to any server belonging to Forma; each goes only to its own provider.',
+      'Your Gemini key, and an OpenRouter key if you use one, are held in the Forma tabs you have open and erased when the last of them closes: a Forma tab you open while another is open gets them from it, inside this browser, unless you turn that off in Settings. Neither is written to disk in readable form or sent to any server belonging to Forma; each goes only to its own provider.',
     ],
   },
   {
     heading: 'What is kept in your browser',
     paragraphs: [
-      'Signed out, your projects are saved automatically in your browser’s local storage on that machine only — the conversation, the report, your attachments and your ratings. Revisions last only while the tab is open.',
+      'Signed out, your projects are saved automatically in your browser’s local storage on that machine only — the conversation, the report, your attachments and your ratings — and Forma asks the browser to keep them rather than clear them to free space. Revisions last only while the tab is open. Settings, under General, downloads every project you saved, signed in or not.',
       'Local storage also keeps: the theme; the DevExpress version and unit last used; the AI you chose, with its server address and model, never a key; your memories and the style of reports you kept; which projects you pinned or archived; which library reports are your house style; the workspace’s layout; today’s request counts and the daily limits Google reported; the models your key can reach, with a short fingerprint of the key rather than the key; and the last announcement you saw.',
       'Session storage, which the browser erases when the tab closes, keeps your keys, the unsent text in the box and any messages waiting in the queue, the open project, the changes a reply’s Undo can take back, and the model in use.',
       'IndexedDB keeps the report library — the stripped reports you add and their index — and, once you sign in, Firebase’s record that you are signed in.',

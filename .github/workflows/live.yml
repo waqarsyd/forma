@@ -1,4 +1,5 @@
-# The deployed site, checked every day (2026-11-07, site audit items 3 and 102).
+# The deployed site, checked every three hours (2026-11-07, site audit items 3
+# and 102; every three hours since 2026-11-08, item 65).
 #
 # scripts/smoke.mjs asks the two hosted sites what a visitor's browser asks:
 # every route, the entry chunk, the headers, the changelog's feed. A broken
@@ -7,13 +8,22 @@
 # behind main is news, not breakage. The page carries its commit in
 # <meta name="forma-version">, which is how the two are compared.
 #
+# It is the uptime monitor, free and with nothing to host (item 65): GitHub
+# emails a scheduled workflow's failure to whoever last edited its schedule,
+# which is the owner, and the badge in README shows the last run. Every three
+# hours rather than every few minutes because Actions minutes are free on a
+# public repository but a check this often already says "down since this
+# morning", which is what a person can act on. Google's own status pages are
+# linked from Docs, Troubleshooting, for the half of an outage that is
+# Gemini's or Firebase's.
+#
 # Read-only: it sends GETs to the public site and nothing else, and needs no
 # secret. Free, as Actions is on a public repository.
 name: Live site
 
 on:
   schedule:
-    - cron: '17 6 * * *'
+    - cron: '17 */3 * * *'
   workflow_dispatch:
 
 permissions:

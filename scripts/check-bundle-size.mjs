@@ -156,7 +156,11 @@ const BUDGETS = [
   { prefix: 'index-', ext: '.js', max: 446_000, note: 'eager entry chunk (the public site) + the genai chunk' },
   // The workspace itself (2026-11-08), lazy since the cut above, budgeted so
   // it is watched like the rest: 143,209 B, 152_500 is 93.9%.
-  { prefix: 'App-', ext: '.js', max: 152_500, note: 'the workspace, loaded on /workspace' },
+  // Raised to 159_000 the same day, at 149,354 B (97.9%): the site audit's
+  // batches SH and SI put the projects index and its reconciliation, the
+  // export of every project, the key's hand-off to a new tab and an error
+  // boundary around each area into the workspace. 159_000 is 93.9%.
+  { prefix: 'App-', ext: '.js', max: 159_000, note: 'the workspace, loaded on /workspace' },
   /*
    * The generation service, lazy as of 2026-09-04.
    *

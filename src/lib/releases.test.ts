@@ -107,14 +107,19 @@ describe('the filter in the address', () => {
 
 describe('releasesByMonth and readableDate', () => {
   it('groups by month, newest first, with a name', () => {
-    expect(releasesByMonth(sample).map((m) => [m.id, m.label, m.releases.length])).toEqual([
+    expect(releasesByMonth(sample, 'en-GB').map((m) => [m.id, m.label, m.releases.length])).toEqual([
       ['2026-11', 'November 2026', 1],
       ['2026-10', 'October 2026', 1],
     ]);
   });
 
-  it('writes a date as people read it', () => {
-    expect(readableDate('2026-11-07')).toBe('7 November 2026');
+  it("writes a date as the reader's language does, on the day it names (site audit item 104)", () => {
+    expect(readableDate('2026-11-07', 'en-GB')).toBe('7 November 2026');
+    expect(readableDate('2026-11-07', 'en-US')).toBe('November 7, 2026');
+    expect(readableDate('2026-11-07', 'de-DE')).toBe('7. November 2026');
+    expect(releasesByMonth(sample, 'fr-FR')[0].label).toBe('novembre 2026');
+    // The day named, wherever the reader is: read in UTC.
+    expect(readableDate('2026-01-01', 'en-GB')).toBe('1 January 2026');
   });
 });
 

@@ -50,6 +50,18 @@ body:
       render: text
 
   - type: input
+    id: version
+    attributes:
+      label: Forma version
+      description: >-
+        Settings, under General, shows it: a commit and the day it was built.
+        It says which code you were running, which a deploy can change under
+        you (2026-11-08, site audit item 103).
+      placeholder: 1fc5bb3, built 2026-11-08
+    validations:
+      required: false
+
+  - type: input
     id: env
     attributes:
       label: Browser and OS
