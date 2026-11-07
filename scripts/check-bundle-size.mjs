@@ -134,7 +134,18 @@ const BUDGETS = [
   // and its table, chart and picture helpers) and the REPX pane (RepxViewer)
   // were components defined inside App.tsx; they are now their own lazy
   // files, -13,496 B to 651,327 B (96.9%), and App.tsx is ~700 lines shorter.
-  { prefix: 'index-', ext: '.js', max: 672_000, note: 'eager entry chunk + the genai chunk' },
+  //
+  // Lowered to 582_000 on 2026-11-07, when the cut this comment kept naming
+  // was found and made. At 659,539 B (98.1%) after the agent audit's batches
+  // A to C, a source-mapped build attributed 54,228 B of the chunk to
+  // reportPreview.ts and some 65 kB more to what it reads (criteria,
+  // textMeasure, reportData, netFormat, repxEdit, repxCrossTabs, pictureBox):
+  // the whole Preview engine, on the landing page. One line put it there:
+  // repxBindingPlan.ts, which App imports for its first render, imported
+  // escapeXmlAttribute from repxEdit.ts, which imports reportPreview. The
+  // helper now has a module of its own (lib/xmlEscape.ts), and the chunk is
+  // 547,264 B, -112,275 (-17%), the total unchanged. 582_000 is 94.0%.
+  { prefix: 'index-', ext: '.js', max: 582_000, note: 'eager entry chunk + the genai chunk' },
   /*
    * The generation service, lazy as of 2026-09-04.
    *
@@ -504,8 +515,17 @@ const BUDGETS = [
  * the entry chunk's +4,624 itemised on its own cap above. The fonts and the
  * model themselves are budgeted apart, below. 5,680,000 is 94.0%; per-chunk
  * caps for the route chunks are still the better fix this paragraph names.
+ *
+ * Retuned to 6,010,000 on 2026-11-07, at 5,652,847 B (99.5%) without
+ * tripping: +316,395 since 5,336,452 on 2026-11-02, across the workspace
+ * audit, Stitch's agent card and command menu, sharing, the Settings,
+ * account and OCR redesigns, the changelog and its feed, and the agent
+ * audit's first three batches, not attributed here. The same day's cut on
+ * the `index-` cap moved 112 kB from the entry chunk into lazy ones and left
+ * this number where it was, which is this paragraph's standing point: the
+ * total is a backstop, not what a visitor downloads. 6,010,000 is 94.1%.
  */
-const TOTAL_MAX = 5_680_000;
+const TOTAL_MAX = 6_010_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);

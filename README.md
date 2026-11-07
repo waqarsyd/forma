@@ -547,7 +547,9 @@ src/
                        repxEdit (move, resize and retype one control by
                        splicing its opening tag — the direct manipulation the
                        Preview pane offers, written into the REPX itself so
-                       every other byte the model wrote survives),
+                       every other byte the model wrote survives; its XML
+                       escaping is xmlEscape, a module of its own so the
+                       Preview engine stays out of the entry chunk),
                        dataSource (reads the fields out of whatever the user
                        pastes — a JSON row, a CSV export, a CREATE TABLE or a
                        list of names — and suggests which column each belongs

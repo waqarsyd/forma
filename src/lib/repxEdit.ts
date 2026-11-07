@@ -32,6 +32,7 @@
  * to prevent.
  */
 import { parseReportStructure, type PreviewControl } from './reportPreview';
+import { escapeXmlAttribute } from './xmlEscape';
 
 /** Which control, by its position in the parsed structure. */
 export interface ControlRef {
@@ -50,15 +51,8 @@ export interface EditResult {
 
 const decline = (xml: string, reason: string): EditResult => ({ xml, applied: false, reason });
 
-/** Attribute values go inside double quotes, so those five must not appear raw. */
-export function escapeXmlAttribute(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
+/** Attribute values go inside double quotes; the one copy is lib/xmlEscape.ts (2026-11-07). */
+export { escapeXmlAttribute };
 
 /**
  * Set attributes on one opening tag, replacing what is there and appending

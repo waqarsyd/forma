@@ -47,6 +47,7 @@ import {
   pointsToUnits,
   resolveReportUnit,
   resolvePageSize,
+  SUPPORTED_PAGE_SIZES,
 } from "../lib/reportGeometry";
 
 
@@ -757,7 +758,7 @@ export interface ChatOutcome {
 export const REPORT_CHAT_INSTRUCTIONS = `You are the assistant inside Forma, which designs DevExpress reports. A report is open, and its outline is below: every band and control by its Name, where it is, what it says or prints, and its font. It IS the report the user is looking at.
 
 Decide what the user's last message needs, and set "action":
-- "answer": a question, about this report, Forma or DevExpress, or anything that changes nothing. Answer from the outline; never say you cannot see the report.
+- "answer": a question, about this report, Forma or DevExpress, or anything that changes nothing. Answer from the outline: it is the report, with each control's place, words or expression, font, alignment, colours, borders, format and totals. What it does not show (a style's name, a script, the data itself), say it does not show rather than guessing.
 - "edit": a change the edits below can make. List them in "edits", in order. Name controls exactly as the outline does. Positions and sizes are in the report's unit, as the outline gives them; font sizes are points; colours are #RRGGBB. Keep every control inside its band and the page.
 - "rebuild": a change the edits cannot make: a new table, chart or group, binding to data or new fields, totals, a different layout, or many controls redesigned at once. Forma then redesigns the whole report from the user's words, which takes a minute or two. List no edits.
 - "new": the user asks for a different report, a new one rather than a change to this one ("create a new sales report", "now make me a payslip"). Forma keeps this report in its project and starts a new project for that one. List no edits.
@@ -772,7 +773,7 @@ The edits, by "op", and the fields each reads:
 - align: control (row, cell), align: left, center or right.
 - delete: control. visible: control, visible.
 - add: a new label: band (its name or kind), text, x, y, and optionally width, height, family, size, bold, italic. Match the report's own font unless asked otherwise.
-- paper: paper (A4, Letter, Legal, A3, A5, Tabloid), landscape. margins: any of left, right, top, bottom.
+- paper: paper (${SUPPORTED_PAGE_SIZES.join(', ')}), landscape; landscape alone turns the paper the report has. margins: any of left, right, top, bottom.
 
 When the outline ends with SELECTED ON THE PREVIEW, the user has selected those controls, and "this", "it", "these" and "them" in the message mean them.
 
@@ -1182,7 +1183,10 @@ ${transcript}`,
     config: {
       abortSignal: signal,
       temperature: report ? 0.2 : 0.4,
-      maxOutputTokens: report ? 2048 : 512,
+      // Room for MAX_EDITS edits at some 60 tokens each and the reply
+      // (2026-11-07, agent audit item 9): 2,048 could not hold forty, and a
+      // list cut short arrived as a reply claiming changes that never came.
+      maxOutputTokens: report ? 4096 : 512,
       // Chat is a two-or-three sentence answer plus a yes/no classification.
       // These models otherwise reason silently before writing a single
       // character, which for "hello" is the entire wait — and it is timed and
@@ -1237,6 +1241,8 @@ ${transcript}`,
   let firstChunkAt = 0;
   // The last usage metadata the stream carried: the turn's cost (2026-11-05).
   let usageMetadata: Parameters<typeof readTokenUsage>[0] = null;
+  // Why the model stopped, when the stream says (2026-11-07): MAX_TOKENS is an answer cut off.
+  let finishReason = '';
 
   /**
    * The whole turn is retryable, request and stream together.
@@ -1260,6 +1266,7 @@ ${transcript}`,
     lastEmitted = '';
     firstChunkAt = 0;
     usageMetadata = null;
+    finishReason = '';
 
     try {
       let stream;
@@ -1289,6 +1296,8 @@ ${transcript}`,
         if ((chunk as { usageMetadata?: Parameters<typeof readTokenUsage>[0] }).usageMetadata) {
           usageMetadata = (chunk as { usageMetadata?: Parameters<typeof readTokenUsage>[0] }).usageMetadata ?? null;
         }
+        const stopped = (chunk as { candidates?: { finishReason?: string }[] }).candidates?.[0]?.finishReason;
+        if (stopped) finishReason = String(stopped);
         if (!chunk.text) continue;
         if (!firstChunkAt) firstChunkAt = Date.now();
 
@@ -1403,6 +1412,20 @@ ${transcript}`,
   if (!raw) throw new Error('The assistant did not respond. Try again.');
 
   const usage = readTokenUsage(usageMetadata);
+  /*
+   * A report turn cut off, or whose answer did not parse, changes nothing and
+   * says so (2026-11-07, agent audit item 9). Its reply was salvaged and
+   * shown as the answer, so "Made labelTitle bold." stood over a report the
+   * edits never reached.
+   */
+  const cutOff = (why: string): ChatOutcome => ({
+    reply: `${why}, so nothing was changed. Try again, or ask for fewer changes at once.`,
+    wantsReport: false,
+    action: 'answer',
+    edits: [],
+    usage,
+  });
+  if (report && finishReason === 'MAX_TOKENS') return cutOff('The answer was cut off before it finished');
   try {
     const parsed = JSON.parse(raw) as ChatOutcome;
     // As the model wrote it; `readReportOutcome` decides what it means.
@@ -1419,7 +1442,7 @@ ${transcript}`,
     // scanner above already has a usable answer in most cases.
     const salvaged = extractPartialReply(raw);
     return report
-      ? { reply: salvaged || raw, wantsReport: false, action: 'answer', edits: [] }
+      ? cutOff('The answer came back incomplete')
       : { reply: salvaged || raw, wantsReport: false };
   }
 }

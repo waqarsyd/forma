@@ -30,7 +30,7 @@
  * out (`reportGeometry.ts` is where conversions live; this converts nothing).
  * Font sizes are points, as `Font` writes them.
  */
-import { parseReportStructure, type PreviewBand, type PreviewControl } from './reportPreview';
+import { marginsOf, parseReportStructure, type PreviewBand, type PreviewControl } from './reportPreview';
 import {
   addLabel,
   deleteControl,
@@ -116,9 +116,71 @@ function fontWords(c: { fontFamily: string | null; fontSize: number | null; bold
   return [c.fontFamily, c.fontSize ? `${round(c.fontSize)}pt` : null, c.bold ? 'bold' : null, c.italic ? 'italic' : null].filter(Boolean).join(' ');
 }
 
-function says(c: { text: string; field: string | null }): string {
+/**
+ * What a control or cell prints: its field, the expression it prints when
+ * that names none (2026-11-07, agent audit item 48: "Page " + [PageNumber],
+ * a total's formula), or its own words.
+ */
+function says(c: { text: string; field: string | null; data?: { expression: string | null } }): string {
   if (c.field) return `[${c.field}]`;
+  if (c.data?.expression) return `= ${clip(c.data.expression)}`;
   return c.text.trim() ? `"${clip(c.text)}"` : '';
+}
+
+/**
+ * The report as its file writes it (2026-11-07, agent audit item 6): a
+ * right-to-left report's cells in file order and its positions unmirrored,
+ * since the edits name cells and positions as the file does. The Preview
+ * draws what prints; the outline and the edits read this.
+ */
+const parseAsWritten = (xml: string) => parseReportStructure(xml, undefined, { asWritten: true });
+
+/** Whether DevExpress prints the report right to left, its alignments flipped; and mirrored, its layout too. */
+function rightToLeftOf(xml: string): { rtl: boolean; mirrored: boolean } {
+  const attrs = ROOT.exec(xml)?.[1] ?? '';
+  const rtl = attrOf(attrs, 'RightToLeft') === 'Yes';
+  return { rtl, mirrored: rtl && attrOf(attrs, 'RightToLeftLayout') === 'Yes' };
+}
+
+const flipSide = (a: 'left' | 'center' | 'right') => (a === 'left' ? 'right' : a === 'right' ? 'left' : a);
+
+/** More than this many rows of one table are summarised (agent audit item 43). */
+const MAX_ROWS = 10;
+
+/**
+ * Every control's name as the outline and the edits use it (2026-11-07,
+ * agent audit item 42): its `Name`, and for the second control sharing a
+ * name `name#2`, the third `name#3`, in file order, so two controls with one
+ * name are told apart and an edit reaches the one meant. Unnamed controls
+ * get none.
+ */
+function keyedControls(bands: PreviewBand[]): { band: number; index: number; c: PreviewControl; key: string }[] {
+  const seen = new Map<string, number>();
+  const out: { band: number; index: number; c: PreviewControl; key: string }[] = [];
+  bands.forEach((band, b) =>
+    band.controls.forEach((c, i) => {
+      if (!c.name) {
+        out.push({ band: b, index: i, c, key: '' });
+        return;
+      }
+      const n = (seen.get(c.name) ?? 0) + 1;
+      seen.set(c.name, n);
+      out.push({ band: b, index: i, c, key: n === 1 ? c.name : `${c.name}#${n}` });
+    }),
+  );
+  return out;
+}
+
+/** What a control's appearance adds to its line: a colour, a fill, borders (agent audit item 10). */
+function lookWords(look: Partial<Record<string, string>>): string[] {
+  const out: string[] = [];
+  const fore = look.ForeColor?.trim();
+  if (fore && !/^(Black|0,\s*0,\s*0)$/i.test(fore)) out.push(`colour ${fore}`);
+  const back = look.BackColor?.trim();
+  if (back && !/^Transparent$/i.test(back)) out.push(`fill ${back}`);
+  const borders = look.Borders?.trim();
+  if (borders && !/^None$/i.test(borders)) out.push(`borders ${borders}${look.BorderColor ? ` ${look.BorderColor}` : ''}`);
+  return out;
 }
 
 /**
@@ -127,24 +189,35 @@ function says(c: { text: string; field: string | null }): string {
  * (2026-11-05), which "this" and "these" in a message mean.
  */
 export function reportOutline(xml: string, options: { findings?: readonly string[]; selected?: readonly string[] } = {}): string {
-  const structure = parseReportStructure(xml);
+  const structure = parseAsWritten(xml);
   const rootAttrs = ROOT.exec(xml)?.[1] ?? '';
   const title = /\sDisplayName="([^"]*)"/.exec(rootAttrs)?.[1] ?? /\sName="([^"]*)"/.exec(rootAttrs)?.[1] ?? 'the report';
   const paper = attrOf(rootAttrs, 'PaperKind') ?? 'Letter';
   const landscape = (attrOf(rootAttrs, 'Landscape') ?? '').toLowerCase() === 'true';
+  const { rtl, mirrored } = rightToLeftOf(xml);
   const m = structure.margins;
   const lines: string[] = [
     `REPORT "${clip(title)}"; unit ${structure.unit}; paper ${paper} ${landscape ? 'landscape' : 'portrait'}, page ${round(structure.page.width)} x ${round(structure.page.height)}; margins left ${round(m.left)}, right ${round(m.right)}, top ${round(m.top)}, bottom ${round(m.bottom)}.`,
     "Positions and sizes are in the report's unit, as the file writes them; font sizes are points.",
   ];
+  if (rtl) {
+    lines.push(
+      `RIGHT TO LEFT: the report prints right to left. Alignments below are as they print, and an alignment edit is written as it should print.${mirrored ? ' Positions and table cells are as the file writes them, and print mirrored: x is measured from the left as written, and cell 1 prints rightmost.' : ''}`,
+    );
+  }
   const fields = new Set<string>();
   let listed = 0;
   let unlisted = 0;
+  let shared = false;
+  const keyed = keyedControls(structure.bands);
+  let at = 0;
   structure.bands.forEach((band, b) => {
     const height = round(band.height / (band.dpiScale ?? 1));
     lines.push(`BAND ${b} ${band.kind} "${band.name}", height ${height}${band.fields.length ? `, grouped by ${band.fields.map((f) => `[${f.field}]`).join(', ')}` : ''}`);
     if (band.sub) lines.push(`  (a detail report: its own bands are not listed and cannot be edited here)`);
     for (const c of band.controls) {
+      const key = keyed[at++].key;
+      if (key.includes('#')) shared = true;
       if (c.field) fields.add(c.field);
       for (const row of c.rows) for (const cell of row.cells) if (cell.field) fields.add(cell.field);
       if (listed >= MAX_CONTROLS) {
@@ -153,20 +226,29 @@ export function reportOutline(xml: string, options: { findings?: readonly string
       }
       listed++;
       const box = fileBox(c);
+      // A control inside a panel is placed within it (agent audit item 41).
+      const panel = c.panel !== undefined ? band.controls[c.panel] : null;
+      const where = panel ? `in panel ${panel.name || '(unnamed)'} at ${box.x},${box.y} within it` : `at ${box.x},${box.y}`;
+      const align = rtl ? flipSide(c.align) : c.align;
       const parts = [
-        `${c.name || '(unnamed)'}: ${c.type} at ${box.x},${box.y} size ${box.width}x${box.height}`,
+        `${key || '(unnamed)'}: ${c.type} ${where} size ${box.width}x${box.height}`,
         says(c),
         c.type === 'XRTable' ? '' : fontWords(c),
-        c.type === 'XRTable' ? `${c.rows.length} ${c.rows.length === 1 ? 'row' : 'rows'}` : c.align,
+        c.type === 'XRTable' ? `${c.rows.length} ${c.rows.length === 1 ? 'row' : 'rows'}` : align,
+        ...lookWords(c.appearance),
+        c.data?.format ? `format "${c.data.format}"` : '',
+        c.data?.running ? (c.data.running === 'None' ? 'a summary with no running scope' : `a total over ${c.data.running === 'Report' ? 'the report' : `each ${c.data.running.toLowerCase()}`}`) : '',
         c.visible ? '' : 'hidden',
       ].filter(Boolean);
       lines.push(`  ${parts.join(', ')}`);
-      c.rows.forEach((row, r) => {
+      c.rows.slice(0, MAX_ROWS).forEach((row, r) => {
         lines.push(`    row ${r + 1}: ${row.cells.map((cell, k) => `cell ${k + 1} ${says(cell) || '""'}${cell.bold ? ' bold' : ''}`).join(' | ')}`);
       });
+      if (c.rows.length > MAX_ROWS) lines.push(`    (${c.rows.length - MAX_ROWS} more rows are not listed)`);
     }
   });
   if (unlisted) lines.push(`(${unlisted} more controls are not listed)`);
+  if (shared) lines.push('Some controls share a name: the second is written name#2, the third name#3, and an edit names them the same way.');
   if (fields.size) lines.push(`FIELDS PRINTED: ${[...fields].map((f) => `[${f}]`).join(', ')}`);
   if (structure.parameters.length) lines.push(`PARAMETERS: ${structure.parameters.map((p) => p.name).join(', ')}`);
   if (options.findings?.length) lines.push(`CHECKS FOUND: ${options.findings.slice(0, 8).join(' | ')}`);
@@ -181,12 +263,11 @@ interface Found {
 
 function findControl(xml: string, name: string | undefined): Found | null {
   if (!name) return null;
-  const bands = parseReportStructure(xml).bands;
+  const keyed = keyedControls(parseAsWritten(xml).bands);
+  // "name#2" is the second control of that name; a bare name is the first.
   for (const exact of [true, false]) {
-    for (let b = 0; b < bands.length; b++) {
-      const at = bands[b].controls.findIndex((c) => (exact ? c.name === name : c.name.toLowerCase() === name.toLowerCase()));
-      if (at !== -1) return { ref: { band: b, control: at }, control: bands[b].controls[at] };
-    }
+    const hit = keyed.find((k) => k.key && (exact ? k.key === name : k.key.toLowerCase() === name.toLowerCase()));
+    if (hit) return { ref: { band: hit.band, control: hit.index }, control: hit.c };
   }
   return null;
 }
@@ -297,11 +378,29 @@ function setRootAttributes(xml: string, attrs: Record<string, string | null>): s
   return xml.slice(0, root.index) + tag + xml.slice(root.index + root[0].length);
 }
 
-function applyOne(xml: string, e: AgentEdit): EditResult {
+function applyOne(xml: string, edit: AgentEdit): EditResult {
+  // An alignment is asked for as it should print; a right-to-left report
+  // prints the file's flipped, so the file is written the other way (item 6).
+  const side = edit.op === 'align' ? readAlign(edit.align ?? (edit as { alignment?: unknown }).alignment) : null;
+  const e: AgentEdit = side && rightToLeftOf(xml).rtl ? { ...edit, align: flipSide(side) } : edit;
   if (e.op === 'paper') {
     const paper = SUPPORTED_PAGE_SIZES.find((p) => p.toLowerCase() === (e.paper ?? '').trim().toLowerCase());
     const rootAttrs = ROOT.exec(xml)?.[1] ?? '';
     const current = attrOf(rootAttrs, 'PaperKind') ?? 'Letter';
+    /*
+     * A paper Forma has no size for, Custom above all, only turns (2026-11-07,
+     * agent audit item 12): "make it landscape" looked its size up, found
+     * none, and set the page to Letter. Its own size is kept, the sides
+     * swapped when the turn changes which is longer.
+     */
+    if (!e.paper && !SUPPORTED_PAGE_SIZES.includes(current)) {
+      const w = Number.parseFloat(attrOf(rootAttrs, 'PageWidth') ?? '');
+      const h = Number.parseFloat(attrOf(rootAttrs, 'PageHeight') ?? '');
+      if (e.landscape === undefined || !Number.isFinite(w) || !Number.isFinite(h)) return decline(xml, `the paper is ${current}: name a paper (${SUPPORTED_PAGE_SIZES.join(', ')}) or say landscape or portrait`);
+      const [nw, nh] = e.landscape === w > h || w === h ? [w, h] : [h, w];
+      const out = setRootAttributes(xml, { Landscape: e.landscape ? 'true' : null, PageWidth: String(Math.round(nw)), PageHeight: String(Math.round(nh)) });
+      return { xml: out, applied: out !== xml, reason: `turned the ${current} paper ${e.landscape ? 'landscape' : 'portrait'}` };
+    }
     const target = paper ?? (e.paper ? null : current);
     if (!target) return decline(xml, `"${e.paper}" is not a paper Forma knows (${SUPPORTED_PAGE_SIZES.join(', ')})`);
     const landscape = e.landscape ?? (attrOf(rootAttrs, 'Landscape') ?? '').toLowerCase() === 'true';
@@ -317,13 +416,15 @@ function applyOne(xml: string, e: AgentEdit): EditResult {
   }
   if (e.op === 'margins') {
     const rootAttrs = ROOT.exec(xml)?.[1] ?? '';
-    const [l, r, t, b] = (attrOf(rootAttrs, 'Margins') ?? '100, 100, 100, 100').split(',').map((n) => Number(n.trim()));
+    // 100 a side when none are written, in the root's own Dpi, whatever the
+    // unit: what DevExpress printed (parity row 65), read by the Preview's own rule.
+    const [l, r, t, b] = marginsOf(attrOf(rootAttrs, 'Margins'));
     const next = [e.left ?? l, e.right ?? r, e.top ?? t, e.bottom ?? b].map((n) => Math.max(0, Math.round(Number.isFinite(n) ? n : 0)));
     const out = setRootAttributes(xml, { Margins: next.join(', ') });
     return { xml: out, applied: out !== xml, reason: `set the margins to ${next.join(', ')} (left, right, top, bottom)` };
   }
   if (e.op === 'add') {
-    const bands = parseReportStructure(xml).bands;
+    const bands = parseAsWritten(xml).bands;
     const b = findBand(bands, e.band);
     if (b === -1) return decline(xml, `no band "${e.band}"`);
     const added = addLabel(xml, b, 0, 0, e.text?.trim() || 'New label');
@@ -356,6 +457,9 @@ function applyOne(xml: string, e: AgentEdit): EditResult {
         return setCellText(xml, ref, cellAt.row, cellAt.cell, e.text);
       }
       if (control.field) return decline(xml, `${control.name} prints the field [${control.field}], so typed text would never show`);
+      // Bound to an expression that names no field, it prints the expression,
+      // never its own text (agent audit item 48).
+      if (control.data?.expression) return decline(xml, `${control.name} prints the expression ${clip(control.data.expression)}, so typed text would never show: change the expression in the Data tab`);
       return setControlText(xml, ref, e.text);
     case 'move':
       return moveControl(xml, ref, e.x ?? box.x, e.y ?? box.y);
@@ -438,15 +542,6 @@ export function toolLine(tool: AgentTool): string {
   }
 }
 
-function isTool(t: unknown): t is AgentTool {
-  if (!t || typeof t !== 'object') return false;
-  const { name, pane, format } = t as AgentTool;
-  if (!(TOOL_NAMES as readonly string[]).includes(name)) return false;
-  if (name === 'show') return (PANES as readonly string[]).includes(pane ?? '');
-  if (name === 'export') return (EXPORT_FORMATS as readonly string[]).includes(format ?? '');
-  return true;
-}
-
 /** A report turn's answer, as `chatReply` hands it over and as Forma acts on it. */
 export interface ReportOutcome {
   reply: string;
@@ -458,6 +553,23 @@ export interface ReportOutcome {
   tools: AgentTool[];
   /** The whole request for a redesign or a new report, from the conversation; absent otherwise. */
   brief?: string;
+  /** Tools asked for that Forma could not run, each with why (2026-11-07), for the reply's "Not done". */
+  toolsDeclined?: string[];
+}
+
+/**
+ * A tool as the model wrote it, made runnable or refused with a reason
+ * (2026-11-07, agent audit item 82): a "show" with no pane opens the
+ * Preview, as `toolLine` always said it would; an export with no format,
+ * or one Forma does not make, is refused and said, where it vanished.
+ */
+function readTool(t: unknown): AgentTool | string | null {
+  if (!t || typeof t !== 'object') return null;
+  const { name, pane, format } = t as AgentTool;
+  if (!(TOOL_NAMES as readonly string[]).includes(name)) return typeof name === 'string' && name ? `"${name}" is not something Forma can do` : null;
+  if (name === 'show') return (PANES as readonly string[]).includes(pane ?? '') ? { name, pane } : !pane ? { name, pane: 'preview' } : `there is no "${pane}" pane to show`;
+  if (name === 'export') return (EXPORT_FORMATS as readonly string[]).includes(format ?? '') ? { name, format } : `export: ${format ? `Forma does not export ${String(format).toUpperCase()}` : 'no format was named'} (${EXPORT_FORMATS.join(', ')})`;
+  return { name };
 }
 
 /**
@@ -494,7 +606,9 @@ export function readReportOutcome(parsed: { reply?: string; action?: string; edi
   const edits = (Array.isArray(parsed.edits) ? parsed.edits : [])
     .filter((e): e is AgentEdit => Boolean(e) && typeof e === 'object' && (EDIT_OPS as readonly string[]).includes((e as AgentEdit).op))
     .map((e) => (e.op === 'align' && named && !readAlign(e.align ?? (e as { alignment?: unknown }).alignment) ? { ...e, align: named } : e));
-  const tools = (Array.isArray(parsed.tools) ? parsed.tools : []).filter(isTool).slice(0, 4);
+  const read = (Array.isArray(parsed.tools) ? parsed.tools : []).map(readTool);
+  const tools = read.filter((t): t is AgentTool => !!t && typeof t === 'object').slice(0, 4);
+  const toolsDeclined = read.filter((t): t is string => typeof t === 'string');
   let action: ReportOutcome['action'] =
     parsed.action === 'answer' || parsed.action === 'edit' || parsed.action === 'rebuild' || parsed.action === 'new'
       ? parsed.action
@@ -509,6 +623,7 @@ export function readReportOutcome(parsed: { reply?: string; action?: string; edi
     edits: action === 'edit' ? edits : [],
     tools: designs ? [] : tools,
     ...(brief ? { brief } : {}),
+    ...(!designs && toolsDeclined.length ? { toolsDeclined } : {}),
   };
 }
 
@@ -543,14 +658,19 @@ interface Seen {
   band: string;
 }
 
+/**
+ * Every control by the name the outline gives it (`name#2` for a second of
+ * one name, agent audit item 42), as written; until 2026-11-07 a second
+ * control of one name overwrote the first here, and the Changed list
+ * described the wrong one. A right-to-left report's alignment is as it prints.
+ */
 function controlsOf(xml: string): Map<string, Seen> {
   const out = new Map<string, Seen>();
-  const s = parseReportStructure(xml);
-  s.bands.forEach((band, b) =>
-    band.controls.forEach((c, i) => {
-      out.set(c.name || `${c.type}@${b}.${i}`, { c, band: band.kind });
-    }),
-  );
+  const s = parseAsWritten(xml);
+  const { rtl } = rightToLeftOf(xml);
+  for (const { band, index, c, key } of keyedControls(s.bands)) {
+    out.set(key || `${c.type}@${band}.${index}`, { c: rtl ? { ...c, align: flipSide(c.align) } : c, band: s.bands[band].kind });
+  }
   return out;
 }
 
@@ -592,8 +712,10 @@ export function changedControls(before: string, after: string): string[] {
   for (const [key, { c: now }] of controlsOf(after)) {
     if (key.includes('@')) continue;
     const was = a.get(key)?.c;
+    // The Preview outlines by the control's own Name, which "name#2" shares.
+    const name = key.replace(/#\d+$/, '');
     if (!was) {
-      out.push(key);
+      if (!out.includes(name)) out.push(name);
       continue;
     }
     const [p, q] = [fileBox(was), fileBox(now)];
@@ -601,7 +723,7 @@ export function changedControls(before: string, after: string): string[] {
       was.text !== now.text || p.x !== q.x || p.y !== q.y || p.width !== q.width || p.height !== q.height ||
       fontWords(was) !== fontWords(now) || JSON.stringify(was.appearance) !== JSON.stringify(now.appearance) ||
       was.align !== now.align || was.visible !== now.visible || JSON.stringify(was.rows) !== JSON.stringify(now.rows);
-    if (differs) out.push(key);
+    if (differs && !out.includes(name)) out.push(name);
   }
   return out;
 }

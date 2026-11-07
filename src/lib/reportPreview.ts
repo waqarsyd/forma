@@ -1890,6 +1890,13 @@ export function parseReportStructure(
    * laid out inside its host, so its numbers are wanted in the host's unit.
    */
   into?: { dpi: number; unit: string },
+  /**
+   * `asWritten` (2026-11-07): a right-to-left report as its file writes it,
+   * nothing flipped or mirrored (`applyRightToLeft` skipped), for the chat's
+   * outline and edits, which name cells and positions as the file does. The
+   * Preview draws what prints and never passes it.
+   */
+  options: { asWritten?: boolean } = {},
 ): ReportStructure {
   const text = xml ?? '';
   const problems: string[] = [];
@@ -2087,7 +2094,7 @@ export function parseReportStructure(
     }
   }
 
-  applyRightToLeft(structure, rootAttrs);
+  if (!options.asWritten) applyRightToLeft(structure, rootAttrs);
   return structure;
 }
 

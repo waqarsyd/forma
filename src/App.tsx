@@ -4496,6 +4496,8 @@ export default function App() {
           ? tools.map((t) => (t.name === 'testData' && boundFields.length === 0 ? 'no sample rows: the report prints no fields' : agent.toolLine(t)))
           : [];
         if (tools.length) setPendingTools(tools);
+        // Tools asked for and refused, said under "Not done" (agent audit item 82).
+        const toolsRefused = agent && 'toolsDeclined' in outcome ? outcome.toolsDeclined ?? [] : [];
 
         if (open && agent && outcome.action === 'edit') {
           /*
@@ -4520,7 +4522,7 @@ export default function App() {
             setMessages(prev => [...prev, {
               id,
               role: 'assistant',
-              text: [outcome.reply, agent.changesMarkdown(changes, done.declined, toolsDone), brought].filter(Boolean).join('\n\n'),
+              text: [outcome.reply, agent.changesMarkdown(changes, [...done.declined, ...toolsRefused], toolsDone), brought].filter(Boolean).join('\n\n'),
             }]);
             announceReady('Report ready');
             return;
@@ -4534,7 +4536,7 @@ export default function App() {
             setMessages(prev => [...prev, {
               id,
               role: 'assistant',
-              text: ['Nothing needed changing: the report already reads that way.', agent.changesMarkdown([], done.declined, toolsDone)].filter(Boolean).join('\n\n'),
+              text: ['Nothing needed changing: the report already reads that way.', agent.changesMarkdown([], [...done.declined, ...toolsRefused], toolsDone)].filter(Boolean).join('\n\n'),
             }]);
             announceReady('Reply ready');
             return;
@@ -4565,7 +4567,7 @@ export default function App() {
           setMessages(prev => [...prev, {
             id: nextMessageId(),
             role: 'assistant',
-            text: agent && toolsDone.length ? [outcome.reply, agent.changesMarkdown([], [], toolsDone)].filter(Boolean).join('\n\n') : outcome.reply,
+            text: agent && (toolsDone.length || toolsRefused.length) ? [outcome.reply, agent.changesMarkdown([], toolsRefused, toolsDone)].filter(Boolean).join('\n\n') : outcome.reply,
           }]);
           announceReady('Reply ready');
           return;

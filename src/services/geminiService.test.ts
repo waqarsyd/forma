@@ -14,6 +14,7 @@ import {
   REPORT_CHAT_INSTRUCTIONS,
 } from './geminiService';
 import { auditRepx } from '../lib/repxAudit';
+import { SUPPORTED_PAGE_SIZES } from '../lib/reportGeometry';
 import { liftReportMargins } from '../lib/repxMargins';
 import { ensureUniqueRefs } from '../lib/repxRefs';
 import { normalizeItemNames } from '../lib/repxItems';
@@ -39,6 +40,14 @@ describe('REPORT_CHAT_INSTRUCTIONS', () => {
     expect(REPORT_CHAT_INSTRUCTIONS).toContain('"brief": with "rebuild" or "new", the whole request');
     expect(REPORT_CHAT_INSTRUCTIONS).toContain("THE USER'S REMEMBERED PREFERENCES are given, they are standing instructions");
     expect(CHAT_INSTRUCTIONS).toContain('When "wantsReport" is true, also write "brief"');
+  });
+
+  // The agent audit's batch C (2026-11-07): items 10 and 11.
+  it('offers only the papers the edit makes, and lets the model say what the outline does not show', () => {
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain(`paper (${SUPPORTED_PAGE_SIZES.join(', ')})`);
+    expect(REPORT_CHAT_INSTRUCTIONS).not.toMatch(/\bA3\b|\bA5\b/);
+    expect(REPORT_CHAT_INSTRUCTIONS).not.toContain('never say you cannot see the report');
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain('say it does not show rather than guessing');
   });
 });
 

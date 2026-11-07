@@ -74,7 +74,9 @@
  * are not deliberately changing survives untouched.
  */
 import { deriveFieldNames, fieldExpression, inferTextFormat, type DerivedField } from './repxBindings';
-import { escapeXmlAttribute } from './repxEdit';
+// From its own module, not repxEdit: that one brings the Preview engine into
+// the entry chunk with it (2026-11-07, lib/xmlEscape.ts).
+import { escapeXmlAttribute } from './xmlEscape';
 
 /** One complete `<Tag …>`, `</Tag>` or `<Tag … />`, as repxTruncation reads them. */
 const TAG = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/g;

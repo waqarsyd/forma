@@ -63,6 +63,92 @@ describe('changedControls', () => {
   });
 });
 
+/* The agent audit's batch C (2026-11-07): what the agent sees, and edits that reach what it meant. */
+describe('what the agent sees, and edits that reach the control meant', () => {
+  const ROOT = 'SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" ReportUnit="HundredthsOfAnInch" PageWidth="850" PageHeight="1100" Version="20.1"';
+  const doc = (rootExtra: string, controls: string) =>
+    `<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer ${ROOT} ${rootExtra}><Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="200"><Controls>${controls}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`;
+  const table = '<Item1 Ref="2" ControlType="XRTable" Name="grid" LocationFloat="0,0" SizeF="600,25"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="r1" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="first" Text="First" Weight="1" TextAlignment="MiddleLeft" /><Item2 Ref="5" ControlType="XRTableCell" Name="second" Text="Second" Weight="1" /></Cells></Item1></Rows></Item1>';
+  const label = (ref: number, name: string, x: number, extra = '') => `<Item${ref} Ref="${ref + 10}" ControlType="XRLabel" Name="${name}" Text="${name}" LocationFloat="${x},50" SizeF="100,20" ${extra} />`;
+
+  // Item 6: a right-to-left report is outlined and edited as its file writes it.
+  it('outlines a right-to-left report with cells in file order and alignments as they print, and writes an alignment so it prints as asked', () => {
+    const rtl = doc('RightToLeft="Yes" RightToLeftLayout="Yes"', table + label(2, 'note', 10, 'TextAlignment="MiddleLeft"'));
+    const outline = reportOutline(rtl);
+    expect(outline).toContain('RIGHT TO LEFT');
+    expect(outline).toContain('cell 1 "First" | cell 2 "Second"');
+    expect(outline).toContain('note: XRLabel at 10,50 size 100x20, "note", Times New Roman 9.75pt, right');
+    const out = applyEdits(rtl, [{ op: 'text', control: 'grid', row: 1, cell: 1, text: 'Erste' }, { op: 'align', control: 'note', align: 'left' }]);
+    expect(out.xml).toContain('Name="first" Text="Erste"');
+    expect(out.xml).toMatch(/Name="note"[^>]*TextAlignment="MiddleRight"/);
+  });
+
+  // Item 41: a control in a panel is placed within it.
+  it('says a control inside a panel is placed within it', () => {
+    const panel = '<Item1 Ref="2" ControlType="XRPanel" Name="box" LocationFloat="100,40" SizeF="300,100"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="inner" Text="Hi" LocationFloat="10,5" SizeF="80,20" /></Controls></Item1>';
+    expect(reportOutline(doc('', panel))).toContain('inner: XRLabel in panel box at 10,5 within it size 80x20');
+  });
+
+  // Item 42: two controls of one name are told apart, and an edit reaches the one meant.
+  it('names a second control of one name name#2, edits it by that name, and lists its change under it', () => {
+    const twins = doc('', label(1, 'total', 10) + label(2, 'total', 300));
+    const outline = reportOutline(twins);
+    expect(outline).toContain('total#2: XRLabel at 300,50');
+    expect(outline).toContain('Some controls share a name');
+    const out = applyEdits(twins, [{ op: 'move', control: 'total#2', x: 400 }]);
+    expect(out.xml).toMatch(/LocationFloat="10,50"[\s\S]*LocationFloat="400,50"/);
+    expect(describeChanges(twins, out.xml)).toEqual(['moved **total#2** to 400, 50']);
+    expect(changedControls(twins, out.xml)).toEqual(['total']);
+  });
+
+  // Item 43: a long static table does not flood the prompt.
+  it('lists at most ten rows of a table and counts the rest', () => {
+    const rows = Array.from({ length: 14 }, (_, i) => `<Item${i + 1} Ref="${100 + i}" ControlType="XRTableRow" Name="r${i}" Weight="1"><Cells><Item1 Ref="${200 + i}" ControlType="XRTableCell" Name="c${i}" Text="Row ${i}" Weight="1" /></Cells></Item${i + 1}>`).join('');
+    const outline = reportOutline(doc('', `<Item1 Ref="2" ControlType="XRTable" Name="long" LocationFloat="0,0" SizeF="600,350"><Rows>${rows}</Rows></Item1>`));
+    expect(outline).toContain('    row 10: cell 1 "Row 9"');
+    expect(outline).not.toContain('row 11:');
+    expect(outline).toContain('(4 more rows are not listed)');
+  });
+
+  // Items 10 and 48: the colours, borders, format, total and expression, and no text typed over an expression.
+  it('shows colours, borders, a format, a total and an expression, and refuses to retype what an expression prints', () => {
+    const rich =
+      label(1, 'flag', 10, 'ForeColor="Red" BackColor="255, 255, 224" Borders="Bottom" TextFormatString="{0:N2}"') +
+      '<Item2 Ref="20" ControlType="XRLabel" Name="pageNo" LocationFloat="10,100" SizeF="100,20"><ExpressionBindings><Item1 Ref="21" EventName="BeforePrint" PropertyName="Text" Expression="\'Page \' + ?Page" /></ExpressionBindings></Item2>' +
+      '<Item3 Ref="22" ControlType="XRLabel" Name="sum" LocationFloat="10,130" SizeF="100,20"><Summary Ref="23" Running="Group" /><ExpressionBindings><Item1 Ref="24" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Amount])" /></ExpressionBindings></Item3>';
+    const outline = reportOutline(doc('', rich));
+    expect(outline).toMatch(/flag: .*colour Red, fill 255, 255, 224, borders Bottom/);
+    expect(outline).toContain('format "{0:N2}"');
+    expect(outline).toContain(`pageNo: XRLabel at 10,100 size 100x20, = 'Page ' + ?Page`);
+    expect(outline).toMatch(/sum: .*\[Amount\].*a total over each group/);
+    expect(applyEdits(doc('', rich), [{ op: 'text', control: 'pageNo', text: 'Page 1' }]).declined[0]).toMatch(/prints the expression/);
+  });
+
+  // Item 12: landscape on a Custom paper turns it rather than resetting it to Letter.
+  it('turns a Custom paper landscape by swapping its own sides', () => {
+    const custom = doc('PaperKind="Custom"', label(1, 'a', 10)).replace('PageWidth="850" PageHeight="1100"', 'PageWidth="900" PageHeight="1300"');
+    const out = applyEdits(custom, [{ op: 'paper', landscape: true }]);
+    expect(out.xml).toContain('PageWidth="1300" PageHeight="900"');
+    expect(out.xml).toContain('PaperKind="Custom"');
+    expect(out.xml).toContain('Landscape="true"');
+    expect(applyEdits(custom, [{ op: 'paper' }]).declined[0]).toMatch(/the paper is Custom/);
+  });
+
+  // Item 81: no margins written is 100 a side, as DevExpress printed (parity row 65).
+  it('reads absent margins as DevExpress prints them before changing one side', () => {
+    expect(applyEdits(doc('', label(1, 'a', 10)), [{ op: 'margins', left: 30 }]).xml).toContain('Margins="30, 100, 100, 100"');
+  });
+
+  // Item 82: a tool asked for without what it needs is defaulted or said, never dropped.
+  it('opens the Preview for a show with no pane, and says why an export with no format was not made', () => {
+    const out = readReportOutcome({ reply: 'Here.', action: 'answer', tools: [{ name: 'show' }, { name: 'export' }, { name: 'export', format: 'odt' }] });
+    expect(out.tools).toEqual([{ name: 'show', pane: 'preview' }]);
+    expect(out.toolsDeclined).toHaveLength(2);
+    expect(out.toolsDeclined![0]).toMatch(/no format was named/);
+    expect(out.toolsDeclined![1]).toMatch(/does not export ODT/);
+  });
+});
+
 describe('reportOutline: the report as the model is shown it', () => {
   const outline = reportOutline(report, { findings: ['A total prints blank.'] });
 
