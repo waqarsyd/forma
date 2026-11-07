@@ -39,6 +39,11 @@ describe('the public pages do not claim what Forma no longer does', () => {
     ['nothing to configure before a key', /nothing to configure/i],
     ['a folder drop or parallel run that is not supported', /not supported yet/i],
     ['the spec written as .txt for a missing file', /specification as a <code[^>]*>\.txt|written spec as \.txt/],
+    // The site audit's batch SD (2026-11-08), on the Docs page.
+    ['an upload as the only way to start a report', /An upload is what starts a generation/],
+    ['an unverified account missing nothing', /Nothing is withheld/],
+    ['the account dialog in columns', /one in another column/],
+    ['a docs fix promised for feedback nobody receives', /gets fixed in the next pass/],
   ])('no longer claims %s', (_what, pattern) => {
     expect(all).not.toMatch(pattern);
   });
@@ -78,5 +83,34 @@ describe('what the pages state, the code answers', () => {
       expect(visible(features), label).toContain(name);
     }
     for (const src of [landing, features, docs]) expect(visible(src)).toContain('OCR');
+  });
+});
+
+/*
+ * The Docs page covers what the workspace does (2026-11-08, the site audit's
+ * batch SD): sharing, memory, the library, the data view, the workspace
+ * itself and its shortcuts had no article, and the account article described
+ * a dialog that had been rebuilt in sections the day before.
+ */
+describe('the Docs page covers the workspace as it is', () => {
+  const labels = (src: string) => [...src.matchAll(/\{ id: '\w+', label: '([^']+)'/g)].map((m) => m[1]);
+
+  it('has an article for each part of the workspace a visitor asks about', () => {
+    for (const id of ['ai', 'workspace', 'data', 'share', 'memory', 'shortcuts']) {
+      expect(docs, id).toContain(`<Article id="${id}"`);
+    }
+  });
+
+  it("names every section of Settings and of the account dialog", () => {
+    const settings = labels(readFileSync('src/components/SettingsDialog.tsx', 'utf8'));
+    const account = labels(readFileSync('src/components/AccountDialog.tsx', 'utf8'));
+    expect(settings.length).toBeGreaterThanOrEqual(4);
+    expect(account.length).toBeGreaterThanOrEqual(4);
+    for (const label of [...settings, ...account]) expect(visible(docs), label).toContain(label);
+  });
+
+  it('prints the shortcuts from the list the workspace dialog uses, not a copy', () => {
+    expect(docs).toContain("import { shortcutGroups } from '../lib/shortcuts'");
+    expect(readFileSync('src/components/ShortcutsDialog.tsx', 'utf8')).toContain("import { shortcutGroups } from '../lib/shortcuts'");
   });
 });

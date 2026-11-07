@@ -3,69 +3,15 @@
  * Stitch's Shortcut Keys dialog lists its own: opened by "?" (outside a
  * field), from the command menu and from the corner's help. Written for a
  * Mac with ⌘ and for a PC with Ctrl. The keys themselves are read in
- * `lib/shortcuts.ts`, `lib/sidebar.ts`, the Preview and the box; this is
- * their one list, so a new shortcut is a new row here too.
+ * `lib/shortcuts.ts`, `lib/sidebar.ts`, the Preview and the box; their one
+ * list is `shortcutGroups` in `lib/shortcuts.ts` since 2026-11-08, which the
+ * Docs page prints too, so a new shortcut is a new row there.
  */
 import { useRef } from 'react';
 import './overlays.css';
 import { IconClose } from './landing/icons';
 import { useFocusTrap } from './useFocusTrap';
-
-type Row = [label: string, keys: string[]];
-
-export function shortcutGroups(mac: boolean): { title: string; rows: Row[] }[] {
-  const mod = mac ? '⌘' : 'Ctrl';
-  return [
-    {
-      title: 'General',
-      rows: [
-        ['Command menu', [mod, 'K']],
-        ['Keyboard shortcuts', ['?']],
-        ['New report', [mod, '⇧', 'O']],
-        ['Show or hide the sidebar', [mod, 'B']],
-        ['Clean screen', [mod, '\\']],
-      ],
-    },
-    {
-      title: 'The box',
-      rows: [
-        ['Cursor to the box', ['⇧', 'Esc']],
-        ['Send', ['Enter']],
-        ['Stop what Forma is doing', ['Esc']],
-        ['New line', ['⇧', 'Enter']],
-        ['Your earlier messages', ['↑']],
-        ['Copy the last reply', [mod, '⇧', 'C']],
-      ],
-    },
-    {
-      title: 'Edit',
-      rows: [
-        ['Undo', [mod, 'Z']],
-        ['Redo', [mod, '⇧', 'Z']],
-        ...(mac ? [] : [['Redo, the other way', ['Ctrl', 'Y']] as Row]),
-        ['Select more', ['⇧', 'Click']],
-        ['Nudge the selection', ['↑ ↓ ← →']],
-        ['Nudge it ten units', ['⇧', '↑ ↓ ← →']],
-        ['Duplicate the selection', [mod, 'D']],
-        ['Put the selection in the chat', [mod, 'L']],
-        ['Delete the selection', ['Delete']],
-        ['Clear the selection', ['Esc']],
-        ['Retype a label or a cell', ['Double-click']],
-      ],
-    },
-    {
-      title: 'View',
-      rows: [
-        ['Zoom in', ['+']],
-        ['Zoom out', ['−']],
-        ['Zoom to 100%', ['⇧', '0']],
-        ['Zoom to fit', ['⇧', '1']],
-        ['Zoom to the selection', ['⇧', '2']],
-        ['Focus on the selection', ['F']],
-      ],
-    },
-  ];
-}
+import { shortcutGroups } from '../lib/shortcuts';
 
 export default function ShortcutsDialog({ onClose, mac }: { onClose: () => void; mac: boolean }) {
   // A modal's keyboard (2026-11-06): focus in, Tab kept inside, Escape, and focus back.

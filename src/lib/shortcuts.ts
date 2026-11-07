@@ -83,3 +83,65 @@ export function shortcutText(shortcut: ChatShortcut, platform: string): string {
   const letter = shortcut === 'newReport' ? 'O' : 'C';
   return mac ? `⇧⌘${letter}` : `Ctrl+Shift+${letter}`;
 }
+
+/**
+ * Every shortcut of the workspace, by group, as the shortcuts dialog lists them
+ * and the Docs page prints them (moved here from ShortcutsDialog.tsx on
+ * 2026-11-08, site audit item 19, so the two cannot disagree). Written for a
+ * Mac with the command key and for a PC with Ctrl.
+ */
+export type ShortcutRow = [label: string, keys: string[]];
+
+export function shortcutGroups(mac: boolean): { title: string; rows: ShortcutRow[] }[] {
+  const mod = mac ? '⌘' : 'Ctrl';
+  return [
+    {
+      title: 'General',
+      rows: [
+        ['Command menu', [mod, 'K']],
+        ['Keyboard shortcuts', ['?']],
+        ['New report', [mod, '⇧', 'O']],
+        ['Show or hide the sidebar', [mod, 'B']],
+        ['Clean screen', [mod, '\\']],
+      ],
+    },
+    {
+      title: 'The box',
+      rows: [
+        ['Cursor to the box', ['⇧', 'Esc']],
+        ['Send', ['Enter']],
+        ['Stop what Forma is doing', ['Esc']],
+        ['New line', ['⇧', 'Enter']],
+        ['Your earlier messages', ['↑']],
+        ['Copy the last reply', [mod, '⇧', 'C']],
+      ],
+    },
+    {
+      title: 'Edit',
+      rows: [
+        ['Undo', [mod, 'Z']],
+        ['Redo', [mod, '⇧', 'Z']],
+        ...(mac ? [] : [['Redo, the other way', ['Ctrl', 'Y']] as ShortcutRow]),
+        ['Select more', ['⇧', 'Click']],
+        ['Nudge the selection', ['↑ ↓ ← →']],
+        ['Nudge it ten units', ['⇧', '↑ ↓ ← →']],
+        ['Duplicate the selection', [mod, 'D']],
+        ['Put the selection in the chat', [mod, 'L']],
+        ['Delete the selection', ['Delete']],
+        ['Clear the selection', ['Esc']],
+        ['Retype a label or a cell', ['Double-click']],
+      ],
+    },
+    {
+      title: 'View',
+      rows: [
+        ['Zoom in', ['+']],
+        ['Zoom out', ['−']],
+        ['Zoom to 100%', ['⇧', '0']],
+        ['Zoom to fit', ['⇧', '1']],
+        ['Zoom to the selection', ['⇧', '2']],
+        ['Focus on the selection', ['F']],
+      ],
+    },
+  ];
+}
