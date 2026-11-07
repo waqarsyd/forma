@@ -61,36 +61,39 @@ export function FigureIngest() {
   );
 }
 
-/** What the bar is actually measuring. */
+/**
+ * What working looks like (2026-11-08, site audit item 7): your message, the
+ * reply's three dots, and Stop. This drew a progress bar at 62% with
+ * "chars received · 18.4s elapsed" until then, which the workspace stopped
+ * showing on 2026-11-04, when the owner asked for every step behind the scenes.
+ */
 export function FigureStream() {
   const reduce = useReducedMotion();
   return (
-    <div className={`${FRAME} flex flex-col justify-center gap-2.5 px-[22px] pb-6`}>
-      <div className="flex items-center gap-[11px]">
-        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-[color:var(--ground-2)]">
+    <div className={`${FRAME} flex flex-col justify-center gap-3 px-[22px] pb-6`}>
+      <motion.span
+        className="ml-auto block h-[7px] w-[58%] origin-right rounded-full bg-[color:var(--ground-2)]"
+        initial={{ scaleX: 0 }}
+        whileInView={{ scaleX: 1 }}
+        viewport={view}
+        transition={{ ...transition.slow, delay: reduce ? 0 : 0.2 }}
+      />
+      <div className="flex items-center gap-[6px]" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
           <motion.span
-            className="block h-full rounded-full bg-secondary-container"
-            initial={{ width: '4%' }}
-            whileInView={{ width: '62%' }}
+            key={i}
+            className="block h-[7px] w-[7px] rounded-full bg-secondary-container"
+            initial={{ opacity: 0.25 }}
+            whileInView={reduce ? { opacity: 1 } : { opacity: [0.25, 1, 0.25] }}
             viewport={view}
-            transition={{ ...transition.slow, duration: reduce ? 0 : 1.3, delay: reduce ? 0 : 0.2 }}
+            transition={reduce ? { duration: 0 } : { duration: 1.2, repeat: Infinity, delay: 0.4 + i * 0.2 }}
           />
-        </span>
-        <span className="min-w-[26px] text-right font-code-sm text-[10px] leading-[1.62] font-medium tabular-nums text-secondary">
-          62%
+        ))}
+        <span className="ml-auto inline-flex items-center gap-[6px] rounded-full border border-outline-variant px-2.5 py-[3px] font-code-sm text-[10px] leading-[1.62] font-medium text-on-surface-variant">
+          <span className="block h-[7px] w-[7px] rounded-[1.5px] bg-[color:var(--ink-faint)]" />
+          Stop
         </span>
       </div>
-      {[78, 54].map((w, i) => (
-        <motion.span
-          key={w}
-          className="block h-[5px] origin-left rounded-full bg-[color:var(--ground-2)]"
-          style={{ width: `${w}%` }}
-          initial={{ scaleX: 0 }}
-          whileInView={{ scaleX: 1 }}
-          viewport={view}
-          transition={{ ...transition.slow, delay: reduce ? 0 : 0.55 + i * 0.17 }}
-        />
-      ))}
       <motion.span
         className={CAPTION}
         initial={{ opacity: 0 }}
@@ -98,7 +101,7 @@ export function FigureStream() {
         viewport={view}
         transition={{ ...transition.slow, delay: reduce ? 0 : 0.55 }}
       >
-        chars received · 18.4s elapsed
+        working · Stop aborts the request
       </motion.span>
     </div>
   );

@@ -8,7 +8,7 @@ import { Reveal, RevealGroup, RevealItem, SectionHead, Eyebrow, Stat, BODY } fro
 import {
   IconImage, IconDoc, IconCode, IconStack,
   IconText, IconBorder, IconGrid, IconChart, IconGauge,
-  IconPulse, IconPause, IconRedo, IconChat,
+  IconPulse, IconRedo, IconChat,
   IconSpec, IconLayout, IconDownload, IconShieldCheck, IconKey,
   IconCheck, IconMinus, IconDot, IconArrowRight, IconScan,
 } from './landing/icons';
@@ -42,8 +42,8 @@ const FORMATS = [
   {
     Icon: IconImage,
     kind: 'PNG · JPG',
-    title: 'Screenshots and photos',
-    body: 'Resized and re-encoded in your browser before anything is sent, so a phone photo of a printed form uploads as fast as a screenshot. A file that is already small enough is passed through untouched.',
+    title: 'Screenshots, photos and scans',
+    body: 'Resized and re-encoded in your browser before anything is sent, so a phone photo of a printed form uploads as fast as a screenshot. Its words are read by OCR in your browser too, and go with the picture as exact text.',
   },
   {
     Icon: IconDoc,
@@ -63,41 +63,53 @@ const FORMATS = [
     title: 'Several files at once',
     body: 'Drag them in or pick them — both routes run the same intake. Text recovered from your files is ordered ahead of the page images so exact strings are in context first.',
   },
+  {
+    Icon: IconGrid,
+    kind: 'CSV · XLSX · JSON',
+    title: 'The data it will print',
+    body: 'A CSV, TSV, JSON, text, SQL, Excel or Word file is read in your browser for its columns and first rows, so the report is bound to the fields you actually have.',
+  },
 ];
 
 /* ------------------------------------------------------------------- setup */
 
-/** What the configuration panel actually exposes before a run. */
+/**
+ * What Forma works out for each request instead of asking (lib/autoConfig.ts,
+ * since 2026-11-04, the owner's rule that nobody is asked what the input
+ * already says). Until 2026-11-08 this listed the configuration dialog that
+ * was removed that day: a version, unit and page-size picker and header and
+ * footer settings (site audit item 4).
+ */
 const SETUP: Array<{ Icon: typeof IconText; k: string; v: string; d: string }> = [
   {
     Icon: IconCode,
     k: 'DevExpress version',
-    v: '26.1 · 25.2 · 25.1 · 24.1 · 23.2 · 23.1 · 22.2 · 20.1',
-    d: 'The generated markup is targeted at the version you pick, so the file matches the designer you actually have. The tag is a label rather than a gate — a report targeting a newer release still opens, and the designer rewrites the version when it saves.',
+    v: 'read from your report · 23.2 if there is none',
+    d: 'The version a .repx you bring declares, otherwise the version of the last one you brought, otherwise 23.2. The tag is a label rather than a gate: a report targeting a newer release still opens, and the designer rewrites the version when it saves.',
   },
   {
     Icon: IconLayout,
     k: 'Report unit',
     v: 'hundredths of an inch · tenths of a millimetre · pixels',
-    d: 'The measurement system the generated report is written in. Every coordinate in the file, and every conversion behind the preview, goes through this one choice.',
+    d: 'Read from a .repx you bring, or the last one, else DevExpress’s own default, hundredths of an inch. Every coordinate in the file, and every conversion behind the preview, goes through it.',
   },
   {
     Icon: IconLayout,
-    k: 'Page size',
-    v: 'Letter · A4 · Legal',
-    d: 'Written into the XML as real page dimensions, so the sheet you review and the sheet that prints are the same size.',
+    k: 'Paper',
+    v: 'Letter · A4 · Legal · Tabloid, portrait or landscape',
+    d: 'From the page you attach, then your words (“on A4, landscape”), then your region: Letter in the Americas and the Philippines, A4 elsewhere. Written as the paper DevExpress prints on.',
   },
   {
-    Icon: IconImage,
-    k: 'Header',
-    v: 'logo · title',
-    d: 'Include a company logo, and give the report a title — set before it generates rather than corrected afterwards in the designer.',
+    Icon: IconText,
+    k: 'Direction',
+    v: 'left to right · right to left',
+    d: 'Right to left when the text you bring reads that way, written into the report so it prints that way.',
   },
   {
-    Icon: IconSpec,
-    k: 'Footer',
-    v: 'page numbers · custom text',
-    d: 'Turn page numbering on, and add your own footer line — a document reference, a confidentiality note, whatever the form needs.',
+    Icon: IconStack,
+    k: 'Data',
+    v: 'fields · a stored procedure',
+    d: 'The fields from a data file you attach or the columns your words name, and a stored procedure from your words or your data.',
   },
 ];
 
@@ -125,7 +137,7 @@ const CARRIES: Array<{ Icon: typeof IconText; k: string; d: string; mock: Cell; 
   {
     Icon: IconText,
     k: 'Text and its position',
-    d: 'Content, x and y, width and height — in hundredths of an inch, the unit DevExpress stores.',
+    d: 'Content, x and y, width and height, in the report’s own unit (hundredths of an inch unless the report says otherwise).',
     mock: { mark: 'full', note: 'drawn' },
     repx: { mark: 'full', note: 'XRLabel' },
   },
@@ -160,9 +172,9 @@ const CARRIES: Array<{ Icon: typeof IconText; k: string; d: string; mock: Cell; 
   {
     Icon: IconImage,
     k: 'Pictures and logos',
-    d: 'Each one located in your upload and cut out of it. A rectangle that fails the sanity check falls back to a placeholder — a wrong crop is worse than none.',
+    d: 'Each one located in your upload and cut out of it for the mockup. In the .repx it is a picture box placed and sized where the logo was, for you to point at the image in the designer: the image itself is not written into the file.',
     mock: { mark: 'full', note: 'cropped' },
-    repx: { mark: 'full', note: 'XRPictureBox' },
+    repx: { mark: 'partial', note: 'placed, empty' },
   },
   {
     Icon: IconGauge,
@@ -185,6 +197,44 @@ const CARRIES: Array<{ Icon: typeof IconText; k: string; d: string; mock: Cell; 
     mock: { mark: 'standin', note: 'placeholder' },
     repx: { mark: 'full', note: 'XRGauge' },
   },
+  /* The controls below were missing until 2026-11-08 (site audit item 50).
+     The Preview draws every one of them as DevExpress prints it; this table
+     compares the mockup with the file. */
+  {
+    Icon: IconCheck,
+    k: 'Check boxes',
+    d: 'A tick box, checked or not, or bound to a yes-or-no field.',
+    mock: { mark: 'full', note: 'drawn' },
+    repx: { mark: 'full', note: 'XRCheckBox' },
+  },
+  {
+    Icon: IconLayout,
+    k: 'Panels',
+    d: 'A box that holds other controls and moves them as one. The mockup draws what is inside it.',
+    mock: { mark: 'partial', note: 'contents' },
+    repx: { mark: 'full', note: 'XRPanel' },
+  },
+  {
+    Icon: IconBorder,
+    k: 'Shapes and cross-band lines',
+    d: 'Rectangles, ellipses and lines, and the lines and boxes DevExpress draws from one band to another, as on a form with a border round the whole page.',
+    mock: { mark: 'standin', note: 'Preview' },
+    repx: { mark: 'full', note: 'XRShape' },
+  },
+  {
+    Icon: IconGrid,
+    k: 'Cross-tabs',
+    d: 'A pivot of rows against columns, written with the layout DevExpress generates for it. The Preview draws its grid over test data.',
+    mock: { mark: 'standin', note: 'labelled box' },
+    repx: { mark: 'full', note: 'XRCrossTab' },
+  },
+  {
+    Icon: IconStack,
+    k: 'Subreports and a table of contents',
+    d: 'Kept from a report you bring: Forma does not invent a subreport. A table of contents is built from the report’s bookmarks.',
+    mock: { mark: 'standin', note: 'labelled box' },
+    repx: { mark: 'full', note: 'XRSubreport' },
+  },
 ];
 
 /* ----------------------------------------------------------------- control */
@@ -192,13 +242,13 @@ const CARRIES: Array<{ Icon: typeof IconText; k: string; d: string; mock: Cell; 
 const CONTROLS = [
   {
     Icon: IconPulse,
-    title: 'Progress you can believe',
-    body: 'The response is streamed, so the bar tracks output actually received rather than a timer inventing percentages. It can never run backwards, and only a finished, parsed result ever reads as complete.',
+    title: 'Three dots, and Stop',
+    body: 'While Forma works the reply shows three dots, and the send button becomes Stop, which aborts the request in flight rather than hiding a loader. Every step happens behind the scenes, as in the chat apps you know.',
   },
   {
-    Icon: IconPause,
-    title: 'Pause and Stop really stop',
-    body: 'Both abort the request in flight rather than hiding a loader. Pause keeps the run alive so it can be re-issued; Stop resets the workspace.',
+    Icon: IconStack,
+    title: 'A queue while it works',
+    body: 'What you type meanwhile waits in a queue over the box. Steer sends one now and changes course; Stop pauses the queue until you resume it.',
   },
   {
     Icon: IconChat,
@@ -207,8 +257,8 @@ const CONTROLS = [
   },
   {
     Icon: IconRedo,
-    title: 'Refinements edit, not regenerate',
-    body: 'A follow-up sends the existing layout and XML back with your instruction, so the model changes what you asked about and leaves the rest of the structure standing.',
+    title: 'Edits in place, not a regenerate',
+    body: 'With a report open, the chat reads its outline and answers a question, edits the file in place (a move, a font, a colour, a border, a number format, a binding, a page number, a table’s row or column), or asks before a redesign for what an edit cannot reach. Each reply lists what changed, with Undo and Redo.',
   },
   {
     Icon: IconShieldCheck,
@@ -306,7 +356,7 @@ function XmlLine({ src }: { src: string }) {
 function PipelineCard() {
   const stops: Array<[string, string, string, string]> = [
     ['01', 'Intake', 'What you can hand it', '#intake'],
-    ['02', 'Setup', 'What you set first', '#setup'],
+    ['02', 'Setup', 'What it works out', '#setup'],
     ['03', 'Fidelity', 'What survives the trip', '#fidelity'],
     ['04', 'Control', 'The run itself', '#control'],
     ['05', 'Scale', 'A folder at a time', '#scale'],
@@ -449,16 +499,16 @@ export default function FeaturesPage({
             {/* stat strip */}
             <RevealGroup className="mt-[76px] grid grid-cols-2 border-y border-outline-variant bg-surface-container-lowest/45 md:grid-cols-4">
               <RevealItem className="border-outline-variant px-0 py-6 md:pr-[26px]">
-                <Stat to={4} unit="file types" label="PNG, JPG, PDF and .repx" />
+                <Stat to={10} unit="kinds of file" label="pictures, PDF, .repx and seven data formats" />
               </RevealItem>
               <RevealItem className="border-l border-outline-variant px-6 py-6 md:px-[26px]">
                 <Stat to={8} unit="pages / PDF" label="rendered and text-extracted" />
               </RevealItem>
               <RevealItem className="border-t border-outline-variant px-0 py-6 md:border-l md:border-t-0 md:px-[26px]">
-                <Stat to={3} unit="artifacts" label="spec, mockup and XML, per request" />
+                <Stat to={3} unit="artifacts" label="the .repx, and the spec and mockup read off it" />
               </RevealItem>
               <RevealItem className="border-l border-t border-outline-variant px-6 py-6 md:border-t-0 md:px-[26px]">
-                <Stat to={0} label="plaintext copies of your key" />
+                <Stat to={0} label="plaintext copies of your key on any server" />
               </RevealItem>
             </RevealGroup>
           </div>
@@ -529,12 +579,12 @@ export default function FeaturesPage({
                     {
                       Icon: IconText,
                       h: 'the page as text',
-                      d: 'Every string with its exact position, converted into hundredths of an inch. Authoritative for content.',
+                      d: 'Every string with its exact position, converted into the report’s unit. Authoritative for content.',
                     },
                     {
                       Icon: IconScan,
                       h: 'no text layer found',
-                      d: 'A scan is detected and reported, and the page falls back to being read visually.',
+                      d: 'A scan or a photo is read by OCR in your browser (English, and Arabic, Urdu, Hindi, French, German or Spanish when the page is in one), and its words go with the image.',
                     },
                   ].map((r, i) => (
                     <div
@@ -583,8 +633,8 @@ export default function FeaturesPage({
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
               eyebrow="Setup"
-              title="Decide the shape before it builds."
-              lede="Four settings, all of them things you would otherwise fix by hand in the designer afterwards. They are written into the generated XML rather than applied to it later."
+              title="Nothing to set before it builds."
+              lede="What used to be a dialog of settings is worked out from what you bring, and anything else is a sentence in the chat. Settings shows what was worked out for the last request, and why."
             />
 
             <RevealGroup className="grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant sm:grid-cols-2" stagger={0.09}>
@@ -611,11 +661,11 @@ export default function FeaturesPage({
 
             <Reveal delay={0.1}>
               <div className="mt-9 rounded-[10px] border border-[color:var(--accent-line)] bg-[color:var(--accent-wash)] px-[17px] py-[15px] font-body-lg text-[13.5px] leading-[1.6] text-on-surface-variant">
-                <b className="font-bold text-on-surface">There is no model to choose, and that is deliberate.</b>{' '}
+                <b className="font-bold text-on-surface">The model is found for you, and still yours to change.</b>{' '}
                 Google retires models "for new users", so a hard-coded id is a time bomb — an existing project keeps
-                working while every freshly created key gets a 404. Forma probes the candidates your key can actually
-                reach, once per session, and uses the best one that answers. One less setting, and one less thing to
-                be wrong about in six months.
+                working while every freshly created key gets a 404. Forma probes the models your key can actually
+                reach, once per session, and uses the best one that answers. The box offers Fast and Balanced beside
+                Auto, and Settings → AI swaps Gemini for a local AI or OpenRouter’s free models.
               </div>
             </Reveal>
           </div>
@@ -627,7 +677,7 @@ export default function FeaturesPage({
             <SectionHead
               eyebrow="Fidelity"
               title="What survives the trip."
-              lede="The mockup you look at and the XML you download are generated together from one description, so they agree with each other. This is what that description carries — including the two rows where it stops short."
+              lede="The AI writes the .repx, and the mockup and the spec are read off it, so the three always agree; the Preview prints the same file as DevExpress would. This is what the file carries, and where the mockup draws less than the file holds."
             />
 
             <Reveal>
@@ -682,8 +732,8 @@ export default function FeaturesPage({
                   100 units = 1 inch
                 </span>
                 <span className="font-body-lg text-[12.5px] leading-[1.5] text-[color:var(--ink-faint)]">
-                  the grid both artifacts are drawn on — the unit DevExpress stores, so nothing is converted on the
-                  way in or out
+                  DevExpress’s own default grid; a report in millimetres or pixels keeps its unit, and every
+                  conversion goes through one place
                 </span>
               </div>
             </Reveal>
@@ -695,8 +745,8 @@ export default function FeaturesPage({
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
               eyebrow="Control"
-              title="You are not watching a spinner."
-              lede="A generation takes real time, and the interface is honest about where that time goes rather than filling it with an animation."
+              title="The run stays out of your way."
+              lede="A generation takes real time. The chat shows that Forma is working and how to stop it, and keeps every step behind the scenes."
             />
             <RevealGroup className="grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant sm:grid-cols-2" stagger={0.09}>
               {CONTROLS.map((c) => (
@@ -741,7 +791,7 @@ export default function FeaturesPage({
               {[
                 {
                   k: 'A queue, not a batch button',
-                  d: 'Choose as many files as you like and each one becomes its own report — the opposite of attaching several pages to build one. They run in sequence, because your key carries the quota and forty simultaneous requests turn a slow success into a fast 429.',
+                  d: 'Choose as many files as you like and each one becomes its own report — the opposite of attaching several pages to build one. They run one at a time by default, because your key carries the quota and forty simultaneous requests turn a slow success into a fast 429; a key whose quota allows it can run two or three at once.',
                 },
                 {
                   k: 'A verdict on every row',
@@ -753,7 +803,7 @@ export default function FeaturesPage({
                 },
                 {
                   k: 'Out in one archive',
-                  d: 'Any finished row opens in the workspace or downloads on its own, and Download as .zip takes the lot. Dropping a folder onto the panel is not supported yet; the picker takes the files.',
+                  d: 'Any finished row opens in the workspace or downloads on its own, and Download as .zip takes the lot. Drop a folder onto the panel, or choose one, and every report in it is queued with its path.',
                 },
                 {
                   k: 'Every revision, and what it changed',
@@ -801,22 +851,27 @@ export default function FeaturesPage({
                     {
                       Icon: IconSpec,
                       t: 'The written specification',
-                      d: 'A component inventory in markdown — every element, its coordinates, its font and its borders. The document you would otherwise have written by hand.',
+                      d: 'A component inventory in markdown, read off the .repx: every band and control, its coordinates, its font and its borders. The document you would otherwise have written by hand.',
                     },
                     {
                       Icon: IconLayout,
                       t: 'The live mockup',
-                      d: 'Drawn at true proportions on a sheet that stays white in both light and dark themes, because a printed report does. It scales to your viewport without reflowing the layout.',
+                      d: 'Read off the .repx too, and drawn at true proportions on a sheet that stays white in both light and dark themes, because a printed report does. It scales to your viewport without reflowing the layout.',
                     },
                     {
                       Icon: IconShieldCheck,
                       t: 'The XML, parsed and checked',
-                      d: 'Syntax-coloured with line numbers and a copy action. Before you download, it is parsed and asserted to have the right root element and a Bands section.',
+                      d: 'Syntax-coloured with line numbers and a copy action. Before you download, it is parsed, asserted to have the right root element and a Bands section, and audited for what DevExpress would drop or print wrong.',
+                    },
+                    {
+                      Icon: IconDoc,
+                      t: 'The Preview, and every export',
+                      d: 'The Preview pages the report as DevExpress prints it, over test data Forma can make, and exports it as PDF (with an outline, a password, or as PDF/A), Excel, CSV, Word, RTF, HTML or a picture, all in your browser. Open in designer hands the file to the DevExpress designer on Windows.',
                     },
                     {
                       Icon: IconDownload,
                       t: 'The file itself',
-                      d: 'Downloads as a .repx named after the report title. If the model returned no XML at all, you get the written spec as .txt rather than an empty file.',
+                      d: 'Downloads as a .repx named after the report title. A generation that ends without a complete file says so, and is not handed to you as a broken one.',
                     },
                   ].map((o) => (
                     <RevealItem key={o.t}>
@@ -895,7 +950,7 @@ export default function FeaturesPage({
             <SectionHead
               eyebrow="Custody"
               title="Your key, and your saved work."
-              lede="Forma ships with no API key and cannot be given one. Yours is never written to disk in plaintext, on any tier."
+              lede="Forma ships with no API key and cannot be given one. Yours is a working copy in this tab, and leaves it only encrypted, if you ask it to."
             />
 
             <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,532px)_minmax(0,1fr)]">
@@ -1007,7 +1062,7 @@ export default function FeaturesPage({
             <SectionHead
               eyebrow="Cost"
               title="Free, and there is no upgrade to sell you."
-              lede="Forma is open source. There is no licence, no seat count, no plan above the one you are on — because there are no plans."
+              lede="Forma is open source under the Apache-2.0 licence. There is no seat count and no plan above the one you are on, because there are no plans."
             />
             <RevealGroup className="grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant sm:grid-cols-3" stagger={0.09}>
               {[
@@ -1018,8 +1073,8 @@ export default function FeaturesPage({
                 },
                 {
                   k: 'The generation',
-                  v: 'billed by Google',
-                  d: 'You bring your own key, so Google bills you directly for your own usage. Forma takes no cut and adds no markup — it never sees the transaction.',
+                  v: 'Google’s free tier',
+                  d: 'You bring your own Gemini key, and Forma is built to stay inside Google’s free tier. If you turn on billing for your key, Google bills you directly; Forma takes no cut and never sees the transaction. A local AI costs nothing at all.',
                 },
                 {
                   k: 'Your queue',
@@ -1070,7 +1125,7 @@ export default function FeaturesPage({
             <Reveal>
               <Logo size={46} className="mx-auto mb-[22px]" alt="Forma" />
               <div className="font-code-sm text-[11px] font-medium leading-[1.62] tracking-[0.15em] uppercase text-white/[0.46]">
-                Nothing to configure
+                Your own key, nothing else to set
               </div>
             </Reveal>
             <Reveal delay={0.06}>

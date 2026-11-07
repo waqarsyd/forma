@@ -49,14 +49,14 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
   { id: 'key', n: '02', title: 'Your API key', keys: 'key api gemini google studio session vault passphrase encrypt security storage' },
   { id: 'account', n: '03', title: 'Your account', keys: 'account sign in signup register google email password forgot reset sync devices optional' },
   { id: 'upload', n: '04', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan' },
-  { id: 'run', n: '05', title: 'Running and refining', keys: 'run generate progress streaming pause stop cancel elapsed read result specification mockup refine change iterate conversation' },
+  { id: 'run', n: '05', title: 'Running and refining', keys: 'run generate working dots stop escape queue steer resume cancel read result specification mockup preview export refine change edit undo redo changed iterate conversation' },
   // xrchart and xrgauge are searchable because both are now written into the
   // file — a real XRChart with its series, and a real XRGauge with its value
   // and range. This comment used to say the opposite, and was left behind by
   // the work that added them.
-  { id: 'controls', n: '06', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrpageinfo pageinfo page numbers xrchart xrgauge chart gauge elements supported' },
+  { id: 'controls', n: '06', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrpageinfo pageinfo page numbers xrchart xrgauge chart gauge xrcheckbox checkbox xrpanel panel xrshape shape crossband cross-band xrcrosstab cross-tab pivot xrsubreport subreport table of contents elements supported' },
   { id: 'repx', n: '07', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download' },
-  { id: 'config', n: '08', title: 'Configuration', keys: 'config configure version paper size letter a4 legal header footer rtl model picker unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
+  { id: 'config', n: '08', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
   { id: 'saving', n: '09', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
   /* Batch and Revisions are two of the five rail panels and both shipped on
      2026-09-05, and neither appeared anywhere on this page or on Features
@@ -64,7 +64,7 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
      Batch in particular is the migration story: it is the thing a
      prompt-driven competitor structurally cannot offer, and it was the one
      feature a visitor could not discover without opening the app. */
-  { id: 'batch', n: '10', title: 'Batch generation', keys: 'batch bulk many folder queue multiple files zip archive migration legacy convert retry stop download all at once' },
+  { id: 'batch', n: '10', title: 'Batch generation', keys: 'batch bulk many folder drop queue multiple files parallel two three zip archive migration legacy convert retry stop download all at once' },
   { id: 'revisions', n: '11', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
   { id: 'trouble', n: '12', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem' },
   { id: 'faq', n: '13', title: 'FAQ', keys: 'faq questions common help cost price free visual studio photo' },
@@ -75,9 +75,10 @@ const FAQS: Array<{ q: string; a: ReactNode }> = [
     q: 'Does Forma cost anything to use?',
     a: (
       <p>
-        Forma itself is open source and free. What you pay for is your own Gemini usage, billed to you by
-        Google against your own key. Whoever runs Forma pays nothing for your requests, and you never wait
-        behind another user's quota.
+        Forma itself is open source (Apache-2.0) and free, and it is built to stay inside Google's free tier
+        for your own Gemini key. If you turn on billing for your key, Google bills you directly; Forma takes
+        no cut. A local AI costs nothing at all. Whoever runs Forma pays nothing for your requests, and you
+        never wait behind another user's quota.
       </p>
     ),
   },
@@ -85,8 +86,8 @@ const FAQS: Array<{ q: string; a: ReactNode }> = [
     q: 'Which file formats can I upload?',
     a: (
       <p>
-        PNG and JPG images, PDF documents, and existing DevExpress <code className="doc-code">.repx</code>{' '}
-        files — several at once, and you can mix them.
+        Pictures (PNG, JPG and the like), PDF documents, existing DevExpress <code className="doc-code">.repx</code>{' '}
+        files, and data files (CSV, TSV, JSON, text, SQL, Excel and Word), several at once, and you can mix them.
       </p>
     ),
   },
@@ -95,8 +96,8 @@ const FAQS: Array<{ q: string; a: ReactNode }> = [
     a: (
       <p>
         Yes. The output is standard <code className="doc-code">XtraReportsLayoutSerializer</code> XML and
-        opens in the Visual Studio report designer or an end-user designer. Match the version in the
-        configuration panel to your installed SDK.
+        opens in the Visual Studio report designer or an end-user designer. The version is read from a
+        report you bring; ask in the chat for another if your SDK needs it.
       </p>
     ),
   },
@@ -104,9 +105,9 @@ const FAQS: Array<{ q: string; a: ReactNode }> = [
     q: 'Can Forma read a photo of a printed form?',
     a: (
       <p>
-        Yes — that is one of the cases it is built for. It reads the page visually, so strings and
-        coordinates will be approximate rather than exact. If you have a digital PDF of the same document,
-        use that instead: the text layer gives exact positions.
+        Yes — that is one of the cases it is built for. Its words are read by OCR in your browser and its
+        layout from the picture, so expect the odd misread string where a digital PDF would be exact. If
+        you have a digital PDF of the same document, use that instead: the text layer gives exact positions.
       </p>
     ),
   },
@@ -116,8 +117,8 @@ const FAQS: Array<{ q: string; a: ReactNode }> = [
       <>
         <p>
           Ask for it explicitly in the conversation — say the region is a table and should be one control
-          with rows and cells. Refinements edit the existing layout rather than starting over, so you keep
-          everything else.
+          with rows and cells. With a report open the chat edits it in place where it can, and asks before a
+          redesign where it cannot, so you keep everything else.
         </p>
         <p className="mt-2.5">
           Projects saved before tables were supported still contain the older split-label form and will keep
@@ -407,7 +408,7 @@ export default function DocsPage({
             <div className={`${CARD} p-[18px]`}>
               <div className={`${KICKER} text-secondary`}>Ready to try it</div>
               <p className="mt-2 mb-3.5 font-body-lg text-[12.5px] leading-[1.55] text-on-surface-variant">
-                Bring a design and your own Gemini key. Nothing to install, nothing to configure first.
+                Bring a design and your own Gemini key. Nothing to install, and nothing else to set first.
               </p>
               <button
                 onClick={onEnterWorkspace}
@@ -488,7 +489,8 @@ export default function DocsPage({
                   and create a key.
                 </Def>
                 <Def t="2 · Open the workspace">
-                  Forma prompts for the key on first use, or open it yourself from the configuration panel.
+                  Without a key the message box is locked, and its button opens Settings at the key; Settings is
+                  also under Configure in the sidebar.
                 </Def>
                 <Def t="3 · Paste and save">
                   The key is checked with a single one-token request, which also works out which model your
@@ -659,9 +661,10 @@ y_top = pageHeight − (baseline + height)`}
                 </pre>
               </div>
               <Note label="Two things to watch">
-                A <b className="font-bold text-on-surface">scanned</b> PDF has no text layer. Forma detects
-                that, says so, and reads the page visually instead — expect approximate strings where a
-                digital PDF would have been exact. And on an unusually text-dense page, extraction stops at{' '}
+                A <b className="font-bold text-on-surface">scanned</b> PDF or a photo has no text layer. Forma
+                reads its words with OCR in your browser instead (English, and Arabic, Urdu, Hindi, French,
+                German or Spanish when the page is in one) — expect the odd misread string where a digital PDF
+                would have been exact; the picture's viewer shows what was read. And on an unusually text-dense page, extraction stops at{' '}
                 <b className="font-bold text-on-surface">400 strings per page</b>, so if accuracy drops off at
                 the bottom of a busy page, that is the cause.
               </Note>
@@ -677,37 +680,37 @@ y_top = pageHeight − (baseline + height)`}
                 While it runs
               </h3>
               <dl className="mt-4 border-t border-outline-variant">
-                <Def t="The progress bar">
-                  The response is streamed, so the bar tracks output actually received rather than a timer inventing
-                  percentages. It never runs backwards, and only a finished, parsed result reads as complete.
+                <Def t="Three dots">
+                  While Forma works, the reply shows three dots and every step happens behind the scenes, as in
+                  the chat apps you know. The first request of a session is slower than the rest because it also
+                  works out which model your key can reach.
                 </Def>
-                <Def t="Elapsed time">
-                  Real wall-clock, beside the bar. The first request of a session is slower than the rest because it
-                  also works out which model your key can reach.
+                <Def t="Stop">
+                  The send button becomes Stop while Forma works, and aborts the request in flight; Escape in
+                  the box does the same.
                 </Def>
-                <Def t="Pause">
-                  Aborts the request in flight and keeps the run so you can re-issue it. Not a loader that hides
-                  while the work carries on.
+                <Def t="The queue">
+                  What you send while Forma works waits in a queue over the box. Steer sends one now and changes
+                  the request under way; Stop pauses the queue, and Resume sends it on.
                 </Def>
-                <Def t="Stop">Aborts the request and resets the workspace.</Def>
               </dl>
               <Note label="Cancelling is local">
-                Pause and Stop tear down the connection from your side. Google may still finish generating the
-                response, and if it does, that usage is billed to your key. Cancelling saves you the wait, not
-                necessarily the request.
+                Stop tears down the connection from your side. Google may still finish generating the response,
+                and if it does, it counts against your key. Cancelling saves you the wait, not necessarily the
+                request.
               </Note>
 
               <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
                 Reading the result
               </h3>
               <p className={`mt-2 ${PROSE}`}>
-                One request comes back as three things, produced together from a single description so they agree
-                with each other.
+                One request comes back as the .repx, and the specification and the mockup are read off it, so the
+                three always agree.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="The specification">
-                  A component inventory in markdown — every element, where it sits, its type, its font and its
-                  borders. Useful on its own as the written brief you would otherwise have produced by hand, and
+                  A component inventory in markdown, read off the .repx — every element, where it sits, its type,
+                  its font and its borders. Useful on its own as the written brief you would otherwise have produced by hand, and
                   worth reading first: if the specification describes the wrong thing, the layout will too.
                 </Def>
                 <Def t="The mockup">
@@ -726,15 +729,23 @@ y_top = pageHeight − (baseline + height)`}
                   </a>
                   .
                 </Def>
+                <Def t="The Preview">
+                  The report paged as DevExpress prints it, over test data Forma can make. Drag or retype a
+                  control here, and export it as PDF (with an outline, a password, or as PDF/A), Excel, CSV,
+                  Word, RTF, HTML or a picture, all in your browser.
+                </Def>
               </dl>
 
               <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
                 Asking for changes
               </h3>
               <p className={`mt-2 ${PROSE}`}>
-                Say what is wrong rather than describing the whole report again. A follow-up sends the existing
-                layout and XML back with your instruction, so the model edits what you named and leaves the rest of
-                the structure standing.
+                Say what is wrong rather than describing the whole report again. With a report open, the chat reads
+                its outline and does one of three things: answers a question about it; edits the file in place (a
+                move, a font, a colour, a border, a number format, a binding, a page number, a table's row or
+                column, a duplicate, a band's height); or, for what an edit cannot reach, asks before redesigning
+                it. Each reply lists what changed, with Undo and Redo, and "undo that" in the chat takes the last
+                change back.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="Name the region">
@@ -773,12 +784,34 @@ y_top = pageHeight − (baseline + height)`}
                 </Def>
                 <Def t="XRPictureBox">
                   Logos, stamps and photo slots. Each picture is located in your upload and cropped out of it,
-                  so the mockup shows your own artwork. A crop that fails its sanity check falls back to a
-                  clean placeholder.
+                  so the mockup shows your own artwork.{' '}
+                  <em className="not-italic text-[color:var(--ink-faint)]">
+                    In the file it is placed and sized where the picture was, for you to point at the image in
+                    the designer: the image itself is not written into the .repx.
+                  </em>
                 </Def>
                 <Def t="XRLine">Rules and dividers, placed at exact coordinates.</Def>
                 <Def t="XRPageInfo">
-                  Page numbers and dates, written when the footer options ask for them.
+                  Page numbers and dates, where the source has them or when you ask for them in the chat.
+                </Def>
+                <Def t="XRCheckBox">A tick box, checked or not, or bound to a yes-or-no field.</Def>
+                <Def t="XRPanel">
+                  A box that holds other controls and moves them as one. The mockup draws what is inside it.
+                </Def>
+                <Def t="XRShape and cross-band lines">
+                  Rectangles, ellipses and lines, and the lines and boxes drawn from one band to another, as on a
+                  form with a border round the page.{' '}
+                  <em className="not-italic text-[color:var(--ink-faint)]">The Preview draws them; the mockup does not.</em>
+                </Def>
+                <Def t="XRCrossTab">
+                  A pivot of rows against columns, written with the layout DevExpress generates for it.{' '}
+                  <em className="not-italic text-[color:var(--ink-faint)]">
+                    The Preview draws its grid over test data; the mockup marks where it sits.
+                  </em>
+                </Def>
+                <Def t="XRSubreport and a table of contents">
+                  Kept from a report you bring; Forma does not invent a subreport. A table of contents is built
+                  from the report's bookmarks.
                 </Def>
                 <Def t="XRBarCode">
                   Written into the file as a real barcode control, carrying its symbology.{' '}
@@ -809,7 +842,7 @@ y_top = pageHeight − (baseline + height)`}
             <Article id="repx" kicker="Output" title="The .repx file" hidden={!matches('repx')}>
               <p className={PROSE}>
                 The file is standard <code className="doc-code">XtraReportsLayoutSerializer</code> XML.
-                Everything is positioned on a grid of{' '}
+                Everything is positioned in the report's unit, by default{' '}
                 <strong className="font-semibold text-on-surface">hundredths of an inch</strong> — 100 units
                 to the inch, which is the unit DevExpress itself stores — so a Letter page is 850 × 1100.
               </p>
@@ -825,47 +858,55 @@ y_top = pageHeight − (baseline + height)`}
               <p className={`mt-4 ${PROSE}`}>
                 Before you can download it, Forma parses the XML and checks that it has the right root element
                 and a <code className="doc-code">&lt;Bands&gt;</code> section. A malformed generation therefore
-                surfaces in the browser rather than when the designer refuses the file. If the model returns
-                no XML at all, you get the written specification as a <code className="doc-code">.txt</code>{' '}
-                rather than an empty file.
+                surfaces in the browser rather than when the designer refuses the file. It is also audited for
+                what DevExpress would drop or print wrong. A generation that ends without a complete file is
+                repaired where it can be, and otherwise marked as failed with Try again, never handed to you
+                as a broken file.
               </p>
             </Article>
 
-            <Article id="config" kicker="Reference" title="Configuration" hidden={!matches('config')}>
-              <p className={PROSE}>What the configuration panel exposes, and what it deliberately does not.</p>
+            <Article id="config" kicker="Reference" title="Settings and what is worked out" hidden={!matches('config')}>
+              <p className={PROSE}>
+                Nothing has to be set before a run. What used to be a configuration dialog is worked out from what
+                you bring, and anything else is a sentence in the chat. Settings shows what was worked out for the
+                last request, and why.
+              </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="DevExpress version">
-                  26.1, 25.2, 25.1, 24.1, 23.2, 23.1, 22.2 or 20.1. The generated markup is targeted at the version you pick.
-                  Matching your installed SDK keeps the file tidy, but the tag is not a gate: a report
-                  targeting a newer release still opens, and the designer rewrites the version when it saves.
+                  The version a .repx you bring declares, otherwise the version of the last one you brought,
+                  otherwise 23.2. The tag is not a gate: a report targeting a
+                  newer release still opens, and the designer rewrites the version when it saves.
                 </Def>
-                <Def t="Page size">Letter, A4 or Legal, written into the XML along with margins.</Def>
+                <Def t="Paper">
+                  Letter, A4, Legal or Tabloid, portrait or landscape: from the page you attach, then your words
+                  ("on A4, landscape"), then your region — Letter in the Americas and the Philippines, A4 elsewhere.
+                </Def>
                 <Def t="Report unit">
-                  Hundredths of an inch, tenths of a millimetre, or pixels. This is the scale every
-                  coordinate and size in the generated file is written in — change it and{' '}
+                  Hundredths of an inch, tenths of a millimetre, or pixels, read from a .repx you bring or the last
+                  one. This is the scale every coordinate and size in the generated file is written in — change it and{' '}
                   <code className="doc-code">LocationFloat</code> and{' '}
                   <code className="doc-code">SizeF</code> mean something different, so it has to match
                   what your report expects. Hundredths of an inch is the DevExpress default and what a
-                  Letter page of 850 × 1100 refers to. The status bar names the scale in use, so the
+                  Letter page of 850 × 1100 refers to. The REPX pane names the scale in use, so the
                   file you are about to export is never ambiguous. Font sizes are the one exception:
                   they are always in points, whatever this is set to.
                 </Def>
-                <Def t="Header">Whether to include a company logo, and a report title.</Def>
-                <Def t="Footer">Whether to show page numbers, plus custom footer text.</Def>
+                <Def t="Direction">Right to left when the text you bring reads that way.</Def>
+                <Def t="Data">
+                  The fields from a data file you attach, or the Data tab, or the columns your words name; a
+                  stored procedure from your words or your data.
+                </Def>
               </dl>
               <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
-                No model picker, on purpose
+                The model: found for you, and yours to change
               </h3>
               <p className={`mt-2 ${PROSE}`}>
                 Google retires models "for new users", so a hard-coded model id is a time bomb — an existing
-                project keeps working while every freshly created key gets a 404. Instead Forma probes which
-                models your key can actually reach, once per session, and uses the best one that answers. That
-                is also what validates the key when you save it.
+                project keeps working while every freshly created key gets a 404. So Forma probes which models
+                your key can actually reach, once per session, and uses the best one that answers (Auto). The
+                box offers Fast and Balanced beside it, and Settings → AI swaps Gemini for a local AI (Ollama
+                or LM Studio) or OpenRouter's free models.
               </p>
-              <Note label="Not exposed yet">
-                Right-to-left layout, a stored-procedure name and a data-binding schema exist in the request
-                Forma sends but have no controls in the interface yet.
-              </Note>
             </Article>
 
             <Article id="saving" kicker="Guide" title="Saving your work" hidden={!matches('saving')}>
@@ -901,9 +942,10 @@ y_top = pageHeight − (baseline + height)`}
                 themselves, so the distinction is made by where you put them.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
-                <Def t="One at a time">
-                  Files are generated in sequence, not in parallel. Your key carries the quota, and forty
-                  simultaneous requests turn a slow success into a fast 429.
+                <Def t="One at a time, or two or three">
+                  Files run one at a time by default. Your key carries the quota, and forty simultaneous
+                  requests turn a slow success into a fast 429; a key whose quota allows it can run two or
+                  three at once.
                 </Def>
                 <Def t="A verdict per row">
                   Each finished row carries the structural audit's answer in the same words the REPX pane
@@ -921,9 +963,9 @@ y_top = pageHeight − (baseline + height)`}
                   them all at once.
                 </Def>
               </dl>
-              <Note label="Files, not a folder">
-                The picker selects files — as many at once as you like. Dropping a folder onto the panel is
-                not supported yet, and neither is running more than one at a time.
+              <Note label="Files or a folder">
+                Choose files, as many as you like, or a folder, or drop a folder onto the panel: every report
+                in it is queued with its path.
               </Note>
             </Article>
 
@@ -969,21 +1011,21 @@ y_top = pageHeight − (baseline + height)`}
                   has no quota to share, since it uses no key of its own.
                 </Def>
                 <Def t="Model overloaded">
-                  Google's capacity for that model is momentarily exhausted. Forma retries the same model
-                  twice with a growing pause before surfacing anything. Changing models or editing the prompt
-                  does not help; waiting does.
+                  Google's capacity for that model is momentarily exhausted. Forma retries it with a growing
+                  pause, then moves to another model your key can reach. Editing the prompt does not help;
+                  waiting does.
                 </Def>
                 <Def t="Nothing happens on send">
-                  Check that a key is set. The composer is disabled and a banner sits above it when none is
-                  present.
+                  Check that a key is set. With none, the box is locked and its button opens Settings at the
+                  key.
                 </Def>
                 <Def t="The layout is roughly right">
                   Upload the original PDF rather than a screenshot of it. Exact strings and coordinates come
                   from the text layer, which a screenshot does not have.
                 </Def>
                 <Def t="Generation feels slow">
-                  The progress bar tracks output actually received. The first request of a session also pays
-                  for model detection. Pause and Stop abort the request for real.
+                  The first request of a session also pays for model detection, and a picture's words are read
+                  by OCR before it is sent. Stop aborts the request for real.
                 </Def>
               </dl>
             </Article>

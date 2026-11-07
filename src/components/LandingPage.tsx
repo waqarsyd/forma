@@ -46,7 +46,7 @@ const USE_CASES = [
   {
     Icon: IconScan,
     title: 'Legacy paper forms',
-    body: 'A scan or a phone photo of a form nobody has the source for. Forma reads it visually and gives you a designer file to start from.',
+    body: 'A scan or a phone photo of a form nobody has the source for. Forma reads its words with OCR in your browser and its layout from the picture, and gives you a designer file to start from.',
   },
   {
     Icon: IconRedo,
@@ -60,12 +60,12 @@ const SPECS = [
   {
     k: 'coordinate grid',
     v: <><em className="not-italic text-secondary">100</em> units = 1 in</>,
-    d: 'LocationFloat and SizeF in hundredths of an inch, the unit DevExpress actually stores.',
+    d: 'LocationFloat and SizeF in the report’s unit: hundredths of an inch unless a report you bring says otherwise, the unit DevExpress stores.',
   },
   {
     k: 'page',
     v: <>850 × <em className="not-italic text-secondary">1100</em></>,
-    d: 'Letter, A4 or Legal — set in the report configuration, honoured in the generated XML.',
+    d: 'Letter, A4, Legal or Tabloid, portrait or landscape: worked out from your page, your words or your region, and written as the paper DevExpress prints on.',
   },
   {
     k: 'tables',
@@ -84,8 +84,8 @@ const SPECS = [
   },
   {
     k: 'pictures',
-    v: <>cropped, not <em className="not-italic text-secondary">guessed</em></>,
-    d: 'Each logo is located in your upload and cut out of it. A rectangle that fails a sanity check falls back to a placeholder rather than showing you the wrong thing.',
+    v: <>located, not <em className="not-italic text-secondary">guessed</em></>,
+    d: 'Each logo is located in your upload and cut out of it for the mockup, and placed and sized as a picture box in the .repx, ready for you to point at the image in the designer.',
   },
 ];
 
@@ -105,12 +105,12 @@ const STEPS = [
     body: (
       <>
         Drag in a screenshot, a scan, a multi-page PDF, or a <span className="font-code-sm">.repx</span> you already
-        have. Images are downscaled and re-encoded before they are sent; a{' '}
-        <span className="font-code-sm">.repx</span> is parsed and validated as XML in the browser first.
+        have. Images are downscaled and re-encoded, and their words read by OCR, in your browser; a{' '}
+        <span className="font-code-sm">.repx</span> is parsed and validated as XML there first.
       </>
     ),
     points: [
-      'PNG, JPG, PDF and .repx, several at once',
+      'Pictures, PDF, .repx and data files, several at once',
       'Multi-page PDFs read and text-extracted, up to 8 pages',
       'Every file you add is confirmed on screen before it is sent',
     ],
@@ -118,16 +118,16 @@ const STEPS = [
   },
   {
     co: '02 — BUILD IT',
-    title: 'Watch it resolve',
+    title: 'Let it work',
     body: (
       <>
-        The response streams, so the progress bar tracks output actually received rather than a timer inventing
-        percentages. Pause and Stop genuinely abort the request in flight.
+        While Forma works the reply shows three dots, every step behind the scenes, and Stop aborts the request in
+        flight. With a report open, the chat edits it in place rather than starting again.
       </>
     ),
     points: [
-      'Live elapsed time and characters received',
-      'Refinements edit the existing report instead of regenerating it',
+      'Three dots and Stop, as in the chat apps you know',
+      'Edits made in place, each listed, with Undo and Redo',
       'Plain chat stays chat — asking a question does not build a report',
     ],
     figure: <FigureStream />,
@@ -138,12 +138,12 @@ const STEPS = [
     body: (
       <>
         Download the <span className="font-code-sm">.repx</span>, named after the report title, and open it in the
-        DevExpress designer. Or copy the XML straight out of the viewer.
+        DevExpress designer. Or print it from the Preview, which pages it as DevExpress does.
       </>
     ),
     points: [
       'Parsed and checked in the viewer before you download',
-      'Copy the XML from the viewer, or take the .repx file',
+      'Exported from the Preview as PDF, Excel, CSV, Word, RTF, HTML or a picture',
       'Save the session to your account, or keep it on this device',
     ],
     figure: <FigureExport />,
@@ -276,7 +276,7 @@ const LandingPage = ({
                 <Reveal delay={0.26}>
                   <p className="mt-[22px] flex max-w-[54ch] items-baseline gap-[9px] font-code-sm text-[12px] leading-[1.7] text-[color:var(--ink-faint)]">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-secondary-container ring-[3px] ring-secondary-container/10" />
-                    Bring your own Gemini key — Forma ships with none, and never stores one.
+                    Bring your own Gemini key — Forma ships with none, and keeps yours in this tab unless you ask it to save an encrypted copy.
                   </p>
                 </Reveal>
               </div>
@@ -292,7 +292,7 @@ const LandingPage = ({
                 <Stat to={3} label="artifacts per request" />
               </RevealItem>
               <RevealItem className="border-l border-outline-variant px-6 py-6 md:px-[26px]">
-                <Stat to={8} unit="versions" label="DevExpress 26.1 back to 20.1" />
+                <Stat to={7} unit="export formats" label="PDF, Excel, CSV, Word, RTF, HTML and a picture" />
               </RevealItem>
               <RevealItem className="border-t border-outline-variant px-0 py-6 md:border-l md:border-t-0 md:px-[26px]">
                 <Stat to={8} unit="pages / PDF" label="read and text-extracted per file" />
@@ -480,7 +480,8 @@ const LandingPage = ({
                   Forma reads each page twice, for two different purposes. It renders the page as an image for visual
                   structure — borders, fills, logos — and it extracts the page's own text layer, converting every
                   position from PDF points into the report grid before anything is sent. The prompt ranks the extracted
-                  text above the image for content and position.
+                  text above the image for content and position. A scan or a photo has no text layer, so its words are
+                  read by OCR in your browser instead.
                 </p>
               </Reveal>
               <Reveal delay={0.24}>
@@ -493,8 +494,8 @@ const LandingPage = ({
               </Reveal>
               <Reveal delay={0.3}>
                 <p className="mt-[15px] font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-faint)]">
-                  A scanned PDF has no text layer. That is detected and reported, and it falls back to reading the page
-                  visually.
+                  A scanned PDF has no text layer. Its words are read by OCR in your browser instead, so expect the odd
+                  misread string where a digital PDF would have been exact.
                 </p>
               </Reveal>
             </div>
@@ -644,8 +645,8 @@ const LandingPage = ({
               {/* Body copy, not the lede scale — the source sets this one at
                   the base 16px/1.62. */}
               <p className="mx-auto mt-[18px] max-w-[56ch] font-body-lg text-[16px] leading-[1.62] text-white/[0.64]">
-                Bring a design and your own Gemini key. The workspace opens with nothing to configure and nothing to pay
-                for.
+                Bring a design and your own Gemini key. Once the key is in, there is nothing else to set and nothing to
+                pay for.
               </p>
             </Reveal>
             <Reveal delay={0.18}>

@@ -580,10 +580,15 @@ const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-s
  * OCR engine is, so they do not consume the total's headroom for code; the
  * changelog's page grows with every release, which is what this cap watches.
  * 452,000 is 93.9%.
+ *
+ * Raised to 474,000 the same day, at 445,703 B (98.6%): the site audit's batch
+ * SC put twenty corrected claims, seven fidelity rows, a Preview card and a
+ * data-format card on the Features page and the Docs page, which the build
+ * draws into both pages' HTML. Copy a visitor reads, not drift. 94.0%.
  */
 const isPage = (f) => f.name.endsWith('.html') && dirname(f.path) === DIST;
 const pagesTotal = files.filter(isPage).reduce((a, f) => a + f.size, 0);
-const PAGES_TOTAL_MAX = 452_000;
+const PAGES_TOTAL_MAX = 474_000;
 const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
 const handwritingTotal = files.filter(isHandwriting).reduce((a, f) => a + f.size, 0);
 // 90,597,142 B with the model (2026-11-04), so 94.0%.

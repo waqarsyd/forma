@@ -81,6 +81,7 @@ export const RELEASES: Release[] = [
     summary:
       'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'fixed', area: 'site', text: 'The home, Features and Docs pages describe Forma as it is today: settings worked out for you, OCR for scans and photos, the Preview and its exports, the chat editing in place, Batch running two or three at once from a folder, and the Apache-2.0 licence.' },
       { kind: 'improved', area: 'site', text: 'Every page has its own title, description and link preview, so a shared link to the docs or the changelog says what it is.' },
       { kind: 'improved', area: 'site', text: 'The public pages can be read without JavaScript and are listed for search engines; the workspace, sign-in and shared reports are kept out of search results.' },
       { kind: 'new', area: 'site', text: 'Forma can be installed as an app from the browser, with its own icon on the home screen.' },
