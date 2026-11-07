@@ -145,7 +145,18 @@ const BUDGETS = [
   // escapeXmlAttribute from repxEdit.ts, which imports reportPreview. The
   // helper now has a module of its own (lib/xmlEscape.ts), and the chunk is
   // 547,264 B, -112,275 (-17%), the total unchanged. 582_000 is 94.0%.
-  { prefix: 'index-', ext: '.js', max: 582_000, note: 'eager entry chunk + the genai chunk' },
+  //
+  // Lowered to 446_000 on 2026-11-08 (the site audit's batch SG, item 42),
+  // when the public pages stopped loading the workspace: main.tsx draws them
+  // from PublicSite.tsx and loads App.tsx only on /workspace. At 567,446 B
+  // (97.5%) before, 419,174 B after, -148,272 (-26%); what is left is React,
+  // motion and the home page. 446_000 is 94.0%, so the workspace creeping
+  // back into the entry trips it. The genai chunk shares the prefix and sits
+  // at 278 kB under it.
+  { prefix: 'index-', ext: '.js', max: 446_000, note: 'eager entry chunk (the public site) + the genai chunk' },
+  // The workspace itself (2026-11-08), lazy since the cut above, budgeted so
+  // it is watched like the rest: 143,209 B, 152_500 is 93.9%.
+  { prefix: 'App-', ext: '.js', max: 152_500, note: 'the workspace, loaded on /workspace' },
   /*
    * The generation service, lazy as of 2026-09-04.
    *

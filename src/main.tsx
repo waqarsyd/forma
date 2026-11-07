@@ -1,9 +1,54 @@
-import {StrictMode, Component, ErrorInfo, ReactNode} from 'react';
+import {StrictMode, Component, ErrorInfo, ReactNode, lazy, Suspense, useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {MotionConfig} from 'motion/react';
-import App from './App.tsx';
+import PublicSite from './PublicSite';
+import OfflineBanner from './components/OfflineBanner';
 import './index.css';
 import {isStaleChunkError, reloadForStaleChunk, watchForStaleChunks} from './lib/staleChunks';
+import {currentPath, onRouteChange} from './lib/router';
+
+/*
+ * The workspace loads when it is opened, not before (2026-11-08, the site
+ * audit's batch SG, item 42). Every visitor used to download App.tsx and all
+ * it imports to read the home page; the public pages now draw from
+ * PublicSite.tsx, and App arrives on /workspace. Once it has, it keeps the
+ * tab and draws the public pages itself, as it always has, so going back and
+ * forth costs nothing more.
+ */
+const App = lazy(() => import('./App.tsx'));
+const isWorkspace = () => currentPath() === '/workspace';
+
+function Root() {
+  const [workspace, setWorkspace] = useState(isWorkspace);
+  useEffect(() => {
+    if (workspace) return;
+    return onRouteChange(() => {
+      if (isWorkspace()) setWorkspace(true);
+    });
+  }, [workspace]);
+  return workspace ? (
+    <Suspense
+      fallback={
+        <div role="status" className="grid min-h-screen place-items-center bg-surface font-body-lg text-[14px] text-on-surface-variant">
+          Opening the workspace…
+        </div>
+      }
+    >
+      <App />
+    </Suspense>
+  ) : (
+    <PublicSite />
+  );
+}
+
+// The offline worker (2026-11-08, site audit item 55): the build's own pages
+// and files kept for the next visit and for a lost connection. Production
+// only, so development never serves a cached module.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('The offline worker did not register.', err));
+  });
+}
 
 // A tab open across a deploy reloads once for the new build rather than break
 // on its next lazy load (2026-11-07, site audit item 1; lib/staleChunks.ts).
@@ -60,8 +105,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MotionConfig reducedMotion="user">
       <ErrorBoundary>
-        <App />
+        <Root />
       </ErrorBoundary>
+      <OfflineBanner />
     </MotionConfig>
   </StrictMode>,
 );

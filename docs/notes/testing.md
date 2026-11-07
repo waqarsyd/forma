@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,800 tests in 165 files** — under the `node` environment
+`npm test` runs Vitest over **2,807 tests in 167 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -131,6 +131,8 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/csvExport` | 6 | CSV export; three expectations are DevExpress's own exported files, byte for byte |
 | `lib/dataSource` | 29 |  |
 | `lib/datetime` | 12 |  |
+| `lib/serviceWorker` | 4 | the offline worker (2026-11-08, site audit item 55): pages from the network first, hashed files from the cache, the handwriting model, the worker itself and Firebase's paths left to the network, and the source it writes parsing with the same routing rule |
+| `lib/signOut` | 3 | what a sign-out removes from the tab (2026-11-08, the site audit's batch SG), shared by the public site and App: every session key and nothing else, storage that throws, and each key spelled as the module that writes it |
 | `lib/docsSearch` | 4 | the Docs page's search and feedback (2026-11-08, the site audit's batch SD): an article found by the words it says and not only its title and keywords, every word of the query needed, and the feedback as a GitHub issue prefilled with what was typed and the article |
 | `lib/designerBridge` | 38 | 8 from one loop |
 | `lib/draftText` | 11 | jsdom (`checkRepx`); Forma's draft as the AI corrects it (2026-11-05): written line by line with its words, fields, groups and colours and read back exactly; words with spaces, quotes and a bar; a line and a table written with no role, font or alignment, quoted from the first measured answers; the borders and length a model drops before its words, an alignment written as a word, a length left out, a total written as `sumSum([Amount])` and a fence forgiven; words only for text and a field only for a value or a total; what cannot be read skipped and named; the report built from it carrying them, in the version asked for, a file the designer opens; the rules naming every band and role |
@@ -242,7 +244,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,800 in 165 files** — and that total is the arithmetic sum of the column above
+**Total: 2,807 in 167 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -256,7 +258,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2652** against a real 2,800 (2026-11-08, after the site audit's batch SF, whose contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2659** against a real 2,807 (2026-11-08, after the site audit's batch SG, which added no loop; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

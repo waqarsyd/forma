@@ -7,7 +7,6 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspens
 // Only for the theme swap: a view transition snapshots the DOM around its
 // callback, so the state change has to land inside it rather than on React's
 // own schedule. See setTheme.
-import { flushSync } from 'react-dom';
 /*
  * The workspace draws from the same hairline set as the marketing pages. It used
  * to mix two other systems: Material Symbols (40 ligature spans) and lucide
@@ -91,8 +90,9 @@ import { cacheKeyForSession, readSessionKey, clearSessionKey, purgeLegacyPlainte
    CSS keyframes and transitions, so the Framer Motion presets it used to import
    are unused — see the note in CLAUDE.md about this being a deliberate departure
    for this surface. */
-import { DURATION } from './lib/motion';
-import { circularThemeSwap } from './lib/themeTransition';
+import { useTheme } from './components/useTheme';
+import { useLinkNavigation } from './components/useLinkNavigation';
+import { forgetSession } from './lib/signOut';
 // @ts-ignore
 /* Firebase arrives on demand — see lib/firebaseClient.ts for why, and for what
    had to move with it. `OperationType` is the one piece that stays eager: it is
@@ -1479,42 +1479,9 @@ export default function App() {
     };
   }, []);
 
-  /**
-   * One delegated handler turns every in-app `<a href="/...">` into a client-side
-   * navigation, so the individual pages keep using plain anchors — which stay
-   * right-clickable, middle-clickable and readable in the status bar, unlike a
-   * button pretending to be a link.
-   *
-   * Modified clicks, new-tab targets and downloads are left to the browser.
-   */
-  useEffect(() => {
-    const onDocumentClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-
-      const anchor = (event.target as HTMLElement | null)?.closest?.('a');
-      if (!anchor) return;
-
-      const href = anchor.getAttribute('href');
-      if (!href || !href.startsWith('/')) return;
-      if (anchor.target === '_blank' || anchor.hasAttribute('download')) return;
-
-      event.preventDefault();
-      const from = currentPath();
-      navigate(href);
-      // Where a click lands (2026-11-07, the site audit): at the section a
-      // fragment names, else at the top of a new page. pushState kept the old
-      // scroll, so a footer link opened the next page near its bottom, and a
-      // link to /docs#faq never reached the FAQ. The sign-in routes are a
-      // dialog over the page, which must keep its place behind it.
-      const hash = href.includes('#') ? href.slice(href.indexOf('#')) : '';
-      if (hash.length > 1) scrollToHash(hash);
-      else if (currentPath() !== from && !['/login', '/signup'].includes(currentPath())) window.scrollTo(0, 0);
-    };
-
-    document.addEventListener('click', onDocumentClick);
-    return () => document.removeEventListener('click', onDocumentClick);
-  }, []);
+  // In-app links navigate without a reload (components/useLinkNavigation.ts,
+  // shared with the public site since 2026-11-08).
+  useLinkNavigation();
 
 
   /**
@@ -2028,21 +1995,8 @@ export default function App() {
   // Sub-view inside the "Specs & REPX" tab. The tab has always been named for
   // both, but only ever rendered the specification.
   const [specView, setSpecView] = useState<SpecView>('spec');
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    // Guarded as every other read of storage here (2026-11-06, the workspace
-    // audit): in a profile that blocks storage, or with a mangled value, the
-    // whole app threw on its first render.
-    try {
-      const saved = localStorage.getItem('darkMode');
-      if (saved !== null) return JSON.parse(saved) === true;
-    } catch {
-      /* storage blocked or unreadable: the system decides */
-    }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
-  const isFirstThemeRun = useRef(true);
-  /** Set when a circular wipe handled the swap, so the cross-fade stands down. */
-  const skipThemeFade = useRef(false);
+  // The theme (components/useTheme.ts since 2026-11-08, shared with the public site).
+  const { isDarkMode, followsSystem, setTheme } = useTheme();
   // The elapsed-time clock went with the status bar on 2026-11-04. It set state
   // every 100 ms of a generation, re-rendering the whole app ten times a second
   // for a number in the bottom bar.
@@ -2086,94 +2040,6 @@ export default function App() {
       loadingIntervalRef.current = null;
     }
     setProgress((prev) => applyStreamProgress(prev, { percent: chunk.percent, chars: chunk.chars }));
-  }, []);
-
-  // Syncs the class only. Persistence deliberately lives in setTheme (the user
-  // action) rather than here: StrictMode double-invokes effects in dev, so an
-  // effect-based write would persist the system-derived value on mount and
-  // permanently detach the user from prefers-color-scheme.
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle('dark', isDarkMode);
-
-    // The inline bootstrap in index.html already painted the correct theme, so
-    // mount must not animate — only a genuine change should.
-    if (isFirstThemeRun.current) {
-      isFirstThemeRun.current = false;
-      return;
-    }
-
-    // A circular wipe already handled this one — see setTheme. Running the
-    // cross-fade as well paints it *inside* the expanding circle and the
-    // leading edge turns to mush. Consumed here so the next change, whatever
-    // causes it, gets the fade again.
-    if (skipThemeFade.current) {
-      skipThemeFade.current = false;
-      return;
-    }
-
-    // Animate the swap with the app's shared timing, then drop the class so
-    // steady-state hover/focus transitions are left exactly as they were.
-    root.classList.add('theme-transition');
-    const timer = window.setTimeout(
-      () => root.classList.remove('theme-transition'),
-      DURATION.base * 1000,
-    );
-    return () => window.clearTimeout(timer);
-  }, [isDarkMode]);
-
-  /**
-   * The only place a theme choice is persisted — an explicit user action.
-   *
-   * The swap runs inside a circular view transition opening from whichever
-   * control was pressed. Two details are load-bearing:
-   *
-   * - The class is toggled directly here rather than left to the effect above.
-   *   `startViewTransition` snapshots the DOM *around* its callback, and the
-   *   effect is passive, so it would run after the snapshot was taken and the
-   *   new theme would flash in after the wipe instead of arriving with it.
-   * - `flushSync` keeps React's own state in the same frame. Without it the
-   *   class and the state disagree for a tick, which is visible on anything
-   *   rendering off `isDarkMode` rather than off the class — the toggle's own
-   *   sun/moon icon, for one.
-   *
-   * The effect then re-applies the identical class, which is a no-op.
-   */
-  /** Whether no theme was ever chosen, so the OS decides (the corner's "System", 2026-11-06). */
-  const [followsSystem, setFollowsSystem] = useState(() => {
-    try {
-      return localStorage.getItem('darkMode') === null;
-    } catch {
-      return true;
-    }
-  });
-  const setTheme = useCallback((val: boolean, remember = true) => {
-    // "System" when the system already agrees changes only what is remembered.
-    if (document.documentElement.classList.contains('dark') !== val) {
-      skipThemeFade.current = circularThemeSwap(() => {
-        document.documentElement.classList.toggle('dark', val);
-        flushSync(() => setIsDarkMode(val));
-      });
-    }
-    setFollowsSystem(!remember);
-    try {
-      if (remember) localStorage.setItem('darkMode', JSON.stringify(val));
-      else localStorage.removeItem('darkMode');
-    } catch {
-      /* storage disabled — the choice still applies for this session */
-    }
-  }, []);
-
-  // Keep following the OS for as long as the user has never chosen explicitly.
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (e: MediaQueryListEvent) => {
-      let chosen: string | null = null;
-      try { chosen = localStorage.getItem('darkMode'); } catch { /* blocked: follow the system */ }
-      if (chosen === null) setIsDarkMode(e.matches);
-    };
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   /* The transcript follows itself now, inside `ChatThread`, which owns the
@@ -3547,6 +3413,9 @@ export default function App() {
     writeDrafts({});
     keptQueue.current = null;
     setRailPanel('review');
+    // And every session key a sign-out removes, the list the public site
+    // uses too (lib/signOut.ts, 2026-11-08).
+    forgetSession();
   };
   useEffect(() => {
     forgetSignedOutRef.current = forgetSignedOut;

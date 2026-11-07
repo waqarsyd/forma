@@ -268,8 +268,11 @@ Beyond the environment variables above, two things are configurable.
 
 ```
 src/
-  App.tsx              workspace, chat, config modal
-  main.tsx             entry point
+  App.tsx              the workspace and the chat, loaded on /workspace
+  PublicSite.tsx       every public page and the sign-in dialog, without
+                       the workspace (the entry since 2026-11-08)
+  main.tsx             entry point: PublicSite, or App on /workspace, the
+                       offline banner and the offline worker's registration
   index.css            tokens, marketing pages, shared chrome (Tailwind v4, no config file)
   workspace.css        the workspace shell only — every `wb-` class lives here
                        but the lazy menus', in components/overlays.css
@@ -613,7 +616,10 @@ src/
                        (what the chat box keeps as a memory, sends straight
                        to a design, or reads as an answer), composerStore
                        (an unsent draft per project, and the queue, kept in
-                       the tab over a reload), licenceNotice (the
+                       the tab over a reload), signOut (what a sign-out
+                       removes from the tab), serviceWorker (the offline
+                       worker /sw.js is written from at build),
+                       licenceNotice (the
                        third-party notices /licenses.txt is written
                        from at build), docsSearch (the Docs page's
                        search over each article's words, and its feedback

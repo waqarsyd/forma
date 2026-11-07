@@ -9,6 +9,7 @@ import {atomFeed, RELEASES} from './src/lib/releases';
 import {headFor, llmsTxt, pageFile, robotsTxt, securityTxt, sitemapXml, softwareJsonLd, withHead} from './src/lib/seo';
 import {ROUTES} from './src/lib/router';
 import {licenceNotice, licenseOf, packageDirOf, type LicensedWork} from './src/lib/licenceNotice';
+import {serviceWorkerSource} from './src/lib/serviceWorker';
 
 /**
  * OCR's runtime, served from this site rather than a CDN (2026-11-01). The
@@ -348,6 +349,28 @@ function thirdPartyLicences(): Plugin {
   };
 }
 
+/**
+ * `/sw.js`, the offline worker (2026-11-08, site audit item 55;
+ * src/lib/serviceWorker.ts has its rules). Written at build, so it can name
+ * the files to keep on install: the home page, the entry script, its
+ * stylesheet and its static imports. Its cache is named for the commit and
+ * that list, so each build's is its own. main.tsx registers it in production.
+ */
+function offlineWorker(): Plugin {
+  return {
+    name: 'forma-offline-worker',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const entry = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry);
+      if (!entry || entry.type !== 'chunk') return;
+      const css = [...(entry.viteMetadata?.importedCss ?? [])];
+      const precache = ['/', `/${entry.fileName}`, ...css.map((f) => `/${f}`), ...entry.imports.map((f) => `/${f}`)];
+      const version = `${commitOf()}-${createHash('sha256').update(precache.join('\n')).digest('hex').slice(0, 8)}`;
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: serviceWorkerSource({ version, precache }) });
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
     plugins: [
@@ -359,6 +382,7 @@ export default defineConfig(() => {
       servedAssets('handwriting', HANDWRITING_ASSETS, VERSIONS.handwriting),
       changelogFeed(),
       thirdPartyLicences(),
+      offlineWorker(),
       versionMeta(),
       pagesAndCrawlers(),
     ],
