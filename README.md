@@ -30,7 +30,7 @@ It is built around one constraint that shaped everything else: **the application
 
 ## Demo
 
-**Live at [openforma.web.app](https://openforma.web.app)** — the deployed build of `main`. It runs signed out with no account, and generating a report needs a Gemini API key of your own, which you paste into Settings and which never leaves your browser.
+**Live at [openforma.web.app](https://openforma.web.app)** — built from `main` and deployed by hand, so it can trail the newest commits; what changed, and when, is on the [changelog](https://openforma.web.app/changelog). It runs signed out with no account, and generating a report needs a Gemini API key of your own, which you paste into Settings and which never leaves your browser.
 
 ![Forma's home page: upload a report design and get a specification, a live mockup and valid DevExpress XML](docs/media/screenshot.png)
 
@@ -276,6 +276,7 @@ src/
   vite-env.d.ts        Vite's ambient types; the one file here not in
                        PascalCase.tsx / camelCase.ts form, because Vite names it
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
+                       ChangelogPage (/changelog, every release),
                        LoginPage, LegalPage (/terms and /privacy),
                        SiteHeader, SiteFooter, MobileNav, Logo,
                        AccountDialog, UserAvatar, NotFoundPage,
@@ -596,7 +597,9 @@ src/
                        attachments, panelSize, sidebar (the workspace sidebar
                        opening and closing as Gemini's and ChatGPT's do: the
                        phone breakpoint, Ctrl+B, the toggle's name),
-                       announcements, datetime,
+                       releases (the release notes behind /changelog,
+                       its Atom feed and What's new), announcements,
+                       datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        geminiClient (loads the generation service on demand, so
                        its 19.6 kB prompt is not on every page load) and

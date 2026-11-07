@@ -50,4 +50,13 @@ describe('ANNOUNCEMENTS', () => {
   it('has unique ids, because "seen" is remembered by one', () => {
     expect(new Set(ANNOUNCEMENTS.map((a) => a.id)).size).toBe(ANNOUNCEMENTS.length);
   });
+
+  /* Since 2026-11-07 the notes are the releases marked to announce
+     (releases.ts). A changed id would light the dot again for every reader who
+     had already seen the note, so the two shown before are kept word for word. */
+  it('keeps the ids readers have already seen', () => {
+    const ids = ANNOUNCEMENTS.map((a) => a.id);
+    expect(ids).toContain('2026-10-28-version-1-0-0');
+    expect(ids).toContain('2026-09-09-open-source-live');
+  });
 });

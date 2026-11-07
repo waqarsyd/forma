@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { User } from 'firebase/auth';
 import Logo from './Logo';
 import SiteHeader from './SiteHeader';
@@ -5,13 +6,20 @@ import SiteFooter from './SiteFooter';
 import HeroScanner from './landing/HeroScanner';
 import VaultFigure from './landing/VaultFigure';
 import SheetRuler from './landing/SheetRuler';
-import AnnouncementDock from './landing/AnnouncementDock';
 import { FigureIngest, FigureStream, FigureExport } from './landing/StepFigures';
 import { Reveal, RevealGroup, RevealItem, SectionHead, Eyebrow, Stat, H2, LEDE, BODY } from './landing/sections';
 import {
   IconSpec, IconLayout, IconCode, IconInvoice, IconGrid, IconPayslip, IconSeal, IconScan, IconRedo,
   IconArrowRight,
 } from './landing/icons';
+
+/*
+ * Lazy since 2026-11-07: its notes are the releases marked to announce in
+ * lib/releases.ts, and importing it here put every release note into the
+ * entry chunk every visitor downloads (+13 kB, 99.5% of its budget). A corner
+ * disc arriving a moment after the page costs nothing.
+ */
+const AnnouncementDock = lazy(() => import('./landing/AnnouncementDock'));
 
 /** Document shapes Forma is built around. */
 const USE_CASES = [
@@ -182,7 +190,9 @@ const LandingPage = ({
       {/* Home only — see the component. The other marketing pages are reference
           material people arrive at on purpose, and the workspace has enough
           chrome without a disc floating over it. */}
-      <AnnouncementDock />
+      <Suspense fallback={null}>
+        <AnnouncementDock />
+      </Suspense>
       <SiteHeader
         active="Product"
         onEnterWorkspace={onEnterWorkspace}

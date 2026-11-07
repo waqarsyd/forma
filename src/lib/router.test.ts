@@ -2,7 +2,7 @@
 // Real history/location, which is the whole point of this file. Must stay
 // line 1; see vitest.config.ts.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ROUTES, currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './router';
+import { ROUTES, currentPath, navigate, onRouteChange, migrateLegacyHashUrl, scrollToHash } from './router';
 
 /**
  * Routing has no test-visible output — it moves the address bar and fires an
@@ -145,11 +145,18 @@ describe('migrateLegacyHashUrl', () => {
     expect(currentPath()).toBe('/privacy');
   });
 
-  it('drops a fragment that is not a route rather than 404ing on it', () => {
-    setUrl('/#nonsense');
+  /* A fragment that is not a route is a section of the page (2026-11-07). It
+     was dropped until then, so /docs#faq from the Contact page landed at the
+     top of Docs with the #faq gone. */
+  it('keeps a fragment that is not a route, as the section it names', () => {
+    setUrl('/docs#faq');
     migrateLegacyHashUrl();
-    expect(currentPath()).toBe('/');
-    expect(window.location.hash).toBe('');
+    expect(currentPath()).toBe('/docs');
+    expect(window.location.hash).toBe('#faq');
+
+    setUrl('/changelog#2026-11-07-settings-account-ocr');
+    migrateLegacyHashUrl();
+    expect(window.location.hash).toBe('#2026-11-07-settings-account-ocr');
   });
 
   it('keeps the query string on both paths', () => {
@@ -158,9 +165,10 @@ describe('migrateLegacyHashUrl', () => {
     expect(currentPath()).toBe('/features');
     expect(window.location.search).toBe('?ref=x');
 
-    setUrl('/?ref=x#nonsense');
+    setUrl('/?ref=x#how');
     migrateLegacyHashUrl();
     expect(window.location.search).toBe('?ref=x');
+    expect(window.location.hash).toBe('#how');
   });
 
   /* A URL ending in a bare `#` reports `location.hash === ''`, which is why the
@@ -189,5 +197,52 @@ describe('migrateLegacyHashUrl', () => {
     setUrl('/#features');
     migrateLegacyHashUrl();
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+/* A page renders after its lazy chunk arrives, so the section a link names is
+   often not in the document yet when the route changes (2026-11-07). */
+describe('scrollToHash', () => {
+  let scroll: ReturnType<typeof vi.fn>;
+  let raf: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll as unknown as Element['scrollIntoView'];
+    let frames: FrameRequestCallback[] = [];
+    raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    (window as unknown as { flushFrames: () => void }).flushFrames = () => {
+      const run = frames;
+      frames = [];
+      run.forEach((cb) => cb(0));
+    };
+  });
+  afterEach(() => {
+    raf.mockRestore();
+    document.body.innerHTML = '';
+  });
+  const flush = () => (window as unknown as { flushFrames: () => void }).flushFrames();
+
+  it('scrolls to a section that is already there', () => {
+    document.body.innerHTML = '<section id="faq"></section>';
+    scrollToHash('#faq');
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a section that renders later', () => {
+    scrollToHash('#faq');
+    expect(scroll).not.toHaveBeenCalled();
+    flush();
+    document.body.innerHTML = '<section id="faq"></section>';
+    flush();
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing for an empty fragment', () => {
+    scrollToHash('#');
+    expect(raf).not.toHaveBeenCalled();
+    expect(scroll).not.toHaveBeenCalled();
   });
 });

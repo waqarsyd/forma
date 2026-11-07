@@ -44,6 +44,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/features': 'Features — Forma',
   '/docs': 'Docs — Forma',
   '/contact': 'Contact — Forma',
+  '/changelog': 'Changelog — Forma',
   '/login': 'Sign in — Forma',
   '/signup': 'Create account — Forma',
   '/workspace': 'Workspace — Forma',
@@ -133,6 +134,7 @@ export function viewForRoute(path: string): RouteView {
     case '/features':
     case '/docs':
     case '/contact':
+    case '/changelog':
     case '/terms':
     case '/privacy':
       return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: path, notFound: false };

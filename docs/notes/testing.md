@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,595 tests in 151 files** — under the `node` environment
+`npm test` runs Vitest over **2,622 tests in 153 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -87,6 +87,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/CommandMenu` | 4 | the command menu, Ctrl+K (2026-11-06), as Stitch's: narrowed by every word typed, the arrows and Enter running the highlighted command, the empty answer and Escape; and the shortcuts list beside it, by group, with Cmd on a Mac and Ctrl on a PC. jsdom |
 | `components/ExportPanel` | 3 | every way out in one panel (2026-11-06), as Stitch's Export: the .repx from its first row, each print format asked of the Preview by its own name, the designer greyed for a report with no XML, and Escape. jsdom |
 | `components/ProjectMenu` | 4 | the open project's menu from its title (2026-11-06), as Stitch's: Rename in place and nothing sent for an unchanged name, a Delete that asks once and Keep, opened at Rename's field or Delete's question, Duplicate and Archive and no Download (Export has it), and what an unsaved project cannot do greyed. jsdom |
+| `components/ChangelogPage` | 7 | the changelog (2026-11-07): every release drawn newest first as an article with its anchor and date, the version linked to its GitHub release, a kind filter kept in the address and cleared, a filter read from the address, the empty result with Clear filters, a link copied per entry, and the feed and GitHub offered to follow it. jsdom |
 | `components/HelpMenu` | 3 | the corner's "?" (2026-11-06), as Stitch's: the theme in force marked and the one chosen handed back, What's new opening on the newest note, the shortcuts closing the menu, help and feedback in a new tab, the line that Forma can make mistakes, and Escape. jsdom |
 | `components/HomeStart` | 2 | the empty workspace as a home (2026-11-06), as Stitch's: a recent project opened and All projects, the starting point picked handed back, and no project list when there is none. jsdom |
 | `components/PinProject` | 1 | the pin beside the title (2026-11-06, `RateReport` until then, whose star and thumbs it replaced): pinning and unpinning the project, saying which, and no rating, which the reply card keeps. jsdom |
@@ -103,7 +104,8 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/legalDisclosure` | 9 | 3 from one loop |
 | `lib/analysisResponse` | 14 | 4 from two `it(` sharing one loop; since 2026-11-05 the answer is the REPX as raw XML: unwrapped from a fence, a preamble or the old JSON shape, cut off told from malformed, an unfinished document with a normal finish kept |
 | `lib/aiProvider` | 7 | jsdom (storage); the workspace open only with the Gemini key in, whichever AI is chosen, and that AI ready (2026-11-05); which AI answers: Automatic as Gemini, key or no key, since Forma Offline went into it on 2026-11-05, and the retired Gemini and Forma Offline choices read as Automatic, ready only with what each provider needs, Forma's vision model found as a helper beside any AI or as the Local AI model itself and alone only then, the choice kept in localStorage and the OpenRouter key only in this tab's sessionStorage, an unknown provider ignored |
-| `lib/announcements` | 7 |  |
+| `lib/announcements` | 8 | since 2026-11-07 the notes are the releases marked to announce, and the ids readers had seen are kept |
+| `lib/releases` | 16 | the release notes behind /changelog (2026-11-07): newest first, slug ids and ISO dates, every release with a change of a known kind and area, 1.0.0's version; grouping by kind and month, filtering and its query string, and the Atom feed's shape, links and escaping |
 | `lib/clipboard` | 3 | one copy for every Copy in the workspace (2026-11-06, the workspace audit): the clipboard when the page has one, a hidden field and `execCommand` where there is none, as on plain HTTP, and false when neither works; the document is stubbed, so `node` |
 | `lib/initials` | 3 | one initials rule for the avatar and the account menu (2026-11-06): the first letters of a name's first two words, an address read the same way, and a question mark |
 | `lib/layers` | 5 | the layer stack behind every Escape (2026-11-06, the workspace audit): only the topmost layer closes and the key goes no further, an Escape a field used left alone and every other key, nothing with nothing open, what is open and on top, and a key on a menu, a dialog or the conversation told from one on the report |
@@ -187,7 +189,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/agentEdit` | 28 | since 2026-11-06 an alignment sent with no side taking the one side the request names; since 2026-11-05 formatEdits, for the selection toolbar; since 2026-11-05 changedControls, for the log's outline; since its first day also the tools the chat runs; the chat's edits to an open report (2026-11-05): the outline the model is shown, its answer checked before Forma acts on it, each edit made by splices and found by name, a font made bold keeping its family and size, a style priority set back, declines with their reasons, the paper and margins, the 40-edit limit, and what changed read off the file |
 | `lib/revisions` | 21 |  |
 | `lib/revisionStore` | 26 |  |
-| `lib/router` | 17 | jsdom |
+| `lib/router` | 20 | jsdom; since 2026-11-07 a fragment that is not a route is kept as the section it names, and `scrollToHash` reaches a section already there or one that renders later |
 | `lib/routes` | 18 | since 2026-11-06 a shared report's /s/{id} opened as its own page and named as one, a malformed one as nowhere; since 2026-11-05 the title of a tab that finished something unseen |
 | `lib/shortcuts` | 7 | since 2026-11-06 Ctrl+Z as undo and Ctrl+Shift+Z or Ctrl+Y as redo, left to a field; since 2026-11-06 Stitch's too, Ctrl+K, Ctrl+Backslash, ? and the zoom keys by the physical key, left to a field being typed in; the chat's keyboard shortcuts, ChatGPT's own (2026-11-05): Ctrl+Shift+O, Shift+Esc and Ctrl+Shift+C read exactly, nothing else held, never mid-composition, and each written as a PC and a Mac write it |
 | `lib/workingTips` | 3 | the tip above the box while Forma works (2026-11-06), as Stitch's: distinct sentences short enough for one line, walked from a starting point and wrapping round, and Ctrl written as the Command key on a Mac |
@@ -228,7 +230,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,595 in 151 files** — and that total is the arithmetic sum of the column above
+**Total: 2,622 in 153 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -242,7 +244,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2477** against a real 2,595 (2026-11-07; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
+A grep for `\bit(` answers **2504** against a real 2,622 (2026-11-07; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

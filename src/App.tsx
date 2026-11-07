@@ -178,10 +178,12 @@ const FeaturesPage = lazy(() => import('./components/FeaturesPage'));
 const DocsPage = lazy(() => import('./components/DocsPage'));
 const ContactPage = lazy(() => import('./components/ContactPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
+/* The release notes (2026-11-07), lazy like the other marketing pages. */
+const ChangelogPage = lazy(() => import('./components/ChangelogPage'));
 const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 import type { LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
-import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl } from './lib/router';
+import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl, scrollToHash } from './lib/router';
 import { readyTitle, sharedReportId, titleForRoute, viewForRoute } from './lib/routes';
 import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, type WorkspaceShortcut } from './lib/shortcuts';
 import { hasOpenLayer, topLayer } from './lib/layers';
@@ -1369,6 +1371,9 @@ export default function App() {
 
     const unsubscribe = onRouteChange(applyRoute);
     applyRoute();
+    // A link to a section of a page, /docs#faq or /changelog#<entry>, opened
+    // from outside: the section renders after the page's chunk, so wait for it.
+    if (window.location.hash) scrollToHash(window.location.hash);
     return () => {
       window.removeEventListener('hashchange', onHashChange);
       unsubscribe();
@@ -1396,7 +1401,16 @@ export default function App() {
       if (anchor.target === '_blank' || anchor.hasAttribute('download')) return;
 
       event.preventDefault();
+      const from = currentPath();
       navigate(href);
+      // Where a click lands (2026-11-07, the site audit): at the section a
+      // fragment names, else at the top of a new page. pushState kept the old
+      // scroll, so a footer link opened the next page near its bottom, and a
+      // link to /docs#faq never reached the FAQ. The sign-in routes are a
+      // dialog over the page, which must keep its place behind it.
+      const hash = href.includes('#') ? href.slice(href.indexOf('#')) : '';
+      if (hash.length > 1) scrollToHash(hash);
+      else if (currentPath() !== from && !['/login', '/signup'].includes(currentPath())) window.scrollTo(0, 0);
     };
 
     document.addEventListener('click', onDocumentClick);
@@ -4665,6 +4679,7 @@ export default function App() {
       void import('./components/DocsPage').catch(() => {});
       void import('./components/ContactPage').catch(() => {});
       void import('./components/LegalPage').catch(() => {});
+      void import('./components/ChangelogPage').catch(() => {});
     };
     // requestIdleCallback is still unimplemented in Safari; the timeout is the
     // documented fallback rather than a second strategy.
@@ -4749,6 +4764,7 @@ export default function App() {
     const isFeatures = currentRoute === '/features';
     const isDocs = currentRoute === '/docs';
     const isContact = currentRoute === '/contact';
+    const isChangelog = currentRoute === '/changelog';
     const legalDoc: LegalDoc | null =
       currentRoute === '/terms' ? 'terms' : currentRoute === '/privacy' ? 'privacy' : null;
 
@@ -4832,6 +4848,22 @@ export default function App() {
           />
         ) : isDocs ? (
           <DocsPage
+            onEnterWorkspace={() => {
+              navigate('/workspace');
+            }}
+            onSignIn={() => {
+              navigate('/login');
+            }}
+            onSignUp={() => {
+              navigate('/signup');
+            }}
+            user={user}
+            logOut={handleLogOut}
+            isDarkMode={isDarkMode}
+            setIsDarkMode={setTheme}
+          />
+        ) : isChangelog ? (
+          <ChangelogPage
             onEnterWorkspace={() => {
               navigate('/workspace');
             }}

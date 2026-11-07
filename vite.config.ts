@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import {defineConfig, type Plugin} from 'vite';
 import {createReadStream, existsSync, readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {atomFeed, RELEASES} from './src/lib/releases';
 
 /**
  * OCR's runtime, served from this site rather than a CDN (2026-11-01). The
@@ -98,9 +99,31 @@ function servedAssets(dir: string, files: Record<string, string>): Plugin {
   };
 }
 
+/**
+ * The changelog's Atom feed (2026-11-07), written from src/lib/releases.ts:
+ * served at /changelog.xml in development and emitted into dist/ at build, so
+ * it needs no server and costs nothing. Firebase serves a file before its `**`
+ * rewrite, so the static file is what a feed reader gets.
+ */
+function changelogFeed(): Plugin {
+  const feed = () => atomFeed(RELEASES);
+  return {
+    name: 'forma-changelog-feed',
+    configureServer(server) {
+      server.middlewares.use('/changelog.xml', (_req, res) => {
+        res.setHeader('Content-Type', 'application/atom+xml; charset=utf-8');
+        res.end(feed());
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'changelog.xml', source: feed() });
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), servedAssets('ocr', OCR_ASSETS), servedAssets('pdf-fonts', PDF_FONT_ASSETS), servedAssets('model', MODEL_ASSETS), servedAssets('handwriting', HANDWRITING_ASSETS)],
+    plugins: [react(), tailwindcss(), servedAssets('ocr', OCR_ASSETS), servedAssets('pdf-fonts', PDF_FONT_ASSETS), servedAssets('model', MODEL_ASSETS), servedAssets('handwriting', HANDWRITING_ASSETS), changelogFeed()],
     // Only VITE_* reaches the client. GEMINI_* was previously allowlisted here,
     // which inlined GEMINI_API_KEY into the shipped bundle — Google's secret
     // scanner found that key and revoked it (403 "reported as leaked").

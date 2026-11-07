@@ -80,6 +80,11 @@ export default function HelpMenu({ theme, onTheme, onShortcuts, onClose }: Props
           ))}
         </ul>
       )}
+      {/* Every release, not only the ones announced here (2026-11-07). */}
+      <a className="wb-help-row" href="/changelog" target="_blank" rel="noopener">
+        <span>Changelog</span>
+        <IconExternal size={13} />
+      </a>
       <button type="button" className="wb-help-row" onClick={() => { onClose(); onShortcuts(); }}>
         <span>Keyboard shortcuts</span>
         <kbd>?</kbd>

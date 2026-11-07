@@ -24,7 +24,7 @@
  * missing may not be so lucky. A new route belongs here *and* in `App.tsx`'s
  * route effect and `ROUTE_TITLES`.
  */
-export const ROUTES = ['/', '/features', '/docs', '/contact', '/login', '/signup', '/workspace', '/terms', '/privacy'] as const;
+export const ROUTES = ['/', '/features', '/docs', '/contact', '/changelog', '/login', '/signup', '/workspace', '/terms', '/privacy'] as const;
 export type Route = (typeof ROUTES)[number];
 
 /**
@@ -67,6 +67,12 @@ export function onRouteChange(handler: () => void): () => void {
  * this should not add a history entry the back button has to step through.
  * A bare `#` with nothing after it is also stripped, which is what the home page
  * was left showing after `location.hash = ''`.
+ *
+ * **Only a fragment that names a route is rewritten** (2026-11-07). Any other
+ * fragment is a section of the page, `/docs#faq` or `/changelog#<entry>`, and
+ * is left for `scrollToHash` to reach. Until then it was dropped, so every link
+ * to a section of another page landed at that page's top with its fragment
+ * gone (the site audit of 2026-11-07, item 11).
  */
 export function migrateLegacyHashUrl(): void {
   const raw = window.location.hash;
@@ -87,8 +93,29 @@ export function migrateLegacyHashUrl(): void {
   const target = `/${name}`;
   if ((ROUTES as readonly string[]).includes(target)) {
     window.history.replaceState({}, '', `${target}${search}`);
-  } else {
-    // An unknown fragment is not a route; drop it rather than 404 on it.
-    window.history.replaceState({}, '', `${window.location.pathname}${search}`);
   }
+  // Anything else is a section of the page, kept for scrollToHash.
+}
+
+/**
+ * Bring the element a `#fragment` names into view, waiting for it to render.
+ *
+ * A page here renders after its lazy chunk arrives, so the element a deep link
+ * names is often not in the document yet when the route changes. This looks
+ * once a frame for up to `timeoutMs` and gives up quietly: a fragment that
+ * names nothing is the browser's own behaviour too.
+ */
+export function scrollToHash(hash: string, timeoutMs = 3000): void {
+  const id = decodeURIComponent(hash.replace(/^#/, ''));
+  if (!id) return;
+  const started = Date.now();
+  const look = () => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ block: 'start' });
+      return;
+    }
+    if (Date.now() - started < timeoutMs) window.requestAnimationFrame(look);
+  };
+  look();
 }

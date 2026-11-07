@@ -25,6 +25,8 @@ type Link = [label: string, href: string];
 const PRODUCT: Link[] = [
   ['Features', '/features'],
   ['Documentation', '/docs'],
+  // The release notes (2026-11-07), where Cursor, GitHub and Vercel keep theirs.
+  ['Changelog', '/changelog'],
   ['Contact', '/contact'],
   ['Open the workspace', '/workspace'],
 ];

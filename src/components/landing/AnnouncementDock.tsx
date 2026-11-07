@@ -147,6 +147,12 @@ export default function AnnouncementDock() {
                 </article>
               ))}
             </div>
+            {/* The full list (2026-11-07): the dock shows only what is announced. */}
+            <div className="border-t border-outline-variant px-[18px] py-3">
+              <a href="/changelog" className="u-focus-ring font-body-lg text-[13px] font-semibold text-on-surface underline hover:no-underline">
+                Read the changelog
+              </a>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

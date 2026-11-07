@@ -1,17 +1,19 @@
 /**
- * The notes the landing page's announcement dock shows, newest first.
+ * The notes the landing page's announcement dock and the workspace's What's
+ * new show, newest first.
  *
- * A hand-written list rather than a feed: this app has no CMS, no backend of
- * its own and no analytics, and adding one so a three-line changelog can be
- * edited without a deploy would be the tail wagging the dog. Add an entry at
- * the top, ship, done.
+ * Since 2026-11-07 they are the releases marked `announce` in releases.ts,
+ * which the public /changelog page draws in full: one list, so the dock, the
+ * menu, the page and its feed cannot disagree. Add a release there, not here.
+ * Until then this file held its own three notes; the ids of the two still
+ * shown are kept word for word, because `SEEN_KEY` remembers what was seen by
+ * id. "Going open source" (2026-08-14) went: it said "soon" of something done
+ * on 2026-09-09.
  *
- * **Only write things that are true.** This is the one surface where the
- * product talks about itself to someone who has not used it yet, so a note
- * describing a feature that is not there is worse than no note at all. A note
- * about something *coming* is fine — say so in as many words, as the one below
- * does, rather than writing a plan in the present tense.
+ * **Only write things that are true** — releases.ts carries the rule now.
  */
+import { RELEASES } from './releases';
+
 export type Announcement = {
   /** Stable, and never reused — it is what "already seen" is remembered by. */
   id: string;
@@ -21,26 +23,12 @@ export type Announcement = {
   body: string;
 };
 
-export const ANNOUNCEMENTS: Announcement[] = [
-  {
-    id: '2026-10-28-version-1-0-0',
-    date: '2026-10-28',
-    title: 'Forma 1.0.0',
-    body: 'The first numbered release. Nothing in the app changed today — the number caught up with what has been live since September: banded reports with data binding, grouping, parameters, charts and gauges; a Preview drawn from the file you actually download; and revisions and batch on the rail. The full notes are on the v1.0.0 release at github.com/waqarsyd/forma. 🎉',
-  },
-  {
-    id: '2026-09-09-open-source-live',
-    date: '2026-09-09',
-    title: 'Forma is open source',
-    body: 'It’s done — the repository is public at github.com/waqarsyd/forma under Apache-2.0: the app itself, the prompt behind it, and the notes on why it works the way it does. 🚀',
-  },
-  {
-    id: '2026-08-14-open-source',
-    date: '2026-08-14',
-    title: 'Going open source',
-    body: 'Soon, I’ll be open-sourcing the project and making the repository publicly available. 🚀 Stay tuned — more details coming soon! 🔥',
-  },
-];
+export const ANNOUNCEMENTS: Announcement[] = RELEASES.filter((r) => r.announce).map((r) => ({
+  id: r.id,
+  date: r.date,
+  title: r.title,
+  body: r.summary,
+}));
 
 /** Where the newest id the reader has seen is remembered. */
 export const SEEN_KEY = 'announcementsSeenId';
