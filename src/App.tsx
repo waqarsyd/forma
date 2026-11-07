@@ -1603,6 +1603,18 @@ export default function App() {
    * them. Answered by that message's form or by the next message typed.
    */
   const pendingClarifyRef = useRef<{ request: ReportDescriptionRequest; messageId: string } | null>(null);
+  /**
+   * The questions a conversation is waiting on, from the conversation itself
+   * (2026-11-07, agent audit item 24): its last message's, when they are
+   * unanswered and carry their description. For a project opened and a
+   * version flipped, where the ref above had been emptied.
+   */
+  const pendingClarifyOf = (list: readonly ChatMessage[]): { request: ReportDescriptionRequest; messageId: string } | null => {
+    const last = list[list.length - 1];
+    return last?.role === 'assistant' && last.clarify && !last.clarify.answered && last.clarify.request
+      ? { request: last.clarify.request as ReportDescriptionRequest, messageId: last.id }
+      : null;
+  };
   /*
    * The transcript as requests (2026-11-05), for the card and the log. A new
    * request shows itself and opens the card, as Stitch's does when a prompt
@@ -1816,19 +1828,56 @@ export default function App() {
    * Its words only: anything attached stays in the box for the person to
    * send. Steer puts one first and stops what runs, so it goes next.
    */
-  /** A queued message's words, and the pictures it carries when it is one the chat moved to a new project. */
-  type Queued = { id: string; text: string; images?: string[]; imageMeta?: PreviewMeta[] };
+  /**
+   * A queued message's words; the pictures it carries when the chat moved it
+   * to a new project or it steers a request that had some; `steer` when it
+   * was sent ahead with Steer, and `steerFrom`, the words of the request it
+   * changes (agent audit item 86).
+   */
+  type Queued = { id: string; text: string; images?: string[]; imageMeta?: PreviewMeta[]; steer?: true; steerFrom?: string; go?: true };
   const [queue, setQueue] = useState<Queued[]>([]);
+  /** Resume: the next message goes whatever is waiting, the person having said so. */
+  const resumeQueue = () => {
+    setQueue((q) => (q.length ? [{ ...q[0], go: true }, ...q.slice(1)] : q));
+    setQueuePaused(false);
+  };
+  /**
+   * Whether the queue waits for the person (2026-11-07, agent audit items 27
+   * and 28, the owner's choice): Stop pauses it, as do a question Forma asks
+   * and a request that failed, and "Resume" in the tray sends the next.
+   * Until then Stop stopped one message and the next started at once, and a
+   * message queued before a question was taken as its answer.
+   */
+  const [queuePaused, setQueuePaused] = useState(false);
+  useEffect(() => {
+    if (!queue.length) setQueuePaused(false);
+  }, [queue.length]);
+  /** A turn under way, from its first step to its last (see `handleGenerate`). */
+  const turnBusyRef = useRef(false);
+  const [turnBusy, setTurnBusy] = useState(false);
   /** A different report the chat was asked for, waiting for its turn to end to open a project of its own (agent audit item 20). */
   const [startNewFrom, setStartNewFrom] = useState<Omit<Queued, 'id'> | null>(null);
   useEffect(() => {
-    if (isAnalyzing || isChatting || queue.length === 0) return;
+    if (isAnalyzing || isChatting || turnBusy || queue.length === 0 || queuePaused) return;
     const [next, ...rest] = queue;
+    // A question waiting, or a request that failed, holds what was queued
+    // before it was known (item 28); a steer is the person's own word, and goes.
+    const last = messages[messages.length - 1];
+    const asking = last?.role === 'assistant' && ((last.clarify && !last.clarify.answered) || (last.confirm && !last.confirm.answered));
+    const failed = [...messages].reverse().find((m) => m.role === 'user')?.error;
+    if (!next.steer && !next.go && (asking || failed)) {
+      setQueuePaused(true);
+      return;
+    }
     setQueue(rest);
-    void handleGenerate(next.text, next.images?.length ? { images: next.images, imageMeta: next.imageMeta } : undefined);
+    void handleGenerate(next.text, {
+      ...(next.images?.length ? { images: next.images, imageMeta: next.imageMeta } : {}),
+      queued: true,
+      ...(next.steerFrom ? { steerFrom: next.steerFrom } : {}),
+    });
     // handleGenerate is read at the moment Forma is free; it is declared below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnalyzing, isChatting, queue]);
+  }, [isAnalyzing, isChatting, turnBusy, queue, queuePaused, messages]);
   /*
    * The model picker in the chat box (2026-11-05), as Gemini's: Auto, or one
    * of the models this key has answered for (`readCachedModelSet`, the probe's
@@ -1859,6 +1908,8 @@ export default function App() {
   const turnAbortRef = useRef<AbortController | null>(null);
   /** The reply as streamed so far, which Stop keeps, as ChatGPT keeps it. */
   const partialReplyRef = useRef('');
+  /** Whether the chat turn under way is on an open report, whose reply, stopped, must not claim a change (item 51). */
+  const reportTurnRef = useRef(false);
   /*
    * Something finished while the tab was hidden (2026-11-05): a report or a
    * reply. The tab's title says so (`readyTitle`) until the person comes
@@ -2324,6 +2375,8 @@ export default function App() {
    * log searched its titles only, and the thread's marking was never reached.
    */
   const [logQuery, setLogQuery] = useState('');
+  /** Bumped to open the request log from the command menu (agent audit item 66). */
+  const [logReveal, setLogReveal] = useState(0);
   /**
    * The REPX the Preview itself last wrote. Any other change to the file (a
    * chat edit, Undo, a restore, another project) clears the Preview's
@@ -3148,6 +3201,8 @@ export default function App() {
     // answer was cut off by a reload or a closed page, and says so.
     setMessages(markInterrupted(report.messages));
     setResult(report.result);
+    // Questions it was waiting on are answered by the next message, as before the reload (item 24).
+    pendingClarifyRef.current = pendingClarifyOf(report.messages);
     // The replies' changes this tab kept for it, so their Undo survives a
     // reload; read once, as only the reload's own project can match.
     const kept = unpackChanges(keptChanges.current, report.id);
@@ -3859,7 +3914,12 @@ export default function App() {
    * is abandoned, and a reply keeps what it had written so far, as ChatGPT's
    * does; with nothing written, Forma answers "Stopped." as for a generation.
    */
-  const handleStop = () => {
+  const handleStop = (how?: { steering?: boolean } | unknown) => {
+    const steering = Boolean((how as { steering?: boolean } | undefined)?.steering);
+    // Stop pauses what is queued (agent audit item 27, the owner's choice);
+    // a steer is the next message, and goes.
+    if (!steering && queue.length) setQueuePaused(true);
+    const stopped = steering ? 'Stopped to change course.' : 'Stopped.';
     if (isAnalyzing) {
       const running = abortControllerRef.current;
       setIsAnalyzing(false);
@@ -3872,17 +3932,34 @@ export default function App() {
       setMessages(prev => [...prev, {
         id: nextMessageId(),
         role: 'assistant',
-        text: 'Stopped.'
+        text: stopped,
       }]);
       return;
     }
-    if (!isChatting) return;
+    if (!isChatting) {
+      // Between a turn's steps (pages read, the chat not yet asked), the turn
+      // is still under way and stops the same way.
+      if (turnBusyRef.current) {
+        turnAbortRef.current?.abort();
+        setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: stopped }]);
+      }
+      return;
+    }
     turnAbortRef.current?.abort();
     const partial = partialReplyRef.current.trim();
     partialReplyRef.current = '';
     setIsChatting(false);
     setStreamingReply('');
-    setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: partial || 'Stopped.' }]);
+    /*
+     * What a stopped reply keeps (2026-11-07, agent audit item 51): a turn on
+     * an open report stopped before its edits were made changes nothing, and
+     * its half-written reply ("Made `labelTitle") claimed a change, so it says
+     * nothing changed instead; a plain answer keeps its words, marked stopped.
+     */
+    const text = reportTurnRef.current
+      ? `${stopped.replace(/\.$/, '')} before anything was changed.`
+      : partial ? `${partial}\n\n*${stopped}*` : stopped;
+    setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text }]);
   };
 
   /**
@@ -4074,8 +4151,10 @@ export default function App() {
   /** Another version of one of the person's messages, with the conversation that followed it (2026-11-05). */
   const handleShowVersion = (id: string, to: number) => {
     if (isChatting || isAnalyzing) return;
-    pendingClarifyRef.current = null;
-    setMessages((prev) => showBranch(prev, prev.findIndex((m) => m.id === id), to));
+    const next = showBranch(messages, messages.findIndex((m) => m.id === id), to);
+    // The version shown decides which questions wait, if any (item 24).
+    pendingClarifyRef.current = pendingClarifyOf(next);
+    setMessages(next);
   };
 
   /** One of the person's messages and Forma's answers to it, withdrawn (2026-11-04). See `withdrawTurn`. */
@@ -4238,7 +4317,27 @@ export default function App() {
    * is not kept on a message, so a PDF's pages are read again by OCR and a
    * `.repx` cannot be sent again.
    */
-  const handleGenerate = async (
+  /*
+   * One turn at a time, from its first step to its last (2026-11-07, found
+   * checking agent audit item 27). A turn reads its pages, then chats, then
+   * may generate, and between those steps neither `isChatting` nor
+   * `isAnalyzing` was set, so the queue sent its next message into the middle
+   * of the turn: a message queued during the reading of a picture arrived
+   * before the picture's reply. `turnBusy`, declared beside the queue, covers
+   * the whole turn.
+   */
+  const handleGenerate = async (...args: Parameters<typeof runTurn>) => {
+    if (isChatting || isAnalyzing || turnBusyRef.current) return;
+    turnBusyRef.current = true;
+    setTurnBusy(true);
+    try {
+      await runTurn(...args);
+    } finally {
+      turnBusyRef.current = false;
+      setTurnBusy(false);
+    }
+  };
+  const runTurn = async (
     overridePrompt?: string,
     resend?: {
       images?: string[];
@@ -4256,6 +4355,10 @@ export default function App() {
        * item 3, `baseFor`); undefined for the report as it is now.
        */
       base?: DesignResult | null;
+      /** Sent from the queue (agent audit item 28): a new message, which answers a waiting question as any is. */
+      queued?: boolean;
+      /** The words of the request this one steers (agent audit item 86), carried into what the model is told. */
+      steerFrom?: string;
     },
   ) => {
     /*
@@ -4311,6 +4414,18 @@ export default function App() {
       return;
     }
 
+    /*
+     * A redesign Forma asked about is answered by the next message, yes or no
+     * (2026-11-07, agent audit item 58): one left open behind a "remember"
+     * message kept its buttons, and the log said Waiting, for good. Closed as
+     * "no" here; the typed yes below marks its own "yes" after this.
+     */
+    if (promptText.trim() || stagedImages.length || stagedTexts.length) {
+      setMessages((prev) => (prev.some((m) => m.confirm && !m.confirm.answered)
+        ? prev.map((m) => (m.confirm && !m.confirm.answered ? { ...m, confirm: { ...m.confirm, answered: 'no' as const } } : m))
+        : prev));
+    }
+
     // "Remember: always use A4" is kept, not designed or sent (2026-11-02,
     // lib/memory.ts), whichever AI answers and with none.
     if (stagedImages.length === 0 && stagedTexts.length === 0 && isRememberMessage(promptText)) {
@@ -4345,7 +4460,8 @@ export default function App() {
      * else typed instead is a no, and is answered as the message it is.
      */
     const lastMessage = transcript[transcript.length - 1];
-    if (!again && lastMessage?.role === 'assistant' && lastMessage.confirm && !lastMessage.confirm.answered) {
+    // A queued message is new words, and answers the question as typed ones do (item 28).
+    if ((!again || resend?.queued) && lastMessage?.role === 'assistant' && lastMessage.confirm && !lastMessage.confirm.answered) {
       const yes = AFFIRMATIVE.test(promptText) && stagedImages.length === 0 && stagedTexts.length === 0;
       const asked = lastMessage.confirm;
       setMessages(prev => prev.map(m => (m.id === lastMessage.id ? { ...m, confirm: { ...asked, answered: yes ? 'yes' : 'no' } } : m)));
@@ -4459,8 +4575,18 @@ export default function App() {
       await describeFromChat(currentPrompt, turn.signal, newUserMsg.id);
       return;
     }
+    /*
+     * A steer changes the request it stopped (2026-11-07, agent audit item
+     * 86): it was sent alone, so "make it landscape" steering "an invoice
+     * from this picture" designed a landscape nothing. The model is told what
+     * it changes, and a design is made from both.
+     */
+    const steered = resend?.steerFrom?.trim();
+    const modelWords = steered
+      ? `${currentPrompt}\n\n(This changes my request above, which was stopped: "${steered.slice(0, 600)}". Carry over everything from it that still applies.)`
+      : currentPrompt;
     /** The words a design is made from: the turn's brief, which carries the whole conversation, or the message. */
-    let designWords = currentPrompt;
+    let designWords = steered ? `${steered}\n\n${currentPrompt}` : currentPrompt;
     /*
      * A picture or a file sent with a report open goes to the agent too
      * (2026-11-07, agent audit item 21), which reads it with the report: it
@@ -4474,7 +4600,7 @@ export default function App() {
       setStreamingReply('');
       partialReplyRef.current = '';
       try {
-        const history: ChatTurn[] = buildChatHistory(transcript, currentPrompt);
+        const history: ChatTurn[] = buildChatHistory(transcript, modelWords);
         const { chatReply } = await loadGemini();
         // What the user asked Forma to remember, told to the chat as well (agent audit item 13).
         const memory = await import('./lib/memory').catch(() => null);
@@ -4491,6 +4617,7 @@ export default function App() {
         const outline = open && agent
           ? agent.reportOutline(open.repxContent!, { findings: repxAudit?.findings.map((f) => f.message), selected: previewSelection })
           : undefined;
+        reportTurnRef.current = Boolean(outline);
         const answered = await chatReply(history, config, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
@@ -4508,7 +4635,7 @@ export default function App() {
         const outcome = agent ? agent.readReportOutcome(answered, currentPrompt) : answered;
         // The whole request for a design (agent audit item 19): the brief the
         // turn wrote from the conversation, and on a redesign what is selected.
-        designWords = withSelection(outcome.brief || currentPrompt, open ? previewSelection : []);
+        designWords = withSelection(outcome.brief || designWords, open ? previewSelection : []);
         /*
          * A different report (2026-11-07, agent audit item 20): "create a new
          * sales report" with an invoice open redesigned the invoice. This
@@ -4799,7 +4926,8 @@ export default function App() {
           id,
           role: 'assistant',
           text: `Before I design it, ${outcome.questions.length === 1 ? 'one question' : `${outcome.questions.length} questions`}. Keep the suggested answers, change them, or reply in your own words.`,
-          clarify: { questions: outcome.questions, answered: false },
+          // The description goes with the questions, so the form works after a reload (item 24).
+          clarify: { questions: outcome.questions, answered: false, request },
         }]);
         pendingClarifyRef.current = { request, messageId: id };
         return;
@@ -4821,8 +4949,12 @@ export default function App() {
 
   /** The answers given in a message's question form. */
   const handleClarifyAnswers = async (messageId: string, answers: ClarificationAnswer[]) => {
-    const pending = pendingClarifyRef.current;
-    if (!pending || pending.messageId !== messageId || isChatting || isAnalyzing) return;
+    // The questions in memory, or the description kept with them (item 24).
+    const kept = messages.find((m) => m.id === messageId)?.clarify;
+    const pending = pendingClarifyRef.current?.messageId === messageId
+      ? pendingClarifyRef.current
+      : kept && !kept.answered && kept.request ? { request: kept.request as ReportDescriptionRequest, messageId } : null;
+    if (!pending || isChatting || isAnalyzing) return;
     pendingClarifyRef.current = null;
     setMessages((prev) => prev.map((m) => (m.id === messageId && m.clarify ? { ...m, clarify: { ...m.clarify, answered: true } } : m)));
     const answered = answers.filter((a) => a.answer.trim());
@@ -5498,6 +5630,10 @@ export default function App() {
       { id: 'clean', label: isClean ? 'Leave the clean screen' : 'Clean screen', keys: keysFor('Ctrl+\\'), run: () => setIsClean((c) => !c) },
     ];
     if (requests.length) list.push({ id: 'card', label: isCardCollapsed ? 'Show the reply' : 'Fold the reply away', run: () => setIsCardCollapsed((c) => !c) });
+    // Stop, the request log and a paused queue, in the menu too (2026-11-07, agent audit item 66).
+    if (isAnalyzing || isChatting) list.push({ id: 'stop', label: 'Stop what Forma is doing', keys: 'Esc', run: () => handleStop() });
+    if (requests.length) list.push({ id: 'log', label: 'Open the request log', run: () => setLogReveal((n) => n + 1) });
+    if (queuePaused && queue.length && !isAnalyzing && !isChatting) list.push({ id: 'resume', label: 'Resume the queue', run: resumeQueue });
     if (result) {
       const panes: [Plate, string][] = [['proof', 'Mockup'], ['print', 'Preview'], ['data', 'Data'], ['spec', 'Spec'], ['xml', 'REPX']];
       list.push(...panes.map(([p, name]) => ({ id: `pane-${p}`, label: `Show the ${name}`, run: () => showPlate(p) })));
@@ -6536,6 +6672,7 @@ export default function App() {
                 onShow={(id) => void showRequest(id)}
                 onExport={exportConversation}
                 onQuery={setLogQuery}
+                reveal={logReveal}
               />
             </Suspense>
           </div>
@@ -6590,7 +6727,8 @@ export default function App() {
             hasApiKey={hasApiKey}
             onAddKey={() => setIsConfigOpen(true)}
             isAnalyzing={isAnalyzing}
-            isChatting={isChatting}
+            // Between a turn's steps the box still queues and stops (see `turnBusy`).
+            isChatting={isChatting || (turnBusy && !isAnalyzing)}
             isIngesting={isIngesting}
             onPasteFiles={ingestFiles}
             selection={result?.repxContent ? previewSelection : []}
@@ -6601,9 +6739,29 @@ export default function App() {
               setPrompt('');
             }}
             onSteer={(id) => {
-              setQueue((q) => [...q.filter((x) => x.id === id), ...q.filter((x) => x.id !== id)]);
-              handleStop();
+              /*
+               * A steer changes the request under way (2026-11-07, agent audit
+               * item 86): it goes next, carrying that request's words, and its
+               * pictures when it had some, rather than alone. Stop here does
+               * not pause the queue: the steer is the person's next message.
+               */
+              const working = [...messages].reverse().find((m) => m.role === 'user');
+              setQueue((q) => {
+                const item = q.find((x) => x.id === id);
+                if (!item) return q;
+                const steer: Queued = {
+                  ...item,
+                  steer: true,
+                  ...(working?.text ? { steerFrom: working.text } : {}),
+                  ...(working?.images?.length ? { images: working.images, imageMeta: working.imageMeta } : {}),
+                };
+                return [steer, ...q.filter((x) => x.id !== id)];
+              });
+              setQueuePaused(false);
+              handleStop({ steering: true });
             }}
+            queuePaused={queuePaused}
+            onResumeQueue={resumeQueue}
             onEditQueued={(id) => {
               const item = queue.find((x) => x.id === id);
               setQueue((q) => q.filter((x) => x.id !== id));

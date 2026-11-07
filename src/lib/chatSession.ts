@@ -73,7 +73,17 @@ export interface ChatMessage<R = unknown, M = unknown> {
    * suggested answer the thread draws as a field to keep or change. `answered`
    * once the reader has replied, by the form or by typing.
    */
-  clarify?: { questions: { id: string; question: string; suggestion?: string }[]; answered: boolean };
+  clarify?: {
+    questions: { id: string; question: string; suggestion?: string }[];
+    answered: boolean;
+    /**
+     * The description the questions are about (2026-11-07, agent audit item
+     * 24), kept with them so "Build the report" works after a reload, a
+     * project reopened or a version flipped; it was held in memory only, and
+     * the form did nothing while the log said Waiting for good.
+     */
+    request?: unknown;
+  };
   /**
    * The person's rating of one of Forma's replies (2026-11-05), as ChatGPT's
    * thumbs. Kept with the message, and so with a saved project, and sent

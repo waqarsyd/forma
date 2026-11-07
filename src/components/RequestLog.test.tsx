@@ -32,6 +32,14 @@ describe('RequestLog', () => {
     expect(within(items[2]).getByRole('img').getAttribute('aria-label')).toBe('Answered');
   });
 
+  // Agent audit item 66: the command menu opens the log.
+  it('opens when it is told to, from the command menu', () => {
+    const { rerender } = render(<RequestLog requests={requests} shownId="c" working={false} onShow={() => {}} />);
+    expect(screen.queryByRole('list')).toBeNull();
+    rerender(<RequestLog requests={requests} shownId="c" working={false} onShow={() => {}} reveal={1} />);
+    expect(screen.getByRole('list')).toBeTruthy();
+  });
+
   it('shows a picked request, and searches what the requests say', () => {
     const onShow = vi.fn();
     render(<RequestLog requests={requests} shownId="c" working={false} onShow={onShow} onExport={() => {}} />);

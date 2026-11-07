@@ -26,6 +26,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ChangeEventHandler, 
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
 import { modelTiers } from '../lib/modelTiers';
+import { hasOpenLayer } from '../lib/layers';
 import { useLayer } from './useLayer';
 import { useMenuKeys } from './useMenuKeys';
 import {
@@ -140,6 +141,12 @@ export interface ComposerProps {
   queue?: readonly QueuedMessage[];
   onQueue?: (text: string) => void;
   onSteer?: (id: string) => void;
+  /**
+   * The queue waits for the person (2026-11-07, the owner's choice): after
+   * Stop, a question or a failure. The tray says so, with Resume.
+   */
+  queuePaused?: boolean;
+  onResumeQueue?: () => void;
   onEditQueued?: (id: string) => void;
   onCancelQueued?: (id: string) => void;
   /**
@@ -183,6 +190,8 @@ export default function Composer({
   queue = [],
   onQueue,
   onSteer,
+  queuePaused = false,
+  onResumeQueue,
   onEditQueued,
   onCancelQueued,
   history = [],
@@ -334,7 +343,16 @@ export default function Composer({
       {/* The queue (2026-11-05), as Stitch's tray over its box. */}
       {queue.length > 0 && (
         <div className="wb-queue" role="list" aria-label="Queued messages">
-          <div className="wb-queue-head">Queued · sends after this one</div>
+          {queuePaused ? (
+            <div className="wb-queue-head" role="status">
+              Queue paused ·{' '}
+              <button type="button" className="wb-queue-resume" onClick={onResumeQueue} disabled={isAnalyzing || isChatting}>
+                Resume
+              </button>
+            </div>
+          ) : (
+            <div className="wb-queue-head">Queued · sends after this one</div>
+          )}
           {queue.map((q) => (
             <div className="wb-queue-item" role="listitem" key={q.id}>
               <span title={q.text}>{q.text}</span>
@@ -483,6 +501,14 @@ export default function Composer({
             // (2026-11-06): ten requests back in one, then ↑ in a project of
             // three, recalled nothing and left the box uncontrolled.
             if (recall.current >= history.length) recall.current = -1;
+            // Escape stops Forma while it works (2026-11-07, agent audit item
+            // 66), as Escape stops a reply in ChatGPT; a menu or dialog open
+            // over the box keeps Escape for itself.
+            if (e.key === 'Escape' && (isAnalyzing || isChatting) && onStop && !hasOpenLayer()) {
+              e.preventDefault();
+              onStop();
+              return;
+            }
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               recall.current = -1;

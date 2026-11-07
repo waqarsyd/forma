@@ -31,6 +31,7 @@ export function shortcutGroups(mac: boolean): { title: string; rows: Row[] }[] {
       rows: [
         ['Cursor to the box', ['⇧', 'Esc']],
         ['Send', ['Enter']],
+        ['Stop what Forma is doing', ['Esc']],
         ['New line', ['⇧', 'Enter']],
         ['Your earlier messages', ['↑']],
         ['Copy the last reply', [mod, '⇧', 'C']],

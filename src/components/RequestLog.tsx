@@ -12,7 +12,7 @@
  * in the card too (`query`, App passes it on). See *The conversation floats
  * over the report* in docs/notes/app-shell.md.
  */
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { requestMatches, requestState, requestTitle, type ChatRequest } from '../lib/chatSession';
 import { IconAlert, IconCheckCircle, IconChevronDown, IconDownload, IconInfo, IconStack } from './landing/icons';
 import './overlays.css';
@@ -47,10 +47,15 @@ export interface RequestLogProps {
   onExport?: () => void;
   /** The words searched for, told to App so the card marks them too (2026-11-06). */
   onQuery?: (query: string) => void;
+  /** Changed to open the log, from the command menu (2026-11-07, agent audit item 66). */
+  reveal?: number;
 }
 
-export default function RequestLog({ requests, shownId, working, onShow, onExport, onQuery }: RequestLogProps) {
+export default function RequestLog({ requests, shownId, working, onShow, onExport, onQuery, reveal = 0 }: RequestLogProps) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (reveal) setOpen(true);
+  }, [reveal]);
   const [query, setQueryState] = useState('');
   const setQuery = (next: string) => {
     setQueryState(next);

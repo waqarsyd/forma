@@ -311,6 +311,27 @@ describe('a clean composer', () => {
     expect([onSteer, onEditQueued, onCancelQueued].map((f) => f.mock.calls[0][0])).toEqual(['q1', 'q1', 'q1']);
   });
 
+  // Agent audit item 27, the owner's choice: Stop pauses the queue, and the tray says so.
+  it('says a paused queue is paused, with Resume', () => {
+    const onResumeQueue = vi.fn();
+    draw({ onQueue: vi.fn(), queue: [{ id: 'q1', text: 'Make the total bold' }], queuePaused: true, onResumeQueue });
+    expect(screen.getByRole('status').textContent).toMatch(/^Queue paused ·/);
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    expect(onResumeQueue).toHaveBeenCalledTimes(1);
+  });
+
+  // Agent audit item 66: Escape in the box stops Forma while it works, and does nothing otherwise.
+  it('stops on Escape in the box while Forma works, and only then', () => {
+    const onStop = vi.fn();
+    const { unmount } = draw({ isChatting: true, onStop });
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Escape' });
+    expect(onStop).toHaveBeenCalledTimes(1);
+    unmount();
+    draw({ onStop });
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Escape' });
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
   // ↑ in an empty box brings back earlier messages (2026-11-05).
   it('brings back earlier messages with the up arrow in an empty box, and goes forward with the down arrow', () => {
     function Box() {
