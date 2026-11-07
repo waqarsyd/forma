@@ -599,7 +599,10 @@ src/
                        attachments, panelSize, sidebar (the workspace sidebar
                        opening and closing as Gemini's and ChatGPT's do: the
                        phone breakpoint, Ctrl+B, the toggle's name),
-                       assetPaths (where the OCR engine, the PDF/A fonts
+                       seo (each page's title, description, preview, canonical
+                       address and robots, and the sitemap, robots.txt,
+                       security.txt and llms.txt), assetPaths (where the
+                       OCR engine, the PDF/A fonts
                        and the models are served, in folders named for
                        their contents), staleChunks (a tab open across a
                        deploy reloads once for the new build), releases

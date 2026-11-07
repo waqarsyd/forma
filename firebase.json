@@ -22,43 +22,43 @@
         },
         {
           "source": "/features",
-          "destination": "/index.html"
+          "destination": "/features.html"
         },
         {
           "source": "/docs",
-          "destination": "/index.html"
+          "destination": "/docs.html"
         },
         {
           "source": "/contact",
-          "destination": "/index.html"
+          "destination": "/contact.html"
         },
         {
           "source": "/changelog",
-          "destination": "/index.html"
+          "destination": "/changelog.html"
         },
         {
           "source": "/login",
-          "destination": "/index.html"
+          "destination": "/login.html"
         },
         {
           "source": "/signup",
-          "destination": "/index.html"
+          "destination": "/signup.html"
         },
         {
           "source": "/workspace",
-          "destination": "/index.html"
+          "destination": "/workspace.html"
         },
         {
           "source": "/terms",
-          "destination": "/index.html"
+          "destination": "/terms.html"
         },
         {
           "source": "/privacy",
-          "destination": "/index.html"
+          "destination": "/privacy.html"
         },
         {
           "source": "/s/*",
-          "destination": "/index.html"
+          "destination": "/share.html"
         }
       ],
       "headers": [
@@ -92,6 +92,15 @@
             {
               "key": "Cache-Control",
               "value": "no-cache"
+            }
+          ]
+        },
+        {
+          "source": "/s/**",
+          "headers": [
+            {
+              "key": "X-Robots-Tag",
+              "value": "noindex"
             }
           ]
         },
@@ -169,43 +178,43 @@
         },
         {
           "source": "/features",
-          "destination": "/index.html"
+          "destination": "/features.html"
         },
         {
           "source": "/docs",
-          "destination": "/index.html"
+          "destination": "/docs.html"
         },
         {
           "source": "/contact",
-          "destination": "/index.html"
+          "destination": "/contact.html"
         },
         {
           "source": "/changelog",
-          "destination": "/index.html"
+          "destination": "/changelog.html"
         },
         {
           "source": "/login",
-          "destination": "/index.html"
+          "destination": "/login.html"
         },
         {
           "source": "/signup",
-          "destination": "/index.html"
+          "destination": "/signup.html"
         },
         {
           "source": "/workspace",
-          "destination": "/index.html"
+          "destination": "/workspace.html"
         },
         {
           "source": "/terms",
-          "destination": "/index.html"
+          "destination": "/terms.html"
         },
         {
           "source": "/privacy",
-          "destination": "/index.html"
+          "destination": "/privacy.html"
         },
         {
           "source": "/s/*",
-          "destination": "/index.html"
+          "destination": "/share.html"
         }
       ],
       "headers": [
@@ -239,6 +248,15 @@
             {
               "key": "Cache-Control",
               "value": "no-cache"
+            }
+          ]
+        },
+        {
+          "source": "/s/**",
+          "headers": [
+            {
+              "key": "X-Robots-Tag",
+              "value": "noindex"
             }
           ]
         },

@@ -16,6 +16,7 @@
  */
 import { ROUTES } from '../lib/router';
 import { sharedReportId } from '../lib/routes';
+import { pageFile } from '../lib/seo';
 
 /** Whether the app answers this path: a route, or a shared report. */
 export function isAppPath(path: string): boolean {
@@ -23,10 +24,27 @@ export function isAppPath(path: string): boolean {
 }
 
 /**
- * firebase.json's rewrites: each route, and one segment under /s/, to the
- * app. Firebase serves a file that exists before any rewrite, and dist/404.html
- * for whatever is neither.
+ * firebase.json's rewrites: each route to the page the build wrote for it
+ * (`pageFile`, since 2026-11-08: `features.html` for /features, each with its
+ * own head and, for a marketing page, its words), and one segment under /s/
+ * to `share.html`. Firebase serves a file that exists before any rewrite, and
+ * dist/404.html for whatever is neither.
  */
 export function hostingRewrites(): { source: string; destination: string }[] {
-  return [...ROUTES.map((source) => ({ source, destination: '/index.html' })), { source: '/s/*', destination: '/index.html' }];
+  return [...ROUTES.map((source) => ({ source, destination: `/${pageFile(source)}` })), { source: '/s/*', destination: `/${pageFile('/s/xxxxxxxxxxxxxxxx')}` }];
+}
+
+/**
+ * Headers by path that keep a page out of search results (2026-11-08, site
+ * audit item 38): a shared report is the author's to pass on, not the web's
+ * to index. Its page says noindex too; the header holds for any client that
+ * reads headers and not the page. firebase.json derives its rule from this,
+ * and server.ts sends the same.
+ */
+export const NOINDEX_HEADER = { key: 'X-Robots-Tag', value: 'noindex' } as const;
+export const NOINDEX_SOURCES = ['/s/**'] as const;
+
+/** Whether `npm start` sends NOINDEX_HEADER for a path. */
+export function isNoindexPath(path: string): boolean {
+  return path.startsWith('/s/');
 }

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ROUTES } from '../lib/router';
-import { hostingRewrites, isAppPath } from './appRoutes';
+import { hostingRewrites, isAppPath, isNoindexPath } from './appRoutes';
 
 describe('isAppPath', () => {
   it('takes every route and a shared report', () => {
@@ -21,10 +21,20 @@ describe('isAppPath', () => {
 });
 
 describe('hostingRewrites', () => {
-  it('rewrites each route and one segment under /s/ to the app, and nothing else', () => {
+  it("rewrites each route to its own page and one segment under /s/ to the share page, and nothing else", () => {
     const rewrites = hostingRewrites();
     expect(rewrites.map((r) => r.source)).toEqual([...ROUTES, '/s/*']);
-    expect(new Set(rewrites.map((r) => r.destination))).toEqual(new Set(['/index.html']));
+    expect(rewrites.find((r) => r.source === '/')?.destination).toBe('/index.html');
+    expect(rewrites.find((r) => r.source === '/features')?.destination).toBe('/features.html');
+    expect(rewrites.at(-1)?.destination).toBe('/share.html');
     expect(rewrites.some((r) => r.source.includes('**'))).toBe(false);
+  });
+});
+
+describe('isNoindexPath', () => {
+  it('keeps a shared report out of search results, and nothing else by header', () => {
+    expect(isNoindexPath('/s/AbCdEfGhIjKlMnOp1234')).toBe(true);
+    expect(isNoindexPath('/workspace')).toBe(false);
+    expect(isNoindexPath('/')).toBe(false);
   });
 });

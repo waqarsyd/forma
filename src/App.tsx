@@ -186,6 +186,7 @@ import type { LegalDoc } from './components/LegalPage';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl, scrollToHash } from './lib/router';
 import { readyTitle, sharedReportId, titleForRoute, viewForRoute, type ReadyWhat } from './lib/routes';
+import { applyHead, headFor } from './lib/seo';
 import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, type WorkspaceShortcut } from './lib/shortcuts';
 import { hasOpenLayer, topLayer } from './lib/layers';
 import { initialsOf } from './lib/initials';
@@ -1441,7 +1442,10 @@ export default function App() {
       // Set here rather than in a render pass or a per-page effect: this runs on
       // boot, on navigate() and on back/forward, which is every way the route can
       // change, and one writer cannot disagree with another about the same tab.
-      document.title = titleForRoute(path);
+      // The whole head since 2026-11-08 (site audit item 53, src/lib/seo.ts):
+      // the description, the preview's words, the canonical address and
+      // robots follow the route, as the build wrote them for the page loaded.
+      applyHead(document, headFor(path));
 
       // The mapping itself lives in `src/lib/routes.ts` so it can be tested
       // without importing this file (and with it pdf.js and Firebase). A `null`

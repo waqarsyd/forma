@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,736 tests in 159 files** — under the `node` environment
+`npm test` runs Vitest over **2,747 tests in 160 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -107,6 +107,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/announcements` | 8 | since 2026-11-07 the notes are the releases marked to announce, and the ids readers had seen are kept |
 | `lib/composerStore` | 7 | what the box keeps over a reload (2026-11-07, agent audit items 69 and 71): a draft per project, an older build's single draft given to the project its tab had open, a new report's words moved to its id at its first save, the newest kept when there are too many; the queue only for its own project, kept as its words when its files will not fit, each saying so |
 | `lib/assetPaths` | 2 | the served OCR, font and model files (2026-11-08, site audit item 91): each in its own folder and asked for by an absolute path, unversioned outside a build; written after a path lost its folder in the browser and nothing caught it |
+| `lib/seo` | 10 | jsdom (`applyHead`); each page's head (2026-11-08, the site audit's batch SB): every route its own title and description, the public pages indexed at their canonical address and the rest not, the file each path is served from, the head written into index.html and kept in step on the live page, the home page's JSON-LD, and the sitemap, robots.txt, security.txt (the public address, never the git one) and llms.txt |
 | `lib/staleChunks` | 4 | jsdom; a tab open across a deploy (2026-11-08, site audit item 1): each browser's words for a chunk that could not be fetched, one reload and not a second soon after, and only for Vite's preload error or a failed import |
 | `lib/chatTurn` | 16 | since 2026-11-08 (batch K) the turn's control flow out of App: the queue's next step and its pauses, Resume, Steer, the questions waited on, the report a resend starts from, and how a turn that ended is said; how the chat box routes a message before any AI is asked (2026-11-07, the agent audit's batch B): a memory only from "remember" or "from now on", a plain build only when it says what the report shows, a reply to Forma's questions read as the answer, a question or a new request, and the selection named for a redesign |
 | `lib/replyChanges` | 4 | the replies' changes kept in the tab for a reload (2026-11-07, agent audit item 52): only the open project's come back, the newest kept and fewer while too large, and anything unreadable or empty is nothing |
@@ -217,7 +218,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/workspaceView` | 11 |  |
 | `lib/xlsxExport` | 19 | 8 from one loop; Excel export; the expectations are DevExpress's own workbooks read into grids, one by fingerprint; the file's `<Xlsx>` options, every file, sheet, gridline setting and cell of s62a to s62h (row 74) |
 | `lib/zip` | 25 |  |
-| `server/appRoutes` | 3 | which paths are the app's (2026-11-08, site audit items 1 and 52): every route and a shared report, and not an unknown page, a stale chunk, a file or a malformed share; the rewrites firebase.json is derived from |
+| `server/appRoutes` | 4 | since 2026-11-08 each route rewritten to its own page and a share kept out of search results; which paths are the app's (2026-11-08, site audit items 1 and 52): every route and a shared report, and not an unknown page, a stale chunk, a file or a malformed share; the rewrites firebase.json is derived from |
 | `server/bindHost` | 6 |  |
 | `server/hostingConfig` | 9 | reads `firebase.json` off disk; since 2026-11-08 the rewrites derived from the routes and every cache rule from staticCache.ts, in order |
 | `server/securityHeaders` | 28 | since 2026-11-05 the microphone the page's own and no frame's |
@@ -236,7 +237,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,736 in 159 files** — and that total is the arithmetic sum of the column above
+**Total: 2,747 in 160 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -250,7 +251,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2618** against a real 2,736 (2026-11-08, after the site audit's batch SA; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
+A grep for `\bit(` answers **2629** against a real 2,747 (2026-11-08, after the site audit's batch SB; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

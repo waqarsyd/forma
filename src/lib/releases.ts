@@ -81,6 +81,9 @@ export const RELEASES: Release[] = [
     summary:
       'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'improved', area: 'site', text: 'Every page has its own title, description and link preview, so a shared link to the docs or the changelog says what it is.' },
+      { kind: 'improved', area: 'site', text: 'The public pages can be read without JavaScript and are listed for search engines; the workspace, sign-in and shared reports are kept out of search results.' },
+      { kind: 'new', area: 'site', text: 'Forma can be installed as an app from the browser, with its own icon on the home screen.' },
       { kind: 'fixed', area: 'site', text: 'A tab left open while Forma is updated reloads itself once for the new version, instead of breaking on the next thing it opens.' },
       { kind: 'fixed', area: 'site', text: 'An address that is not a page now says “Not found” with a proper 404, rather than showing the home page.' },
       { kind: 'improved', area: 'site', text: 'Reading a picture starts sooner on a later visit: the text reader and Forma’s models are kept by the browser until they change.' },

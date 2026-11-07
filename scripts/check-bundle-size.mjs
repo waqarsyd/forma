@@ -50,7 +50,7 @@
  *         node scripts/check-bundle-size.mjs --print (report only, exit 0)
  */
 import { readdirSync, statSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const DIST = 'dist';
 const PRINT_ONLY = process.argv.includes('--print');
@@ -572,7 +572,19 @@ const isModel = (f) => f.path.startsWith(MODEL_DIR);
  */
 const HANDWRITING_DIR = join(DIST, 'handwriting');
 const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-simd-threaded|transformers\.web)/.test(f.name);
-const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f)).reduce((a, f) => a + f.size, 0);
+/*
+ * The built pages (2026-11-08, the site audit's batch SB): one HTML file per
+ * route at dist/'s root, the seven marketing pages drawn in full at build so
+ * a crawler reads them (src/prerender.tsx). 424,564 B that day, of which a
+ * visitor downloads the one page they open, compressed. Counted apart, as the
+ * OCR engine is, so they do not consume the total's headroom for code; the
+ * changelog's page grows with every release, which is what this cap watches.
+ * 452,000 is 93.9%.
+ */
+const isPage = (f) => f.name.endsWith('.html') && dirname(f.path) === DIST;
+const pagesTotal = files.filter(isPage).reduce((a, f) => a + f.size, 0);
+const PAGES_TOTAL_MAX = 452_000;
+const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
 const handwritingTotal = files.filter(isHandwriting).reduce((a, f) => a + f.size, 0);
 // 90,597,142 B with the model (2026-11-04), so 94.0%.
 const HANDWRITING_TOTAL_MAX = 96_400_000;
@@ -617,7 +629,11 @@ for (const budget of BUDGETS) {
   }
 }
 
-rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr, dist/pdf-fonts and dist/model' });
+rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr, dist/pdf-fonts, dist/model and the pages' });
+rows.push({ name: 'pages total', size: pagesTotal, max: PAGES_TOTAL_MAX, pct: ((pagesTotal / PAGES_TOTAL_MAX) * 100).toFixed(1), note: 'one HTML page per route, the marketing pages drawn in full' });
+if (pagesTotal > PAGES_TOTAL_MAX) {
+  breaches.push(`OVER     pages total — ${pagesTotal.toLocaleString()} B exceeds the ${PAGES_TOTAL_MAX.toLocaleString()} B budget`);
+}
 rows.push({ name: 'dist/ocr/ total', size: ocrTotal, max: OCR_TOTAL_MAX, pct: ((ocrTotal / OCR_TOTAL_MAX) * 100).toFixed(1), note: 'the OCR engine, lazy' });
 rows.push({ name: 'dist/pdf-fonts/ total', size: fontTotal, max: FONT_TOTAL_MAX, pct: ((fontTotal / FONT_TOTAL_MAX) * 100).toFixed(1), note: 'PDF/A fonts, lazy' });
 rows.push({ name: 'handwriting total', size: handwritingTotal, max: HANDWRITING_TOTAL_MAX, pct: ((handwritingTotal / HANDWRITING_TOTAL_MAX) * 100).toFixed(1), note: 'TrOCR and its runtime, opt-in' });

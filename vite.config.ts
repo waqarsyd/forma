@@ -1,11 +1,13 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import {defineConfig, type Plugin} from 'vite';
+import {createServer, defineConfig, type Plugin} from 'vite';
 import {createReadStream, existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execSync} from 'node:child_process';
 import {resolve} from 'node:path';
 import {atomFeed, RELEASES} from './src/lib/releases';
+import {headFor, llmsTxt, pageFile, robotsTxt, securityTxt, sitemapXml, softwareJsonLd, withHead} from './src/lib/seo';
+import {ROUTES} from './src/lib/router';
 
 /**
  * OCR's runtime, served from this site rather than a CDN (2026-11-01). The
@@ -151,36 +153,96 @@ function commitOf(): string {
 }
 
 /**
- * The page says which commit it was built from, and a missing page is a real
- * 404 (2026-11-07, site audit items 3 and 52).
- *
- * `<meta name="forma-version">` carries the commit, so anyone, and the
- * scheduled check in .github/workflows/live.yml, can tell what the live site
- * runs: it served the 28 October build for weeks while README said it was
- * main. A meta element, not a script, so the inline script's CSP hash in
- * securityHeaders.ts is unchanged.
- *
- * `404.html` is the built page again, with `noindex`: Firebase serves it, with
- * a 404 status, for any path firebase.json does not rewrite to the app, and
- * the app draws its own Not found there. Every unknown path, and every stale
- * chunk, was the home page with a 200 until then.
+ * The page says which commit it was built from (2026-11-07, site audit item
+ * 3): `<meta name="forma-version">`, so anyone, and the scheduled check in
+ * .github/workflows/live.yml, can tell what the live site runs. It served the
+ * 28 October build for weeks while README said it was main. A meta element,
+ * not a script, so the inline script's CSP hash in securityHeaders.ts holds.
  */
-function versionAndNotFound(): Plugin {
+function versionMeta(): Plugin {
   const commit = commitOf();
-  let outDir = 'dist';
   return {
-    name: 'forma-version-and-404',
-    configResolved(config) {
-      outDir = resolve(config.root, config.build.outDir);
-    },
+    name: 'forma-version',
     transformIndexHtml(html) {
       return html.replace('</head>', `  <meta name="forma-version" content="${commit}" />\n  </head>`);
     },
-    closeBundle() {
+  };
+}
+
+/** The files a crawler asks for by name (site audit items 36 and 118), from src/lib/seo.ts. */
+const CRAWLER_FILES = (): Record<string, { type: string; body: string }> => ({
+  'robots.txt': { type: 'text/plain; charset=utf-8', body: robotsTxt() },
+  'sitemap.xml': { type: 'application/xml; charset=utf-8', body: sitemapXml(RELEASES[0]?.date ?? new Date().toISOString().slice(0, 10)) },
+  '.well-known/security.txt': { type: 'text/plain; charset=utf-8', body: securityTxt(new Date()) },
+  'llms.txt': { type: 'text/plain; charset=utf-8', body: llmsTxt() },
+});
+
+/**
+ * One page per route, each with its own head, the marketing pages drawn in
+ * full, and the files crawlers ask for (2026-11-08, the site audit's batch
+ * SB). Until then every route was one index.html: the home page's title,
+ * description and preview on every page, no canonical address, and an empty
+ * `<div id="root">` for anything that runs no script.
+ *
+ * After the bundle is written, the built index.html, its developer comments
+ * taken out (item 73: 5 kB every visitor downloaded), is the template for
+ * every page: `withHead` writes each route's title, description, preview,
+ * canonical address and robots into it (src/lib/seo.ts), and the seven
+ * marketing pages are rendered into their `<div id="root">` by
+ * src/prerender.tsx through Vite's SSR loader, so a crawler and a link
+ * preview read the page itself (item 54). The app replaces that markup with
+ * the same page when its bundle runs. `pageFile` names each file, and
+ * firebase.json and `npm start` serve them by it: `features.html` for
+ * /features, `share.html` for /s/{id}, `404.html` for anything else.
+ */
+function pagesAndCrawlers(): Plugin {
+  let outDir = 'dist';
+  return {
+    name: 'forma-pages-and-crawlers',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    configureServer(server) {
+      for (const [name, file] of Object.entries(CRAWLER_FILES())) {
+        server.middlewares.use(`/${name}`, (_req, res) => {
+          res.setHeader('Content-Type', file.type);
+          res.end(file.body);
+        });
+      }
+    },
+    generateBundle() {
+      for (const [name, file] of Object.entries(CRAWLER_FILES())) this.emitFile({ type: 'asset', fileName: name, source: file.body });
+    },
+    async closeBundle() {
       const index = resolve(outDir, 'index.html');
       if (!existsSync(index)) return;
-      const page = readFileSync(index, 'utf8').replace('</head>', '  <meta name="robots" content="noindex" />\n  </head>');
-      writeFileSync(resolve(outDir, '404.html'), page);
+      const shell = readFileSync(index, 'utf8').replace(/<!--[\s\S]*?-->\s*/g, '');
+      // The marketing pages, rendered by the same components the app draws.
+      const ssr = await createServer({
+        configFile: false,
+        root: process.cwd(),
+        logLevel: 'error',
+        plugins: [react()],
+        server: { middlewareMode: true, hmr: false, ws: false, watch: null },
+        optimizeDeps: { noDiscovery: true, include: [] },
+        appType: 'custom',
+        define: { __FORMA_ASSETS__: 'undefined' },
+      });
+      try {
+        const { PRERENDERED, renderRoute } = (await ssr.ssrLoadModule('/src/prerender.tsx')) as {
+          PRERENDERED: readonly string[];
+          renderRoute: (route: string) => string;
+        };
+        for (const route of ROUTES) {
+          const body = PRERENDERED.includes(route) ? renderRoute(route) : undefined;
+          const page = withHead(shell, headFor(route), { body, extraHead: route === '/' ? softwareJsonLd() : undefined });
+          writeFileSync(resolve(outDir, pageFile(route)), page);
+        }
+      } finally {
+        await ssr.close();
+      }
+      writeFileSync(resolve(outDir, 'share.html'), withHead(shell, headFor(`/s/${'x'.repeat(16)}`)));
+      writeFileSync(resolve(outDir, '404.html'), withHead(shell, headFor('/404')));
     },
   };
 }
@@ -217,7 +279,8 @@ export default defineConfig(() => {
       servedAssets('model', MODEL_ASSETS, VERSIONS.model),
       servedAssets('handwriting', HANDWRITING_ASSETS, VERSIONS.handwriting),
       changelogFeed(),
-      versionAndNotFound(),
+      versionMeta(),
+      pagesAndCrawlers(),
     ],
     // The served sets' paths, for src/lib/assetPaths.ts (site audit item 91).
     define: {

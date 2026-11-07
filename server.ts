@@ -5,7 +5,8 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import fs from "fs";
 import { securityHeadersFor } from "./src/server/securityHeaders";
-import { isAppPath } from "./src/server/appRoutes";
+import { isAppPath, isNoindexPath, NOINDEX_HEADER } from "./src/server/appRoutes";
+import { pageFile } from "./src/lib/seo";
 import { resolveBindHost } from "./src/server/bindHost";
 import { cacheControlFor, REVALIDATE } from "./src/server/staticCache";
 
@@ -175,7 +176,11 @@ async function startServer() {
     app.get('*', (req, res) => {
       res.setHeader('Cache-Control', REVALIDATE);
       if (isAppPath(req.path)) {
-        res.sendFile(path.join(distPath, 'index.html'));
+        // Each route's own page, with its head (2026-11-08, src/lib/seo.ts),
+        // and a shared report kept out of search results (site audit item 38).
+        if (isNoindexPath(req.path)) res.setHeader(NOINDEX_HEADER.key, NOINDEX_HEADER.value);
+        const page = path.join(distPath, pageFile(req.path));
+        res.sendFile(fs.existsSync(page) ? page : path.join(distPath, 'index.html'));
         return;
       }
       const notFound = path.join(distPath, '404.html');

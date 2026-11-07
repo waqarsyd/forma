@@ -59,7 +59,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { securityHeadersFor } from './securityHeaders';
 import { IMAGE_CACHE, IMAGE_EXTENSIONS, IMMUTABLE, REVALIDATE, VERSIONED_DIRS } from './staticCache';
-import { hostingRewrites } from './appRoutes';
+import { hostingRewrites, NOINDEX_HEADER, NOINDEX_SOURCES } from './appRoutes';
 
 /** Read off disk rather than imported, so the committed file is what is tested. */
 const config = JSON.parse(readFileSync('firebase.json', 'utf8'));
@@ -159,6 +159,8 @@ describe('firebase.json hosting', () => {
    */
   it('carries the same cache policy staticCache.ts applies, in that order', () => {
     const expected = [
+      // A shared report kept out of search results (site audit item 38), from appRoutes.ts.
+      ...NOINDEX_SOURCES.map((source) => ({ source, headers: [{ ...NOINDEX_HEADER }] })),
       { source: `**/*.@(${IMAGE_EXTENSIONS.join('|')})`, headers: [{ key: 'Cache-Control', value: IMAGE_CACHE }] },
       ...VERSIONED_DIRS.map((dir) => ({ source: `/${dir}/**`, headers: [{ key: 'Cache-Control', value: IMMUTABLE }] })),
       { source: '/assets/**', headers: [{ key: 'Cache-Control', value: IMMUTABLE }] },
