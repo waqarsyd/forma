@@ -7,6 +7,7 @@ import { useFocusTrap } from './useFocusTrap';
 const LINKS = [
   { label: 'Product', path: '/' },
   { label: 'Features', path: '/features' },
+  { label: 'Pricing', path: '/pricing' },
   { label: 'Docs', path: '/docs' },
   { label: 'Contact', path: '/contact' },
 ] as const;

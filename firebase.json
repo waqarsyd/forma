@@ -61,8 +61,40 @@
           "destination": "/accessibility.html"
         },
         {
+          "source": "/security",
+          "destination": "/security.html"
+        },
+        {
+          "source": "/pricing",
+          "destination": "/pricing.html"
+        },
+        {
+          "source": "/examples",
+          "destination": "/examples.html"
+        },
+        {
+          "source": "/compare",
+          "destination": "/compare.html"
+        },
+        {
+          "source": "/about",
+          "destination": "/about.html"
+        },
+        {
+          "source": "/self-host",
+          "destination": "/self-host.html"
+        },
+        {
+          "source": "/faq",
+          "destination": "/faq.html"
+        },
+        {
           "source": "/s/*",
           "destination": "/share.html"
+        },
+        {
+          "source": "/.well-known/security.txt",
+          "destination": "/security.txt"
         }
       ],
       "headers": [
@@ -233,8 +265,40 @@
           "destination": "/accessibility.html"
         },
         {
+          "source": "/security",
+          "destination": "/security.html"
+        },
+        {
+          "source": "/pricing",
+          "destination": "/pricing.html"
+        },
+        {
+          "source": "/examples",
+          "destination": "/examples.html"
+        },
+        {
+          "source": "/compare",
+          "destination": "/compare.html"
+        },
+        {
+          "source": "/about",
+          "destination": "/about.html"
+        },
+        {
+          "source": "/self-host",
+          "destination": "/self-host.html"
+        },
+        {
+          "source": "/faq",
+          "destination": "/faq.html"
+        },
+        {
           "source": "/s/*",
           "destination": "/share.html"
+        },
+        {
+          "source": "/.well-known/security.txt",
+          "destination": "/security.txt"
         }
       ],
       "headers": [

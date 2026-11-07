@@ -621,10 +621,15 @@ const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-s
  * link, a GitHub link, a Resources column and a legal bar into every page's
  * header and footer, and table semantics into the Features matrix — about
  * 2.6 kB on each of the nine pages. 93.9%.
+ *
+ * Raised to 756,000 on 2026-11-08, at 711,121 B (121.8%): batch SJ added
+ * seven pages (security, pricing, examples, compare and migrate, about,
+ * self-hosting and the FAQ), each about 20 kB drawn in full with its header
+ * and footer, and a Pricing link and a Help column on every page. 94.1%.
  */
 const isPage = (f) => f.name.endsWith('.html') && dirname(f.path) === DIST;
 const pagesTotal = files.filter(isPage).reduce((a, f) => a + f.size, 0);
-const PAGES_TOTAL_MAX = 584_000;
+const PAGES_TOTAL_MAX = 756_000;
 const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
 const handwritingTotal = files.filter(isHandwriting).reduce((a, f) => a + f.size, 0);
 // 90,597,142 B with the model (2026-11-04), so 94.0%.

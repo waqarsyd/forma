@@ -42,6 +42,7 @@ import {
   type Firestore,
   type Query,
 } from 'firebase/firestore';
+import { MAX_SHARES } from './shares';
 
 /** Everything for one account hangs off `users/{uid}`. */
 export const USERS_COLLECTION = 'users';
@@ -106,7 +107,8 @@ export function ownedShares(db: Firestore, uid: string, reportId?: string): Quer
  */
 export const META_COLLECTION = 'meta';
 export const QUOTA_DOC_ID = 'quota';
-export const MAX_SHARES = 100;
+// MAX_SHARES lives in shares.ts (2026-11-08), which loads no Firestore, so the
+// public Security page can state the limit without pulling the SDK in.
 
 export function quotaDocRef(db: Firestore, uid: string): DocumentReference {
   return doc(db, USERS_COLLECTION, uid, META_COLLECTION, QUOTA_DOC_ID);

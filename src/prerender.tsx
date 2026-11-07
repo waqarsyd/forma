@@ -17,12 +17,15 @@ import DocsPage from './components/DocsPage';
 import ContactPage from './components/ContactPage';
 import ChangelogPage from './components/ChangelogPage';
 import LegalPage from './components/LegalPage';
+import InfoRoutePage from './components/InfoRoutePage';
+import { INFO_ROUTES } from './components/publicPages';
+import type { InfoRoute } from './components/infoPages';
 
 const noop = () => {};
 const common = { onEnterWorkspace: noop, onSignIn: noop, onSignUp: noop, user: null, logOut: noop, isDarkMode: false, setIsDarkMode: noop };
 
 /** The routes drawn here; the app's own routes (the workspace, sign-in) are not pages to read. */
-export const PRERENDERED = ['/', '/features', '/docs', '/contact', '/changelog', '/terms', '/privacy', '/accessibility'] as const;
+export const PRERENDERED = ['/', '/features', '/docs', '/contact', '/changelog', '/terms', '/privacy', '/accessibility', '/security', '/pricing', '/examples', '/compare', '/about', '/self-host', '/faq'] as const;
 
 /** One page's markup, for the build to put inside `<div id="root">`. */
 export function renderRoute(route: (typeof PRERENDERED)[number]): string {
@@ -34,6 +37,7 @@ export function renderRoute(route: (typeof PRERENDERED)[number]): string {
             : route === '/terms' ? <LegalPage doc="terms" {...common} />
               : route === '/privacy' ? <LegalPage doc="privacy" {...common} />
                 : route === '/accessibility' ? <LegalPage doc="accessibility" {...common} />
-                  : <LandingPage {...common} />;
+                  : (INFO_ROUTES as readonly string[]).includes(route) ? <InfoRoutePage route={route as InfoRoute} {...common} />
+                    : <LandingPage {...common} />;
   return renderToString(<MotionConfig reducedMotion="user">{page}</MotionConfig>);
 }

@@ -181,14 +181,9 @@ import LandingPage from './components/LandingPage';
    again pulls LegalPage straight back into the entry chunk, exactly as a static
    import of `services/firebase` would undo that deferral, and nothing would
    report it except this chunk's budget. */
-const FeaturesPage = lazy(() => import('./components/FeaturesPage'));
-const DocsPage = lazy(() => import('./components/DocsPage'));
-const ContactPage = lazy(() => import('./components/ContactPage'));
-const LegalPage = lazy(() => import('./components/LegalPage'));
 /* The release notes (2026-11-07), lazy like the other marketing pages. */
-const ChangelogPage = lazy(() => import('./components/ChangelogPage'));
 const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
-import type { LegalDoc } from './components/LegalPage';
+import { publicPageFor } from './components/publicPages';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl, scrollToHash } from './lib/router';
 import { readyTitle, sharedReportId, titleForRoute, viewForRoute, type ReadyWhat } from './lib/routes';
@@ -1043,6 +1038,24 @@ export default function App() {
       box?.focus();
       box?.setSelectionRange(box.value.length, box.value.length);
     });
+  /*
+   * /workspace?start=<id> puts a starting point in the box (2026-11-08, the
+   * site audit's batch SJ): the Examples page's "Open it in the workspace".
+   * Once, on the way in, and the address loses its query so a reload does
+   * not put it there again.
+   */
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('start');
+    if (!id) return;
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
+    void import('./lib/startingPoints').then(({ STARTING_POINTS }) => {
+      const point = STARTING_POINTS.find((p) => p.id === id);
+      if (!point) return;
+      addToBox(point.text);
+      focusBox();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on the way in
+  }, []);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // Through the validating reader. A bare JSON.parse here threw during the very
   // first render on a corrupted entry, taking the whole application to the error
@@ -5519,15 +5532,18 @@ export default function App() {
 
   if (!showWorkspace) {
     const isNotFound = viewForRoute(currentRoute).notFound;
-    const isFeatures = currentRoute === '/features';
-    const isDocs = currentRoute === '/docs';
-    const isContact = currentRoute === '/contact';
-    const isChangelog = currentRoute === '/changelog';
-    const legalDoc: LegalDoc | null =
-      currentRoute === '/terms' ? 'terms'
-        : currentRoute === '/privacy' ? 'privacy'
-          : currentRoute === '/accessibility' ? 'accessibility'
-            : null;
+    // The other public pages, through the switch PublicSite shares (2026-11-08,
+    // components/publicPages.tsx); the home, the 404 and a share stay here.
+    const publicPage = {
+      onEnterWorkspace: () => navigate('/workspace'),
+      onSignIn: () => navigate('/login'),
+      onSignUp: () => navigate('/signup'),
+      user,
+      logOut: handleLogOut,
+      isDarkMode,
+      setIsDarkMode: setTheme,
+    };
+    const otherPage = publicPageFor(currentRoute, publicPage);
 
     return (
       /* `inert` while the sign-in dialog is open, rather than unmounting.
@@ -5574,103 +5590,10 @@ export default function App() {
             isDarkMode={isDarkMode}
             setIsDarkMode={setTheme}
           />
-        ) : legalDoc ? (
-          <LegalPage
-            doc={legalDoc}
-            onEnterWorkspace={() => {
-              navigate('/workspace');
-            }}
-            onSignIn={() => {
-              navigate('/login');
-            }}
-            onSignUp={() => {
-              navigate('/signup');
-            }}
-            user={user}
-            logOut={handleLogOut}
-            isDarkMode={isDarkMode}
-            setIsDarkMode={setTheme}
-          />
-        ) : isFeatures ? (
-          <FeaturesPage
-            onEnterWorkspace={() => {
-              navigate('/workspace');
-            }}
-            onSignIn={() => {
-              navigate('/login');
-            }}
-            onSignUp={() => {
-              navigate('/signup');
-            }}
-            user={user}
-            logOut={handleLogOut}
-            isDarkMode={isDarkMode}
-            setIsDarkMode={setTheme}
-          />
-        ) : isDocs ? (
-          <DocsPage
-            onEnterWorkspace={() => {
-              navigate('/workspace');
-            }}
-            onSignIn={() => {
-              navigate('/login');
-            }}
-            onSignUp={() => {
-              navigate('/signup');
-            }}
-            user={user}
-            logOut={handleLogOut}
-            isDarkMode={isDarkMode}
-            setIsDarkMode={setTheme}
-          />
-        ) : isChangelog ? (
-          <ChangelogPage
-            onEnterWorkspace={() => {
-              navigate('/workspace');
-            }}
-            onSignIn={() => {
-              navigate('/login');
-            }}
-            onSignUp={() => {
-              navigate('/signup');
-            }}
-            user={user}
-            logOut={handleLogOut}
-            isDarkMode={isDarkMode}
-            setIsDarkMode={setTheme}
-          />
-        ) : isContact ? (
-          <ContactPage
-            onEnterWorkspace={() => {
-              navigate('/workspace');
-            }}
-            onSignIn={() => {
-              navigate('/login');
-            }}
-            onSignUp={() => {
-              navigate('/signup');
-            }}
-            user={user}
-            logOut={handleLogOut}
-            isDarkMode={isDarkMode}
-            setIsDarkMode={setTheme}
-          />
+        ) : otherPage ? (
+          otherPage
         ) : (
-          <LandingPage
-            onEnterWorkspace={() => {
-              navigate('/workspace');
-            }}
-            onSignIn={() => {
-              navigate('/login');
-            }}
-            onSignUp={() => {
-              navigate('/signup');
-            }}
-            user={user}
-            logOut={handleLogOut}
-            isDarkMode={isDarkMode}
-            setIsDarkMode={setTheme}
-          />
+          <LandingPage {...publicPage} />
           )}
           </Suspense>
         </div>

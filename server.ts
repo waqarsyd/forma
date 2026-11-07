@@ -5,7 +5,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import fs from "fs";
 import { securityHeadersFor } from "./src/server/securityHeaders";
-import { isAppPath, isNoindexPath, NOINDEX_HEADER } from "./src/server/appRoutes";
+import { isAppPath, isNoindexPath, NOINDEX_HEADER, SECURITY_TXT } from "./src/server/appRoutes";
 import { pageFile } from "./src/lib/seo";
 import { resolveBindHost } from "./src/server/bindHost";
 import { cacheControlFor, REVALIDATE } from "./src/server/staticCache";
@@ -82,6 +82,14 @@ async function startServer() {
   // no route reads a body any more, so they only invited anyone to make the
   // server buffer 50 MB per request. A route that needs one adds its own,
   // with a limit sized to it.
+
+  // The security contact at the address RFC 9116 gives it, answered by the
+  // file at the root, as Hosting's rewrite does; SECURITY_TXT says why.
+  // A route rather than a mount, so the address is replaced, not trimmed.
+  app.get(SECURITY_TXT.source, (req, _res, next) => {
+    req.url = SECURITY_TXT.destination;
+    next();
+  });
 
   // API routes FIRST
   app.get("/api/health", (_req, res) => {

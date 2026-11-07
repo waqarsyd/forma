@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import LandingPage from './components/LandingPage';
-import type { LegalDoc } from './components/LegalPage';
+import { publicPageFor } from './components/publicPages';
 import { useTheme } from './components/useTheme';
 import { useLinkNavigation } from './components/useLinkNavigation';
 import { currentPath, migrateLegacyHashUrl, navigate, onRouteChange, scrollToHash } from './lib/router';
@@ -10,11 +10,6 @@ import { applyHead, headFor } from './lib/seo';
 import { loadAuth, type AuthClient } from './lib/firebaseClient';
 import { forgetSession } from './lib/signOut';
 
-const FeaturesPage = lazy(() => import('./components/FeaturesPage'));
-const DocsPage = lazy(() => import('./components/DocsPage'));
-const ContactPage = lazy(() => import('./components/ContactPage'));
-const LegalPage = lazy(() => import('./components/LegalPage'));
-const ChangelogPage = lazy(() => import('./components/ChangelogPage'));
 const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 const SharedReportPage = lazy(() => import('./components/SharedReportPage'));
 const LoginPage = lazy(() => import('./components/LoginPage'));
@@ -137,8 +132,6 @@ export default function PublicSite() {
 
   const view = viewForRoute(route);
   const shared = sharedReportId(route);
-  const legalDoc: LegalDoc | null =
-    route === '/terms' ? 'terms' : route === '/privacy' ? 'privacy' : route === '/accessibility' ? 'accessibility' : null;
 
   return (
     <>
@@ -155,18 +148,9 @@ export default function PublicSite() {
             />
           ) : view.notFound ? (
             <NotFoundPage {...common} />
-          ) : legalDoc ? (
-            <LegalPage doc={legalDoc} {...common} />
-          ) : route === '/features' ? (
-            <FeaturesPage {...common} />
-          ) : route === '/docs' ? (
-            <DocsPage {...common} />
-          ) : route === '/changelog' ? (
-            <ChangelogPage {...common} />
-          ) : route === '/contact' ? (
-            <ContactPage {...common} />
           ) : (
-            <LandingPage {...common} />
+            // Every other public page, through the switch App shares (components/publicPages.tsx).
+            publicPageFor(route, common) ?? <LandingPage {...common} />
           )}
         </Suspense>
       </div>

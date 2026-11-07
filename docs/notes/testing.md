@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,827 tests in 172 files** — under the `node` environment
+`npm test` runs Vitest over **2,837 tests in 173 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -100,6 +100,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/DataBinding` | 18 | jsdom |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/MobileNav` | 2 | jsdom; the phone menu is a modal dialog (2026-11-08, site audit item 41): focus inside, Escape closes it and gives focus back to its button once the sheet's exit animation unmounts it, sentence-case labels and the repository's link |
+| `components/infoPages` | 10 | 7 from one table, one per page the site audit's batch SJ added (2026-11-08): a route, a title, a case in `viewForRoute`, a description, a sitemap entry, a prerendered file and a hosting rewrite on both sites; the list `publicPageFor` draws equal to the pages `infoPages.tsx` defines; the share limit, the six starting points and no shares listed until there are some, read from the code; and `public/security.txt` valid under RFC 9116, with the contact SECURITY.md gives and an `Expires` still to come, which fails on purpose once it passes |
 | `components/publicContrast` | 12 | 11 from one table; the public pages' colours read out of `src/index.css` and every pairing a visitor reads computed against WCAG's 4.5:1, light and dark (2026-11-08, site audit item 17), and the bright brand orange kept for what carries no words |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
 | `components/OcrDialog` | 6 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run and the pages not read marked stopped (2026-11-06), low-confidence text listed and named or left out, a report built after the app's checks, a PDF page read at its resolution, and pages the chat box read already shown without reading them again; `reportNameFor`'s case moved to `lib/ocrRepx` on 2026-11-06 |
@@ -249,7 +250,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,827 in 172 files** — and that total is the arithmetic sum of the column above
+**Total: 2,837 in 173 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -263,8 +264,8 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2679** against a real 2,827 (2026-11-08, after the site audit's batch SI, which added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
-"correcting" numbers that were already right. **Ten** files generate cases from a loop,
+A grep for `\bit(` answers **2682** against a real 2,837 (2026-11-08, after the site audit's batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+"correcting" numbers that were already right. **Thirteen** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
 device names, `attachmentParts` six of its fourteen over malformed data URLs,
@@ -274,7 +275,7 @@ from **two** `it(` sharing one loop over the four conditions that must block a s
 reasons — the shape `Composer` now also has — `reportData` seven of its 23 from one
 `it(` over the bands of parity case s17, `reportPreview` twenty-two of its 280 from five
 `it(`, one over the five c05 cases, one over the seven s19 nesting variants, one over four cross-tabs, one over s29a and s29b and an `it.each` over s55a to s55d,
-`repxCrossTabs` twenty-four of its 37 from one `it(` over the field shapes DevExpress generated, and `textMeasure` twenty-four of its 45 from one `it.each` over DevExpress's synthesized-bold measurements, which the grep does not count at all because it is not spelled `it(`.
+`repxCrossTabs` twenty-four of its 37 from one `it(` over the field shapes DevExpress generated, and `textMeasure` twenty-four of its 45 from one `it.each` over DevExpress's synthesized-bold measurements, which the grep does not count at all because it is not spelled `it(`. Three more since 2026-11-08 take the same `it.each` form, so the grep counts none of their rows: `publicClaims` seventeen of its 27, `publicContrast` eleven of its twelve, and `infoPages` seven of its ten.
 
 **The shortfall is a constant, not a coincidence** — every other file adds as many tests
 as it has `it(` calls, so both totals move together. **A change in the *gap* is the

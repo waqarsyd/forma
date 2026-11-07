@@ -51,6 +51,13 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/terms': 'Terms of use — Forma',
   '/privacy': 'Privacy policy — Forma',
   '/accessibility': 'Accessibility — Forma',
+  '/security': 'Security — Forma',
+  '/pricing': 'Pricing — Forma',
+  '/examples': 'Examples — Forma',
+  '/compare': 'Compare and migrate — Forma',
+  '/about': 'About — Forma',
+  '/self-host': 'Self-hosting — Forma',
+  '/faq': 'FAQ — Forma',
 };
 
 /**
@@ -147,6 +154,13 @@ export function viewForRoute(path: string): RouteView {
     case '/terms':
     case '/privacy':
     case '/accessibility':
+    case '/security':
+    case '/pricing':
+    case '/examples':
+    case '/compare':
+    case '/about':
+    case '/self-host':
+    case '/faq':
       return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: path, notFound: false };
     default:
       // A shared report (2026-11-06): a page of its own, and signing in from

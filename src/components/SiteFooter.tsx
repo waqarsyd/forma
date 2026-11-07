@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import Logo from './Logo';
 
 /**
@@ -24,11 +25,21 @@ type Link = [label: string, href: string];
 
 const PRODUCT: Link[] = [
   ['Features', '/features'],
-  ['Documentation', '/docs'],
+  ['Pricing', '/pricing'],
+  ['Examples', '/examples'],
   // The release notes (2026-11-07), where Cursor, GitHub and Vercel keep theirs.
   ['Changelog', '/changelog'],
-  ['Contact', '/contact'],
   ['Open the workspace', '/workspace'],
+];
+
+/* Help (2026-11-08, the site audit's batch SJ): the documentation and the
+   pages that answer a question before it is asked. */
+const HELP: Link[] = [
+  ['Documentation', '/docs'],
+  ['FAQ', '/faq'],
+  ['Compare and migrate', '/compare'],
+  ['Self-hosting', '/self-host'],
+  ['Contact', '/contact'],
 ];
 
 const REPO = 'https://github.com/waqarsyd/forma';
@@ -44,7 +55,6 @@ const RESOURCES: Link[] = [
   ['Report an issue', `${REPO}/issues/new/choose`],
   ['Licence (Apache-2.0)', `${REPO}/blob/main/LICENSE`],
   ['Get a Gemini key', 'https://aistudio.google.com/apikey'],
-  ['DevExpress Reporting', 'https://www.devexpress.com/products/net/reporting/'],
 ];
 
 /*
@@ -54,6 +64,8 @@ const RESOURCES: Link[] = [
  * the statement and the notices joined them on 2026-11-08 (items 115, 97).
  */
 const LEGAL: Link[] = [
+  ['About', '/about'],
+  ['Security', '/security'],
   ['Privacy', '/privacy'],
   ['Terms', '/terms'],
   ['Accessibility', '/accessibility'],
@@ -132,18 +144,19 @@ export default function SiteFooter({
    */
   className?: string;
 }) {
-  const columns = maker
-    ? 'lg:grid-cols-[1.6fr_1fr_1fr_1fr]'
-    : onThisPage
-      ? 'lg:grid-cols-[1.7fr_1fr_1fr_1fr]'
-      : 'lg:grid-cols-[1.7fr_1fr_1fr]';
+  // The brand's column and one per list, however many a page passes
+  // (2026-11-08): a fixed template had wrapped the contact page's fifth
+  // column onto a row of its own.
+  const lists = 3 + (maker ? 1 : 0) + (onThisPage ? 1 : 0);
+  const columns = `lg:[grid-template-columns:var(--footer-cols)]`;
+  const columnStyle = { '--footer-cols': `${lists > 4 ? '1.4fr' : '1.6fr'} repeat(${lists}, minmax(0, 1fr))` } as CSSProperties;
 
   return (
     <footer
       className={`w-full bg-surface-container-lowest dark:bg-card border-t border-outline-variant pt-12 mt-auto ${className}`}
     >
       <div className="max-w-container-max mx-auto px-margin-desktop">
-        <div className={`grid grid-cols-2 gap-10 pb-[42px] ${columns}`}>
+        <div className={`grid grid-cols-2 gap-10 pb-[42px] ${columns}`} style={columnStyle}>
           <div>
             <a href="/" className="mb-3.5 flex items-center gap-[11px] select-none">
               <Logo size={30} />
@@ -167,9 +180,10 @@ export default function SiteFooter({
           </div>
 
           <Column heading="Product" links={PRODUCT} />
+          <Column heading="Help" links={HELP} />
           {maker && <Column heading="The maker" links={maker} />}
           {onThisPage && <Column heading="On this page" links={onThisPage} />}
-          <Column heading="Resources" links={RESOURCES} />
+          <Column heading="Open source" links={RESOURCES} />
         </div>
 
         {/* The policies, then the trademark notice (2026-11-08, site audit

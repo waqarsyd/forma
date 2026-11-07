@@ -23,10 +23,12 @@ describe('isAppPath', () => {
 describe('hostingRewrites', () => {
   it("rewrites each route to its own page and one segment under /s/ to the share page, and nothing else", () => {
     const rewrites = hostingRewrites();
-    expect(rewrites.map((r) => r.source)).toEqual([...ROUTES, '/s/*']);
+    expect(rewrites.map((r) => r.source)).toEqual([...ROUTES, '/s/*', '/.well-known/security.txt']);
     expect(rewrites.find((r) => r.source === '/')?.destination).toBe('/index.html');
     expect(rewrites.find((r) => r.source === '/features')?.destination).toBe('/features.html');
-    expect(rewrites.at(-1)?.destination).toBe('/share.html');
+    expect(rewrites.find((r) => r.source === '/s/*')?.destination).toBe('/share.html');
+    // RFC 9116's address, answered by the file a deploy keeps (item 110).
+    expect(rewrites.at(-1)).toEqual({ source: '/.well-known/security.txt', destination: '/security.txt' });
     expect(rewrites.some((r) => r.source.includes('**'))).toBe(false);
   });
 });

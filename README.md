@@ -176,7 +176,7 @@ Contributors should use `npm ci` instead — it installs exactly what the lockfi
 npm run dev
 ```
 
-Open <http://localhost:3000>, click **Configure**, and paste your Gemini API key.
+Open <http://localhost:3000/workspace>; the locked message box's button opens **Settings** at **Gemini key**, where the key you paste takes effect at once.
 
 That's enough to generate reports. Sign-in and cloud sync are optional — signed out, Forma saves your projects to `localStorage` and works fully.
 
@@ -188,11 +188,11 @@ That's enough to generate reports. Sign-in and cloud sync are optional — signe
 
 **Generate a report from a design:**
 
-1. `npm run dev`, then open <http://localhost:3000>.
-2. **Configure** → paste your Gemini key. It goes to `sessionStorage` and is erased when the tab closes.
-3. Drop an image, a PDF, or a `.repx` onto the composer.
-4. Generate. The progress bar tracks real output once the model starts writing; you can pause or stop mid-stream.
-5. Review the spec and the mockup, then download the `.repx`.
+1. `npm run dev`, then open <http://localhost:3000/workspace>.
+2. **Settings → Gemini key** → paste your key. It goes to `sessionStorage` and is erased when the last Forma tab closes.
+3. Attach an image, a scan, a PDF or a `.repx` to the message box, describe the report you want, or both.
+4. Send. Working dots show while the AI writes, and **Stop** ends it; the report opens over the whole bench when it is done.
+5. Check it in **Preview**, ask the chat for changes, then take the `.repx` from **Export**.
 
 **Develop against a canned response, spending no quota:**
 
@@ -281,7 +281,12 @@ src/
                        PascalCase.tsx / camelCase.ts form, because Vite names it
   components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
                        ChangelogPage (/changelog, every release),
-                       LoginPage, LegalPage (/terms and /privacy),
+                       LoginPage, LegalPage (/terms, /privacy and /accessibility),
+                       InfoPage and InfoRoutePage (/security, /pricing, /examples,
+                       /compare, /about, /self-host and /faq, their words in
+                       infoPages.tsx, the FAQ in faqs.tsx, which Docs shows too),
+                       publicPages.tsx (which page a public route draws, shared
+                       by PublicSite and App),
                        SiteHeader, SiteFooter, MobileNav, Logo,
                        AccountDialog, UserAvatar, NotFoundPage,
                        OcrDialog (the review the image viewer opens: the text

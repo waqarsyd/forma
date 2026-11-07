@@ -39,6 +39,8 @@ export interface SharedReport {
 export const MAX_INVITED = 50;
 /** The rules' cap on `result`, in characters. */
 export const MAX_SHARED_RESULT = 1_000_000;
+/** How many shares an account may hold at once (2026-11-08, site audit item 57); firestore.rules caps the count at the same number. */
+export const MAX_SHARES = 100;
 
 /** A new share id: 22 random base64url characters. */
 export function makeShareId(random: (bytes: Uint8Array) => Uint8Array = (b) => crypto.getRandomValues(b)): string {

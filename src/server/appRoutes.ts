@@ -31,8 +31,22 @@ export function isAppPath(path: string): boolean {
  * dist/404.html for whatever is neither.
  */
 export function hostingRewrites(): { source: string; destination: string }[] {
-  return [...ROUTES.map((source) => ({ source, destination: `/${pageFile(source)}` })), { source: '/s/*', destination: `/${pageFile('/s/xxxxxxxxxxxxxxxx')}` }];
+  return [
+    ...ROUTES.map((source) => ({ source, destination: `/${pageFile(source)}` })),
+    { source: '/s/*', destination: `/${pageFile('/s/xxxxxxxxxxxxxxxx')}` },
+    SECURITY_TXT,
+  ];
 }
+
+/**
+ * Where RFC 9116 says a security contact lives, and the file that answers it
+ * (2026-11-08, site audit item 110). The file is `public/security.txt`
+ * rather than `public/.well-known/security.txt` because Firebase Hosting's
+ * `ignore` drops every dot-path from a deploy (`**\/.*`), and `npm start`'s
+ * express.static ignores dotfiles too: so Hosting rewrites the address to the
+ * file and server.ts does the same.
+ */
+export const SECURITY_TXT = { source: '/.well-known/security.txt', destination: '/security.txt' } as const;
 
 /**
  * Headers by path that keep a page out of search results (2026-11-08, site

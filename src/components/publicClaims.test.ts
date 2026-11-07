@@ -23,7 +23,10 @@ const docs = page('DocsPage');
 const figures = readFileSync('src/components/landing/StepFigures.tsx', 'utf8');
 /** The words a visitor reads: comments taken out, so a note about a removed claim does not count as making it. */
 const visible = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
-const all = [landing, features, docs, figures].map(visible).join('\n');
+// With the FAQ and the pages SJ added (2026-11-08), which make claims too.
+const faqs = readFileSync('src/components/faqs.tsx', 'utf8');
+const info = readFileSync('src/components/infoPages.tsx', 'utf8');
+const all = [landing, features, docs, figures, faqs, info].map(visible).join('\n');
 
 describe('the public pages do not claim what Forma no longer does', () => {
   it.each([

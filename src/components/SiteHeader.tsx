@@ -78,11 +78,13 @@ function AccountMenu({ user, onClose, onEnterWorkspace, logOut }: { user: User; 
  * `'none'` is for pages that are not in the nav at all — Terms and Privacy.
  * Passing one of the four instead would light a link the reader is not on.
  */
-export type NavItem = 'Product' | 'Features' | 'Docs' | 'Contact' | 'none';
+export type NavItem = 'Product' | 'Features' | 'Pricing' | 'Docs' | 'Contact' | 'none';
 
 const LINKS: Array<{ label: NavItem; href: string }> = [
   { label: 'Product', href: '/' },
   { label: 'Features', href: '/features' },
+  // Where the big sites put it (2026-11-08, site audit item 112).
+  { label: 'Pricing', href: '/pricing' },
   { label: 'Docs', href: '/docs' },
   { label: 'Contact', href: '/contact' },
 ];

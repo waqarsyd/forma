@@ -24,7 +24,7 @@
  * missing may not be so lucky. A new route belongs here *and* in `App.tsx`'s
  * route effect and `ROUTE_TITLES`.
  */
-export const ROUTES = ['/', '/features', '/docs', '/contact', '/changelog', '/login', '/signup', '/workspace', '/terms', '/privacy', '/accessibility'] as const;
+export const ROUTES = ['/', '/features', '/docs', '/contact', '/changelog', '/login', '/signup', '/workspace', '/terms', '/privacy', '/accessibility', '/security', '/pricing', '/examples', '/compare', '/about', '/self-host', '/faq'] as const;
 export type Route = (typeof ROUTES)[number];
 
 /**
@@ -90,8 +90,11 @@ export function migrateLegacyHashUrl(): void {
 
   const name = raw.replace(/^#/, '');
 
+  // Only on the home page (2026-11-08), where the hash-era links lived
+  // (`/#features`): once /faq became a route, `/docs#faq`, the Docs page's own
+  // FAQ section, was being rewritten to the FAQ page.
   const target = `/${name}`;
-  if ((ROUTES as readonly string[]).includes(target)) {
+  if (window.location.pathname === '/' && (ROUTES as readonly string[]).includes(target)) {
     window.history.replaceState({}, '', `${target}${search}`);
   }
   // Anything else is a section of the page, kept for scrollToHash.

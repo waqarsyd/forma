@@ -149,10 +149,15 @@ describe('migrateLegacyHashUrl', () => {
      was dropped until then, so /docs#faq from the Contact page landed at the
      top of Docs with the #faq gone. */
   it('keeps a fragment that is not a route, as the section it names', () => {
+    // The Docs page's FAQ section, not the FAQ page that /faq is since
+    // 2026-11-08: only the home page's hash links are the legacy ones.
     setUrl('/docs#faq');
     migrateLegacyHashUrl();
     expect(currentPath()).toBe('/docs');
     expect(window.location.hash).toBe('#faq');
+    setUrl('/#faq');
+    migrateLegacyHashUrl();
+    expect(currentPath()).toBe('/faq');
 
     setUrl('/changelog#2026-11-07-settings-account-ocr');
     migrateLegacyHashUrl();

@@ -30,7 +30,7 @@ export const REPOSITORY = 'https://github.com/waqarsyd/forma';
 export const CONTACT_EMAIL = 'waqarsayyed.official@gmail.com';
 
 /** The pages a search engine may index: the public ones. */
-export const INDEXED_ROUTES = ['/', '/features', '/docs', '/contact', '/changelog', '/terms', '/privacy', '/accessibility'] as const;
+export const INDEXED_ROUTES = ['/', '/features', '/pricing', '/docs', '/faq', '/examples', '/compare', '/security', '/self-host', '/about', '/contact', '/changelog', '/terms', '/privacy', '/accessibility'] as const;
 
 /** One sentence per route, for search results and link previews. The home page's is index.html's own. */
 export const ROUTE_DESCRIPTIONS: Record<string, string> = {
@@ -42,6 +42,13 @@ export const ROUTE_DESCRIPTIONS: Record<string, string> = {
   '/terms': 'The terms of use for Forma, a free and open-source DevExpress report designer.',
   '/privacy': 'How Forma handles your data, your Gemini key and the files you upload.',
   '/accessibility': 'What Forma does to be usable by everyone, what still falls short, and how to tell us.',
+  '/security': 'How Forma keeps your API key and your reports safe: bring your own key, a strict content policy, owner-only data and how to report a vulnerability.',
+  '/pricing': 'Forma is free, with no plans. What the AI costs: Google’s free Gemini tier, a free local AI, or OpenRouter’s free models.',
+  '/examples': 'Six example reports to start from in Forma, from an invoice to an inventory report, each opened in the workspace with one click.',
+  '/compare': 'Forma beside DevExpress’s own AI features, and how to move Crystal Reports and SSRS reports to DevExpress for free.',
+  '/about': 'Forma, an open-source AI report designer for DevExpress: who makes it, what it is built with, and a press kit.',
+  '/self-host': 'Run Forma yourself: on your own computer, or with your own Firebase project for a team.',
+  '/faq': 'Answers to the questions people ask about Forma: cost, files, privacy, languages and moving your projects.',
   '/login': 'Sign in to Forma to keep your reports in your account.',
   '/signup': 'Create a free Forma account to keep your reports in your account.',
   '/workspace': 'The Forma workspace: a screenshot, a PDF or a description to a DevExpress report.',
