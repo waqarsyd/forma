@@ -256,6 +256,13 @@ describe('projectName', () => {
     expect(projectName(undefined, undefined, 'hello there\nand more')).toBe('hello there');
     expect(projectName(undefined, '', '')).toBe('Untitled Report');
   });
+
+  // Agent audit item 95: "hello" no longer names a project holding an invoice.
+  it('lets a name taken from the first words give way to the report title, and keeps one the person typed', () => {
+    expect(projectName('hello', 'Invoice', 'hello')).toBe('Invoice');
+    expect(projectName('hello', undefined, 'hello')).toBe('hello');
+    expect(projectName('Hello for Q3', 'Invoice', 'hello')).toBe('Hello for Q3');
+  });
 });
 
 /**

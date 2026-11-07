@@ -149,6 +149,14 @@ describe('applyEdits: what the model asked for, made by splices', () => {
     expect(control(out.xml, 'title').visible).toBe(false);
   });
 
+  // Agent audit item 13: an added label takes the font asked for, or the remembered one App passes.
+  it('gives an added label the font it is asked for', () => {
+    const out = edit({ op: 'add', band: 'Detail', text: 'Thank you', x: 10, y: 5, family: 'Tahoma', size: 11, bold: true });
+    const added = parseReportStructure(out.xml).bands.find((b) => b.kind === 'Detail')!.controls.find((c) => c.text === 'Thank you')!;
+    expect(added).toMatchObject({ fontFamily: 'Tahoma', fontSize: 11, bold: true });
+    expect(out.applied).toHaveLength(1);
+  });
+
   it('sets the paper as the serializer names it, and the margins', () => {
     const out = edit({ op: 'paper', paper: 'a4', landscape: true }, { op: 'margins', left: 30, right: 30 });
     expect(out.xml).toMatch(/PaperKind="A4"/);
@@ -200,6 +208,14 @@ describe('readReportOutcome: the answer as Forma acts on it', () => {
   it('reads a redesign as wanting a report, and an edit with nothing to make as a redesign', () => {
     expect(readReportOutcome({ reply: 'Forma will add a chart.', action: 'rebuild' })).toMatchObject({ wantsReport: true, action: 'rebuild', edits: [] });
     expect(readReportOutcome({ reply: 'Adding a group.', action: 'edit', edits: [] })).toMatchObject({ wantsReport: true, action: 'rebuild' });
+  });
+
+  // Agent audit items 19 and 20: the whole request for a design, and a different report in a project of its own.
+  it('keeps the brief for a redesign or a new report only, and runs no edit or tool with a new report', () => {
+    expect(readReportOutcome({ reply: 'Redesigning.', action: 'rebuild', brief: ' Orders grouped by region, with a total per region ' }).brief).toBe('Orders grouped by region, with a total per region');
+    expect(readReportOutcome({ reply: 'Made it bold.', action: 'edit', edits: [{ op: 'font', control: 'a', bold: true }], brief: 'x' })).not.toHaveProperty('brief');
+    const fresh = readReportOutcome({ reply: 'A new one.', action: 'new', brief: 'A payslip', edits: [{ op: 'delete', control: 'a' }], tools: [{ name: 'testData' }] });
+    expect(fresh).toEqual({ reply: 'A new one.', wantsReport: false, action: 'new', edits: [], tools: [], brief: 'A payslip' });
   });
 
   it('reads an unknown action from what came with it, and never edits on an answer', () => {

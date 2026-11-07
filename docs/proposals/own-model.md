@@ -242,12 +242,21 @@ available on this machine.
 Forma remembers how its user works, local-first and free, after Hermes
 Agent's persistent memory (`src/lib/memory.ts`). It learns two ways:
 
-- **What the user says.** A message that starts "remember", "always", "from
-  now on", "never", "I prefer" or "by default" is kept as a memory, never
-  designed or sent to a model. That works with or without a key. Its words
-  are read for hints Forma's own model can apply: a paper, an orientation, a
-  face, and the size of titles, captions, values or totals ("titles 14pt").
-  The reply says what will be applied.
+- **What the user says.** A message that starts "remember" or "from now on"
+  is kept as a memory, never designed or sent to a model. That works with or
+  without a key. Until 2026-11-07 "always", "never", "I prefer", "by default"
+  and "note that" did too, so "Never mind, make the title red" was kept and
+  told to every report after it; the owner chose the two openings in the
+  agent audit, and the rest now go to the agent (`isRememberMessage` in
+  `lib/chatTurn.ts`, the one copy of the rule). Its words are read for hints
+  Forma's own model can apply: a paper, an orientation, a face, and the size
+  of titles, captions, values or totals ("titles 14pt"). A name said as not
+  wanted is not a hint and the first wanted wins (`hintsOf`, 2026-11-07):
+  "never use Letter" asks for no paper and "Tahoma instead of Arial" is
+  Tahoma, where the first name in Forma's own list won wherever it stood.
+  The reply says what will be applied. Since the same day the chat, its
+  questions and the labels it adds are given the memory too, not only a
+  generation, as the reply had always promised.
 - **What the user's reports show.** Each report kept, by Export .repx or
   Save, leaves its style and no word of it: paper, orientation, face, and
   the size of each role. That is the skeleton's rule applied to the user's

@@ -34,9 +34,12 @@ const style = (o: Partial<KeptStyle>): KeptStyle => ({ at: '2026-11-02T00:00:00Z
 beforeEach(() => localStorage.clear());
 
 describe('what a message asks Forma to remember', () => {
+  // Only "remember" and "from now on" (the owner's rule, 2026-11-07, agent audit item 2).
   it('knows a memory from a request', () => {
-    for (const m of ['remember: always use A4', 'Always use Tahoma', 'From now on, landscape please', 'I prefer 9pt captions', 'never put the logo on the right']) expect(REMEMBER.test(m), m).toBe(true);
-    for (const m of ['Create a stock register', 'a report that always totals', 'what can you remember?']) expect(REMEMBER.test(m), m).toBe(false);
+    for (const m of ['remember: always use A4', 'Remember that our titles are 16pt', 'From now on, landscape please', 'please remember to use Tahoma']) expect(REMEMBER.test(m), m).toBe(true);
+    for (const m of ['Create a stock register', 'a report that always totals', 'what can you remember?', 'Always use Tahoma', 'Never mind, make the title red', 'Note that the total is wrong', 'I prefer 9pt captions']) {
+      expect(REMEMBER.test(m), m).toBe(false);
+    }
   });
 
   it('keeps the words after "remember", and what Forma’s own model can apply', () => {
@@ -44,8 +47,19 @@ describe('what a message asks Forma to remember', () => {
     expect(m.text).toBe('Our reports use A4 landscape, Tahoma, titles 14pt and values 8pt');
     expect(m.hints).toEqual({ paper: 'A4', landscape: true, fontFamily: 'Tahoma', sizes: { title: 14, value: 8 } });
     expect(memoryFrom('Always use portrait').text).toBe('Always use portrait');
-    expect(memoryFrom('never use Letter').hints).toEqual({ paper: 'Letter' });
+    expect(memoryFrom('remember: never use Letter').text).toBe('Never use Letter');
     expect(rememberedReply(m)).toContain('A4 paper, landscape, Tahoma, 14pt titles, 8pt values');
+  });
+
+  // Agent audit item 14: a name said as not wanted is not a hint, and the first wanted wins.
+  it('reads what is not wanted as not wanted, and the first name wanted over the rest', () => {
+    expect(memoryFrom('never use Letter').hints).toEqual({});
+    expect(memoryFrom('Use Tahoma instead of Arial').hints).toEqual({ fontFamily: 'Tahoma' });
+    expect(memoryFrom('A4, not Letter').hints).toEqual({ paper: 'A4' });
+    expect(memoryFrom('not Letter but Legal').hints).toEqual({ paper: 'Legal' });
+    expect(memoryFrom('Verdana rather than Arial, on A3').hints).toEqual({ paper: 'A3', fontFamily: 'Verdana' });
+    expect(memoryFrom('never landscape').hints).toEqual({ landscape: false });
+    expect(memoryFrom("don't print in portrait").hints).toEqual({ landscape: true });
   });
 });
 

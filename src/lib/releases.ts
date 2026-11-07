@@ -79,8 +79,15 @@ export const RELEASES: Release[] = [
     date: '2026-11-07',
     title: 'A chat that keeps its word',
     summary:
-      'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo are the same steps as the corner’s and survive a reload.',
+      'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'changed', area: 'chat', text: 'Only a message that starts “Remember” or “From now on” is kept as a memory. “Always…” or “Never mind…” now goes to the chat, which acts on it.' },
+      { kind: 'improved', area: 'chat', text: 'The chat, its questions and the labels it adds follow what you asked Forma to remember, not only a new report.' },
+      { kind: 'fixed', area: 'chat', text: 'A memory such as “Tahoma instead of Arial” or “never use Letter” is read the way you meant it.' },
+      { kind: 'new', area: 'chat', text: 'Asking for a different report while one is open starts a new project for it, and keeps the one you had.' },
+      { kind: 'improved', area: 'chat', text: 'A redesign is given everything you asked for in the conversation, and the controls you selected, not only your last message.' },
+      { kind: 'improved', area: 'chat', text: 'A question asked while Forma’s questions are waiting is answered, and they stay open; “Create a report” with nothing about what it shows is asked about first.' },
+      { kind: 'fixed', area: 'workspace', text: 'A project started with “hello” takes its report’s title once it has one.' },
       { kind: 'fixed', area: 'chat', text: 'A change made in the chat, from the selection toolbar or by dragging on the Preview now shows on the Mockup and in the Spec as well.' },
       { kind: 'fixed', area: 'chat', text: 'Try again and editing a message start from the report as that message found it: an edit is not made twice, and a first report is designed again rather than refined.' },
       { kind: 'improved', area: 'chat', text: 'A reply’s Undo is the same step as the Undo in the corner, with a Redo beside it, and both are still there after a reload.' },

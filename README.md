@@ -600,7 +600,9 @@ src/
                        releases (the release notes behind /changelog,
                        its Atom feed and What's new), announcements,
                        replyChanges (the chat's changes kept in the tab, so
-                       a reply's Undo and Redo outlive a reload), datetime,
+                       a reply's Undo and Redo outlive a reload), chatTurn
+                       (what the chat box keeps as a memory, sends straight
+                       to a design, or reads as an answer), datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        geminiClient (loads the generation service on demand, so
                        its 19.6 kB prompt is not on every page load) and

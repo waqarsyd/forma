@@ -32,6 +32,14 @@ describe('REPORT_CHAT_INSTRUCTIONS', () => {
     expect(REPORT_CHAT_INSTRUCTIONS).toContain('It IS the report the user is looking at.');
     expect(REPORT_CHAT_INSTRUCTIONS).toContain('Name controls exactly as the outline does.');
   });
+
+  // The agent audit's batch B (2026-11-07): a new report, the whole request, and the memory obeyed.
+  it('offers a new report, asks for the whole request with a design, and makes the memory standing instructions', () => {
+    expect(REPORT_CHAT_INSTRUCTIONS).toMatch(/- "new": the user asks for a different report/);
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain('"brief": with "rebuild" or "new", the whole request');
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain("THE USER'S REMEMBERED PREFERENCES are given, they are standing instructions");
+    expect(CHAT_INSTRUCTIONS).toContain('When "wantsReport" is true, also write "brief"');
+  });
 });
 
 describe('extractPartialReply', () => {

@@ -335,7 +335,11 @@ function applyOne(xml: string, e: AgentEdit): EditResult {
     // addLabel takes report units and divides by the band's Dpi; the outline's numbers are the file's.
     const placed = moveControl(added.xml, found.ref, e.x ?? 0, e.y ?? 0);
     const sized = e.width || e.height ? resizeControl(placed.xml, found.ref, e.width ?? found.control.width / s, e.height ?? found.control.height / s) : placed;
-    return { xml: sized.xml, applied: true, reason: added.reason };
+    // Its font, when one is asked for or remembered (2026-11-07, agent audit item 13).
+    const styled = name && (e.family || e.size || e.bold !== undefined || e.italic !== undefined)
+      ? applyOne(sized.xml, { op: 'font', control: name, family: e.family, size: e.size, bold: e.bold, italic: e.italic })
+      : null;
+    return { xml: styled?.applied ? styled.xml : sized.xml, applied: true, reason: added.reason };
   }
 
   const found = findControl(xml, e.control);
@@ -447,10 +451,13 @@ function isTool(t: unknown): t is AgentTool {
 export interface ReportOutcome {
   reply: string;
   wantsReport: boolean;
-  action: 'answer' | 'edit' | 'rebuild';
+  /** `new` (2026-11-07): a different report, designed in a project of its own while this one is kept. */
+  action: 'answer' | 'edit' | 'rebuild' | 'new';
   edits: AgentEdit[];
   /** Forma's own actions to run, with an answer or after edits; none with a redesign. */
   tools: AgentTool[];
+  /** The whole request for a redesign or a new report, from the conversation; absent otherwise. */
+  brief?: string;
 }
 
 /**
@@ -482,21 +489,26 @@ export function sideNamed(message: string): 'left' | 'center' | 'right' | null {
  * align edit and no `align` (the schema cannot require it for that op alone),
  * and the edit was declined, which offered a whole redesign for a centring.
  */
-export function readReportOutcome(parsed: { reply?: string; action?: string; edits?: unknown; tools?: unknown }, message?: string): ReportOutcome {
+export function readReportOutcome(parsed: { reply?: string; action?: string; edits?: unknown; tools?: unknown; brief?: unknown }, message?: string): ReportOutcome {
   const named = message ? sideNamed(message) : null;
   const edits = (Array.isArray(parsed.edits) ? parsed.edits : [])
     .filter((e): e is AgentEdit => Boolean(e) && typeof e === 'object' && (EDIT_OPS as readonly string[]).includes((e as AgentEdit).op))
     .map((e) => (e.op === 'align' && named && !readAlign(e.align ?? (e as { alignment?: unknown }).alignment) ? { ...e, align: named } : e));
   const tools = (Array.isArray(parsed.tools) ? parsed.tools : []).filter(isTool).slice(0, 4);
   let action: ReportOutcome['action'] =
-    parsed.action === 'answer' || parsed.action === 'edit' || parsed.action === 'rebuild' ? parsed.action : edits.length ? 'edit' : 'answer';
+    parsed.action === 'answer' || parsed.action === 'edit' || parsed.action === 'rebuild' || parsed.action === 'new'
+      ? parsed.action
+      : edits.length ? 'edit' : 'answer';
   if (action === 'edit' && !edits.length) action = tools.length ? 'answer' : 'rebuild';
+  const designs = action === 'rebuild' || action === 'new';
+  const brief = designs && typeof parsed.brief === 'string' && parsed.brief.trim() ? parsed.brief.trim() : undefined;
   return {
     reply: parsed.reply || (action === 'answer' && !tools.length ? 'Sorry — I did not catch that.' : ''),
     wantsReport: action === 'rebuild',
     action,
     edits: action === 'edit' ? edits : [],
-    tools: action === 'rebuild' ? [] : tools,
+    tools: designs ? [] : tools,
+    ...(brief ? { brief } : {}),
   };
 }
 

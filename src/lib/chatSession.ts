@@ -254,11 +254,19 @@ export function isGenerationTurn(previewCount: number, attachmentTextCount: numb
  * hiding them produces a model that answers as though they had not.
  */
 export function buildChatHistory(
-  messages: ReadonlyArray<ChatHistoryTurn>,
+  messages: ReadonlyArray<ChatHistoryTurn & { clarify?: { questions: { question: string; suggestion?: string }[] } }>,
   nextUserText: string
 ): ChatHistoryTurn[] {
   return [
-    ...messages.map((m) => ({ role: m.role, text: m.text })),
+    // Forma's questions are in the form, not the words (2026-11-07, agent
+    // audit item 87): without them the model saw "Before I design it, two
+    // questions" and never what they were, so a typed answer meant nothing.
+    ...messages.map((m) => ({
+      role: m.role,
+      text: m.clarify?.questions.length
+        ? `${m.text}\n${m.clarify.questions.map((q, i) => `${i + 1}. ${q.question}${q.suggestion ? ` (suggested: ${q.suggestion})` : ''}`).join('\n')}`
+        : m.text,
+    })),
     { role: 'user' as const, text: nextUserText },
   ];
 }

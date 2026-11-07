@@ -256,6 +256,7 @@ import {
   type ChatMessage as ChatSessionMessage,
 } from './lib/chatSession';
 import { packChanges, unpackChanges, REPLY_CHANGES_KEY } from './lib/replyChanges';
+import { isPlainBuild, isRememberMessage, pendingReplyKind, withSelection } from './lib/chatTurn';
 import { formatSessionStamp } from './lib/datetime';
 import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
 // LogoPulse, the progress ring of the generation card, went with the card on
@@ -689,10 +690,9 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
  */
 const MAX_IMAGE_EDGE = 2048;
 const JPEG_QUALITY = 0.92;
-/** A message that plainly asks for a report to be built, which needs no chat turn to tell. */
-const PLAIN_BUILD = /^\s*(please\s+)?(create|build|make|design|generate|produce|draft|prepare)\s+(me\s+)?(a|an|the|my|our)?\s*[\p{L}\p{N} ]{0,40}?\b(report|list|register|invoice|statement|ledger|summary|payslips?|labels?|catalogue)\b/iu;
-/** A message asking Forma to remember something; the full rule is REMEMBER in lib/memory.ts, which this mirrors. */
-const REMEMBER_WORDS = /^\s*(please\s+)?(remember|always|from now on|never|i\s+(always\s+)?prefer|by default|note that)\b/i;
+/* PLAIN_BUILD and REMEMBER_WORDS went to lib/chatTurn.ts on 2026-11-07 (the
+   agent audit's batch B), as `isPlainBuild` and `isRememberMessage`: the
+   second was a copy of memory.ts's rule that had already drifted from it. */
 /** Below this, re-encoding is not worth the quality risk. */
 const REENCODE_THRESHOLD_BYTES = 1_200_000;
 
@@ -1817,6 +1817,8 @@ export default function App() {
    * send. Steer puts one first and stops what runs, so it goes next.
    */
   const [queue, setQueue] = useState<{ id: string; text: string }[]>([]);
+  /** A different report the chat was asked for, waiting for its turn to end to open a project of its own (agent audit item 20). */
+  const [startNewFrom, setStartNewFrom] = useState<string | null>(null);
   useEffect(() => {
     if (isAnalyzing || isChatting || queue.length === 0) return;
     const [next, ...rest] = queue;
@@ -4284,7 +4286,7 @@ export default function App() {
 
     // "Remember: always use A4" is kept, not designed or sent (2026-11-02,
     // lib/memory.ts), whichever AI answers and with none.
-    if (stagedImages.length === 0 && stagedTexts.length === 0 && REMEMBER_WORDS.test(promptText)) {
+    if (stagedImages.length === 0 && stagedTexts.length === 0 && isRememberMessage(promptText)) {
       setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: promptText }]);
       clearComposer();
       const memory = await import('./lib/memory');
@@ -4391,11 +4393,18 @@ export default function App() {
      * chat takes the next message after a question; an attachment instead is a
      * new request, and the questions are dropped.
      */
+    /*
+     * Not every message typed then is the answer (2026-11-07, agent audit item
+     * 87, `pendingReplyKind`): a question of its own is answered by the chat
+     * and the questions stay open; a new report asked for in so many words, or
+     * anything attached, drops them and is routed as any message is.
+     */
     const pending = pendingClarifyRef.current;
-    if (pending) {
+    const replyKind = pending && !isGenerationTurn(currentPreviews.length, currentTexts.length) ? pendingReplyKind(currentPrompt) : 'new';
+    if (pending && replyKind !== 'question') {
       pendingClarifyRef.current = null;
       setMessages(prev => prev.map(m => (m.id === pending.messageId && m.clarify ? { ...m, clarify: { ...m.clarify, answered: true } } : m)));
-      if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
+      if (replyKind === 'answer') {
         await startDescribedGeneration(withAnswers(pending.request, [{ id: 'reply', question: 'In the reader\'s own words', answer: currentPrompt }]), newUserMsg.id);
         return;
       }
@@ -4416,11 +4425,15 @@ export default function App() {
     let fromDescription = false;
     // A plain "create a … report" with no report open skips the chat turn
     // (2026-11-02): it is a report request in any reading, and the turn spent
-    // one request of the key's free allowance saying so.
-    if (!base && !isGenerationTurn(currentPreviews.length, currentTexts.length) && PLAIN_BUILD.test(currentPrompt)) {
+    // one request of the key's free allowance saying so. Only one that says
+    // what the report is (2026-11-07, `isPlainBuild`): "create a report" goes
+    // to the chat, which asks what it should show.
+    if (!base && !isGenerationTurn(currentPreviews.length, currentTexts.length) && isPlainBuild(currentPrompt)) {
       await describeFromChat(currentPrompt, turn.signal, newUserMsg.id);
       return;
     }
+    /** The words a design is made from: the turn's brief, which carries the whole conversation, or the message. */
+    let designWords = currentPrompt;
     if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
       setIsChatting(true);
       setStreamingReply('');
@@ -4428,6 +4441,9 @@ export default function App() {
       try {
         const history: ChatTurn[] = buildChatHistory(transcript, currentPrompt);
         const { chatReply } = await loadGemini();
+        // What the user asked Forma to remember, told to the chat as well (agent audit item 13).
+        const memory = await import('./lib/memory').catch(() => null);
+        const remembered = memory ? memory.instructionsOf(memory.readMemory()) : '';
         /*
          * With a report open, the turn sees it and may change it in place
          * (2026-11-05, lib/agentEdit.ts): its outline goes with the
@@ -4443,11 +4459,32 @@ export default function App() {
         const answered = await chatReply(history, config, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
-        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS } : undefined);
+        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS } : undefined, remembered);
         if (turn.signal.aborted) return;
         // A report turn's answer is checked before anything is acted on.
         // With the message, so an alignment sent with no side takes the one asked for.
         const outcome = agent ? agent.readReportOutcome(answered, currentPrompt) : answered;
+        // The whole request for a design (agent audit item 19): the brief the
+        // turn wrote from the conversation, and on a redesign what is selected.
+        designWords = withSelection(outcome.brief || currentPrompt, open ? previewSelection : []);
+        /*
+         * A different report (2026-11-07, agent audit item 20): "create a new
+         * sales report" with an invoice open redesigned the invoice. This
+         * project keeps its report and the reply; a new project opens once
+         * this turn has ended (`startNewFrom`), with the brief as its message.
+         */
+        if (open && outcome.action === 'new') {
+          setMessages(prev => [...prev, {
+            id: nextMessageId(),
+            role: 'assistant',
+            text: [outcome.reply, 'This report stays in its project; the new one opens in a project of its own.'].filter(Boolean).join(' '),
+          }]);
+          setStartNewFrom(outcome.brief || currentPrompt);
+          return;
+        }
+        // Edits that add a label take the remembered font, unless they name one (agent audit item 13).
+        const houseFont = memory && outcome.edits?.some((e) => e.op === 'add' && !e.family) ? memory.preferencesOf(memory.readMemory()).fontFamily : undefined;
+        if (houseFont && outcome.edits) outcome.edits = outcome.edits.map((e) => (e.op === 'add' && !e.family ? { ...e, family: houseFont } : e));
         /*
          * Forma's own actions the answer asked for (2026-11-05): queued, and
          * run by the effect beside `showPlate` once the edits have rendered,
@@ -4507,7 +4544,7 @@ export default function App() {
             id,
             role: 'assistant',
             text: `That could not be changed in place. Redesign the report from your words? It rewrites the whole report and takes a minute or two.\n\n${agent.changesMarkdown([], done.declined)}`,
-            confirm: { prompt: currentPrompt },
+            confirm: { prompt: designWords },
           }]);
           return;
         } else if (open && outcome.wantsReport) {
@@ -4521,7 +4558,7 @@ export default function App() {
             id: nextMessageId(),
             role: 'assistant',
             text: [outcome.reply, 'Redesigning rewrites the whole report and takes a minute or two.'].filter(Boolean).join(' '),
-            confirm: { prompt: currentPrompt },
+            confirm: { prompt: designWords },
           }]);
           return;
         } else if (!outcome.wantsReport) {
@@ -4567,7 +4604,9 @@ export default function App() {
     }
 
     if (fromDescription) {
-      await describeFromChat(currentPrompt, turn.signal, newUserMsg.id);
+      // A data source pasted in this message goes with the brief, which may summarise it away.
+      const pasted = /```[\s\S]*?```|CREATE\s+TABLE[\s\S]*?\)\s*;?/i.exec(currentPrompt)?.[0];
+      await describeFromChat(pasted && !designWords.includes(pasted) ? `${designWords}\n\n${pasted}` : designWords, turn.signal, newUserMsg.id);
       return;
     }
     if (turn.signal.aborted) return;
@@ -4577,8 +4616,24 @@ export default function App() {
     setError(null);
 
     activeDescribeRef.current = undefined;
-    await runGeneration(currentPrompt, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput, { base, askId: newUserMsg.id });
+    await runGeneration(designWords, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput, { base, askId: newUserMsg.id });
   };
+
+  /*
+   * A new project for a different report the chat was asked for (agent audit
+   * item 20), once the turn that asked has ended: this project is saved as it
+   * stands, and the request is the new one's first message, sent through the
+   * queue so it is routed as any message in an empty workspace is.
+   */
+  useEffect(() => {
+    if (!startNewFrom || isChatting || isAnalyzing) return;
+    const words = startNewFrom;
+    setStartNewFrom(null);
+    handleClearChat('save');
+    setQueue([{ id: nextMessageId(), text: words }]);
+    // handleClearChat is read at the moment the turn has ended.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startNewFrom, isChatting, isAnalyzing]);
 
   /* ---------------------------------------------------------------- *
    * Prompt-to-Report.
@@ -4626,7 +4681,9 @@ export default function App() {
     setIsChatting(true);
     try {
       const { clarifyReportRequest } = await loadGemini();
-      const outcome = await clarifyReportRequest(request, config, signal);
+      // Nothing the memory already answers is asked (agent audit item 13).
+      const remembered = await import('./lib/memory').then((m) => m.instructionsOf(m.readMemory())).catch(() => '');
+      const outcome = await clarifyReportRequest(request, config, signal, remembered);
       if (signal?.aborted) return;
       if (!outcome.ready) {
         const id = nextMessageId();

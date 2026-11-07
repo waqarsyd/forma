@@ -98,9 +98,17 @@ function hash(text: string): string {
  * A project's name (2026-11-05): kept once it has one, so a name chosen
  * later is not undone by the next save; an untitled one takes the report's
  * title, or else the first thing the person said, as ChatGPT names a chat.
+ *
+ * A name taken from the first words stands in until there is a report
+ * (2026-11-07, agent audit item 95): a project that began with "hello" was
+ * still called "hello" holding an invoice. Once a report has a title, a name
+ * that is still exactly the first words gives way to it; one the person typed
+ * is theirs and stays.
  */
 export function projectName(existing: string | undefined, title: string | undefined, firstWords: string | undefined): string {
-  if (existing && existing !== 'Untitled Report') return existing;
+  const fromWords = firstWords?.trim() ? reportDisplayName(firstWords.trim().split('\n')[0]) : undefined;
+  const standIn = !existing || existing === 'Untitled Report' || (!!title?.trim() && existing === fromWords);
+  if (!standIn) return existing!;
   return reportDisplayName(title?.trim() || firstWords?.trim().split('\n')[0]);
 }
 

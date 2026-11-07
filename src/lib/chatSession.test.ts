@@ -116,6 +116,17 @@ describe('buildChatHistory', () => {
     expect(buildChatHistory([], 'hello')).toEqual([{ role: 'user', text: 'hello' }]);
   });
 
+  // Agent audit item 87: Forma's questions are in the form, and the model saw only "two questions".
+  it("writes Forma's questions, and their suggested answers, into the reply that asked them", () => {
+    const asked = msg({
+      id: 'a',
+      role: 'assistant',
+      text: 'Before I design it, 2 questions.',
+      clarify: { questions: [{ id: 'q1', question: 'Group by what?', suggestion: 'Region' }, { id: 'q2', question: 'Which total?' }], answered: false },
+    });
+    expect(buildChatHistory([asked], 'by region')[0].text).toBe('Before I design it, 2 questions.\n1. Group by what? (suggested: Region)\n2. Which total?');
+  });
+
   // The expensive failure. `images` holds base64 data URLs; passing whole
   // message objects into the history would upload every previously-attached
   // page again on every subsequent chat turn, billed each time, to say nothing

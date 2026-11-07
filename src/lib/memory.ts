@@ -5,6 +5,8 @@
  * user works and gets better at it. Here, local-first and free:
  * - **What the user tells it.** A message such as "remember: always use A4"
  *   or "from now on use Tahoma" is kept as a memory, not sent to a model.
+ *   Only those two openings (2026-11-07, the owner's rule): "always", "never"
+ *   and the rest go to the agent, which applies them to the open report.
  * - **What their reports show.** Each report they keep, by exporting or
  *   saving it, leaves its style: paper, orientation, face, and the size of
  *   titles, captions and values. Never its words; this is the skeleton's
@@ -19,6 +21,7 @@
 import { parseReportStructure } from './reportPreview';
 import { skeletonOf } from './reportSkeleton';
 import { learnStyle } from './formaModel';
+import { REMEMBER } from './chatTurn';
 
 /** What Forma's own model can apply from a memory. */
 export interface MemoryHints {
@@ -83,21 +86,52 @@ export function writeMemory(state: MemoryState): void {
   }
 }
 
-/** A message that asks Forma to remember something, rather than to design. */
-export const REMEMBER = /^\s*(please\s+)?(remember(\s+that)?|always|from now on|never|i\s+(always\s+)?prefer|by default|note that)\b[\s:,-]*/i;
+/** A message that asks Forma to remember something; the one copy is lib/chatTurn.ts (2026-11-07). */
+export { REMEMBER };
 
 const PAPERS = ['A4', 'A3', 'A5', 'Letter', 'Legal', 'Executive'];
 const FAMILIES = ['Arial', 'Tahoma', 'Verdana', 'Calibri', 'Segoe UI', 'Times New Roman', 'Georgia', 'Courier New', 'Microsoft Sans Serif', 'DIN Pro', 'Helvetica'];
 
-/** The hints in a memory's words: a paper, an orientation, a face, sizes by role. */
+/** Words that turn what follows them in the same clause into what is not wanted. */
+const NEGATION = /\b(not|never|no|don't|dont|do not|avoid|without|instead of|rather than|other than|except|but not)\b/i;
+
+/**
+ * Where each of `names` is said in `text`, and whether it is said as not
+ * wanted (2026-11-07, agent audit item 14): a negation earlier in its clause
+ * ("never use Letter", "Tahoma instead of Arial"). The clause starts after
+ * the last full stop, comma, semicolon, colon or "but" before the name.
+ */
+function mentions(text: string, names: readonly string[]): { name: string; at: number; negated: boolean }[] {
+  const found: { name: string; at: number; negated: boolean }[] = [];
+  for (const name of names) {
+    const re = new RegExp(`\\b${name}\\b`, 'gi');
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      const before = text.slice(0, m.index);
+      const cut = Math.max(before.search(/[.,;:][^.,;:]*$/), ...[...before.matchAll(/\bbut\b/gi)].map((b) => (b.index ?? -1) + 3));
+      found.push({ name, at: m.index, negated: NEGATION.test(before.slice(cut + 1)) });
+    }
+  }
+  return found.sort((a, b) => a.at - b.at);
+}
+
+/** The first of `names` said as wanted, or undefined. */
+const firstWanted = (text: string, names: readonly string[]) => mentions(text, names).find((m) => !m.negated)?.name;
+
+/**
+ * The hints in a memory's words: a paper, an orientation, a face, sizes by
+ * role. A name said as not wanted is not a hint ("never use Letter" asks for
+ * no paper; "Tahoma instead of Arial" is Tahoma), and of two wanted the first
+ * said wins. "Never landscape" is portrait, and "never portrait" landscape.
+ * Until 2026-11-07 the first name in Forma's own list won, wherever it stood.
+ */
 export function hintsOf(text: string): MemoryHints {
   const hints: MemoryHints = {};
-  const paper = PAPERS.find((p) => new RegExp(`\\b${p}\\b`, 'i').test(text));
-  if (paper) hints.paper = paper;
-  if (/\blandscape\b/i.test(text)) hints.landscape = true;
-  else if (/\bportrait\b/i.test(text)) hints.landscape = false;
-  const family = FAMILIES.find((f) => new RegExp(`\\b${f}\\b`, 'i').test(text));
-  if (family) hints.fontFamily = family;
+  const paper = firstWanted(text, PAPERS);
+  if (paper) hints.paper = PAPERS.find((p) => p.toLowerCase() === paper.toLowerCase());
+  const turn = mentions(text, ['landscape', 'portrait'])[0];
+  if (turn) hints.landscape = (turn.name.toLowerCase() === 'landscape') !== turn.negated;
+  const family = firstWanted(text, FAMILIES);
+  if (family) hints.fontFamily = FAMILIES.find((f) => f.toLowerCase() === family.toLowerCase());
   const sizes: MemoryHints['sizes'] = {};
   for (const role of ['title', 'caption', 'value', 'total'] as const) {
     const words = { title: 'titles?|headings?', caption: 'captions?|labels?|column headings?', value: 'values?|data|body|text', total: 'totals?' }[role];
@@ -110,9 +144,7 @@ export function hintsOf(text: string): MemoryHints {
 
 /** A memory from a message: the words after "remember", capitalised. */
 export function memoryFrom(message: string, source: Memory['source'] = 'chat', now = new Date()): Memory {
-  const rest = message.replace(REMEMBER, '').trim().replace(/[.!]+$/, '');
-  const lead = /^(always|never)\b/i.exec(message.trim())?.[1];
-  const text = (lead && !/^(always|never)\b/i.test(rest) ? `${lead} ${rest}` : rest) || message.trim();
+  const text = message.replace(REMEMBER, '').trim().replace(/[.!]+$/, '') || message.trim();
   return {
     id: `m${now.getTime().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
     text: text.charAt(0).toUpperCase() + text.slice(1),
@@ -134,7 +166,7 @@ export function rememberedReply(m: Memory): string {
   return (
     `I'll remember that: "${m.text}". ` +
     (applied.length ? `Forma's own model will apply ${applied.join(', ')} from now on, and ` : 'From now on ') +
-    'any AI you use is told it before each report. See or change your memories in Settings, under Memory.'
+    'any AI you use is told it before each report and each reply. See or change your memories in Settings, under Memory.'
   );
 }
 

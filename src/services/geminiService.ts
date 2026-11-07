@@ -725,7 +725,14 @@ export interface ChatOutcome {
    * is answered, made as edits in place, or needs the report redesigned,
    * which is the one that sets `wantsReport`. Absent with no report open.
    */
-  action?: 'answer' | 'edit' | 'rebuild';
+  action?: 'answer' | 'edit' | 'rebuild' | 'new';
+  /**
+   * The whole request, from everything the conversation asked for that still
+   * applies, when the turn hands work on to a design (2026-11-07, agent audit
+   * item 19): the design was given the last message alone, so "yes, build
+   * it" after three messages describing a report designed "yes, build it".
+   */
+  brief?: string;
   /** The edits, for `action: 'edit'`, as the model wrote them; `applyEdits` checks each. */
   edits?: AgentEdit[];
   /** Forma's own actions to run, as the model wrote them; `readReportOutcome` checks each. */
@@ -753,6 +760,9 @@ Decide what the user's last message needs, and set "action":
 - "answer": a question, about this report, Forma or DevExpress, or anything that changes nothing. Answer from the outline; never say you cannot see the report.
 - "edit": a change the edits below can make. List them in "edits", in order. Name controls exactly as the outline does. Positions and sizes are in the report's unit, as the outline gives them; font sizes are points; colours are #RRGGBB. Keep every control inside its band and the page.
 - "rebuild": a change the edits cannot make: a new table, chart or group, binding to data or new fields, totals, a different layout, or many controls redesigned at once. Forma then redesigns the whole report from the user's words, which takes a minute or two. List no edits.
+- "new": the user asks for a different report, a new one rather than a change to this one ("create a new sales report", "now make me a payslip"). Forma keeps this report in its project and starts a new project for that one. List no edits.
+
+"brief": with "rebuild" or "new", the whole request in one paragraph, from everything the user has asked for in this conversation that still applies to it, in their terms, so the designer has all of it and not only the last message. Empty otherwise.
 
 The edits, by "op", and the fields each reads:
 - text: control, text. For a table's cell also row and cell, numbered as in the outline. A control or cell printing a [Field] cannot be retyped.
@@ -761,14 +771,16 @@ The edits, by "op", and the fields each reads:
 - color: control (row, cell), foreColor and/or backColor.
 - align: control (row, cell), align: left, center or right.
 - delete: control. visible: control, visible.
-- add: a new label: band (its name or kind), text, x, y, and optionally width, height.
+- add: a new label: band (its name or kind), text, x, y, and optionally width, height, family, size, bold, italic. Match the report's own font unless asked otherwise.
 - paper: paper (A4, Letter, Legal, A3, A5, Tabloid), landscape. margins: any of left, right, top, bottom.
 
 When the outline ends with SELECTED ON THE PREVIEW, the user has selected those controls, and "this", "it", "these" and "them" in the message mean them.
 
 "tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows, which costs a request), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer).
 
-"reply": one or two sentences to the user, drawn as Markdown with no headings. For an edit, say briefly what you changed; Forma lists the changes itself, so do not list them. For a rebuild, say what Forma will redesign. Never claim a change you did not list.`;
+"reply": one or two sentences to the user, drawn as Markdown with no headings. For an edit, say briefly what you changed; Forma lists the changes itself, so do not list them. For a rebuild, say what Forma will redesign. Never claim a change you did not list.
+
+When THE USER'S REMEMBERED PREFERENCES are given, they are standing instructions: follow them in what you add or change, unless the message says otherwise.`;
 
 /**
  * What the chat turn is told before the conversation. Since 2026-11-01 the
@@ -787,7 +799,11 @@ Answer the user's message briefly and helpfully — two or three sentences at mo
 
 Set "wantsReport" to true when the user is asking for a report to be built or changed right now: they say what a new report should show (what it lists, how it is grouped or sorted, what it totals, or its columns), or they ask for a change to a report that already exists. A written description is enough on its own: do NOT ask for an image, a PDF or a layout first. Forma asks its own follow-up questions about anything the description leaves open, so a short request such as "a report of our orders grouped by region with a total per region" is a report request. When "wantsReport" is true, reply in one short sentence that you are designing it, and ask nothing in the reply: Forma asks its own questions next.
 
-Set "wantsReport" to false for greetings, questions about Forma or DevExpress, thanks, and requests that say nothing about what the report should contain (for example "make me a report"). For those, answer, and when they want a report but gave no content, ask what it should list, or invite them to attach an image or a PDF of one.`;
+Set "wantsReport" to false for greetings, questions about Forma or DevExpress, thanks, and requests that say nothing about what the report should contain (for example "make me a report"). For those, answer, and when they want a report but gave no content, ask what it should list, or invite them to attach an image or a PDF of one.
+
+When "wantsReport" is true, also write "brief": the whole report request in one paragraph, from everything the user has said about it in this conversation, in their terms, so the designer has all of it and not only the last message. Empty otherwise.
+
+When THE USER'S REMEMBERED PREFERENCES are given, they are standing instructions for every report; do not ask about anything they already answer.`;
 
 /**
  * Canned chat turn for VITE_FORMA_MOCK. The classification is keyword-based
@@ -805,6 +821,7 @@ function buildMockChatReply(userText: string): ChatOutcome {
       // A little Markdown, so the chat's rendering of it (2026-11-05) shows offline.
       : "**Mock mode is on**, so this reply is canned rather than generated. For real answers:\n\n- set `VITE_FORMA_MOCK` aside\n- add your API key",
     wantsReport: asks,
+    ...(asks ? { brief: userText.trim() } : {}),
   };
 }
 
@@ -835,7 +852,11 @@ function buildMockReportReply(userText: string, outline: string): ChatOutcome {
   if (/\bsample (data|rows)\b/i.test(text)) return { ...answer('Filling the Preview with sample rows.'), tools: [{ name: 'testData' }] };
   const pane = /\bshow\b.*?\b(mockup|preview|data|spec|repx)\b/i.exec(text)?.[1]?.toLowerCase();
   if (pane) return { ...answer(`Here is the ${pane}.`), tools: [{ name: 'show', pane: pane as AgentTool['pane'] }] };
-  return { reply: 'Mock mode is on, so Forma will redesign the canned report for that.', wantsReport: true, action: 'rebuild', edits: [] };
+  // A different report, in a project of its own (2026-11-07, agent audit item 20).
+  if (/\bnew\b[^.?!]*\b(report|invoice|list|statement|payslip)\b/i.test(text)) {
+    return { reply: 'Mock mode is on: Forma will start a new project for that report.', wantsReport: false, action: 'new', edits: [], brief: text };
+  }
+  return { reply: 'Mock mode is on, so Forma will redesign the canned report for that.', wantsReport: true, action: 'rebuild', edits: [], brief: text };
 }
 
 /**
@@ -1031,6 +1052,13 @@ export async function chatReply(
     ops: readonly string[];
     tools: { names: readonly string[]; panes: readonly string[]; formats: readonly string[] };
   },
+  /**
+   * The user's remembered preferences, as `instructionsOf` in lib/memory.ts
+   * writes them (2026-11-07, agent audit item 13). Only a generation was told
+   * them, while the memory's reply promised that any AI would be, so "make
+   * the title bigger" ignored a remembered 16pt title.
+   */
+  remembered = '',
 ): Promise<ChatOutcome> {
   if (signal?.aborted) throw abortError();
 
@@ -1135,7 +1163,7 @@ export async function chatReply(
           {
             text: report
               ? `${REPORT_CHAT_INSTRUCTIONS}
-
+${remembered ? `\n${remembered}\n` : ''}
 THE OPEN REPORT:
 ${report.outline}
 
@@ -1144,7 +1172,7 @@ ${transcript}`
               : `${CHAT_INSTRUCTIONS}
 
 Never claim to have generated anything. You do not generate reports — you only reply and decide.
-
+${remembered ? `\n${remembered}\n` : ''}
 Conversation so far:
 ${transcript}`,
           },
@@ -1172,7 +1200,8 @@ ${transcript}`,
             type: Type.OBJECT,
             properties: {
               reply: { type: Type.STRING },
-              action: { type: Type.STRING, enum: ['answer', 'edit', 'rebuild'] },
+              action: { type: Type.STRING, enum: ['answer', 'edit', 'rebuild', 'new'] },
+              brief: { type: Type.STRING },
               edits: { type: Type.ARRAY, items: editSchema },
               tools: {
                 type: Type.ARRAY,
@@ -1188,15 +1217,17 @@ ${transcript}`,
               },
             },
             required: ['reply', 'action'],
-            propertyOrdering: ['reply', 'action', 'edits', 'tools'],
+            propertyOrdering: ['reply', 'action', 'brief', 'edits', 'tools'],
           }
         : {
             type: Type.OBJECT,
             properties: {
               reply: { type: Type.STRING },
               wantsReport: { type: Type.BOOLEAN },
+              brief: { type: Type.STRING },
             },
             required: ['reply', 'wantsReport'],
+            propertyOrdering: ['reply', 'wantsReport', 'brief'],
           },
     },
   });
@@ -1375,10 +1406,12 @@ ${transcript}`,
   try {
     const parsed = JSON.parse(raw) as ChatOutcome;
     // As the model wrote it; `readReportOutcome` decides what it means.
-    if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits, tools: parsed.tools, usage };
+    const brief = typeof parsed.brief === 'string' && parsed.brief.trim() ? parsed.brief.trim() : undefined;
+    if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits, tools: parsed.tools, brief, usage };
     return {
       reply: parsed.reply || 'Sorry — I did not catch that.',
       wantsReport: Boolean(parsed.wantsReport),
+      brief,
       usage,
     };
   } catch {
@@ -1626,6 +1659,8 @@ export async function clarifyReportRequest(
   request: ReportDescriptionRequest,
   config?: ReportConfig,
   signal?: AbortSignal,
+  /** The user's remembered preferences (2026-11-07): nothing they answer is asked again. */
+  remembered = '',
 ): Promise<ClarificationOutcome> {
   const ready: ClarificationOutcome = { ready: true, questions: [] };
   if (signal?.aborted) throw abortError();
@@ -1649,7 +1684,7 @@ export async function clarifyReportRequest(
               text: `A user has described a DevExpress report they want designed. Decide whether the description is enough to design a sensible report from, or whether up to ${MAX_CLARIFICATION_QUESTIONS} short questions would change what gets built.
 
 Ask ONLY about content the description leaves genuinely open and that would change the report: which columns, what to group or sort by, what a total is of, which fields a chart plots. Do NOT ask about things with a common-practice default for that kind of report (an invoice has line items and a total; a customer list has one row per customer), do NOT ask about page size, orientation, fonts or colours, and do NOT ask for a title when one can be read from the description. A detailed description gets no questions at all. Each question should offer a reasonable suggested answer.
-
+${remembered ? `\n${remembered}\nDo NOT ask about anything these preferences already answer.\n` : ''}
 ${buildDescriptionBrief(request)}`,
             },
           ],
