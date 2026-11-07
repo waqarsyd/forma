@@ -599,7 +599,8 @@ src/
                        phone breakpoint, Ctrl+B, the toggle's name),
                        releases (the release notes behind /changelog,
                        its Atom feed and What's new), announcements,
-                       datetime,
+                       replyChanges (the chat's changes kept in the tab, so
+                       a reply's Undo and Redo outlive a reload), datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        geminiClient (loads the generation service on demand, so
                        its 19.6 kB prompt is not on every page load) and

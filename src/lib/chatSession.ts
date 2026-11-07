@@ -83,6 +83,18 @@ export interface ChatMessage<R = unknown, M = unknown> {
   /** The change this reply made was taken back with its Undo (2026-11-05). */
   undone?: true;
   /**
+   * Sent with no report open (2026-11-07). Try again and an edit design it
+   * from nothing again, after a reload too, rather than refining the report
+   * the first answer built; the report itself is not kept on the message.
+   */
+  fresh?: true;
+  /**
+   * Written by Forma of its own accord, not in answer to the message before
+   * it (2026-11-07): a report built from the OCR review. Try again has nothing
+   * to send again, so it is not offered.
+   */
+  standalone?: true;
+  /**
    * A redesign this reply asks before making (2026-11-05): with a report
    * open, a change only a full redesign can make costs a minute or two and
    * the whole REPX in tokens, so Forma asks first, as an agent asks before a
@@ -263,6 +275,37 @@ export function markMessageError<T extends { id: string; error?: string }>(
   error: string
 ): T[] {
   return messages.map((m) => (m.id === id ? { ...m, error } : m));
+}
+
+/**
+ * A failure marked on the request that failed (2026-11-07): the message
+ * `askId` names, or the person's latest when it is unknown or gone. Until
+ * then a failed generation or description only set the banner, and the log
+ * listed the request as answered with no Try again. A transcript with no
+ * message of the person's comes back as it was.
+ */
+export function markAskError<T extends { id: string; role: 'user' | 'assistant'; error?: string }>(
+  messages: ReadonlyArray<T>,
+  error: string,
+  askId?: string,
+): T[] {
+  const named = askId !== undefined && messages.some((m) => m.id === askId && m.role === 'user');
+  const id = named ? askId : [...messages].reverse().find((m) => m.role === 'user')?.id;
+  return id === undefined ? [...messages] : markMessageError(messages, id, error);
+}
+
+/** What a request left unanswered by a closed or reloaded page says. */
+export const INTERRUPTED = 'Forma had not answered when the page was left.';
+
+/**
+ * A saved conversation whose last message is the person's, with no answer
+ * and no error, was left mid-turn (2026-11-07): it is saved as soon as it is
+ * sent, and the answer never came. Marked, so the request offers Try again
+ * rather than reading as answered.
+ */
+export function markInterrupted<T extends { id: string; role: 'user' | 'assistant'; error?: string }>(messages: ReadonlyArray<T>): T[] {
+  const last = messages[messages.length - 1];
+  return last && last.role === 'user' && !last.error ? markMessageError(messages, last.id, INTERRUPTED) : [...messages];
 }
 
 /**

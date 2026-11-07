@@ -8,6 +8,9 @@ import {
   conversationMarkdown,
   buildChatHistory,
   isGenerationTurn,
+  markAskError,
+  markInterrupted,
+  INTERRUPTED,
   markMessageError,
   nextMessageId,
   messageMatches,
@@ -185,6 +188,45 @@ describe('markMessageError', () => {
     const messages = [msg({ id: '1', text: 'one' })];
     markMessageError(messages, '1', 'boom');
     expect(messages[0].error).toBeUndefined();
+  });
+});
+
+/* Agent audit item 5: a failed generation is marked on the request that asked for it. */
+describe('markAskError', () => {
+  const m = (id: string, role: 'user' | 'assistant') => ({ id, role, text: id }) as ChatMessage;
+  const thread = [m('u1', 'user'), m('a1', 'assistant'), m('u2', 'user'), m('a2', 'assistant')];
+
+  it('marks the message named', () => {
+    const marked = markAskError(thread, 'Google was busy.', 'u1');
+    expect(marked.map((x) => x.error ?? null)).toEqual(['Google was busy.', null, null, null]);
+  });
+
+  it("marks the person's latest message when none is named, or the one named is gone or Forma's", () => {
+    for (const id of [undefined, 'gone', 'a1']) {
+      expect(markAskError(thread, 'Failed.', id).map((x) => x.error ?? null)).toEqual([null, null, 'Failed.', null]);
+    }
+  });
+
+  it('leaves a transcript with no message of the person as it was', () => {
+    const forma = [m('a', 'assistant')];
+    expect(markAskError(forma, 'Failed.')).toEqual(forma);
+  });
+});
+
+/* Agent audit item 33: a message is saved as soon as it is sent, and a reload mid-turn says so. */
+describe('markInterrupted', () => {
+  const m = (id: string, role: 'user' | 'assistant', error?: string) => ({ id, role, text: id, ...(error ? { error } : {}) }) as ChatMessage;
+
+  it('marks a last message of the person left with no answer', () => {
+    const marked = markInterrupted([m('u1', 'user'), m('a1', 'assistant'), m('u2', 'user')]);
+    expect(marked[2].error).toBe(INTERRUPTED);
+    expect(marked[0].error).toBeUndefined();
+  });
+
+  it('leaves an answered conversation, an empty one and one already marked failed alone', () => {
+    expect(markInterrupted([m('u1', 'user'), m('a1', 'assistant')]).every((x) => !x.error)).toBe(true);
+    expect(markInterrupted([])).toEqual([]);
+    expect(markInterrupted([m('u1', 'user', 'Google was busy.')])[0].error).toBe('Google was busy.');
   });
 });
 

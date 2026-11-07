@@ -85,6 +85,13 @@ export interface ChatThreadProps<R> {
    */
   undoable?: ReadonlySet<string>;
   onUndo?: (id: string) => void;
+  /**
+   * The replies whose change was taken back and can be made again
+   * (2026-11-07): the report is still as the Undo left it. Each gets a Redo,
+   * the same step as the corner's Redo.
+   */
+  redoable?: ReadonlySet<string>;
+  onRedo?: (id: string) => void;
   /** The answer to a redesign a reply asks before making (2026-11-05): see `ChatMessage.confirm`. */
   onConfirm?: (id: string, yes: boolean) => void;
   /** What a reply cost, as words ("23.4k tokens"), or null; shown beside its time (2026-11-05). */
@@ -179,6 +186,7 @@ function ReplyActions({
   onRegenerate,
   onRate,
   onUndo,
+  onRedo,
 }: {
   id: string;
   text: string;
@@ -193,6 +201,8 @@ function ReplyActions({
   onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
   /** Present only while its change can still be taken back. */
   onUndo?: (id: string) => void;
+  /** Present only while its change, taken back, can be made again. */
+  onRedo?: (id: string) => void;
 }) {
   const rate = (value: 'good' | 'bad') => onRate?.(id, rating === value ? undefined : value);
   return (
@@ -218,7 +228,13 @@ function ReplyActions({
           Undo
         </button>
       )}
-      {undone && <span className="wb-note-done">Undone</span>}
+      {/* Made again by a Redo, the change is no longer undone, whatever the flag still says. */}
+      {undone && !onUndo && <span className="wb-note-done">Undone</span>}
+      {onRedo && !onUndo && (
+        <button type="button" className="wb-note-act" title="Make this change again" disabled={disabled} onClick={() => onRedo(id)}>
+          Redo
+        </button>
+      )}
       {meta && <span className="wb-note-meta">{meta}</span>}
     </div>
   );
@@ -395,6 +411,7 @@ const ChatNote = memo(function ChatNote<R>({
   onRegenerate,
   onRate,
   onUndo,
+  onRedo,
   onConfirm,
   usageOf,
   query = '',
@@ -407,6 +424,8 @@ const ChatNote = memo(function ChatNote<R>({
   onConfirm?: (id: string, yes: boolean) => void;
   /** Present only while this reply's change can still be taken back. */
   onUndo?: (id: string) => void;
+  /** Present only while this reply's change, taken back, can be made again. */
+  onRedo?: (id: string) => void;
   onRetry: (id: string) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
@@ -495,6 +514,7 @@ const ChatNote = memo(function ChatNote<R>({
             onRegenerate={onRegenerate}
             onRate={onRate}
             onUndo={onUndo}
+            onRedo={onRedo}
           />
         )}
 
@@ -515,6 +535,7 @@ const ChatNote = memo(function ChatNote<R>({
   retryDisabled: boolean;
   latest?: boolean;
   onUndo?: (id: string) => void;
+  onRedo?: (id: string) => void;
   onConfirm?: (id: string, yes: boolean) => void;
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   onRetry: (id: string) => void;
@@ -537,6 +558,8 @@ export default function ChatThread<R>({
   onRate,
   undoable,
   onUndo,
+  redoable,
+  onRedo,
   onConfirm,
   usageOf,
   query = '',
@@ -553,10 +576,11 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onConfirm, usageOf });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onConfirm, usageOf };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onRedo, onConfirm, usageOf });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onRedo, onConfirm, usageOf };
   const usage = useCallback((m: ChatMessage<R, PreviewMeta>) => latest.current.usageOf?.(m) ?? null, []);
   const undo = useCallback((id: string) => latest.current.onUndo?.(id), []);
+  const redo = useCallback((id: string) => latest.current.onRedo?.(id), []);
   const confirm = useCallback((id: string, yes: boolean) => latest.current.onConfirm?.(id, yes), []);
   const retry = useCallback((id: string) => latest.current.onRetry(id), []);
   const openAttachment = useCallback(
@@ -650,12 +674,14 @@ export default function ChatThread<R>({
           retryDisabled={retryDisabled}
           latest={msg.id === lastReplyId}
           onUndo={onUndo && undoable?.has(msg.id) ? undo : undefined}
+          onRedo={onRedo && redoable?.has(msg.id) ? redo : undefined}
           onConfirm={onConfirm ? confirm : undefined}
           usageOf={usageOf ? usage : undefined}
           onRetry={retry}
           onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}
-          onRegenerate={onRegenerate ? regenerate : undefined}
+          // Not on a reply Forma wrote of its own accord: it answers no message (agent audit item 75).
+          onRegenerate={onRegenerate && !msg.standalone ? regenerate : undefined}
           onRate={onRate ? rate : undefined}
           query={searching ? query : ''}
         />

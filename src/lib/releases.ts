@@ -75,6 +75,21 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-07-chat-keeps-its-word',
+    date: '2026-11-07',
+    title: 'A chat that keeps its word',
+    summary:
+      'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo are the same steps as the corner’s and survive a reload.',
+    changes: [
+      { kind: 'fixed', area: 'chat', text: 'A change made in the chat, from the selection toolbar or by dragging on the Preview now shows on the Mockup and in the Spec as well.' },
+      { kind: 'fixed', area: 'chat', text: 'Try again and editing a message start from the report as that message found it: an edit is not made twice, and a first report is designed again rather than refined.' },
+      { kind: 'improved', area: 'chat', text: 'A reply’s Undo is the same step as the Undo in the corner, with a Redo beside it, and both are still there after a reload.' },
+      { kind: 'fixed', area: 'chat', text: 'A message is saved as soon as you send it; if the page closes before Forma answers, it says so and offers Try again.' },
+      { kind: 'fixed', area: 'chat', text: 'A report that could not be made marks its request as failed, with Try again, rather than looking answered.' },
+      { kind: 'fixed', area: 'chat', text: 'A change you make on the Preview while Forma is answering is kept when the answer lands.' },
+    ],
+  },
+  {
     id: '2026-11-07-settings-account-ocr',
     date: '2026-11-07',
     title: 'Settings, your account and the OCR review, redesigned',

@@ -244,6 +244,9 @@ export default function RequestCard<R>({
             showWorking={latest}
             onOpenAttachment={onOpenAttachment}
             onRetry={onRetry}
+            // A request Forma started, as a project opening on its own report,
+            // has no message to send again (agent audit item 75).
+            onRegenerate={request?.ask ? thread.onRegenerate : undefined}
           >
             {latest ? children : null}
           </ChatThread>

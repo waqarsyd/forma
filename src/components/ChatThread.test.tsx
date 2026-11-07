@@ -554,6 +554,31 @@ describe("actions on Forma's replies", () => {
     expect(within(actions('a2')).getByText('Undone')).toBeTruthy();
   });
 
+  // One history with the corner's (2026-11-07, agent audit item 52).
+  it('offers Redo on a reply whose change was taken back, and drops Undone once the change is made again', () => {
+    const onRedo = vi.fn();
+    const undone = thread.map((m) => (m.id === 'a2' ? { ...m, undone: true as const } : m));
+    const { rerender } = draw({ messages: undone, undoable: new Set(), onUndo: vi.fn(), redoable: new Set(['a2']), onRedo });
+    expect(within(actions('a1')).queryByText('Redo')).toBeNull();
+    fireEvent.click(within(actions('a2')).getByText('Redo'));
+    expect(onRedo).toHaveBeenCalledWith('a2');
+    // The corner's Redo made it again before the flag was cleared: Undo, not "Undone".
+    rerender(<ChatThread messages={undone} isChatting={false} isAnalyzing={false} streamingReply="" onRetry={vi.fn()} onOpenAttachment={vi.fn()} undoable={new Set(['a2'])} onUndo={vi.fn()} redoable={new Set()} onRedo={onRedo} />);
+    expect(within(actions('a2')).getByText('Undo')).toBeTruthy();
+    expect(within(actions('a2')).queryByText('Undone')).toBeNull();
+    expect(within(actions('a2')).queryByText('Redo')).toBeNull();
+  });
+
+  // Agent audit item 75: a report built from the OCR review answers no message.
+  it('offers no Try again on a reply Forma wrote of its own accord', () => {
+    const own = [...thread, msg({ id: 'a3', role: 'assistant', text: 'Built "Invoice" from the text OCR read.', standalone: true })];
+    draw({ messages: own, onRegenerate: vi.fn() });
+    const notes = [...document.querySelectorAll('.wb-note')];
+    const group = notes[4].querySelector('[role="group"][aria-label="This reply"]') as HTMLElement;
+    expect(within(group).queryByLabelText('Try again')).toBeNull();
+    expect(within(actions('a2')).getByLabelText('Try again')).toBeTruthy();
+  });
+
   // When it was made and what it cost (2026-11-05), read off the id and from App.
   it("says when a reply was made and what it cost, and when the person's message was sent", () => {
     const at = new Date();

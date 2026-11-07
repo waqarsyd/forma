@@ -70,6 +70,16 @@ describe('RequestCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     expect(onEdit).toHaveBeenCalledWith('q1', 'Make the total red');
   });
+
+  // Agent audit item 75: a project opening on its own report asked nothing to send again.
+  it('offers Try again on a reply only when the request has a message to send again', () => {
+    const { unmount } = draw({ onRegenerate: vi.fn() });
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    unmount();
+    draw({ onRegenerate: vi.fn(), request: { id: 'r1', ask: null, replies: [reply] } });
+    expect(screen.getByText('Both are changed in place.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
 });
 
 /*

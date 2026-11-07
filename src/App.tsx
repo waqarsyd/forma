@@ -238,6 +238,8 @@ import { makeRightToLeft } from './lib/repxRtl';
 import {
   buildChatHistory,
   isGenerationTurn,
+  markAskError,
+  markInterrupted,
   markMessageError,
   nextMessageId,
   AFFIRMATIVE,
@@ -253,6 +255,7 @@ import {
   withdrawTurn,
   type ChatMessage as ChatSessionMessage,
 } from './lib/chatSession';
+import { packChanges, unpackChanges, REPLY_CHANGES_KEY } from './lib/replyChanges';
 import { formatSessionStamp } from './lib/datetime';
 import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
 // LogoPulse, the progress ring of the generation card, went with the card on
@@ -987,6 +990,9 @@ export default function App() {
     }, 300);
     return () => window.clearTimeout(t);
   }, [prompt]);
+  /** The words in the box as the latest render has them, kept at once when the page goes. */
+  const draftNow = useRef(prompt);
+  draftNow.current = prompt;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // Through the validating reader. A bare JSON.parse here threw during the very
   // first render on a corrupted entry, taking the whole application to the error
@@ -1036,6 +1042,56 @@ export default function App() {
   const [uploadNotices, setUploadNotices] = useState<string[]>([]);
   const [isIngesting, setIsIngesting] = useState(false);
   const [result, setResult] = useState<DesignResult | null>(null);
+  /**
+   * The report as the latest render has it (2026-11-07), for a turn that
+   * lands after an await: a drag or a Format made while the chat was working
+   * is in this, and an edit applied to the report the turn started from
+   * would throw it away (agent audit item 8).
+   */
+  const reportNow = useRef<DesignResult | null>(null);
+  reportNow.current = result;
+  /*
+   * The Mockup and the Spec follow the file (2026-11-07, agent audit item 1).
+   * Both are read off the REPX (lib/repxViews.ts), once, when a generation
+   * lands; a change made in place (an edit in the chat, the selection
+   * toolbar, a drag on Preview, a binding) keeps the result's layout and
+   * changes its file, so the Mockup went on showing the report before it:
+   * a title made bold on Preview stayed regular on the Mockup. Each layout is
+   * remembered with the file it describes; a result whose file is not that
+   * one has its views read again, a moment after the last change, so a drag
+   * is read once at its end rather than at every frame. A layout seen for the
+   * first time (a generation, a project opened) is taken as describing its
+   * own file, so a report saved with the AI's layout keeps it until edited.
+   */
+  const viewsOf = useRef(new WeakMap<object, string>());
+  useEffect(() => {
+    const layout = result?.layout;
+    const xml = result?.repxContent;
+    if (!layout || !xml) return;
+    const described = viewsOf.current.get(layout);
+    if (described === undefined) {
+      viewsOf.current.set(layout, xml);
+      return;
+    }
+    if (described === xml) return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      void import('./lib/repxViews').then(({ layoutFromRepx, specFromRepx }) => {
+        if (!live) return;
+        setResult((prev) => {
+          if (!prev || prev.repxContent !== xml || prev.layout !== layout) return prev;
+          const title = layout.title || prev.title || undefined;
+          const next = layoutFromRepx(xml, title);
+          viewsOf.current.set(next, xml);
+          return { ...prev, layout: next, content: specFromRepx(xml, title) };
+        });
+      }).catch((err) => console.warn('The Mockup and the Spec could not be read again after the change.', err));
+    }, 250);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [result]);
   /* The unit the open report is written in, for the panes that measure it:
      its own, not whichever unit the next request will be worked out in. */
   const openUnit = useMemo(() => repxFacts(result?.repxContent).unit ?? 'HundredthsOfAnInch', [result?.repxContent]);
@@ -1563,12 +1619,29 @@ export default function App() {
     setChangedHighlight([]);
   }, [requestCount]);
   /**
-   * The changes the chat made, each with the report before it, for the
-   * reply's Undo (2026-11-05). Held in memory only: a saved project keeps its
-   * versions in Revisions, and an Undo offered after a reload would restore
-   * a report from a session that no longer exists.
+   * The changes the chat made, each with the report before and after it, for
+   * the reply's Undo and Redo (2026-11-05). Kept in this tab as REPX too
+   * since 2026-11-07 (lib/replyChanges.ts), so a reload keeps them: they were
+   * memory only, and a reload took every Undo away while the reply still
+   * listed what it changed. Older versions are in Revisions.
    */
   const [chatChanges, setChatChanges] = useState<Record<string, { before: DesignResult; after: DesignResult }>>({});
+  /** What the tab kept before this load, read once, for the project the reload opens again. */
+  const keptChanges = useRef<string | null>((() => {
+    try {
+      return sessionStorage.getItem(REPLY_CHANGES_KEY);
+    } catch {
+      return null;
+    }
+  })());
+  /**
+   * The report as each of the person's messages found it, for Try again and an
+   * edit (2026-11-07, agent audit item 3): a turn sent again starts from the
+   * report it first started from, so an edit is not made twice and a first
+   * report is not refined. Null for none open; in memory, with `fresh` on
+   * the message and the replies' changes covering a reload.
+   */
+  const turnBases = useRef(new Map<string, DesignResult | null>());
   /** The chat's tools waiting for the render that applies the turn's edits (2026-11-05). */
   const [pendingTools, setPendingTools] = useState<AgentTool[] | null>(null);
   /** Runs them; assigned beside `showPlate`, where the handlers it calls are. */
@@ -2518,6 +2591,7 @@ export default function App() {
       role: 'assistant',
       text: `Built "${built.title}" from the text OCR read, with no model involved.${unsure}`,
       result: newResult,
+      standalone: true,
     }]);
     setOcrReview(null);
   };
@@ -2543,6 +2617,7 @@ export default function App() {
         `${bands} ${bands === 1 ? 'band' : 'bands'}, the records printing from bound fields.` +
         (copy ? ' The page exactly as OCR read it is the revision before this one.' : ''),
       result: newResult,
+      standalone: true,
     }]);
     setOcrReview(null);
   };
@@ -2856,8 +2931,16 @@ export default function App() {
    */
   const AUTOSAVE_DELAY_MS = 1200;
   const currentSignature = useMemo(() => sessionSignature(messages, result), [messages, result]);
+  /*
+   * Not only once a turn has settled (2026-11-07, agent audit item 33): a
+   * message is saved as soon as it is sent, so a reload while Forma works
+   * keeps it, marked as unanswered when the project opens again
+   * (`markInterrupted`). Until then the save waited for the turn, and a reload
+   * in the middle of one lost the message. A reply being written is not in
+   * `messages`, so a turn still costs two saves, not one per streamed word.
+   */
   useEffect(() => {
-    if (isChatting || isAnalyzing || messages.length === 0) return;
+    if (messages.length === 0) return;
     if (currentSignature === savedSignatureRef.current) return;
     const run = () => {
       if (pendingAutosave.current?.run === run) pendingAutosave.current = null;
@@ -2871,7 +2954,39 @@ export default function App() {
     };
     // persistProject is redefined every render; the signature is what decides,
     // and the closure scheduled is the latest render's, holding what moved it.
-  }, [currentSignature, isChatting, isAnalyzing]);
+  }, [currentSignature]);
+  /*
+   * A page closed, reloaded or put away (2026-11-07, agent audit item 33)
+   * runs the waiting save and keeps the unsent words at once, rather than
+   * losing whatever changed in the last moment: the save waits 1.2 seconds
+   * and the draft 300 milliseconds. `visibilitychange` as well as `pagehide`,
+   * because a phone often closes a tab it has hidden without the second.
+   */
+  useEffect(() => {
+    const keepNow = () => {
+      const pending = pendingAutosave.current;
+      if (pending) {
+        window.clearTimeout(pending.timer);
+        pendingAutosave.current = null;
+        pending.run();
+      }
+      try {
+        if (draftNow.current) sessionStorage.setItem(DRAFT_KEY, draftNow.current);
+        else sessionStorage.removeItem(DRAFT_KEY);
+      } catch {
+        /* storage blocked: the draft lasts as long as the page */
+      }
+    };
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') keepNow();
+    };
+    window.addEventListener('pagehide', keepNow);
+    document.addEventListener('visibilitychange', onHidden);
+    return () => {
+      window.removeEventListener('pagehide', keepNow);
+      document.removeEventListener('visibilitychange', onHidden);
+    };
+  }, []);
 
   /** Runs a waiting automatic save now, before the session it belongs to is replaced. */
   const flushAutosave = () => {
@@ -2934,6 +3049,7 @@ export default function App() {
     resetReportHistory();
     setRevisions([]);
     setChatChanges({});
+    turnBases.current.clear();
     setChangedHighlight([]);
     setQueue([]);
     setTestRows(null);
@@ -2964,6 +3080,20 @@ export default function App() {
       /* storage blocked: a reload starts empty, as before */
     }
   }, [openProjectId]);
+  /** The open project's reply changes, kept in this tab for a reload (lib/replyChanges.ts). */
+  useEffect(() => {
+    if (!openProjectId) return;
+    const packed = packChanges(
+      openProjectId,
+      Object.entries(chatChanges).map(([id, c]) => [id, { before: c.before.repxContent ?? '', after: c.after.repxContent ?? '' }] as const),
+    );
+    try {
+      if (packed) sessionStorage.setItem(REPLY_CHANGES_KEY, packed);
+      else sessionStorage.removeItem(REPLY_CHANGES_KEY);
+    } catch {
+      /* storage full or blocked: the Undo lasts as long as the page, as before */
+    }
+  }, [chatChanges, openProjectId]);
   useEffect(() => {
     const id = restoreProjectId.current;
     if (!id) return;
@@ -2992,8 +3122,18 @@ export default function App() {
     const signature = sessionSignature(report.messages, report.result);
     savedSignatureRef.current = signature;
     setSavedSignature(signature);
-    setMessages(report.messages);
+    // Saved as soon as it was sent (2026-11-07), a message left with no
+    // answer was cut off by a reload or a closed page, and says so.
+    setMessages(markInterrupted(report.messages));
     setResult(report.result);
+    // The replies' changes this tab kept for it, so their Undo survives a
+    // reload; read once, as only the reload's own project can match.
+    const kept = unpackChanges(keptChanges.current, report.id);
+    keptChanges.current = null;
+    const base = report.result;
+    if (kept.length && base) {
+      setChatChanges(Object.fromEntries(kept.map(([id, c]) => [id, { before: { ...base, repxContent: c.before }, after: { ...base, repxContent: c.after } }])));
+    }
     // What is typed or attached in the box stays, as before: it may be meant
     // for the project being opened.
     setError(null);
@@ -3423,9 +3563,17 @@ export default function App() {
     describeRequest?: ReportDescriptionRequest,
     /** What Forma's own parts bring (lib/formaTeam.ts); absent on a refinement in words. */
     teamInput?: TeamInput,
+    /**
+     * The turn it belongs to (2026-11-07): the report it refines, null to
+     * design from nothing, absent for the report on the bench (agent audit
+     * item 3); and the message that asked, which a failure is marked on
+     * (item 5), the person's latest when absent.
+     */
+    turnOf?: { base?: DesignResult | null; askId?: string },
   ) => {
     // The settings worked out for this request, not the stored ones (lib/autoConfig.ts).
     const config = effectiveConfig();
+    const open = turnOf?.base !== undefined ? turnOf.base : result;
     loadingIntervalRef.current = setInterval(() => setProgress(tickSimulated), STEP_INTERVAL_MS);
 
     console.log(`${copy.start} Prompt: "${currentPrompt}"`);
@@ -3461,11 +3609,11 @@ export default function App() {
        * generation they actually asked for.
        */
       let houseStyle = '';
-      if (result?.repxContent && canonicalSources.size > 0) {
+      if (open?.repxContent && canonicalSources.size > 0) {
         try {
           const { retrieveHouseStyle } = await loadLibrary();
           houseStyle = await retrieveHouseStyle(
-            result.repxContent,
+            open.repxContent,
             currentPrompt,
             await getLibraryDeps(),
             {
@@ -3491,7 +3639,7 @@ export default function App() {
         currentPrompt,
         attachmentParts,
         config,
-        result ? { repxContent: result.repxContent, houseStyle } : undefined,
+        open ? { repxContent: open.repxContent, houseStyle } : undefined,
         signal,
         handleStreamProgress,
         {
@@ -3501,7 +3649,7 @@ export default function App() {
           evidence: team.evidence,
           // Forma drafts and the AI corrects, on a first generation from a
           // picture (2026-11-05); the service designs as before otherwise.
-          draft: result ? null : team.correct ?? null,
+          draft: open ? null : team.correct ?? null,
         },
       );
 
@@ -3572,7 +3720,7 @@ export default function App() {
       setResult(newResult);
       // A refinement turn replaces the whole report, so this is the moment the
       // previous one would otherwise be gone for good.
-      recordRevision(result ? 'Refined' : 'Generated', newResult);
+      recordRevision(open ? 'Refined' : 'Generated', newResult);
       setActiveTab('ui');
 
       // Add assistant message, with who took part when more than the AI did.
@@ -3587,7 +3735,7 @@ export default function App() {
       const [changed, checked] = newResult.repxContent
         ? await Promise.all([import('./lib/agentEdit'), import('./lib/repxAudit')])
             .then(([m, a]) => [
-              result?.repxContent ? m.changesMarkdown(m.describeChanges(result.repxContent, newResult.repxContent!)) : '',
+              open?.repxContent ? m.changesMarkdown(m.describeChanges(open.repxContent, newResult.repxContent!)) : '',
               m.checksMarkdown(a.auditRepx(newResult.repxContent, newResult.layout).findings),
             ])
             .catch(() => ['', ''])
@@ -3600,7 +3748,7 @@ export default function App() {
       };
       // The two imports above are a wait: a session left meanwhile is not this one.
       if (signal.aborted) return;
-      if (result && result.repxContent !== newResult.repxContent) rememberChange(newAssistantMsg.id, result, newResult);
+      if (open && open.repxContent !== newResult.repxContent) rememberChange(newAssistantMsg.id, open, newResult);
       setMessages(prev => [...prev, newAssistantMsg]);
       announceReady('Report ready');
       console.log(copy.done);
@@ -3616,6 +3764,7 @@ export default function App() {
       // to the place they can fix it instead of showing a dead-end error.
       if (isMissingApiKey(err)) {
         setError('Add your own Gemini API key in Settings to generate reports.');
+        setMessages((prev) => markAskError(prev, 'Add your own Gemini API key in Settings to generate reports.', turnOf?.askId));
         setIsConfigOpen(true);
         return;
       }
@@ -3654,6 +3803,9 @@ export default function App() {
         }
       }
       setError(friendlyMessage);
+      // On the request that failed (agent audit item 5): the log marks it
+      // failed and its card offers Try again, where it read as answered.
+      setMessages((prev) => markAskError(prev, friendlyMessage, turnOf?.askId));
     } finally {
       if (!signal.aborted) {
         // Done, before the half second the bar takes to finish (2026-11-06):
@@ -3713,10 +3865,34 @@ export default function App() {
     if (isChatting || isAnalyzing) return;
     const failed = messages.find((m) => m.id === id);
     if (!failed) return;
+    // Questions asked after it go with it, as for an edit (agent audit item 25):
+    // the retry is not the answer to a question it came before.
+    const pending = pendingClarifyRef.current;
+    if (pending && messages.findIndex((m) => m.id === pending.messageId) >= messages.indexOf(failed)) pendingClarifyRef.current = null;
 
-    setMessages((prev) => truncateFrom(prev, id));
+    const transcript = truncateFrom(messages, id);
+    setMessages(transcript);
     setError(null);
-    void handleGenerate(failed.text, failed);
+    void handleGenerate(failed.text, { images: failed.images, imageMeta: failed.imageMeta, transcript, base: baseFor(failed) });
+  };
+
+  /**
+   * The report a message of the person's found when it was sent (2026-11-07,
+   * agent audit item 3), for sending it again: as recorded this session; none
+   * when it was sent with none open (`fresh`, which a reload keeps); else the
+   * report a reply to it changed, from the change kept for its Undo. Undefined
+   * when nothing says, and the report as it is now is used, as before.
+   */
+  const baseFor = (ask: ChatMessage): DesignResult | null | undefined => {
+    if (turnBases.current.has(ask.id)) return turnBases.current.get(ask.id) ?? null;
+    if (ask.fresh) return null;
+    const at = messages.indexOf(ask);
+    for (const m of messages.slice(at + 1)) {
+      if (m.role === 'user') break;
+      const change = chatChanges[m.id];
+      if (change) return change.before;
+    }
+    return undefined;
   };
 
   /**
@@ -3727,15 +3903,20 @@ export default function App() {
    */
   const handleRegenerate = (id: string) => {
     if (isChatting || isAnalyzing) return;
+    // A reply Forma wrote of its own accord answers no message (agent audit item 75).
+    if (messages.find((m) => m.id === id)?.standalone) return;
     const asked = answeredBy(messages, id);
     if (!asked) return;
     const pending = pendingClarifyRef.current;
     if (pending && messages.findIndex((m) => m.id === pending.messageId) >= messages.indexOf(asked)) pendingClarifyRef.current = null;
     // The reply it replaces is kept as a version of the message (2026-11-05).
     const versions = branchesForResend(messages, messages.indexOf(asked), asked.text);
-    setMessages((prev) => truncateFrom(prev, asked.id));
+    // The transcript the model is sent is the one without the turns dropped
+    // (agent audit item 4); `messages` here still holds them.
+    const transcript = truncateFrom(messages, asked.id);
+    setMessages(transcript);
     setError(null);
-    void handleGenerate(asked.text, { images: asked.images, imageMeta: asked.imageMeta, ...versions });
+    void handleGenerate(asked.text, { images: asked.images, imageMeta: asked.imageMeta, ...versions, transcript, base: baseFor(asked) });
   };
 
   /** A change the chat made, kept for its reply's Undo. */
@@ -3752,18 +3933,52 @@ export default function App() {
     () => new Set(Object.entries(chatChanges).filter(([, c]) => c.after.repxContent === result?.repxContent).map(([id]) => id)),
     [chatChanges, result?.repxContent],
   );
+  /** The replies whose change was taken back with their Undo, while the report is still as that left it. */
+  const redoableIds = useMemo(
+    () => new Set(
+      messages
+        .filter((m) => m.undone && chatChanges[m.id] && chatChanges[m.id].before.repxContent === result?.repxContent)
+        .map((m) => m.id),
+    ),
+    [messages, chatChanges, result?.repxContent],
+  );
+  /*
+   * One history (2026-11-07, agent audit item 52). The reply's Undo kept a
+   * record of its own and set the report back as a new change, so the
+   * corner's Undo then put the change back again and its Redo had nothing.
+   * Now, when the change is the corner's last step, the reply's Undo is that
+   * step undone, and the corner's Redo, or the reply's own, makes it again;
+   * when other steps came between, it is a step of its own, as before.
+   */
   const handleUndo = (id: string) => {
     const change = chatChanges[id];
     if (!change || !undoableIds.has(id) || isChatting || isAnalyzing) return;
-    setResult(change.before);
+    if (reportPast.current[reportPast.current.length - 1]?.repxContent === change.before.repxContent) undoReport();
+    else setResult(change.before);
     recordRevision('Undone in the chat', change.before);
-    setChatChanges((prev) => {
-      const rest = { ...prev };
-      delete rest[id];
-      return rest;
-    });
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, undone: true } : m)));
   };
+  const handleRedo = (id: string) => {
+    const change = chatChanges[id];
+    if (!change || !redoableIds.has(id) || isChatting || isAnalyzing) return;
+    if (reportFuture.current[reportFuture.current.length - 1]?.repxContent === change.after.repxContent) redoReport();
+    else setResult(change.after);
+    recordRevision('Redone in the chat', change.after);
+  };
+  /* A change made again, by either Redo, is no longer undone. */
+  useEffect(() => {
+    const xml = result?.repxContent;
+    if (!xml) return;
+    const back = new Set(Object.entries(chatChanges).filter(([, c]) => c.after.repxContent === xml).map(([id]) => id));
+    if (!back.size) return;
+    setMessages((prev) => (prev.some((m) => m.undone && back.has(m.id))
+      ? prev.map((m) => {
+          if (!m.undone || !back.has(m.id)) return m;
+          const { undone: _undone, ...rest } = m;
+          return rest;
+        })
+      : prev));
+  }, [result?.repxContent, chatChanges]);
 
   /**
    * The answer to a redesign Forma asked before making (2026-11-05): yes
@@ -3821,9 +4036,10 @@ export default function App() {
     // Its pictures go again, and the version it replaces is kept (2026-11-05).
     const old = messages[at];
     const versions = branchesForResend(messages, at, text.trim());
-    setMessages((prev) => truncateFrom(prev, id));
+    const transcript = truncateFrom(messages, id);
+    setMessages(transcript);
     setError(null);
-    void handleGenerate(text.trim(), { images: old.images, imageMeta: old.imageMeta, ...versions });
+    void handleGenerate(text.trim(), { images: old.images, imageMeta: old.imageMeta, ...versions, transcript, base: baseFor(old) });
   };
 
   /** Another version of one of the person's messages, with the conversation that followed it (2026-11-05). */
@@ -3995,7 +4211,23 @@ export default function App() {
    */
   const handleGenerate = async (
     overridePrompt?: string,
-    resend?: { images?: string[]; imageMeta?: PreviewMeta[]; branches?: ChatBranch<DesignResult, PreviewMeta>[]; branch?: number },
+    resend?: {
+      images?: string[];
+      imageMeta?: PreviewMeta[];
+      branches?: ChatBranch<DesignResult, PreviewMeta>[];
+      branch?: number;
+      /**
+       * The conversation to send from (2026-11-07, agent audit item 4): the
+       * resend has just cut the turns after the message out of `messages`,
+       * which this closure still holds, and the model was sent them.
+       */
+      transcript?: ChatMessage[];
+      /**
+       * The report as the message first found it, null for none (agent audit
+       * item 3, `baseFor`); undefined for the report as it is now.
+       */
+      base?: DesignResult | null;
+    },
   ) => {
     /*
      * Refuse re-entry while a request is already in flight.
@@ -4018,6 +4250,17 @@ export default function App() {
     // What goes with the words: the composer's staging, or a message's own
     // pictures when it is sent again (see `resend` above).
     const again = overridePrompt !== undefined;
+    const transcript = resend?.transcript ?? messages;
+    /*
+     * The report this turn works on (agent audit item 3). Sent again, it is the
+     * one the message first found, put back on the bench, so an edit is not
+     * made twice over its own result, a first report is designed again rather
+     * than refined, and a report described in words is described again rather
+     * than sent to the chat. None is still none: the report on the bench stays
+     * until the new one replaces it, and stays if the turn fails.
+     */
+    const base = resend?.base !== undefined ? resend.base : result;
+    if (resend?.base && resend.base.repxContent !== result?.repxContent) setResult(resend.base);
     const stagedImages = again ? resend?.images ?? [] : previews;
     const stagedImageMeta: PreviewMeta[] = again
       ? stagedImages.map((_, i) => resend?.imageMeta?.[i] ?? { uploadId: `again-${i}`, file: 'image' })
@@ -4072,7 +4315,7 @@ export default function App() {
      * yes starts it with no request spent on what "yes" means; anything
      * else typed instead is a no, and is answered as the message it is.
      */
-    const lastMessage = messages[messages.length - 1];
+    const lastMessage = transcript[transcript.length - 1];
     if (!again && lastMessage?.role === 'assistant' && lastMessage.confirm && !lastMessage.confirm.answered) {
       const yes = AFFIRMATIVE.test(promptText) && stagedImages.length === 0 && stagedTexts.length === 0;
       const asked = lastMessage.confirm;
@@ -4117,7 +4360,10 @@ export default function App() {
       imageMeta: currentPreviews.length > 0 ? stagedMeta : undefined,
       // The versions it replaces, when it is an edit or Try again (2026-11-05).
       ...(again && resend?.branches ? { branches: resend.branches, branch: resend.branch } : {}),
+      // Sent with no report open, which a reload must not forget (agent audit item 3).
+      ...(base ? {} : { fresh: true as const }),
     };
+    turnBases.current.set(newUserMsg.id, base);
 
     setMessages(prev => [...prev, newUserMsg]);
     clearComposer();
@@ -4150,7 +4396,7 @@ export default function App() {
       pendingClarifyRef.current = null;
       setMessages(prev => prev.map(m => (m.id === pending.messageId && m.clarify ? { ...m, clarify: { ...m.clarify, answered: true } } : m)));
       if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
-        await startDescribedGeneration(withAnswers(pending.request, [{ id: 'reply', question: 'In the reader\'s own words', answer: currentPrompt }]));
+        await startDescribedGeneration(withAnswers(pending.request, [{ id: 'reply', question: 'In the reader\'s own words', answer: currentPrompt }]), newUserMsg.id);
         return;
       }
     }
@@ -4171,8 +4417,8 @@ export default function App() {
     // A plain "create a … report" with no report open skips the chat turn
     // (2026-11-02): it is a report request in any reading, and the turn spent
     // one request of the key's free allowance saying so.
-    if (!result && !isGenerationTurn(currentPreviews.length, currentTexts.length) && PLAIN_BUILD.test(currentPrompt)) {
-      await describeFromChat(currentPrompt, turn.signal);
+    if (!base && !isGenerationTurn(currentPreviews.length, currentTexts.length) && PLAIN_BUILD.test(currentPrompt)) {
+      await describeFromChat(currentPrompt, turn.signal, newUserMsg.id);
       return;
     }
     if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
@@ -4180,7 +4426,7 @@ export default function App() {
       setStreamingReply('');
       partialReplyRef.current = '';
       try {
-        const history: ChatTurn[] = buildChatHistory(messages, currentPrompt);
+        const history: ChatTurn[] = buildChatHistory(transcript, currentPrompt);
         const { chatReply } = await loadGemini();
         /*
          * With a report open, the turn sees it and may change it in place
@@ -4189,7 +4435,7 @@ export default function App() {
          * redesign. Until then the turn saw the conversation alone, and every
          * change went to a second request that wrote the whole REPX again.
          */
-        const open = result?.repxContent ? result : null;
+        const open = base?.repxContent ? base : null;
         const agent = open ? await import('./lib/agentEdit') : null;
         const outline = open && agent
           ? agent.reportOutline(open.repxContent!, { findings: repxAudit?.findings.map((f) => f.message), selected: previewSelection })
@@ -4215,18 +4461,25 @@ export default function App() {
         if (tools.length) setPendingTools(tools);
 
         if (open && agent && outcome.action === 'edit') {
-          const done = agent.applyEdits(open.repxContent!, outcome.edits ?? []);
+          /*
+           * Onto the report as it is now (agent audit item 8): a drag or a
+           * Format made while the turn was working is kept, the edits found by
+           * control name as always. A report replaced meanwhile by another
+           * project or New report is not this turn's, and the signal says so.
+           */
+          const now = reportNow.current?.repxContent ? reportNow.current : open;
+          const done = agent.applyEdits(now.repxContent!, outcome.edits ?? []);
           const id = nextMessageId();
           if (done.changed) {
-            const next: DesignResult = { ...open, repxContent: done.xml };
+            const next: DesignResult = { ...now, repxContent: done.xml };
             setResult(next);
             recordRevision('Changed in the chat', next);
-            rememberChange(id, open, next);
-            const changes = agent.describeChanges(open.repxContent!, done.xml);
+            rememberChange(id, now, next);
+            const changes = agent.describeChanges(now.repxContent!, done.xml);
             // Whatever the edit brought that the checks find, said here (2026-11-05).
             const { auditRepx } = await import('./lib/repxAudit');
             if (turn.signal.aborted) return;
-            const brought = agent.checksMarkdown(auditRepx(done.xml, open.layout).findings, auditRepx(open.repxContent!, open.layout).findings);
+            const brought = agent.checksMarkdown(auditRepx(done.xml, now.layout).findings, auditRepx(now.repxContent!, now.layout).findings);
             setMessages(prev => [...prev, {
               id,
               role: 'assistant',
@@ -4291,7 +4544,7 @@ export default function App() {
         // With no report to refine, a description is designed as the Describe
         // dialog designed one, which the chat box took over on 2026-11-01:
         // a question or two first if it leaves something open, then the brief.
-        fromDescription = !result;
+        fromDescription = !base;
       } catch (err: any) {
         if (turn.signal.aborted) return;
         console.error('Chat turn failed:', err);
@@ -4314,7 +4567,7 @@ export default function App() {
     }
 
     if (fromDescription) {
-      await describeFromChat(currentPrompt, turn.signal);
+      await describeFromChat(currentPrompt, turn.signal, newUserMsg.id);
       return;
     }
     if (turn.signal.aborted) return;
@@ -4324,7 +4577,7 @@ export default function App() {
     setError(null);
 
     activeDescribeRef.current = undefined;
-    await runGeneration(currentPrompt, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput);
+    await runGeneration(currentPrompt, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput, { base, askId: newUserMsg.id });
   };
 
   /* ---------------------------------------------------------------- *
@@ -4337,7 +4590,7 @@ export default function App() {
    * report...". The description becomes the user's message in the transcript
    * so the conversation shows what was asked, exactly as an upload does.
    * ---------------------------------------------------------------- */
-  const startDescribedGeneration = async (request: ReportDescriptionRequest) => {
+  const startDescribedGeneration = async (request: ReportDescriptionRequest, askId?: string) => {
     setIsAnalyzing(true);
     activeDescribeRef.current = request;
     // The words are the whole source here, answers included ("on A4", "EXEC dbo.Sales").
@@ -4346,7 +4599,8 @@ export default function App() {
     const teamInput: TeamInput = { read: [], described: request };
     setProgress(startProgress());
     setError(null);
-    await runGeneration('', [], [], DESCRIBE_RUN, request, teamInput);
+    // A report described is designed from nothing, whatever the bench shows.
+    await runGeneration('', [], [], DESCRIBE_RUN, request, teamInput, { base: null, askId });
   };
 
   /*
@@ -4357,7 +4611,7 @@ export default function App() {
    * as a form; then the brief. A failure inside the clarification already
    * answers "ready", so the only way out without a generation is a key problem.
    */
-  const describeFromChat = async (message: string, signal?: AbortSignal) => {
+  const describeFromChat = async (message: string, signal?: AbortSignal, askId?: string) => {
     const request = describedRequest(message);
     // Too little to design from, the dialog's Build button stayed disabled;
     // in the chat the same rule asks for more instead.
@@ -4389,13 +4643,15 @@ export default function App() {
       if (signal?.aborted) return;
       const message = isMissingApiKey(err) ? 'Add your Gemini API key to use the workspace.' : err?.message || 'Could not reach the assistant.';
       setError(message);
+      // On the request too (agent audit item 5), with its Try again.
+      setMessages((prev) => markAskError(prev, message, askId));
       if (isMissingApiKey(err)) setIsConfigOpen(true);
       return;
     } finally {
       if (!signal?.aborted) setIsChatting(false);
     }
     if (signal?.aborted) return;
-    await startDescribedGeneration(request);
+    await startDescribedGeneration(request, askId);
   };
 
   /** The answers given in a message's question form. */
@@ -4979,12 +5235,15 @@ export default function App() {
   const editSelection = async (make: (agent: typeof import('./lib/agentEdit'), xml: string) => import('./lib/agentEdit').AgentEdit[]) => {
     if (!result?.repxContent || !previewSelection.length) return null;
     const agent = await import('./lib/agentEdit');
-    const done = agent.applyEdits(result.repxContent, make(agent, result.repxContent));
+    // The report as it is once the module has loaded, not as it was clicked.
+    const now = reportNow.current;
+    if (!now?.repxContent) return null;
+    const done = agent.applyEdits(now.repxContent, make(agent, now.repxContent));
     if (!done.changed) {
       setSaveNotice(done.declined[0] ?? 'Nothing needed changing');
       return null;
     }
-    setResult({ ...result, repxContent: done.xml });
+    setResult({ ...now, repxContent: done.xml });
     setSaveNotice(done.applied.length === 1 ? done.applied[0] : `${done.applied.length} changes`);
     return done;
   };
@@ -6043,6 +6302,8 @@ export default function App() {
                 onRate={handleRate}
                 undoable={undoableIds}
                 onUndo={handleUndo}
+                redoable={redoableIds}
+                onRedo={handleRedo}
                 onConfirm={(id, yes) => void handleConfirm(id, yes)}
                 onShowVersion={handleShowVersion}
                 // The log's search, marked in the card's replies too (2026-11-06).
