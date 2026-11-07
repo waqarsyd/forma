@@ -77,10 +77,13 @@ export const RELEASES: Release[] = [
   {
     id: '2026-11-07-chat-keeps-its-word',
     date: '2026-11-07',
+    // Tagged and released on GitHub by the deploy that publishes it (item 43).
+    version: '1.1.0',
     title: 'A chat that keeps its word',
     summary:
       'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'improved', area: 'site', text: 'Forma has version numbers again: this release is 1.1.0, Settings shows the version you are using, and every release is published on GitHub with its notes, so watching the repository’s releases tells you when a new one is out. The roadmap and where to get help are linked from the README.' },
       { kind: 'new', area: 'site', text: 'Seven new pages: Pricing (Forma is free, and what each AI costs), Examples (six reports to open in the workspace with one click), Security, a comparison with DevExpress’s own AI and how to bring Crystal Reports and SSRS reports across, About with a press kit, running Forma yourself, and a FAQ of its own. Security reports have a security.txt at the address scanners look for.' },
       { kind: 'new', area: 'workspace', text: 'Settings, under General, downloads every project you have saved as one .zip and shows which version of Forma you are using. A new Forma tab gets your key from one already open, a part of the workspace that fails no longer takes the rest with it, and its Report this problem opens an issue with the details filled in.' },
       { kind: 'improved', area: 'workspace', text: 'Signed in, your projects list loads its names alone and fetches a project when you open it, instead of downloading every project in full; an autosave no longer sends the whole project to your other open tabs.' },
@@ -375,6 +378,52 @@ export function releasesByMonth(releases: readonly Release[], locale?: string): 
 /** A date as the page shows it: 7 November 2026 in English, as the reader's language writes it elsewhere. */
 export function readableDate(iso: string, locale?: string): string {
   return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(utcDay(iso));
+}
+
+/*
+ * A version per deploy (2026-11-08, site audit item 43). The number had sat at
+ * 1.0.0 since its one GitHub release while every deploy after it went
+ * unnamed. Now package.json's version is the release a deploy publishes:
+ * the newest entry carrying a version carries the same one (a test holds
+ * them together), and scripts/deploy.mjs tags `v<version>` and makes its
+ * GitHub release from `releaseNotes` once the live checks pass. Raise both
+ * together when new work is to ship. Plain major.minor.patch, no prerelease
+ * suffix: the releases are for people, not for a package registry.
+ */
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
+
+/** Whether `a` is a later version than `b`; both plain major.minor.patch. */
+export function laterVersion(a: string, b: string): boolean {
+  const pa = SEMVER.exec(a)?.slice(1).map(Number);
+  const pb = SEMVER.exec(b)?.slice(1).map(Number);
+  if (!pa || !pb) throw new Error(`Not a major.minor.patch version: ${pa ? b : a}`);
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] > pb[i];
+  return false;
+}
+
+/** The newest version the list carries, which package.json must equal. */
+export function latestVersion(releases: readonly Release[] = RELEASES): string | null {
+  return releases.find((r) => r.version)?.version ?? null;
+}
+
+/**
+ * The notes of the GitHub release for `version`: the release carrying it and
+ * every release after the previous version, since one deploy publishes all of
+ * them. Markdown, as GitHub draws a release's notes.
+ */
+export function releaseNotes(version: string, releases: readonly Release[] = RELEASES, site = SITE_URL): string {
+  const start = releases.findIndex((r) => r.version === version);
+  if (start < 0) throw new Error(`No release carries version ${version}.`);
+  const after = releases.slice(start + 1);
+  const previous = after.findIndex((r) => r.version);
+  const included = [releases[start], ...(previous < 0 ? after : after.slice(0, previous))];
+  const sections = included.map((r) => {
+    const groups = changesByKind(r).map(
+      (g) => `### ${KIND_LABELS[g.kind]}\n\n${g.changes.map((c) => `- **${AREA_LABELS[c.area]}.** ${c.text}`).join('\n')}`,
+    );
+    return [`## ${r.title} (${readableDate(r.date, 'en-GB')})`, r.summary, ...groups].join('\n\n');
+  });
+  return [...sections, `Every release, with a feed: ${site}/changelog`].join('\n\n') + '\n';
 }
 
 const escapeXml = (s: string): string =>

@@ -4,14 +4,19 @@
  * functions that filter it, group it and write its Atom feed.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
+  AREA_LABELS,
   AREAS,
   atomFeed,
   changesByKind,
   filterFromSearch,
   filterReleases,
   KINDS,
+  laterVersion,
+  latestVersion,
   readableDate,
+  releaseNotes,
   RELEASES,
   releasesByMonth,
   searchForFilter,
@@ -50,6 +55,55 @@ describe('RELEASES', () => {
 
   it('carries the 1.0.0 release with its version, as its GitHub release does', () => {
     expect(RELEASES.find((r) => r.version === '1.0.0')?.id).toBe('2026-10-28-version-1-0-0');
+  });
+
+  /* Site audit item 43: the version a deploy tags is package.json's, and
+     the newest release must carry it, or the release notes start from the
+     wrong place. */
+  it('numbers releases newest first, the newest being the version package.json declares', () => {
+    const versions = RELEASES.flatMap((r) => (r.version ? [r.version] : []));
+    for (let i = 1; i < versions.length; i++) expect(laterVersion(versions[i - 1], versions[i]), versions.join(' > ')).toBe(true);
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+    const lock = JSON.parse(readFileSync('package-lock.json', 'utf8')) as { version: string };
+    expect(latestVersion()).toBe(pkg.version);
+    expect(lock.version).toBe(pkg.version);
+  });
+});
+
+/* Item 108: scripts/github-setup.mjs labels issues by the areas the changelog
+   files changes under. It is plain Node and cannot import this file, so its
+   list is read as text and held to AREA_LABELS here. */
+describe("the GitHub labels scripts/github-setup.mjs makes", () => {
+  it('has one area label per changelog area, and no other', () => {
+    const script = readFileSync('scripts/github-setup.mjs', 'utf8');
+    const labels = [...script.matchAll(/\['(area: [^']+)'/g)].map((m) => m[1]);
+    expect(labels).toEqual(AREAS.map((a) => `area: ${AREA_LABELS[a].toLowerCase()}`));
+  });
+});
+
+describe('versions and release notes (item 43)', () => {
+  it('compares major.minor.patch as numbers, not text', () => {
+    expect(laterVersion('1.10.0', '1.9.3')).toBe(true);
+    expect(laterVersion('2.0.0', '1.99.99')).toBe(true);
+    expect(laterVersion('1.1.0', '1.1.0')).toBe(false);
+    expect(() => laterVersion('1.1', '1.0.0')).toThrow();
+  });
+
+  it('gathers every release since the previous version, grouped by kind, with a link to the page', () => {
+    const list: Release[] = [
+      { id: 'd', date: '2026-11-08', version: '1.1.0', title: 'D', summary: 'Fourth.', changes: [{ kind: 'fixed', area: 'chat', text: 'Fix D' }, { kind: 'new', area: 'site', text: 'New D' }] },
+      { id: 'c', date: '2026-11-05', title: 'C', summary: 'Third.', changes: [{ kind: 'improved', area: 'preview', text: 'Better C' }] },
+      ...sample.slice(1),
+    ];
+    const notes = releaseNotes('1.1.0', list, 'https://example.test');
+    expect(notes).toContain('## D (8 November 2026)');
+    expect(notes).toContain('## C (5 November 2026)');
+    expect(notes).not.toContain('## A');
+    expect(notes.indexOf('### New')).toBeLessThan(notes.indexOf('### Fixed'));
+    expect(notes).toContain('- **Site.** New D');
+    expect(notes.trimEnd().endsWith('https://example.test/changelog')).toBe(true);
+    expect(releaseNotes('1.0.0', list)).toContain('## A (28 October 2026)');
+    expect(() => releaseNotes('9.9.9', list)).toThrow();
   });
 });
 

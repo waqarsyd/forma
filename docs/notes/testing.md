@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,837 tests in 173 files** — under the `node` environment
+`npm test` runs Vitest over **2,841 tests in 173 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -115,7 +115,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/staleChunks` | 4 | jsdom; a tab open across a deploy (2026-11-08, site audit item 1): each browser's words for a chunk that could not be fetched, one reload and not a second soon after, and only for Vite's preload error or a failed import |
 | `lib/chatTurn` | 16 | since 2026-11-08 (batch K) the turn's control flow out of App: the queue's next step and its pauses, Resume, Steer, the questions waited on, the report a resend starts from, and how a turn that ended is said; how the chat box routes a message before any AI is asked (2026-11-07, the agent audit's batch B): a memory only from "remember" or "from now on", a plain build only when it says what the report shows, a reply to Forma's questions read as the answer, a question or a new request, and the selection named for a redesign |
 | `lib/replyChanges` | 4 | the replies' changes kept in the tab for a reload (2026-11-07, agent audit item 52): only the open project's come back, the newest kept and fewer while too large, and anything unreadable or empty is nothing |
-| `lib/releases` | 16 | the release notes behind /changelog (2026-11-07): newest first, slug ids and ISO dates, every release with a change of a known kind and area, 1.0.0's version; grouping by kind and month, filtering and its query string, and the Atom feed's shape, links and escaping |
+| `lib/releases` | 20 | the release notes behind /changelog (2026-11-07): since 2026-11-08 (site audit items 43 and 108) the versions numbered newest first with the newest equal to package.json's and the lockfile's, versions compared as numbers, a GitHub release's notes gathered from every release since the previous version, and the area labels `scripts/github-setup.mjs` makes held to the changelog's areas; newest first, slug ids and ISO dates, every release with a change of a known kind and area, 1.0.0's version; grouping by kind and month, filtering and its query string, and the Atom feed's shape, links and escaping |
 | `lib/clipboard` | 3 | one copy for every Copy in the workspace (2026-11-06, the workspace audit): the clipboard when the page has one, a hidden field and `execCommand` where there is none, as on plain HTTP, and false when neither works; the document is stubbed, so `node` |
 | `lib/initials` | 3 | one initials rule for the avatar and the account menu (2026-11-06): the first letters of a name's first two words, an address read the same way, and a question mark |
 | `lib/layers` | 5 | the layer stack behind every Escape (2026-11-06, the workspace audit): only the topmost layer closes and the key goes no further, an Escape a field used left alone and every other key, nothing with nothing open, what is open and on top, and a key on a menu, a dialog or the conversation told from one on the report |
@@ -133,7 +133,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/dataSource` | 29 |  |
 | `lib/datetime` | 12 |  |
 | `lib/keyHandoff` | 3 | the keys reaching a new tab (2026-11-08, site audit item 105): a tab with no key asks and one with a key answers, neither does when turned off, and the setting is on until turned off |
-| `lib/problemReport` | 2 | which build runs and a problem report (items 103 and 64): the short commit and the day, the commit's link, and an issue prefilled with the area, the error, the build and the page without its query |
+| `lib/problemReport` | 2 | which build runs and a problem report (items 103 and 64): the version in front since item 43, the short commit and the day, the commit's link, and an issue prefilled with the area, the error, the build and the page without its query |
 | `lib/projectExport` | 1 | every saved project in one .zip (items 59 and 66): each as JSON, its .repx beside it, and a README |
 | `lib/storagePersist` | 2 | asking the browser to keep local projects (item 60): once, not when it already does, and no where it cannot |
 | `lib/authDomain` | 3 | sign-in's domain and App Check, prepared and off (2026-11-08, site audit items 98 and 56): the page's own host only once listed, a redirect only where it can come back, and neither adding an origin to the CSP while off |
@@ -250,7 +250,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,837 in 173 files** — and that total is the arithmetic sum of the column above
+**Total: 2,841 in 173 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -264,7 +264,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2682** against a real 2,837 (2026-11-08, after the site audit's batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2686** against a real 2,841 (2026-11-08, after the site audit's batch SK, which added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Thirteen** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

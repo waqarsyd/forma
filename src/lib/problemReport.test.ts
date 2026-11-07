@@ -11,6 +11,8 @@ describe('versionLabel and problemReportUrl', () => {
     expect(versionLabel(build)).toBe('1fc5bb3, built 2026-11-08');
     expect(versionUrl(build)).toBe('https://github.com/waqarsyd/forma/commit/1fc5bb3dad9891486bc587f75c15346d4d28f8af');
     expect(versionLabel(null)).toBe('a development build');
+    // With the release in front since item 43, the commit still beside it.
+    expect(versionLabel({ ...build, version: '1.1.0' })).toBe('1.1.0 (1fc5bb3, built 2026-11-08)');
     expect(versionUrl({ commit: 'unknown', date: '' })).toBeNull();
   });
 

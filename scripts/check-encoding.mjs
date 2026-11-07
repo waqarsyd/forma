@@ -86,6 +86,8 @@ const ROOT_FILES = [
   'CONTRIBUTING.md',
   'SECURITY.md',
   'CODE_OF_CONDUCT.md',
+  // 2026-11-08, site audit item 43: a root file, so it is swept only by name.
+  'CHANGELOG.md',
   'index.html',
   'firestore.rules',
   '.gitignore',

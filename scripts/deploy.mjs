@@ -28,9 +28,24 @@
  * release history, or `firebase hosting:clone`, and the rules from the
  * commit before.
  *
+ * Every deploy of main is a numbered release (2026-11-08, site audit item
+ * 43): v<package.json's version>, tagged on the deployed commit and published
+ * as a GitHub release once the live checks pass, its notes written from
+ * src/lib/releases.ts by scripts/release-notes.ts. So before it builds
+ * anything this checks the number: if v<version> is already a tag on another
+ * commit, main has new work under an old number and it stops; if it is no tag
+ * yet, the newest release in releases.ts must carry that version, or the notes
+ * would start in the wrong place. Deploying a commit that is already tagged
+ * (a re-deploy) makes no new release. The tag is pushed with git; the release
+ * needs the GitHub CLI signed in, and without it the command to make it later
+ * is printed instead.
+ *
  * Pure ASCII, as every script here.
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const args = new Set(process.argv.slice(2));
 const preview = args.has('--preview');
@@ -41,7 +56,8 @@ function run(command, options = {}) {
   console.log(`\n> ${command}`);
   const r = spawnSync(command, { stdio: 'inherit', shell: true, env: { ...process.env, ...(options.env ?? {}) } });
   if (r.status !== 0) {
-    console.error(`\nStopped: "${command}" failed (exit ${r.status}). Nothing was deployed${options.after ? ' after it' : ''}.`);
+    const what = options.released ? 'The site is deployed and checked; the release step stopped here.' : `Nothing was deployed${options.after ? ' after it' : ''}.`;
+    console.error(`\nStopped: "${command}" failed (exit ${r.status}). ${what}`);
     process.exit(r.status || 1);
   }
 }
@@ -72,7 +88,43 @@ if (!preview) {
   }
 }
 const commit = read('git rev-parse HEAD');
-console.log(`Deploying ${commit} (${branch})${preview ? ' to a preview channel' : ''}${dryRun ? ', dry run' : ''}.`);
+
+// 1b. The number this deploy publishes (item 43). Not for a preview, which is
+// a look, not a release.
+const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+const tag = `v${version}`;
+let notes = null; // the release's notes, when this deploy makes the release
+let ghReady = false;
+if (!preview) {
+  run(`git fetch origin --tags --force`);
+  const tagged = read(`git rev-list -n 1 ${tag}`);
+  if (tagged && tagged !== commit) {
+    console.error(
+      `Stopped: ${tag} is already the release of ${tagged.slice(0, 12)}, and main has moved on from it. ` +
+        'Give the new work a number: raise "version" in package.json (npm version <x.y.z> --no-git-tag-version) ' +
+        'and set the same version on the newest release in src/lib/releases.ts, then commit and push.',
+    );
+    process.exit(1);
+  }
+  if (!tagged) {
+    const info = JSON.parse(read(`npx tsx scripts/release-notes.ts ${version}`) || '{}');
+    if (info.newest !== version || !info.notes) {
+      console.error(
+        `Stopped: package.json says ${version}, but the newest release in src/lib/releases.ts carries ` +
+          `${info.newest ?? 'no version'}. Set version: '${version}' on it, so ${tag}'s notes start there.`,
+      );
+      process.exit(1);
+    }
+    notes = info.notes;
+    ghReady = spawnSync('gh auth status', { shell: true, stdio: 'ignore' }).status === 0;
+  }
+}
+
+console.log(
+  `Deploying ${commit} (${branch})${preview ? ' to a preview channel' : ''}${dryRun ? ', dry run' : ''}` +
+    `${preview ? '' : notes ? `, as release ${tag}` : `, already released as ${tag}`}.`,
+);
+if (notes && !ghReady) console.log('The GitHub CLI is not signed in: the tag will be pushed, and the command to make the release printed.');
 
 // 2. Every check CI runs, and the rules suite, which needs Java.
 run('npm run lint');
@@ -100,3 +152,18 @@ run('npx firebase deploy --only hosting,firestore:rules');
 // 4. The live sites, expecting this commit.
 run(`node scripts/smoke.mjs --expect ${commit}`, { after: true });
 console.log(`\nDeployed ${commit.slice(0, 12)} to every site, with the rules, and the live checks passed.`);
+
+// 5. The release (item 43): the tag on this commit, then its GitHub release.
+if (notes) {
+  run(`git tag -a ${tag} -m "Forma ${version}" ${commit}`, { released: true });
+  run(`git push origin ${tag}`, { released: true });
+  const file = join(tmpdir(), `forma-${tag}-notes.md`);
+  writeFileSync(file, notes);
+  const create = `gh release create ${tag} --repo waqarsyd/forma --title "Forma ${version}" --notes-file "${file}" --verify-tag`;
+  if (ghReady) {
+    run(create, { released: true });
+    console.log(`\nReleased ${tag}: https://github.com/waqarsyd/forma/releases/tag/${tag}`);
+  } else {
+    console.log(`\nTagged ${tag}. Sign in to the GitHub CLI (gh auth login) and make its release with:\n  ${create}`);
+  }
+}

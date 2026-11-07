@@ -95,7 +95,7 @@ Each of these is a shipped code path, not a plan.
 - **Image, PDF and `.repx` intake.** Drop a mockup, a scan, a photo, or an existing report. PDFs are rasterised *and* have their text layer extracted, so exact strings survive rather than being read back out of pixels ([`src/App.tsx`](src/App.tsx), [`src/lib/pdf.ts`](src/lib/pdf.ts)).
 - **Your own free key opens it, and Forma's own model works behind it.** Forma ships no key of its own: it starts once your free Gemini key is in Settings, whichever AI then designs (Gemini by default, or a local AI on your own computer through Ollama or LM Studio, or OpenRouter's free models), and until then the chat box is locked (the owner's rule since 2026-11-05; from 2026-11-02 it worked with no key). Forma learned the house style and the kinds of report from the structure of 359 real DevExpress reports (never their words), and that model stands in when the AI cannot answer. It also remembers how you work: say "remember: always use A4 and Tahoma" and every report after follows it, and the reports you keep teach it your house style, all kept in your browser and listed in Settings ([`src/lib/offlineGenerator.ts`](src/lib/offlineGenerator.ts), [`docs/proposals/own-model.md`](docs/proposals/own-model.md)). With an AI chosen, the parts work together on each request: OCR reads the words, Forma's own vision model (when you run one) reads the layout, Forma's own model brings the house style, and if the AI cannot answer you get Forma's own draft instead of an error ([`src/lib/formaTeam.ts`](src/lib/formaTeam.ts)). For a picture, Forma drafts the report and the AI only corrects the draft, one short line per control, so a report costs a fraction of the tokens of one the AI designs from nothing ([`src/lib/draftText.ts`](src/lib/draftText.ts), since 2026-11-05).
 - **One chat box for everything.** Attach or paste an image, a scan, a PDF or a `.repx`, describe the report you want, or both, and the box works out what to do: an attachment shows as the file alone, and once you send, its text is read with OCR behind the scenes in the browser (Tesseract.js; nothing leaves the browser; English, Arabic, Hindi, Urdu, French, German or Spanish, the language worked out from the page itself), the image viewer offering a review of what was found over the source from which a `.repx` can be built with no model; a description with no attachment gets a question or two in the thread when it leaves something open, then a report designed from it; words and an attachment together go to one generation ([`src/components/Composer.tsx`](src/components/Composer.tsx), [`src/lib/ocrAttach.ts`](src/lib/ocrAttach.ts), [`src/lib/promptToReport.ts`](src/lib/promptToReport.ts)).
-- **Three artifacts in one structured response** — spec, `layout`, and `repxContent` — guaranteed parseable by a Gemini `responseSchema` rather than by hoping the model returns valid JSON ([`src/services/geminiService.ts`](src/services/geminiService.ts)).
+- **The AI writes the `.repx`, and Forma reads the rest off it.** Since 2026-11-05 the model answers with the REPX as plain XML and nothing else; the spec and the mockup's `layout` are read off that file ([`src/lib/repxViews.ts`](src/lib/repxViews.ts)), which more than halved what each report asks the model to write. A cut-off answer is detected and repaired rather than downloaded half-written ([`src/lib/repxTruncation.ts`](src/lib/repxTruncation.ts)).
 - **Targets your DevExpress version** — eight of them, 26.1 back to 20.1, written into the file's `SerializerVersion` so it drops into the codebase you already have. Worth knowing that the tag is a *label rather than a gate*: a newer `.repx` still opens in an older designer, which was measured with `RepxProbe inspect` and then confirmed through the product — a 23.2 file opened correctly in a real 20.1 designer, and the designer rewrote the tag on save. So pick the version you build against; nothing is lost if you pick wrong.
 - **In-browser mockup** drawn from the `layout` JSON, so you can see what the model understood before downloading anything.
 - **Print preview and PDF export**, and it is the one pane drawn from `repxContent` rather than from the `layout`. The exported REPX is read back, the band rules applied — Detail once per record, PageHeader and PageFooter on every sheet, ReportHeader once, ReportFooter after the last record — and laid out across real pages at true size, so `window.print()` gives a correctly-scaled PDF. **This is what closes the loop:** before it, nothing showed the report paginated and nothing checked the artifact you actually download. A Detail band the height of the page looks fine in the mockup and is obvious here on sight, one record per sheet ([`src/lib/reportPreview.ts`](src/lib/reportPreview.ts), [`src/components/ReportPreview.tsx`](src/components/ReportPreview.tsx)). Export, at the top right, holds that PDF with every other format; beside it, **PDF with outline** writes a PDF of Forma's own: the report's bookmarks as its outline, encrypted under the report's passwords when it has any, and PDF/A-1b, 2b or 3b when the report asks for it, with Liberation fonts embedded and checked with veraPDF ([`src/lib/pdfWriter.ts`](src/lib/pdfWriter.ts), [`src/lib/pdfA.ts`](src/lib/pdfA.ts)).
@@ -107,7 +107,7 @@ Each of these is a shipped code path, not a plan.
 - **Batch intake — a folder of legacy reports in, a queue of `.repx` out.** Each source document becomes *its own* report, which is the opposite of attaching several files to the composer, where several pages build one report. Choose files or a folder, or drop either on the panel ([`src/lib/folderDrop.ts`](src/lib/folderDrop.ts) opens a folder to its last file). Files run one at a time by default because your key carries the quota and forty parallel requests turn a slow success into a fast 429; two or three at once are offered for a key that allows it. Each row shows the audit's verdict, since the point of running forty files is knowing which are worth opening. **Download as .zip** takes them all ([`src/lib/batchQueue.ts`](src/lib/batchQueue.ts), [`src/lib/zip.ts`](src/lib/zip.ts) — a store-only writer in ~150 lines rather than a ~30 kB dependency, verified by opening its output with .NET's own `ZipFile` reader). **This is the migration story, and the one thing a prompt-driven competitor structurally cannot offer**: you can describe one report to an assistant, but not forty you have never read.
 - **An audit that says what is still wrong** after every repair has run — errors mean content will be lost when DevExpress loads the file, warnings mean it opens and is a worse report than it should be. A chart with no series and a cross-tab missing a field collection both load happily and print an empty frame that reads as "the data has not arrived yet", so both are reported ([`src/lib/repxAudit.ts`](src/lib/repxAudit.ts)).
 - **Runtime model detection.** Models are probed against a preference list on first use and the winner is cached for the session. Nothing is hardcoded, because Google retires models "for new users" — a pinned id keeps working for existing projects and 404s for every new key (`resolveModel` in [`src/services/geminiService.ts`](src/services/geminiService.ts), covered by `modelResolution.test.ts` beside it, with the curated preference list in [`src/lib/modelCatalog.ts`](src/lib/modelCatalog.ts)).
-- **Streaming progress with pause and stop.** Once the model starts writing, the progress bar and character count reflect output actually received ([`src/lib/generationProgress.ts`](src/lib/generationProgress.ts)).
+- **A workspace as quiet as a chat app.** Working dots while Forma writes and **Stop** in place of the send button; no progress bar, no status bar and no pause, since 2026-11-04. The measured progress is still read to a screen reader ([`src/lib/generationProgress.ts`](src/lib/generationProgress.ts)).
 - **Optional sign-in and cloud sync.** Signed out, Forma saves to `localStorage` and works fully; signed in, reports sync to Firestore under rules that enforce account isolation ([`firestore.rules`](firestore.rules)).
 - **Zero-knowledge key vault.** AES-GCM encryption in the browser, PBKDF2-SHA256 key derivation ([`src/services/keyVault.ts`](src/services/keyVault.ts)).
 - **Version history with a structural diff.** Every generation, refinement and binding pass is kept, each row saying what it changed — controls added, removed, moved, resized, retyped — so a refinement that made the report worse is one click from being undone. Signed in, the newest ten are saved with the project ([`src/lib/revisions.ts`](src/lib/revisions.ts), [`src/lib/revisionStore.ts`](src/lib/revisionStore.ts)).
@@ -140,7 +140,7 @@ There is no ESLint config, no state-management library, no date library, no HTTP
 
 ### Prerequisites
 
-- **Node 20, 22, or 24+** (developed on Node 24.18.1 / npm 11.16.0). "20+" is the wrong shorthand: Vitest supports `^20 || ^22 || >=24`, so the odd-numbered lines **21 and 23 are outside the supported range** even though they are newer than 20.
+- **Node 20, 22, or 24+** (developed on Node 24.21.0 / npm 11.19.0). "20+" is the wrong shorthand: Vitest supports `^20 || ^22 || >=24`, so the odd-numbered lines **21 and 23 are outside the supported range** even though they are newer than 20.
 - **A Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey) — supplied in the app at runtime, never in a file.
 - **A JRE** — only for `npm run test:rules`, which starts the Firestore emulator (a JVM process). A runtime is enough; no JDK.
 - **A Firebase project** — only if you want sign-in and cloud sync. Everything else works without one.
@@ -160,11 +160,12 @@ Contributors should use `npm ci` instead — it installs exactly what the lockfi
 
 ### Environment variables
 
-**All three are optional, and none is a secret.** Copy [`.env.example`](.env.example) to `.env` only if you need one of them; `server.ts` loads it via `dotenv/config`.
+**All four are optional, and none is a secret.** Copy [`.env.example`](.env.example) to `.env` only if you need one of them; `server.ts` loads it via `dotenv/config`.
 
 | Name | Required | Default | Description |
 |---|---|---|---|
 | `VITE_FORMA_MOCK` | No | unset | Set to `"true"` to skip Gemini entirely and return a canned mock invoice after a 3s delay. Local development only. The value `"misordered"` returns the same fixture with its two header bands swapped, so the REPX audit's band-order warning can be seen firing in the running app; `"true"` stays deliberately clean. |
+| `PORT` | No | `3000` | The port the server listens on. Useful for a second instance beside a running dev server; a value that is not a port falls back to 3000. |
 | `HOST` | No | loopback in dev, all interfaces in production | Which interface the server binds. Set to `0.0.0.0` only to reach the dev server from another device — that publishes Vite's module graph to anything that can reach the machine. |
 | `HTTPS` | No | unset | Set to `"true"` **only where TLS actually terminates**, so the server sends HSTS. Never set it locally: a browser that receives HSTS on `http://localhost` refuses plain-HTTP localhost for a year afterwards, breaking every other project on the machine. |
 
@@ -742,15 +743,21 @@ docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
   media/               images the documentation links to, and the only place a
                        committed screenshot belongs; nothing here is read by the
                        build. Has its own README with the capture rules
-.github/               CI workflow (checks.yml, which runs the six checks plus
-                       `npm ci`), three issue templates and a PR template
+.github/               workflows (checks.yml, which runs the seven checks plus
+                       `npm ci`; codeql.yml; live.yml, which checks the live
+                       site), three issue templates, a PR template,
+                       dependabot.yml, CODEOWNERS, SUPPORT.md and the main
+                       branch's ruleset (rulesets/main.json)
 .githooks/             opt-in pre-commit guard; enable with
                        `git config core.hooksPath .githooks`
 .claude/               settings.json — the committed permission allowlist, so
                        the documented checks run without prompting
-scripts/               five helpers: dev + build, and the encoding, doc-pointer
-                       and bundle-size checks that three of the seven commands
-                       call; fidelity/, the benchmark's runner and cases; and
+scripts/               dev + build; the encoding, doc-pointer and bundle-size
+                       checks that three of the seven checks call; the owner's
+                       deploy.mjs (release-notes.ts writes each release's
+                       notes), smoke.mjs, backup.mjs and github-setup.mjs (the
+                       repository's settings, labels, milestones and roadmap);
+                       make-icons.mjs and fetch-handwriting.mjs; fidelity/, the benchmark's runner and cases; and
                        model/, which learns Forma's own model and packs and
                        draws the vision model's training set (render.py needs
                        Python 3 and Pillow), with kaggle/train_vision.py, the
@@ -859,6 +866,8 @@ node scripts/deploy.mjs --dry-run    # everything but the deploy
 
 **One deploy, the same every time (2026-11-07).** `scripts/deploy.mjs` refuses unless it is deploying `main` exactly as pushed (a clean tree, equal to `origin/main`), runs every check CI runs plus the rules suite, builds, deploys hosting and `firestore.rules` together, and then runs `scripts/smoke.mjs` against both sites expecting the commit it built. The site had served the build of 28 October for weeks while this file said it was `main`, and the sharing rules were never deployed with the code that needs them. It is deliberately not an npm script: the committed permission list allows `npm run *`, and a deploy must not be something an agent can start without asking. The two commands it runs are still the way by hand: `npx firebase deploy --only hosting` and `npx firebase deploy --only firestore:rules`.
 
+**Every deploy is a numbered release (2026-11-08).** `package.json`'s version is the release a deploy publishes, and the newest entry in [`src/lib/releases.ts`](src/lib/releases.ts) carries the same one, which a test holds. Once the live checks pass, `deploy.mjs` tags the commit `v<version>`, pushes the tag, and makes the GitHub release, its notes written from `releases.ts` by `scripts/release-notes.ts`: every release since the previous version. It stops before building anything if `v<version>` already names another commit (new work under an old number: raise the version in both places) or if the newest release does not carry the version; re-deploying a tagged commit makes no new release. The release needs the GitHub CLI signed in; without it the tag is still pushed and the command to make the release is printed. `v1.0.0` (28 October) was made by hand; `v1.1.0` is the next deploy.
+
 **Rolling back.** The Hosting console's *Release history* has a *Rollback* on every earlier release, for each site; from the command line, `npx firebase hosting:clone forma-201ba:<version id> forma-201ba:live` (and the same for `openforma`) puts a listed version back. The rules are not versioned by Hosting: deploy them from the commit before, `git show <commit>~1:firestore.rules > firestore.rules` and `npx firebase deploy --only firestore:rules`, then restore the file. A preview channel (`--preview`) is the way to look at a build before it is anyone's.
 
 **Handwriting is a deploy-time decision.** The handwriting model (2026-11-04, used when a page looks handwritten) is served only by a build made after `npm run fetch:handwriting`, which downloads it into the gitignored `vendor/handwriting/`, pinned by SHA-256, **and asked for by name**: `FORMA_HANDWRITING=1 npm run build`, or `node scripts/deploy.mjs --with-handwriting`. Until 2026-11-07 any build on a machine that had once fetched it shipped it. Each visitor whose page looks handwritten downloads about 88 MB once, a quarter of the free plan's 360 MB a day, and on Spark a product that passes its quota is switched off rather than billed. Deploy without fetching it and the site serves no model, and OCR keeps its own reading of a handwritten page.
@@ -892,23 +901,21 @@ The site audit of 2026-11-07 left these prepared in the repository and waiting f
 
 If you would rather run the Express bundle than a static host, it needs a platform with a card on file (Cloud Run, Railway, Fly) or one that sleeps (Render's free tier, ~30–60 s cold start). The advantage is that `securityHeaders.ts` stays the only copy of the policy.
 
-**CI** is defined in [`.github/workflows/checks.yml`](.github/workflows/checks.yml): one job running typecheck, dead-code sweep, encoding sweep, unit tests with coverage, build and bundle-size budget, plus a second job for the rules suite (which needs a JVM). Both jobs run on every push and pull request, and the badge at the top of this file reports the result on `main`.
+**CI** is defined in [`.github/workflows/checks.yml`](.github/workflows/checks.yml): one job running typecheck, dead-code sweep, encoding sweep, the documentation's links, unit tests with coverage, build and bundle-size budget, plus a second job for the rules suite (which needs a JVM). Both jobs run on every push and pull request, and the badge at the top of this file reports the result on `main`.
 
 ---
 
 ## Roadmap
 
-From [`docs/PRD.md`](docs/PRD.md) §6, which is kept current against the code:
+The roadmap is section 6 of [`docs/PRD.md`](docs/PRD.md), which is kept current against the code. On GitHub each item is a [milestone](https://github.com/waqarsyd/forma/milestones), and the pinned *Roadmap* discussion carries the same text; [`scripts/github-setup.mjs`](scripts/github-setup.mjs) makes both from that section. Ideas are welcome in [Discussions](https://github.com/waqarsyd/forma/discussions/categories/ideas).
 
-- Raise or remove the 8-page PDF cap, and support multi-page `.repx` datasets.
-- ~~Expose the RTL and stored-procedure options in the settings UI.~~ Done 2026-11-04. (`ExpressionBindings` generation was done earlier — it left the settings dialog entirely and became the **Data** tab, because a schema is not a setting: it belongs beside the report it binds, not in a modal shared with the API key.)
-- Render real gauges and barcodes in the mockup, and draw charts *there* with a real charting library rather than the current stylised approximation. (Chart titles, legends and axis labels are read from the source since 2026-11-04.) (The exported REPX no longer approximates — charts are real `XRChart` elements and value matrices real `XRCrossTab` elements.)
-- Editing: deleting and adding a control, editing a table cell's text, and multi-select. Move, resize, retype, keyboard nudge and per-gesture undo are done.
-- A data source for the preview. It has none today, so it repeats one record's worth of content — it proves the band structure and the pagination, not the data.
-- Batch: dropping a folder onto the panel rather than choosing files through the picker, and running more than one at a time when the key's quota allows.
-- A mobile layout. Deliberately absent rather than broken — the ported design carries no mobile arrangement, and it is a design task before it is a CSS one.
-- Finish sign-in hardening — there is still no password-strength indicator and no email-verification gate after sign-up.
-- Find real signal for the *opening* phase of generation (model detection and upload), which still runs on a simulated cadence. The output phase is already driven by real streaming.
+- **PDFs past eight pages.** Raise or remove the 8-page cap, and support multi-page `.repx` datasets.
+- **Editing by hand on the Preview:** deleting and adding a control, editing a table cell's text, and multi-select. Move, resize, retype, keyboard nudge and per-gesture undo are done, and the chat already deletes and adds controls.
+- **Real barcodes**, encoded from their value: the Preview draws a barcode as a placeholder of bars, and the mockup draws gauges, barcodes and charts as placeholders. The exported `.repx` carries the real controls.
+- **A password-strength indicator** at sign-up. The minimum of eight characters, the verification email and the verified address sharing needs are done.
+- **The report library, evaluated** on real reports, as [`docs/proposals/rag.md`](docs/proposals/rag.md) describes, before it counts as part of the product.
+
+Done and taken off on 2026-11-08: Batch from a dropped or chosen folder, two or three at once; right to left and the stored procedure worked out rather than set; data in the Preview; a phone layout; and the progress signal, which went with the progress bar.
 
 **Explicitly out of scope — connecting to a live database.** The Data tab binds against a pasted sample and never opens a connection. A live one means credentials, which means either a server holding every customer's database password or a browser reaching a production database directly; a pasted sample supplies everything binding needs and none of what that would cost.
 
@@ -927,20 +934,20 @@ Forma is usable but young, and some things are worth knowing before you rely on 
 - **Models are detected at runtime, never hardcoded.** Google retires models "for new users", so a pinned id works for existing projects and 404s for every new key. Forma probes a preference list on first use and caches the winner for the session.
 - **Reports with large images may not sync to the cloud.** A single detailed 2048px upload can exceed Firestore's 1 MiB document limit on its own; Forma saves the spec and REPX without the images in that case, and says so.
 - **PDFs are read to 8 pages.** Beyond that, later pages are ignored. A single upload is capped at **20 MB** and a request at **12 attachments**; anything over either is reported on screen rather than dropped silently.
-- **Component coverage is nine components deep.** `DataBinding`, `BatchPanel`, `ChatThread`, `Composer`, `AccountDialog`, `LibraryPanel`, `OcrDialog`, `NotFoundPage` and `ReportPreview` have render tests; nothing else does, and `App.tsx` is still several thousand lines of which only the pieces extracted into `src/lib` are tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`. (No line count here on purpose: it was written down as "4,500" and was wrong within a week. Measure it if you need it.)
+- **Component coverage is partial.** Twenty-five components have render tests (among them `ChatThread`, `Composer`, `ReportPreview`, `SettingsDialog` and `ShareDialog`; [`docs/notes/testing.md`](docs/notes/testing.md) lists them all), and the public pages' claims, contrast and routes are held by tests that read their source; the rest have none, and `App.tsx` is still several thousand lines of which only the pieces extracted into `src/lib` are tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`. (No line count here on purpose: it was written down as "4,500" and was wrong within a week. Measure it if you need it.)
 
 ---
 
 ## Contributing
 
-Start with **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — setup, the six checks, and the rules for adding and removing things.
+Start with **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — setup, the seven checks, and the rules for adding and removing things. Questions go to [Discussions](https://github.com/waqarsyd/forma/discussions); [`.github/SUPPORT.md`](.github/SUPPORT.md) says where everything else goes.
 
 The flow is the usual one:
 
 ```bash
 # 1. Fork, then clone your fork
 git clone <your-fork-url>
-cd Dev_Forma
+cd forma
 npm ci
 
 # 2. Enable the pre-commit guard (once per clone; git will not run hooks
@@ -954,6 +961,7 @@ git checkout -b fix/short-description
 npm run lint
 npx tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run lint:encoding
+npm run lint:links
 npm test
 npm run test:rules
 npm run build && npm run check:size
@@ -963,11 +971,11 @@ git commit -m "Short imperative summary"
 git push origin fix/short-description
 ```
 
-Six is what you can run locally. [`.github/workflows/checks.yml`](.github/workflows/checks.yml) runs a seventh, `npm ci`, which fails when `package.json` and the lockfile disagree — nothing local checks that.
+Seven is what you can run locally. [`.github/workflows/checks.yml`](.github/workflows/checks.yml) runs an eighth, `npm ci`, which fails when `package.json` and the lockfile disagree — nothing local checks that.
 
 Four documents carry the reasoning that the code cannot:
 
-- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — the six checks and the rules for adding and removing things; the one to read before you open a PR.
+- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — the seven checks and the rules for adding and removing things; the one to read before you open a PR.
 - **[`CLAUDE.md`](CLAUDE.md)** — the entry point: hard constraints, commands, and an index that routes you to the note covering whatever you are about to change.
 - **[`docs/notes/`](docs/notes/)** — five notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md), [`testing.md`](docs/notes/testing.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.
 - **[`docs/PRD.md`](docs/PRD.md)** — the product specification, kept current against the code.

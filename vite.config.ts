@@ -389,7 +389,9 @@ export default defineConfig(() => {
     // The served sets' paths, for src/lib/assetPaths.ts (site audit item 91),
     // and which build this is, for src/lib/buildInfo.ts (item 103).
     define: {
-      __FORMA_BUILD__: JSON.stringify({ commit: commitOf(), date: new Date().toISOString().slice(0, 10) }),
+      // package.json's version too (2026-11-08, site audit item 43): the release
+      // a deploy tags, shown beside the commit it was built from.
+      __FORMA_BUILD__: JSON.stringify({ version: JSON.parse(readFileSync('package.json', 'utf8')).version, commit: commitOf(), date: new Date().toISOString().slice(0, 10) }),
       __FORMA_ASSETS__: JSON.stringify({
         ocr: `/ocr/${VERSIONS.ocr}/`,
         pdfFonts: `/pdf-fonts/${VERSIONS.pdfFonts}/`,
