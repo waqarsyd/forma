@@ -22,7 +22,7 @@ const noop = () => {};
 const common = { onEnterWorkspace: noop, onSignIn: noop, onSignUp: noop, user: null, logOut: noop, isDarkMode: false, setIsDarkMode: noop };
 
 /** The routes drawn here; the app's own routes (the workspace, sign-in) are not pages to read. */
-export const PRERENDERED = ['/', '/features', '/docs', '/contact', '/changelog', '/terms', '/privacy'] as const;
+export const PRERENDERED = ['/', '/features', '/docs', '/contact', '/changelog', '/terms', '/privacy', '/accessibility'] as const;
 
 /** One page's markup, for the build to put inside `<div id="root">`. */
 export function renderRoute(route: (typeof PRERENDERED)[number]): string {
@@ -33,6 +33,7 @@ export function renderRoute(route: (typeof PRERENDERED)[number]): string {
           : route === '/changelog' ? <ChangelogPage {...common} />
             : route === '/terms' ? <LegalPage doc="terms" {...common} />
               : route === '/privacy' ? <LegalPage doc="privacy" {...common} />
-                : <LandingPage {...common} />;
+                : route === '/accessibility' ? <LegalPage doc="accessibility" {...common} />
+                  : <LandingPage {...common} />;
   return renderToString(<MotionConfig reducedMotion="user">{page}</MotionConfig>);
 }

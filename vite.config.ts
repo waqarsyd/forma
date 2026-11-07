@@ -1,13 +1,14 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import {createServer, defineConfig, type Plugin} from 'vite';
-import {createReadStream, existsSync, readFileSync, writeFileSync} from 'node:fs';
+import {createReadStream, existsSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execSync} from 'node:child_process';
 import {resolve} from 'node:path';
 import {atomFeed, RELEASES} from './src/lib/releases';
 import {headFor, llmsTxt, pageFile, robotsTxt, securityTxt, sitemapXml, softwareJsonLd, withHead} from './src/lib/seo';
 import {ROUTES} from './src/lib/router';
+import {licenceNotice, licenseOf, packageDirOf, type LicensedWork} from './src/lib/licenceNotice';
 
 /**
  * OCR's runtime, served from this site rather than a CDN (2026-11-01). The
@@ -269,6 +270,84 @@ function changelogFeed(): Plugin {
   };
 }
 
+/**
+ * `/licenses.txt` (2026-11-08, site audit item 97): the licence of every npm
+ * package the build put into the bundle, read from the package's own licence
+ * file, with the packages and data the site serves beside it (Tesseract and
+ * its language data, the three typefaces, the PDF fonts, and TrOCR when the
+ * build carries it). `src/lib/licenceNotice.ts` writes the text; the footer
+ * links it. In development it lists the project's direct dependencies, since
+ * there is no bundle to read.
+ */
+const LICENCE_FILE = /^(licen[cs]e|copying|notice)(\.[a-z]+)?$/i;
+
+function packageWork(dir: string): LicensedWork | null {
+  const manifest = resolve(dir, 'package.json');
+  if (!existsSync(manifest)) return null;
+  const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string; version?: string; license?: unknown; licenses?: unknown; homepage?: string };
+  if (!pkg.name) return null;
+  const file = readdirSync(dir).find((f) => LICENCE_FILE.test(f));
+  return {
+    name: pkg.name,
+    version: pkg.version,
+    license: licenseOf(pkg.license ?? pkg.licenses),
+    text: file ? readFileSync(resolve(dir, file), 'utf8') : '',
+    homepage: pkg.homepage,
+  };
+}
+
+/** What the site serves beside the bundle, and the licence each comes with. */
+function servedWorks(): LicensedWork[] {
+  const ofl = (name: string, file: string): LicensedWork => ({ name, license: 'OFL-1.1', text: readFileSync(resolve(file), 'utf8') });
+  const served = [
+    'tesseract.js',
+    'tesseract.js-core',
+    ...['eng', 'ara', 'hin', 'urd', 'fra', 'deu', 'spa'].map((l) => `@tesseract.js-data/${l}`),
+  ].map((name) => packageWork(resolve('node_modules', name)));
+  return [
+    ...served.filter((w): w is LicensedWork => w !== null),
+    ofl('Inter (typeface)', 'src/fonts/OFL-inter.txt'),
+    ofl('Hanken Grotesk (typeface)', 'src/fonts/OFL-hankengrotesk.txt'),
+    ofl('JetBrains Mono (typeface)', 'src/fonts/OFL-jetbrainsmono.txt'),
+    ofl('Liberation Sans, Serif and Mono 2.1.5 (fonts embedded in PDF/A files)', 'assets/pdf-fonts/LICENSE'),
+    ...(Object.keys(HANDWRITING_ASSETS).length
+      ? [{ name: 'TrOCR small handwritten (Microsoft), ONNX conversion Xenova/trocr-small-handwritten', license: 'MIT', text: '', homepage: 'https://huggingface.co/Xenova/trocr-small-handwritten' }]
+      : []),
+  ];
+}
+
+const LICENCE_HEADING = `Third-party notices for Forma (https://openforma.web.app)
+
+Forma is open source under the Apache-2.0 licence, (c) 2026 Waqar Sayyed.
+It ships the open-source code, data and typefaces below, each under its own
+licence, which follows its name. Written when this build was made.`;
+
+function thirdPartyLicences(): Plugin {
+  return {
+    name: 'forma-third-party-licences',
+    configureServer(server) {
+      server.middlewares.use('/licenses.txt', (_req, res) => {
+        const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { dependencies?: Record<string, string> };
+        const works = Object.keys(pkg.dependencies ?? {}).map((name) => packageWork(resolve('node_modules', name)));
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end(licenceNotice([...works.filter((w): w is LicensedWork => w !== null), ...servedWorks()], LICENCE_HEADING));
+      });
+    },
+    generateBundle(_options, bundle) {
+      const dirs = new Set<string>();
+      for (const output of Object.values(bundle)) {
+        if (output.type !== 'chunk') continue;
+        for (const [id, info] of Object.entries(output.modules)) {
+          const dir = info.renderedLength > 0 ? packageDirOf(id) : null;
+          if (dir) dirs.add(dir);
+        }
+      }
+      const bundled = [...dirs].map(packageWork).filter((w): w is LicensedWork => w !== null);
+      this.emitFile({ type: 'asset', fileName: 'licenses.txt', source: licenceNotice([...bundled, ...servedWorks()], LICENCE_HEADING) });
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
     plugins: [
@@ -279,6 +358,7 @@ export default defineConfig(() => {
       servedAssets('model', MODEL_ASSETS, VERSIONS.model),
       servedAssets('handwriting', HANDWRITING_ASSETS, VERSIONS.handwriting),
       changelogFeed(),
+      thirdPartyLicences(),
       versionMeta(),
       pagesAndCrawlers(),
     ],

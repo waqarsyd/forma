@@ -524,8 +524,14 @@ const BUDGETS = [
  * the `index-` cap moved 112 kB from the entry chunk into lazy ones and left
  * this number where it was, which is this paragraph's standing point: the
  * total is a backstop, not what a visitor downloads. 6,010,000 is 94.1%.
+ *
+ * Raised to 6,255,000 on 2026-11-08, at 5,878,818 B (97.8%) without
+ * tripping: +88,168 of it is /licenses.txt, the third-party notices the
+ * site audit's batch SE writes at build (fetched only from the footer's
+ * link), and the rest the agent audit's later batches and the site audit's
+ * first four, not attributed here. 6,255,000 is 94.0%.
  */
-const TOTAL_MAX = 6_010_000;
+const TOTAL_MAX = 6_255_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);
@@ -591,10 +597,14 @@ const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-s
  * binding, sharing, memory and the library, the audit's findings, and every
  * keyboard shortcut), and docs.html went from about 93 KB to 143 KB. Each is
  * a page of the product a visitor could not read about before. 94.0%.
+ *
+ * Raised to 558,000 the next morning, at 524,283 B (99.5%): batch SE added
+ * a page, /accessibility, and rewrote the terms and the privacy policy at
+ * about twice their length, with a footer line on every page. 94.0%.
  */
 const isPage = (f) => f.name.endsWith('.html') && dirname(f.path) === DIST;
 const pagesTotal = files.filter(isPage).reduce((a, f) => a + f.size, 0);
-const PAGES_TOTAL_MAX = 527_000;
+const PAGES_TOTAL_MAX = 558_000;
 const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
 const handwritingTotal = files.filter(isHandwriting).reduce((a, f) => a + f.size, 0);
 // 90,597,142 B with the model (2026-11-04), so 94.0%.

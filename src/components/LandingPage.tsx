@@ -144,7 +144,7 @@ const STEPS = [
     points: [
       'Parsed and checked in the viewer before you download',
       'Exported from the Preview as PDF, Excel, CSV, Word, RTF, HTML or a picture',
-      'Save the session to your account, or keep it on this device',
+      'Saved as you work, to your account or on this device',
     ],
     figure: <FigureExport />,
   },

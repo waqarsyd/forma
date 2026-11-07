@@ -44,6 +44,8 @@ describe('the public pages do not claim what Forma no longer does', () => {
     ['an unverified account missing nothing', /Nothing is withheld/],
     ['the account dialog in columns', /one in another column/],
     ['a docs fix promised for feedback nobody receives', /gets fixed in the next pass/],
+    // Batch SE (2026-11-08): projects are saved as you work.
+    ['a project saved only when you choose to', /Projects you choose to save|Save the session to your account|sign in and save a project/],
   ])('no longer claims %s', (_what, pattern) => {
     expect(all).not.toMatch(pattern);
   });
@@ -107,6 +109,25 @@ describe('the Docs page covers the workspace as it is', () => {
     expect(settings.length).toBeGreaterThanOrEqual(4);
     expect(account.length).toBeGreaterThanOrEqual(4);
     for (const label of [...settings, ...account]) expect(visible(docs), label).toContain(label);
+  });
+
+  it('says on every page whose code and name it is (site audit items 83 and 35)', () => {
+    const footer = readFileSync('src/components/SiteFooter.tsx', 'utf8');
+    const holder = readFileSync('LICENSE', 'utf8').match(/^\s*Copyright (\d{4} .+?)\s*$/m)?.[1];
+    expect(holder).toBeTruthy();
+    expect(footer).toContain(`export const COPYRIGHT = '© ${holder}'`);
+    expect(visible(footer)).toMatch(/trademarks of Developer Express Inc\. Forma is an independent project, not\s+affiliated/);
+    expect(visible(footer)).not.toContain('getFullYear');
+  });
+
+  it('gives the security route SECURITY.md gives, on the contact page (item 81)', () => {
+    const security = readFileSync('SECURITY.md', 'utf8');
+    const contact = visible(readFileSync('src/components/ContactPage.tsx', 'utf8'));
+    expect(security).toMatch(/private vulnerability reporting/);
+    expect(contact).toMatch(/private vulnerability reporting/);
+    expect(security).toContain('"Forma security" in the subject');
+    expect(contact).toContain('"Forma security" in the subject');
+    expect(contact).toMatch(/delivered by[\s\S]{0,200}FormSubmit/);
   });
 
   it('prints the shortcuts from the list the workspace dialog uses, not a copy', () => {

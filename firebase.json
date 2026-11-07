@@ -57,6 +57,10 @@
           "destination": "/privacy.html"
         },
         {
+          "source": "/accessibility",
+          "destination": "/accessibility.html"
+        },
+        {
           "source": "/s/*",
           "destination": "/share.html"
         }
@@ -211,6 +215,10 @@
         {
           "source": "/privacy",
           "destination": "/privacy.html"
+        },
+        {
+          "source": "/accessibility",
+          "destination": "/accessibility.html"
         },
         {
           "source": "/s/*",

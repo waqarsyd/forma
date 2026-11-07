@@ -39,6 +39,11 @@ const ELSEWHERE: Link[] = [
   // mode `data-needs-url` exists to prevent and this pair slipped past.
   ['Privacy', '/privacy'],
   ['Terms', '/terms'],
+  // 2026-11-08 (the site audit's batch SE, items 115 and 97): the statement
+  // the big sites keep beside their policies, and the notices of the
+  // open-source code Forma ships, written at build (vite.config.ts).
+  ['Accessibility', '/accessibility'],
+  ['Third-party licences', '/licenses.txt'],
 ];
 
 const HEADING =
@@ -48,15 +53,13 @@ const LINK =
 const NOTE = 'font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-faint)]';
 
 /**
- * Read once when the module loads rather than hardcoded, so the sign-off rolls
- * over on its own and nobody has to remember it every January. It follows the
- * visitor's clock, which is the right source here — a copyright line is for
- * whoever is reading it.
- *
- * This is now the only copy in the app; LoginPage had a second one until it
- * started rendering this component.
+ * The copyright line LICENSE states, word for word (2026-11-08, site audit
+ * item 83). It read "© {the visitor's year} Forma", which disagreed with the
+ * licence on both the year and the holder, and rolled over every January for
+ * a work first published in 2026. `publicClaims.test.ts` reads LICENSE and
+ * holds the two together.
  */
-const YEAR = new Date().getFullYear();
+export const COPYRIGHT = '© 2026 Waqar Sayyed';
 
 /**
  * `h2`, not `h4`. The footer is a landmark of its own, so its column headings
@@ -144,7 +147,7 @@ export default function SiteFooter({
                 reference for this chrome, so the designs follow it, not the
                 other way round. */}
             <p className={`mt-2.5 ${NOTE}`}>
-              © {YEAR} Forma. Designed &amp; built by{' '}
+              {COPYRIGHT}, open source under Apache-2.0. Designed &amp; built by{' '}
               <strong className="font-bold text-secondary">Waqar Sayyed</strong>.
             </p>
           </div>
@@ -155,10 +158,14 @@ export default function SiteFooter({
           <Column heading="Elsewhere" links={ELSEWHERE} />
         </div>
 
-        <div className="flex justify-center border-t border-outline-variant py-5 text-center select-none">
-          <span className="font-code-sm text-[10.5px] leading-[1.62] font-medium uppercase tracking-[0.14em] text-[color:var(--ink-faint)]">
-            Crafting the future of report generation.
-          </span>
+        {/* The trademark notice (2026-11-08, site audit item 35), where a
+            generic sign-off stood: Forma names DevExpress on every page, and
+            only the README said it was not theirs. */}
+        <div className="flex justify-center border-t border-outline-variant py-5 text-center">
+          <p className="max-w-[86ch] font-body-lg text-[12.5px] leading-[1.6] text-[color:var(--ink-faint)]">
+            DevExpress and XtraReports are trademarks of Developer Express Inc. Forma is an independent project, not
+            affiliated with or endorsed by Developer Express Inc.
+          </p>
         </div>
       </div>
     </footer>

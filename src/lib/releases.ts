@@ -81,6 +81,7 @@ export const RELEASES: Release[] = [
     summary:
       'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'improved', area: 'site', text: 'The privacy policy and terms describe everything Forma stores and sends, including OpenRouter, a local AI, dictation and autosave, with your rights, how long things are kept and what the free Gemini tier does with requests. There is an accessibility statement, a list of the open-source code Forma ships, and the contact form says when a message did not go through.' },
       { kind: 'new', area: 'site', text: 'The Docs page covers the whole workspace: choosing your AI, a tour of the workspace, data and binding, sharing, memory and the report library, what the checks find, and every keyboard shortcut. Its search now reads every article, and "Did this answer your question?" opens an issue on GitHub with what you typed.' },
       { kind: 'fixed', area: 'site', text: 'The home, Features and Docs pages describe Forma as it is today: settings worked out for you, OCR for scans and photos, the Preview and its exports, the chat editing in place, Batch running two or three at once from a folder, and the Apache-2.0 licence.' },
       { kind: 'improved', area: 'site', text: 'Every page has its own title, description and link preview, so a shared link to the docs or the changelog says what it is.' },

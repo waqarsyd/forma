@@ -63,7 +63,12 @@ const ROUTES: Array<[string, ReactNode]> = [
   ['A wrong layout', 'The file you uploaded, and what came back. The original PDF beats a screenshot of it — that is usually the whole explanation.'],
   ['A file the designer rejects', <>The generated <code className="doc-code">.repx</code> and your DevExpress version. The XML is checked in the browser first, so this one is worth reporting.</>],
   ['An error message', 'The exact wording, and whether it happened on the first request of the session or a later one.'],
-  ['A security issue', 'Email it privately and give it a day before sharing it anywhere public.'],
+  // As SECURITY.md says it (2026-11-08, site audit item 81): the two private
+  // routes, and not this form, which passes through a third-party relay.
+  ['A security issue', <>Report it privately: by email with "Forma security" in the subject, or through{' '}
+    <a href="https://github.com/waqarsyd/forma/security/advisories/new" target="_blank" rel="noopener" className="font-semibold text-secondary hover:underline">GitHub's private vulnerability reporting</a>.
+    Please do not open a public issue for anything that could expose someone's key or saved reports. An
+    acknowledgement comes within a few days.</>],
   ['An idea', 'What you were trying to do, more than the feature you had in mind — the underlying task is the useful part.'],
 ];
 
@@ -457,7 +462,11 @@ export default function ContactPage({
                   Send a message
                 </h2>
                 <p className="mt-2 font-body-lg text-[14.5px] leading-[1.6] text-on-surface-variant">
-                  Everything marked with an asterisk is needed. Nothing else is collected.
+                  Everything marked with an asterisk is needed. Nothing else is collected. The form is delivered by{' '}
+                  <a href="https://formsubmit.co" target="_blank" rel="noopener" className="font-semibold text-secondary hover:underline">FormSubmit</a>,
+                  a free relay that forwards what you type to the maintainer's inbox as email; the{' '}
+                  <a href="/privacy" className="font-semibold text-secondary hover:underline">privacy policy</a> says
+                  more. For a security issue, use the private routes this page lists under it instead.
                 </p>
 
                 {state === 'sent' ? (

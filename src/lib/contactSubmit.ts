@@ -38,15 +38,23 @@ export interface ContactMessage {
 /**
  * POST the message, or throw.
  *
- * Resolves only on a 2xx. Every other outcome — a non-2xx, a refused
- * connection, or the timeout — rejects, so the caller cannot mistake any of
- * them for a send.
+ * Resolves only when FormSubmit says it took the message: a 2xx whose JSON
+ * carries `success: "true"`. Every other outcome — a non-2xx, a refused
+ * connection, the timeout, or a 2xx that says `success: "false"` — rejects,
+ * so the caller cannot mistake any of them for a send.
+ *
+ * The last of those is the 2026-11-08 fix (site audit item 45). FormSubmit
+ * answers 200 to a submission it will not deliver, the first one to an
+ * address not yet activated among them, and says so only in the body; any
+ * 2xx used to count, so the page said "Message sent" over a message nobody
+ * would receive.
  */
 export async function submitContactMessage(url: string, message: ContactMessage): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CONTACT_TIMEOUT_MS);
 
   let response: Response;
+  let body = '';
   try {
     response = await fetch(url, {
       method: 'POST',
@@ -54,6 +62,8 @@ export async function submitContactMessage(url: string, message: ContactMessage)
       body: JSON.stringify(message),
       signal: controller.signal,
     });
+    // Read inside the timeout too: a relay can send its headers and stall.
+    if (response.ok) body = await response.text();
   } catch (error: any) {
     if (error?.name === 'AbortError') {
       // The wording is the point. What the visitor needs to know is not that a
@@ -73,5 +83,15 @@ export async function submitContactMessage(url: string, message: ContactMessage)
 
   if (!response.ok) {
     throw new Error(`send failed: ${response.status}`);
+  }
+  let answer: { success?: unknown; message?: unknown } = {};
+  try {
+    answer = JSON.parse(body) as typeof answer;
+  } catch {
+    throw new Error('The contact service gave an answer it could not read, so your message may not have been sent.');
+  }
+  if (String(answer?.success) !== 'true') {
+    const said = typeof answer?.message === 'string' && answer.message ? ` It said: ${answer.message}` : '';
+    throw new Error(`The contact service did not accept the message.${said}`);
   }
 }

@@ -50,6 +50,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/workspace': 'Workspace — Forma',
   '/terms': 'Terms of use — Forma',
   '/privacy': 'Privacy policy — Forma',
+  '/accessibility': 'Accessibility — Forma',
 };
 
 /**
@@ -145,6 +146,7 @@ export function viewForRoute(path: string): RouteView {
     case '/changelog':
     case '/terms':
     case '/privacy':
+    case '/accessibility':
       return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: path, notFound: false };
     default:
       // A shared report (2026-11-06): a page of its own, and signing in from

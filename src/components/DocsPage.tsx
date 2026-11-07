@@ -148,8 +148,8 @@ const FAQS: Array<{ q: string; a: ReactNode }> = [
     a: (
       <p>
         No. Generation runs entirely in your browser and talks to Google directly — there is no generation
-        endpoint on Forma's server to route through. If you sign in and save a project, that project is
-        stored in your own account; the key is never part of it.
+        endpoint on Forma's server to route through. Signed in, your projects are saved to your own account
+        as you work; the key is never part of them.
       </p>
     ),
   },
@@ -526,9 +526,9 @@ export default function DocsPage({
                   Without a key the message box is locked, and its button opens Settings at the key; Settings is
                   also under Configure in the sidebar.
                 </Def>
-                <Def t="3 · Paste and save">
-                  The key is checked with a single one-token request, which also works out which model your
-                  key can reach.
+                <Def t="3 · Paste it">
+                  Into Settings → Gemini key, where it takes effect as you paste it. Check key sends a single
+                  one-token request, which also works out which model your key can reach.
                 </Def>
               </dl>
 
@@ -1133,6 +1133,10 @@ y_top = pageHeight − (baseline + height)`}
 
             <Article id="saving" kicker="Guide" title="Saving your work" hidden={!matches('saving')}>
               <dl className="border-t border-outline-variant">
+                <Def t="Saved as you work">
+                  There is nothing to remember to do: a project is saved a moment after each change, and as soon as
+                  a message is sent. Save above the report saves at once.
+                </Def>
                 <Def t="Signed in">
                   Projects are saved to your account and appear on every device you sign in from.
                 </Def>

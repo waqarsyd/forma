@@ -613,7 +613,9 @@ src/
                        (what the chat box keeps as a memory, sends straight
                        to a design, or reads as an answer), composerStore
                        (an unsent draft per project, and the queue, kept in
-                       the tab over a reload), docsSearch (the Docs page's
+                       the tab over a reload), licenceNotice (the
+                       third-party notices /licenses.txt is written
+                       from at build), docsSearch (the Docs page's
                        search over each article's words, and its feedback
                        as a prefilled GitHub issue), datetime,
                        modelCatalog, reportConfigStore, designerBridge,

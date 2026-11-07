@@ -82,6 +82,21 @@ const DISCLOSURES: Array<{
     probe: 'generativelanguage.googleapis.com',
     mustName: /Gemini/i,
   },
+  // 2026-11-08 (the site audit's batch SE, item 15): the AI a user may choose
+  // instead, which the policy did not name for a week after it shipped.
+  {
+    host: 'openrouter.ai',
+    source: 'src/lib/aiProvider.ts',
+    probe: read('src/lib/aiProvider.ts'),
+    mustName: /OpenRouter/,
+  },
+  // Dictation: the browser's speech service hears the audio (item 51).
+  {
+    host: 'SpeechRecognition',
+    source: 'src/components/Composer.tsx',
+    probe: read('src/components/Composer.tsx'),
+    mustName: /speech recognition/i,
+  },
 ];
 
 describe('privacy policy discloses every third party in the path', () => {
@@ -203,7 +218,12 @@ describe('privacy policy discloses every third party in the path', () => {
     // reads that report from Firestore (SharedReportPage.tsx). The flow is
     // read off the router, so removing the shared page takes it out again.
     const sharedPage = read('src/lib/routes.ts').includes('export function sharedReportId');
-    const flows = 2 + (sharedPage ? 1 : 0) + (indexHtml.includes('fonts.googleapis.com') ? 1 : 0);
+    // Four since 2026-11-08 (the site audit's batch SE, item 51): dictation
+    // hands the user's voice to the browser's speech service, which in Chrome
+    // and Edge is a server. Read off the composer, so taking the microphone
+    // out takes the flow out again.
+    const dictation = read('src/components/Composer.tsx').includes('SpeechRecognition');
+    const flows = 2 + (sharedPage ? 1 : 0) + (dictation ? 1 : 0) + (indexHtml.includes('fonts.googleapis.com') ? 1 : 0);
 
     expect(
       legal,
@@ -276,9 +296,16 @@ describe('the legal copy and its date change together', () => {
      Moved again on 2026-11-06 for sharing: a shared copy is stored and
      readable by others, opening a shared link signed out reaches the
      database (the closed set went from two to three), and deleting a project
-     or an account removes its shares. Substantive, so the date moved. */
-  const EXPECTED_COPY_HASH = 'd1b344bcec21';
-  const EXPECTED_UPDATED = '6 November 2026';
+     or an account removes its shares. Substantive, so the date moved.
+
+     Moved again on 2026-11-08 (the site audit's batch SE): both documents
+     rewritten from an inventory of the code's storage and outbound calls
+     (OpenRouter, a local AI, dictation, autosave, memory, the library, the
+     host's logs, the closed set going from three to four), with who runs
+     Forma, the rights, retention, cookies, the age and the trademark notice,
+     and the accessibility statement added to the same block. */
+  const EXPECTED_COPY_HASH = 'b8947e3b4bdd';
+  const EXPECTED_UPDATED = '8 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);

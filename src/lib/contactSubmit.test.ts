@@ -26,6 +26,9 @@ const MESSAGE = {
 
 const URL = 'https://formsubmit.co/ajax/someone@example.com';
 
+/** What FormSubmit's JSON endpoint answers when it takes a message. */
+const ACCEPTED = JSON.stringify({ success: 'true', message: 'The form was submitted successfully.' });
+
 /** A fetch that accepts the connection and never answers, but honours abort. */
 const hangingFetch = () =>
   vi.fn((_url: string, init?: RequestInit) =>
@@ -50,7 +53,7 @@ describe('submitContactMessage', () => {
     // `init` is not optional here: submitContactMessage always passes one, and
     // saying so is what lets the assertions below read it without a `!`.
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
-      new Response('{}', { status: 200 })
+      new Response(ACCEPTED, { status: 200 })
     );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -93,6 +96,21 @@ describe('submitContactMessage', () => {
     await expect(submitContactMessage(URL, MESSAGE)).rejects.toThrow(/500/);
   });
 
+  it('treats a 2xx FormSubmit did not accept as a failure, with its reason (site audit item 45)', async () => {
+    // The first message to an address not yet activated is answered 200 with
+    // success "false"; any 2xx used to count, so the page said "Message sent".
+    const refused = JSON.stringify({ success: 'false', message: 'This form needs Activation.' });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(refused, { status: 200 })));
+    await expect(submitContactMessage(URL, MESSAGE)).rejects.toThrow(/did not accept the message\. It said: This form needs Activation\./);
+  });
+
+  it('treats a 2xx it cannot read as not sent', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>Thanks</html>', { status: 200 })));
+    await expect(submitContactMessage(URL, MESSAGE)).rejects.toThrow(/may not have been sent/);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await expect(submitContactMessage(URL, MESSAGE)).rejects.toThrow(/did not accept/);
+  });
+
   it('propagates a refused connection', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
     await expect(submitContactMessage(URL, MESSAGE)).rejects.toThrow(/Failed to fetch/);
@@ -100,7 +118,7 @@ describe('submitContactMessage', () => {
 
   it('clears its timer on success, so a resolved send cannot abort later', async () => {
     vi.useFakeTimers();
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(ACCEPTED, { status: 200 })));
 
     await submitContactMessage(URL, MESSAGE);
     // If the timer survived, advancing past the budget would abort a completed

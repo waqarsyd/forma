@@ -5464,7 +5464,10 @@ export default function App() {
     const isContact = currentRoute === '/contact';
     const isChangelog = currentRoute === '/changelog';
     const legalDoc: LegalDoc | null =
-      currentRoute === '/terms' ? 'terms' : currentRoute === '/privacy' ? 'privacy' : null;
+      currentRoute === '/terms' ? 'terms'
+        : currentRoute === '/privacy' ? 'privacy'
+          : currentRoute === '/accessibility' ? 'accessibility'
+            : null;
 
     return (
       /* `inert` while the sign-in dialog is open, rather than unmounting.

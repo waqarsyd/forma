@@ -30,7 +30,7 @@ export const REPOSITORY = 'https://github.com/waqarsyd/forma';
 export const CONTACT_EMAIL = 'waqarsayyed.official@gmail.com';
 
 /** The pages a search engine may index: the public ones. */
-export const INDEXED_ROUTES = ['/', '/features', '/docs', '/contact', '/changelog', '/terms', '/privacy'] as const;
+export const INDEXED_ROUTES = ['/', '/features', '/docs', '/contact', '/changelog', '/terms', '/privacy', '/accessibility'] as const;
 
 /** One sentence per route, for search results and link previews. The home page's is index.html's own. */
 export const ROUTE_DESCRIPTIONS: Record<string, string> = {
@@ -41,6 +41,7 @@ export const ROUTE_DESCRIPTIONS: Record<string, string> = {
   '/changelog': 'What is new in Forma, release by release, with an Atom feed.',
   '/terms': 'The terms of use for Forma, a free and open-source DevExpress report designer.',
   '/privacy': 'How Forma handles your data, your Gemini key and the files you upload.',
+  '/accessibility': 'What Forma does to be usable by everyone, what still falls short, and how to tell us.',
   '/login': 'Sign in to Forma to keep your reports in your account.',
   '/signup': 'Create a free Forma account to keep your reports in your account.',
   '/workspace': 'The Forma workspace: a screenshot, a PDF or a description to a DevExpress report.',
