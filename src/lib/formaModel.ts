@@ -22,6 +22,7 @@
  */
 import { FEATURE_NAMES, skeletonFeatures, skeletonTexts, type ReportSkeleton, type SkeletonRole } from './reportSkeleton';
 import type { BandKind } from './reportPreview';
+import { MODEL_BASE } from './assetPaths';
 
 /**
  * The generic report categories a folder or a request can name, each with the
@@ -40,7 +41,7 @@ export const CATEGORY_WORDS: Record<string, string[]> = {
 };
 
 /** Where the browser fetches the shipped model from (see MODEL_ASSETS in vite.config.ts). */
-export const MODEL_URL = '/model/formaModel.json';
+export const MODEL_URL = `${MODEL_BASE}formaModel.json`;
 
 let loading: Promise<FormaModel> | null = null;
 

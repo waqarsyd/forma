@@ -30,7 +30,7 @@ It is built around one constraint that shaped everything else: **the application
 
 ## Demo
 
-**Live at [openforma.web.app](https://openforma.web.app)** — built from `main` and deployed by hand, so it can trail the newest commits; what changed, and when, is on the [changelog](https://openforma.web.app/changelog). It runs signed out with no account, and generating a report needs a Gemini API key of your own, which you paste into Settings and which never leaves your browser.
+**Live at [openforma.web.app](https://openforma.web.app)** — built from `main` and deployed by hand, so it can trail the newest commits: the page names the commit it was built from in `<meta name="forma-version">`, and a daily check ([`live.yml`](.github/workflows/live.yml)) says when it is behind `main`. What changed, and when, is on the [changelog](https://openforma.web.app/changelog). It runs signed out with no account, and generating a report needs a Gemini API key of your own, which you paste into Settings and which never leaves your browser.
 
 ![Forma's home page: upload a report design and get a specification, a live mockup and valid DevExpress XML](docs/media/screenshot.png)
 
@@ -599,7 +599,11 @@ src/
                        attachments, panelSize, sidebar (the workspace sidebar
                        opening and closing as Gemini's and ChatGPT's do: the
                        phone breakpoint, Ctrl+B, the toggle's name),
-                       releases (the release notes behind /changelog,
+                       assetPaths (where the OCR engine, the PDF/A fonts
+                       and the models are served, in folders named for
+                       their contents), staleChunks (a tab open across a
+                       deploy reloads once for the new build), releases
+                       (the release notes behind /changelog,
                        its Atom feed and What's new), announcements,
                        replyChanges (the chat's changes kept in the tab, so
                        a reply's Undo and Redo outlive a reload), chatTurn
@@ -671,9 +675,10 @@ src/
                        compatClient (local AI and OpenRouter in the shape of
                        Gemini's SDK) and formaVision (Forma's vision model
                        asked through the local endpoint), each + tests
-  server/              securityHeaders, bindHost and staticCache (+ tests) —
-                       what server.ts sends, where it listens, and how long
-                       dist/ is cached for. Under src/ but never bundled
+  server/              securityHeaders, bindHost, staticCache and appRoutes
+                       (+ tests) — what server.ts sends, where it listens,
+                       how long dist/ is cached for, and which paths are
+                       the app's rather than a 404. Under src/ but never bundled
                        into the client; server.ts is the only importer
   fonts/               the three self-hosted typefaces as variable woff2, their
                        SIL OFL licences, and a README — referenced from
@@ -749,6 +754,7 @@ firebase-applet-config.json
 | `npm run lint:encoding` | Fails if any source file contains mojibake |
 | `npm run lint:links` | Fails if a relative link or a cited section heading in the docs does not resolve |
 | `npm run check:size` | Artifact size budgets — run `build` first |
+| `npm run smoke` | Checks the deployed site over the network: every route, the entry chunk, the headers, the feed, and once it runs `main`'s build, a 404 for an unknown path and a missing chunk. Read-only; `.github/workflows/live.yml` runs it daily |
 | `npm run fetch:handwriting` | Download the handwriting model (about 64 MB, pinned by SHA-256) into `vendor/handwriting/` for the next build — see *Handwriting is a deploy-time decision* |
 | `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |
@@ -817,12 +823,16 @@ Set `HTTPS="true"` **only where TLS actually terminates**, so HSTS is sent. Set 
 **The target is Firebase Hosting, on the free Spark plan**, chosen on 2026-09-08. The app has no server state — Firestore and Gemini are both called from the browser with the user's own key — so everything `server.ts` does in production is static-host territory, and running a Node process to serve five megabytes of files buys nothing. Two things decided it over Cloudflare Pages: the *default* domain is already in the API key's referrer allowlist and Firebase Auth's authorised domains, so sign-in works there with no reconfiguration; and it is one vendor rather than two. Measured, a cold visit transfers about 490 kB, so the free tier's 360 MB/day is roughly 730 visits a day.
 
 ```bash
-npm run build
-npx firebase deploy --only hosting          # every site in firebase.json
-npx firebase deploy --only firestore:rules  # the rules, deployed separately
+node scripts/deploy.mjs              # main as pushed: every check, the build, hosting AND the rules, then the live checks
+node scripts/deploy.mjs --preview    # the same build on a 7-day preview channel; the live site is untouched
+node scripts/deploy.mjs --dry-run    # everything but the deploy
 ```
 
-**Handwriting is a deploy-time decision.** The handwriting model (2026-11-04, used when a page looks handwritten) is served only by a build made after `npm run fetch:handwriting`, which downloads it into the gitignored `vendor/handwriting/`, pinned by SHA-256. Each visitor whose page looks handwritten downloads about 88 MB once, a quarter of the free plan's 360 MB a day, and on Spark a product that passes its quota is switched off rather than billed. Deploy without fetching it and the site serves no model, and OCR keeps its own reading of a handwritten page.
+**One deploy, the same every time (2026-11-07).** `scripts/deploy.mjs` refuses unless it is deploying `main` exactly as pushed (a clean tree, equal to `origin/main`), runs every check CI runs plus the rules suite, builds, deploys hosting and `firestore.rules` together, and then runs `scripts/smoke.mjs` against both sites expecting the commit it built. The site had served the build of 28 October for weeks while this file said it was `main`, and the sharing rules were never deployed with the code that needs them. It is deliberately not an npm script: the committed permission list allows `npm run *`, and a deploy must not be something an agent can start without asking. The two commands it runs are still the way by hand: `npx firebase deploy --only hosting` and `npx firebase deploy --only firestore:rules`.
+
+**Rolling back.** The Hosting console's *Release history* has a *Rollback* on every earlier release, for each site; from the command line, `npx firebase hosting:clone forma-201ba:<version id> forma-201ba:live` (and the same for `openforma`) puts a listed version back. The rules are not versioned by Hosting: deploy them from the commit before, `git show <commit>~1:firestore.rules > firestore.rules` and `npx firebase deploy --only firestore:rules`, then restore the file. A preview channel (`--preview`) is the way to look at a build before it is anyone's.
+
+**Handwriting is a deploy-time decision.** The handwriting model (2026-11-04, used when a page looks handwritten) is served only by a build made after `npm run fetch:handwriting`, which downloads it into the gitignored `vendor/handwriting/`, pinned by SHA-256, **and asked for by name**: `FORMA_HANDWRITING=1 npm run build`, or `node scripts/deploy.mjs --with-handwriting`. Until 2026-11-07 any build on a machine that had once fetched it shipped it. Each visitor whose page looks handwritten downloads about 88 MB once, a quarter of the free plan's 360 MB a day, and on Spark a product that passes its quota is switched off rather than billed. Deploy without fetching it and the site serves no model, and OCR keeps its own reading of a handwritten page.
 
 **`hosting` is an array — one entry per site**, because Firebase cannot share a block between sites. The entries are identical apart from `site`, and the test below asserts that: a second site quietly missing an origin from `connect-src` would keep serving while defending less, and both URLs would look fine. Generate the duplicate rather than typing it.
 
@@ -835,7 +845,7 @@ Skip either and the site renders perfectly with an empty console, because Fireba
 
 **The headers in `firebase.json` are derived, not written by hand.** A static host cannot run `server.ts`, so the whole security header set has to be restated there — including `connect-src`, which is what makes a stolen Gemini key worthless to injected script. That copy is pinned by [`src/server/hostingConfig.test.ts`](src/server/hostingConfig.test.ts), which builds the headers from `securityHeaders.ts` and `staticCache.ts` and fails if `firebase.json` disagrees, printing the JSON to paste back. **Change the policy in `securityHeaders.ts` and let the test tell you what `firebase.json` should say** — never the other way round.
 
-Two differences from `npm start` worth knowing. Firebase terminates TLS itself, so HSTS is set unconditionally in `firebase.json` rather than gated on `HTTPS`. And a stale `/assets/*` hash returns `index.html` with a 200 instead of the 404 the Express server gives, because Firebase rewrites cannot answer 404 on the free plan; the risk is small because `index.html` is `no-cache`, so a returning visitor revalidates the document before it can request a deleted chunk.
+One difference from `npm start` worth knowing: Firebase terminates TLS itself, so HSTS is set unconditionally in `firebase.json` rather than gated on `HTTPS`. **Both now answer a path that is not the app with a 404** (2026-11-07): `firebase.json` rewrites only the router's routes and a shared report's `/s/*` (derived from `src/server/appRoutes.ts`, and asserted), so an unknown address and a chunk from an earlier deploy fall through to Firebase's own 404, which serves the built `dist/404.html` (`noindex`; the app draws Not found). Until then every path was the home page with a 200, a stale chunk included, which broke a tab left open across a deploy; such a tab now reloads once for the new build (`src/lib/staleChunks.ts`). OCR's engine, the PDF/A fonts and the models are served from folders named for their contents (`/ocr/<hash>/…`) and cached for good, like the hashed bundle.
 
 **"Open in designer" cannot work on any HTTPS deployment.** The companion listens on plain `http://127.0.0.1:7317`, which a secure page may not call — mixed content. It is a localhost-development convenience; Export `.repx` is the path that always works.
 

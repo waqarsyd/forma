@@ -3,6 +3,11 @@ import {createRoot} from 'react-dom/client';
 import {MotionConfig} from 'motion/react';
 import App from './App.tsx';
 import './index.css';
+import {isStaleChunkError, reloadForStaleChunk, watchForStaleChunks} from './lib/staleChunks';
+
+// A tab open across a deploy reloads once for the new build rather than break
+// on its next lazy load (2026-11-07, site audit item 1; lib/staleChunks.ts).
+watchForStaleChunks();
 
 class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean, error: Error | null}> {
   constructor(props: {children: ReactNode}) {
@@ -15,6 +20,9 @@ class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean,
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // A lazy component whose chunk a deploy removed: reload once for the new
+    // build rather than show this page (site audit item 1).
+    if (isStaleChunkError(error) && reloadForStaleChunk()) return;
     console.error("Uncaught error:", error, errorInfo);
   }
 

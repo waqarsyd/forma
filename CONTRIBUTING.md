@@ -73,7 +73,9 @@ the same reason.)
 
 **Every baseline is clean**, so anything any of them prints is yours.
 
-One script is deliberately not in that table. `npm run bench:fidelity` generates the
+Two more are deliberately not in that table. `npm run smoke` checks the *deployed* site
+over the network, read-only, and `.github/workflows/live.yml` runs it every day; it says
+nothing about your change, which is not deployed. And `npm run bench:fidelity` generates the
 cases under `scripts/fidelity/cases` through the real pipeline with your own Gemini key
 and scores what comes back; it spends quota and takes minutes, so it is a benchmark
 rather than a check and runs by hand. **A change to the prompt, the model order, a

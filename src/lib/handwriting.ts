@@ -25,6 +25,7 @@
  */
 import type { OcrPage } from './ocr';
 import type { PixelBox } from './reportGeometry';
+import { HANDWRITING_ASSET_BASE } from './assetPaths';
 /*
  * ONNX Runtime's glue and WebAssembly, as URLs of this site's own copies.
  * Transformers.js points the runtime at cdn.jsdelivr.net otherwise, which the
@@ -39,8 +40,8 @@ import ortWasm from '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threa
 export const HANDWRITING_BELOW = 70;
 /** The confidence a line read by TrOCR is given: high enough not to be flagged, no higher. */
 export const HANDWRITING_CONFIDENCE = 60;
-/** Where the model and the runtime are served. */
-export const HANDWRITING_BASE = '/handwriting/';
+/** Where the model is served: a folder the build names for its contents (lib/assetPaths.ts). */
+export const HANDWRITING_BASE = HANDWRITING_ASSET_BASE;
 const MODEL = 'Xenova/trocr-small-handwritten';
 
 /** One of the model's files, asked for to learn whether this site serves it. */

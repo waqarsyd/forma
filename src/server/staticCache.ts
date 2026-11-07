@@ -21,8 +21,11 @@
  * `og-card.png`, the logos. Their URLs are stable by design, because the OG card
  * is referenced by absolute path from `index.html` and scrapers cache it. Give
  * those a long max-age and replacing a logo would not reach anyone who had
- * already loaded it, with no way to force it short of renaming the file. They
- * get revalidation instead, which is what they had.
+ * already loaded it, with no way to force it short of renaming the file. A
+ * picture gets an hour (`IMAGE_CACHE`), as firebase.json has always given it;
+ * this module said revalidate until 2026-11-07 (site audit item 90), so the
+ * deployed site and `npm start` disagreed with nothing comparing them. Other
+ * unhashed files revalidate.
  *
  * `index.html` is the one that must never be cached hard: it carries the
  * `<script src>` naming the current hashed bundle, so a stale copy pins a
@@ -36,6 +39,35 @@ const ONE_YEAR = 31536000;
 
 export const IMMUTABLE = `public, max-age=${ONE_YEAR}, immutable`;
 export const REVALIDATE = 'no-cache';
+/**
+ * An unhashed picture from `public/` (the favicon, the OG card, the logos):
+ * an hour, so a replaced logo reaches everyone within one without renaming it.
+ * firebase.json had this rule alone, untested, until 2026-11-07 (site audit
+ * item 90); it is derived from here now, as the other rules are.
+ */
+export const IMAGE_CACHE = 'public, max-age=3600';
+/** The picture extensions IMAGE_CACHE covers, as firebase.json's glob names them. */
+export const IMAGE_EXTENSIONS = ['png', 'webp', 'ico', 'svg', 'jpg', 'jpeg'] as const;
+
+/**
+ * The folders whose files the build puts under a name made from their
+ * contents (2026-11-07, site audit item 91; `versionOf` in vite.config.ts):
+ * `/ocr/3f9a1c20b7/worker.min.js`. A new engine, font or model is a new
+ * folder, so a file at a given path never changes and is IMMUTABLE, as a
+ * hashed bundle is. They were at fixed paths and revalidated on every use.
+ */
+export const VERSIONED_DIRS = ['ocr', 'pdf-fonts', 'model', 'handwriting'] as const;
+
+/** Whether a path is a file in a versioned folder: `<dir>/<ten hex digits>/<file>`. */
+export function isVersioned(filePath: string): boolean {
+  const normalised = filePath.replace(/\\/g, '/');
+  return new RegExp(`(^|/)(${VERSIONED_DIRS.join('|')})/[0-9a-f]{10}/[^/]`).test(normalised);
+}
+
+/** Whether a path is a picture IMAGE_CACHE covers. */
+export function isImage(filePath: string): boolean {
+  return new RegExp(`\\.(${IMAGE_EXTENSIONS.join('|')})$`, 'i').test(filePath);
+}
 
 /**
  * Is this a build artifact whose name changes with its content?
@@ -84,5 +116,6 @@ export function isContentHashed(filePath: string): boolean {
  * the same reason `securityHeaders.ts` exists as its own module.
  */
 export function cacheControlFor(filePath: string): string {
-  return isContentHashed(filePath) ? IMMUTABLE : REVALIDATE;
+  if (isContentHashed(filePath) || isVersioned(filePath)) return IMMUTABLE;
+  return isImage(filePath) ? IMAGE_CACHE : REVALIDATE;
 }

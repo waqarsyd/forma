@@ -40,15 +40,16 @@
  * `/assets/**` overrides it — **last matching rule wins**, which is why the
  * immutable rule is last in the array and must stay there.
  *
- * ## What is deliberately NOT mirrored
+ * ## Only the app's paths are rewritten (2026-11-07, site audit items 1 and 52)
  *
- * `server.ts` returns **404** for a stale `/assets/*` hash rather than falling
- * through to `index.html`. Firebase Hosting cannot express that: its rewrites
- * always answer 200 and there is no "404 this pattern" on the free plan. So a
- * missing chunk arrives as HTML with a 200 and fails as a parse error. That is
- * survivable only because the document above it genuinely revalidates now —
- * which, until this was measured, it did not. Cloudflare Pages *can* express
- * it, with an `/assets/*` rule above the SPA catch-all, if this ever moves.
+ * This said, until that day, that Firebase could not 404 a stale `/assets/*`
+ * hash because "its rewrites always answer 200". True of a `**` rewrite, which
+ * this config had: every unknown path, and every chunk a deploy removed, came
+ * back as the home page with a 200, the chunk cached for a year as immutable.
+ * The rewrites now name the router's routes and a shared report's `/s/*`
+ * (`hostingRewrites` in appRoutes.ts), so anything else falls through to
+ * Firebase's own 404 handling, which serves `dist/404.html` with a 404 status,
+ * and a page that asks for a stale chunk reloads once (lib/staleChunks.ts).
  *
  * `Strict-Transport-Security` is asserted here but **cannot be observed on
  * `*.web.app`**: Firebase replaces it with its own preloaded value. The
@@ -57,7 +58,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { securityHeadersFor } from './securityHeaders';
-import { IMMUTABLE, REVALIDATE } from './staticCache';
+import { IMAGE_CACHE, IMAGE_EXTENSIONS, IMMUTABLE, REVALIDATE, VERSIONED_DIRS } from './staticCache';
+import { hostingRewrites } from './appRoutes';
 
 /** Read off disk rather than imported, so the committed file is what is tested. */
 const config = JSON.parse(readFileSync('firebase.json', 'utf8'));
@@ -113,11 +115,16 @@ describe('firebase.json hosting', () => {
 
   /*
    * The SPA fallback. Every route in this app is a real path (see lib/router),
-   * so a deep link to /docs must serve index.html rather than 404.
+   * so a deep link to /docs must serve index.html rather than 404, and a path
+   * that is no route must not (site audit item 52): the rewrites are the
+   * router's routes and /s/*, derived, so a new route is a failure here that
+   * prints what to paste.
    */
-  it('serves index.html for any path, so deep links work', () => {
+  it('serves index.html for the routes and shared reports, and nothing else', () => {
+    const expected = hostingRewrites();
     for (const s of sites) {
-      expect(s.rewrites, `site ${s.site}`).toEqual([{ source: '**', destination: '/index.html' }]);
+      if (JSON.stringify(s.rewrites) === JSON.stringify(expected)) continue;
+      expect.fail(`site ${s.site}'s rewrites are not the app's routes. Paste this as "rewrites":\n${JSON.stringify(expected, null, 2)}`);
     }
   });
 
@@ -145,8 +152,21 @@ describe('firebase.json hosting', () => {
     expect(Object.keys(actual).sort()).toEqual(Object.keys(expected).sort());
   });
 
-  it('carries the same cache policy staticCache.ts applies', () => {
-    expect(asMap(ruleFor('/assets/**'))['Cache-Control']).toBe(IMMUTABLE);
+  /*
+   * Every cache rule after the catch-all, derived from staticCache.ts: the
+   * pictures (item 90, the one rule that was firebase.json's alone), the
+   * versioned folders (item 91), and the hashed assets last, which must win.
+   */
+  it('carries the same cache policy staticCache.ts applies, in that order', () => {
+    const expected = [
+      { source: `**/*.@(${IMAGE_EXTENSIONS.join('|')})`, headers: [{ key: 'Cache-Control', value: IMAGE_CACHE }] },
+      ...VERSIONED_DIRS.map((dir) => ({ source: `/${dir}/**`, headers: [{ key: 'Cache-Control', value: IMMUTABLE }] })),
+      { source: '/assets/**', headers: [{ key: 'Cache-Control', value: IMMUTABLE }] },
+    ];
+    const actual = rules.slice(1);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      expect.fail(`the cache rules after "**" are not staticCache.ts's. Paste these after the "**" rule:\n${JSON.stringify(expected, null, 2)}`);
+    }
     expect(asMap(ruleFor('**'))['Cache-Control']).toBe(REVALIDATE);
   });
 

@@ -16,6 +16,7 @@
  * before the user ticked languages in Settings.
  */
 import type { PixelBox } from './reportGeometry';
+import { OCR_BASE, OCR_WORKER } from './assetPaths';
 import { OTHER_SCRIPTS, bestScript, latinLanguageOf, looksHandwritten, meanConfidence, probeLines, readsAsLatin } from './ocrScript';
 
 /** One recognized word: its text, its box in the image's pixels, and Tesseract's confidence, 0 to 100. */
@@ -104,9 +105,10 @@ async function loadEngine(languages = 'eng'): Promise<Engine> {
     engine = import('tesseract.js')
       .then(({ createWorker, OEM }) =>
         createWorker(languages, OEM.LSTM_ONLY, {
-          workerPath: '/ocr/worker.min.js',
-          corePath: '/ocr/',
-          langPath: '/ocr/',
+          // Versioned by the build (site audit item 91, lib/assetPaths.ts).
+          workerPath: OCR_WORKER,
+          corePath: OCR_BASE,
+          langPath: OCR_BASE,
           gzip: true,
           logger: (m: { status: string; progress: number }) => listener?.(m.status, m.progress),
         }),

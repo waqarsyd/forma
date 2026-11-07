@@ -3,7 +3,9 @@ import compression from "compression";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 import { securityHeadersFor } from "./src/server/securityHeaders";
+import { isAppPath } from "./src/server/appRoutes";
 import { resolveBindHost } from "./src/server/bindHost";
 import { cacheControlFor, REVALIDATE } from "./src/server/staticCache";
 
@@ -165,9 +167,19 @@ async function startServer() {
     // `setHeaders` above -- that hook belongs to express.static. Set it here
     // too, or every deep link (which is most navigations) gets a different
     // caching policy from the same file served at `/`.
-    app.get('*', (_req, res) => {
+    //
+    // Only the app's own paths get the app (2026-11-07, site audit item 52,
+    // src/server/appRoutes.ts), as firebase.json now rewrites only those:
+    // anything else is a 404 with the built 404.html, which the app draws as
+    // Not found and search engines do not index as a copy of the home page.
+    app.get('*', (req, res) => {
       res.setHeader('Cache-Control', REVALIDATE);
-      res.sendFile(path.join(distPath, 'index.html'));
+      if (isAppPath(req.path)) {
+        res.sendFile(path.join(distPath, 'index.html'));
+        return;
+      }
+      const notFound = path.join(distPath, '404.html');
+      res.status(404).sendFile(fs.existsSync(notFound) ? notFound : path.join(distPath, 'index.html'));
     });
   }
 

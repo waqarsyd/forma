@@ -81,6 +81,9 @@ export const RELEASES: Release[] = [
     summary:
       'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'fixed', area: 'site', text: 'A tab left open while Forma is updated reloads itself once for the new version, instead of breaking on the next thing it opens.' },
+      { kind: 'fixed', area: 'site', text: 'An address that is not a page now says “Not found” with a proper 404, rather than showing the home page.' },
+      { kind: 'improved', area: 'site', text: 'Reading a picture starts sooner on a later visit: the text reader and Forma’s models are kept by the browser until they change.' },
       { kind: 'fixed', area: 'workspace', text: 'Copy works on a page without a secure connection, and says so when the browser refuses the clipboard.' },
       { kind: 'improved', area: 'chat', text: 'A long conversation keeps its newest messages in full and still remembers what you asked at the start, and a long pasted schema no longer crowds out the rest.' },
       { kind: 'improved', area: 'chat', text: 'Edits made in the chat are quicker on a large report: each version of it is read once rather than three or four times.' },

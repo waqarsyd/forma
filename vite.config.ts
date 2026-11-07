@@ -1,7 +1,9 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import {defineConfig, type Plugin} from 'vite';
-import {createReadStream, existsSync, readFileSync} from 'node:fs';
+import {createReadStream, existsSync, readFileSync, writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {execSync} from 'node:child_process';
 import {resolve} from 'node:path';
 import {atomFeed, RELEASES} from './src/lib/releases';
 
@@ -70,20 +72,52 @@ const MODEL_ASSETS: Record<string, string> = {
  * keeps Tesseract's reading of a handwritten page (`handwritingServed`).
  */
 const HANDWRITING_MODEL = 'vendor/handwriting/Xenova/trocr-small-handwritten';
-const HANDWRITING_ASSETS: Record<string, string> = Object.fromEntries(
-  ['config.json', 'generation_config.json', 'preprocessor_config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/encoder_model_quantized.onnx', 'onnx/decoder_model_merged_quantized.onnx']
-    .map((f) => [`models/Xenova/trocr-small-handwritten/${f}`, `${HANDWRITING_MODEL}/${f}`])
-    .filter(([, source]) => existsSync(resolve(source))),
-);
+/*
+ * Only when the build is asked for it (2026-11-07, site audit item 2):
+ * `FORMA_HANDWRITING=1 npm run build`. It was included whenever
+ * vendor/handwriting held the model, so a deploy from a machine that had once
+ * run fetch:handwriting shipped 68 MB of model onto the free plan's 360 MB a
+ * day without anyone deciding to. README's *Handwriting* has the decision.
+ */
+const WITH_HANDWRITING = process.env.FORMA_HANDWRITING === '1';
+const HANDWRITING_ASSETS: Record<string, string> = WITH_HANDWRITING
+  ? Object.fromEntries(
+      ['config.json', 'generation_config.json', 'preprocessor_config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/encoder_model_quantized.onnx', 'onnx/decoder_model_merged_quantized.onnx']
+        .map((f) => [`models/Xenova/trocr-small-handwritten/${f}`, `${HANDWRITING_MODEL}/${f}`])
+        .filter(([, source]) => existsSync(resolve(source))),
+    )
+  : {};
+
+/**
+ * A folder name for a set of files, from their contents (2026-11-07, site
+ * audit item 91): ten hex digits of a SHA-256 over every name and every byte,
+ * so a new engine, font or model gets a new URL and the old one can be cached
+ * for good, as the hashed bundle is (`VERSIONED_DIRS` in src/server/
+ * staticCache.ts, and firebase.json's rules). The client reads the paths from
+ * `__FORMA_ASSETS__` (src/lib/assetPaths.ts).
+ */
+function versionOf(files: Record<string, string>): string {
+  const hash = createHash('sha256');
+  for (const name of Object.keys(files).sort()) {
+    hash.update(name);
+    const source = resolve(files[name]);
+    if (existsSync(source)) hash.update(readFileSync(source));
+  }
+  return hash.digest('hex').slice(0, 10);
+}
 
 const CONTENT_TYPES: Record<string, string> = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.ttf': 'font/ttf', '.json': 'application/json' };
 
-/** Files served at `/<dir>/` from their sources in development and copied into `dist/<dir>/` at build. */
-function servedAssets(dir: string, files: Record<string, string>): Plugin {
+/**
+ * Files served at `/<dir>/<version>/` from their sources in development and
+ * copied into `dist/<dir>/<version>/` at build; `version` names the contents
+ * (`versionOf`), since 2026-11-07.
+ */
+function servedAssets(dir: string, files: Record<string, string>, version: string): Plugin {
   return {
     name: `forma-${dir}-assets`,
     configureServer(server) {
-      server.middlewares.use(`/${dir}`, (req, res, next) => {
+      server.middlewares.use(`/${dir}/${version}`, (req, res, next) => {
         const name = (req.url ?? '').replace(/^\//, '').split('?')[0];
         if (!(name in files)) return next();
         const ext = /\.[a-z]+$/.exec(name)?.[0] ?? '';
@@ -93,8 +127,60 @@ function servedAssets(dir: string, files: Record<string, string>): Plugin {
     },
     generateBundle() {
       for (const [name, source] of Object.entries(files)) {
-        this.emitFile({ type: 'asset', fileName: `${dir}/${name}`, source: readFileSync(resolve(source)) });
+        this.emitFile({ type: 'asset', fileName: `${dir}/${version}/${name}`, source: readFileSync(resolve(source)) });
       }
+    },
+  };
+}
+
+/** The served sets' folder names, computed once per build or dev server. */
+const VERSIONS = {
+  ocr: versionOf(OCR_ASSETS),
+  pdfFonts: versionOf(PDF_FONT_ASSETS),
+  model: versionOf(MODEL_ASSETS),
+  handwriting: versionOf(HANDWRITING_ASSETS),
+};
+
+/** The commit the build is made from, or "unknown" outside a git checkout. */
+function commitOf(): string {
+  try {
+    return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * The page says which commit it was built from, and a missing page is a real
+ * 404 (2026-11-07, site audit items 3 and 52).
+ *
+ * `<meta name="forma-version">` carries the commit, so anyone, and the
+ * scheduled check in .github/workflows/live.yml, can tell what the live site
+ * runs: it served the 28 October build for weeks while README said it was
+ * main. A meta element, not a script, so the inline script's CSP hash in
+ * securityHeaders.ts is unchanged.
+ *
+ * `404.html` is the built page again, with `noindex`: Firebase serves it, with
+ * a 404 status, for any path firebase.json does not rewrite to the app, and
+ * the app draws its own Not found there. Every unknown path, and every stale
+ * chunk, was the home page with a 200 until then.
+ */
+function versionAndNotFound(): Plugin {
+  const commit = commitOf();
+  let outDir = 'dist';
+  return {
+    name: 'forma-version-and-404',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    transformIndexHtml(html) {
+      return html.replace('</head>', `  <meta name="forma-version" content="${commit}" />\n  </head>`);
+    },
+    closeBundle() {
+      const index = resolve(outDir, 'index.html');
+      if (!existsSync(index)) return;
+      const page = readFileSync(index, 'utf8').replace('</head>', '  <meta name="robots" content="noindex" />\n  </head>');
+      writeFileSync(resolve(outDir, '404.html'), page);
     },
   };
 }
@@ -123,7 +209,25 @@ function changelogFeed(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), servedAssets('ocr', OCR_ASSETS), servedAssets('pdf-fonts', PDF_FONT_ASSETS), servedAssets('model', MODEL_ASSETS), servedAssets('handwriting', HANDWRITING_ASSETS), changelogFeed()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      servedAssets('ocr', OCR_ASSETS, VERSIONS.ocr),
+      servedAssets('pdf-fonts', PDF_FONT_ASSETS, VERSIONS.pdfFonts),
+      servedAssets('model', MODEL_ASSETS, VERSIONS.model),
+      servedAssets('handwriting', HANDWRITING_ASSETS, VERSIONS.handwriting),
+      changelogFeed(),
+      versionAndNotFound(),
+    ],
+    // The served sets' paths, for src/lib/assetPaths.ts (site audit item 91).
+    define: {
+      __FORMA_ASSETS__: JSON.stringify({
+        ocr: `/ocr/${VERSIONS.ocr}/`,
+        pdfFonts: `/pdf-fonts/${VERSIONS.pdfFonts}/`,
+        model: `/model/${VERSIONS.model}/`,
+        handwriting: `/handwriting/${VERSIONS.handwriting}/`,
+      }),
+    },
     // Only VITE_* reaches the client. GEMINI_* was previously allowlisted here,
     // which inlined GEMINI_API_KEY into the shipped bundle — Google's secret
     // scanner found that key and revoked it (403 "reported as leaked").

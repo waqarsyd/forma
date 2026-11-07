@@ -1,0 +1,30 @@
+# The deployed site, checked every day (2026-11-07, site audit items 3 and 102).
+#
+# scripts/smoke.mjs asks the two hosted sites what a visitor's browser asks:
+# every route, the entry chunk, the headers, the changelog's feed. A broken
+# site fails this job. A site running an older build than main is a warning
+# in the run's summary, not a failure: deploying is the owner's, and a site
+# behind main is news, not breakage. The page carries its commit in
+# <meta name="forma-version">, which is how the two are compared.
+#
+# Read-only: it sends GETs to the public site and nothing else, and needs no
+# secret. Free, as Actions is on a public repository.
+name: Live site
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: node scripts/smoke.mjs --expect "$GITHUB_SHA"

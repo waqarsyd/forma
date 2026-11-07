@@ -20,9 +20,10 @@
 import type { StandardFont } from './pdfWriter';
 import type { TrueTypeFont } from './trueType';
 import { md5 } from './pdfCrypto';
+import { PDF_FONT_BASE } from './assetPaths';
 
-/** Where the browser fetches the faces from. */
-export const PDF_FONT_PATH = '/pdf-fonts/';
+/** Where the browser fetches the faces from: a folder the build names for its contents (lib/assetPaths.ts). */
+export const PDF_FONT_PATH = PDF_FONT_BASE;
 
 /** The Liberation face each standard font is replaced by. */
 export const LIBERATION_FACE: Record<StandardFont, string> = {

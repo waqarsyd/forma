@@ -8,7 +8,7 @@
  * that can never land.
  */
 import { describe, it, expect } from 'vitest';
-import { cacheControlFor, isContentHashed, IMMUTABLE, REVALIDATE } from './staticCache';
+import { cacheControlFor, isContentHashed, isVersioned, IMAGE_CACHE, IMMUTABLE, REVALIDATE } from './staticCache';
 
 describe('isContentHashed', () => {
   it('recognises Vite hashed output', () => {
@@ -76,16 +76,31 @@ describe('cacheControlFor', () => {
     expect(cacheControlFor('dist/index.html')).not.toMatch(/max-age=[1-9]/);
   });
 
-  it('keeps the OG card and favicon revalidating, since their URLs are stable', () => {
-    // Scrapers hold onto og-card.png by absolute path; a year of immutable
-    // would make replacing it impossible without renaming.
-    expect(cacheControlFor('dist/og-card.png')).toBe(REVALIDATE);
-    expect(cacheControlFor('dist/favicon.png')).toBe(REVALIDATE);
+  /*
+   * Scrapers hold onto og-card.png by absolute path; a year of immutable would
+   * make replacing it impossible without renaming. An hour, as firebase.json
+   * has always sent (site audit item 90: this module said "revalidate" while
+   * the deployed site cached it for an hour, and nothing compared the two).
+   */
+  it('keeps the OG card and favicon to an hour, since their URLs are stable', () => {
+    expect(cacheControlFor('dist/og-card.png')).toBe(IMAGE_CACHE);
+    expect(cacheControlFor('dist/favicon.png')).toBe(IMAGE_CACHE);
+    expect(cacheControlFor('dist/og-card.png')).not.toContain('immutable');
   });
 
-  it('answers with one of exactly two values', () => {
-    for (const p of ['dist/index.html', 'dist/assets/index-liqdgv4K.js', 'dist/logo.png']) {
-      expect([IMMUTABLE, REVALIDATE]).toContain(cacheControlFor(p));
+  // Site audit item 91: a file in a folder named for its contents never changes.
+  it('caches the versioned OCR, font and model files for good, and not their unversioned paths', () => {
+    expect(cacheControlFor('dist/ocr/3f9a1c20b7/worker.min.js')).toBe(IMMUTABLE);
+    expect(cacheControlFor('dist\\model\\0123456789\\formaModel.json')).toBe(IMMUTABLE);
+    expect(cacheControlFor('dist/pdf-fonts/abcdef0123/LiberationSans-Regular.ttf')).toBe(IMMUTABLE);
+    expect(cacheControlFor('dist/ocr/worker.min.js')).toBe(REVALIDATE);
+    expect(cacheControlFor('dist/model/latest/formaModel.json')).toBe(REVALIDATE);
+    expect(isVersioned('/handwriting/0123456789/models/x/config.json')).toBe(true);
+  });
+
+  it('answers with one of exactly three values', () => {
+    for (const p of ['dist/index.html', 'dist/assets/index-liqdgv4K.js', 'dist/logo.png', 'dist/ocr/3f9a1c20b7/eng.traineddata.gz']) {
+      expect([IMMUTABLE, REVALIDATE, IMAGE_CACHE]).toContain(cacheControlFor(p));
     }
   });
 });

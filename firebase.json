@@ -17,7 +17,47 @@
       "trailingSlash": false,
       "rewrites": [
         {
-          "source": "**",
+          "source": "/",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/features",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/docs",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/contact",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/changelog",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/login",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/signup",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/workspace",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/terms",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/privacy",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/s/*",
           "destination": "/index.html"
         }
       ],
@@ -61,6 +101,42 @@
             {
               "key": "Cache-Control",
               "value": "public, max-age=3600"
+            }
+          ]
+        },
+        {
+          "source": "/ocr/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
+        },
+        {
+          "source": "/pdf-fonts/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
+        },
+        {
+          "source": "/model/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
+        },
+        {
+          "source": "/handwriting/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         },
@@ -88,7 +164,47 @@
       "trailingSlash": false,
       "rewrites": [
         {
-          "source": "**",
+          "source": "/",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/features",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/docs",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/contact",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/changelog",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/login",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/signup",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/workspace",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/terms",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/privacy",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/s/*",
           "destination": "/index.html"
         }
       ],
@@ -132,6 +248,42 @@
             {
               "key": "Cache-Control",
               "value": "public, max-age=3600"
+            }
+          ]
+        },
+        {
+          "source": "/ocr/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
+        },
+        {
+          "source": "/pdf-fonts/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
+        },
+        {
+          "source": "/model/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
+        },
+        {
+          "source": "/handwriting/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         },

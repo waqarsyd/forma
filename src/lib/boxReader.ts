@@ -36,6 +36,7 @@ import { pointsToUnits } from './reportGeometry';
 import type { BandKind } from './reportPreview';
 import { paperName, type ReportSkeleton, type SkeletonBand, type SkeletonControl, type SkeletonRole } from './reportSkeleton';
 import { lineWidthPt } from './textMeasure';
+import { MODEL_BASE } from './assetPaths';
 
 /** A text read on the page: where its ink is, and its words. */
 export interface ReadBox {
@@ -966,7 +967,7 @@ export function controlPlaceOf(t: DetectedText): ControlPlace {
 }
 
 /** Where the browser fetches the shipped reader (MODEL_ASSETS in vite.config.ts). */
-export const BOX_READER_URL = '/model/boxReader.json';
+export const BOX_READER_URL = `${MODEL_BASE}boxReader.json`;
 
 /** Whether a model reads the features this version computes, in the same order. */
 export function readsTheseFeatures(model: BoxReaderModel): boolean {
