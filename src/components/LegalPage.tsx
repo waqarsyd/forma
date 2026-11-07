@@ -214,7 +214,7 @@ const ACCESSIBILITY: Section[] = [
     paragraphs: [
       'The workspace is built to be used from the keyboard. Ctrl+K (⌘K on a Mac) opens a command menu that runs an action by name, “?” lists every shortcut, and a selected control moves with the arrow keys rather than only by dragging.',
       'Dialogs keep focus inside them, close with Escape and hand focus back to where you were; menus move with the arrow keys. Progress and replies are announced to screen readers as they arrive.',
-      'The light and dark themes follow your system, and motion is reduced when your system asks for it.',
+      'Every public page opens with a link that skips to its content, and its text and buttons meet the 4.5:1 contrast the guidelines ask for, in the light theme and the dark. The light and dark themes follow your system, and motion is reduced when your system asks for it.',
       'Every report Forma writes is checked as DevExpress’s own designer checks it: text too small to read, contrast too low, and pictures with no description are listed in the REPX view.',
     ],
   },
@@ -283,7 +283,7 @@ export default function LegalPage({
         setIsDarkMode={setIsDarkMode}
       />
 
-      <main className="flex-grow sheet-grid pt-[76px] pb-[104px]">
+      <main id="main" tabIndex={-1} className="outline-none flex-grow sheet-grid pt-[76px] pb-[104px]">
         <div className="max-w-container-max mx-auto px-margin-desktop">
           <Eyebrow>{eyebrow}</Eyebrow>
 

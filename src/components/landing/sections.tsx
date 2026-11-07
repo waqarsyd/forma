@@ -157,7 +157,33 @@ export function Stat({ to, unit, label }: { to: number; unit?: string; label: st
  * `coord` remains as an override for the one caller that is not a page section:
  * the workspace canvas card, which is not positioned down a document and whose
  * coordinate is legitimately fixed.
+ *
+ * Two changes on 2026-11-08 (the site audit's batch SF). The coordinate is
+ * `aria-hidden`: a screen reader read "x 000 · y 0840" before every section's
+ * name (item 75), and it is a drawing's mark, not a word of the page. And the
+ * eyebrows share one `ResizeObserver` (item 80): each made its own on the same
+ * element, so a page of twelve sections ran twelve observers and twelve layout
+ * reads on every reflow.
  */
+const reflowReaders = new Set<() => void>();
+let reflowObserver: ResizeObserver | null = null;
+
+/** Calls `read` on every reflow of the document, through one observer shared by every caller. */
+function onReflow(read: () => void): () => void {
+  reflowReaders.add(read);
+  if (!reflowObserver && typeof ResizeObserver !== 'undefined') {
+    reflowObserver = new ResizeObserver(() => reflowReaders.forEach((r) => r()));
+    reflowObserver.observe(document.documentElement);
+  }
+  return () => {
+    reflowReaders.delete(read);
+    if (!reflowReaders.size && reflowObserver) {
+      reflowObserver.disconnect();
+      reflowObserver = null;
+    }
+  };
+}
+
 export function Eyebrow({ coord, children }: { coord?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [measured, setMeasured] = useState('');
@@ -172,17 +198,17 @@ export function Eyebrow({ coord, children }: { coord?: string; children: ReactNo
       if (!live) return;
       let y = 0;
       for (let n: HTMLElement | null = el; n; n = n.offsetParent as HTMLElement | null) y += n.offsetTop;
-      setMeasured(`x 000 · y ${String(toSheetUnits(y)).padStart(4, '0')}`);
+      const next = `x 000 · y ${String(toSheetUnits(y)).padStart(4, '0')}`;
+      setMeasured((prev) => (prev === next ? prev : next));
     };
     read();
 
-    const ro = new ResizeObserver(read);
-    ro.observe(document.documentElement);
+    const stop = onReflow(read);
     document.fonts?.ready.then(read).catch(() => {});
 
     return () => {
       live = false;
-      ro.disconnect();
+      stop();
     };
   }, [coord]);
 
@@ -191,7 +217,7 @@ export function Eyebrow({ coord, children }: { coord?: string; children: ReactNo
       ref={ref}
       className="flex items-center gap-3 font-code-sm text-[11px] leading-[1.62] font-medium tracking-[0.15em] uppercase text-[color:var(--ink-faint)]"
     >
-      <b className="font-medium text-secondary">{coord ?? measured}</b>
+      <b aria-hidden="true" className="font-medium text-secondary">{coord ?? measured}</b>
       {children}
       <span className="h-px flex-1 bg-gradient-to-r from-outline-variant to-transparent" />
     </div>

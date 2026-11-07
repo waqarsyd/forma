@@ -31,7 +31,8 @@ import {
  * that it tells you exactly what happens.
  *
  * Every number on this page is read out of the code: the caps from App.tsx, the
- * version and paper lists from the config modal, the layout properties from the
+ * version and paper lists from lib/autoConfig.ts and lib/reportGeometry.ts
+ * (the config modal's until 2026-11-04), the layout properties from the
  * schema in geminiService.ts. If you change one of those, change it here — the
  * page claims precision, so a stale figure costs more here than elsewhere.
  */
@@ -435,7 +436,7 @@ export default function FeaturesPage({
         setIsDarkMode={setIsDarkMode}
       />
 
-      <main className="flex-grow sheet-grid">
+      <main id="main" tabIndex={-1} className="outline-none flex-grow sheet-grid">
         {/* ---------------------------------------------------------- HERO */}
         <section id="top" className="relative overflow-hidden pt-24">
           <div
@@ -681,9 +682,27 @@ export default function FeaturesPage({
             />
 
             <Reveal>
-              <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card shadow-[var(--shadow-md)]">
-                {/* header — hidden where the rows stack */}
-                <div className="hidden border-b border-outline-variant bg-surface-container-low px-[22px] py-[11px] font-code-sm text-[9.5px] leading-[1.62] font-medium tracking-[0.12em] uppercase text-[color:var(--ink-faint)] md:grid md:grid-cols-[minmax(0,1fr)_132px_132px] md:gap-6">
+              {/* A table to a screen reader (2026-11-08, site audit item 78):
+                  it was rows of divs, so the two columns' meaning was lost. The
+                  .repx column is `sr-only` rather than `hidden` where the rows
+                  stack, so it is still read there, and the chip drawn twice on a
+                  phone is read once. */}
+              <div
+                role="table"
+                aria-label="What the mockup and the .repx carry"
+                className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card shadow-[var(--shadow-md)]"
+              >
+                {/* The header twice: drawn where the rows sit side by side, and
+                    read at every width. */}
+                <div role="row" className="sr-only">
+                  <span role="columnheader">Property</span>
+                  <span role="columnheader">In the mockup</span>
+                  <span role="columnheader">In the .repx</span>
+                </div>
+                <div
+                  aria-hidden="true"
+                  className="hidden border-b border-outline-variant bg-surface-container-low px-[22px] py-[11px] font-code-sm text-[9.5px] leading-[1.62] font-medium tracking-[0.12em] uppercase text-[color:var(--ink-faint)] md:grid md:grid-cols-[minmax(0,1fr)_132px_132px] md:gap-6"
+                >
                   <span>property</span>
                   <span>in the mockup</span>
                   <span className="text-secondary">in the .repx</span>
@@ -692,11 +711,12 @@ export default function FeaturesPage({
                 {CARRIES.map((r, i) => (
                   <div
                     key={r.k}
+                    role="row"
                     className={`u-transition px-[22px] py-[18px] hover:bg-[color:var(--accent-wash)] md:grid md:grid-cols-[minmax(0,1fr)_132px_132px] md:items-center md:gap-6 ${
                       i ? 'border-t border-outline-variant' : ''
                     }`}
                   >
-                    <div className="flex items-start gap-[13px]">
+                    <div role="rowheader" className="flex items-start gap-[13px]">
                       <span className="mt-[3px] shrink-0 text-[color:var(--ink-faint)]">
                         <r.Icon size={16} />
                       </span>
@@ -709,13 +729,13 @@ export default function FeaturesPage({
                         </p>
                       </div>
                     </div>
-                    <div className="mt-3 flex gap-2 pl-[29px] md:mt-0 md:block md:pl-0">
+                    <div role="cell" className="mt-3 flex gap-2 pl-[29px] md:mt-0 md:block md:pl-0">
                       <MarkChip cell={r.mock} />
-                      <span className="md:hidden">
+                      <span aria-hidden="true" className="md:hidden">
                         <MarkChip cell={r.repx} />
                       </span>
                     </div>
-                    <div className="hidden md:block">
+                    <div role="cell" className="sr-only md:not-sr-only md:block">
                       <MarkChip cell={r.repx} />
                     </div>
                   </div>

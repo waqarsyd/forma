@@ -18,7 +18,8 @@
  * Not "it finished". The point of running forty files is knowing which of the
  * forty are worth opening, so each row carries the audit's verdict — clean, N
  * warnings, or N errors and content will be lost — in the same words the
- * status bar uses for a single report. `batchQueue.ts` owns those states; this
+ * REPX pane's audit uses for a single report (the status bar's until it went
+ * on 2026-11-04). `batchQueue.ts` owns those states; this
  * file owns the running of them.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';

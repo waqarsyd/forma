@@ -31,17 +31,31 @@ const PRODUCT: Link[] = [
   ['Open the workspace', '/workspace'],
 ];
 
-const ELSEWHERE: Link[] = [
+const REPO = 'https://github.com/waqarsyd/forma';
+
+/*
+ * The open-source project and the two outside resources (2026-11-08, site
+ * audit item 47): an open-source tool whose site linked neither its
+ * repository, its Discussions, its issue forms nor its licence.
+ */
+const RESOURCES: Link[] = [
+  ['GitHub', REPO],
+  ['Discussions', `${REPO}/discussions`],
+  ['Report an issue', `${REPO}/issues/new/choose`],
+  ['Licence (Apache-2.0)', `${REPO}/blob/main/LICENSE`],
   ['Get a Gemini key', 'https://aistudio.google.com/apikey'],
   ['DevExpress Reporting', 'https://www.devexpress.com/products/net/reporting/'],
-  // Real pages since 2026-08-15. These pointed at '/' — a link that silently
-  // goes home rather than admitting it has nowhere to go, which is the failure
-  // mode `data-needs-url` exists to prevent and this pair slipped past.
+];
+
+/*
+ * The policies, in the bar under the columns where the big sites keep them
+ * (2026-11-08, site audit item 82), rather than under "Elsewhere" beside two
+ * outside links. Real pages since 2026-08-15 (they pointed at '/' before);
+ * the statement and the notices joined them on 2026-11-08 (items 115, 97).
+ */
+const LEGAL: Link[] = [
   ['Privacy', '/privacy'],
   ['Terms', '/terms'],
-  // 2026-11-08 (the site audit's batch SE, items 115 and 97): the statement
-  // the big sites keep beside their policies, and the notices of the
-  // open-source code Forma ships, written at build (vite.config.ts).
   ['Accessibility', '/accessibility'],
   ['Third-party licences', '/licenses.txt'],
 ];
@@ -155,13 +169,25 @@ export default function SiteFooter({
           <Column heading="Product" links={PRODUCT} />
           {maker && <Column heading="The maker" links={maker} />}
           {onThisPage && <Column heading="On this page" links={onThisPage} />}
-          <Column heading="Elsewhere" links={ELSEWHERE} />
+          <Column heading="Resources" links={RESOURCES} />
         </div>
 
-        {/* The trademark notice (2026-11-08, site audit item 35), where a
-            generic sign-off stood: Forma names DevExpress on every page, and
-            only the README said it was not theirs. */}
-        <div className="flex justify-center border-t border-outline-variant py-5 text-center">
+        {/* The policies, then the trademark notice (2026-11-08, site audit
+            items 82 and 35), where a generic sign-off stood: Forma names
+            DevExpress on every page, and only the README said it was not
+            theirs. */}
+        <div className="flex flex-col items-center gap-2.5 border-t border-outline-variant py-5 text-center">
+          <nav aria-label="Legal" className="flex flex-wrap justify-center gap-x-5 gap-y-1">
+            {LEGAL.map(([label, href]) => (
+              <a
+                key={label}
+                href={href}
+                className="u-transition font-body-lg text-[13px] leading-[1.6] text-on-surface-variant hover:text-secondary"
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
           <p className="max-w-[86ch] font-body-lg text-[12.5px] leading-[1.6] text-[color:var(--ink-faint)]">
             DevExpress and XtraReports are trademarks of Developer Express Inc. Forma is an independent project, not
             affiliated with or endorsed by Developer Express Inc.

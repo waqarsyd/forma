@@ -103,18 +103,47 @@ export default function SheetRuler() {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    /*
+     * Only while the rule is drawn, and once a frame (2026-11-08, site audit
+     * item 80). It is `hidden xl:block`, yet it set state on every scroll
+     * event at every width, re-rendering its ticks for nobody on a phone and
+     * several times a frame on a fast wheel.
+     */
+    const wide = window.matchMedia?.('(min-width: 1280px)');
+    let frame = 0;
+    let listening = false;
     const measure = () => setHeight(window.innerHeight);
-    measure();
 
     // The document offset at the top edge of the viewport. That is the only
     // thing the rule needs: every tick's coordinate is this plus its own screen
     // position, so there is one input and one scale.
-    const onScroll = () => setScrollY(window.scrollY);
-    onScroll();
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setScrollY(window.scrollY);
+      });
+    };
 
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', measure);
+    const listen = () => {
+      const on = wide ? wide.matches : true;
+      if (on === listening) return;
+      listening = on;
+      if (on) {
+        measure();
+        setScrollY(window.scrollY);
+        window.addEventListener('scroll', onScroll, { passive: true });
+        window.addEventListener('resize', measure);
+      } else {
+        window.removeEventListener('scroll', onScroll);
+        window.removeEventListener('resize', measure);
+      }
+    };
+    listen();
+    wide?.addEventListener?.('change', listen);
     return () => {
+      wide?.removeEventListener?.('change', listen);
+      cancelAnimationFrame(frame);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', measure);
     };

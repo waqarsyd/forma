@@ -29,6 +29,9 @@ type State = { kind: 'loading' } | { kind: 'shown'; name: string; report: Shared
 
 export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) {
   const [state, setState] = useState<State>({ kind: 'loading' });
+  // Try again re-reads the share (2026-11-08, site audit item 84): a failed
+  // read used to say "reload the page" and offer nothing to press.
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let gone = false;
     setState({ kind: 'loading' });
@@ -54,7 +57,7 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
     return () => {
       gone = true;
     };
-  }, [id, user?.uid]);
+  }, [id, user?.uid, attempt]);
 
   const download = (name: string, xml: string) => {
     const url = URL.createObjectURL(new Blob([xml], { type: 'application/xml' }));
@@ -64,7 +67,9 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    // Not at once (item 84): a browser that starts the download after the
+    // click returns finds the address already gone and saves nothing.
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
   return (
@@ -86,9 +91,24 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
           </>
         )}
       </header>
-      <main className="wb-shared-body">
-        {state.kind === 'loading' && <p className="wb-shared-say">Opening the shared report…</p>}
-        {state.kind === 'failed' && <p className="wb-shared-say">Forma could not reach the report just now. Check the connection and reload the page.</p>}
+      <main id="main" className="wb-shared-body">
+        {/* A heading in every state (item 84): until the report arrived the
+            page had none, so a screen reader landed on an untitled page. */}
+        {(state.kind === 'loading' || state.kind === 'failed') && <h1 className="sr-only">Shared report</h1>}
+        {state.kind === 'loading' && <p className="wb-shared-say" role="status">Opening the shared report…</p>}
+        {state.kind === 'failed' && (
+          <div className="wb-shared-say" role="alert">
+            <p>Forma could not reach the report just now. Check the connection, then try again.</p>
+            <button type="button" className="wb-pill wb-pill--accent" onClick={() => setAttempt((n) => n + 1)}>
+              Try again
+            </button>
+          </div>
+        )}
+        {state.kind === 'shown' && !state.report.repxContent && (
+          <p className="wb-shared-say">
+            This share holds no report file to show. Ask whoever sent the link to share the report again from Forma.
+          </p>
+        )}
         {state.kind === 'closed' && (
           <div className="wb-shared-say">
             <h1>This link does not open a report for you</h1>
@@ -109,6 +129,16 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
           </Suspense>
         )}
       </main>
+      {/* Where a viewer turns (item 84): what Forma is, its policies, and
+          how to report a link that shares something it should not. */}
+      <footer className="wb-shared-foot">
+        <span>Shared with Forma, a report designer for DevExpress.</span>
+        <nav aria-label="About this page">
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/contact#form">Report this link</a>
+        </nav>
+      </footer>
     </div>
   );
 }

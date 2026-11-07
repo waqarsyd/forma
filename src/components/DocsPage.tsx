@@ -76,7 +76,7 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
   { id: 'batch', n: '15', title: 'Batch generation', keys: 'batch bulk many folder drop queue multiple files parallel two three zip archive migration legacy convert retry stop download all at once' },
   { id: 'revisions', n: '16', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
   { id: 'shortcuts', n: '17', title: 'Keyboard shortcuts', keys: 'keyboard shortcuts keys hotkeys ctrl cmd command' },
-  { id: 'trouble', n: '18', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem draft local not answering context' },
+  { id: 'trouble', n: '18', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem draft local not answering context sign in login pop-up popup password' },
   { id: 'faq', n: '19', title: 'FAQ', keys: 'faq questions common help cost price free billing visual studio photo' },
 ];
 
@@ -341,7 +341,7 @@ export default function DocsPage({
       />
 
       {/* No overflow anywhere in this chain — see the note at the top. */}
-      <main className="flex-grow sheet-grid">
+      <main id="main" tabIndex={-1} className="outline-none flex-grow sheet-grid">
         {/* 68px top / 44px bottom — the artifact's `padding: 68px 0 44px`.
             py-[68px] put everything below it 24px too low. */}
         <section className="border-b border-outline-variant pt-[68px] pb-11">
@@ -412,6 +412,11 @@ export default function DocsPage({
                 </button>
               )}
             </div>
+            {/* What a search found, said aloud (item 79): the list filtered in
+                silence, so a screen reader heard nothing change. */}
+            <p className="sr-only" role="status" aria-live="polite">
+              {q ? (visible.length ? `${visible.length} ${visible.length === 1 ? 'section matches' : 'sections match'}` : 'No section matches') : ''}
+            </p>
 
             <nav className={`${CARD} p-2`} aria-label="Documentation sections">
               {SECTIONS.map((s) => (
@@ -419,6 +424,8 @@ export default function DocsPage({
                   key={s.id}
                   href={`#${s.id}`}
                   hidden={!matches(s.id)}
+                  // The section being read, to a screen reader too (2026-11-08, site audit item 79).
+                  aria-current={active === s.id ? 'location' : undefined}
                   className={`u-transition flex items-center gap-2.5 rounded-lg px-2.5 py-2 font-body-lg text-[13.5px] leading-[1.4] ${
                     active === s.id
                       ? 'bg-[color:var(--accent-wash)] font-semibold text-secondary'
@@ -1326,6 +1333,15 @@ y_top = pageHeight − (baseline + height)`}
 
             <Article id="trouble" kicker="Support" title="Troubleshooting" hidden={!matches('trouble')}>
               <dl className="border-t border-outline-variant">
+                {/* The sign-in page sends "Cannot get in?" here (2026-11-08,
+                    site audit item 46), and there was nothing about signing in. */}
+                <Def t="Cannot sign in">
+                  With Google, the sign-in opens in a pop-up: if nothing appears, allow pop-ups for this site and
+                  try again. With an email address, check it is the one the account was made with; Forgot password
+                  on the sign-in page sends a reset link. Signing in is optional — Forma works signed out, with your
+                  work kept in this browser — and{' '}
+                  <a href="#account" className={LINK}>Your account</a> has the rest.
+                </Def>
                 <Def t={'"No longer available"'}>
                   A model your key could once reach has been retired. Forma clears its cached choice,
                   re-detects and retries once, by itself. If it persists, the key has access to no supported

@@ -3,7 +3,62 @@ import { User } from 'firebase/auth';
 import Logo from './Logo';
 import UserAvatar from './UserAvatar';
 import MobileNav from './MobileNav';
-import { IconSun, IconMoon, IconChevronDown, IconLogout } from './landing/icons';
+import { IconSun, IconMoon, IconChevronDown, IconLogout, IconGitHub, IconArrowRight } from './landing/icons';
+import { useMenuKeys } from './useMenuKeys';
+
+/** The repository, linked from the header and the footer (2026-11-08, site audit item 47). */
+export const REPO_URL = 'https://github.com/waqarsyd/forma';
+
+/**
+ * The account menu, mounted while open so it can be a real menu (2026-11-08,
+ * site audit item 77): the button said `aria-haspopup="menu"` over a plain
+ * box with a button in it, which took no arrow keys and gave focus back to
+ * nothing. Now role="menu" with menu items, and `useMenuKeys` moves focus in,
+ * round with the arrows, and back to the button as it closes.
+ */
+function AccountMenu({ user, onClose, onEnterWorkspace, logOut }: { user: User; onClose: () => void; onEnterWorkspace: () => void; logOut: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useMenuKeys(ref);
+  const name = user.displayName || user.email?.split('@')[0] || 'Your account';
+  const ITEM = 'w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold font-label-caps cursor-pointer transition-colors focus:outline-none';
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label="Account"
+      className="absolute right-0 top-full mt-2 w-56 bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-2xl shadow-2xl z-50 overflow-hidden py-2"
+    >
+      <div className="px-4 py-3 border-b border-outline-variant/30 flex flex-col text-left">
+        <span className="text-xs font-bold text-on-surface truncate">{name}</span>
+        {user.email && <span className="text-[10px] text-on-surface-variant truncate font-mono mt-0.5">{user.email}</span>}
+      </div>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          onClose();
+          onEnterWorkspace();
+        }}
+        className={`${ITEM} text-on-surface hover:bg-surface-container-low focus:bg-surface-container-low`}
+      >
+        <IconArrowRight size={16} />
+        Open the workspace
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          onClose();
+          logOut();
+        }}
+        className={`${ITEM} text-error hover:bg-error-container focus:bg-error-container`}
+      >
+        <IconLogout size={16} />
+        Sign out
+      </button>
+    </div>
+  );
+}
 
 /**
  * The header shared by all four marketing pages.
@@ -78,6 +133,16 @@ export default function SiteHeader({
 
   return (
     <header className="w-full sticky top-0 z-50 bg-surface/[0.84] [backdrop-filter:blur(16px)_saturate(1.5)] border-b border-outline-variant">
+      {/* Skip to the page's own content (2026-11-08, site audit item 40): the
+          first thing Tab reaches on every public page, shown only while it has
+          focus, so a keyboard does not walk the header on every page. Each
+          page's <main> carries id="main". */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-[60] focus:rounded-full focus:bg-secondary-container focus:px-4 focus:py-2 focus:font-body-lg focus:text-[14px] focus:font-semibold focus:text-white"
+      >
+        Skip to content
+      </a>
       <nav className="flex h-[68px] gap-6 justify-between items-center px-margin-desktop max-w-container-max mx-auto">
         <a href="/" className="flex items-center gap-[11px] select-none">
           <Logo size={30} />
@@ -118,6 +183,16 @@ export default function SiteHeader({
 
         <div className="flex items-center gap-2.5">
           <MobileNav active={active} signedIn={!!user} />
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noopener"
+            aria-label="Forma on GitHub"
+            title="Forma on GitHub"
+            className="u-transition u-press u-focus-ring hidden lg:grid w-[37px] h-[37px] place-items-center rounded-full border border-outline-variant bg-surface-container-lowest/60 hover:border-secondary text-on-surface-variant hover:text-secondary select-none"
+          >
+            <IconGitHub size={16} />
+          </a>
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
             className="u-transition u-press u-focus-ring w-[37px] h-[37px] grid place-items-center rounded-full border border-outline-variant bg-surface-container-lowest/60 hover:border-secondary text-on-surface-variant hover:text-secondary cursor-pointer select-none"
@@ -185,26 +260,12 @@ export default function SiteHeader({
               </button>
 
               {showProfileMenu && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-surface-container-lowest dark:bg-card border border-outline-variant rounded-2xl shadow-2xl z-50 overflow-hidden py-2">
-                  <div className="px-4 py-3 border-b border-outline-variant/30 flex flex-col text-left">
-                    <span className="text-xs font-bold text-on-surface truncate">
-                      {user.displayName || 'Developer User'}
-                    </span>
-                    <span className="text-[10px] text-on-surface-variant truncate font-mono mt-0.5">
-                      {user.email || 'developer@example.com'}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowProfileMenu(false);
-                      logOut();
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-error-container text-error hover:text-error transition-colors text-left text-xs font-semibold font-label-caps cursor-pointer"
-                  >
-                    <IconLogout size={16} />
-                    Sign Out
-                  </button>
-                </div>
+                <AccountMenu
+                  user={user}
+                  onClose={() => setShowProfileMenu(false)}
+                  onEnterWorkspace={onEnterWorkspace}
+                  logOut={logOut}
+                />
               )}
             </div>
           ) : (

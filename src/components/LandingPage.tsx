@@ -203,7 +203,7 @@ const LandingPage = ({
         isDarkMode={isDarkMode}
         setIsDarkMode={setIsDarkMode}
       />
-      <main className="flex-grow sheet-grid">
+      <main id="main" tabIndex={-1} className="outline-none flex-grow sheet-grid">
         {/* ---------------------------------------------------------- HERO */}
         <section id="top" className="relative overflow-hidden pt-24">
           <div
@@ -675,6 +675,8 @@ const LandingPage = ({
           ['What you get back', '#artifacts'],
           ['Use cases', '#cases'],
           ['How it works', '#how'],
+          // Every section of the page, in its order (2026-11-08, site audit item 82).
+          ['Accuracy', '#textlayer'],
           ['Precision', '#precision'],
           ['Your API key', '#key'],
         ]}

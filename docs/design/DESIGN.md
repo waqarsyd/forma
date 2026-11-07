@@ -149,7 +149,7 @@ Larger containers (cards, main content areas) use `rounded-lg` (0.5rem) to provi
 ## Components
 
 ### Buttons
-Primary buttons use the high-energy **Vibrant Orange (#FF6B00)** with white text. Secondary buttons use a transparent background with a 1px Navy border. All buttons have a fixed height (36px or 44px) and use the `label-caps` typography for a rigorous, military-spec feel.
+Primary buttons use the high-energy **Vibrant Orange (#FF6B00)** with white text. On the public pages (since 2026-11-08) a filled button is the deeper **#C94B00** and accent text **#B34A00**, because white on #FF6B00 is 2.9:1 against the 4.5:1 WCAG asks; #FF6B00 stays for fills and strokes that carry no words (see `docs/notes/styling.md`). Secondary buttons use a transparent background with a 1px Navy border. All buttons have a fixed height (36px or 44px) and use the `label-caps` typography for a rigorous, military-spec feel.
 
 ### Input Fields
 Inputs are defined by a 1px border (#CBD5E1) that transitions to Primary Navy on focus. Labels sit outside the field in `code-sm` JetBrains Mono. Use placeholder text sparingly; use helper text below the field for technical instructions.

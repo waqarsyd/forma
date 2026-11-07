@@ -7,7 +7,7 @@ import { Eyebrow } from './landing/sections';
 import Logo from './Logo';
 import { submitContactMessage } from '../lib/contactSubmit';
 import {
-  IconMail, IconCheck, IconWarn, IconChevronDown, IconArrowRight, IconExternal,
+  IconMail, IconCheck, IconWarn, IconChevronDown, IconArrowRight, IconArrowDown, IconExternal,
   IconGitHub, IconLinkedIn, IconDiscord, IconPortfolio,
 } from './landing/icons';
 
@@ -156,7 +156,7 @@ function Field({
   return (
     <div className="grid gap-[7px]">
       <label htmlFor={id} className={LABEL}>
-        {label} <span className="text-secondary">*</span>
+        {label} <span aria-hidden="true" className="text-secondary">*</span>
       </label>
       {children}
       {/* The id is what `describedBy` below points the control at. Without it
@@ -333,7 +333,7 @@ export default function ContactPage({
       />
 
       {/* 76px top / 104px bottom — the artifact's `padding: 76px 0 104px`. */}
-      <main className="flex-grow sheet-grid pt-[76px] pb-[104px]">
+      <main id="main" tabIndex={-1} className="outline-none flex-grow sheet-grid pt-[76px] pb-[104px]">
         <div className="max-w-container-max mx-auto px-margin-desktop">
           <Eyebrow>Contact</Eyebrow>
 
@@ -540,6 +540,8 @@ export default function ContactPage({
                           value={values.name}
                           onChange={(e) => set('name')(e.target.value)}
                           aria-invalid={!!errors.name}
+                        required
+                        aria-required="true"
                           aria-describedby={describedBy('name', !!errors.name)}
                           className={fieldClass(!!errors.name)}
                         />
@@ -555,6 +557,8 @@ export default function ContactPage({
                           value={values.email}
                           onChange={(e) => set('email')(e.target.value)}
                           aria-invalid={!!errors.email}
+                        required
+                        aria-required="true"
                           aria-describedby={describedBy('email', !!errors.email)}
                           className={fieldClass(!!errors.email)}
                         />
@@ -568,6 +572,8 @@ export default function ContactPage({
                           value={values.topic}
                           onChange={(e) => set('topic')(e.target.value)}
                           aria-invalid={!!errors.topic}
+                        required
+                        aria-required="true"
                           aria-describedby={describedBy('topic', !!errors.topic)}
                           className={`${fieldClass(!!errors.topic)} cursor-pointer appearance-none pr-10`}
                         >
@@ -591,6 +597,8 @@ export default function ContactPage({
                         value={values.message}
                         onChange={(e) => set('message')(e.target.value)}
                         aria-invalid={!!errors.message}
+                        required
+                        aria-required="true"
                         aria-describedby={describedBy('message', !!errors.message)}
                         className={`${fieldClass(!!errors.message)} min-h-[132px] resize-y`}
                       />
@@ -794,9 +802,11 @@ export default function ContactPage({
                       the form above, or reveal the address
                     </span>
                   </span>
-                  <IconExternal
+                  {/* An arrow for a jump within the page (2026-11-08, site audit
+                      item 85): the external-link mark said it opened elsewhere. */}
+                  <IconArrowDown
                     size={15}
-                    className="u-transition ml-auto shrink-0 text-[color:var(--ink-faint)] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-secondary"
+                    className="u-transition ml-auto shrink-0 rotate-180 text-[color:var(--ink-faint)] group-hover:-translate-y-0.5 group-hover:text-secondary"
                   />
                 </a>
               </div>

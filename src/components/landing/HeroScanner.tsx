@@ -299,6 +299,11 @@ export default function HeroScanner() {
   return (
     <div
       ref={ref}
+      // A figure with a name, its moving parts silent (2026-11-08, site audit
+      // item 78): a screen reader read the made-up invoice word by word and
+      // then the XML as it typed. The Replay button stays reachable.
+      role="group"
+      aria-label="Demonstration: a scanned invoice is read and written out as DevExpress report XML"
       className="rounded-[14px] border border-outline-variant bg-surface-container-lowest dark:bg-card shadow-[var(--shadow-lg),var(--inset-hi)] overflow-hidden"
     >
       {/* title bar */}
@@ -327,7 +332,7 @@ export default function HeroScanner() {
 
       {/* The floor is the sheet plus its padding, not a round number: below
           that the page would be cropped, above it the column just adds bed. */}
-      <div className="grid grid-cols-1 min-[460px]:grid-cols-2 min-h-[344px]">
+      <div aria-hidden="true" className="grid grid-cols-1 min-[460px]:grid-cols-2 min-h-[344px]">
         {/* the page being read */}
         {/* The page is the subject of this figure and was losing to the space
             around it: 212 × 274 inside a 273 × 474 pane, 200px of dotted

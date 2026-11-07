@@ -70,7 +70,7 @@ export default function NotFoundPage({
         setIsDarkMode={setIsDarkMode}
       />
 
-      <main className="flex-grow sheet-grid pt-[76px] pb-[104px]">
+      <main id="main" tabIndex={-1} className="outline-none flex-grow sheet-grid pt-[76px] pb-[104px]">
         <div className="max-w-container-max mx-auto px-margin-desktop">
           <Eyebrow>Error 404</Eyebrow>
 
@@ -85,11 +85,14 @@ export default function NotFoundPage({
             </p>
 
             {/* Real destinations rather than a bare "go home": someone arriving
-                from a dead link usually wanted one specific thing. */}
+                from a dead link usually wanted one specific thing. The first is
+                the filled button every other page uses (2026-11-08, site audit
+                item 85): it was the one bg-secondary button with on-secondary
+                text on the site. */}
             <div className="mt-9 flex flex-wrap gap-3">
               <a
                 href="/"
-                className="u-transition u-press u-focus-ring inline-flex cursor-pointer items-center gap-2 rounded-full bg-secondary px-5 py-2.5 font-body-lg text-[14px] font-semibold text-on-secondary"
+                className="u-transition u-press u-focus-ring inline-flex cursor-pointer items-center gap-2 rounded-full bg-secondary-container px-5 py-2.5 font-body-lg text-[14px] font-semibold text-white shadow-[0_1px_2px_rgba(8,24,43,0.1)] hover:bg-[color:var(--accent-deep)]"
               >
                 Back to the home page
               </a>

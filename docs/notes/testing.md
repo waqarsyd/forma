@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,786 tests in 163 files** — under the `node` environment
+`npm test` runs Vitest over **2,800 tests in 165 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -99,6 +99,8 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/SettingsDialog` | 8 | Settings as ChatGPT's (2026-11-07, the owner's request): opened at the Gemini key while there is none and at General once there is, the sections by click and by the arrows, Home and End, a choice applied as it is made with no Save or Cancel, Add it from the AI section to the key, the key checked and cleared with a line that says so, Forget everything asking first and Cancel keeping the memory, the stored key forgotten only after asking, and Close and Escape. Firebase and the Gemini client are stand-ins. jsdom |
 | `components/DataBinding` | 18 | jsdom |
 | `components/LibraryPanel` | 17 | jsdom |
+| `components/MobileNav` | 2 | jsdom; the phone menu is a modal dialog (2026-11-08, site audit item 41): focus inside, Escape closes it and gives focus back to its button once the sheet's exit animation unmounts it, sentence-case labels and the repository's link |
+| `components/publicContrast` | 12 | 11 from one table; the public pages' colours read out of `src/index.css` and every pairing a visitor reads computed against WCAG's 4.5:1, light and dark (2026-11-08, site audit item 17), and the bright brand orange kept for what carries no words |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
 | `components/OcrDialog` | 6 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run and the pages not read marked stopped (2026-11-06), low-confidence text listed and named or left out, a report built after the app's checks, a PDF page read at its resolution, and pages the chat box read already shown without reading them again; `reportNameFor`'s case moved to `lib/ocrRepx` on 2026-11-06 |
 | `components/ReportPreview` | 36 | since 2026-11-06 the arrows and Delete left alone while a menu or dialog is open, a group kept whole when one of it is pressed, and the whole selection cleared when the paper is pressed; since 2026-11-06 no export buttons where the Export panel has them, an export asked for still made; since 2026-11-05 Ctrl+Z handed to the workspace's history; since 2026-11-05 the outline of what a request changed; since 2026-11-05 an export the chat asked for, made once; jsdom; since 2026-11-04 also Shift+click selection deleted and nudged as one step, Add label, a table cell retyped, a label retyped in one placement of a repeated band, and a declined edit saying why; since 2026-11-04 also the grouping field chosen above the paper, through the undo path and only where the pane edits; inline styles computed from the file, against what DevExpress printed; a parameter value typed over test data; a link as an anchor; a cross-band box and line; turned text; the page drawn unkerned; Export CSV; a drill-down group opened and closed by its toggle; a picture box drawn as its image zoomed into its box, and a dashed box naming what it would show when it has no image (2026-11-04) |
@@ -240,7 +242,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,786 in 163 files** — and that total is the arithmetic sum of the column above
+**Total: 2,800 in 165 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -254,7 +256,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2649** against a real 2,786 (2026-11-08, after the site audit's batch SE; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2652** against a real 2,800 (2026-11-08, after the site audit's batch SF, whose contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

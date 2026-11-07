@@ -310,7 +310,7 @@
 @layer base {
   /* Edge and IE draw their own reveal/clear controls *inside* a password input.
      Every password field in this app already ships a toggle of its own — the
-     API key row in the config modal, and both password fields in the auth
+     key field in Settings (the config modal's until 2026-11-07), and the password fields in the auth
      dialog — so the native control appears as a second, differently-styled eye
      sitting next to ours. Two reveal buttons on one field is confusing enough
      that a user reported it as a bug.
@@ -734,7 +734,7 @@ body {
 .markdown-body blockquote {
   margin: 0 0 1em;
   padding: 0.5em 1em;
-  border-left: 3px solid var(--color-secondary-container);
+  border-left: 3px solid var(--brand, var(--color-secondary-container));
   background-color: var(--color-surface-container-low);
   color: var(--color-on-surface-variant);
 }
@@ -918,6 +918,22 @@ body {
     overflow-x: clip;
     --spacing-container-max: 1180px;
     --spacing-margin-desktop: 32px;
+
+    /* Contrast (2026-11-08, site audit item 17). The brand orange #fe6b00
+       read 2.9:1 under white button text, 2.5:1 as text on the light sheet,
+       and the captions' #8492a6 3.2:1; WCAG asks 4.5:1 of both. So on the
+       public pages the orange that carries words is a deeper one — #b34a00
+       as text (5.4:1 on white, 4.8:1 on the sheet), #c94b00 under a filled
+       button's white label (4.7:1), #a83f00 on hover (5.9:1) — and the
+       captions are #5b6a80 (5.5:1, 4.9:1 on the sheet). The bright orange
+       stays for what carries no words: tints, the hero's sweep and caret,
+       the registration marks, as `--brand`. Scoped to .landing, so the
+       workspace's approved palette is untouched. */
+    --brand: #fe6b00;
+    --color-secondary: #b34a00;
+    --color-secondary-container: #c94b00;
+    --accent-deep: #a83f00;
+    --ink-faint: #5b6a80;
 }
 
 /* ====================================================================
@@ -957,6 +973,19 @@ body {
     --display: var(--font-display-lg);
     --body: var(--font-body-lg);
     --mono: var(--font-code-sm);
+}
+
+/* The dark half of the contrast fix above (site audit item 17). As text the
+   dark accent #ff7d21 already reads 7.3:1, so it stays; under a white label
+   it read 2.6:1, so a filled button keeps the light theme's #c94b00, and the
+   captions lift to #7d8aa0 (5.4:1 on the dark card). Declared before the
+   shared dark block and with its specificity raised by `.landing.landing`,
+   so it wins over it without depending on order. */
+.dark .landing.landing {
+    --brand: #ff7d21;
+    --color-secondary-container: #c94b00;
+    --accent-deep: #a83f00;
+    --ink-faint: #7d8aa0;
 }
 
 .dark .sheet, .dark .landing {
@@ -1047,10 +1076,10 @@ body {
     width: 104%;
     height: 2px;
     top: -4px;
-    background: var(--color-secondary-container);
+    background: var(--brand, var(--color-secondary-container));
     box-shadow:
-      0 0 16px 3px color-mix(in srgb, var(--color-secondary-container) 34%, transparent),
-      0 0 44px 8px color-mix(in srgb, var(--color-secondary-container) 12%, transparent);
+      0 0 16px 3px color-mix(in srgb, var(--brand, var(--color-secondary-container)) 34%, transparent),
+      0 0 44px 8px color-mix(in srgb, var(--brand, var(--color-secondary-container)) 12%, transparent);
     animation: hero-sweep 1900ms var(--ease-standard) 480ms both;
 }
 @keyframes hero-sweep {
@@ -1065,7 +1094,7 @@ body {
     width: 5px;
     height: 10px;
     vertical-align: -1px;
-    background: var(--color-secondary-container);
+    background: var(--brand, var(--color-secondary-container));
     animation: hero-caret 900ms steps(1) infinite;
 }
 @keyframes hero-caret {
@@ -1100,12 +1129,12 @@ body {
 .reg-marks::before {
     top: -1px;
     left: -1px;
-    border-top: 1.5px solid var(--color-secondary-container);
-    border-left: 1.5px solid var(--color-secondary-container);
+    border-top: 1.5px solid var(--brand, var(--color-secondary-container));
+    border-left: 1.5px solid var(--brand, var(--color-secondary-container));
 }
 .reg-marks::after {
     bottom: -1px;
     right: -1px;
-    border-bottom: 1.5px solid var(--color-secondary-container);
-    border-right: 1.5px solid var(--color-secondary-container);
+    border-bottom: 1.5px solid var(--brand, var(--color-secondary-container));
+    border-right: 1.5px solid var(--brand, var(--color-secondary-container));
 }

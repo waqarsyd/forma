@@ -534,9 +534,9 @@ const EXPRESSION = /\sExpression\s*=\s*"([^"]*)"/g;
  *
  * Reading it back instead means a saved report loaded a month later shows the
  * truth about the file that was saved, not about the settings in force when it
- * is reopened. It also means the status bar cannot claim a binding that is not
- * in the `.repx` about to be exported, which is the standard the comment above
- * that bar sets for the units readout beside it.
+ * is reopened. It also means the Data tab cannot claim a binding that is not
+ * in the `.repx` about to be exported, which is the standard the REPX pane's
+ * units readout is held to (both sat in the status bar until 2026-11-04).
  *
  * Distinct, in document order, so the detail row's `[Amount]` and the footer's
  * `sumSum([Amount])` count once between them.

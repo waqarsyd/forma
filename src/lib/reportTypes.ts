@@ -147,7 +147,7 @@ export interface AnalysisResponse {
    * What the request cost, when the model reported it.
    *
    * Absent on the mock path, which returns before any call is made, and on any
-   * response that arrived without usage metadata. The status bar shows nothing
+   * response that arrived without usage metadata. The REPX pane shows nothing
    * rather than a zero in that case -- see `lib/tokenUsage.ts`.
    */
   usage?: TokenUsage | null;

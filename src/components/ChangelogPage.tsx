@@ -103,7 +103,7 @@ export default function ChangelogPage({
         setIsDarkMode={setIsDarkMode}
       />
 
-      <main className="flex-grow sheet-grid pt-[76px] pb-[104px]">
+      <main id="main" tabIndex={-1} className="outline-none flex-grow sheet-grid pt-[76px] pb-[104px]">
         <div className="max-w-container-max mx-auto px-margin-desktop">
           <Eyebrow>Changelog</Eyebrow>
           <h1 className="mt-[22px] font-display-lg text-display-lg md:text-[56px] font-extrabold leading-[1.04] tracking-[-0.038em] text-on-surface">

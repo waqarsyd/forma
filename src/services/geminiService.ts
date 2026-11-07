@@ -386,7 +386,7 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
 
 /**
  * Forma is bring-your-own-key: the only source of an API key is the one the user
- * typed into the config modal, which arrives here as `config.customApiKey`.
+ * typed into Settings, under Gemini key, which arrives here as `config.customApiKey`.
  *
  * There is deliberately no environment fallback. An application-owned key read
  * from import.meta.env was previously inlined into the shipped bundle, and
@@ -401,7 +401,7 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
 const viteEnv: Record<string, string | undefined> =
   (import.meta as any).env ?? {};
 
-/** Thrown when no key is configured, so the UI can open the config modal instead of guessing. */
+/** Thrown when no key is configured, so the UI can open Settings at the key instead of guessing. */
 export class MissingApiKeyError extends Error {
   constructor() {
     super("Add your Gemini API key to generate a report.");
@@ -428,7 +428,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * Cheap liveness check for a user-supplied key, so the config modal can say
+ * Cheap liveness check for a user-supplied key, so Settings' Check key can say
  * "valid" or "rejected" at paste time rather than failing on the first
  * generation. Lists models rather than generating, so it costs nothing.
  *
@@ -2132,12 +2132,12 @@ export async function analyzeReportDesign(
   // canned fake report and had no way to tell it was not real output.
   if (isMockMode(viteEnv.VITE_FORMA_MOCK)) {
     console.warn("VITE_FORMA_MOCK is set — returning the mock invoice layout without calling Gemini.");
-    // Simulate a 3-second network delay to allow testing loaders and status bars
+    // Simulate a 3-second network delay to allow testing the working dots and Stop
     await sleep(3000, signal);
     if (viteEnv.VITE_FORMA_MOCK === MOCK_MISORDERED) {
       console.warn(
         `VITE_FORMA_MOCK="${MOCK_MISORDERED}" — the two header bands are swapped ON PURPOSE. ` +
-          'The "1 REPX warning" in the status bar is the fixture, not the app.',
+          'The "1 REPX warning" in the REPX pane is the fixture, not the app.',
       );
       return {
         ...MOCK_INVOICE_RESPONSE,
@@ -2148,7 +2148,7 @@ export async function analyzeReportDesign(
   }
 
   // No key means no request. Surfaced as a distinct type so the caller can open
-  // the config modal rather than showing a generic failure.
+  // Settings at the key rather than showing a generic failure.
   if (!currentApiKey) {
     throw new MissingApiKeyError();
   }

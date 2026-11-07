@@ -1,5 +1,6 @@
 /**
- * What one generation cost, in the form the status bar shows it.
+ * What one generation cost, in the form the REPX pane shows it (the status
+ * bar's until 2026-11-04).
  *
  * ## Why this is in the UI at all
  *
@@ -79,7 +80,7 @@ export function addUsage(a: TokenUsage | null | undefined, b: TokenUsage | null 
 }
 
 /**
- * A count short enough for a status bar: `847`, `12.9k`, `1.4M`.
+ * A count short enough for a one-line readout: `847`, `12.9k`, `1.4M`.
  *
  * One decimal place from a thousand up, because the difference between 12.9k and
  * 13.4k is the size of a prompt section and worth seeing, while the difference
@@ -92,7 +93,7 @@ export function formatTokenCount(value: number): string {
   return `${(value / 1_000_000).toFixed(1)}M`;
 }
 
-/** The status bar's own text: the total, because the bar has room for one number. */
+/** The readout's own text: the total, because the line has room for one number. */
 export function summariseUsage(usage: TokenUsage | null | undefined): string | null {
   if (!usage) return null;
   return `${formatTokenCount(usage.total)} tokens`;

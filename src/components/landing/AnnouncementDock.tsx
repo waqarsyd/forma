@@ -12,7 +12,7 @@ import { IconBell, IconClose } from './icons';
  * Three things are deliberate:
  *
  * 1. **Landing page only.** It is a first-visit surface. The workspace already
- *    has a rail, a review column and a status bar; adding a floating disc over
+ *    has a sidebar, a floating conversation and its own What's new; adding a floating disc over
  *    a tool someone is working in is one thing too many, and the marketing
  *    pages other than `/` are reference material people arrive at on purpose.
  * 2. **Right, and the right has nothing else in it.** It briefly sat bottom-left

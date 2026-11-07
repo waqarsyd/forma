@@ -303,8 +303,10 @@ describe('the legal copy and its date change together', () => {
      (OpenRouter, a local AI, dictation, autosave, memory, the library, the
      host's logs, the closed set going from three to four), with who runs
      Forma, the rights, retention, cookies, the age and the trademark notice,
-     and the accessibility statement added to the same block. */
-  const EXPECTED_COPY_HASH = 'b8947e3b4bdd';
+     and the accessibility statement added to the same block. The same day
+     batch SF added the skip link and the contrast to that statement, which
+     moves the hash and not the date. */
+  const EXPECTED_COPY_HASH = 'b57574406e81';
   const EXPECTED_UPDATED = '8 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

@@ -1611,7 +1611,9 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 
    Verified both ways: with the panel shown the rail holds at 55px and the
    canvas absorbs the rest at every viewport height; with it hidden the canvas
-   takes 1109px of a 1200px window and the status bar stays 36px.
+   takes 1109px of a 1200px window and the status bar stays 36px. (Measured
+   with the status bar, which went on 2026-11-04; the flex rule is why its
+   removal needed no change here.)
 
    Nothing here reaches the desktop layout — `.wb-bench { grid-column: 3 }` and
    the resizable-column rules are all scoped to `min-width: 881px`. */

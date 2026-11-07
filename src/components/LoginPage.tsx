@@ -390,7 +390,7 @@ export default function LoginPage({
               type="button"
               onClick={() => setIsDarkMode(!isDarkMode)}
               title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-              aria-label="Switch theme"
+              aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
               className="u-transition u-press u-focus-ring grid h-[38px] w-[38px] cursor-pointer place-items-center rounded-full border border-outline-variant bg-surface-container-lowest/60 text-on-surface-variant hover:border-secondary hover:text-secondary"
             >
               {isDarkMode ? <IconMoon size={16} /> : <IconSun size={16} />}

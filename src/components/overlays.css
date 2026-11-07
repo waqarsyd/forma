@@ -117,6 +117,13 @@
 .wb-shared-say { max-width: 560px; margin: 8vh auto 0; text-align: center; color: var(--ink-2); font-size: 14px; line-height: 1.55; }
 .wb-shared-say h1 { margin: 0 0 10px; font-family: var(--display); font-size: 24px; color: var(--ink); }
 .wb-shared-say .wb-pill { margin-top: 10px; }
+/* The shared page's foot (2026-11-08, site audit item 84): what Forma is, its policies, and a way to report the link. */
+.wb-shared { display: flex; flex-direction: column; }
+.wb-shared-body { flex: 1; width: 100%; box-sizing: border-box; }
+.wb-shared-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 18px; padding: 14px 22px; border-top: 1px solid var(--rule); color: var(--ink-2); font-size: 12.5px; }
+.wb-shared-foot nav { display: flex; gap: 14px; }
+.wb-shared-foot a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; }
+.wb-shared-foot a:hover { color: var(--ink); }
 
 /* The pin beside the title (PinProject.tsx); a star and thumbs until 2026-11-06. */
 .wb-rate { display: inline-flex; align-items: center; gap: 1px; align-self: center; }
