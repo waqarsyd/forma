@@ -101,6 +101,12 @@ export interface ChatMessage<R = unknown, M = unknown> {
    */
   usage?: { input: number; output: number; thinking: number; total: number } | null;
   /**
+   * What the reply offers to do rather than doing (2026-11-07, agent audit
+   * item 47, the owner's choice): an export or the designer the model asked
+   * for, drawn as buttons under the reply and run only when one is pressed.
+   */
+  actions?: { name: string; pane?: string; format?: string }[];
+  /**
    * A redesign this reply asks before making (2026-11-05): with a report
    * open, a change only a full redesign can make costs a minute or two and
    * the whole REPX in tokens, so Forma asks first, as an agent asks before a

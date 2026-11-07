@@ -92,6 +92,12 @@ export interface ChatThreadProps<R> {
    */
   redoable?: ReadonlySet<string>;
   onRedo?: (id: string) => void;
+  /**
+   * A reply's offered action pressed (2026-11-07, the owner's choice): an
+   * export or the designer the model asked for, run only now. By the reply's
+   * id and the action's place in its `actions`.
+   */
+  onAction?: (id: string, index: number) => void;
   /** The answer to a redesign a reply asks before making (2026-11-05): see `ChatMessage.confirm`. */
   onConfirm?: (id: string, yes: boolean) => void;
   /** What a reply cost, as words ("23.4k tokens"), or null; shown beside its time (2026-11-05). */
@@ -412,12 +418,14 @@ const ChatNote = memo(function ChatNote<R>({
   onRate,
   onUndo,
   onRedo,
+  onAction,
   onConfirm,
   usageOf,
   query = '',
 }: {
   message: ChatMessage<R, PreviewMeta>;
   retryDisabled: boolean;
+  onAction?: (id: string, index: number) => void;
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   /** The latest of Forma's replies, whose actions show without pointing at it. */
   latest?: boolean;
@@ -460,6 +468,16 @@ const ChatNote = memo(function ChatNote<R>({
           </div>
         )}
         {message.confirm?.answered === 'no' && <span className="wb-note-done">Not redesigned</span>}
+        {/* What the reply offers rather than does: an export or the designer, run when pressed. */}
+        {!mine && message.actions?.length && onAction ? (
+          <div className="wb-note-actions" role="group" aria-label="Offered by this reply">
+            {message.actions.map((action, i) => (
+              <button key={`${action.name}-${action.format ?? ''}-${i}`} type="button" className="wb-pill wb-pill--outline" disabled={retryDisabled} onClick={() => onAction(message.id, i)}>
+                {action.name === 'export' ? `Export as ${(action.format ?? 'repx').toUpperCase()}` : action.name === 'designer' ? 'Open in designer' : action.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {message.images && message.images.length > 0 && (
           // Sent messages showed a count and nothing else, so once a
@@ -536,6 +554,7 @@ const ChatNote = memo(function ChatNote<R>({
   latest?: boolean;
   onUndo?: (id: string) => void;
   onRedo?: (id: string) => void;
+  onAction?: (id: string, index: number) => void;
   onConfirm?: (id: string, yes: boolean) => void;
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   onRetry: (id: string) => void;
@@ -560,6 +579,7 @@ export default function ChatThread<R>({
   onUndo,
   redoable,
   onRedo,
+  onAction,
   onConfirm,
   usageOf,
   query = '',
@@ -576,8 +596,9 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onRedo, onConfirm, usageOf });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onRedo, onConfirm, usageOf };
+  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, usageOf });
+  latest.current = { onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, usageOf };
+  const act = useCallback((id: string, index: number) => latest.current.onAction?.(id, index), []);
   const usage = useCallback((m: ChatMessage<R, PreviewMeta>) => latest.current.usageOf?.(m) ?? null, []);
   const undo = useCallback((id: string) => latest.current.onUndo?.(id), []);
   const redo = useCallback((id: string) => latest.current.onRedo?.(id), []);
@@ -675,6 +696,7 @@ export default function ChatThread<R>({
           latest={msg.id === lastReplyId}
           onUndo={onUndo && undoable?.has(msg.id) ? undo : undefined}
           onRedo={onRedo && redoable?.has(msg.id) ? redo : undefined}
+          onAction={onAction ? act : undefined}
           onConfirm={onConfirm ? confirm : undefined}
           usageOf={usageOf ? usage : undefined}
           onRetry={retry}

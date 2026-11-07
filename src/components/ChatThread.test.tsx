@@ -569,6 +569,21 @@ describe("actions on Forma's replies", () => {
     expect(within(actions('a2')).queryByText('Redo')).toBeNull();
   });
 
+  // Agent audit item 47, the owner's choice: an export or the designer is a button, run only when pressed.
+  it('draws what a reply offers as buttons, and runs one only when it is pressed', () => {
+    const onAction = vi.fn();
+    const offering = [...thread.slice(0, 3), msg({ id: 'a2', role: 'assistant', text: 'It is ready.', actions: [{ name: 'export', format: 'pdf' }, { name: 'designer' }] })];
+    const { unmount } = draw({ messages: offering, onAction });
+    const group = screen.getByRole('group', { name: 'Offered by this reply' });
+    expect([...group.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Export as PDF', 'Open in designer']);
+    expect(onAction).not.toHaveBeenCalled();
+    fireEvent.click(within(group).getByText('Open in designer'));
+    expect(onAction).toHaveBeenCalledWith('a2', 1);
+    unmount();
+    draw({ messages: offering });
+    expect(screen.queryByRole('group', { name: 'Offered by this reply' })).toBeNull();
+  });
+
   // Agent audit item 75: a report built from the OCR review answers no message.
   it('offers no Try again on a reply Forma wrote of its own accord', () => {
     const own = [...thread, msg({ id: 'a3', role: 'assistant', text: 'Built "Invoice" from the text OCR read.', standalone: true })];

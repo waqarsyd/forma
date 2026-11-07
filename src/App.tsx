@@ -1816,14 +1816,16 @@ export default function App() {
    * Its words only: anything attached stays in the box for the person to
    * send. Steer puts one first and stops what runs, so it goes next.
    */
-  const [queue, setQueue] = useState<{ id: string; text: string }[]>([]);
+  /** A queued message's words, and the pictures it carries when it is one the chat moved to a new project. */
+  type Queued = { id: string; text: string; images?: string[]; imageMeta?: PreviewMeta[] };
+  const [queue, setQueue] = useState<Queued[]>([]);
   /** A different report the chat was asked for, waiting for its turn to end to open a project of its own (agent audit item 20). */
-  const [startNewFrom, setStartNewFrom] = useState<string | null>(null);
+  const [startNewFrom, setStartNewFrom] = useState<Omit<Queued, 'id'> | null>(null);
   useEffect(() => {
     if (isAnalyzing || isChatting || queue.length === 0) return;
     const [next, ...rest] = queue;
     setQueue(rest);
-    void handleGenerate(next.text);
+    void handleGenerate(next.text, next.images?.length ? { images: next.images, imageMeta: next.imageMeta } : undefined);
     // handleGenerate is read at the moment Forma is free; it is declared below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAnalyzing, isChatting, queue]);
@@ -3801,8 +3803,11 @@ export default function App() {
       }
 
       // Forma's own draft stands in for the AI that could not answer
-      // (lib/formaTeam.ts), rather than the request ending in an error.
-      if (team.draft) {
+      // (lib/formaTeam.ts), rather than the request ending in an error. Not
+      // over an open report (2026-11-07, agent audit item 21): a refinement
+      // that failed replaced the report the person had with an OCR draft of
+      // the picture they sent to change it.
+      if (team.draft && !open) {
         try {
           const made = await team.draft();
           if (made && !signal.aborted) {
@@ -4456,7 +4461,15 @@ export default function App() {
     }
     /** The words a design is made from: the turn's brief, which carries the whole conversation, or the message. */
     let designWords = currentPrompt;
-    if (!isGenerationTurn(currentPreviews.length, currentTexts.length)) {
+    /*
+     * A picture or a file sent with a report open goes to the agent too
+     * (2026-11-07, agent audit item 21), which reads it with the report: it
+     * may be a question about it, a change to match it, or a design to
+     * redesign from. It skipped the agent and redesigned the report every
+     * time. With no report open it is a design, and goes straight to one.
+     */
+    const withPictures = isGenerationTurn(currentPreviews.length, currentTexts.length);
+    if (!withPictures || base?.repxContent) {
       setIsChatting(true);
       setStreamingReply('');
       partialReplyRef.current = '';
@@ -4481,7 +4494,7 @@ export default function App() {
         const answered = await chatReply(history, config, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
-        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS } : undefined, remembered);
+        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined);
         if (turn.signal.aborted) return;
         /*
          * What the turn cost, kept on the reply it writes (2026-11-07, agent
@@ -4508,7 +4521,7 @@ export default function App() {
             role: 'assistant',
             text: [outcome.reply, 'This report stays in its project; the new one opens in a project of its own.'].filter(Boolean).join(' '),
           })]);
-          setStartNewFrom(outcome.brief || currentPrompt);
+          setStartNewFrom({ text: outcome.brief || currentPrompt, ...(withPictures ? { images: currentPreviews, imageMeta: stagedMeta } : {}) });
           return;
         }
         // Edits that add a label take the remembered font, unless they name one (agent audit item 13).
@@ -4520,7 +4533,15 @@ export default function App() {
          * so an export carries the report as edited. Each says what it did;
          * sample rows need a report that prints a field.
          */
-        const tools = agent ? outcome.tools ?? [] : [];
+        /*
+         * An export or the designer is offered as a button under the reply
+         * and runs only when pressed (2026-11-07, agent audit item 47, the
+         * owner's choice): a model can be told to ask for one by a label in
+         * the report it reads. The rest still run at once.
+         */
+        const split = agent ? agent.splitTools(outcome.tools ?? []) : { now: [], ask: [] };
+        const tools = split.now;
+        const offered = split.ask.length ? { actions: split.ask } : {};
         const toolsDone = agent
           ? tools.map((t) =>
               t.name === 'testData' && boundFields.length === 0 ? 'no sample rows: the report prints no fields'
@@ -4590,6 +4611,7 @@ export default function App() {
             setMessages(prev => [...prev, withCost({
               id,
               role: 'assistant',
+              ...offered,
               text: [
                 outcome.reply,
                 secondPass ? 'Forma took a second pass for what the first could not make.' : '',
@@ -4610,6 +4632,7 @@ export default function App() {
             setMessages(prev => [...prev, withCost({
               id,
               role: 'assistant',
+              ...offered,
               text: ['Nothing needed changing: the report already reads that way.', agent.changesMarkdown([], [...done.declined, ...toolsRefused], toolsDone)].filter(Boolean).join('\n\n'),
             })]);
             announceReady('Reply ready');
@@ -4627,12 +4650,14 @@ export default function App() {
             confirm: { prompt: designWords },
           })]);
           return;
-        } else if (open && outcome.wantsReport) {
+        } else if (open && outcome.wantsReport && !withPictures) {
           /*
            * A change only a redesign can make, asked first (2026-11-05): with a
            * report open it rewrites the whole report, minutes and the whole
            * REPX in tokens, as an agent asks before a costly step. The buttons
-           * or a typed yes start it (`handleConfirm`).
+           * or a typed yes start it (`handleConfirm`). A picture sent to
+           * redesign from is the request already, and goes on, as it always
+           * has: the confirmation keeps words, not pictures.
            */
           setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
@@ -4646,6 +4671,7 @@ export default function App() {
           setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
             role: 'assistant',
+            ...offered,
             text: agent && (toolsDone.length || toolsRefused.length) ? [outcome.reply, agent.changesMarkdown([], toolsRefused, toolsDone)].filter(Boolean).join('\n\n') : outcome.reply,
           })]);
           announceReady('Reply ready');
@@ -4708,10 +4734,11 @@ export default function App() {
    */
   useEffect(() => {
     if (!startNewFrom || isChatting || isAnalyzing) return;
-    const words = startNewFrom;
+    const request = startNewFrom;
     setStartNewFrom(null);
     handleClearChat('save');
-    setQueue([{ id: nextMessageId(), text: words }]);
+    // With its pictures, when it came with any (agent audit item 21).
+    setQueue([{ id: nextMessageId(), ...request }]);
     // handleClearChat is read at the moment the turn has ended.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startNewFrom, isChatting, isAnalyzing]);
@@ -6453,6 +6480,11 @@ export default function App() {
                 onUndo={handleUndo}
                 redoable={redoableIds}
                 onRedo={handleRedo}
+                // An export or the designer a reply offered, run when pressed (agent audit item 47).
+                onAction={(id, index) => {
+                  const action = messages.find((m) => m.id === id)?.actions?.[index];
+                  if (action) runToolsRef.current?.([action as AgentTool]);
+                }}
                 onConfirm={(id, yes) => void handleConfirm(id, yes)}
                 onShowVersion={handleShowVersion}
                 // The log's search, marked in the card's replies too (2026-11-06).

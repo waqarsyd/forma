@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changedControls, distinctTools, followUpMessage, formatEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -258,6 +258,13 @@ describe('the new edits, and edits that do what they say', () => {
     expect(out.edits[0]).toMatchObject({ bold: false, size: 12 });
     expect(out.edits[1]).toMatchObject({ visible: false });
     expect(applyEdits(doc(lbl(1, 'a', 'Font="Arial, 9pt, style=Bold"')), out.edits.slice(0, 1)).xml).toContain('Font="Arial, 12pt"');
+  });
+
+  // Agent audit item 47, the owner's choice: what takes something out of the page waits for a press.
+  it('offers an export and the designer as buttons, and runs a pane, sample rows and undo at once', () => {
+    const { now, ask } = splitTools([{ name: 'show', pane: 'preview' }, { name: 'export', format: 'pdf' }, { name: 'testData' }, { name: 'designer' }, { name: 'undo' }]);
+    expect(now.map((t) => t.name)).toEqual(['show', 'testData', 'undo']);
+    expect(ask).toEqual([{ name: 'export', format: 'pdf' }, { name: 'designer' }]);
   });
 
   // Items 23 and 38.

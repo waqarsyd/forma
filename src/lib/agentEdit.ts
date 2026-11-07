@@ -725,6 +725,23 @@ export function toolLine(tool: AgentTool): string {
 }
 
 /**
+ * The tools that wait for the person's word (2026-11-07, agent audit item 47,
+ * the owner's choice): an export downloads a file and the designer opens a
+ * program, so a model asking for either, perhaps told to by a label in the
+ * report, offers a button instead. Showing a pane, sample rows and undo,
+ * which take nothing out of the page, still run at once.
+ */
+export const ASK_FIRST_TOOLS: readonly ToolName[] = ['export', 'designer'];
+
+/** The tools to run at once, and those offered as a button. */
+export function splitTools(tools: readonly AgentTool[]): { now: AgentTool[]; ask: AgentTool[] } {
+  return {
+    now: tools.filter((t) => !ASK_FIRST_TOOLS.includes(t.name)),
+    ask: tools.filter((t) => ASK_FIRST_TOOLS.includes(t.name)),
+  };
+}
+
+/**
  * The tools to run, once each (agent audit item 38): the same tool asked
  * for twice runs once, and a second pane to show replaces the first.
  */
@@ -750,7 +767,7 @@ export function followUpMessage(declined: readonly string[], brought: readonly s
   const parts = ['Forma applied your edits.'];
   if (declined.length) parts.push(`These could not be made:\n${declined.map((d) => `- ${d}`).join('\n')}`);
   if (brought.length) parts.push(`The checks found these errors the edits brought:\n${brought.map((b) => `- ${b}`).join('\n')}`);
-  parts.push('If the edits can make what was meant another way, or fix those errors, answer with "edit" and only those edits, against the report as it now is (the outline above). Otherwise answer with "answer" and say plainly what could not be done.');
+  parts.push('If the edits can make what was meant another way, or fix those errors, answer with "edit" and only those edits, against the report as it now is (the outline). Otherwise answer with "answer" and say plainly what could not be done.');
   return parts.join('\n\n');
 }
 
