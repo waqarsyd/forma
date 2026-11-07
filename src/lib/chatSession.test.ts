@@ -5,6 +5,7 @@ import {
   branchesForResend,
   showBranch,
   messageTime,
+  conversationContext,
   conversationMarkdown,
   buildChatHistory,
   isGenerationTurn,
@@ -380,6 +381,33 @@ describe('conversationMarkdown', () => {
   });
 });
 
+/* The conversation a chat turn carries (2026-11-07, agent audit item 91). */
+describe('conversationContext', () => {
+  it('sends a short conversation whole, as it was', () => {
+    expect(conversationContext([{ role: 'user', text: 'an invoice' }, { role: 'assistant', text: 'Built it.' }, { role: 'user', text: 'make it bold' }])).toBe(
+      'User: an invoice\nAssistant: Built it.\nUser: make it bold',
+    );
+  });
+
+  it('cuts an older long message to its start and end, never the one being answered', () => {
+    const schema = `CREATE TABLE orders (\n${'  col INT,\n'.repeat(400)})`;
+    const out = conversationContext([{ role: 'user', text: schema }, { role: 'assistant', text: 'Noted.' }, { role: 'user', text: schema }]);
+    const [first, last] = out.split('\nAssistant: Noted.\n');
+    expect(first).toMatch(/characters left out/);
+    expect(first.length).toBeLessThan(2_500);
+    expect(last).toBe(`User: ${schema}`);
+  });
+
+  it('keeps the newest messages that fit, and names what was asked before them', () => {
+    const history = Array.from({ length: 40 }, (_, i) => ({ role: (i % 2 ? 'assistant' : 'user') as 'user' | 'assistant', text: `${i % 2 ? 'Done' : 'Request'} ${i}: ${'x'.repeat(900)}` }));
+    const out = conversationContext(history, 8_000);
+    expect(out.length).toBeLessThan(9_000);
+    expect(out).toContain('Request 38');
+    expect(out.startsWith('(Earlier in this conversation, not shown in full, the person asked: "Request')).toBe(true);
+    expect(out).toMatch(/and \d+ more before those\.\)/);
+  });
+});
+
 /* What a screen reader hears when a request settles (2026-11-07, agent audit item 7). */
 describe('requestAnnouncement', () => {
   const ask = msg({ id: 'u', text: 'an invoice' });
@@ -394,6 +422,8 @@ describe('requestAnnouncement', () => {
   it("says a report is ready, or the start of a reply, its Markdown taken out and long words cut", () => {
     expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'Built **it**.', result: {} })] })).toBe('The report is ready. Built it.');
     expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: '## Done\n\n- `Total` is bold\n\n```xml\n<x/>\n```' })] })).toBe('Forma replied: Done - Total is bold');
+    // Emphasis goes; an underscore inside a name stays (seen live: "VITEFORMAMOCK").
+    expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: '_Set_ `VITE_FORMA_MOCK` __aside__.' })] })).toBe('Forma replied: Set VITE_FORMA_MOCK aside.');
     const long = requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'word '.repeat(60) })] });
     expect(long.length).toBeLessThanOrEqual('Forma replied: '.length + 158);
     expect(long.endsWith('word…')).toBe(true);

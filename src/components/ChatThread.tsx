@@ -23,6 +23,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type Re
 import type { PreviewMeta } from '../lib/attachments';
 import { messageMatches, messageTime, searchParts, type ChatMessage } from '../lib/chatSession';
 import { formatSessionStamp } from '../lib/datetime';
+import { copyText } from '../lib/clipboard';
 
 /**
  * When a message was made, and what a reply cost (2026-11-05), quiet beside
@@ -152,28 +153,25 @@ function MessageText({ text, query, markdown }: { text: string; query: string; m
 }
 
 /**
- * Copy, under a reply and under the person's own message (2026-11-05): the
- * message's own words on the clipboard, "Copied" for a moment, and nothing
- * said when the browser refuses the clipboard.
+ * Copy, under a reply and on the person's message in the card's pill
+ * (2026-11-05): the message's own words on the clipboard, "Copied" for a
+ * moment. Through lib/clipboard.ts since 2026-11-07 (agent audit item 56),
+ * as every other Copy in the workspace: it called the clipboard itself, so
+ * on a plain-HTTP page, where the browser has none, it did nothing and said
+ * nothing. The helper falls back to the older copy command there, and a
+ * refusal says "Could not copy".
  */
 export function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+  const [said, setSaid] = useState<'' | 'Copied' | 'Could not copy'>('');
   useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1600);
+    if (!said) return;
+    const t = setTimeout(() => setSaid(''), 1600);
     return () => clearTimeout(t);
-  }, [copied]);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-    } catch {
-      /* no clipboard here (an insecure page, a refusal): nothing to say */
-    }
-  };
+  }, [said]);
+  const copy = async () => setSaid((await copyText(text)) ? 'Copied' : 'Could not copy');
   return (
-    <button type="button" className="wb-note-act wb-note-icon" title={copied ? 'Copied' : 'Copy'} aria-label={copied ? 'Copied' : 'Copy'} onClick={() => void copy()}>
-      {copied ? <IconCheck size={11} /> : <IconCopy size={13} />}
+    <button type="button" className="wb-note-act wb-note-icon" title={said || 'Copy'} aria-label={said || 'Copy'} onClick={() => void copy()}>
+      {said === 'Copied' ? <IconCheck size={11} /> : <IconCopy size={13} />}
     </button>
   );
 }

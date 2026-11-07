@@ -143,6 +143,13 @@ describe('the replies', () => {
     );
   });
 
+  // Agent audit item 96: mock mode asked no AI, and credited Gemini anyway.
+  it('says the canned report stood in for the AI in mock mode, and names no AI', () => {
+    const line = teamLine(['ocr', 'reader', 'ai', 'checks'], 'Gemini', true);
+    expect(line).toBe("OCR read the words, Forma's box reader put each in its band, the canned mock report stood in for an AI and Forma checked and repaired the result.");
+    expect(line).not.toContain('Gemini');
+  });
+
   it('says why the AI did not answer in a few words, and what the draft was made from', () => {
     expect(failureReason('429 RESOURCE_EXHAUSTED: You exceeded your current quota.')).toBe('its free quota is used up for now');
     expect(failureReason('TypeError: Failed to fetch')).toBe('it could not be reached');

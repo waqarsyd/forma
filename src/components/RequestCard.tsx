@@ -21,7 +21,7 @@ import ChatThread, { CopyButton, EditForm, Marked, type AttachmentView, type Cha
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import { messageTime, requestAnnouncement, requestTitle, type ChatMessage, type ChatRequest } from '../lib/chatSession';
 import { formatSessionStamp } from '../lib/datetime';
-import { IconChevronDown, IconPencil, IconTrash } from './landing/icons';
+import { IconChat, IconChevronDown, IconMinus, IconPencil, IconTrash } from './landing/icons';
 
 export interface RequestCardProps<R> extends Omit<ChatThreadProps<R>, 'messages' | 'showWorking'> {
   /** The request shown, or null before the first message. */
@@ -252,13 +252,16 @@ export default function RequestCard<R>({
   const said = useAnnouncement(request, latest, isChatting || isAnalyzing || busy);
   return (
     <section
-      className={`wb-reply${collapsed ? ' wb-is-collapsed' : ''}${latest && (isChatting || isAnalyzing) ? ' wb-is-working' : ''}`}
+      className={`wb-reply${collapsed ? ' wb-is-collapsed' : ''}`}
       aria-label="Forma's reply"
     >
       <div className="wb-reply-said" role="status" aria-live="polite">
         {said.text ? <span key={said.n}>{said.text}</span> : null}
       </div>
-      {/* Stitch's two-dot mark: it folds the card to itself and opens it again. */}
+      {/* The mark that folds the card to itself and opens it again. Stitch's
+          two dots until 2026-11-07 (agent audit item 98), which read as
+          someone typing: a minimise line while open, a chat bubble folded,
+          with a quiet dot on it while Forma works. */}
       <button
         type="button"
         className="wb-reply-mark"
@@ -267,8 +270,8 @@ export default function RequestCard<R>({
         title={collapsed ? 'Show the reply' : 'Fold the reply away'}
         onClick={onToggle}
       >
-        <i />
-        <i />
+        {collapsed ? <IconChat size={18} /> : <IconMinus size={14} />}
+        {collapsed && latest && (isChatting || isAnalyzing || busy) ? <span className="wb-reply-busy" aria-hidden="true" /> : null}
       </button>
       {/* Folded, the card hides what it holds rather than dropping it
           (2026-11-07, agent audit item 32): answers typed into Forma's

@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, parsesSoFar, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -33,6 +33,26 @@ const report = `<?xml version="1.0" encoding="utf-8"?>
 
 const control = (xml: string, name: string) => parseReportStructure(xml).bands.flatMap((b) => b.controls).find((c) => c.name === name)!;
 const edit = (...edits: AgentEdit[]) => applyEdits(report, edits);
+
+// Agent audit item 90: a turn read the same file three or four times over; each version is parsed once now.
+describe('one parse per version of the file', () => {
+  it('parses the report once for the outline, once more per edit made, and not again for the Changed list', () => {
+    const unique = report.replace('<?xml version="1.0" encoding="utf-8"?>', '<?xml version="1.0" encoding="utf-8"?><!-- item 90 -->');
+    const before = parsesSoFar();
+    reportOutline(unique);
+    const out = applyEdits(unique, [
+      { op: 'font', control: 'title', bold: true },
+      { op: 'align', control: 'subtitle', align: 'center' },
+    ]);
+    expect(out.applied).toHaveLength(2);
+    describeChanges(unique, out.xml);
+    changedControls(unique, out.xml);
+    // The original, the version after the first edit, and the final one.
+    expect(parsesSoFar() - before).toBeLessThanOrEqual(3);
+    // And what is shared is the same answer as a fresh parse gives.
+    expect(reportOutline(unique)).toBe(reportOutline(`${unique} `));
+  });
+});
 
 // The selection toolbar's Format menu (2026-11-05), made with the chat's own edits.
 describe('formatEdits', () => {

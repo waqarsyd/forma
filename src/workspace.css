@@ -1748,14 +1748,16 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-float-card { top: 16px; left: 16px; width: 304px; max-height: calc(100% - 16px - 88px); display: flex; flex-direction: column; }
 .wb-reply { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; border-radius: 18px; overflow: hidden; }
 .wb-reply.wb-is-collapsed { flex: none; align-self: flex-start; width: 60px; height: 60px; display: grid; place-items: center; }
+/* The fold mark (agent audit item 98): a minimise line while open, a chat
+   bubble folded; it was two dots on a dark pill, which read as typing. */
 .wb-reply-mark {
-  flex: none; align-self: flex-start; margin: 14px 14px 0; width: 36px; height: 20px; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  border: 0; border-radius: 999px; background: var(--ink); cursor: pointer;
+  position: relative; flex: none; align-self: flex-end; margin: 10px 10px -6px 0; width: 28px; height: 28px; padding: 0;
+  display: inline-grid; place-items: center;
+  border: 0; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer;
 }
-.wb-reply-mark i { width: 6px; height: 6px; border-radius: 50%; background: var(--panel); }
-.wb-reply.wb-is-collapsed .wb-reply-mark { margin: 0; align-self: center; }
-.wb-reply.wb-is-working .wb-reply-mark i:last-child { animation: wb-breathe 1s ease-in-out infinite; }
+.wb-reply-mark:hover { background: var(--track); color: var(--ink); }
+.wb-reply.wb-is-collapsed .wb-reply-mark { margin: 0; align-self: center; width: 44px; height: 44px; color: var(--ink); }
+.wb-reply-busy { position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-2); animation: wb-breathe 1.2s ease-in-out infinite; }
 @keyframes wb-breathe { 50% { opacity: .25; } }
 
 .wb-ask { flex: none; margin: 12px 12px 0; padding: 8px 6px 8px 10px; border: 1px solid var(--rule); border-radius: 14px; background: var(--panel); }
@@ -1770,6 +1772,11 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-ask .wb-edit { flex: 1; min-width: 0; }
 .wb-ask.wb-is-open .wb-ask-more svg { transform: rotate(180deg); }
 .wb-ask-extra { display: grid; gap: 6px; margin-top: 8px; padding-left: 28px; }
+/* The canvas before a report (agent audit item 97): muted words in the middle,
+   no sheet, no coordinates, no accent. */
+.wb-canvas-empty { align-self: center; max-width: 420px; margin: auto; padding: 24px; text-align: center; }
+.wb-canvas-empty h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; color: var(--ink); }
+.wb-canvas-empty p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
 /* The card's contents, hidden rather than dropped while it is folded (agent
    audit item 32); no box of its own, so the pill and the thread stay the
    card's flex children. */

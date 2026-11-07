@@ -1,4 +1,5 @@
 import { loadGenAI } from "../lib/genai";
+import { conversationContext } from "../lib/chatSession";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError, dailyLimitOf, isOffline, isOverloadedError, isQuotaExhausted, isTruncatedStreamMessage, msUntilPacificMidnight, quotaKind, quotaWaitMs, type FailureContext } from "../lib/geminiErrors";
 import { parseRepxAnswer, repxOfAnswer } from "../lib/analysisResponse";
@@ -1180,10 +1181,9 @@ export async function chatReply(
     ? { provider: endpoint.kind, where: endpoint.baseUrl, model: endpoint.model, triedOthers: false }
     : { triedOthers: !pinnedModel };
 
-  const transcript = history
-    .slice(-10) // recent context is enough, and keeps the call small
-    .map((turn) => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`)
-    .join('\n');
+  // The newest messages by size, the older ones named in a line (agent audit
+  // item 91, lib/chatSession.ts): it was the last ten, whole, however long.
+  const transcript = conversationContext(history);
 
   const startedAt = Date.now();
 

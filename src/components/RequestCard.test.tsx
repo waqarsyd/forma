@@ -58,6 +58,19 @@ describe('RequestCard', () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
+  // Agent audit item 98: two dots on a pill read as someone typing.
+  it('marks folding with icons, not dots, and shows a quiet dot on the folded card while Forma works', () => {
+    const { rerender } = draw();
+    const mark = screen.getByRole('button', { name: 'Fold the reply away' });
+    expect(mark.querySelector('svg')).toBeTruthy();
+    expect(mark.querySelectorAll('i')).toHaveLength(0);
+    const props = { request, latest: true, onToggle: () => {}, isAnalyzing: false, streamingReply: '', onRetry: () => {}, onOpenAttachment: () => {} };
+    rerender(<RequestCard<unknown> {...props} collapsed isChatting={false} />);
+    expect(document.querySelector('.wb-reply-busy')).toBeNull();
+    rerender(<RequestCard<unknown> {...props} collapsed isChatting />);
+    expect(document.querySelector('.wb-reply-busy')).toBeTruthy();
+  });
+
   // Agent audit item 32: a fold hid the card by dropping it, and with it an edit being typed.
   it('keeps an edit being typed over a fold', () => {
     const { rerender } = draw({ onEdit: vi.fn() });

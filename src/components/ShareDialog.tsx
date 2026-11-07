@@ -13,6 +13,7 @@
  * and how to make sure the project is saved, since a share names its project.
  */
 import { useEffect, useRef, useState } from 'react';
+import { copyText } from '../lib/clipboard';
 import { loadFirebase } from '../lib/firebaseClient';
 import { isEmail, makeShareId, shareDocument, shareLink, withInvitee, type ShareAccess, type ShareDocument, type SharedReport } from '../lib/shares';
 import { IconClose } from './landing/icons';
@@ -209,7 +210,7 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
                 <h3>Link</h3>
                 <div className="wb-share-link">
                   <input readOnly value={link} aria-label="Link to the shared report" onFocus={(e) => e.target.select()} />
-                  <button type="button" className="wb-pill wb-pill--outline" onClick={() => void navigator.clipboard?.writeText(link).then(() => onNotice('Copied the link')).catch(() => undefined)}>Copy link</button>
+                  <button type="button" className="wb-pill wb-pill--outline" onClick={() => void copyText(link).then((ok) => onNotice(ok ? 'Copied the link' : 'Could not copy the link: select it and copy it by hand'))}>Copy link</button>
                 </div>
                 <p className="wb-share-note">
                   The shared copy is from {new Date(share!.timestamp).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.{' '}

@@ -160,7 +160,34 @@ function says(c: { text: string; field: string | null; data?: { expression: stri
  * since the edits name cells and positions as the file does. The Preview
  * draws what prints; the outline and the edits read this.
  */
-const parseAsWritten = (xml: string) => parseReportStructure(xml, undefined, { asWritten: true });
+/*
+ * Parsed once per version of the file (2026-11-07, agent audit item 90). A
+ * turn read the same REPX three or four times on the main thread: the
+ * outline, each edit's search for its control, the Changed list's before
+ * and after. The last few versions are kept by their text, which a turn
+ * passes from one step to the next unchanged, so each distinct file is
+ * parsed once. Nothing here changes what a parse returns; the callers only
+ * read it, which is what makes sharing it safe.
+ */
+const PARSE_CACHE = 6;
+const parsed = new Map<string, ReturnType<typeof parseReportStructure>>();
+let parses = 0;
+const parseAsWritten = (xml: string) => {
+  const hit = parsed.get(xml);
+  if (hit) {
+    // Newest last, so the oldest is the one to go.
+    parsed.delete(xml);
+    parsed.set(xml, hit);
+    return hit;
+  }
+  parses += 1;
+  const s = parseReportStructure(xml, undefined, { asWritten: true });
+  parsed.set(xml, s);
+  if (parsed.size > PARSE_CACHE) parsed.delete(parsed.keys().next().value as string);
+  return s;
+};
+/** How many times a file has really been parsed here, for the test that holds item 90. */
+export const parsesSoFar = () => parses;
 
 /** Whether DevExpress prints the report right to left, its alignments flipped; and mirrored, its layout too. */
 function rightToLeftOf(xml: string): { rtl: boolean; mirrored: boolean } {

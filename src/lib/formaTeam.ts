@@ -173,9 +173,20 @@ const ROLES: Record<TeamMember, string> = {
   checks: 'Forma checked and repaired the result',
 };
 
-/** One sentence naming who did what, for the reply under a report. */
-export function teamLine(members: readonly TeamMember[], aiName: string): string {
-  const parts = members.map((m) => (m === 'ai' ? `${aiName} designed the report` : m === 'corrector' ? `${aiName} corrected Forma's draft` : ROLES[m]));
+/**
+ * One sentence naming who did what, for the reply under a report. In mock
+ * mode (`VITE_FORMA_MOCK`) no AI was asked, and the sentence says the canned
+ * report stood in for it (2026-11-07, agent audit item 96): it credited
+ * Gemini with a report Gemini never saw.
+ */
+export function teamLine(members: readonly TeamMember[], aiName: string, mock = false): string {
+  const parts = members.map((m) =>
+    m === 'ai'
+      ? mock ? 'the canned mock report stood in for an AI' : `${aiName} designed the report`
+      : m === 'corrector'
+        ? mock ? "the mock stood in for the AI's corrections" : `${aiName} corrected Forma's draft`
+        : ROLES[m],
+  );
   if (parts.length < 2) return '';
   const text = `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}.`;
   return text.charAt(0).toUpperCase() + text.slice(1);

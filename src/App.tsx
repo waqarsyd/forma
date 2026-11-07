@@ -61,8 +61,8 @@ import {
   sidebarToggleLabel,
 } from './lib/sidebar';
 /* `landing/` is the shared marketing design system, not a private folder — see
-   CLAUDE.md. Eyebrow is reused here rather than restating its markup. */
-import { Eyebrow } from './components/landing/sections';
+   CLAUDE.md. Its Eyebrow drew the empty canvas until 2026-11-07 (agent audit
+   item 97), the workspace's last use of it. */
 /*
  * Types only — erased at compile time, so this line costs nothing at runtime and
  * does NOT pull the service into the eager chunk. The values it used to import
@@ -258,6 +258,7 @@ import {
   type ChatMessage as ChatSessionMessage,
 } from './lib/chatSession';
 import { packChanges, unpackChanges, REPLY_CHANGES_KEY } from './lib/replyChanges';
+import { copyText } from './lib/clipboard';
 import { DRAFTS_KEY, keepQueue, keptQueueFor, LEGACY_DRAFT_KEY, movedDraft, NEW_DRAFT, parseDrafts, QUEUE_KEY, queuedFiles, withDraft, withoutFiles, type Drafts } from './lib/composerStore';
 import { isPlainBuild, isRememberMessage, pendingReplyKind, withSelection } from './lib/chatTurn';
 import { formatSessionStamp } from './lib/datetime';
@@ -816,6 +817,12 @@ const REVIEW_WIDTH_EPOCH_KEY = 'reviewWidthEpoch';
 /* The project open in this tab, kept in sessionStorage so a reload opens it
    again (2026-11-05). An id only; the project itself is where it was saved. */
 const OPEN_PROJECT_KEY = 'forma:openProject';
+/**
+ * Whether `VITE_FORMA_MOCK` answers instead of an AI, read as geminiService's
+ * `isMockMode` reads it but without importing that module, which stays out of
+ * the first download. A reply says so rather than crediting an AI (item 96).
+ */
+const MOCK_MODE = ['true', 'misordered'].includes(((import.meta as { env?: Record<string, string | undefined> }).env ?? {}).VITE_FORMA_MOCK ?? '');
 /* The message typed and not yet sent, and the queue, kept per tab and per
    project since 2026-11-07: see lib/composerStore.ts. */
 /* Pinned and archived projects, kept on this device (2026-11-05). Ids only. */
@@ -3947,7 +3954,8 @@ export default function App() {
       // Add assistant message, with who took part when more than the AI did.
       const credits = team.members.length
         ? await import('./lib/formaTeam')
-            .then(m => m.teamLine([...team.members, ...(response.fromDraft ? (['corrector', 'builder'] as const) : (['ai', 'checks'] as const))], aiName))
+            // Mock mode asked no AI, and says so rather than crediting one (agent audit item 96).
+            .then(m => m.teamLine([...team.members, ...(response.fromDraft ? (['corrector', 'builder'] as const) : (['ai', 'checks'] as const))], aiName, MOCK_MODE))
             .catch(() => '')
         : '';
       // A redesign says what it changed and can be undone, as an edit in
@@ -5726,7 +5734,8 @@ export default function App() {
       document.querySelector<HTMLTextAreaElement>('.wb-composer [aria-label="Message"]')?.focus();
     } else {
       const last = [...messages].reverse().find((m) => m.role === 'assistant' && m.text);
-      if (last) void navigator.clipboard?.writeText(last.text).then(() => setSaveNotice('Copied the last reply.')).catch(() => undefined);
+      // Through lib/clipboard.ts (agent audit item 56): on plain HTTP this did nothing and said nothing.
+      if (last) void copyText(last.text).then((ok) => setSaveNotice(ok ? 'Copied the last reply.' : 'Could not copy: this browser refused the clipboard.'));
     }
   };
 
@@ -6733,20 +6742,18 @@ export default function App() {
               />
             </Suspense>
           ) : (
-            <div className="wb-proof-holder wb-rise wb-rise-2">
-              <div className="wb-sheet wb-reg-marks">
-                <Eyebrow coord="x 000 · y 0000">Canvas</Eyebrow>
-                {/* h2, not h3: this follows the bench's h1 and would otherwise
-                    skip a level. `.wb-sheet h2` in workspace.css carries the
-                    same styling the ported `.wb-sheet h3` rule gives, so this
-                    looks identical. */}
-                <h2 style={{ marginTop: 22 }}>Ready to process</h2>
-                <p>
-                  Attach a design in the box below — a screenshot, a PDF, or an existing{' '}
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>.repx</span> — or describe the
-                  report you want, and it lands here.
-                </p>
-              </div>
+            /* The canvas before a report, once something has been said
+               (2026-11-07, agent audit item 97): quiet, as the chat apps leave
+               an empty canvas, where the 2026-08-12 port's drafting sheet
+               stayed, an orange "X 000 · Y 0000 CANVAS" over "Ready to
+               process". h2, as it follows the bench's h1. */
+            <div className="wb-canvas-empty wb-rise wb-rise-2">
+              <h2>{isAnalyzing ? 'Designing the report…' : 'No report yet'}</h2>
+              <p>
+                {isAnalyzing
+                  ? 'It appears here when it is ready.'
+                  : 'Describe the report you want, or attach a picture, a PDF or a .repx, and it appears here.'}
+              </p>
             </div>
           )}
         </div>

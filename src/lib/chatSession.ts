@@ -478,6 +478,48 @@ export function requestState(request: ChatRequest): 'failed' | 'waiting' | 'done
   return 'done';
 }
 
+/** How much of the conversation a chat turn carries, in characters (agent audit item 91). */
+export const CONTEXT_CHARS = 16_000;
+/** An older message longer than this is cut to its start and its end. */
+export const TURN_CHARS = 2_400;
+
+/**
+ * The conversation as a chat turn sends it (2026-11-07, agent audit item 91):
+ * the newest messages, as many as fit `budget` characters, an older long one
+ * cut to its start and its end, and before them one line naming what the
+ * person asked earlier, so a request from the start of a long session is not
+ * simply gone. It was the last ten messages, whole, however long: a pasted
+ * schema or a long reply could fill the call, and the eleventh message back
+ * might as well never have been said. The newest message, the one being
+ * answered, is never cut. No AI is asked to summarise: the line is the
+ * person's own words, free and instant.
+ */
+export function conversationContext(history: readonly { role: 'user' | 'assistant'; text: string }[], budget = CONTEXT_CHARS): string {
+  const said = (role: 'user' | 'assistant') => (role === 'user' ? 'User' : 'Assistant');
+  const cut = (text: string) =>
+    text.length > TURN_CHARS ? `${text.slice(0, TURN_CHARS - 400)} […${text.length - TURN_CHARS + 100} characters left out…] ${text.slice(-300)}` : text;
+  const kept: string[] = [];
+  let used = 0;
+  let i = history.length - 1;
+  for (; i >= 0; i -= 1) {
+    const line = `${said(history[i].role)}: ${i === history.length - 1 ? history[i].text : cut(history[i].text)}`;
+    if (kept.length && used + line.length > budget) break;
+    kept.unshift(line);
+    used += line.length + 1;
+  }
+  const earlier = history
+    .slice(0, i + 1)
+    .filter((t) => t.role === 'user' && t.text.trim())
+    .map((t) => {
+      const first = t.text.trim().split('\n')[0];
+      return first.length > 80 ? `${first.slice(0, 77)}…` : first;
+    });
+  if (!earlier.length) return kept.join('\n');
+  const named = earlier.slice(-12).map((q) => `"${q}"`).join('; ');
+  const more = earlier.length > 12 ? `; and ${earlier.length - 12} more before those` : '';
+  return [`(Earlier in this conversation, not shown in full, the person asked: ${named}${more}.)`, ...kept].join('\n');
+}
+
 /**
  * What a screen reader hears when a request settles (2026-11-07, agent audit
  * item 7), said once in the card's status region: a failure in its own words,
@@ -499,7 +541,9 @@ export function requestAnnouncement(request: ChatRequest): string {
   if (reply.confirm && !reply.confirm.answered) return 'Forma asks whether to redesign the report.';
   const words = reply.text
     .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/[*_`#>|[\]]/g, '')
+    .replace(/[*`#>|[\]]/g, '')
+    // An underscore of emphasis, at a word's edge; one inside a name (VITE_FORMA_MOCK) stays.
+    .replace(/(^|[^\w])_+|_+(?=[^\w]|$)/g, '$1')
     .replace(/\s+/g, ' ')
     .trim();
   const said = words.length > 160 ? `${words.slice(0, 157).replace(/\s+\S*$/, '')}…` : words;

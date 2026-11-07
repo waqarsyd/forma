@@ -373,6 +373,14 @@ describe("actions on Forma's replies", () => {
     expect(await within(actions('a2')).findByLabelText('Copied')).toBeTruthy();
   });
 
+  // Agent audit item 56: on plain HTTP the browser has no clipboard, and Copy did nothing and said nothing.
+  it('says so when the clipboard cannot be had', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    draw({ messages: thread });
+    fireEvent.click(within(actions('a2')).getByLabelText('Copy'));
+    expect(await within(actions('a2')).findByLabelText('Could not copy')).toBeTruthy();
+  });
+
   it('rates a reply, and takes the rating back when the same is chosen again', () => {
     const onRate = vi.fn();
     const { rerender } = draw({ messages: thread, onRate });
