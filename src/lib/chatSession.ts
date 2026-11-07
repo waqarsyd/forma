@@ -95,6 +95,12 @@ export interface ChatMessage<R = unknown, M = unknown> {
    */
   standalone?: true;
   /**
+   * What a chat reply cost (2026-11-07, agent audit item 79), shown beside its
+   * time as a generation's is from its result. It was thrown away, so a turn
+   * that edited a report in place, the cheap path, showed no cost at all.
+   */
+  usage?: { input: number; output: number; thinking: number; total: number } | null;
+  /**
    * A redesign this reply asks before making (2026-11-05): with a report
    * open, a change only a full redesign can make costs a minute or two and
    * the whole REPX in tokens, so Forma asks first, as an agent asks before a

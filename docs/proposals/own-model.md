@@ -193,6 +193,17 @@ The settings dialog now asks which AI answers, in a panel of its own
   model, and "Find models" lists what the server has, image readers first.
   A server that cannot be reached is told about plainly: Ollama needs
   `OLLAMA_ORIGINS` set to the site's address, and LM Studio needs CORS on.
+  Since 2026-11-07 (the agent audit's batch E) a request also needs room:
+  Ollama's default context drops the head of a long request without a
+  word, so the panel says to start it with `OLLAMA_CONTEXT_LENGTH=32768`,
+  and `contextTooSmall` in `compatClient.ts` fails a request whose prompt
+  the server counted at under half of what was sent. An answer is given at
+  least `MIN_COMPAT_OUTPUT_TOKENS` (4,096), since a reasoning model thinks
+  inside that limit, and one that thought it all away is named as such;
+  a 400 asks again without the schema only when it is about the format; a
+  schema-less answer is read from its first brace to its last, with its
+  quoted "false" read as false; and a failure is said in the provider's
+  own terms rather than Google's (`classifyGeminiError`'s `FailureContext`).
 - **OpenRouter**: a key of the user's own and one of its free models, which
   "Find free models" lists (ids ending `:free`).
 

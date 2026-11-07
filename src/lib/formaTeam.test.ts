@@ -148,6 +148,11 @@ describe('the replies', () => {
     expect(failureReason('TypeError: Failed to fetch')).toBe('it could not be reached');
     expect(failureReason('503 The model is overloaded. Try later.')).toBe('it is overloaded right now');
     expect(failureReason('The model returned no report. Something else.')).toBe('The model returned no report.');
+    // Agent audit item 15: the words a local model's failure and the classified ones use.
+    expect(failureReason('You are offline. Forma needs a connection.')).toBe('you are offline');
+    expect(failureReason("Google's servers are busy and could not take this request")).toBe('it is overloaded right now');
+    expect(failureReason('Forma could not reach the local AI at http://localhost:11434/v1.')).toBe('it could not be reached');
+    expect(failureReason("The local AI read only 2,048 of about 10,000 tokens of the request: qwen3's context window is too small")).toBe('its context window is too small for the request');
     expect(fallbackReply('Gemini', '429 quota', 'vision')).toBe(
       "Gemini could not answer (its free quota is used up for now), so Forma built this draft without it, from Forma's vision model and the text OCR read. " +
         'Send the request again when Gemini is available to have it designed in full.',

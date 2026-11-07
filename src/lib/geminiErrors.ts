@@ -48,13 +48,85 @@ function saysKeyIsInvalid(message: string): boolean {
   return message.includes('API_KEY_INVALID') || /api key not valid/i.test(message);
 }
 
-function isOverloadedMessage(status: unknown, message: string): boolean {
+/**
+ * A server out of capacity: the one test, for the retries and for the message
+ * (2026-11-07, agent audit item 93). geminiService.ts had its own, which read
+ * "high demand" and a lower-case "unavailable" where this one did not, so an
+ * error could be retried as an overload and then described as something else.
+ */
+export function isOverloadedError(error: any): boolean {
+  const status = error?.status;
+  const text = `${error?.message || ''}`.toLowerCase();
   return (
     status === 503 ||
-    message.includes('503') ||
-    message.includes('UNAVAILABLE') ||
-    /overloaded/i.test(message)
+    status === 'UNAVAILABLE' ||
+    text.includes('503') ||
+    text.includes('unavailable') ||
+    text.includes('overloaded') ||
+    text.includes('high demand')
   );
+}
+
+/**
+ * Whether the browser says it is offline (2026-11-07, agent audit item 44).
+ * A request made offline fails as "Failed to fetch", which read as a stream
+ * cut short: every model was retried, and the user was told the connection
+ * to Google had closed, as though Google had closed it.
+ */
+export function isOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+/** What failed, for a message that names it (2026-11-07, agent audit items 15 and 83). */
+export interface FailureContext {
+  /** Gemini when absent. */
+  provider?: 'gemini' | 'local' | 'openrouter';
+  /** The local server's address, for a message about reaching it. */
+  where?: string;
+  model?: string;
+  /** False when one model was pinned and no other was tried. True when absent. */
+  triedOthers?: boolean;
+}
+
+/** An Error carrying the one it explains, so a later reader can still see what the provider said. */
+function explained(message: string, cause: unknown): Error {
+  return Object.assign(new Error(message), { cause });
+}
+
+/**
+ * A failure of Local AI or OpenRouter, in their own terms (2026-11-07,
+ * agent audit item 15). Every message below this one names Google, Gemini
+ * and its key, which is wrong for a model on the user's own computer.
+ */
+function classifyCompatError(error: any, context: FailureContext): Error {
+  const message: string = error?.message || '';
+  const status = error?.status;
+  const local = context.provider === 'local';
+  const name = local ? 'The local AI' : 'OpenRouter';
+  const model = context.model ? ` ${context.model}` : '';
+  if (isOffline()) return explained('You are offline. Forma needs a connection to reach OpenRouter; what you wrote is kept, so send it again once you are back online.', error);
+  if (isTruncatedStreamMessage(message) && !/answered \d{3}/.test(message)) {
+    return explained(
+      local
+        ? `Forma could not reach the local AI at ${context.where ?? 'its address'}. Is Ollama or LM Studio running, and does it allow this site? For Ollama set OLLAMA_ORIGINS to this address; in LM Studio turn on CORS.`
+        : 'Forma could not reach OpenRouter. Check your connection and try again in a minute.',
+      error,
+    );
+  }
+  if (isQuotaExhausted(error)) {
+    const waitMs = parseRetryDelayMs(error);
+    return explained(
+      `${name} refused the request for its rate limit${waitMs ? `; try again in about ${Math.max(1, Math.ceil(waitMs / 1000))}s` : ''}. ` +
+        (local ? '' : "OpenRouter's free models allow a few requests a minute and a number a day; another free model has a limit of its own."),
+      error,
+    );
+  }
+  if (status === 401 || status === 403) {
+    return explained(local ? `The local AI refused the request (${status}): ${readableMessage(message)}` : 'OpenRouter rejected the key. Check it in Settings, under AI.', error);
+  }
+  if (status === 404) return explained(`${name} has no model${model}. Choose one it offers in Settings, under AI.`, error);
+  if (isOverloadedError(error)) return explained(`${name}${model} is busy and could not take the request, even after retrying. Wait a minute and send it again.`, error);
+  return explained(`${name}${model}: ${readableMessage(message) || 'the request failed'}`, error);
 }
 
 /**
@@ -171,9 +243,24 @@ export function quotaWaitMs(error: any, now: Date = new Date()): number | undefi
  * and the caller rethrows it unwrapped so "the user pressed stop" stays
  * distinguishable from "the model errored".
  */
-export function classifyGeminiError(error: any): Error {
+export function classifyGeminiError(error: any, context: FailureContext = {}): Error {
+  if (context.provider === 'local' || context.provider === 'openrouter') return classifyCompatError(error, context);
+  return withCause(classifyGemini(error, context), error);
+}
+
+/** The classified error, holding the provider's own as its cause (2026-11-07, `failureReason` reads it). */
+function withCause(classified: Error, cause: unknown): Error {
+  return Object.assign(classified, { cause });
+}
+
+function classifyGemini(error: any, context: FailureContext): Error {
   const message: string = error?.message || '';
   const status = error?.status;
+
+  // Offline is not a cut stream (agent audit item 44): say so, before anything else.
+  if (isOffline()) {
+    return new Error("You are offline. Forma needs a connection to reach Gemini; what you wrote is kept, so send it again once you are back online.");
+  }
 
   if (isQuotaExhausted(error)) {
     /*
@@ -189,8 +276,10 @@ export function classifyGeminiError(error: any): Error {
     if (quotaKind(error) === 'daily') {
       const hours = Math.max(1, Math.round(msUntilPacificMidnight() / 3600000));
       const model = /model:\s*([\w.-]+)/i.exec(message)?.[1];
+      // A model chosen in the box is the only one tried (agent audit item 83).
+      const others = context.triedOthers === false ? ' The model chosen in the box is the only one Forma tries; choose Auto to let it use the others.' : ', and Forma tried the other models it can use.';
       return new Error(
-        `This key's free daily allowance${model ? ` for ${model}` : ''} is used up, and Forma tried the other models it can use. ` +
+        `This key's free daily allowance${model ? ` for ${model}` : ''} is used up${context.triedOthers === false ? '.' : ''}${others} ` +
           `It resets at midnight Pacific time, in about ${hours} hour${hours === 1 ? '' : 's'}. ` +
           // Forma Offline went on 2026-11-05; the other AIs Settings offers are what works meanwhile.
           'Meanwhile a local AI or OpenRouter can design instead: choose one in Settings.',
@@ -229,7 +318,7 @@ export function classifyGeminiError(error: any): Error {
   }
 
   // Reached only after the automatic retries have already been spent.
-  if (isOverloadedMessage(status, message)) {
+  if (isOverloadedError(error)) {
     return new Error(
       "Google's servers are busy and could not take this request, even after retrying. Nothing is wrong with your API key or your design — wait a minute and generate again."
     );

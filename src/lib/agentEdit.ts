@@ -813,10 +813,36 @@ export function sideNamed(message: string): 'left' | 'center' | 'right' | null {
  * align edit and no `align` (the schema cannot require it for that op alone),
  * and the edit was declined, which offered a whole redesign for a centring.
  */
+const BOOLEAN_FIELDS = ['bold', 'italic', 'underline', 'landscape', 'visible'] as const;
+const NUMBER_FIELDS = ['row', 'cell', 'x', 'y', 'width', 'height', 'size', 'left', 'right', 'top', 'bottom', 'borderWidth'] as const;
+
+/**
+ * An edit's fields as their types (2026-11-07, agent audit item 16). A model
+ * answering with no schema, as a local one may, writes "false" and "12" in
+ * quotes, and the string "false" is true: "bold": "false" made text bold, and
+ * "visible": "false" showed a hidden control. A value that is neither is dropped.
+ */
+function coerceEdit(e: AgentEdit): AgentEdit {
+  const out: Record<string, unknown> = { ...e };
+  for (const k of BOOLEAN_FIELDS) {
+    const v = out[k];
+    if (typeof v === 'string') out[k] = /^true$/i.test(v.trim()) ? true : /^false$/i.test(v.trim()) ? false : undefined;
+  }
+  for (const k of NUMBER_FIELDS) {
+    const v = out[k];
+    if (typeof v === 'string') {
+      const n = Number.parseFloat(v);
+      out[k] = Number.isFinite(n) ? n : undefined;
+    }
+  }
+  return out as unknown as AgentEdit;
+}
+
 export function readReportOutcome(parsed: { reply?: string; action?: string; edits?: unknown; tools?: unknown; brief?: unknown }, message?: string): ReportOutcome {
   const named = message ? sideNamed(message) : null;
   const edits = (Array.isArray(parsed.edits) ? parsed.edits : [])
     .filter((e): e is AgentEdit => Boolean(e) && typeof e === 'object' && (EDIT_OPS as readonly string[]).includes((e as AgentEdit).op))
+    .map(coerceEdit)
     .map((e) => (e.op === 'align' && named && !readAlign(e.align ?? (e as { alignment?: unknown }).alignment) ? { ...e, align: named } : e));
   const read = (Array.isArray(parsed.tools) ? parsed.tools : []).map(readTool);
   const tools = distinctTools(read.filter((t): t is AgentTool => !!t && typeof t === 'object')).slice(0, 4);

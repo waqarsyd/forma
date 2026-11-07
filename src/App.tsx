@@ -231,7 +231,7 @@ import {
   type ClarificationAnswer,
   type ReportDescriptionRequest,
 } from './lib/promptToReport';
-import { summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
+import { addUsage, summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
 import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import { makeRightToLeft } from './lib/repxRtl';
@@ -2989,6 +2989,24 @@ export default function App() {
       document.removeEventListener('visibilitychange', onHidden);
     };
   }, []);
+  /*
+   * Offline, said when it happens (2026-11-07, agent audit item 44), as Gemini
+   * and ChatGPT say it, and taken away when the connection is back. Until
+   * then a request made offline was retried on every model and failed as a
+   * stream Google had closed. A notice already saying something else stays.
+   */
+  useEffect(() => {
+    const OFFLINE = "You're offline. Forma needs a connection to reach the AI; what you write is kept, and you can send it once you're back.";
+    const offline = () => setError(OFFLINE);
+    const online = () => setError((shown) => (shown === OFFLINE ? null : shown));
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) offline();
+    window.addEventListener('offline', offline);
+    window.addEventListener('online', online);
+    return () => {
+      window.removeEventListener('offline', offline);
+      window.removeEventListener('online', online);
+    };
+  }, []);
 
   /** Runs a waiting automatic save now, before the session it belongs to is replaced. */
   const flushAutosave = () => {
@@ -3673,6 +3691,8 @@ export default function App() {
        * Image runs are not retried this way: an error there is more often a
        * repair that declined than a layout the model can be talked out of.
        */
+      /** Every answer this report cost, the repairs' too (agent audit item 79). */
+      let spent: TokenUsage | null = response.usage ?? null;
       if (describeRequest) {
         const { auditRepx } = await import('./lib/repxAudit');
         let attempt = 1;
@@ -3693,6 +3713,7 @@ export default function App() {
             console.debug('Generation aborted/paused by user during repair.');
             return;
           }
+          spent = addUsage(spent, fixed.usage);
           const next = auditRepx(fixed.repxContent, fixed.layout);
           // Keep the better of the two; a repair that made things worse is not applied.
           if (next.errors <= audit.errors) {
@@ -3716,7 +3737,7 @@ export default function App() {
         layout: response.layout,
         // The prompt asks for right to left; this makes sure of it.
         repxContent: asConfigured(response.repxContent),
-        usage: response.usage ?? null
+        usage: spent,
       };
 
       setResult(newResult);
@@ -3794,7 +3815,8 @@ export default function App() {
             setMessages(prev => [...prev, {
               id: nextMessageId(),
               role: 'assistant',
-              text: fallbackReply(aiName, err?.message || friendlyMessage, made.source),
+              // The provider's own words when the error carries them (agent audit item 15).
+              text: fallbackReply(aiName, err?.cause?.message || err?.message || friendlyMessage, made.source),
               result: drafted,
             }]);
             announceReady('Report ready');
@@ -4461,6 +4483,13 @@ export default function App() {
           setStreamingReply(text);
         }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS } : undefined, remembered);
         if (turn.signal.aborted) return;
+        /*
+         * What the turn cost, kept on the reply it writes (2026-11-07, agent
+         * audit item 79) and shown beside its time as a generation's is; the
+         * second pass below adds its own.
+         */
+        let turnUsage = answered.usage ?? null;
+        const withCost = <T extends ChatMessage>(m: T): T => (turnUsage ? { ...m, usage: turnUsage } : m);
         // A report turn's answer is checked before anything is acted on.
         // With the message, so an alignment sent with no side takes the one asked for.
         const outcome = agent ? agent.readReportOutcome(answered, currentPrompt) : answered;
@@ -4474,11 +4503,11 @@ export default function App() {
          * this turn has ended (`startNewFrom`), with the brief as its message.
          */
         if (open && outcome.action === 'new') {
-          setMessages(prev => [...prev, {
+          setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
             role: 'assistant',
             text: [outcome.reply, 'This report stays in its project; the new one opens in a project of its own.'].filter(Boolean).join(' '),
-          }]);
+          })]);
           setStartNewFrom(outcome.brief || currentPrompt);
           return;
         }
@@ -4535,6 +4564,7 @@ export default function App() {
                 remembered,
               );
               if (turn.signal.aborted) return;
+              turnUsage = addUsage(turnUsage, again.usage);
               const second = agent.readReportOutcome(again);
               const more = second.action === 'edit' && second.edits.length ? agent.applyEdits(done.xml, second.edits) : null;
               if (more?.changed) {
@@ -4557,7 +4587,7 @@ export default function App() {
             const changes = agent.describeChanges(now.repxContent!, done.xml);
             // Whatever the edit brought that the checks find, said here (2026-11-05).
             const brought = agent.checksMarkdown(auditRepx(done.xml, now.layout).findings, auditRepx(now.repxContent!, now.layout).findings);
-            setMessages(prev => [...prev, {
+            setMessages(prev => [...prev, withCost({
               id,
               role: 'assistant',
               text: [
@@ -4566,7 +4596,7 @@ export default function App() {
                 agent.changesMarkdown(changes, [...done.declined, ...toolsRefused], toolsDone),
                 brought,
               ].filter(Boolean).join('\n\n'),
-            }]);
+            })]);
             announceReady('Report ready');
             return;
           }
@@ -4577,11 +4607,11 @@ export default function App() {
            */
           if (done.applied.length) {
             if (tools.length) setPendingTools(tools);
-            setMessages(prev => [...prev, {
+            setMessages(prev => [...prev, withCost({
               id,
               role: 'assistant',
               text: ['Nothing needed changing: the report already reads that way.', agent.changesMarkdown([], [...done.declined, ...toolsRefused], toolsDone)].filter(Boolean).join('\n\n'),
-            }]);
+            })]);
             announceReady('Reply ready');
             return;
           }
@@ -4590,12 +4620,12 @@ export default function App() {
            * redesigning. The tools asked for with the edits do not run on a
            * report the edits never reached (agent audit item 38).
            */
-          setMessages(prev => [...prev, {
+          setMessages(prev => [...prev, withCost({
             id,
             role: 'assistant',
             text: `That could not be changed in place. Redesign the report from your words? It rewrites the whole report and takes a minute or two.\n\n${agent.changesMarkdown([], [...done.declined, ...tools.map((t) => `${agent.toolLine(t)}: not started, as the edits were not made`)])}`,
             confirm: { prompt: designWords },
-          }]);
+          })]);
           return;
         } else if (open && outcome.wantsReport) {
           /*
@@ -4604,30 +4634,30 @@ export default function App() {
            * REPX in tokens, as an agent asks before a costly step. The buttons
            * or a typed yes start it (`handleConfirm`).
            */
-          setMessages(prev => [...prev, {
+          setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
             role: 'assistant',
             text: [outcome.reply, 'Redesigning rewrites the whole report and takes a minute or two.'].filter(Boolean).join(' '),
             confirm: { prompt: designWords },
-          }]);
+          })]);
           return;
         } else if (!outcome.wantsReport) {
           if (tools.length) setPendingTools(tools);
-          setMessages(prev => [...prev, {
+          setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
             role: 'assistant',
             text: agent && (toolsDone.length || toolsRefused.length) ? [outcome.reply, agent.changesMarkdown([], toolsRefused, toolsDone)].filter(Boolean).join('\n\n') : outcome.reply,
-          }]);
+          })]);
           announceReady('Reply ready');
           return;
         } else {
           // The user does want a report built or redesigned — fall through to
           // generation below, after acknowledging.
-          setMessages(prev => [...prev, {
+          setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
             role: 'assistant',
             text: outcome.reply,
-          }]);
+          })]);
         }
         // With no report to refine, a description is designed as the Describe
         // dialog designed one, which the chat box took over on 2026-11-01:
@@ -6428,7 +6458,8 @@ export default function App() {
                 // The log's search, marked in the card's replies too (2026-11-06).
                 query={logQuery}
                 // The lazy component loses its generic; the result is App's own DesignResult.
-                usageOf={(m) => summariseUsage((m.result as DesignResult | undefined)?.usage)}
+                // A generation's cost from its report; a chat reply's from itself (agent audit item 79).
+                usageOf={(m) => summariseUsage((m.result as DesignResult | undefined)?.usage ?? m.usage)}
               >
                 {/* Generation, as Forma's answer being written: three dots
                     (2026-11-04). Until then a card held a progress ring, the step,

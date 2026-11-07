@@ -1,6 +1,6 @@
 import { loadGenAI } from "../lib/genai";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
-import { classifyGeminiError, dailyLimitOf, isQuotaExhausted, isTruncatedStreamMessage, msUntilPacificMidnight, quotaKind, quotaWaitMs } from "../lib/geminiErrors";
+import { classifyGeminiError, dailyLimitOf, isOffline, isOverloadedError, isQuotaExhausted, isTruncatedStreamMessage, msUntilPacificMidnight, quotaKind, quotaWaitMs, type FailureContext } from "../lib/geminiErrors";
 import { parseRepxAnswer, repxOfAnswer } from "../lib/analysisResponse";
 import { layoutFromRepx, reportTitleOf, specFromRepx } from "../lib/repxViews";
 import { controlCount, CORRECTION_RULES, textToDraft } from "../lib/draftText";
@@ -12,10 +12,30 @@ import {
   readCachedModelSet,
   readDailyModel,
   clearCachedModel,
+  isModelInCooldown,
   lightModel,
   noteModelOverloaded,
   startingModel,
 } from "../lib/modelCache";
+
+/**
+ * The next model to fall back to (2026-11-07, agent audit items 46 and 84):
+ * one not tried in this request and not parked by a recent refusal, which the
+ * fallback ignored, spending a request to be told again what it had been told
+ * a minute before. A chat turn tries the lighter models first, so a fallback
+ * does not spend the daily allowance of the model reports are designed on.
+ */
+export function nextFallbackModel(
+  candidates: readonly string[],
+  tried: readonly string[],
+  opts: { light?: boolean; mainModel?: string | null; now?: number } = {},
+): string | undefined {
+  const open = candidates.filter((m) => !tried.includes(m) && !isModelInCooldown(m, opts.now));
+  if (!opts.light) return open[0];
+  // Lite first, the report model last; the rest keep their preference order.
+  const rank = (m: string) => (/lite/i.test(m) ? 0 : m === opts.mainModel ? 2 : 1);
+  return [...open].sort((a, b) => rank(a) - rank(b))[0];
+}
 import { liftReportMargins } from "../lib/repxMargins";
 import { ensureUniqueRefs } from "../lib/repxRefs";
 import { normalizeItemNames } from "../lib/repxItems";
@@ -29,7 +49,7 @@ import { repairCrossTabs } from "../lib/repxCrossTabs";
 import { repairDpi } from "../lib/repxDpi";
 import { repairPaper } from "../lib/repxPaper";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
-import { readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
+import { addUsage, readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
 import { checkRepxComplete } from "../lib/repxTruncation";
 import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runawayOutput";
@@ -788,7 +808,9 @@ When the outline ends with SELECTED ON THE PREVIEW, the user has selected those 
 
 "reply": one or two sentences to the user, drawn as Markdown with no headings. For an edit, say briefly what you changed; Forma lists the changes itself, so do not list them. For a rebuild, say what Forma will redesign. Never claim a change you did not list.
 
-When THE USER'S REMEMBERED PREFERENCES are given, they are standing instructions: follow them in what you add or change, unless the message says otherwise.`;
+When THE USER'S REMEMBERED PREFERENCES are given, they are standing instructions: follow them in what you add or change, unless the message says otherwise.
+
+Answer with one JSON object and nothing around it: {"reply": "...", "action": "answer" | "edit" | "rebuild" | "new", "brief": "...", "edits": [{"op": "...", ...}], "tools": [{"name": "..."}]}. Numbers as numbers and true or false unquoted.`;
 
 /**
  * What the chat turn is told before the conversation. Since 2026-11-01 the
@@ -811,7 +833,9 @@ Set "wantsReport" to false for greetings, questions about Forma or DevExpress, t
 
 When "wantsReport" is true, also write "brief": the whole report request in one paragraph, from everything the user has said about it in this conversation, in their terms, so the designer has all of it and not only the last message. Empty otherwise.
 
-When THE USER'S REMEMBERED PREFERENCES are given, they are standing instructions for every report; do not ask about anything they already answer.`;
+When THE USER'S REMEMBERED PREFERENCES are given, they are standing instructions for every report; do not ask about anything they already answer.
+
+Answer with one JSON object and nothing around it: {"reply": "...", "wantsReport": true or false, "brief": "..."}.`;
 
 /**
  * Canned chat turn for VITE_FORMA_MOCK. The classification is keyword-based
@@ -1021,17 +1045,30 @@ export function extractPartialReply(json: string): string {
  * while a generation issued a second later would retry twice and then fall back
  * to another model. Same key, same outage, two different behaviours.
  */
+/**
+ * A JSON answer read the way a local model writes one (2026-11-07, agent audit
+ * item 16): a server that ignored the schema, or was asked for none, wraps
+ * the object in a fence or puts a sentence before it, and `JSON.parse` failed
+ * on the whole. The object is read from its first brace to its last; null
+ * when there is none to read.
+ */
+export function parseJsonAnswer(raw: string): Record<string, unknown> | null {
+  const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+  for (const candidate of [text, text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)]) {
+    if (!candidate.startsWith('{')) continue;
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch {
+      /* the next reading, or none */
+    }
+  }
+  return null;
+}
+
 export function isOverloaded(error: any): boolean {
-  const status = error?.status;
-  const text = `${error?.message || ""}`.toLowerCase();
-  return (
-    status === 503 ||
-    status === "UNAVAILABLE" ||
-    text.includes("503") ||
-    text.includes("unavailable") ||
-    text.includes("overloaded") ||
-    text.includes("high demand")
-  );
+  // One test since 2026-11-07, shared with the message the user reads (agent audit item 93).
+  return isOverloadedError(error);
 }
 
 /**
@@ -1122,6 +1159,13 @@ export async function chatReply(
   // and ~6s of backoff before falling back — which is what the console showed.
   if (!pinnedModel) activeModel = startingModel(activeModel, readCachedModelSet());
   const overloadedModels: string[] = [];
+  /** Re-detected once for a retired model (agent audit item 45). */
+  let redetected = false;
+  /** What a failure is said in terms of: which AI, where, and whether other models were tried. */
+  const endpoint = compatEndpoint(config);
+  const failure: FailureContext = endpoint
+    ? { provider: endpoint.kind, where: endpoint.baseUrl, model: endpoint.model, triedOthers: false }
+    : { triedOthers: !pinnedModel };
 
   const transcript = history
     .slice(-10) // recent context is enough, and keeps the call small
@@ -1339,6 +1383,24 @@ ${transcript}`,
     } catch (err: any) {
       // Cancellation is the user's decision and is never retried.
       if (signal?.aborted || err?.name === 'AbortError') throw err;
+      // Offline is said at once (agent audit item 44): no retry and no other model reaches anything.
+      if (isOffline()) throw classifyGeminiError(err, failure);
+
+      /*
+       * A model retired since this tab chose it answers 404 (2026-11-07,
+       * agent audit item 45). Generation has re-detected once for that since
+       * 2026-08-26; the chat failed with "No Gemini model available".
+       */
+      const gone = (err?.status === 404 || `${err?.message || ''}`.includes('NOT_FOUND')) && !pinnedModel && !failure.provider;
+      if (gone && !redetected) {
+        redetected = true;
+        console.warn(`Model "${activeModel}" is no longer available to this key — re-detecting for the chat.`);
+        clearCachedModel();
+        activeModel = lightModel(await resolveModel(currentApiKey, signal));
+        onPartialReply?.('');
+        attempt = -1;
+        continue;
+      }
 
       const retryable = isOverloaded(err) || isTruncatedStream(err);
       if (retryable && attempt < MAX_CHAT_RETRIES) {
@@ -1398,7 +1460,8 @@ ${transcript}`,
         // before the set was cached falls back to the raw preference list,
         // exactly as the generation path does.
         const alternatives = readCachedModelSet() ?? MODEL_PREFERENCE;
-        const next = alternatives.find((m) => !overloadedModels.includes(m));
+        // Not a parked model, and the lighter ones before the one reports use (items 46 and 84).
+        const next = nextFallbackModel(alternatives, overloadedModels, { light: true, mainModel: readCachedModel() });
 
         if (next) {
           console.warn(
@@ -1420,7 +1483,8 @@ ${transcript}`,
       // A rate limit gets the purpose-written message rather than the
       // provider's multi-paragraph one, because it is the failure most likely
       // to be read by someone who has done nothing wrong.
-      throw isQuotaExhausted(err) || cut ? classifyGeminiError(err) : asReadableError(err);
+      // Another provider's failure is said in its own terms (agent audit item 15).
+      throw isQuotaExhausted(err) || cut || failure.provider ? classifyGeminiError(err, failure) : asReadableError(err);
     }
   }
 
@@ -1448,13 +1512,16 @@ ${transcript}`,
   });
   if (report && finishReason === 'MAX_TOKENS') return cutOff('The answer was cut off before it finished');
   try {
-    const parsed = JSON.parse(raw) as ChatOutcome;
+    // Read tolerantly (agent audit item 16): a local model's object can come fenced or after a sentence.
+    const parsed = parseJsonAnswer(raw) as ChatOutcome | null;
+    if (!parsed) throw new Error('no JSON object in the answer');
     // As the model wrote it; `readReportOutcome` decides what it means.
     const brief = typeof parsed.brief === 'string' && parsed.brief.trim() ? parsed.brief.trim() : undefined;
     if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits, tools: parsed.tools, brief, usage };
     return {
       reply: parsed.reply || 'Sorry — I did not catch that.',
-      wantsReport: Boolean(parsed.wantsReport),
+      // "true" from a model with no schema is true; "false" is not (agent audit item 16).
+      wantsReport: parsed.wantsReport === true || (parsed.wantsReport as unknown) === 'true',
       brief,
       usage,
     };
@@ -1761,7 +1828,7 @@ ${buildDescriptionBrief(request)}`,
       },
     }, signal);
 
-    const parsed = JSON.parse(response.text ?? "{}") as Partial<ClarificationOutcome>;
+    const parsed = (parseJsonAnswer(response.text ?? "") ?? {}) as Partial<ClarificationOutcome>;
     const questions = (parsed.questions ?? [])
       .filter((q) => q && typeof q.question === "string" && q.question.trim())
       .slice(0, MAX_CLARIFICATION_QUESTIONS)
@@ -2231,6 +2298,13 @@ ${houseStyleContext}
   // path. The per-request fallback below still runs from wherever this starts.
   if (!pinnedModel) selectedModel = startingModel(selectedModel, readCachedModelSet());
   const tResolved = Date.now();
+  /** What a failure is said in terms of (agent audit items 15 and 83), as on the chat path. */
+  const failureEndpoint = compatEndpoint(config);
+  const failure: FailureContext = failureEndpoint
+    ? { provider: failureEndpoint.kind, where: failureEndpoint.baseUrl, model: failureEndpoint.model, triedOthers: false }
+    : { triedOthers: !pinnedModel };
+  /** Tokens spent on answers that were made and then asked for again (agent audit item 79). */
+  let spentBefore: TokenUsage | null = null;
 
   // Loaded here, not imported at the top: the SDK is only reachable from this
   // function and chatReply, and both refuse above if there is no key. See
@@ -2542,12 +2616,16 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
           `The answer from "${selectedModel}" finished before its REPX did (${checkRepxComplete(repxOfAnswer(response.text)).reason}). ` +
           `Retrying the same request — attempt ${outputAttempts} of ${MAX_OUTPUT_RETRIES}.`
         );
+        // That answer was made and paid for; the report's count includes it.
+        spentBefore = addUsage(spentBefore, response.usage);
         continue;
       }
       break;
     } catch (error: any) {
       // Cancellation is never worth retrying.
       if (signal?.aborted || error?.name === "AbortError") throw toFriendlyError(error);
+      // Offline is said at once (agent audit item 44): no retry and no other model reaches anything.
+      if (isOffline()) throw toFriendlyError(error);
 
       // The output went wrong, not the server. Nothing about the request was
       // wrong either, so the same request is the thing to make again -- the
@@ -2627,7 +2705,8 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
         // picks something the key cannot call, the 404 branch below re-detects
         // once and the loop carries on with an accurate set.
         const alternatives = pinnedModel ? [] : (readCachedModelSet() ?? MODEL_PREFERENCE);
-        const next = alternatives.find((m) => !overloadedModels.includes(m));
+        // Not one parked by a recent refusal (agent audit item 46).
+        const next = nextFallbackModel(alternatives, overloadedModels);
 
         if (next) {
           console.warn(
@@ -2659,7 +2738,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
 
         // Every model this key can use is out of quota: say which limit, and when.
         // Or its streams kept breaking: say that, not the SDK's parser message.
-        if (quota || cut) throw classifyGeminiError(error);
+        if (quota || cut) throw classifyGeminiError(error, failure);
 
         // Every model this key can use is busy. Say so, and name them — "try
         // again" reads very differently when the user can see it was not one
@@ -2711,7 +2790,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
     // the cancellation check above needs this closure's `signal`. The 400
     // branch in particular is load-bearing and was wrong until 2026-08-27 —
     // see the note in that file.
-    return classifyGeminiError(error);
+    return classifyGeminiError(error, failure);
   }
 
   const tResponded = Date.now();
@@ -3015,7 +3094,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       repxContent: parsed.repxContent,
       // Carried onto the result so the REPX pane can show it. The console line
       // in requestFor stays: it is the only record when a run fails before here.
-      usage: response.usage ?? null,
+      usage: addUsage(spentBefore, response.usage),
       ...(draft ? { fromDraft: true } : {}),
     };
   } catch (e) {

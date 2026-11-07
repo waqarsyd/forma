@@ -68,6 +68,17 @@ export function readTokenUsage(
 }
 
 /**
+ * Two requests' usage together, either absent (2026-11-07, agent audit item
+ * 79): a report whose answer was asked for again, or repaired, cost every
+ * answer, and its count showed the last one alone. Null when both are.
+ */
+export function addUsage(a: TokenUsage | null | undefined, b: TokenUsage | null | undefined): TokenUsage | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return { input: a.input + b.input, output: a.output + b.output, thinking: a.thinking + b.thinking, total: a.total + b.total };
+}
+
+/**
  * A count short enough for a status bar: `847`, `12.9k`, `1.4M`.
  *
  * One decimal place from a thousand up, because the difference between 12.9k and

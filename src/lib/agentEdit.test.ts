@@ -252,6 +252,14 @@ describe('the new edits, and edits that do what they say', () => {
     expect(lines.some((l) => l.startsWith('restyled'))).toBe(false);
   });
 
+  // Agent audit item 16: a model with no schema writes "false" in quotes, and "false" is true.
+  it('reads an edit’s quoted booleans and numbers as what they say', () => {
+    const out = readReportOutcome({ reply: 'Done.', action: 'edit', edits: [{ op: 'font', control: 'a', bold: 'false', size: '12' }, { op: 'visible', control: 'b', visible: 'false' }] });
+    expect(out.edits[0]).toMatchObject({ bold: false, size: 12 });
+    expect(out.edits[1]).toMatchObject({ visible: false });
+    expect(applyEdits(doc(lbl(1, 'a', 'Font="Arial, 9pt, style=Bold"')), out.edits.slice(0, 1)).xml).toContain('Font="Arial, 12pt"');
+  });
+
   // Items 23 and 38.
   it('runs each tool once, and tells the second pass what was not made and what the edits broke', () => {
     expect(distinctTools([{ name: 'export', format: 'pdf' }, { name: 'export', format: 'pdf' }, { name: 'show', pane: 'repx' }, { name: 'show', pane: 'preview' }, { name: 'export', format: 'csv' }])).toEqual([

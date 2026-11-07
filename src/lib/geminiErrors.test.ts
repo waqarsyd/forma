@@ -17,8 +17,8 @@
  * dead end: the user is told to fix the one thing that is not broken, replaces
  * a working key with another working key, and hits the same wall.
  */
-import { describe, it, expect } from 'vitest';
-import { classifyGeminiError, dailyLimitOf, isQuotaExhausted, parseRetryDelayMs , quotaKind, quotaWaitMs, msUntilPacificMidnight } from './geminiErrors';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { classifyGeminiError, dailyLimitOf, isOffline, isOverloadedError, isQuotaExhausted, parseRetryDelayMs , quotaKind, quotaWaitMs, msUntilPacificMidnight } from './geminiErrors';
 
 // The day's limit Google states in a spent daily quota, for Settings' Usage today (2026-11-05).
 describe('dailyLimitOf', () => {
@@ -195,6 +195,52 @@ describe('classifyGeminiError', () => {
       for (const e of [sdkError(undefined, ''), sdkError(500, ''), new Error('')]) {
         expect(classifyGeminiError(e).message.trim().length).toBeGreaterThan(0);
       }
+    });
+  });
+
+  /* The agent audit's batch E (2026-11-07). */
+  describe('in the terms of what failed', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    // Item 15: a local model's failure never names Google or the Gemini key.
+    it('says a Local AI or OpenRouter failure in its own words, never Gemini’s', () => {
+      const local = { provider: 'local' as const, where: 'http://localhost:11434/v1', model: 'qwen3:8b' };
+      const unreachable = classifyGeminiError(new TypeError('Failed to fetch'), local);
+      expect(unreachable.message).toMatch(/could not reach the local AI at http:\/\/localhost:11434\/v1/);
+      expect(unreachable.message).toContain('OLLAMA_ORIGINS');
+      expect(classifyGeminiError(sdkError(404, 'the local AI at x answered 404: model not found'), local).message).toMatch(/has no model qwen3:8b/);
+      const router = classifyGeminiError(sdkError(401, 'OpenRouter answered 401: No auth credentials'), { provider: 'openrouter', model: 'm:free' });
+      expect(router.message).toMatch(/OpenRouter rejected the key/);
+      for (const e of [unreachable, router]) expect(e.message).not.toMatch(/Gemini|Google/);
+    });
+
+    // Item 83: a pinned model's spent allowance does not claim the others were tried.
+    it('says a chosen model was the only one tried when its daily allowance is spent', () => {
+      const daily = sdkError(429, "Quota exceeded for metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' model: gemini-2.5-pro");
+      expect(classifyGeminiError(daily).message).toMatch(/Forma tried the other models/);
+      const pinned = classifyGeminiError(daily, { triedOthers: false }).message;
+      expect(pinned).not.toMatch(/tried the other models/);
+      expect(pinned).toMatch(/only one Forma tries; choose Auto/);
+    });
+
+    // Item 44: offline is said as offline.
+    it('says offline when the browser is offline, before reading the failure as a closed stream', () => {
+      vi.stubGlobal('navigator', { onLine: false });
+      expect(isOffline()).toBe(true);
+      expect(classifyGeminiError(new TypeError('Failed to fetch')).message).toMatch(/^You are offline/);
+    });
+
+    // Item 93: one test for an overload.
+    it('reads an overload one way, "high demand" included', () => {
+      expect(isOverloadedError(sdkError(undefined, 'This model is currently experiencing high demand'))).toBe(true);
+      expect(isOverloadedError({ status: 'UNAVAILABLE', message: '' })).toBe(true);
+      expect(classifyGeminiError(sdkError(undefined, 'This model is currently experiencing high demand')).message).toMatch(/busy/);
+      expect(isOverloadedError(sdkError(400, 'bad request'))).toBe(false);
+    });
+
+    it('keeps the provider’s own error as the cause', () => {
+      const raw = sdkError(503, 'UNAVAILABLE');
+      expect((classifyGeminiError(raw) as Error & { cause?: unknown }).cause).toBe(raw);
     });
   });
 });

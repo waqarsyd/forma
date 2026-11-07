@@ -191,11 +191,20 @@ const DRAFT_SOURCES: Record<DraftSource, string> = {
   offline: "Forma's own model",
 };
 
-/** Why the AI did not answer, in a few words, from its error message. */
+/**
+ * Why the AI did not answer, in a few words, from its error message. App
+ * passes the provider's own words, the classified error's `cause`, since
+ * 2026-11-07 (agent audit item 15): the classified ones had been rewritten
+ * ("Google's servers are busy…") and matched nothing here, so the reply
+ * quoted a whole sentence about Google for a local model.
+ */
 export function failureReason(message: string): string {
-  if (/quota|\b429\b|RESOURCE_EXHAUSTED/i.test(message)) return 'its free quota is used up for now';
-  if (/\b503\b|overloaded|UNAVAILABLE/i.test(message)) return 'it is overloaded right now';
-  if (/Failed to fetch|NetworkError|ECONNREFUSED|Load failed/i.test(message)) return 'it could not be reached';
+  if (/offline/i.test(message)) return 'you are offline';
+  if (/quota|\b429\b|RESOURCE_EXHAUSTED|rate limit/i.test(message)) return 'its free quota is used up for now';
+  if (/\b503\b|overloaded|UNAVAILABLE|\bbusy\b|high demand/i.test(message)) return 'it is overloaded right now';
+  if (/Failed to fetch|NetworkError|ECONNREFUSED|Load failed|could not reach|could not be reached/i.test(message)) return 'it could not be reached';
+  if (/context window/i.test(message)) return 'its context window is too small for the request';
+  if (/reasoning and wrote none/i.test(message)) return 'it spent its whole answer reasoning';
   const first = message.trim().split(/(?<=\.)\s/)[0] || 'it returned an error';
   return first.length > 160 ? `${first.slice(0, 159)}…` : first;
 }

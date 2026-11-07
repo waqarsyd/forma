@@ -6,7 +6,7 @@
  * error keeping the status the quota and overload checks read.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { compatClient, listModels, toJsonSchema, toMessages, type CompatEndpoint } from './compatClient';
+import { compatClient, contextTooSmall, listModels, MIN_COMPAT_OUTPUT_TOKENS, refusesFormat, toJsonSchema, toMessages, type CompatEndpoint } from './compatClient';
 import { compatEndpoint } from './geminiService';
 
 const LOCAL: CompatEndpoint = { kind: 'local', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5vl:7b' };
@@ -50,7 +50,8 @@ describe('compatClient', () => {
     expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
     expect(init.headers.Authorization).toBe('Bearer sk-or-test');
     const body = JSON.parse(init.body);
-    expect(body).toMatchObject({ model: 'qwen2.5vl:7b', max_tokens: 512, temperature: 0, response_format: { type: 'json_schema' } });
+    // At least MIN_COMPAT_OUTPUT_TOKENS since 2026-11-07: a reasoning model thinks inside the cap.
+    expect(body).toMatchObject({ model: 'qwen2.5vl:7b', max_tokens: MIN_COMPAT_OUTPUT_TOKENS, temperature: 0, response_format: { type: 'json_schema' } });
     expect(body.thinkingConfig).toBeUndefined();
   });
 
@@ -84,6 +85,37 @@ describe('compatClient', () => {
   it('keeps an error’s status, so a 429 is still a quota and a 503 an overload', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: { message: 'Rate limit exceeded: free-models-per-day' } }, 429)));
     await expect(compatClient(LOCAL).models.generateContent({ model: 'm', contents: 'q' })).rejects.toMatchObject({ status: 429, message: expect.stringContaining('free-models-per-day') });
+  });
+
+  // Agent audit item 94: a 400 for a model the server does not have is not a schema it refuses.
+  it('asks again in the next format only when the 400 is about the format', async () => {
+    const fetch = vi.fn().mockResolvedValue(json({ error: { message: 'model "qwen9:1b" not found, try pulling it first' } }, 400));
+    vi.stubGlobal('fetch', fetch);
+    await expect(compatClient(LOCAL).models.generateContent({ model: 'm', contents: 'q', config: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT' } } })).rejects.toMatchObject({ status: 400 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(refusesFormat('response_format is not supported')).toBe(true);
+    expect(refusesFormat('model not found')).toBe(false);
+  });
+
+  // Agent audit item 17: a reasoning model that thought its answer away is named, not an empty reply.
+  it('says when a reasoning model spent its whole answer thinking', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sse([
+      'data: {"choices":[{"delta":{"reasoning_content":"Let me think about the layout..."}}]}',
+      'data: {"choices":[{"delta":{},"finish_reason":"length"}]}',
+      'data: [DONE]',
+    ])));
+    const stream = await compatClient(LOCAL).models.generateContentStream({ model: 'm', contents: 'q' });
+    await expect((async () => { for await (const c of stream) void c; })()).rejects.toThrow(/spent its whole answer reasoning/);
+  });
+
+  // Agent audit item 18: Ollama's small default context drops the head of the request.
+  it("says when a local server read far less of the request than was sent, and only then", () => {
+    const small = contextTooSmall(LOCAL, 40_000, 2048);
+    expect(small?.message).toMatch(/read only 2,048 of about 10,000 tokens/);
+    expect(small?.message).toContain('OLLAMA_CONTEXT_LENGTH=32768');
+    expect(contextTooSmall(LOCAL, 40_000, 9_000)).toBeNull();
+    expect(contextTooSmall(LOCAL, 8_000, 500)).toBeNull();
+    expect(contextTooSmall({ ...LOCAL, kind: 'openrouter' }, 40_000, 2048)).toBeNull();
   });
 });
 

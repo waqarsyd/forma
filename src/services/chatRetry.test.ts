@@ -311,10 +311,18 @@ describe('a chat turn that fails for a reason retrying cannot fix', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not retry a model that does not exist', async () => {
+  /*
+   * A model retired since the tab chose it is looked for again, once
+   * (2026-11-07, agent audit item 45), as the generation path has done since
+   * 2026-08-26; until then this test pinned the chat giving up at the first 404.
+   * With no model left to find, the turn says so rather than retrying the chat.
+   */
+  it('looks for a model again once when its own is gone, and says when none is left', async () => {
     const fetchMock = stubSequence(() => failure(404, 'models/whatever is not found.'));
-    await expect(runTurn()).rejects.toThrow(/not found/i);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(runTurn()).rejects.toThrow(/no gemini model/i);
+    // One chat request; the rest are the model detection's own probes, never a second chat turn.
+    const chatCalls = fetchMock.mock.calls.filter(([url]) => /:streamGenerateContent/.test(String(url)));
+    expect(chatCalls).toHaveLength(1);
   });
 });
 

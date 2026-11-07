@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { readTokenUsage, formatTokenCount, summariseUsage, describeUsage } from './tokenUsage';
+import { addUsage, readTokenUsage, formatTokenCount, summariseUsage, describeUsage } from './tokenUsage';
+
+/* Agent audit item 79 (2026-11-07): a report asked for again, or repaired, cost every answer. */
+describe('addUsage', () => {
+  it('adds two requests part by part, and keeps either alone when the other is absent', () => {
+    const a = { input: 100, output: 50, thinking: 0, total: 150 };
+    const b = { input: 200, output: 70, thinking: 30, total: 300 };
+    expect(addUsage(a, b)).toEqual({ input: 300, output: 120, thinking: 30, total: 450 });
+    expect(addUsage(null, b)).toBe(b);
+    expect(addUsage(a, undefined)).toBe(a);
+    expect(addUsage(null, null)).toBeNull();
+  });
+});
 
 /**
  * The status-bar readout for what a generation cost.

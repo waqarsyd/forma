@@ -129,6 +129,24 @@ function formats(req: GeminiRequest): (Record<string, unknown> | undefined)[] {
   return [...(schema ? [{ type: 'json_schema', json_schema: { name: 'response', schema, strict: false } }] : []), { type: 'json_object' }, undefined];
 }
 
+/**
+ * The least room an answer is given (2026-11-07, agent audit item 17). A
+ * reasoning model (qwen3, deepseek-r1, gpt-oss) counts its thinking against
+ * `max_tokens`, so the chat turn's 512 went on thinking and the answer came
+ * back empty. Local models and OpenRouter's free ones cost nothing per token.
+ */
+export const MIN_COMPAT_OUTPUT_TOKENS = 4096;
+
+/**
+ * Whether a 400 is about the response format, and so worth asking again in
+ * the next one (2026-11-07, agent audit item 94). Every 400 was taken so, and
+ * a model id the server does not have cost three requests a call, six a turn
+ * with the chat's retry.
+ */
+export function refusesFormat(body: string): boolean {
+  return /response_format|json_schema|json_object|structured output|schema|grammar/i.test(body);
+}
+
 async function post(endpoint: CompatEndpoint, req: GeminiRequest, stream: boolean): Promise<Response> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (endpoint.apiKey) headers.Authorization = `Bearer ${endpoint.apiKey}`;
@@ -138,16 +156,54 @@ async function post(endpoint: CompatEndpoint, req: GeminiRequest, stream: boolea
     const body = {
       model: endpoint.model,
       messages: toMessages(req.contents, req.config?.systemInstruction),
-      ...(req.config?.maxOutputTokens ? { max_tokens: req.config.maxOutputTokens } : {}),
+      ...(req.config?.maxOutputTokens ? { max_tokens: Math.max(req.config.maxOutputTokens, MIN_COMPAT_OUTPUT_TOKENS) } : {}),
       ...(typeof req.config?.temperature === 'number' ? { temperature: req.config.temperature } : {}),
       ...(format ? { response_format: format } : {}),
       ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
     };
     const res = await fetch(`${endpoint.baseUrl}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: req.config?.abortSignal });
     if (res.status !== 400 || !format) return res;
+    // Only a refusal of the format is asked again in the next one.
+    if (!refusesFormat(await res.clone().text().catch(() => ''))) return res;
     last = res;
   }
   return last!;
+}
+
+/** Characters of text a request sends, for the context check below. */
+function promptChars(req: GeminiRequest): number {
+  const list = typeof req.contents === 'string' ? [{ parts: [{ text: req.contents }] }] : Array.isArray(req.contents) ? req.contents : [req.contents];
+  return list.reduce((n, c) => n + (c.parts ?? []).reduce((m, p) => m + (p.text?.length ?? 0), 0), 0);
+}
+
+/**
+ * A local server that read much less of the request than was sent
+ * (2026-11-07, agent audit item 18). Ollama's default context is a few
+ * thousand tokens and it drops the head of anything longer without a word,
+ * the head being the instructions, so the answer is made blind. Its own
+ * count of the prompt says so; text is about four characters a token, and
+ * under half of that is not a tokenizer's difference.
+ */
+export function contextTooSmall(endpoint: Pick<CompatEndpoint, 'kind' | 'model'>, chars: number, promptTokens: number | undefined): Error | null {
+  if (endpoint.kind !== 'local' || !promptTokens) return null;
+  const expected = chars / 4;
+  if (expected < 3000 || promptTokens >= expected * 0.5) return null;
+  return new Error(
+    `The local AI read only ${promptTokens.toLocaleString()} of about ${Math.round(expected).toLocaleString()} tokens of the request: ` +
+      `${endpoint.model}'s context window is too small, so it never saw the instructions. ` +
+      'For Ollama, start it with OLLAMA_CONTEXT_LENGTH=32768 (or set num_ctx in the model); in LM Studio, raise the context length when loading the model.',
+  );
+}
+
+/**
+ * A reasoning model that thought its whole answer away (agent audit item 17):
+ * the stream ended at the length limit with reasoning and no answer.
+ */
+function thoughtOnly(endpoint: CompatEndpoint): Error {
+  return new Error(
+    `${endpoint.model} spent its whole answer reasoning and wrote none of it. ` +
+      'Choose a model that does not reason, or turn its thinking off, in Settings under AI.',
+  );
 }
 
 /** The lines of a server-sent event stream, as they arrive. */
@@ -178,8 +234,13 @@ export function compatClient(endpoint: CompatEndpoint) {
         if (!res.ok) throw await failure(res, endpoint);
         const body = await res.json();
         const choice = body?.choices?.[0];
+        const small = contextTooSmall(endpoint, promptChars(req), body?.usage?.prompt_tokens);
+        if (small) throw small;
+        const text: string = choice?.message?.content ?? '';
+        const reasoning = choice?.message?.reasoning ?? choice?.message?.reasoning_content ?? '';
+        if (!text.trim() && reasoning && choice?.finish_reason === 'length') throw thoughtOnly(endpoint);
         return {
-          text: choice?.message?.content ?? '',
+          text,
           candidates: [{ finishReason: FINISH[choice?.finish_reason] ?? choice?.finish_reason }],
           usageMetadata: usageOf(body?.usage),
         };
@@ -187,7 +248,10 @@ export function compatClient(endpoint: CompatEndpoint) {
       async generateContentStream(req: GeminiRequest): Promise<AsyncGenerator<CompatChunk>> {
         const res = await post(endpoint, req, true);
         if (!res.ok) throw await failure(res, endpoint);
+        const chars = promptChars(req);
         return (async function* () {
+          let wrote = false;
+          let thought = false;
           for await (const line of eventLines(res)) {
             if (!line.startsWith('data:')) continue;
             const data = line.slice(5).trim();
@@ -199,10 +263,17 @@ export function compatClient(endpoint: CompatEndpoint) {
               continue;
             }
             if (event?.error) throw Object.assign(new Error(event.error.message || 'The model reported an error.'), { status: event.error.code });
+            const small = contextTooSmall(endpoint, chars, event?.usage?.prompt_tokens);
+            if (small) throw small;
             const choice = event?.choices?.[0];
             const reason = choice?.finish_reason;
+            const text: string = choice?.delta?.content ?? '';
+            // Reasoning arrives in its own field and is never the answer.
+            if (choice?.delta?.reasoning || choice?.delta?.reasoning_content) thought = true;
+            if (text) wrote = true;
+            if (reason === 'length' && thought && !wrote) throw thoughtOnly(endpoint);
             yield {
-              text: choice?.delta?.content ?? '',
+              text,
               candidates: reason ? [{ finishReason: FINISH[reason] ?? reason }] : undefined,
               usageMetadata: usageOf(event?.usage),
             };

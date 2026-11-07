@@ -169,6 +169,8 @@ export default function ProviderSettings({ config, onChange, onKey }: ProviderSe
             <div className="wb-set-text">
               <label className="wb-set-label" htmlFor="cfg-local-url">Server address</label>
               <p>Ollama answers at port 11434, LM Studio at 1234.</p>
+              {/* Ollama's default context drops the head of a long request without a word (agent audit item 18). */}
+              <p>A report request is long: start Ollama with <code>OLLAMA_CONTEXT_LENGTH=32768</code>, or load the model in LM Studio with a context of 32,768, or the model reads only its end.</p>
             </div>
             <input className="wb-set-input" id="cfg-local-url" type="text" value={config.localUrl || DEFAULT_LOCAL_URL} onChange={(e) => onChange({ localUrl: e.target.value })} autoComplete="off" spellCheck={false} />
           </div>

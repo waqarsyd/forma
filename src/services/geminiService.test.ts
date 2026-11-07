@@ -12,7 +12,10 @@ import {
   generateSmall,
   SMALL_CALL_THINKING_ROOM,
   REPORT_CHAT_INSTRUCTIONS,
+  nextFallbackModel,
+  parseJsonAnswer,
 } from './geminiService';
+import { noteModelOverloaded } from '../lib/modelCache';
 import { auditRepx } from '../lib/repxAudit';
 import { SUPPORTED_PAGE_SIZES } from '../lib/reportGeometry';
 import { liftReportMargins } from '../lib/repxMargins';
@@ -27,6 +30,28 @@ import { normalizeItemNames } from '../lib/repxItems';
  * stray characters flickering in the UI rather than as an error, which is
  * exactly the kind of thing that survives manual testing.
  */
+/* The agent audit's batch E (2026-11-07): the fallback's choice and a tolerant reading. */
+describe('nextFallbackModel and parseJsonAnswer', () => {
+  it('skips models tried or parked, and on a chat turn tries the lighter models before the one reports use', () => {
+    const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+    expect(nextFallbackModel(models, ['gemini-2.5-flash'])).toBe('gemini-2.5-pro');
+    expect(nextFallbackModel(models, ['gemini-2.5-flash-lite'], { light: true, mainModel: 'gemini-2.5-flash' })).toBe('gemini-2.5-pro');
+    expect(nextFallbackModel(models, [], { light: true, mainModel: 'gemini-2.5-flash' })).toBe('gemini-2.5-flash-lite');
+    expect(nextFallbackModel(['gemini-2.5-flash'], [], { light: true, mainModel: 'gemini-2.5-flash' })).toBe('gemini-2.5-flash');
+    noteModelOverloaded('gemini-2.5-pro', 1_000);
+    expect(nextFallbackModel(models, ['gemini-2.5-flash'], { now: 2_000 })).toBe('gemini-2.5-flash-lite');
+    expect(nextFallbackModel(models, models)).toBeUndefined();
+  });
+
+  it('reads a JSON answer fenced, after a sentence, or plain, and nothing from no object', () => {
+    expect(parseJsonAnswer('```json\n{"reply":"hi","wantsReport":true}\n```')).toEqual({ reply: 'hi', wantsReport: true });
+    expect(parseJsonAnswer('Sure! Here is the answer: {"reply":"ok"} Hope that helps.')).toEqual({ reply: 'ok' });
+    expect(parseJsonAnswer('{"reply":"plain"}')).toEqual({ reply: 'plain' });
+    expect(parseJsonAnswer('no object here')).toBeNull();
+    expect(parseJsonAnswer('[1,2]')).toBeNull();
+  });
+});
+
 /* The report turn's instructions (2026-11-05, lib/agentEdit.ts). */
 describe('REPORT_CHAT_INSTRUCTIONS', () => {
   it('tells the model the outline is the report, and to name controls as it does', () => {
