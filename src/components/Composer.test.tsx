@@ -191,6 +191,15 @@ describe('when sending is not possible', () => {
     expect(send().disabled).toBe(true);
   });
 
+  // Agent audit item 55: a PDF of many pages takes seconds to read, and nothing said so.
+  it('says a file is being read while it is', () => {
+    const { unmount } = draw({ isIngesting: true });
+    expect(screen.getByRole('status').textContent).toBe('Reading the file…');
+    unmount();
+    draw({});
+    expect(screen.queryByText('Reading the file…')).toBeNull();
+  });
+
   // The key is the entry point again (2026-11-05): with none the box is
   // locked, as it was until 2026-11-02, and its button opens Settings.
   it('locks with no key, sends nothing, and offers the way to a key in place of the send', () => {
@@ -318,6 +327,14 @@ describe('a clean composer', () => {
     expect(screen.getByRole('status').textContent).toMatch(/^Queue paused ·/);
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
     expect(onResumeQueue).toHaveBeenCalledTimes(1);
+  });
+
+  // Agent audit item 71: files queued with the words go with them, and the tray says so.
+  it('says what files a queued message carries, and when a reload could not keep them', () => {
+    draw({ onQueue: vi.fn(), queue: [{ id: 'q1', text: 'Like this one', files: 2 }, { id: 'q2', text: 'And this', dropped: true }] });
+    const [first, second] = screen.getAllByRole('listitem');
+    expect(first.textContent).toContain('Like this one · 2 files');
+    expect(second.textContent).toContain('its files were not kept over the reload');
   });
 
   // Agent audit item 66: Escape in the box stops Forma while it works, and does nothing otherwise.

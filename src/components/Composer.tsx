@@ -49,6 +49,10 @@ import {
 export interface QueuedMessage {
   id: string;
   text: string;
+  /** The files that go with it (2026-11-07, agent audit item 71): queued with the words, they used to stay behind. */
+  files?: number;
+  /** Its files were too large to keep over a reload, and went. */
+  dropped?: boolean;
 }
 
 /** The browser's speech recognition, as much of it as the box uses. */
@@ -326,7 +330,9 @@ export default function Composer({
   const rootRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = rootRef.current;
-    const column = el?.parentElement;
+    // On the bench since 2026-11-07, where the report's foot reads it to clear
+    // the box (agent audit item 62); on the parent it reached nothing.
+    const column = (el?.closest('.wb-bench') as HTMLElement | null) ?? el?.parentElement;
     if (!el || !column) return;
     const publish = () => column.style.setProperty('--composer-h', `${el.offsetHeight}px`);
     publish();
@@ -355,7 +361,11 @@ export default function Composer({
           )}
           {queue.map((q) => (
             <div className="wb-queue-item" role="listitem" key={q.id}>
-              <span title={q.text}>{q.text}</span>
+              <span title={q.text}>
+                {q.text}
+                {q.files ? <span className="wb-queue-files"> · {q.files} {q.files === 1 ? 'file' : 'files'}</span> : null}
+                {q.dropped ? <span className="wb-queue-files"> · its files were not kept over the reload</span> : null}
+              </span>
               <button type="button" className="wb-tool" aria-label="Steer: stop what runs and send this now" title="Steer: stop what runs and send this now" onClick={() => onSteer?.(q.id)}>
                 <IconArrowRight size={14} />
               </button>
@@ -431,6 +441,16 @@ export default function Composer({
               </span>
             );
           })}
+        </div>
+      )}
+      {/* While a file is read into the box (2026-11-07, agent audit item 55):
+          a PDF of many pages takes seconds, and nothing said so. */}
+      {isIngesting && (
+        <div className="wb-chip-row">
+          <span className="wb-attach" role="status">
+            <span className="wb-spin" aria-hidden="true" />
+            Reading the file…
+          </span>
         </div>
       )}
       {selection.length > 0 && (

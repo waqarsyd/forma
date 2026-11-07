@@ -53,18 +53,29 @@ describe('RequestCard', () => {
   it('folds to its mark, and the mark opens it again', () => {
     const onToggle = vi.fn();
     draw({ collapsed: true, onToggle });
-    expect(screen.queryByText('Both are changed in place.')).toBeNull();
+    expect((document.querySelector('.wb-reply-body') as HTMLElement).hidden).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Show the reply' }));
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  // Agent audit item 32: a fold hid the card by dropping it, and with it an edit being typed.
+  it('keeps an edit being typed over a fold', () => {
+    const { rerender } = draw({ onEdit: vi.fn() });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByLabelText('Edit your message'), { target: { value: 'Make the total red' } });
+    const props = { request, latest: true, onToggle: () => {}, isChatting: false, isAnalyzing: false, streamingReply: '', onRetry: () => {}, onOpenAttachment: () => {}, onEdit: vi.fn() };
+    rerender(<RequestCard<unknown> {...props} collapsed />);
+    rerender(<RequestCard<unknown> {...props} collapsed={false} />);
+    expect((screen.getByLabelText('Edit your message') as HTMLTextAreaElement).value).toBe('Make the total red');
   });
 
   it('edits what was asked from the pill, and offers Try again when the turn failed', () => {
     const onEdit = vi.fn();
     const onRetry = vi.fn();
     draw({ onEdit, onRetry, request: { id: 'q1', ask: { ...ask, error: 'Google was busy.' }, replies: [] } });
+    expect(screen.getByRole('alert').textContent).toContain('Google was busy.');
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledWith('q1');
-    fireEvent.click(screen.getByRole('button', { name: 'Show the whole message' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(screen.getByLabelText('Edit your message'), { target: { value: 'Make the total red' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -80,20 +91,62 @@ describe('RequestCard', () => {
     expect(screen.getByText('Both are changed in place.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
+
+  // Moved from ChatThread.test.tsx with the branch (agent audit item 61).
+  it('refuses a retry while something runs', () => {
+    draw({ isAnalyzing: true, request: { id: 'q1', ask: { ...ask, error: 'failed' }, replies: [] } });
+    expect((screen.getByRole('button', { name: 'Try again' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // Agent audit item 61: the pill showed no time; the thread's never reached the card.
+  it('says when the message was sent', () => {
+    const at = new Date();
+    at.setHours(10, 42, 0, 0);
+    draw({ request: { id: 'q1', ask: { ...ask, id: `${at.getTime()}-0` }, replies: [reply] } });
+    expect(screen.getByRole('group', { name: 'Your message' }).querySelector('.wb-note-meta')?.textContent).toMatch(/^Today, /);
+  });
+
+  // Moved from ChatThread.test.tsx: pages of one upload are one thumbnail, and the viewer gets them all.
+  it('shows the pictures sent, a file of pages as one, and opens all its pages', () => {
+    const onOpenAttachment = vi.fn();
+    const pages = ['data:image/png;base64,A', 'data:image/png;base64,B', 'data:image/png;base64,C'];
+    const imageMeta = [1, 2, 3].map((page) => ({ uploadId: 'u1', file: 'invoice.pdf', page }));
+    draw({ onOpenAttachment, request: { id: 'q1', ask: { ...ask, images: [...pages, 'data:image/png;base64,D'], imageMeta: [...imageMeta, { uploadId: 'u2', file: 'invoice.pdf' }] }, replies: [] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show the whole message and its pictures' }));
+    const shots = document.querySelectorAll('.wb-attach-shot');
+    expect(shots).toHaveLength(2);
+    expect(shots[0].getAttribute('aria-label')).toBe('View invoice.pdf · 3 pages');
+    fireEvent.click(shots[0]);
+    expect(onOpenAttachment).toHaveBeenCalledWith({ srcs: pages, index: 0, file: 'invoice.pdf' });
+  });
+
+  // Agent audit item 30: a request the log found by its question marks it there, and hides no reply.
+  it('marks a search in what was asked, and still shows the replies', () => {
+    draw({ query: 'total' });
+    expect(document.querySelector('.wb-ask mark.wb-hit')?.textContent).toBe('total');
+    expect(screen.getByText('Both are changed in place.')).toBeTruthy();
+    expect(screen.queryByText('No message holds that.')).toBeNull();
+  });
 });
 
 /*
  * The pill's own controls (2026-11-04, and the pill's alone since 2026-11-06,
  * when the workspace audit removed the thread's copy of them, which the card
- * never reached). Moved here from ChatThread.test.tsx with them.
+ * never reached). Moved here from ChatThread.test.tsx with them. In a row of
+ * their own under the words since 2026-11-07 (agent audit item 65): they were
+ * behind the arrow, so `open` is gone from these cases.
  */
 describe("the pill's edit, withdraw and versions", () => {
-  const open = () => fireEvent.click(screen.getByRole('button', { name: 'Show the whole message' }));
+  it('offers them without opening the message', () => {
+    draw({ onEdit: vi.fn(), onWithdraw: vi.fn() });
+    const row = screen.getByRole('group', { name: 'Your message' });
+    expect([...row.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Copy', 'Edit', 'Withdraw']);
+    expect(screen.getByRole('button', { name: 'Show the whole message' }).getAttribute('aria-expanded')).toBe('false');
+  });
 
   it('sends nothing for unchanged text, and Escape puts the message back', () => {
     const onEdit = vi.fn();
     draw({ onEdit });
-    open();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(screen.getByLabelText('Edit your message'), { key: 'Enter' });
@@ -104,7 +157,6 @@ describe("the pill's edit, withdraw and versions", () => {
 
   it('offers editing a message sent with pictures, which an edit sends again', () => {
     draw({ onEdit: vi.fn(), onWithdraw: vi.fn(), request: { id: 'q1', ask: { ...ask, images: ['data:image/png;base64,AA'] }, replies: [] } });
-    open();
     expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Withdraw' })).toBeTruthy();
   });
@@ -113,7 +165,6 @@ describe("the pill's edit, withdraw and versions", () => {
     const onShowVersion = vi.fn();
     const branches = [{ text: 'make it blue', tail: [] }, { text: 'make it green', tail: [] }, { text: 'make it red', tail: [] }];
     draw({ onShowVersion, request: { id: 'q1', ask: { ...ask, text: 'make it green', branches, branch: 1 }, replies: [] } });
-    open();
     const versions = screen.getByRole('group', { name: 'Versions of this message' });
     expect(versions.textContent).toBe('2/3');
     fireEvent.click(screen.getByLabelText('Previous version'));
@@ -124,14 +175,12 @@ describe("the pill's edit, withdraw and versions", () => {
 
   it('draws no versions for a message that has only the one', () => {
     draw({ onShowVersion: vi.fn() });
-    open();
     expect(screen.queryByRole('group', { name: 'Versions of this message' })).toBeNull();
   });
 
   it('withdraws only once asked twice, and Keep changes nothing', () => {
     const onWithdraw = vi.fn();
     draw({ onWithdraw });
-    open();
     fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
     expect(screen.getByText("Withdraw this message and Forma's answer?")).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
@@ -143,7 +192,6 @@ describe("the pill's edit, withdraw and versions", () => {
 
   it('holds both while something runs', () => {
     draw({ onEdit: vi.fn(), onWithdraw: vi.fn(), isChatting: true });
-    open();
     expect((screen.getByRole('button', { name: 'Edit' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'Withdraw' }) as HTMLButtonElement).disabled).toBe(true);
   });

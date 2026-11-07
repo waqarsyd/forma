@@ -8,10 +8,10 @@
  * order that produced the state bug `DataBinding.test.tsx` was added after.
  *
  * `chatSession.test.ts` proves the rules that rewrite the transcript. This
- * proves what those rules look like on screen: the two role treatments, the
- * grouping that turns eight PDF pages back into one thumbnail, the failure that
- * has to appear beside the turn that failed, and the placeholder that must not
- * appear during a generation.
+ * proves what those rules look like on screen. Since 2026-11-07 (agent audit
+ * item 61) the thread draws Forma's replies only: the person's message, its
+ * pictures and its failure are the card's pill, and their tests moved to
+ * RequestCard.test.tsx with them.
  */
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
@@ -24,16 +24,9 @@ afterEach(cleanup);
 type Msg = ChatMessage<unknown, PreviewMeta>;
 
 const msg = (over: Partial<Msg> & { id: string }): Msg => ({
-  role: 'user',
+  role: 'assistant',
   text: '',
   ...over,
-});
-
-/** One page of an upload. Consecutive entries sharing an id are one file. */
-const page = (uploadId: string, file: string, p?: number): PreviewMeta => ({
-  uploadId,
-  file,
-  ...(p === undefined ? {} : { page: p }),
 });
 
 const draw = (props: Partial<React.ComponentProps<typeof ChatThread<unknown>>> = {}) =>
@@ -43,27 +36,16 @@ const draw = (props: Partial<React.ComponentProps<typeof ChatThread<unknown>>> =
       isChatting={false}
       isAnalyzing={false}
       streamingReply=""
-      onRetry={vi.fn()}
-      onOpenAttachment={vi.fn()}
       {...props}
     />
   );
 
 describe('who said it', () => {
-  it('labels the two roles and marks only the user note', () => {
-    draw({
-      messages: [
-        msg({ id: '1', role: 'user', text: 'build me a report' }),
-        msg({ id: '2', role: 'assistant', text: 'done' }),
-      ],
-    });
-
-    const notes = document.querySelectorAll('.wb-note');
-    expect(notes).toHaveLength(2);
-    expect(notes[0].className).toContain('wb-note--me');
-    expect(notes[1].className).not.toContain('wb-note--me');
-    expect(screen.getByText('You')).toBeTruthy();
+  it("names a reply Forma's", () => {
+    draw({ messages: [msg({ id: '2', text: 'done' })] });
+    expect(document.querySelectorAll('.wb-note')).toHaveLength(1);
     expect(screen.getByText('Forma')).toBeTruthy();
+    expect(screen.queryByText('You')).toBeNull();
   });
 
   // A generation pushes an assistant message whose text is empty when the model
@@ -71,120 +53,6 @@ describe('who said it', () => {
   it('renders no paragraph for a message with no text', () => {
     draw({ messages: [msg({ id: '1', text: '' })] });
     expect(document.querySelector('.wb-note p')).toBeNull();
-  });
-});
-
-describe('attachments', () => {
-  // The behaviour the whole PreviewMeta type parameter exists to protect:
-  // grouping is by uploadId, so three pages of one PDF are one thumbnail
-  // carrying a page count, not three thumbnails.
-  it('collapses the pages of one upload into a single thumbnail', () => {
-    draw({
-      messages: [
-        msg({
-          id: '1',
-          images: ['data:image/png;base64,A', 'data:image/png;base64,B', 'data:image/png;base64,C'],
-          imageMeta: [page('u1', 'invoice.pdf', 1), page('u1', 'invoice.pdf', 2), page('u1', 'invoice.pdf', 3)],
-        }),
-      ],
-    });
-
-    const shots = document.querySelectorAll('.wb-attach-shot');
-    expect(shots).toHaveLength(1);
-    expect(shots[0].getAttribute('aria-label')).toBe('View invoice.pdf · 3 pages');
-    expect(screen.getByText('3')).toBeTruthy();
-  });
-
-  it('keeps two separate uploads apart even when they share a filename', () => {
-    draw({
-      messages: [
-        msg({
-          id: '1',
-          images: ['data:image/png;base64,A', 'data:image/png;base64,B'],
-          imageMeta: [page('u1', 'scan.pdf'), page('u2', 'scan.pdf')],
-        }),
-      ],
-    });
-    expect(document.querySelectorAll('.wb-attach-shot')).toHaveLength(2);
-  });
-
-  // Reports saved before imageMeta existed reload with images and no meta.
-  // Dropping them would silently empty the strip on every old saved project.
-  it('still draws one thumbnail per image when the metadata is missing', () => {
-    draw({
-      messages: [msg({ id: '1', images: ['data:image/png;base64,A', 'data:image/png;base64,B'] })],
-    });
-    expect(document.querySelectorAll('.wb-attach-shot')).toHaveLength(2);
-  });
-
-  it('hands the whole group to the viewer, not just the page clicked', () => {
-    const onOpenAttachment = vi.fn();
-    draw({
-      onOpenAttachment,
-      messages: [
-        msg({
-          id: '1',
-          images: ['data:image/png;base64,A', 'data:image/png;base64,B'],
-          imageMeta: [page('u1', 'invoice.pdf', 1), page('u1', 'invoice.pdf', 2)],
-        }),
-      ],
-    });
-
-    fireEvent.click(document.querySelector('.wb-attach-shot')!);
-    expect(onOpenAttachment).toHaveBeenCalledWith({
-      srcs: ['data:image/png;base64,A', 'data:image/png;base64,B'],
-      index: 0,
-      file: 'invoice.pdf',
-    });
-  });
-
-  it('draws no strip at all for a message with no images', () => {
-    draw({ messages: [msg({ id: '1', text: 'just words' })] });
-    expect(document.querySelector('.wb-attach-strip')).toBeNull();
-  });
-});
-
-describe('a turn that failed', () => {
-  it('shows the failure beside the message, as an alert', () => {
-    draw({ messages: [msg({ id: '1', text: 'do it', error: 'The model is overloaded.' })] });
-    const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('The model is overloaded.');
-  });
-
-  it('retries the message it belongs to', () => {
-    const onRetry = vi.fn();
-    draw({
-      onRetry,
-      messages: [
-        msg({ id: 'first', text: 'one' }),
-        msg({ id: 'second', text: 'two', error: 'failed' }),
-      ],
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(onRetry).toHaveBeenCalledWith('second');
-  });
-
-  // Retrying mid-flight would stack a second request on top of the running one.
-  it('refuses a retry while a chat turn is in flight', () => {
-    draw({
-      isChatting: true,
-      messages: [msg({ id: '1', error: 'failed' })],
-    });
-    expect((screen.getByRole('button', { name: 'Try again' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('refuses a retry while a generation is in flight', () => {
-    draw({
-      isAnalyzing: true,
-      messages: [msg({ id: '1', error: 'failed' })],
-    });
-    expect((screen.getByRole('button', { name: 'Try again' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('leaves a healthy message with no alert and no retry', () => {
-    draw({ messages: [msg({ id: '1', text: 'fine' })] });
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 });
 
@@ -198,56 +66,24 @@ describe('a turn that failed', () => {
  * avoid that; this proves the ref works rather than trusting it.
  */
 describe('memoised rows still call the current callbacks', () => {
-  it('retries through the newest handler, not the one it first received', () => {
+  it('asks for a reply again through the newest handler, not the one it first received', () => {
     const first = vi.fn();
     const second = vi.fn();
-    const messages = [msg({ id: '1', text: 'do it', error: 'failed' })];
+    const messages = [msg({ id: '1', text: 'done' })];
+    const props = { messages, isChatting: false, isAnalyzing: false, streamingReply: '' };
 
-    const { rerender } = render(
-      <ChatThread
-        messages={messages}
-        isChatting={false}
-        isAnalyzing={false}
-        streamingReply=""
-        onRetry={first}
-        onOpenAttachment={vi.fn()}
-      />
-    );
-
-    // Same message objects, new callback — exactly what a re-render of App.tsx
+    const { rerender } = render(<ChatThread {...props} onRegenerate={first} />);
+    // Same message objects, new callback: what a re-render of App.tsx
     // produces when only the composer's prompt changed.
-    rerender(
-      <ChatThread
-        messages={messages}
-        isChatting={false}
-        isAnalyzing={false}
-        streamingReply=""
-        onRetry={second}
-        onOpenAttachment={vi.fn()}
-      />
-    );
+    rerender(<ChatThread {...props} onRegenerate={second} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledWith('1');
   });
 
-  it('opens an attachment through the newest handler too', () => {
-    const first = vi.fn();
-    const second = vi.fn();
-    const messages = [msg({ id: '1', images: ['data:image/png;base64,A'] })];
-    const props = { messages, isChatting: false, isAnalyzing: false, streamingReply: '', onRetry: vi.fn() };
-
-    const { rerender } = render(<ChatThread {...props} onOpenAttachment={first} />);
-    rerender(<ChatThread {...props} onOpenAttachment={second} />);
-
-    fireEvent.click(document.querySelector('.wb-attach-shot')!);
-    expect(first).not.toHaveBeenCalled();
-    expect(second).toHaveBeenCalledTimes(1);
-  });
-
   it('redraws a row when its own message changes', () => {
-    const props = { isChatting: false, isAnalyzing: false, streamingReply: '', onRetry: vi.fn(), onOpenAttachment: vi.fn() };
+    const props = { isChatting: false, isAnalyzing: false, streamingReply: '' };
     const { rerender } = render(<ChatThread {...props} messages={[msg({ id: '1', text: 'before' })]} />);
     expect(screen.getByText('before')).toBeTruthy();
 
@@ -321,7 +157,7 @@ describe('following the newest note', () => {
     el.scrollTop = scrollTop;
   };
 
-  const base = { isChatting: false, isAnalyzing: false, streamingReply: '', onRetry: vi.fn(), onOpenAttachment: vi.fn() };
+  const base = { isChatting: false, isAnalyzing: false, streamingReply: '' };
 
   it('scrolls to the bottom when a note arrives and the reader is already there', () => {
     const { rerender } = render(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' })]} />);
@@ -494,21 +330,12 @@ describe('a clean chat', () => {
     expect([...document.querySelectorAll('.wb-note button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Copy']);
   });
 
-  // Edit and Withdraw are the card's pill's alone since 2026-11-06 (RequestCard.test.tsx).
-  it("draws the person's message with Copy, and no Edit or Withdraw, which are the card's pill's", () => {
-    draw({ messages: [msg({ id: 'u', role: 'user', text: 'a sales report' }), msg({ id: 'a', role: 'assistant', text: 'Built it.' })] });
-    const [mine, forma] = document.querySelectorAll('.wb-note');
-    expect([...mine.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Copy']);
-    expect(within(forma as HTMLElement).queryByLabelText('Edit')).toBeNull();
-  });
 });
 
 /* Copy, the rating and Try again under Forma's replies (2026-11-05). */
 describe("actions on Forma's replies", () => {
   const thread = [
-    msg({ id: 'u1', role: 'user', text: 'hello' }),
     msg({ id: 'a1', role: 'assistant', text: 'Hi.' }),
-    msg({ id: 'u2', role: 'user', text: 'an invoice' }),
     msg({ id: 'a2', role: 'assistant', text: 'Built **it**.' }),
   ];
   const actions = (id: string) => [...document.querySelectorAll('.wb-note')][thread.findIndex((m) => m.id === id)].querySelector('[role="group"][aria-label="This reply"]') as HTMLElement;
@@ -535,7 +362,7 @@ describe("actions on Forma's replies", () => {
     fireEvent.click(within(actions('a1')).getByLabelText('Bad reply'));
     expect(onRate).toHaveBeenLastCalledWith('a1', 'bad');
     const rated = thread.map((m) => (m.id === 'a1' ? { ...m, rating: 'bad' as const } : m));
-    rerender(<ChatThread messages={rated} isChatting={false} isAnalyzing={false} streamingReply="" onRetry={vi.fn()} onOpenAttachment={vi.fn()} onRate={onRate} />);
+    rerender(<ChatThread messages={rated} isChatting={false} isAnalyzing={false} streamingReply="" onRate={onRate} />);
     expect(within(actions('a1')).getByLabelText('Bad reply').getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(within(actions('a1')).getByLabelText('Bad reply'));
     expect(onRate).toHaveBeenLastCalledWith('a1', undefined);
@@ -549,7 +376,7 @@ describe("actions on Forma's replies", () => {
     fireEvent.click(within(actions('a2')).getByText('Undo'));
     expect(onUndo).toHaveBeenCalledWith('a2');
     const undone = thread.map((m) => (m.id === 'a2' ? { ...m, undone: true as const } : m));
-    rerender(<ChatThread messages={undone} isChatting={false} isAnalyzing={false} streamingReply="" onRetry={vi.fn()} onOpenAttachment={vi.fn()} undoable={new Set()} onUndo={onUndo} />);
+    rerender(<ChatThread messages={undone} isChatting={false} isAnalyzing={false} streamingReply="" undoable={new Set()} onUndo={onUndo} />);
     expect(within(actions('a2')).queryByText('Undo')).toBeNull();
     expect(within(actions('a2')).getByText('Undone')).toBeTruthy();
   });
@@ -563,7 +390,7 @@ describe("actions on Forma's replies", () => {
     fireEvent.click(within(actions('a2')).getByText('Redo'));
     expect(onRedo).toHaveBeenCalledWith('a2');
     // The corner's Redo made it again before the flag was cleared: Undo, not "Undone".
-    rerender(<ChatThread messages={undone} isChatting={false} isAnalyzing={false} streamingReply="" onRetry={vi.fn()} onOpenAttachment={vi.fn()} undoable={new Set(['a2'])} onUndo={vi.fn()} redoable={new Set()} onRedo={onRedo} />);
+    rerender(<ChatThread messages={undone} isChatting={false} isAnalyzing={false} streamingReply="" undoable={new Set(['a2'])} onUndo={vi.fn()} redoable={new Set()} onRedo={onRedo} />);
     expect(within(actions('a2')).getByText('Undo')).toBeTruthy();
     expect(within(actions('a2')).queryByText('Undone')).toBeNull();
     expect(within(actions('a2')).queryByText('Redo')).toBeNull();
@@ -572,7 +399,7 @@ describe("actions on Forma's replies", () => {
   // Agent audit item 47, the owner's choice: an export or the designer is a button, run only when pressed.
   it('draws what a reply offers as buttons, and runs one only when it is pressed', () => {
     const onAction = vi.fn();
-    const offering = [...thread.slice(0, 3), msg({ id: 'a2', role: 'assistant', text: 'It is ready.', actions: [{ name: 'export', format: 'pdf' }, { name: 'designer' }] })];
+    const offering = [thread[0], msg({ id: 'a2', role: 'assistant', text: 'It is ready.', actions: [{ name: 'export', format: 'pdf' }, { name: 'designer' }] })];
     const { unmount } = draw({ messages: offering, onAction });
     const group = screen.getByRole('group', { name: 'Offered by this reply' });
     expect([...group.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Export as PDF', 'Open in designer']);
@@ -589,30 +416,30 @@ describe("actions on Forma's replies", () => {
     const own = [...thread, msg({ id: 'a3', role: 'assistant', text: 'Built "Invoice" from the text OCR read.', standalone: true })];
     draw({ messages: own, onRegenerate: vi.fn() });
     const notes = [...document.querySelectorAll('.wb-note')];
-    const group = notes[4].querySelector('[role="group"][aria-label="This reply"]') as HTMLElement;
+    const group = notes[2].querySelector('[role="group"][aria-label="This reply"]') as HTMLElement;
     expect(within(group).queryByLabelText('Try again')).toBeNull();
     expect(within(actions('a2')).getByLabelText('Try again')).toBeTruthy();
   });
 
   // When it was made and what it cost (2026-11-05), read off the id and from App.
-  it("says when a reply was made and what it cost, and when the person's message was sent", () => {
+  // The person's message says when it was sent on the card's pill (RequestCard.test.tsx).
+  it('says when a reply was made and what it cost', () => {
     const at = new Date();
     at.setHours(10, 42, 0, 0);
     const id = `${at.getTime()}-1`;
     draw({
-      messages: [msg({ id: `${at.getTime()}-0`, text: 'an invoice' }), msg({ id, role: 'assistant', text: 'Built it.' })],
+      messages: [msg({ id, role: 'assistant', text: 'Built it.' })],
       usageOf: (m) => (m.id === id ? '23.4k tokens' : null),
     });
     const metas = [...document.querySelectorAll('.wb-note-meta')].map((m) => m.textContent);
-    expect(metas).toHaveLength(2);
-    expect(metas[0]).toMatch(/^Today, /);
-    expect(metas[1]).toMatch(/^Today, .+ · 23\.4k tokens$/);
+    expect(metas).toHaveLength(1);
+    expect(metas[0]).toMatch(/^Today, .+ · 23\.4k tokens$/);
   });
 
   // A redesign asked before it is made (2026-11-05).
   it('asks before a redesign with Redesign and Not now, and says Not redesigned after a no', () => {
     const onConfirm = vi.fn();
-    const asking = [msg({ id: 'u', text: 'add a chart' }), msg({ id: 'a', role: 'assistant', text: 'Forma would redesign it.', confirm: { prompt: 'add a chart' } })];
+    const asking = [msg({ id: 'a', role: 'assistant', text: 'Forma would redesign it.', confirm: { prompt: 'add a chart' } })];
     const { rerender } = draw({ messages: asking, onConfirm });
     const group = screen.getByRole('group', { name: 'Redesign the report?' });
     fireEvent.click(within(group).getByText('Redesign'));
@@ -620,7 +447,7 @@ describe("actions on Forma's replies", () => {
     fireEvent.click(within(group).getByText('Not now'));
     expect(onConfirm).toHaveBeenLastCalledWith('a', false);
     const answered = asking.map((m) => (m.id === 'a' ? { ...m, confirm: { prompt: 'add a chart', answered: 'no' as const } } : m));
-    rerender(<ChatThread messages={answered} isChatting={false} isAnalyzing={false} streamingReply="" onRetry={vi.fn()} onOpenAttachment={vi.fn()} onConfirm={onConfirm} />);
+    rerender(<ChatThread messages={answered} isChatting={false} isAnalyzing={false} streamingReply="" onConfirm={onConfirm} />);
     expect(screen.queryByRole('group', { name: 'Redesign the report?' })).toBeNull();
     expect(screen.getByText('Not redesigned')).toBeTruthy();
   });
@@ -639,7 +466,7 @@ describe("actions on Forma's replies", () => {
 /* Editing and withdrawing a message, and its versions, are tested on the card's
    pill (RequestCard.test.tsx) since 2026-11-06: the thread's copy went. */
 
-/* Forma's replies as Markdown, the person's words as typed (2026-11-05). */
+/* Forma's replies as Markdown (2026-11-05); the person's words are the card's pill. */
 describe('what a message says', () => {
   // The renderer is lazy, and its cold import (micromark and all) took longer
   // than findBy's one second when the first case paid for it; testing.md's
@@ -662,43 +489,51 @@ describe('what a message says', () => {
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it("keeps the person's words as typed, line breaks and asterisks included", () => {
-    draw({ messages: [msg({ id: 'u', role: 'user', text: 'Which paper? A4\n**not** Letter' })] });
-    const p = document.querySelector('.wb-note--me .wb-plain')!;
-    expect(p.textContent).toBe('Which paper? A4\n**not** Letter');
-    expect(document.querySelector('.wb-note--me strong')).toBeNull();
-  });
-
   it('draws a reply plain while a search marks its matches', () => {
     draw({ messages: [msg({ id: 'a', role: 'assistant', text: 'Added **two** totals' })], query: 'two' });
     expect(document.querySelector('.wb-md')).toBeNull();
     expect(document.querySelector('mark.wb-hit')?.textContent).toBe('two');
   });
+
+  // Agent audit item 68: a code block has its own Copy, as ChatGPT's has.
+  it('copies a code block whole from its own Copy, and says so', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    draw({ messages: [msg({ id: 'a', role: 'assistant', text: 'Use this:\n\n```\nSum([Amount])\n```' })] });
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy the code' }));
+    expect(writeText).toHaveBeenCalledWith('Sum([Amount])\n');
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeTruthy();
+  });
 });
 
-describe('searching the transcript', () => {
+/*
+ * The log's search, marked in the card (2026-11-07, agent audit item 30): the
+ * card is one request, so hiding the replies that did not hold the words left
+ * a request the log had found by its question saying "No message holds that".
+ */
+describe('searching the requests', () => {
   const thread = [
-    msg({ id: '1', role: 'user', text: 'an invoice with totals' }),
     msg({ id: '2', role: 'assistant', text: 'Built the invoice.' }),
-    msg({ id: '3', role: 'user', text: 'move the logo' }),
+    msg({ id: '4', role: 'assistant', text: 'Moved the logo.' }),
   ];
 
-  it('draws only the messages holding the query, each match marked', () => {
+  it('marks the replies holding the query and hides none', () => {
     draw({ messages: thread, query: 'INVOICE' });
     expect(document.querySelectorAll('.wb-note')).toHaveLength(2);
-    expect([...document.querySelectorAll('mark.wb-hit')].map((m) => m.textContent)).toEqual(['invoice', 'invoice']);
-    expect(screen.getByRole('status').textContent).toBe('2 of 3 messages');
+    expect([...document.querySelectorAll('mark.wb-hit')].map((m) => m.textContent)).toEqual(['invoice']);
+    expect(screen.getByRole('status').textContent).toBe('1 reply holds that');
   });
 
-  it('says so when nothing holds it', () => {
+  it('says nothing when no reply holds it, which the question asked may', () => {
     draw({ messages: thread, query: 'chart' });
-    expect(document.querySelectorAll('.wb-note')).toHaveLength(0);
-    expect(screen.getByRole('status').textContent).toBe('No message holds that.');
+    expect(document.querySelectorAll('.wb-note')).toHaveLength(2);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(document.querySelectorAll('mark')).toHaveLength(0);
   });
 
   it('draws everything, unmarked, with no query', () => {
     draw({ messages: thread, query: '' });
-    expect(document.querySelectorAll('.wb-note')).toHaveLength(3);
+    expect(document.querySelectorAll('.wb-note')).toHaveLength(2);
     expect(document.querySelectorAll('mark')).toHaveLength(0);
   });
 });

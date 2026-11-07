@@ -63,4 +63,34 @@ describe('RequestLog', () => {
     fireEvent.change(screen.getByLabelText('Search requests'), { target: { value: 'total' } });
     expect(onQuery).toHaveBeenLastCalledWith('total');
   });
+
+  // Agent audit item 29: App holds the search, so the card and the log cannot disagree.
+  it('shows the search App holds, and filters by it', () => {
+    const onQuery = vi.fn();
+    const { rerender } = render(<RequestLog requests={requests} shownId="c" working={false} onShow={() => {}} query="terms" onQuery={onQuery} />);
+    fireEvent.click(screen.getByRole('button', { name: /Requests/ }));
+    expect((screen.getByLabelText('Search requests') as HTMLInputElement).value).toBe('terms');
+    expect(within(screen.getByRole('list')).getAllByRole('button').map((b) => b.textContent)).toEqual(['Put the terms under the total']);
+    fireEvent.change(screen.getByLabelText('Search requests'), { target: { value: 'bold' } });
+    expect(onQuery).toHaveBeenLastCalledWith('bold');
+    // Nothing changes until App says so.
+    expect((screen.getByLabelText('Search requests') as HTMLInputElement).value).toBe('terms');
+    rerender(<RequestLog requests={requests} shownId="c" working={false} onShow={() => {}} query="" onQuery={onQuery} />);
+    expect(within(screen.getByRole('list')).getAllByRole('button')).toHaveLength(3);
+  });
+
+  // Agent audit items 64 and 76: a title can be read whole from the keyboard, and App knows when the log is open.
+  it('names each request whole, and says when it opens and closes', () => {
+    const onOpenChange = vi.fn();
+    render(<RequestLog requests={requests} shownId="c" working={false} onShow={() => {}} onOpenChange={onOpenChange} />);
+    const head = screen.getByRole('button', { name: /Requests/ });
+    fireEvent.click(head);
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    const item = screen.getByRole('button', { name: /Put the terms/ });
+    expect(item.getAttribute('title')).toBe('Put the terms under the total');
+    fireEvent.focus(item);
+    fireEvent.click(head);
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(onOpenChange).toHaveBeenCalledTimes(2);
+  });
 });

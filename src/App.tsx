@@ -256,6 +256,7 @@ import {
   type ChatMessage as ChatSessionMessage,
 } from './lib/chatSession';
 import { packChanges, unpackChanges, REPLY_CHANGES_KEY } from './lib/replyChanges';
+import { DRAFTS_KEY, keepQueue, keptQueueFor, LEGACY_DRAFT_KEY, movedDraft, NEW_DRAFT, parseDrafts, QUEUE_KEY, queuedFiles, withDraft, withoutFiles, type Drafts } from './lib/composerStore';
 import { isPlainBuild, isRememberMessage, pendingReplyKind, withSelection } from './lib/chatTurn';
 import { formatSessionStamp } from './lib/datetime';
 import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
@@ -813,8 +814,8 @@ const REVIEW_WIDTH_EPOCH_KEY = 'reviewWidthEpoch';
 /* The project open in this tab, kept in sessionStorage so a reload opens it
    again (2026-11-05). An id only; the project itself is where it was saved. */
 const OPEN_PROJECT_KEY = 'forma:openProject';
-/* The message typed and not yet sent, kept per tab so a reload keeps it (2026-11-05). */
-const DRAFT_KEY = 'forma:draft';
+/* The message typed and not yet sent, and the queue, kept per tab and per
+   project since 2026-11-07: see lib/composerStore.ts. */
 /* Pinned and archived projects, kept on this device (2026-11-05). Ids only. */
 const PINNED_PROJECTS_KEY = 'forma:pinnedProjects';
 const ARCHIVED_PROJECTS_KEY = 'forma:archivedProjects';
@@ -971,28 +972,47 @@ export default function App() {
    * ChatGPT draft does. Per tab, in sessionStorage, as the key is: this may be
    * a shared machine, and an unsent message is the person's words. Sending,
    * New report and signing out clear the box, and so the draft.
+   *
+   * Since 2026-11-07 (agent audit item 69) one draft per project, as ChatGPT
+   * keeps one per chat (lib/composerStore.ts): opening a project shows the
+   * words left in its box, and a reload brings back the open project's. The
+   * tab had one draft, which followed the person from project to project.
    */
-  const [prompt, setPrompt] = useState(() => {
+  /** The project the words in the box belong to: its id, or `NEW_DRAFT` before its first save. */
+  const draftKeyRef = useRef<string>(NEW_DRAFT);
+  const readDrafts = (): Drafts => {
     try {
-      return sessionStorage.getItem(DRAFT_KEY) ?? '';
+      return parseDrafts(sessionStorage.getItem(DRAFTS_KEY), sessionStorage.getItem(LEGACY_DRAFT_KEY), sessionStorage.getItem(OPEN_PROJECT_KEY) ?? NEW_DRAFT);
     } catch {
-      return '';
+      return {};
     }
-  });
+  };
+  const writeDrafts = (drafts: Drafts) => {
+    try {
+      if (Object.keys(drafts).length) sessionStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+      else sessionStorage.removeItem(DRAFTS_KEY);
+      sessionStorage.removeItem(LEGACY_DRAFT_KEY);
+    } catch {
+      /* storage blocked: the draft lasts as long as the page */
+    }
+  };
+  const keepDraft = (key: string, text: string) => writeDrafts(withDraft(readDrafts(), key, text));
+  const [prompt, setPrompt] = useState(() => readDrafts()[NEW_DRAFT] ?? '');
   useEffect(() => {
-    const t = window.setTimeout(() => {
-      try {
-        if (prompt) sessionStorage.setItem(DRAFT_KEY, prompt);
-        else sessionStorage.removeItem(DRAFT_KEY);
-      } catch {
-        /* storage blocked: the draft lasts as long as the page */
-      }
-    }, 300);
+    // The key now, before a project opened in the next render takes it over.
+    const key = draftKeyRef.current;
+    const t = window.setTimeout(() => keepDraft(key, prompt), 300);
     return () => window.clearTimeout(t);
   }, [prompt]);
   /** The words in the box as the latest render has them, kept at once when the page goes. */
   const draftNow = useRef(prompt);
   draftNow.current = prompt;
+  /**
+   * Words put in the box for the person to finish (2026-11-07, agent audit
+   * item 57): after what is already typed, on a line of their own, where
+   * "Edit text" and a starting point replaced an unsent draft.
+   */
+  const addToBox = (text: string) => setPrompt((typed) => (typed.trim() ? `${typed.replace(/\s+$/, '')}\n${text}` : text));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // Through the validating reader. A bare JSON.parse here threw during the very
   // first render on a corrupted entry, taking the whole application to the error
@@ -1625,8 +1645,11 @@ export default function App() {
   // A request withdrawn while shown falls back to the newest.
   const shownRequest = requests.find((r) => r.id === shownRequestId) ?? requests[requestCount - 1] ?? null;
   const shownIsNewest = !shownRequest || shownRequest.id === requests[requestCount - 1]?.id;
+  /** A request to keep in the card when the count changes under it: a version flipped (agent audit item 31). */
+  const keepShownRef = useRef<string | null>(null);
   useEffect(() => {
-    setShownRequestId(null);
+    setShownRequestId(keepShownRef.current);
+    keepShownRef.current = null;
     setIsCardCollapsed(false);
     setChangedHighlight([]);
   }, [requestCount]);
@@ -1834,8 +1857,20 @@ export default function App() {
    * was sent ahead with Steer, and `steerFrom`, the words of the request it
    * changes (agent audit item 86).
    */
-  type Queued = { id: string; text: string; images?: string[]; imageMeta?: PreviewMeta[]; steer?: true; steerFrom?: string; go?: true };
+  type Queued = { id: string; text: string; images?: string[]; imageMeta?: PreviewMeta[]; texts?: TextAttachment[]; dropped?: true; steer?: true; steerFrom?: string; go?: true };
   const [queue, setQueue] = useState<Queued[]>([]);
+  /**
+   * The queue is kept in the tab with its project (2026-11-07, agent audit
+   * item 71), so a reload in the middle of a turn does not lose what was
+   * waiting; `handleLoadReport` brings it back, paused. Read once, here.
+   */
+  const keptQueue = useRef<string | null>((() => {
+    try {
+      return sessionStorage.getItem(QUEUE_KEY);
+    } catch {
+      return null;
+    }
+  })());
   /** Resume: the next message goes whatever is waiting, the person having said so. */
   const resumeQueue = () => {
     setQueue((q) => (q.length ? [{ ...q[0], go: true }, ...q.slice(1)] : q));
@@ -1872,6 +1907,7 @@ export default function App() {
     setQueue(rest);
     void handleGenerate(next.text, {
       ...(next.images?.length ? { images: next.images, imageMeta: next.imageMeta } : {}),
+      ...(next.texts?.length ? { texts: next.texts } : {}),
       queued: true,
       ...(next.steerFrom ? { steerFrom: next.steerFrom } : {}),
     });
@@ -2297,6 +2333,23 @@ export default function App() {
    * Invoice Report" showed as EVERY row highlighted at once (2026-09-06).
    */
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  // The queue, kept with its project (agent audit item 71; `keptQueue` above).
+  useEffect(() => {
+    try {
+      if (!openProjectId || !queue.length) {
+        sessionStorage.removeItem(QUEUE_KEY);
+        return;
+      }
+      try {
+        sessionStorage.setItem(QUEUE_KEY, keepQueue(openProjectId, queue));
+      } catch {
+        // Too large with its pictures: kept as its words, each saying its files went.
+        sessionStorage.setItem(QUEUE_KEY, keepQueue(openProjectId, withoutFiles(queue)));
+      }
+    } catch {
+      /* storage blocked: the queue lasts as long as the page */
+    }
+  }, [queue, openProjectId]);
   /*
    * One history for every change to the report (2026-11-05), for the Undo
    * and Redo at the bench's corner, as Stitch keeps them: a drag or retype on
@@ -2377,6 +2430,8 @@ export default function App() {
   const [logQuery, setLogQuery] = useState('');
   /** Bumped to open the request log from the command menu (agent audit item 66). */
   const [logReveal, setLogReveal] = useState(0);
+  /** Whether the request log is open, so the card above it makes room (agent audit item 76). */
+  const [logOpen, setLogOpen] = useState(false);
   /**
    * The REPX the Preview itself last wrote. Any other change to the file (a
    * chat edit, Undo, a restore, another project) clears the Preview's
@@ -2705,9 +2760,28 @@ export default function App() {
     e.stopPropagation();
   };
 
+  /*
+   * "Drop to attach" while files are dragged over the workspace (2026-11-07,
+   * agent audit item 70), as ChatGPT and Gemini veil the page. Counted, since
+   * entering a child fires leave on its parent.
+   */
+  const [dropping, setDropping] = useState(false);
+  const dragDepth = useRef(0);
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+    dragDepth.current += 1;
+    setDropping(true);
+  };
+  const handleDragLeave = () => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (!dragDepth.current) setDropping(false);
+  };
+
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    dragDepth.current = 0;
+    setDropping(false);
     await ingestFiles(Array.from(e.dataTransfer.files));
   };
 
@@ -2725,6 +2799,10 @@ export default function App() {
     setPreviewMeta([]);
     setAttachmentTexts([]);
     setUploadNotices([]);
+    // A new report starts with an empty box (agent audit item 69): the words
+    // of the one left were kept with it by `leaveSession`.
+    draftKeyRef.current = NEW_DRAFT;
+    keepDraft(NEW_DRAFT, '');
     setPrompt('');
     setError(null);
     setMessages([]);
@@ -2875,6 +2953,11 @@ export default function App() {
     const reportId = openReportId.current ?? Date.now().toString();
     const ts = Date.now();
     const signature = sessionSignature(kept, report);
+    // A report's first save takes the words in its box with it to its id (agent audit item 69).
+    if (!openReportId.current && draftKeyRef.current === NEW_DRAFT) {
+      draftKeyRef.current = reportId;
+      writeDrafts(movedDraft(readDrafts(), NEW_DRAFT, reportId));
+    }
     // Saving makes this the open project, so the list marks the row it just
     // created rather than nothing.
     openReportId.current = reportId;
@@ -3027,12 +3110,7 @@ export default function App() {
         pendingAutosave.current = null;
         pending.run();
       }
-      try {
-        if (draftNow.current) sessionStorage.setItem(DRAFT_KEY, draftNow.current);
-        else sessionStorage.removeItem(DRAFT_KEY);
-      } catch {
-        /* storage blocked: the draft lasts as long as the page */
-      }
+      keepDraft(draftKeyRef.current, draftNow.current);
     };
     const onHidden = () => {
       if (document.visibilityState === 'hidden') keepNow();
@@ -3112,6 +3190,9 @@ export default function App() {
     } else {
       dropAutosave();
     }
+    // The words in the box stay with the project they were typed in (agent
+    // audit item 69), or go with it when it is deleted or the person signs out.
+    keepDraft(draftKeyRef.current, keep === 'save' ? draftNow.current : '');
     sessionId.current += 1;
     abortControllerRef.current?.abort();
     turnAbortRef.current?.abort();
@@ -3211,8 +3292,20 @@ export default function App() {
     if (kept.length && base) {
       setChatChanges(Object.fromEntries(kept.map(([id, c]) => [id, { before: { ...base, repxContent: c.before }, after: { ...base, repxContent: c.after } }])));
     }
-    // What is typed or attached in the box stays, as before: it may be meant
-    // for the project being opened.
+    // The words in the box are the project's own since 2026-11-07 (agent
+    // audit item 69), as a chat's draft is in ChatGPT: the left project's
+    // were kept by `leaveSession`, and this one's come back. Files attached
+    // stay in the box, as before: they are not kept over a reload either.
+    draftKeyRef.current = report.id;
+    setPrompt(readDrafts()[report.id] ?? '');
+    // The queue this tab kept for it (item 71), paused: the turn it waited on
+    // was cut off by the reload. Read once, as only the reload's project can match.
+    const keptItems = keptQueueFor<Queued>(keptQueue.current, report.id);
+    keptQueue.current = null;
+    if (keptItems.length) {
+      setQueue(keptItems);
+      setQueuePaused(true);
+    }
     setError(null);
     setShownRequestId(null);
     setRailPanel('review');
@@ -3348,6 +3441,8 @@ export default function App() {
     // The open project among them is closed first, and not saved on its way
     // out (2026-11-06): left open, its next save wrote it back under its id.
     if (openReportId.current && ids.includes(openReportId.current)) handleClearChat('drop');
+    // A deleted project's unsent words go with it (agent audit item 69).
+    writeDrafts(ids.reduce((drafts, id) => withDraft(drafts, id, ''), readDrafts()));
     setLeavingReportIds((prev) => [...prev, ...ids]);
     window.setTimeout(() => {
       ids.forEach((id) => void handleDeleteReport(id));
@@ -3406,6 +3501,10 @@ export default function App() {
     // state since its redesign (2026-11-07), and leave when it unmounts.
     setIsConfigOpen(false);
     handleClearChat('drop');
+    // Every project's unsent words and a kept queue go too (agent audit items
+    // 69 and 71): the next person to sign in on this machine sees none of them.
+    writeDrafts({});
+    keptQueue.current = null;
     setRailPanel('review');
   };
   useEffect(() => {
@@ -3843,8 +3942,9 @@ export default function App() {
       // No key configured is a setup step, not a failure — send the user straight
       // to the place they can fix it instead of showing a dead-end error.
       if (isMissingApiKey(err)) {
-        setError('Add your own Gemini API key in Settings to generate reports.');
-        setMessages((prev) => markAskError(prev, 'Add your own Gemini API key in Settings to generate reports.', turnOf?.askId));
+        // Once, on the request, or over the box when there is none (item 54).
+        if (messages.some((m) => m.role === 'user')) setMessages((prev) => markAskError(prev, 'Add your own Gemini API key in Settings to generate reports.', turnOf?.askId));
+        else setError('Add your own Gemini API key in Settings to generate reports.');
         setIsConfigOpen(true);
         return;
       }
@@ -3886,10 +3986,12 @@ export default function App() {
           console.warn("Forma's own draft could not be made either.", draftError);
         }
       }
-      setError(friendlyMessage);
       // On the request that failed (agent audit item 5): the log marks it
-      // failed and its card offers Try again, where it read as answered.
-      setMessages((prev) => markAskError(prev, friendlyMessage, turnOf?.askId));
+      // failed and its card offers Try again, where it read as answered. Not
+      // over the box as well, where it was said a second time (item 54),
+      // unless there is no request of the person's to carry it.
+      if (messages.some((m) => m.role === 'user')) setMessages((prev) => markAskError(prev, friendlyMessage, turnOf?.askId));
+      else setError(friendlyMessage);
     } finally {
       if (!signal.aborted) {
         // Done, before the half second the bar takes to finish (2026-11-06):
@@ -4155,6 +4257,13 @@ export default function App() {
     // The version shown decides which questions wait, if any (item 24).
     pendingClarifyRef.current = pendingClarifyOf(next);
     setMessages(next);
+    // The card stays on the request flipped (agent audit item 31): a version
+    // with a different number of turns after it moved the card to the newest.
+    const after = requestsOf(next);
+    const shown = after.at(-1)?.id === id ? null : id;
+    // Held for the count's effect only when the count changes, or it would outlive this flip.
+    keepShownRef.current = after.length !== requestCount ? shown : null;
+    setShownRequestId(shown);
   };
 
   /** One of the person's messages and Forma's answers to it, withdrawn (2026-11-04). See `withdrawTurn`. */
@@ -4342,6 +4451,8 @@ export default function App() {
     resend?: {
       images?: string[];
       imageMeta?: PreviewMeta[];
+      /** The text of files queued with the words: a PDF's text layer, a `.repx` (agent audit item 71). */
+      texts?: TextAttachment[];
       branches?: ChatBranch<DesignResult, PreviewMeta>[];
       branch?: number;
       /**
@@ -4397,8 +4508,12 @@ export default function App() {
     const stagedImageMeta: PreviewMeta[] = again
       ? stagedImages.map((_, i) => resend?.imageMeta?.[i] ?? { uploadId: `again-${i}`, file: 'image' })
       : previewMeta;
-    const stagedTexts = again ? [] : attachmentTexts;
-    const stagedOcr = again ? stagedImages.map((src, i) => ({ src, meta: stagedImageMeta[i] })) : ocrPages;
+    const stagedTexts = again ? resend?.texts ?? [] : attachmentTexts;
+    // Sent again, a page whose text came with it (a queued PDF's text layer) is not read twice.
+    const againText = new Set(stagedTexts.map((t) => `${t.uploadId}#${t.page ?? 0}`));
+    const stagedOcr = again
+      ? stagedImages.flatMap((src, i) => (againText.has(`${stagedImageMeta[i].uploadId}#${stagedImageMeta[i].page ?? 0}`) ? [] : [{ src, meta: stagedImageMeta[i] }]))
+      : ocrPages;
     /** Clears the composer, unless this is a message sent again, which leaves it as it is. */
     const clearComposer = () => {
       if (again) return;
@@ -4413,6 +4528,9 @@ export default function App() {
       setError('Please provide at least an image, PDF, or a text description.');
       return;
     }
+    // A new request clears the last one's error line (agent audit item 53):
+    // it stayed over the box after later turns had succeeded.
+    setError(null);
 
     /*
      * A redesign Forma asked about is answered by the next message, yes or no
@@ -4822,9 +4940,10 @@ export default function App() {
         const message = isMissingApiKey(err)
           ? 'Add your Gemini API key to use the workspace.'
           : err?.message || 'Could not reach the assistant.';
-        setError(message);
         // Mark the message that failed, so the transcript shows which turn went
-        // wrong instead of leaving it looking merely unanswered.
+        // wrong instead of leaving it looking merely unanswered. Said there
+        // only (agent audit item 54): it was also the line over the box, two
+        // alerts for one failure.
         setMessages(prev => markMessageError(prev, newUserMsg.id, message));
         if (isMissingApiKey(err)) setIsConfigOpen(true);
         return;
@@ -4935,8 +5054,7 @@ export default function App() {
     } catch (err: any) {
       if (signal?.aborted) return;
       const message = isMissingApiKey(err) ? 'Add your Gemini API key to use the workspace.' : err?.message || 'Could not reach the assistant.';
-      setError(message);
-      // On the request too (agent audit item 5), with its Try again.
+      // On the request (agent audit item 5), with its Try again, and not over the box too (item 54).
       setMessages((prev) => markAskError(prev, message, askId));
       if (isMissingApiKey(err)) setIsConfigOpen(true);
       return;
@@ -5547,7 +5665,7 @@ export default function App() {
   const formatSelection = (action: FormatAction) => editSelection((agent, xml) => agent.formatEdits(xml, previewSelection, action));
   /** New words for one control are Forma's to write: the box, started for it. */
   const askForText = (name: string) => {
-    setPrompt(`Change the text of ${name} to `);
+    addToBox(`Change the text of ${name} to `);
     requestAnimationFrame(() => (document.querySelector('textarea[aria-label="Message"]') as HTMLTextAreaElement | null)?.focus());
   };
 
@@ -6269,9 +6387,17 @@ export default function App() {
       <main
         className="wb-bench"
         data-card={requests.length > 0 || isAnalyzing || isChatting ? (isCardCollapsed ? 'folded' : 'open') : undefined}
+        data-log={logOpen ? 'open' : undefined}
         onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {dropping && (
+          <div className="wb-drop-veil" aria-hidden="true">
+            <span>Drop to attach</span>
+          </div>
+        )}
         <div className="wb-bench-bar">
           <div className="wb-doc-id">
             {/* The title opens the project's menu (2026-11-06), as Stitch's
@@ -6564,7 +6690,7 @@ export default function App() {
                 }}
                 onAllProjects={() => showRailPanel('projects')}
                 onPick={(point) => {
-                  setPrompt(point.text);
+                  addToBox(point.text);
                   requestAnimationFrame(() => {
                     const box = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]');
                     box?.focus();
@@ -6664,15 +6790,19 @@ export default function App() {
           <div className="wb-float wb-float-log">
             <Suspense fallback={null}>
               <RequestLog
-                // A search of one project's requests is not another's.
-                key={openProjectId ?? 'new'}
                 requests={requests}
                 shownId={shownRequest?.id ?? null}
                 working={isAnalyzing || isChatting}
                 onShow={(id) => void showRequest(id)}
                 onExport={exportConversation}
+                // App holds the search (agent audit item 29), so the card and
+                // the log agree; leaving a project clears it (`leaveSession`).
+                // The log is no longer keyed by project, whose first save
+                // remounted it and emptied its own copy of the words.
+                query={logQuery}
                 onQuery={setLogQuery}
                 reveal={logReveal}
+                onOpenChange={setLogOpen}
               />
             </Suspense>
           </div>
@@ -6733,9 +6863,20 @@ export default function App() {
             onPasteFiles={ingestFiles}
             selection={result?.repxContent ? previewSelection : []}
             models={modelPicker}
-            queue={queue}
+            queue={queue.map((q) => ({ id: q.id, text: q.text, files: queuedFiles(q), dropped: q.dropped }))}
             onQueue={(text) => {
-              setQueue((q) => [...q, { id: nextMessageId(), text }]);
+              // The files in the box go with the words (agent audit item 71):
+              // they stayed behind, and the message was sent without them, unsaid.
+              const files = previews.length || attachmentTexts.length
+                ? { ...(previews.length ? { images: previews, imageMeta: previewMeta } : {}), ...(attachmentTexts.length ? { texts: attachmentTexts } : {}) }
+                : {};
+              setQueue((q) => [...q, { id: nextMessageId(), text, ...files }]);
+              if (previews.length || attachmentTexts.length) {
+                setPreviews([]);
+                setPreviewMeta([]);
+                setAttachmentTexts([]);
+                setUploadNotices([]);
+              }
               setPrompt('');
             }}
             onSteer={(id) => {
@@ -6768,6 +6909,12 @@ export default function App() {
               // What was being typed stays, under the queued words (2026-11-06,
               // the workspace audit): Edit replaced it, and it was lost.
               if (item) setPrompt((typed) => (typed.trim() ? `${item.text}\n${typed}` : item.text));
+              // Its files come back to the box with it (agent audit item 71).
+              if (item?.images?.length) {
+                setPreviews((p) => [...p, ...item.images!]);
+                setPreviewMeta((m) => [...m, ...item.images!.map((_, i) => item.imageMeta?.[i] ?? { uploadId: `queued-${item.id}-${i}`, file: 'image' })]);
+              }
+              if (item?.texts?.length) setAttachmentTexts((t) => [...t, ...item.texts!]);
             }}
             onCancelQueued={(id) => setQueue((q) => q.filter((x) => x.id !== id))}
             history={requests.map((r) => r.ask?.text ?? '').filter(Boolean)}

@@ -1,0 +1,15 @@
+/* A code block's Copy (2026-11-07, agent audit item 68), wherever Markdown.tsx
+   draws one: a reply in the card, the Spec pane, a shared report. Quiet until
+   the block is pointed at or the button has the keyboard's focus, as
+   ChatGPT's is; grey, never orange (the workspace has no orange border). */
+.md-code { position: relative; }
+.md-code > pre { margin: 0; }
+.md-code-copy {
+  position: absolute; top: 6px; right: 6px;
+  padding: 2px 8px; border: 1px solid var(--rule); border-radius: 999px;
+  background: var(--panel); color: var(--ink-2); font-size: 11.5px; cursor: pointer;
+  opacity: 0; transition: opacity .15s ease;
+}
+.md-code:hover .md-code-copy, .md-code-copy:focus-visible { opacity: 1; }
+.md-code-copy:focus-visible { outline: 2px solid var(--ink-faint); outline-offset: 1px; }
+@media (hover: none) { .md-code-copy { opacity: 1; } }

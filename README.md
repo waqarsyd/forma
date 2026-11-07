@@ -604,7 +604,9 @@ src/
                        replyChanges (the chat's changes kept in the tab, so
                        a reply's Undo and Redo outlive a reload), chatTurn
                        (what the chat box keeps as a memory, sends straight
-                       to a design, or reads as an answer), datetime,
+                       to a design, or reads as an answer), composerStore
+                       (an unsent draft per project, and the queue, kept in
+                       the tab over a reload), datetime,
                        modelCatalog, reportConfigStore, designerBridge,
                        geminiClient (loads the generation service on demand, so
                        its 19.6 kB prompt is not on every page load) and

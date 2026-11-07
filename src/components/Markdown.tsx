@@ -1,5 +1,8 @@
+import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { copyText } from '../lib/clipboard';
+import './markdown.css';
 
 /**
  * The generated specification, rendered, and since 2026-11-05 Forma's replies
@@ -25,9 +28,42 @@ import remarkGfm from 'remark-gfm';
  */
 export default function Markdown({ children }: { children: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: NewTabLink }}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: NewTabLink, pre: CodeBlock }}>
       {children}
     </ReactMarkdown>
+  );
+}
+
+/**
+ * A code block with its own Copy (2026-11-07, agent audit item 68), as
+ * ChatGPT's and Gemini's have: a reply that gives an expression or a piece of
+ * REPX is copied whole, without selecting it by hand. Copies the text as
+ * drawn, through lib/clipboard.ts, and says "Copied" for a moment; a browser
+ * that refuses the clipboard says "Could not copy".
+ */
+function CodeBlock({ children, node: _node, ...rest }: ComponentProps<'pre'> & { node?: unknown }) {
+  const ref = useRef<HTMLPreElement>(null);
+  const [said, setSaid] = useState<'' | 'Copied' | 'Could not copy'>('');
+  useEffect(() => {
+    if (!said) return;
+    const t = setTimeout(() => setSaid(''), 1600);
+    return () => clearTimeout(t);
+  }, [said]);
+  return (
+    <div className="md-code">
+      <pre ref={ref} {...rest}>
+        {children}
+      </pre>
+      <button
+        type="button"
+        className="md-code-copy"
+        aria-label={said || 'Copy the code'}
+        title="Copy the code"
+        onClick={async () => setSaid((await copyText(ref.current?.textContent ?? '')) ? 'Copied' : 'Could not copy')}
+      >
+        {said || 'Copy'}
+      </button>
+    </div>
   );
 }
 

@@ -20,7 +20,7 @@
  */
 
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
+import type { PreviewMeta } from '../lib/attachments';
 import { messageMatches, messageTime, searchParts, type ChatMessage } from '../lib/chatSession';
 import { formatSessionStamp } from '../lib/datetime';
 
@@ -63,8 +63,6 @@ export interface ChatThreadProps<R> {
   isAnalyzing: boolean;
   /** Text received so far this turn. Empty until the first token arrives. */
   streamingReply: string;
-  onRetry: (id: string) => void;
-  onOpenAttachment: (view: AttachmentView) => void;
   /**
    * Answers to a message's clarifying questions (Prompt-to-Report in the
    * chat). Absent, the questions are drawn without a form.
@@ -102,7 +100,12 @@ export interface ChatThreadProps<R> {
   onConfirm?: (id: string, yes: boolean) => void;
   /** What a reply cost, as words ("23.4k tokens"), or null; shown beside its time (2026-11-05). */
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
-  /** A transcript search: only the messages holding it are drawn, with each match marked. */
+  /**
+   * A search of the requests: each match marked, nothing hidden. It hid the
+   * replies that did not hold it until 2026-11-07 (agent audit item 30), and
+   * a request the log found by its question showed "No message holds that",
+   * the card being one request.
+   */
   query?: string;
   /**
    * Whether a reply being written shows here (2026-11-05). The card shows a
@@ -114,8 +117,8 @@ export interface ChatThreadProps<R> {
   children?: ReactNode;
 }
 
-/** A message's text with every match of the search marked. */
-function Marked({ text, query }: { text: string; query: string }) {
+/** A message's text with every match of the search marked; the card's pill marks the words asked with it. */
+export function Marked({ text, query }: { text: string; query: string }) {
   if (!query.trim()) return <>{text}</>;
   return (
     <>
@@ -411,8 +414,6 @@ const ChatNote = memo(function ChatNote<R>({
   message,
   retryDisabled,
   latest = false,
-  onRetry,
-  onOpenAttachment,
   onAnswer,
   onRegenerate,
   onRate,
@@ -434,26 +435,24 @@ const ChatNote = memo(function ChatNote<R>({
   onUndo?: (id: string) => void;
   /** Present only while this reply's change, taken back, can be made again. */
   onRedo?: (id: string) => void;
-  onRetry: (id: string) => void;
-  onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
   onRegenerate?: (id: string) => void;
   onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
   query?: string;
 }) {
   /*
-   * The person's message is drawn plainly, with its Copy. Its Edit, Withdraw
-   * and versions are the card's pill (RequestCard.tsx), which holds what was
-   * asked; this thread holds Forma's replies. Both drew them until 2026-11-06
-   * (the workspace audit), and this copy was never reached, the card passing
-   * the replies alone.
+   * Forma's replies only. What the person asked, with its pictures, its
+   * error and Try again, its Copy, Edit, Withdraw and versions, is the card's
+   * pill (RequestCard.tsx). This note drew the person's message too, with its
+   * pictures and its error, until 2026-11-07 (agent audit item 61): the card
+   * has passed the replies alone since the workspace audit, so none of that
+   * was ever reached. `git log -S"wb-note--me"` finds it.
    */
-  const mine = message.role === 'user';
   return (
-    <article className={`wb-note${mine ? ' wb-note--me' : ''}`}>
+    <article className="wb-note">
       <div>
-        <div className="wb-who">{mine ? 'You' : 'Forma'}</div>
-        {message.text && <MessageText text={message.text} query={query} markdown={!mine} />}
+        <div className="wb-who">Forma</div>
+        {message.text && <MessageText text={message.text} query={query} markdown />}
         {message.clarify && !message.clarify.answered && onAnswer && (
           <ClarifyForm id={message.id} questions={message.clarify.questions} disabled={retryDisabled} onAnswer={onAnswer} />
         )}
@@ -469,7 +468,7 @@ const ChatNote = memo(function ChatNote<R>({
         )}
         {message.confirm?.answered === 'no' && <span className="wb-note-done">Not redesigned</span>}
         {/* What the reply offers rather than does: an export or the designer, run when pressed. */}
-        {!mine && message.actions?.length && onAction ? (
+        {message.actions?.length && onAction ? (
           <div className="wb-note-actions" role="group" aria-label="Offered by this reply">
             {message.actions.map((action, i) => (
               <button key={`${action.name}-${action.format ?? ''}-${i}`} type="button" className="wb-pill wb-pill--outline" disabled={retryDisabled} onClick={() => onAction(message.id, i)}>
@@ -479,48 +478,7 @@ const ChatNote = memo(function ChatNote<R>({
           </div>
         ) : null}
 
-        {message.images && message.images.length > 0 && (
-          // Sent messages showed a count and nothing else, so once a
-          // message was on the transcript there was no way to check
-          // what had gone with it. Names are not kept on a message —
-          // `ChatMessage.images` is data URLs only, and a saved report
-          // reloads with just those — so the picture is the label.
-          <div className="wb-attach-strip">
-            {groupAttachments(message.imageMeta ?? [], message.images.length).map((group) => {
-              const label = groupLabel(group);
-              const srcs = group.indices.map((i) => message.images![i]);
-              return (
-                <button
-                  key={`${group.file}-${group.indices[0]}`}
-                  type="button"
-                  className="wb-attach-shot"
-                  onClick={() => onOpenAttachment({ srcs, index: 0, file: group.file })}
-                  title={`View ${label}`}
-                  aria-label={`View ${label}`}
-                >
-                  <img src={srcs[0]} alt="" />
-                  {group.pages > 1 && <span className="wb-attach-pages">{group.pages}</span>}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* The failure belongs beside the turn that failed. */}
-        {message.error && (
-          <p role="alert" style={{ color: 'var(--bad-ink)' }}>
-            {message.error}{' '}
-            <button
-              className="wb-pill wb-pill--outline"
-              onClick={() => onRetry(message.id)}
-              disabled={retryDisabled}
-            >
-              Try again
-            </button>
-          </p>
-        )}
-
-        {!mine && message.text && (
+        {message.text && (
           <ReplyActions
             id={message.id}
             text={message.text}
@@ -536,15 +494,6 @@ const ChatNote = memo(function ChatNote<R>({
           />
         )}
 
-        {/* One row under the bubble, as ChatGPT's: when it was sent and Copy, shown when pointed at. */}
-        {mine && (
-          <div className="wb-note-foot">
-            <div className="wb-note-actions wb-note-actions--quiet" role="group" aria-label="Your message">
-              {noteMeta(message.id, null) && <span className="wb-note-meta">{noteMeta(message.id, null)}</span>}
-              {message.text && <CopyButton text={message.text} />}
-            </div>
-          </div>
-        )}
       </div>
     </article>
   );
@@ -557,8 +506,6 @@ const ChatNote = memo(function ChatNote<R>({
   onAction?: (id: string, index: number) => void;
   onConfirm?: (id: string, yes: boolean) => void;
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
-  onRetry: (id: string) => void;
-  onOpenAttachment: (view: AttachmentView) => void;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
   onRegenerate?: (id: string) => void;
   onRate?: (id: string, rating: 'good' | 'bad' | undefined) => void;
@@ -570,8 +517,6 @@ export default function ChatThread<R>({
   isChatting,
   isAnalyzing,
   streamingReply,
-  onRetry,
-  onOpenAttachment,
   onAnswer,
   onRegenerate,
   onRate,
@@ -596,25 +541,21 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, usageOf });
-  latest.current = { onRetry, onOpenAttachment, onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, usageOf };
+  const latest = useRef({ onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, usageOf });
+  latest.current = { onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, usageOf };
   const act = useCallback((id: string, index: number) => latest.current.onAction?.(id, index), []);
   const usage = useCallback((m: ChatMessage<R, PreviewMeta>) => latest.current.usageOf?.(m) ?? null, []);
   const undo = useCallback((id: string) => latest.current.onUndo?.(id), []);
   const redo = useCallback((id: string) => latest.current.onRedo?.(id), []);
   const confirm = useCallback((id: string, yes: boolean) => latest.current.onConfirm?.(id, yes), []);
-  const retry = useCallback((id: string) => latest.current.onRetry(id), []);
-  const openAttachment = useCallback(
-    (view: AttachmentView) => latest.current.onOpenAttachment(view),
-    []
-  );
   const answer = useCallback((id: string, answers: ClarifyAnswer[]) => latest.current.onAnswer?.(id, answers), []);
   const regenerate = useCallback((id: string) => latest.current.onRegenerate?.(id), []);
   const rate = useCallback((id: string, rating: 'good' | 'bad' | undefined) => latest.current.onRate?.(id, rating), []);
 
   const retryDisabled = isChatting || isAnalyzing;
   const searching = query.trim().length > 0;
-  const shown = searching ? messages.filter((m) => messageMatches(m, query)) : messages;
+  // Marked, not filtered (agent audit item 30): the card is one request.
+  const hits = searching ? messages.filter((m) => messageMatches(m, query)).length : 0;
   const lastReplyId = [...messages].reverse().find((m) => m.role === 'assistant')?.id;
 
   /*
@@ -681,14 +622,12 @@ export default function ChatThread<R>({
           saying what the box takes and six predefined descriptions as chips,
           until the owner asked for all of that to go behind the scenes, as the
           chat apps people know do it; `git log -S"wb-note--start"` finds it. */}
-      {searching && (
+      {searching && hits > 0 && (
         <p className="wb-search-count" role="status">
-          {shown.length === 0
-            ? 'No message holds that.'
-            : `${shown.length} of ${messages.length} ${messages.length === 1 ? 'message' : 'messages'}`}
+          {hits === 1 ? '1 reply holds that' : `${hits} replies hold that`}
         </p>
       )}
-      {shown.map((msg) => (
+      {messages.map((msg) => (
         <ChatNote
           key={msg.id}
           message={msg}
@@ -699,13 +638,12 @@ export default function ChatThread<R>({
           onAction={onAction ? act : undefined}
           onConfirm={onConfirm ? confirm : undefined}
           usageOf={usageOf ? usage : undefined}
-          onRetry={retry}
-          onOpenAttachment={openAttachment}
           onAnswer={onAnswer ? answer : undefined}
           // Not on a reply Forma wrote of its own accord: it answers no message (agent audit item 75).
           onRegenerate={onRegenerate && !msg.standalone ? regenerate : undefined}
           onRate={onRate ? rate : undefined}
-          query={searching ? query : ''}
+          // Only a reply holding the words is drawn plain to mark them; the rest stay Markdown.
+          query={searching && messageMatches(msg, query) ? query : ''}
         />
       ))}
 

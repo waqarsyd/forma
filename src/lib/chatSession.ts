@@ -226,9 +226,20 @@ export function messageTime(id: string): number | null {
  * Forma's replies as written (they are Markdown already), the person's
  * words as a quote, so a heading or a list typed in a message stays text.
  * Pictures are counted, not embedded: a file of base64 helps nobody read.
+ * Since 2026-11-07 (agent audit item 67) Forma's questions are in it, each
+ * with its suggestion, and whether a redesign it asked about was made: they
+ * live in the message's form, not its words, and the file left them out.
+ * The answers were already there, as the person's message that gave them.
  */
 export function conversationMarkdown(
-  messages: ReadonlyArray<{ id: string; role: 'user' | 'assistant'; text: string; images?: string[] }>,
+  messages: ReadonlyArray<{
+    id: string;
+    role: 'user' | 'assistant';
+    text: string;
+    images?: string[];
+    clarify?: { questions: readonly { question: string; suggestion?: string }[]; answered?: boolean };
+    confirm?: { answered?: 'yes' | 'no' };
+  }>,
   title: string,
   when: (ms: number) => string = (ms) => new Date(ms).toLocaleString(),
 ): string {
@@ -239,6 +250,11 @@ export function conversationMarkdown(
     if (m.role === 'user') {
       if (m.text.trim()) parts.push(m.text.split('\n').map((line) => `> ${line}`).join('\n'));
     } else if (m.text.trim()) parts.push(m.text.trim());
+    if (m.clarify?.questions.length) {
+      parts.push('', m.clarify.questions.map((q, i) => `${i + 1}. ${q.question}${q.suggestion ? ` _(suggested: ${q.suggestion})_` : ''}`).join('\n'));
+      if (!m.clarify.answered) parts.push('', '_Not answered._');
+    }
+    if (m.confirm) parts.push('', m.confirm.answered === 'yes' ? '_Redesigned._' : m.confirm.answered === 'no' ? '_Not redesigned._' : '_Waiting for an answer._');
     if (m.images?.length) parts.push(`_(${m.images.length} ${m.images.length === 1 ? 'picture' : 'pictures'} attached)_`);
     parts.push('');
   }

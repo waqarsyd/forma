@@ -81,6 +81,14 @@ export const RELEASES: Release[] = [
     summary:
       'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'improved', area: 'workspace', text: 'Each project keeps its own unsent message, as a chat app keeps a draft per chat, and messages waiting in the queue survive a reload.' },
+      { kind: 'fixed', area: 'workspace', text: 'Words queued while a file is attached now take the file with them, and the queue says how many go.' },
+      { kind: 'improved', area: 'workspace', text: 'When it was sent, the versions, Edit and Withdraw sit under your message, no longer hidden behind its arrow.' },
+      { kind: 'fixed', area: 'workspace', text: 'Searching the requests marks what it found in the card rather than hiding replies, and the search, the card and the log stay in step.' },
+      { kind: 'fixed', area: 'workspace', text: 'Folding the card keeps answers and edits you were typing, and the card makes room for the open request log.' },
+      { kind: 'new', area: 'workspace', text: 'A code block in a reply or the Spec has its own Copy, and dragging files over the workspace shows “Drop to attach”.' },
+      { kind: 'fixed', area: 'workspace', text: 'A failed request says so once, an old error clears when you send the next one, a file being read says so, and “Edit text” or a starting point no longer replaces what you had typed.' },
+      { kind: 'improved', area: 'workspace', text: 'The conversation’s Markdown export now includes Forma’s questions and what became of a redesign it asked about.' },
       { kind: 'changed', area: 'chat', text: 'Only a message that starts “Remember” or “From now on” is kept as a memory. “Always…” or “Never mind…” now goes to the chat, which acts on it.' },
       { kind: 'improved', area: 'chat', text: 'The chat, its questions and the labels it adds follow what you asked Forma to remember, not only a new report.' },
       { kind: 'fixed', area: 'chat', text: 'A memory such as “Tahoma instead of Arial” or “never use Letter” is read the way you meant it.' },

@@ -203,6 +203,8 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
       }}
       onDrop={(e) => {
         e.preventDefault();
+        // The batch's, not the chat box's as well (2026-11-07, agent audit item 26).
+        e.stopPropagation();
         setDragging(false);
         if (running) return;
         // The items are read before anything is awaited; see folderDrop.ts.

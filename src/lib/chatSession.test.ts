@@ -360,6 +360,23 @@ describe('conversationMarkdown', () => {
   it('names an untitled conversation', () => {
     expect(conversationMarkdown([], '  ')).toBe('# Forma conversation\n');
   });
+
+  // Agent audit item 67: the questions live in the form, not the words, and the file left them out.
+  it("writes Forma's questions with their suggestions, and what became of a redesign it asked about", () => {
+    const md = conversationMarkdown(
+      [
+        msg({ id: 'a', role: 'assistant', text: 'Before I design it, two questions.', clarify: { answered: true, questions: [{ id: 'g', question: 'Group by what?', suggestion: 'Region' }, { id: 't', question: 'Total of what?' }] } }),
+        msg({ id: 'u', text: 'Group by what? Region\nTotal of what? Amount' }),
+        msg({ id: 'b', role: 'assistant', text: 'That needs a redesign.', confirm: { prompt: 'add a chart', answered: 'no' } }),
+        msg({ id: 'c', role: 'assistant', text: 'One more?', clarify: { answered: false, questions: [{ id: 'p', question: 'Which paper?' }] } }),
+      ],
+      'Invoice',
+    );
+    expect(md).toContain('Before I design it, two questions.\n\n1. Group by what? _(suggested: Region)_\n2. Total of what?\n');
+    expect(md).toContain('> Group by what? Region\n> Total of what? Amount');
+    expect(md).toContain('That needs a redesign.\n\n_Not redesigned._');
+    expect(md).toContain('1. Which paper?\n\n_Not answered._');
+  });
 });
 
 /* When a message was made, read off its id (2026-11-05). */
