@@ -3,6 +3,7 @@ import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
 import SheetRuler from './landing/SheetRuler';
 import { Eyebrow } from './landing/sections';
+import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
 
 /**
  * The Terms, the Privacy policy and the accessibility statement, from one
@@ -160,6 +161,10 @@ const PRIVACY: Section[] = [
     paragraphs: [
       'Google Firebase hosts the site, runs sign-in and holds the database. Google Gemini answers the requests you make with your key. Signed out, the database is reached only through a link to a shared report. Once you are signed in, your browser does talk to Google on every load, first to check your session is still valid and then to fetch your saved projects, and it holds a connection open so changes to them arrive as they happen.',
       'OpenRouter answers your requests only if you chose it under Settings → AI, with your own key.',
+      // Said only once App Check is on (lib/appCheck.ts, site audit item 56).
+      ...(APP_CHECK_SITE_KEY
+        ? ['Google reCAPTCHA checks that requests to the database come from this site, through Firebase App Check. It runs only when the database is used — once you are signed in, or when you open a shared report — and Google sees your browser and the page while it does.']
+        : []),
       'The contact form is delivered by FormSubmit, which receives the name, email address, subject and message you type into that form and forwards them on as email — only when you press send, only from that one page, and nothing else about you goes with it.',
       'Dictation uses your browser’s own speech recognition. Forma receives only the text; the audio goes wherever your browser sends it, which in Chrome is Google and in Edge is Microsoft.',
       'The typefaces used to come from Google Fonts, which meant Google saw the IP address and browser of anyone who opened Forma at all. Since 30 August 2026 they are served by Forma’s own host, as are OCR, Forma’s own models and the fonts a PDF embeds. OCR and those models run in your browser, so a picture’s words are read without leaving your machine.',

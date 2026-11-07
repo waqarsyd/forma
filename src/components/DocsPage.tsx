@@ -636,7 +636,7 @@ export default function DocsPage({
                   reason not to.
                 </Def>
                 <Def t="With an email address">
-                  An email and a password of at least six characters. A name is optional — leave it blank and your
+                  An email and a password of at least eight characters. A name is optional — leave it blank and your
                   email is used instead.
                 </Def>
                 <Def t="Either way">
@@ -692,6 +692,13 @@ export default function DocsPage({
                   your password. Removes your saved projects with their revision history, every report you shared
                   (its link stops opening), and the encrypted copy of your key. Reports kept only in this browser
                   are not touched. It cannot be undone.
+                </Def>
+                <Def t="Signed in somewhere you should not be">
+                  Change your password: every other session ends within the hour, as Firebase ends them when a
+                  password or an address changes. An account that signs in with Google ends its sessions from its
+                  Google Account&apos;s security page. If you cannot get in to do either, write through the contact
+                  page and the account can be suspended, which ends its sessions, until it is yours again.
+                  Forma offers no second factor: Firebase&apos;s needs a paid upgrade, and Forma stays free.
                 </Def>
                 <Def t="Each section asks for its own password">
                   A password typed under <em className="not-italic text-secondary">Password</em> does not arm the

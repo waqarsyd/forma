@@ -305,8 +305,10 @@ describe('the legal copy and its date change together', () => {
      Forma, the rights, retention, cookies, the age and the trademark notice,
      and the accessibility statement added to the same block. The same day
      batch SF added the skip link and the contrast to that statement, which
-     moves the hash and not the date. */
-  const EXPECTED_COPY_HASH = 'b57574406e81';
+     moves the hash and not the date. So did batch SH's reCAPTCHA paragraph,
+     which the policy shows only once App Check has a key (lib/appCheck.ts):
+     the words a reader sees today did not change. */
+  const EXPECTED_COPY_HASH = '13ab553c1708';
   const EXPECTED_UPDATED = '8 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

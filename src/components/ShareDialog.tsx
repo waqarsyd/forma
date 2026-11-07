@@ -21,7 +21,8 @@ import './overlays.css';
 import { useFocusTrap } from './useFocusTrap';
 
 interface Props {
-  user: { uid: string; email: string | null } | null;
+  /** emailVerified: a share needs a verified address (site audit item 57). */
+  user: { uid: string; email: string | null; emailVerified?: boolean } | null;
   name: string;
   report: SharedReport;
   /** Saves the project when it is not saved yet, and gives its id. */
@@ -100,13 +101,18 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
     }
     setBusy(true);
     try {
-      const { sdk, paths, db } = await loadFirebase();
-      await sdk.setDoc(paths.shareDocRef(db, doc.id), doc);
+      const { paths, db } = await loadFirebase();
+      // Counted on the account when new (site audit item 57, lib/accountData.ts).
+      await paths.writeShare(db, user.uid, doc, !share);
       setShare(doc);
       setProblem(null);
       onNotice(notice);
       return true;
     } catch (err) {
+      if (err instanceof Error && err.name === 'ShareLimitError') {
+        setProblem(err.message);
+        return false;
+      }
       onFailure(err, `shares/${doc.id}`, 'That report could not be shared. Try again in a moment.');
       return false;
     } finally {
@@ -127,11 +133,11 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
   };
 
   const stop = async () => {
-    if (!share) return;
+    if (!share || !user) return;
     setBusy(true);
     try {
-      const { sdk, paths, db } = await loadFirebase();
-      await sdk.deleteDoc(paths.shareDocRef(db, share.id));
+      const { paths, db } = await loadFirebase();
+      await paths.deleteShare(db, user.uid, share.id);
       setShare(null);
       onNotice('Stopped sharing');
     } catch (err) {
@@ -170,6 +176,17 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
           <div className="wb-share-body">
             <p>Sign in to share a report. A shared report lives in your account, so only you can change or stop sharing it.</p>
             <button type="button" className="wb-pill wb-pill--accent" onClick={onSignIn}>Sign in</button>
+          </div>
+        ) : user.emailVerified === false && !share ? (
+          /* A verified address first (2026-11-08, site audit item 57): a share
+             puts a report on this site for others to read, so it is not for an
+             account nobody has confirmed. A share made before then can still
+             be changed back and stopped below once verified, and stopped now. */
+          <div className="wb-share-body">
+            <p>
+              Verify your email address to share a report. Forma sent a link when the account was made; Account
+              settings, under Profile, sends it again. Then come back and share.
+            </p>
           </div>
         ) : loading ? (
           <div className="wb-share-body"><p>Checking whether it is shared…</p></div>

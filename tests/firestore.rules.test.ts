@@ -17,7 +17,7 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import fs from 'node:fs';
 
 const ALICE = 'alice-uid';
@@ -102,18 +102,67 @@ const SHARE = 'Sh4r3dR3p0rtIdOfTwentyTwo';
 const bobWithEmail = (email: string, verified: boolean) =>
   testEnv.authenticatedContext(BOB, { email, email_verified: verified }).firestore();
 
+/** Alice with her address verified, which creating or changing a share needs since 2026-11-08 (site audit item 57). */
+const aliceVerified = () => testEnv.authenticatedContext(ALICE, { email: 'alice@example.com', email_verified: true }).firestore();
+/** Her project r1, which a share must name (item 57). */
+const seedAliceReport = () =>
+  seed(['users', ALICE, 'reports', 'r1'], { id: 'r1', name: 'Invoice', timestamp: Date.now(), messages: '[]', result: '{}', userId: ALICE });
+/** A share and the raised count in one batch, as lib/accountData.ts's writeShare writes them. */
+const createShare = (db: ReturnType<typeof aliceDb>, id: string, data: unknown, countBefore = 0, owner = ALICE) => {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'shares', id), data as any);
+  batch.set(doc(db, 'users', owner, 'meta', 'quota'), { shares: countBefore + 1, last: id });
+  return batch.commit();
+};
+
 describe('shares (2026-11-06)', () => {
   it('lets the owner create a share, and nobody else create one in their name', async () => {
-    await assertSucceeds(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE)));
-    await assertFails(setDoc(doc(bobDb(), 'shares', 'AnotherShareIdOfTwentyTwo'), validShare('AnotherShareIdOfTwentyTwo', ALICE)));
+    await seedAliceReport();
+    await assertSucceeds(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE)));
+    await assertFails(createShare(bobWithEmail('bob@example.com', true), 'AnotherShareIdOfTwentyTwo', validShare('AnotherShareIdOfTwentyTwo', ALICE), 0, BOB));
     await assertFails(setDoc(doc(anonDb(), 'shares', 'ThirdShareIdOfTwentyTwoX'), validShare('ThirdShareIdOfTwentyTwoX', ALICE)));
   });
 
   it('pins the shape: no extra field, a known access, the id it is filed under', async () => {
-    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { userId: ALICE })));
-    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { access: 'public' })));
-    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare('SomeOtherId', ALICE)));
-    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { emails: 'bob@example.com' })));
+    await seedAliceReport();
+    await assertFails(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE, { userId: ALICE })));
+    await assertFails(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE, { access: 'public' })));
+    await assertFails(createShare(aliceVerified(), SHARE, validShare('SomeOtherId', ALICE)));
+    await assertFails(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE, { emails: 'bob@example.com' })));
+  });
+
+  it('needs a verified address, a project of the account and the count raised in the same batch (site audit item 57)', async () => {
+    await seedAliceReport();
+    await assertFails(createShare(aliceDb(), SHARE, validShare(SHARE, ALICE))); // unverified
+    await assertFails(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE, { reportId: 'notHers' })));
+    await assertFails(setDoc(doc(aliceVerified(), 'shares', SHARE), validShare(SHARE, ALICE))); // not counted
+    await assertSucceeds(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE)));
+    // The next one must count from where the first left it.
+    await assertFails(createShare(aliceVerified(), 'SecondShareIdOfTwentyTwo', validShare('SecondShareIdOfTwentyTwo', ALICE), 0));
+    await assertSucceeds(createShare(aliceVerified(), 'SecondShareIdOfTwentyTwo', validShare('SecondShareIdOfTwentyTwo', ALICE), 1));
+  });
+
+  it('caps an account at 100 shares', async () => {
+    await seedAliceReport();
+    await seed(['users', ALICE, 'meta', 'quota'], { shares: 100, last: 'Earlier' });
+    await assertFails(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE), 100));
+  });
+
+  it('moves the count only with a share: no lowering to make room, no deleting it above zero', async () => {
+    await seedAliceReport();
+    await assertSucceeds(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE)));
+    await assertFails(setDoc(doc(aliceVerified(), 'users', ALICE, 'meta', 'quota'), { shares: 0, last: SHARE }));
+    await assertFails(setDoc(doc(aliceVerified(), 'users', ALICE, 'meta', 'quota'), { shares: 2, last: 'Invented' }));
+    await assertFails(deleteDoc(doc(aliceVerified(), 'users', ALICE, 'meta', 'quota')));
+    await assertFails(getDoc(doc(bobDb(), 'users', ALICE, 'meta', 'quota')));
+    // A counted share goes with the count lowered in the same batch, and then the count may go.
+    await assertFails(deleteDoc(doc(aliceDb(), 'shares', SHARE)));
+    const db = aliceDb();
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'shares', SHARE));
+    batch.set(doc(db, 'users', ALICE, 'meta', 'quota'), { shares: 0, last: SHARE });
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(deleteDoc(doc(aliceDb(), 'users', ALICE, 'meta', 'quota')));
   });
 
   it('lets anyone read a link share, signed in or not', async () => {
@@ -141,11 +190,15 @@ describe('shares (2026-11-06)', () => {
   });
 
   it('lets the owner update and delete a share, but not move it to another project or owner', async () => {
+    // A share from before the count (seeded, no quota document).
     await seed(['shares', SHARE], validShare(SHARE, ALICE));
-    await assertSucceeds(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { access: 'link' })));
-    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { reportId: 'r2' })));
+    await assertSucceeds(setDoc(doc(aliceVerified(), 'shares', SHARE), validShare(SHARE, ALICE, { access: 'link' })));
+    // Changing who may read it needs a verified address (item 57).
+    await assertFails(setDoc(doc(aliceDb(), 'shares', SHARE), validShare(SHARE, ALICE, { access: 'restricted' })));
+    await assertFails(setDoc(doc(aliceVerified(), 'shares', SHARE), validShare(SHARE, ALICE, { reportId: 'r2' })));
     await assertFails(setDoc(doc(bobDb(), 'shares', SHARE), validShare(SHARE, BOB)));
     await assertFails(deleteDoc(doc(bobDb(), 'shares', SHARE)));
+    // Stopping it is always the owner's, verified or not.
     await assertSucceeds(deleteDoc(doc(aliceDb(), 'shares', SHARE)));
   });
 });

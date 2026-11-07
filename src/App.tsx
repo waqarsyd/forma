@@ -234,7 +234,7 @@ import {
   type ReportDescriptionRequest,
 } from './lib/promptToReport';
 import { addUsage, summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
-import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner } from './lib/designerBridge';
+import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner, designerReachableFrom } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import { makeRightToLeft } from './lib/repxRtl';
 import {
@@ -1582,7 +1582,7 @@ export default function App() {
   // Fetch from Firebase
   useEffect(() => {
     if (!user || !firebase) return;
-    const { service, sdk, paths, db } = firebase;
+    const { sdk, paths, db } = firebase;
     try {
       const q = sdk.query(paths.reportsCollectionRef(db, user.uid));
       const unsubscribe = sdk.onSnapshot(q, (snapshot) => {
@@ -1597,12 +1597,16 @@ export default function App() {
         reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setSavedReports(reports);
       }, (error) => {
-        service.handleFirestoreError(error, OperationType.GET, `users/${user.uid}/reports`);
+        // Reported, not rethrown (2026-11-08, site audit item 62): this callback
+        // runs long after the try below, so the rethrow was an uncaught error
+        // whose text carried the account's email.
+        reportFirestoreFailure(error, OperationType.GET, 'users/{uid}/reports', 'Your saved projects could not be loaded just now. What is open here is safe; reload to try again.');
       });
       return () => unsubscribe();
     } catch (error) {
-      service.handleFirestoreError(error, OperationType.GET, `users/${user.uid}/reports`);
+      reportFirestoreFailure(error, OperationType.GET, 'users/{uid}/reports', 'Your saved projects could not be loaded just now. What is open here is safe; reload to try again.');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reportFirestoreFailure only sets state and logs
   }, [user, firebase]);
 
   const [error, setError] = useState<string | null>(null);
@@ -5165,7 +5169,16 @@ export default function App() {
   const hasRepxToOpen = Boolean(result?.repxContent);
   /** True while a `forma-repx://` launch is being waited on — a cold start is slow. */
   const [designerStarting, setDesignerStarting] = useState(false);
+  /*
+   * Only on a page this machine serves (2026-11-08, site audit item 95). The
+   * effect probed 127.0.0.1 as soon as a report existed, on any origin: on the
+   * deployed site that is the request that makes Chromium ask a visitor for
+   * access to their local network, unasked, and the companion refuses that
+   * origin anyway (`designerReachableFrom`). There, nothing is sent at all,
+   * and Open in designer says why when it is clicked.
+   */
   useEffect(() => {
+    if (!designerReachableFrom(window.location.origin)) return;
     // Only while the workspace is open. This used to run on mount with no
     // condition, so every visitor to the landing page, the docs and the privacy
     // policy fired a request at http://127.0.0.1:7317 — and for the very large
@@ -5272,6 +5285,16 @@ export default function App() {
     // first cleared "starting" for both.
     if (designerStarting) return;
     if (blockedByInvalidRepx()) return;
+    // From the website the companion cannot be reached (site audit item 95):
+    // it answers only a page served from this machine. Say so, and send nothing.
+    if (!designerReachableFrom(window.location.origin)) {
+      setError(
+        'Open in designer works when Forma runs on this computer (npm run dev or npm start), because the ' +
+        'designer companion only answers a page served from this machine. From the website, choose Export, ' +
+        'then DevExpress report (.repx), and open the file in the designer.'
+      );
+      return;
+    }
 
     try {
       // Nothing listening: ask Windows to start it, then wait for the port.
@@ -6938,7 +6961,7 @@ export default function App() {
       {isShareOpen && result && (
         <Suspense fallback={null}>
           <ShareDialog
-            user={user ? { uid: user.uid, email: user.email } : null}
+            user={user ? { uid: user.uid, email: user.email, emailVerified: user.emailVerified } : null}
             name={savedReports.find((r) => r.id === openProjectId)?.name || result.title || 'Untitled report'}
             report={result}
             ensureSaved={async () => {

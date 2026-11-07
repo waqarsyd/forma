@@ -9,6 +9,7 @@ import {
   setDisplayName,
 } from '../services/firebase';
 import { IconKey, IconMail, IconTrash, IconUser, IconWarn } from './landing/icons';
+import { MIN_PASSWORD } from '../lib/passwordPolicy';
 import SectionedDialog, { type DialogSection } from './SectionedDialog';
 
 /**
@@ -65,7 +66,7 @@ const AUTH_MESSAGES: Record<string, string> = {
   'auth/invalid-credential': 'That password is not right.',
   'auth/wrong-password': 'That password is not right.',
   'auth/missing-password': 'Enter your current password.',
-  'auth/weak-password': 'Use at least 6 characters.',
+  'auth/weak-password': `Use at least ${MIN_PASSWORD} characters.`,
   'auth/email-already-in-use': 'Another account already uses that address.',
   'auth/invalid-email': 'Enter a valid email address.',
   'auth/requires-recent-login': 'For safety, sign in again and then retry this.',
@@ -252,7 +253,7 @@ export default function AccountDialog({
   /** Both copies of the new password must agree before it can be set. */
   const passwordsDiffer = confirmPassword.length > 0 && nextPassword !== confirmPassword;
   const canChangePassword =
-    passwordForChange.length > 0 && nextPassword.length >= 6 && nextPassword === confirmPassword;
+    passwordForChange.length > 0 && nextPassword.length >= MIN_PASSWORD && nextPassword === confirmPassword;
 
   return (
     <SectionedDialog title="Your account" sections={sections} section={section} onSection={openSection} onClose={onClose}>
@@ -343,7 +344,7 @@ export default function AccountDialog({
               className={FIELD}
               value={nextPassword}
               onChange={(e) => setNextPassword(e.target.value)}
-              placeholder="At least 6 characters"
+              placeholder={`At least ${MIN_PASSWORD} characters`}
               autoComplete="new-password"
             />
           </div>

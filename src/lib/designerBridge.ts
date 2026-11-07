@@ -94,6 +94,19 @@ export function designerFileName(title?: string): string {
  */
 export const DESIGNER_RECHECK_GAP_MS = 30_000;
 
+/**
+ * Whether the page can reach the companion at all (2026-11-08, site audit
+ * item 95). The companion answers only an `http://localhost` or
+ * `http://127.0.0.1` origin (`IsAllowedOrigin` in tools/RepxDesigner), so a
+ * page served from anywhere else, the deployed site above all, is refused
+ * whatever runs on the machine. Such a page never asks: a request to
+ * 127.0.0.1 from a public site is what makes Chromium ask the visitor for
+ * access to their local network, for a feature that cannot answer.
+ */
+export function designerReachableFrom(origin: string): boolean {
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
 /** Has enough time passed since the last probe to be worth another? */
 export function shouldRecheckDesigner(
   lastCheckedAt: number | null,

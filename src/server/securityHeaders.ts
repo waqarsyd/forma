@@ -48,6 +48,9 @@
  * (`bindHost.ts`), so they are never reachable from another machine.
  */
 
+import { APP_CHECK_ORIGINS, APP_CHECK_SITE_KEY } from '../lib/appCheck';
+import { OWN_AUTH_HOSTS } from '../lib/authDomain';
+
 /**
  * SHA-256 of the inline theme script in `index.html`, base64, as CSP wants it.
  *
@@ -158,9 +161,13 @@ function directives(development: boolean): Record<string, string[]> {
      * from `/ocr/`. No origin is added anywhere, and `connect-src` is
      * untouched: the language data is fetched from this site too.
      */
-    'script-src': development
-      ? ["'self'", "'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'", 'https://apis.google.com']
-      : ["'self'", THEME_SCRIPT_HASH, "'wasm-unsafe-eval'", 'https://apis.google.com'],
+    'script-src': [
+      ...(development
+        ? ["'self'", "'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'", 'https://apis.google.com']
+        : ["'self'", THEME_SCRIPT_HASH, "'wasm-unsafe-eval'", 'https://apis.google.com']),
+      // reCAPTCHA, only once App Check has a key (lib/appCheck.ts, item 56).
+      ...(APP_CHECK_SITE_KEY ? APP_CHECK_ORIGINS.script : []),
+    ],
     // No fonts.googleapis.com and no fonts.gstatic.com: the three families are
     // self-hosted as of 2026-08-30 (see the typefaces block in src/index.css),
     // so both origins came out of the policy. Putting either back means a
@@ -176,7 +183,15 @@ function directives(development: boolean): Record<string, string[]> {
     'media-src': ["'self'", 'blob:', 'data:'],
     // signInWithPopup opens a window rather than a frame, but the Firebase Auth
     // SDK also mounts a hidden iframe on the auth domain to carry the result.
-    'frame-src': ['https://*.firebaseapp.com', 'https://accounts.google.com'],
+    // 'self' once sign-in runs on the site's own host (lib/authDomain.ts, item
+    // 98), whose /__/auth/ iframe is then this origin's; reCAPTCHA's frame
+    // once App Check has a key (lib/appCheck.ts, item 56). Neither today.
+    'frame-src': [
+      ...(OWN_AUTH_HOSTS.length ? ["'self'"] : []),
+      'https://*.firebaseapp.com',
+      'https://accounts.google.com',
+      ...(APP_CHECK_SITE_KEY ? APP_CHECK_ORIGINS.frame : []),
+    ],
     // The HMR socket is NOT on the server's port. Vite in middleware mode opens
     // its own listener -- 24678 by default -- and `vite.config.ts` passes `hmr`
     // as a boolean, so there is no port here to read even if we wanted one.
@@ -186,9 +201,11 @@ function directives(development: boolean): Record<string, string[]> {
     //
     // So the port is wildcarded rather than guessed. Still loopback, still
     // development only, and now immune to Vite moving its default.
-    'connect-src': development
-      ? [...CONNECT_SRC, 'ws://localhost:*', 'ws://127.0.0.1:*']
-      : CONNECT_SRC,
+    'connect-src': [
+      ...(development ? [...CONNECT_SRC, 'ws://localhost:*', 'ws://127.0.0.1:*'] : CONNECT_SRC),
+      // App Check's token exchange, only once it has a key (item 56).
+      ...(APP_CHECK_SITE_KEY ? APP_CHECK_ORIGINS.connect : []),
+    ],
   };
 }
 
@@ -222,6 +239,29 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = Object.freeze(
   // Microsoft; nothing goes anywhere until the button is pressed. A frame
   // from another origin still gets none, and the camera and location stay off.
   'Permissions-Policy': 'camera=(), microphone=(self), geolocation=()',
+  /*
+   * Isolation from other origins (2026-11-08, site audit item 94).
+   *
+   * COOP `same-origin-allow-popups`, not `same-origin`: a page this site opens
+   * keeps its opener, which Google sign-in's pop-up needs to hand the result
+   * back (Firebase documents exactly this value); a page that opens this site
+   * gets no handle on it, which is the cross-window attack COOP exists for.
+   *
+   * CORP `same-origin`: nothing of this site's is meant to be loaded into
+   * another site's page. Link previews are fetched by the platforms' servers,
+   * which the header does not concern.
+   */
+  'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  /*
+   * A Trusted Types trial (2026-11-08, site audit item 93), report-only: it
+   * blocks nothing, and every place a string would reach an HTML or script
+   * sink is logged to the console, which is where the next step (enforcing
+   * it) has to start. There is no report endpoint: the site has no server to
+   * receive one, and a free collector would hand each report to a third
+   * party. `main.tsx` writes each violation to the console in one line.
+   */
+  'Content-Security-Policy-Report-Only': "require-trusted-types-for 'script'",
 });
 
 export interface SecurityHeaderOptions {

@@ -77,9 +77,11 @@ async function startServer() {
    */
   if (isProduction) app.use(compression());
 
-  // Increase payload limit for base64 images
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  // No body parsers (2026-11-08, site audit item 96). A 50 MB JSON parser and
+  // a 50 MB form parser stood here from when generation ran on this server;
+  // no route reads a body any more, so they only invited anyone to make the
+  // server buffer 50 MB per request. A route that needs one adds its own,
+  // with a limit sized to it.
 
   // API routes FIRST
   app.get("/api/health", (_req, res) => {

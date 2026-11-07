@@ -616,7 +616,11 @@ src/
                        (what the chat box keeps as a memory, sends straight
                        to a design, or reads as an answer), composerStore
                        (an unsent draft per project, and the queue, kept in
-                       the tab over a reload), signOut (what a sign-out
+                       the tab over a reload), passwordPolicy (the
+                       shortest password a form accepts), authDomain and
+                       appCheck (sign-in on the site's own host and App
+                       Check, prepared and off until the owner's console
+                       steps), signOut (what a sign-out
                        removes from the tab), serviceWorker (the offline
                        worker /sw.js is written from at build),
                        licenceNotice (the
@@ -860,7 +864,18 @@ Skip either and the site renders perfectly with an empty console, because Fireba
 
 One difference from `npm start` worth knowing: Firebase terminates TLS itself, so HSTS is set unconditionally in `firebase.json` rather than gated on `HTTPS`. **Both now answer a path that is not the app with a 404** (2026-11-07): `firebase.json` rewrites only the router's routes and a shared report's `/s/*` (derived from `src/server/appRoutes.ts`, and asserted), so an unknown address and a chunk from an earlier deploy fall through to Firebase's own 404, which serves the built `dist/404.html` (`noindex`; the app draws Not found). Until then every path was the home page with a 200, a stale chunk included, which broke a tab left open across a deploy; such a tab now reloads once for the new build (`src/lib/staleChunks.ts`). OCR's engine, the PDF/A fonts and the models are served from folders named for their contents (`/ocr/<hash>/…`) and cached for good, like the hashed bundle.
 
-**"Open in designer" cannot work on any HTTPS deployment.** The companion listens on plain `http://127.0.0.1:7317`, which a secure page may not call — mixed content. It is a localhost-development convenience; Export `.repx` is the path that always works.
+**"Open in designer" works only where Forma runs on the same machine.** The companion on `http://127.0.0.1:7317` answers only a page served from `http://localhost` or `http://127.0.0.1` (`IsAllowedOrigin` in `tools/RepxDesigner`), so from the deployed site it is refused. It was never mixed content, as this said until 2026-11-08: browsers treat `127.0.0.1` as a secure origin. Since that date the deployed workspace sends nothing to `127.0.0.1` at all, since a public page reaching the local network is what makes Chromium ask the visitor for permission; the button says why it cannot open the designer there. Export `.repx` is the path that always works.
+
+### Settings only the owner can apply
+
+The site audit of 2026-11-07 left these prepared in the repository and waiting for the account that owns the project, because each is a console or repository setting, not code:
+
+1. **Protect `main`** (item 58). The ruleset is [`.github/rulesets/main.json`](.github/rulesets/main.json): no deletion, no force-push, and both CI jobs required, with the repository's admins able to bypass so a push of your own still lands. Apply it with `gh api repos/waqarsyd/forma/rulesets --method POST --input .github/rulesets/main.json`.
+2. **Dependabot security updates and private vulnerability reporting** (items 92 and 81): in the repository's Settings, under Code security. `SECURITY.md` and the contact page already point at the private reporting form, which is off until then; [`.github/dependabot.yml`](.github/dependabot.yml) asks for security updates only on npm.
+3. **A password policy** (item 61): *Firebase console → Authentication → Settings → Password policy*, minimum 8. The forms already ask for 8 (`src/lib/passwordPolicy.ts`); this makes Firebase refuse fewer.
+4. **App Check** (item 56): the four steps in [`src/lib/appCheck.ts`](src/lib/appCheck.ts). Setting its key adds reCAPTCHA to the CSP and the privacy policy by itself; enforce only after a week of metrics.
+5. **Google sign-in on Forma's own address** (item 98): add each site's `https://<site>.web.app/__/auth/handler` to the OAuth client's redirect URIs, then list the hosts in [`src/lib/authDomain.ts`](src/lib/authDomain.ts). That also turns on the redirect fallback when a browser blocks the pop-up.
+6. **Log the deploy and push tools out of the shared Windows profile** (item 58): `npx firebase logout` and `gh auth logout` on the shared server, and log in again only for the minutes a deploy needs.
 
 If you would rather run the Express bundle than a static host, it needs a platform with a card on file (Cloud Run, Railway, Fly) or one that sleeps (Render's free tier, ~30–60 s cold start). The advantage is that `securityHeaders.ts` stays the only copy of the policy.
 

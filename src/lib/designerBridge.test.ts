@@ -9,7 +9,25 @@ import {
   DESIGNER_PROTOCOL,
   DESIGNER_RECHECK_GAP_MS,
   shouldRecheckDesigner,
+  designerReachableFrom,
 } from './designerBridge';
+
+describe('designerReachableFrom (site audit item 95)', () => {
+  it('is true only for a page served from this machine over http, as the companion allows', () => {
+    expect(designerReachableFrom('http://localhost:3000')).toBe(true);
+    expect(designerReachableFrom('http://127.0.0.1:3001')).toBe(true);
+    expect(designerReachableFrom('http://localhost')).toBe(true);
+    expect(designerReachableFrom('https://openforma.web.app')).toBe(false);
+    expect(designerReachableFrom('https://localhost:3000')).toBe(false);
+    expect(designerReachableFrom('http://localhost.evil.example')).toBe(false);
+  });
+
+  it('matches the companion\'s own allowlist', async () => {
+    const { readFileSync } = await import('node:fs');
+    const program = readFileSync('tools/RepxDesigner/Program.cs', 'utf8');
+    expect(program).toContain('@"^http://(localhost|127\\.0\\.0\\.1)(:\\d+)?$"');
+  });
+});
 
 /**
  * `designerFileName` was the only thing covered here, on the reasoning that the

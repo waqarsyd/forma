@@ -96,6 +96,18 @@
             {
               "key": "Cache-Control",
               "value": "no-cache"
+            },
+            {
+              "key": "Cross-Origin-Opener-Policy",
+              "value": "same-origin-allow-popups"
+            },
+            {
+              "key": "Cross-Origin-Resource-Policy",
+              "value": "same-origin"
+            },
+            {
+              "key": "Content-Security-Policy-Report-Only",
+              "value": "require-trusted-types-for 'script'"
             }
           ]
         },
@@ -256,6 +268,18 @@
             {
               "key": "Cache-Control",
               "value": "no-cache"
+            },
+            {
+              "key": "Cross-Origin-Opener-Policy",
+              "value": "same-origin-allow-popups"
+            },
+            {
+              "key": "Cross-Origin-Resource-Policy",
+              "value": "same-origin"
+            },
+            {
+              "key": "Content-Security-Policy-Report-Only",
+              "value": "require-trusted-types-for 'script'"
             }
           ]
         },

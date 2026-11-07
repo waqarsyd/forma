@@ -37,6 +37,8 @@
  * Firestore and the path builders, and opens the database, when something
  * first reads or writes it, which in the app is once a user has signed in.
  */
+import { startAppCheck } from './appCheck';
+
 type FirebaseService = typeof import('../services/firebase');
 type FirestoreSdk = typeof import('firebase/firestore');
 type AccountData = typeof import('./accountData');
@@ -78,7 +80,15 @@ export function loadFirebase(): Promise<FirebaseClient> {
       loadAuth(),
       import('firebase/firestore'),
       import('./accountData'),
-    ]).then(([{ service }, sdk, paths]) => ({ service, sdk, paths, db: sdk.getFirestore(service.app, service.firestoreDatabaseId) }));
+    ])
+      // App Check first, when it has a key (lib/appCheck.ts, site audit item
+      // 56): the database is the one thing it guards, and this is the only
+      // way to the database, so a signed-out reader never loads reCAPTCHA.
+      .then(async ([client, sdk, paths]) => {
+        await startAppCheck(client.service.app);
+        return [client, sdk, paths] as const;
+      })
+      .then(([{ service }, sdk, paths]) => ({ service, sdk, paths, db: sdk.getFirestore(service.app, service.firestoreDatabaseId) }));
   }
   return pending;
 }

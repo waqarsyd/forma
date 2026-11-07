@@ -5,6 +5,7 @@ import { signInWithEmail, signUpWithEmail, signInWithGoogle, sendPasswordReset }
 import Logo from './Logo';
 import SiteFooter from './SiteFooter';
 import { currentPath, navigate, onRouteChange } from '../lib/router';
+import { MIN_PASSWORD } from '../lib/passwordPolicy';
 import { IconEye, IconEyeOff, IconClose, IconWarn, IconInfo, IconSun, IconMoon } from './landing/icons';
 
 interface LoginPageProps {
@@ -16,7 +17,6 @@ interface LoginPageProps {
 }
 
 /** Firebase's own floor. Rejecting shorter client-side avoids a wasted round-trip. */
-const MIN_PASSWORD = 6;
 
 /**
  * Deliberately permissive: one @, no spaces, a dot in the domain. This exists to

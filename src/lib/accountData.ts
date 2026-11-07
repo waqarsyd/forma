@@ -30,10 +30,14 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
+  setDoc,
   where,
+  writeBatch,
   type CollectionReference,
+  type DocumentData,
   type DocumentReference,
   type Firestore,
   type Query,
@@ -93,6 +97,67 @@ export function ownedShares(db: Firestore, uid: string, reportId?: string): Quer
   return reportId ? query(collection(db, SHARES_COLLECTION), owned, where('reportId', '==', reportId)) : query(collection(db, SHARES_COLLECTION), owned);
 }
 
+/**
+ * The account's share count (2026-11-08, site audit item 57), at
+ * `users/{uid}/meta/quota`: `{ shares, last }`. `firestore.rules` lets it move
+ * only by one, in the same batch as the share it counts, and caps shares at
+ * `MAX_SHARES`; so a share is created and deleted only through `writeShare`
+ * and `deleteShare` below, one at a time.
+ */
+export const META_COLLECTION = 'meta';
+export const QUOTA_DOC_ID = 'quota';
+export const MAX_SHARES = 100;
+
+export function quotaDocRef(db: Firestore, uid: string): DocumentReference {
+  return doc(db, USERS_COLLECTION, uid, META_COLLECTION, QUOTA_DOC_ID);
+}
+
+/** Thrown when an account already has `MAX_SHARES` shares. */
+export class ShareLimitError extends Error {
+  constructor() {
+    super(`An account can share up to ${MAX_SHARES} reports at once. Stop sharing one to share another.`);
+    this.name = 'ShareLimitError';
+  }
+}
+
+async function sharesCounted(db: Firestore, uid: string): Promise<number> {
+  const quota = await getDoc(quotaDocRef(db, uid));
+  const n = quota.exists() ? Number(quota.data().shares) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Write a share: a new one with the count raised in the same batch, an existing one as it is. */
+export async function writeShare(db: Firestore, uid: string, share: DocumentData & { id: string }, isNew: boolean): Promise<void> {
+  if (!isNew) {
+    await setDoc(shareDocRef(db, share.id), share);
+    return;
+  }
+  const count = await sharesCounted(db, uid);
+  if (count >= MAX_SHARES) throw new ShareLimitError();
+  const batch = writeBatch(db);
+  batch.set(shareDocRef(db, share.id), share);
+  batch.set(quotaDocRef(db, uid), { shares: count + 1, last: share.id });
+  await batch.commit();
+}
+
+/** Delete a share, lowering the count in the same batch while there is one to lower. */
+export async function deleteShare(db: Firestore, uid: string, shareId: string): Promise<void> {
+  const count = await sharesCounted(db, uid);
+  if (count === 0) {
+    await deleteDoc(shareDocRef(db, shareId));
+    return;
+  }
+  const batch = writeBatch(db);
+  batch.delete(shareDocRef(db, shareId));
+  batch.set(quotaDocRef(db, uid), { shares: count - 1, last: shareId });
+  await batch.commit();
+}
+
+/** Delete shares one at a time, as the count requires. */
+async function deleteShares(db: Firestore, uid: string, shareIds: string[]): Promise<void> {
+  for (const id of shareIds) await deleteShare(db, uid, id);
+}
+
 export function reportsCollectionRef(db: Firestore, uid: string): CollectionReference {
   return collection(db, USERS_COLLECTION, uid, REPORTS_COLLECTION);
 }
@@ -146,7 +211,7 @@ export async function deleteReportAndVersions(
   // Its shared copies first (2026-11-06): they are readable by others, so a
   // deleted project must not leave one behind.
   const shares = await getDocs(ownedShares(db, uid, reportId));
-  await Promise.all(shares.docs.map((entry) => deleteDoc(entry.ref)));
+  await deleteShares(db, uid, shares.docs.map((entry) => entry.id));
   const versions = await getDocs(versionsCollectionRef(db, uid, reportId));
   await Promise.all(versions.docs.map((entry) => deleteDoc(entry.ref)));
   await deleteDoc(reportDocRef(db, uid, reportId));
@@ -174,11 +239,17 @@ export async function deleteAccountData(db: Firestore, uid: string): Promise<voi
   // Deleting the reports directly here would leave every version behind, under
   // an account that no longer exists, addressable by nobody -- the precise
   // outcome the ordering in `deleteAccountAndData` exists to avoid.
-  await Promise.all(reports.docs.map((entry) => deleteReportAndVersions(db, uid, entry.id)));
+  // One report at a time since 2026-11-08: each deletes its shares through
+  // the share count, which moves by one per batch and so cannot be raced.
+  for (const entry of reports.docs) await deleteReportAndVersions(db, uid, entry.id);
   // And any share whose project had already gone (2026-11-06): nothing else
   // would ever find it once the account does.
   const shares = await getDocs(ownedShares(db, uid));
-  await Promise.all(shares.docs.map((entry) => deleteDoc(entry.ref)));
+  await deleteShares(db, uid, shares.docs.map((entry) => entry.id));
+  // The count itself, at zero now (2026-11-08); tolerated like the vault.
+  await deleteDoc(quotaDocRef(db, uid)).catch((error) => {
+    console.warn('Could not remove the share count while deleting the account:', error);
+  });
 
   await deleteDoc(vaultDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the stored key while deleting the account:', error);

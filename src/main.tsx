@@ -41,6 +41,14 @@ function Root() {
   );
 }
 
+// Every content-security violation, in one line (2026-11-08, site audit item
+// 93): the enforced policy's blocks and the Trusted Types trial's reports
+// (securityHeaders.ts). There is no endpoint to send them to; the console of
+// whoever meets one is where they are read.
+document.addEventListener('securitypolicyviolation', (e) => {
+  console.warn(`[CSP${e.disposition === 'report' ? ', report only' : ''}] ${e.effectiveDirective} refused ${e.blockedURI || 'an inline use'} at ${e.sourceFile || 'the page'}:${e.lineNumber}`);
+});
+
 // The offline worker (2026-11-08, site audit item 55): the build's own pages
 // and files kept for the next visit and for a lost connection. Production
 // only, so development never serves a cached module.

@@ -1,0 +1,23 @@
+# Dependabot (2026-11-08, site audit item 92).
+#
+# npm: security updates only. `open-pull-requests-limit: 0` turns off routine
+# version bumps, which this project makes by hand and on purpose (the
+# `comment:` fields in package.json record why firebase, @grpc/grpc-js and
+# others sit where they do), while a security update still opens its pull
+# request. Security updates themselves are a repository setting, which the
+# owner turns on (Settings, Code security, Dependabot security updates).
+#
+# GitHub Actions: weekly. The workflows pin each action to a commit SHA, with
+# its tag in a comment, and these pull requests are what keep the pins current.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

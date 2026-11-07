@@ -43,6 +43,7 @@ import {
   VERSIONS_COLLECTION,
   SHARES_COLLECTION,
   shareDocRef,
+  writeShare,
 } from '../src/lib/accountData';
 
 const ALICE = 'alice-uid';
@@ -337,6 +338,28 @@ describe('shared copies go with what they were shared from', () => {
 
   it('pins the shares path the rules match', () => {
     expect(shareDocRef(asUser(ALICE), 'abc').path).toBe('shares/abc');
+  });
+
+  it('removes shares made through the count, and the count itself (2026-11-08, site audit item 57)', async () => {
+    const verified = testEnv.authenticatedContext(ALICE, { email: 'alice@example.com', email_verified: true }).firestore() as unknown as Firestore;
+    await seed(['users', ALICE, 'reports', 'r1'], validReport('r1', ALICE));
+    await seed(['users', ALICE, 'reports', 'r2'], validReport('r2', ALICE));
+    // Made the way ShareDialog makes them, so the rules' count is in play.
+    await writeShare(verified, ALICE, validShare('CountedShareOneXxxxxxxx', ALICE, 'r1'), true);
+    await writeShare(verified, ALICE, validShare('CountedShareTwoXxxxxxxx', ALICE, 'r2'), true);
+    // And one from before the count, which it never saw.
+    await seed([SHARES_COLLECTION, 'LegacyShareXxxxxxxxxxxx'], validShare('LegacyShareXxxxxxxxxxxx', ALICE, 'r1'));
+
+    await deleteAccountData(asUser(ALICE), ALICE);
+
+    expect(await shareExists('CountedShareOneXxxxxxxx')).toBe(false);
+    expect(await shareExists('CountedShareTwoXxxxxxxx')).toBe(false);
+    expect(await shareExists('LegacyShareXxxxxxxxxxxx')).toBe(false);
+    let quotaLeft = true;
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      quotaLeft = (await getDoc(doc(ctx.firestore(), 'users', ALICE, 'meta', 'quota'))).exists();
+    });
+    expect(quotaLeft).toBe(false);
   });
 });
 

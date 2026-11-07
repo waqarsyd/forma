@@ -3,6 +3,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -19,6 +20,7 @@ import {
 } from 'firebase/auth';
 import { OperationType, type FirestoreErrorInfo } from '../lib/firestoreOps';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { authDomainFor, canRedirectSignIn } from '../lib/authDomain';
 
 /*
  * Auth only: Firestore is not imported here (2026-11-01). It was, with `db`
@@ -28,7 +30,10 @@ import firebaseConfig from '../../firebase-applet-config.json';
  * the database from `app` and `firestoreDatabaseId` when something first
  * reads or writes it; account deletion loads it below when it runs.
  */
-export const app = initializeApp(firebaseConfig);
+const pageHost = typeof window === 'undefined' ? undefined : window.location.hostname;
+/** Sign-in on the site's own host once the owner has allowed it (lib/authDomain.ts, site audit item 98). */
+const authDomain = authDomainFor(pageHost, firebaseConfig.authDomain);
+export const app = initializeApp({ ...firebaseConfig, authDomain });
 /** The Firestore database this project's data lives in; `loadFirebase` opens it. */
 export const firestoreDatabaseId = firebaseConfig.firestoreDatabaseId;
 // Bound to `app` explicitly. A bare getAuth() resolves the *default* app, which
@@ -138,6 +143,13 @@ export const signInWithGoogle = async () => {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
   } catch (error: any) {
+    // A blocked pop-up goes by redirect instead (site audit item 98), once
+    // sign-in runs on this site's own host, which is what lets the redirect
+    // come back here with the session; until then the dialog asks for pop-ups.
+    if (error.code === 'auth/popup-blocked' && canRedirectSignIn(authDomain, pageHost)) {
+      await signInWithRedirect(auth, googleProvider);
+      return null;
+    }
     if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
       // Just throw to let the UI handle it without logging an error
       throw error;
@@ -195,7 +207,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  // The details stay in the console; what is thrown carries no account
+  // (2026-11-08, site audit item 62): its text was this same JSON, uid and
+  // email included, and a caller that showed an error's message showed them.
+  throw new Error(`Firestore ${operationType} failed${path ? ` on ${path.replace(/users\/[^/]+/, 'users/{uid}')}` : ''}: ${errInfo.error}`);
 }
 
 /*

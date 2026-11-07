@@ -189,19 +189,88 @@ service cloud.firestore {
 
       allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
 
+      // Who may put a report on this domain for others to read (2026-11-08,
+      // site audit item 57). Anyone with an account could, unverified, in any
+      // number, naming any report id. Now: a verified address, a project the
+      // account really has, and one more on the account's share count, which
+      // the same batch must raise (`users/{uid}/meta/quota` below), up to 100.
       allow create: if isSignedIn()
+        && request.auth.token.email_verified == true
         && isValidId(shareId)
-        && isValidShare(incoming(), shareId);
+        && isValidShare(incoming(), shareId)
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/reports/$(incoming().reportId))
+        && getAfter(quotaPath(request.auth.uid)).data.shares == sharesCounted(request.auth.uid) + 1
+        && getAfter(quotaPath(request.auth.uid)).data.last == shareId
+        && getAfter(quotaPath(request.auth.uid)).data.shares <= 100;
 
+      // Changing who may read it needs a verified address too (item 57).
       allow update: if isSignedIn()
+        && request.auth.token.email_verified == true
         && isValidId(shareId)
         && existing().ownerId == request.auth.uid
         && isValidShare(incoming(), shareId)
         && incoming().reportId == existing().reportId;
 
+      // Stopping a share is always the owner's, verified or not. While the
+      // count is above zero the same batch lowers it by one; a share made
+      // before the count existed (2026-11-08) leaves it at zero, so it goes
+      // without one.
       allow delete: if isSignedIn()
         && isValidId(shareId)
-        && existing().ownerId == request.auth.uid;
+        && existing().ownerId == request.auth.uid
+        && (sharesCounted(request.auth.uid) == 0
+          || (getAfter(quotaPath(request.auth.uid)).data.shares == sharesCounted(request.auth.uid) - 1
+            && getAfter(quotaPath(request.auth.uid)).data.last == shareId));
+    }
+
+    // An account's share count (2026-11-08, site audit item 57): `shares`, and
+    // `last`, the share the latest change was for. It moves only by one, and
+    // only in the batch that creates or deletes that share, so it cannot be
+    // lowered to make room or raised to block anyone; deleted only at zero,
+    // which is how account deletion leaves it.
+    function quotaPath(uid) {
+      return /databases/$(database)/documents/users/$(uid)/meta/quota;
+    }
+    function sharePath(id) {
+      return /databases/$(database)/documents/shares/$(id);
+    }
+    function sharesCounted(uid) {
+      return exists(quotaPath(uid)) ? get(quotaPath(uid)).data.shares : 0;
+    }
+    function isValidQuota(data) {
+      return data.keys().hasOnly(['shares', 'last'])
+        && data.keys().hasAll(['shares', 'last'])
+        && data.shares is int && data.shares >= 0
+        && isValidId(data.last);
+    }
+    function shareAdded(data) {
+      return !exists(sharePath(data.last))
+        && existsAfter(sharePath(data.last))
+        && getAfter(sharePath(data.last)).data.ownerId == request.auth.uid;
+    }
+    function shareRemoved(data) {
+      return exists(sharePath(data.last))
+        && !existsAfter(sharePath(data.last))
+        && get(sharePath(data.last)).data.ownerId == request.auth.uid;
+    }
+
+    match /users/{userId}/meta/{metaId} {
+      allow get: if isSignedIn() && userId == request.auth.uid && metaId == 'quota';
+
+      allow create: if isSignedIn() && userId == request.auth.uid && metaId == 'quota'
+        && isValidQuota(incoming())
+        && incoming().shares == 1
+        && shareAdded(incoming());
+
+      allow update: if isSignedIn() && userId == request.auth.uid && metaId == 'quota'
+        && isValidQuota(incoming())
+        && ((incoming().shares == existing().shares + 1 && shareAdded(incoming()))
+          || (incoming().shares == existing().shares - 1 && shareRemoved(incoming())));
+
+      // At zero, or absent (account deletion removes it whether or not the
+      // account ever shared anything).
+      allow delete: if isSignedIn() && userId == request.auth.uid && metaId == 'quota'
+        && (resource == null || existing().shares == 0);
     }
 
     // A report's revision history.

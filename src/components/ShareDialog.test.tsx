@@ -9,7 +9,8 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 
 const sdk = { getDocs: vi.fn(), setDoc: vi.fn(), deleteDoc: vi.fn() };
-const paths = { ownedShares: vi.fn(() => 'query'), shareDocRef: vi.fn((_db: unknown, id: string) => `shares/${id}`) };
+// The counted writes since 2026-11-08 (site audit item 57, lib/accountData.ts).
+const paths = { ownedShares: vi.fn(() => 'query'), shareDocRef: vi.fn((_db: unknown, id: string) => `shares/${id}`), writeShare: vi.fn(), deleteShare: vi.fn() };
 vi.mock('../lib/firebaseClient', () => ({ loadFirebase: () => Promise.resolve({ sdk, paths, db: {} }) }));
 
 import ShareDialog from './ShareDialog';
@@ -19,6 +20,8 @@ beforeEach(() => {
   sdk.getDocs.mockReset().mockResolvedValue({ docs: [] });
   sdk.setDoc.mockReset().mockResolvedValue(undefined);
   sdk.deleteDoc.mockReset().mockResolvedValue(undefined);
+  paths.writeShare.mockReset().mockResolvedValue(undefined);
+  paths.deleteShare.mockReset().mockResolvedValue(undefined);
 });
 
 const props = (over: Partial<React.ComponentProps<typeof ShareDialog>> = {}) => ({
@@ -51,10 +54,12 @@ describe('ShareDialog', () => {
     fireEvent.change(screen.getByLabelText('Add people by email'), { target: { value: ' Bob@Example.com ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
     expect(screen.getByText('bob@example.com')).toBeTruthy();
-    expect(sdk.setDoc).not.toHaveBeenCalled();
+    expect(paths.writeShare).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Share' }));
-    await waitFor(() => expect(sdk.setDoc).toHaveBeenCalledTimes(1));
-    const [, written] = sdk.setDoc.mock.calls[0];
+    await waitFor(() => expect(paths.writeShare).toHaveBeenCalledTimes(1));
+    const [, uid, written, isNew] = paths.writeShare.mock.calls[0];
+    expect(uid).toBe('alice');
+    expect(isNew).toBe(true);
     expect(written).toMatchObject({ ownerId: 'alice', reportId: 'r1', name: 'Invoice', access: 'restricted', emails: ['bob@example.com'] });
     expect(written.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
     await waitFor(() => expect((screen.getByLabelText('Link to the shared report') as HTMLInputElement).value).toContain(`/s/${written.id}`));
@@ -68,10 +73,11 @@ describe('ShareDialog', () => {
     render(<ShareDialog {...p} />);
     await waitFor(() => expect(screen.getByLabelText('Link to the shared report')).toBeTruthy());
     fireEvent.change(screen.getByLabelText('General access'), { target: { value: 'link' } });
-    await waitFor(() => expect(sdk.setDoc).toHaveBeenCalledTimes(1));
-    expect(sdk.setDoc.mock.calls[0][1]).toMatchObject({ id: existing.id, access: 'link' });
+    await waitFor(() => expect(paths.writeShare).toHaveBeenCalledTimes(1));
+    expect(paths.writeShare.mock.calls[0][2]).toMatchObject({ id: existing.id, access: 'link' });
+    expect(paths.writeShare.mock.calls[0][3]).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Stop sharing' }));
-    await waitFor(() => expect(sdk.deleteDoc).toHaveBeenCalledWith(`shares/${existing.id}`));
+    await waitFor(() => expect(paths.deleteShare).toHaveBeenCalledWith({}, 'alice', existing.id));
     await waitFor(() => expect(screen.queryByLabelText('Link to the shared report')).toBeNull());
   });
 
@@ -80,13 +86,32 @@ describe('ShareDialog', () => {
   it('puts a person back when their removal could not be written', async () => {
     const existing = { id: 'Sh4r3dR3p0rtIdOfTwentyTwo', ownerId: 'alice', reportId: 'r1', name: 'Invoice', result: '{}', access: 'restricted', emails: ['bob@example.com'], timestamp: 1_790_000_000_000 };
     sdk.getDocs.mockResolvedValue({ docs: [{ data: () => existing }] });
-    sdk.setDoc.mockRejectedValue(new Error('offline'));
+    paths.writeShare.mockRejectedValue(new Error('offline'));
     const p = props();
     render(<ShareDialog {...p} />);
     await waitFor(() => expect(screen.getByText('bob@example.com')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Remove bob@example.com' }));
     await waitFor(() => expect(p.onFailure).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByText('bob@example.com')).toBeTruthy());
+  });
+
+  // Site audit item 57 (2026-11-08): a verified address to share, and a cap.
+  it('asks an unverified account to verify its address first, and writes nothing', async () => {
+    render(<ShareDialog {...props({ user: { uid: 'alice', email: 'alice@example.com', emailVerified: false } })} />);
+    await waitFor(() => expect(screen.getByText(/Verify your email address to share a report/)).toBeTruthy());
+    expect(screen.queryByLabelText('Add people by email')).toBeNull();
+    expect(paths.writeShare).not.toHaveBeenCalled();
+  });
+
+  it('says when the account has shared as many reports as it may', async () => {
+    const limit = Object.assign(new Error('An account can share up to 100 reports at once. Stop sharing one to share another.'), { name: 'ShareLimitError' });
+    paths.writeShare.mockRejectedValue(limit);
+    const p = props();
+    render(<ShareDialog {...p} />);
+    await waitFor(() => expect(screen.getByLabelText('Add people by email')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Share' }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('up to 100 reports'));
+    expect(p.onFailure).not.toHaveBeenCalled();
   });
 
   it('says when what was typed is not an address', async () => {
