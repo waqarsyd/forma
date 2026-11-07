@@ -21,24 +21,24 @@
  * lib/aiProvider.ts), and at General otherwise.
  *
  * Lazy, like every other dialog: the key check, the vault and the sections
- * load when Settings opens, and none of it weighs on App's entry chunk.
+ * load when Settings opens, and none of it weighs on App's entry chunk. Its
+ * frame, the section list and the keyboard, is SectionedDialog, shared with
+ * the account dialog since the same day; its styles are dialogs.css.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { loadGemini } from '../lib/geminiClient';
 import { loadFirebase } from '../lib/firebaseClient';
 import { clearSessionKey, decryptApiKey, encryptApiKey, isVaultAvailable, WrongPassphraseError, type EncryptedKeyRecord } from '../services/keyVault';
 import type { ReportConfig } from '../services/geminiService';
-import { IconAlert, IconArchive, IconChat, IconCheck, IconClose, IconEye, IconEyeOff, IconKey, IconTune, IconWarn } from './landing/icons';
-import { useFocusTrap } from './useFocusTrap';
+import { IconAlert, IconArchive, IconChat, IconCheck, IconEye, IconEyeOff, IconKey, IconTune, IconWarn } from './landing/icons';
+import SectionedDialog, { type DialogSection } from './SectionedDialog';
 import UsageSettings from './UsageSettings';
 import ProviderSettings from './ProviderSettings';
 import MemorySettings from './MemorySettings';
-import './overlays.css';
-import './settings.css';
 
 export type SettingsSection = 'general' | 'ai' | 'key' | 'memory';
 
-const SECTIONS: { id: SettingsSection; label: string; Icon: (p: { size?: number }) => ReactNode }[] = [
+const SECTIONS: DialogSection<SettingsSection>[] = [
   { id: 'general', label: 'General', Icon: IconTune },
   { id: 'ai', label: 'AI', Icon: IconChat },
   { id: 'key', label: 'Gemini key', Icon: IconKey },
@@ -69,20 +69,6 @@ function Note({ notice }: { notice: Notice }) {
 
 export default function SettingsDialog({ config, onChange, user, workedOut, onClose }: SettingsDialogProps) {
   const [section, setSection] = useState<SettingsSection>(() => (config.customApiKey?.trim() ? 'general' : 'key'));
-  const dialog = useRef<HTMLElement>(null);
-  useFocusTrap(dialog, onClose);
-
-  // The sections take the arrow keys, as a tab list does: up and down here,
-  // left and right where the list runs across a phone.
-  const moveSection = (e: KeyboardEvent<HTMLDivElement>) => {
-    const at = SECTIONS.findIndex((s) => s.id === section);
-    const by = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
-    const next = e.key === 'Home' ? 0 : e.key === 'End' ? SECTIONS.length - 1 : by ? (at + by + SECTIONS.length) % SECTIONS.length : -1;
-    if (next < 0) return;
-    e.preventDefault();
-    setSection(SECTIONS[next].id);
-    e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-  };
 
   /* ---- The Gemini key ---- */
   const key = config.customApiKey || '';
@@ -207,41 +193,8 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
     }
   };
 
-  const current = SECTIONS.find((s) => s.id === section)!;
   return (
-    <div className="wb-cmd-backdrop wb-cmd-backdrop--centre" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <section className="wb-set" role="dialog" aria-modal="true" aria-labelledby="wb-set-title" ref={dialog} tabIndex={-1}>
-        <nav className="wb-set-nav" aria-label="Settings">
-          <div className="wb-set-head">
-            <h2 id="wb-set-title">Settings</h2>
-            <button type="button" className="wb-set-close" aria-label="Close" onClick={onClose}>
-              <IconClose size={15} />
-            </button>
-          </div>
-          <div className="wb-set-tabs" role="tablist" aria-label="Sections" onKeyDown={moveSection}>
-            {SECTIONS.map(({ id, label, Icon }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                id={`wb-set-tab-${id}`}
-                aria-selected={section === id}
-                aria-controls="wb-set-panel"
-                tabIndex={section === id ? 0 : -1}
-                className="wb-set-tab"
-                onClick={() => setSection(id)}
-              >
-                <Icon size={16} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-        </nav>
-
-        {/* Keyed by the section, so a new one starts at its top. */}
-        <div key={section} className="wb-set-pane" role="tabpanel" id="wb-set-panel" aria-labelledby={`wb-set-tab-${section}`}>
-          <h3>{current.label}</h3>
-
+    <SectionedDialog title="Settings" sections={SECTIONS} section={section} onSection={setSection} onClose={onClose}>
           {section === 'general' && (
             <>
               {/* Requests today first, as Stitch's settings open with its daily credits (2026-11-05). */}
@@ -409,8 +362,6 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
           )}
 
           {section === 'memory' && <MemorySettings />}
-        </div>
-      </section>
-    </div>
+    </SectionedDialog>
   );
 }

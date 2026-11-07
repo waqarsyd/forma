@@ -11,6 +11,10 @@
  * which control is enabled when, what each one sends, and what it says when it
  * fails. `tests/accountDeletion.test.ts` proves the deletion really removes the
  * data, against the emulator with production rules.
+ *
+ * Since 2026-11-07 the dialog is shaped as Settings, one section at a time,
+ * so a case opens the section it is about first (`open`); what it asserts is
+ * what it asserted when every section was on one screen.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
@@ -52,6 +56,7 @@ const draw = (user: User = passwordUser, onClose = vi.fn()) =>
 
 const field = (label: RegExp | string) => screen.getByLabelText(label) as HTMLInputElement;
 const button = (name: RegExp | string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+const open = (section: string) => fireEvent.click(screen.getByRole('tab', { name: section }));
 
 beforeEach(() => {
   changePassword.mockClear();
@@ -75,6 +80,25 @@ describe('what it says you are signed in as', () => {
     expect(screen.getByText(/signed in with google/i)).toBeTruthy();
     expect(screen.queryByLabelText(/new password/i)).toBeNull();
     expect(screen.queryByLabelText(/new email address/i)).toBeNull();
+    // Nor the sections that hold them: Profile and Delete account are all a Google account has.
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Profile', 'Delete account']);
+  });
+});
+
+describe('its sections, as Settings', () => {
+  it('opens at Profile, with every section a password account has', () => {
+    draw();
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Profile', 'Password', 'Email address', 'Delete account']);
+    expect(screen.getByRole('tab', { name: 'Profile' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('keeps a line about what happened with the section it happened in', async () => {
+    draw();
+    fireEvent.change(field(/display name/i), { target: { value: 'Ada Lovelace' } });
+    fireEvent.click(button(/^save$/i));
+    expect((await screen.findByRole('status')).textContent).toMatch(/name updated/i);
+    open('Password');
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });
 
@@ -144,6 +168,7 @@ describe('the display name', () => {
 describe('changing the password', () => {
   it('needs the current password and a long enough new one', () => {
     draw();
+    open('Password');
     expect(button(/change password/i).disabled).toBe(true);
 
     fireEvent.change(field(/^current password$/i), { target: { value: 'old-secret' } });
@@ -158,6 +183,7 @@ describe('changing the password', () => {
    */
   it('asks for the new password twice and refuses a mismatch', () => {
     draw();
+    open('Password');
     fireEvent.change(field(/^current password$/i), { target: { value: 'old-secret' } });
     fireEvent.change(field(/^new password$/i), { target: { value: 'new-secret' } });
     fireEvent.change(field(/confirm new password/i), { target: { value: 'new-secrat' } });
@@ -169,6 +195,7 @@ describe('changing the password', () => {
   /** The same association as the display name, for the same reason. */
   it('points the confirm field at its mismatch hint', () => {
     draw();
+    open('Password');
     const confirm = field(/confirm new password/i);
     expect(confirm.getAttribute('aria-invalid')).toBe('false');
 
@@ -183,6 +210,7 @@ describe('changing the password', () => {
 
   it('changes it once both copies agree', async () => {
     draw();
+    open('Password');
     fireEvent.change(field(/^current password$/i), { target: { value: 'old-secret' } });
     fireEvent.change(field(/^new password$/i), { target: { value: 'new-secret' } });
     fireEvent.change(field(/confirm new password/i), { target: { value: 'new-secret' } });
@@ -200,11 +228,14 @@ describe('changing the password', () => {
  * two of them had an input. So the email section required a password typed into
  * a field in the other column with nothing on screen saying so; typing a
  * password to change it also filled the delete confirmation; and satisfying one
- * section silently satisfied the guard on another.
+ * section silently satisfied the guard on another. Since the sections are shown
+ * one at a time, a section's state outlives a change of section, which is what
+ * the third case below now crosses.
  */
 describe('each section asks for its own password', () => {
   it('gives the email change a password field of its own', () => {
     draw();
+    open('Email address');
     fireEvent.change(field(/new email address/i), { target: { value: 'new@example.com' } });
     expect(button(/send confirmation/i).disabled).toBe(true);
 
@@ -214,6 +245,7 @@ describe('each section asks for its own password', () => {
 
   it('sends the email change with the password typed beside it', async () => {
     draw();
+    open('Email address');
     fireEvent.change(field(/new email address/i), { target: { value: 'new@example.com' } });
     fireEvent.change(field(/password, to confirm the email change/i), { target: { value: 'email-pass' } });
     fireEvent.click(button(/send confirmation/i));
@@ -224,13 +256,16 @@ describe('each section asks for its own password', () => {
 
   it('does not let the password-change field arm the delete button', () => {
     draw();
+    open('Password');
     fireEvent.change(field(/^current password$/i), { target: { value: 'old-secret' } });
+    open('Delete account');
     fireEvent.change(field(/type delete to confirm/i), { target: { value: 'DELETE' } });
     expect(button(/delete my account/i).disabled).toBe(true);
   });
 
   it('deletes with the password typed in the delete section', async () => {
     draw();
+    open('Delete account');
     fireEvent.change(field(/password, to confirm deletion/i), { target: { value: 'delete-pass' } });
     fireEvent.change(field(/type delete to confirm/i), { target: { value: 'DELETE' } });
     expect(button(/delete my account/i).disabled).toBe(false);
@@ -243,12 +278,14 @@ describe('each section asks for its own password', () => {
 describe('deleting the account', () => {
   it('says what goes and what does not', () => {
     draw();
+    open('Delete account');
     expect(screen.getByText(/cannot be undone/i)).toBeTruthy();
     expect(screen.getByText(/kept only in this browser are not touched/i)).toBeTruthy();
   });
 
   it('needs the word typed exactly', () => {
     draw();
+    open('Delete account');
     fireEvent.change(field(/password, to confirm deletion/i), { target: { value: 'delete-pass' } });
     for (const typed of ['', 'delete', 'DELET', 'DELETE ']) {
       fireEvent.change(field(/type delete to confirm/i), { target: { value: typed } });
@@ -259,6 +296,7 @@ describe('deleting the account', () => {
   // A Google account has no password to re-enter; Firebase reopens the popup.
   it('asks a Google account only for the typed confirmation', async () => {
     draw(googleUser);
+    open('Delete account');
     expect(screen.queryByLabelText(/password, to confirm deletion/i)).toBeNull();
     fireEvent.change(field(/type delete to confirm/i), { target: { value: 'DELETE' } });
     expect(button(/delete my account/i).disabled).toBe(false);
@@ -274,6 +312,7 @@ describe('when something fails', () => {
   it('reports the error as an alert, not a status', async () => {
     changePassword.mockRejectedValueOnce({ code: 'auth/wrong-password' });
     draw();
+    open('Password');
     fireEvent.change(field(/^current password$/i), { target: { value: 'wrong' } });
     fireEvent.change(field(/^new password$/i), { target: { value: 'new-secret' } });
     fireEvent.change(field(/confirm new password/i), { target: { value: 'new-secret' } });

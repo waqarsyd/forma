@@ -455,6 +455,13 @@ export const IconFolder = (p: Props) => (
     <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5z" />
   </Svg>
 );
+/* The account dialog's Profile section (2026-11-07), as ChatGPT's account row. */
+export const IconUser = (p: Props) => (
+  <Svg {...p}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" />
+  </Svg>
+);
 export const IconLogout = (p: Props) => (
   <Svg {...p}>
     <path d="M15 4h4.5v16H15" />

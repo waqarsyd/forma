@@ -1,0 +1,76 @@
+/* The OCR review (OcrDialog.tsx): the detected layout over its source, before
+   any .repx is written (2026-11-01). Moved out of workspace.css on 2026-11-07,
+   when the dialog took the shape of Settings and the account dialog
+   (dialogs.css): it is lazy, so its styles ship beside its chunk and not in
+   index-*.css, whose budget is the tight one.
+
+   The sheet is paper, so it stays white in both themes, as the Preview's
+   pages do. No orange in it (the owner, 2026-11-06): a detected table is the
+   selection's blue, the progress is ink, and an unsure word is listed in a
+   quiet row with its score in red, not a red-bordered box. */
+
+.wb-ocrd {
+  width: min(1000px, 100%);
+  max-height: calc(100vh - 32px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid var(--rule);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.wb-root .wb-ocrd:focus, .wb-root .wb-ocrd:focus-visible { outline: none; }
+.wb-ocrd > .wb-set-head { padding: 14px 14px 12px 20px; border-bottom: 1px solid var(--rule); }
+.wb-ocrd-body { min-height: 0; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); align-items: start; gap: 20px 24px; padding: 18px 20px; }
+.wb-ocrd-main, .wb-ocrd-side { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.wb-ocrd-side > .wb-set-sub:first-child { margin-top: 0; }
+.wb-ocrd-pages { max-width: 100%; overflow-x: auto; }
+.wb-ocrd-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--rule); }
+@media (max-width: 760px) {
+  .wb-ocrd-body { grid-template-columns: minmax(0, 1fr); padding: 14px 16px; }
+  .wb-ocrd-foot { padding: 12px 16px; }
+}
+
+.wb-ocr-sheet { position: relative; margin: 0 auto; background: #fff; border: 1px solid var(--rule); box-shadow: var(--shadow-sm, none); overflow: hidden; }
+.wb-ocr-sheet img { position: absolute; max-width: none; height: auto; opacity: .85; pointer-events: none; }
+.wb-ocr-margin { position: absolute; border: 1px dashed rgba(0, 0, 0, .18); pointer-events: none; }
+.wb-ocr-box { position: absolute; border: 1px solid rgba(15, 157, 107, .55); background: rgba(15, 157, 107, .10); }
+.wb-ocr-box.is-flagged { border-color: #ba1a1a; background: rgba(186, 26, 26, .16); }
+.wb-ocr-box.is-ignored { border: 1px dashed rgba(0, 0, 0, .35); background: none; }
+.wb-ocr-box.is-focus { outline: 2px solid var(--ink-2); outline-offset: 2px; z-index: 1; }
+/* A detected table and its columns in the selection's blue, not orange (2026-11-06, the owner's rule). */
+.wb-ocr-table { position: absolute; border: 1.5px solid rgba(47, 111, 228, .55); pointer-events: none; }
+.wb-ocr-col { position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(47, 111, 228, .45); }
+.wb-ocr-wait { display: grid; place-items: center; min-height: 240px; padding: 20px; border: 1px dashed var(--rule-strong); border-radius: 12px; font-size: 13px; color: var(--ink-faint); text-align: center; }
+.wb-ocr-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; font-size: 12px; color: var(--ink-faint); }
+.wb-ocr-key { display: inline-block; width: 12px; height: 9px; margin-left: 8px; border: 1px solid rgba(15, 157, 107, .55); background: rgba(15, 157, 107, .10); }
+.wb-ocr-key:first-child { margin-left: 0; }
+.wb-ocr-key.is-flagged { border-color: #ba1a1a; background: rgba(186, 26, 26, .16); }
+.wb-ocr-key.is-ignored { border-style: dashed; border-color: var(--ink-faint); background: none; }
+.wb-ocr-key.is-table { border: 1.5px solid rgba(47, 111, 228, .55); background: none; }
+/* The sheet keeps its drawn width; on a narrow screen it scrolls rather than squeezing the boxes off their text. */
+.wb-ocr-scroll { max-width: 100%; overflow-x: auto; }
+
+.wb-ocr-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.wb-ocr-runs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; font-size: 13px; color: var(--ink); }
+.wb-ocr-run-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-ocr-run-state { font-size: 12px; color: var(--ink-faint); }
+.wb-ocr-runs li.is-failed .wb-ocr-run-state { color: var(--bad-ink); }
+.wb-ocr-bar { grid-column: 1 / -1; height: 4px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.wb-ocr-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--ink-2); transition: width .2s ease; }
+.wb-ocr-counts { margin: 0; font-size: 13px; color: var(--ink); }
+.wb-ocr-counts b { font-weight: 600; }
+.wb-ocr-counts b.is-flagged { color: var(--bad-ink); }
+.wb-ocr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
+.wb-ocr-list button { display: flex; width: 100%; justify-content: space-between; gap: 10px; padding: 7px 10px; border: 0; border-radius: 10px; background: none; color: var(--ink); font-size: 13px; text-align: left; cursor: pointer; }
+/* The workspace's buttons take `line-height: normal` (`.wb-root button`),
+   which Inter makes 29px tall at 13px, and each row came out 43px. Scoped to
+   the root so it outranks that rule rather than tying and relying on loading
+   later, as dialogs.css's does. */
+.wb-root .wb-ocr-list button { line-height: 1.4; }
+.wb-ocr-list button:hover, .wb-ocr-list button.is-focus { background: var(--track); }
+.wb-ocr-list-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-ocr-list-meta { flex: none; font-size: 12px; color: var(--bad-ink); }
+.wb-ocr-problems { padding: 10px 12px; border-radius: 12px; background: var(--track); font-size: 12.5px; line-height: 1.45; color: var(--ink); }
+.wb-ocr-problems p, .wb-ocr-problems ul { margin: 0 0 6px; }

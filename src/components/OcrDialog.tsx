@@ -20,6 +20,14 @@
  *
  * Nothing here leaves the browser. The engine is loaded from this site's own
  * `/ocr/` the first time, about 7 MB, and kept for the next run.
+ *
+ * Drawn as Settings and the account dialog are since 2026-11-07 (the owner's
+ * request): the same panel, title and Close, the groups under quiet headings,
+ * the pages as a segmented control, the notes as plain lines and leaving the
+ * unsure text out as a switch. It is a review, not settings, so it keeps its
+ * two columns, the page on the left and the reading on the right, and its
+ * footer with Build .repx. Its styles are dialogs.css and ocr.css, both lazy;
+ * the sheet's were in workspace.css until then.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconClose } from './landing/icons';
@@ -30,6 +38,9 @@ import { detectLayout, placementFor, type DetectedLayout, type DetectedText } fr
 import { layoutToRepx, layoutToReport, ocrSummary, reportNameFor, validateOcrRepx } from '../lib/ocrRepx';
 import { imageDpi, pageForImage } from '../lib/reportGeometry';
 import type { ReportLayout } from '../lib/reportTypes';
+import './overlays.css';
+import './dialogs.css';
+import './ocr.css';
 
 export interface OcrPageSource {
   /** The page image as attached: a data URL. */
@@ -92,7 +103,7 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
   const [problems, setProblems] = useState<string[] | null>(null);
   const controller = useRef<AbortController | null>(null);
 
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   useFocusTrap(dialogRef, onClose);
 
   // One page at a time: the engine is one worker, and a page is seconds.
@@ -195,25 +206,25 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
     : null;
 
   return (
-    <div className="wb-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="wb-modal wb-ocr wb-reg-marks" role="dialog" aria-modal="true" aria-labelledby="ocr-title" ref={dialogRef} tabIndex={-1}>
-        <div className="wb-modal-head">
+    <div className="wb-cmd-backdrop wb-cmd-backdrop--centre" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <section className="wb-ocrd" role="dialog" aria-modal="true" aria-labelledby="ocr-title" ref={dialogRef} tabIndex={-1}>
+        <div className="wb-set-head">
           <h2 id="ocr-title">Read text with OCR</h2>
-          <button className="wb-pill wb-pill--round" onClick={onClose} aria-label="Close">
-            <IconClose size={16} />
+          <button type="button" className="wb-set-close" onClick={onClose} aria-label="Close">
+            <IconClose size={15} />
           </button>
         </div>
 
-        <div className="wb-modal-body">
-          <div className="wb-modal-col">
+        <div className="wb-ocrd-body">
+          <div className="wb-ocrd-main">
             {pages.length > 1 && (
-              <div className="wb-chips" role="tablist" aria-label="Pages">
+              <div className="wb-set-seg wb-ocrd-pages" role="tablist" aria-label="Pages">
                 {pages.map((p, i) => (
                   <button
                     key={`${p.meta.uploadId}-${p.meta.page ?? 0}-${i}`}
+                    type="button"
                     role="tab"
                     aria-selected={shown === i}
-                    className={`wb-pill ${shown === i ? 'wb-pill--accent' : 'wb-pill--outline'}`}
                     onClick={() => { setShown(i); setFocus(null); }}
                   >
                     {p.meta.page ? `Page ${p.meta.page}` : `Image ${i + 1}`}
@@ -238,48 +249,46 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
             </p>
           </div>
 
-          <div className="wb-modal-col">
-            <div className="wb-fset">
-              <div className="wb-eyebrow"><b>x 001</b>Reading<span className="wb-fade" /></div>
-              <ol className="wb-ocr-runs" aria-live="polite">
-                {pages.map((p, i) => {
-                  const run = runs[i];
-                  const pct = run.status === 'reading' ? Math.round(run.progress * 100) : run.status === 'done' ? 100 : 0;
-                  return (
-                    <li key={`${p.meta.uploadId}-${p.meta.page ?? 0}-${i}`} className={run.status === 'failed' ? 'is-failed' : ''}>
-                      <span className="wb-ocr-run-name">{pageName(p.meta)}</span>
-                      <span className="wb-ocr-run-state">
-                        {run.status === 'waiting' && 'Waiting'}
-                        {run.status === 'reading' && `${stageLabel(run.stage)} ${pct}%`}
-                        {run.status === 'done' && `${run.ocr.lines.length} lines`}
-                        {run.status === 'failed' && 'Could not be read'}
-                      </span>
-                      <span className="wb-ocr-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
-                    </li>
-                  );
-                })}
-              </ol>
-              {!finished && <p className="wb-hint">The first run loads the OCR engine from this site, about 7 MB, once. Nothing leaves your browser.</p>}
-              {finished && failed > 0 && (
-                <p className="wb-hint" role="alert">
-                  {runs.some((r) => r.status === 'failed' && r.error === STOPPED)
-                    ? `Stopped: ${failed} of ${pages.length} ${pages.length === 1 ? 'page was' : 'pages were'} not read. `
-                    : failed === pages.length ? 'No page could be read. ' : `${failed} of ${pages.length} pages could not be read and are left out. `}
-                  <button className="wb-ocr-link" type="button" onClick={retry}>Try again</button>
-                </p>
-              )}
-            </div>
+          <div className="wb-ocrd-side">
+            <h4 className="wb-set-sub">Reading</h4>
+            <ol className="wb-ocr-runs" aria-live="polite">
+              {pages.map((p, i) => {
+                const run = runs[i];
+                const pct = run.status === 'reading' ? Math.round(run.progress * 100) : run.status === 'done' ? 100 : 0;
+                return (
+                  <li key={`${p.meta.uploadId}-${p.meta.page ?? 0}-${i}`} className={run.status === 'failed' ? 'is-failed' : ''}>
+                    <span className="wb-ocr-run-name">{pageName(p.meta)}</span>
+                    <span className="wb-ocr-run-state">
+                      {run.status === 'waiting' && 'Waiting'}
+                      {run.status === 'reading' && `${stageLabel(run.stage)} ${pct}%`}
+                      {run.status === 'done' && `${run.ocr.lines.length} lines`}
+                      {run.status === 'failed' && 'Could not be read'}
+                    </span>
+                    <span className="wb-ocr-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
+                  </li>
+                );
+              })}
+            </ol>
+            {!finished && <p className="wb-set-note">The first run loads the OCR engine from this site, about 7 MB, once. Nothing leaves your browser.</p>}
+            {finished && failed > 0 && (
+              <p className="wb-set-note is-bad" role="alert">
+                {runs.some((r) => r.status === 'failed' && r.error === STOPPED)
+                  ? `Stopped: ${failed} of ${pages.length} ${pages.length === 1 ? 'page was' : 'pages were'} not read. `
+                  : failed === pages.length ? 'No page could be read. ' : `${failed} of ${pages.length} pages could not be read and are left out. `}
+                <button className="wb-set-link" type="button" onClick={retry}>Try again</button>
+              </p>
+            )}
 
             {layout && counts && (
-              <div className="wb-fset">
-                <div className="wb-eyebrow"><b>x 002</b>Detected<span className="wb-fade" /></div>
+              <>
+                <h4 className="wb-set-sub">Detected</h4>
                 <p className="wb-ocr-counts">
                   {counts.labels} labels · {counts.tables} tables · <b className={layout.flagged ? 'is-flagged' : ''}>{layout.flagged} low confidence</b>
                   {layout.ignored > 0 && <> · {layout.ignored} set aside</>}
                 </p>
                 {flagged.length > 0 ? (
                   <>
-                    <p className="wb-hint">Check these against the source. Each is named lowConfidence… in the report, so the designer finds it.</p>
+                    <p className="wb-set-note">Check these against the source. Each is named lowConfidence… in the report, so the designer finds it.</p>
                     <ul className="wb-ocr-list">
                       {flagged.map(({ t, k }, i) => (
                         <li key={i}>
@@ -294,31 +303,34 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
                         </li>
                       ))}
                     </ul>
-                    <label className="wb-checkrow">
-                      <input type="checkbox" checked={dropFlagged} onChange={(e) => setDropFlagged(e.target.checked)} />
-                      Leave low-confidence text out of the report
-                    </label>
+                    <div className="wb-set-row">
+                      <div className="wb-set-text">
+                        <label className="wb-set-label" htmlFor="ocr-drop-flagged">Leave low-confidence text out of the report</label>
+                        <p>Off, each is kept and named so the designer finds it.</p>
+                      </div>
+                      <input id="ocr-drop-flagged" type="checkbox" role="switch" className="wb-set-switch" checked={dropFlagged} onChange={(e) => setDropFlagged(e.target.checked)} />
+                    </div>
                   </>
                 ) : (
-                  <p className="wb-hint">Every word was read with confidence.</p>
+                  <p className="wb-set-note">Every word was read with confidence.</p>
                 )}
                 {problems && (
                   <div className="wb-ocr-problems" role="alert">
                     <p>The report did not pass the app's checks:</p>
                     <ul>{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>
-                    <button className="wb-ocr-link" type="button" onClick={() => build(true)}>Build it anyway</button>
+                    <button className="wb-set-link" type="button" onClick={() => build(true)}>Build it anyway</button>
                   </div>
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>
 
-        <div className="wb-modal-foot">
+        <div className="wb-ocrd-foot">
           {!finished ? (
-            <button className="wb-pill" type="button" onClick={stop}>Stop</button>
+            <button className="wb-pill wb-pill--outline" type="button" onClick={stop}>Stop</button>
           ) : (
-            <button className="wb-pill" type="button" onClick={onClose}>Close</button>
+            <button className="wb-pill wb-pill--outline" type="button" onClick={onClose}>Close</button>
           )}
           <button
             className="wb-pill wb-pill--accent"
@@ -330,7 +342,7 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
             Build .repx
           </button>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

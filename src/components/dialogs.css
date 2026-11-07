@@ -1,8 +1,11 @@
-/* Settings (SettingsDialog.tsx), redesigned 2026-11-07 to match the workspace
-   as it is now: ChatGPT's settings, a list of sections on the left and one
-   section on the right, in the type, hairlines and quiet controls of the
-   Share dialog and the corner's menus (overlays.css). Lazy, so these rules
-   ship beside the dialog's chunk and never in index-*.css, whose budget is
+/* The workspace's dialogs as they are since 2026-11-07: Settings
+   (SettingsDialog.tsx) redesigned as ChatGPT's settings, a list of sections
+   on the left and one section on the right, and the account dialog in the
+   same frame (SectionedDialog.tsx); the OCR review takes its type, rows,
+   notes and controls (with ocr.css for its own). All of it in the type,
+   hairlines and quiet controls of the Share dialog and the corner's menus
+   (overlays.css). Named settings.css for its first day. Lazy, so these rules
+   ship beside the dialogs' chunks and never in index-*.css, whose budget is
    the tight one (scripts/check-bundle-size.mjs).
 
    No orange border, outline or focus ring anywhere in it (the owner,
@@ -31,6 +34,11 @@
 .wb-set-close:hover { background: var(--track); color: var(--ink); }
 .wb-set-tabs { display: flex; flex-direction: column; gap: 2px; }
 .wb-set-tab { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 10px; background: none; color: var(--ink-2); font-size: 13.5px; text-align: left; white-space: nowrap; cursor: pointer; }
+/* The workspace gives every button `line-height: normal` (`.wb-root button`,
+   workspace.css's preflight block), which Inter makes about twice the font
+   size, so a tab came out 46px. A lone class loses to that selector, so this
+   one is scoped to the root too. */
+.wb-root .wb-set-tab, .wb-root .wb-set-quiet { line-height: 1.4; }
 .wb-set-tab:hover { background: var(--track); color: var(--ink); }
 .wb-set-tab[aria-selected='true'] { background: var(--track); color: var(--ink); font-weight: 500; }
 
@@ -52,6 +60,10 @@ h4.wb-set-label { margin: 0; }
 .wb-set-field, .wb-set-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .wb-set-field > .wb-set-input, .wb-set-field > .wb-set-secret { flex: 1 1 220px; }
 .wb-set-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* Fields that stack under one setting, each named above it: the account's passwords. */
+.wb-set-fieldset { display: grid; gap: 6px; }
+.wb-set-fieldset > label { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.wb-set-text .wb-set-strong { color: var(--ink); font-weight: 600; }
 .wb-set-input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--rule-strong); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; }
 select.wb-set-input { cursor: pointer; }
 .wb-set-input::placeholder { color: var(--ink-faint); }
@@ -65,7 +77,7 @@ select.wb-set-input { cursor: pointer; }
 .wb-set-seg { align-self: start; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 3px; border-radius: 10px; background: var(--track); }
 .wb-set-seg button { height: 30px; padding: 0 14px; border: 0; border-radius: 8px; background: none; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; cursor: pointer; }
 .wb-set-seg button:hover { color: var(--ink); }
-.wb-set-seg button[aria-checked='true'] { background: var(--panel); color: var(--ink); box-shadow: var(--shadow-sm); }
+.wb-set-seg button[aria-checked='true'], .wb-set-seg button[aria-selected='true'] { background: var(--panel); color: var(--ink); box-shadow: var(--shadow-sm); }
 
 /* An on/off setting, as ChatGPT's switch. */
 .wb-set-switch { appearance: none; position: relative; flex: none; width: 36px; height: 20px; margin: 0; border-radius: 999px; background: var(--rule-strong); cursor: pointer; transition: background .15s ease; }
@@ -79,6 +91,7 @@ select.wb-set-input { cursor: pointer; }
 .wb-set-quiet:disabled { opacity: .5; cursor: default; }
 .wb-set-quiet.is-danger { color: var(--bad-ink); }
 .wb-set-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+.wb-set-link:disabled { text-decoration: none; opacity: .6; cursor: default; }
 
 .wb-set-note { display: flex; align-items: flex-start; gap: 7px; margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
 .wb-set-note > svg { flex: none; margin-top: 2px; }

@@ -284,7 +284,8 @@ src/
                        and Build .repx with no model),
                        SettingsDialog (Settings as ChatGPT's: General, AI,
                        Gemini key and Memory, a change taking effect as it is
-                       made, with settings.css beside it), whose sections are
+                       made), in the frame SectionedDialog draws for it and
+                       for AccountDialog, whose sections are
                        ProviderSettings (which AI answers:
                        Automatic, which is Gemini, a local AI or OpenRouter's
                        free models; Forma Offline went into Automatic on
@@ -318,7 +319,8 @@ src/
                        dialog on the Escape stack; useMenuKeys, a menu's
                        arrow keys and focus return; useFitScale, the zoom
                        that fits a page to its pane), overlays.css,
-                       settings.css and the tests:
+                       dialogs.css (the three dialogs' shared look), ocr.css
+                       and the tests:
                        legalDisclosure, which reads ContactPage and
                        index.html off disk, and the component render tests,
                        the only ones outside lib/, services/ and server/.

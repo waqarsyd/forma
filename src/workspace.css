@@ -351,22 +351,10 @@
 .wb-reg-marks::before { top: -1px; left: -1px; border-top: 1.5px solid var(--rule-strong); border-left: 1.5px solid var(--rule-strong); }
 .wb-reg-marks::after { bottom: -1px; right: -1px; border-bottom: 1.5px solid var(--rule-strong); border-right: 1.5px solid var(--rule-strong); }
 
-/* Eyebrow: accent coordinate, label, then a hairline that fades out. Same
-   composition as sections.tsx — mono 11px at 0.15em. */
-.wb-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: 10.5px;
-  line-height: 1.62;
-  letter-spacing: .15em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-.wb-eyebrow b { font-weight: 500; color: var(--accent); }
-.wb-eyebrow .wb-fade { height: 1px; flex: 1; background: linear-gradient(to right, var(--rule), transparent); }
+/* `.wb-eyebrow` was here: an orange coordinate, a mono label and a fading
+   hairline over each section of the settings, account and OCR dialogs. It went
+   on 2026-11-07, when those three took ChatGPT's settings' shape
+   (components/dialogs.css) and nothing else used it. */
 
 /* `.wb-glow` was here: the landing hero's orange bloom, carried over with the
    rest of the artifact. Removed 2026-08-26 after it was reported as "yellowness
@@ -950,7 +938,6 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
    chip and the delete confirmations in the rail. */
 .wb-pill--danger { border-color: var(--bad-line); background: var(--bad-wash); color: var(--bad-ink); }
 .wb-pill--danger:hover { background: var(--bad-line); color: var(--bad-ink); }
-.wb-hint { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--ink-faint); }
 
 /* ----------------------------------------------------------------- bench */
 .wb-bench { display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
@@ -1180,32 +1167,10 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   background: color-mix(in srgb, #08182b 52%, transparent);
   backdrop-filter: blur(2px);
 }
-.wb-modal {
-  width: 100%;
-  max-width: 468px;
-  max-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--rule);
-  border-radius: 18px;
-  background: var(--panel);
-  box-shadow: var(--shadow-lg), var(--inset-hi);
-  overflow: hidden;
-}
-.wb-modal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 17px 20px;
-  border-bottom: 1px solid var(--rule);
-}
-.wb-modal-head h2 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 17px; letter-spacing: -.025em; }
-.wb-modal-body { overflow-y: auto; padding: 18px 20px 22px; display: flex; flex-direction: column; gap: 20px; }
-.wb-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--rule); background: var(--panel-2); }
-.wb-fset { display: flex; flex-direction: column; gap: 11px; }
-.wb-fset > .wb-eyebrow { padding-bottom: 2px; }
-.wb-lbl { display: block; margin-bottom: 5px; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+/* The backdrop is the image viewer's now. `.wb-modal` and its head, body,
+   columns and foot, `.wb-fset` and `.wb-lbl` were the settings, account and
+   OCR dialogs' until 2026-11-07, when the three took ChatGPT's settings' shape
+   (components/dialogs.css, SectionedDialog.tsx); nothing else used them. */
 .wb-ctl {
   width: 100%;
   padding: 9px 12px;
@@ -1220,14 +1185,11 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-ctl::placeholder { color: var(--ink-faint); }
 /* The settings dialog's select with its drawn chevron, the key row with its
    eye, the two-column passphrase grid, the required mark and the green note
-   went on 2026-11-07 with the dialog's redesign (components/settings.css),
-   nothing else having used them. */
-/* A row of pills that wraps: the OCR dialog's pages. `textarea.wb-area` went
-   on 2026-11-06 with nothing left using it, the Describe dialog it styled
-   having gone on 2026-11-01. */
-.wb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.wb-checkrow { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink); cursor: pointer; }
-.wb-checkrow input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+   went on 2026-11-07 with the dialog's redesign (components/dialogs.css),
+   nothing else having used them; the OCR dialog's row of page pills
+   (`.wb-chips`) and its checkbox row (`.wb-checkrow`) went with that dialog's
+   redesign the same day. `textarea.wb-area` went on 2026-11-06, the Describe dialog it styled having
+   gone on 2026-11-01. */
 /* Notes under a field. Previously a bare icon-plus-text row, which left the two
    stacked notes reading as loose sentences with no relationship to the field
    above. They are now inset blocks with the icon in a tinted disc, and the tint
@@ -1620,52 +1582,12 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 
 /* --------------------------------------------------- the config dialog
 
-   Down here for the same cascade reason as the shell rules above: every
-   selector below overrides one from the ported block, and a single-class rule
-   at the top of the file would lose to it on position.
-
-   The dialog was one 468px column carrying five sections, 792px tall in a 900px
-   window and still scrolling — document settings, credentials and the vault all
-   in one run. It is now two columns above 760px: the report on the left, the key
-   and its encrypted copy on the right. That is the split the code already makes
-   (`reportConfigStore`'s allowlist versus `keyVault`), it halves the height, and
-   it is the difference between a form you read and a form you scroll. Under
-   760px it collapses back to the single column, which is the artifact's own
-   arrangement and the only one that fits a phone.
-
-   The config dialog itself left this shape on 2026-11-07, redesigned as
-   ChatGPT's settings (components/settings.css); the account and OCR dialogs
-   are the two still drawn by these rules. */
-.wb-root .wb-modal { max-width: 720px; }
-
-/* The dialog takes focus on open so the keyboard is inside it, and `.wb-root
-   :focus-visible` then painted a 2px accent ring around the whole 720px box —
-   the entire modal outlined in orange, which in dark mode reads as an error
-   state. The ring belongs on controls the user navigated to; this is a
-   container being handed focus programmatically. Every control inside keeps
-   its own ring, and the trap is what makes the focus position legible. */
-.wb-root .wb-modal:focus,
-.wb-root .wb-modal:focus-visible {
-  outline: none;
-}
-.wb-root .wb-modal-body {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: start;
-  gap: 20px 22px;
-}
-/* Each column keeps the body's old flex-column behaviour, so the sections
-   inside are spaced exactly as they were. `min-width: 0` because a grid track
-   otherwise refuses to shrink below its widest field. */
-.wb-modal-col {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-width: 0;
-}
-@media (max-width: 760px) {
-  .wb-root .wb-modal-body { grid-template-columns: 1fr; }
-}
+   Its two columns above 760px (the report on the left, the key and its
+   encrypted copy on the right, 2026-08-14) and the account and OCR dialogs'
+   that followed them went on 2026-11-07, when all three took ChatGPT's
+   settings' shape (components/dialogs.css). Kept from here: a dialog takes
+   focus on open, and its container must not take the focus ring, or the
+   whole box is outlined; dialogs.css and ocr.css say so for theirs. */
 
 /* Nothing to resize once the layout has stacked. The hide toggle survives,
    because hiding is the one width change that still means something in a
@@ -1772,48 +1694,9 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .lp-row .wb-pill { flex: none; }
 
 /* ------------------------------------------------------------ OCR dialog
-   2026-11-01. The detected layout over its source, before any .repx is
-   written: OcrDialog.tsx. The sheet is paper, so it stays white in both
-   themes, as the Preview's pages do. */
-.wb-modal.wb-ocr { max-width: 980px; }
-.wb-root .wb-ocr .wb-modal-body { grid-template-columns: minmax(0, 560px) minmax(0, 1fr); }
-.wb-ocr-sheet { position: relative; margin: 0 auto; background: #fff; border: 1px solid var(--rule); box-shadow: var(--shadow-sm, none); overflow: hidden; }
-.wb-ocr-sheet img { position: absolute; max-width: none; height: auto; opacity: .85; pointer-events: none; }
-.wb-ocr-margin { position: absolute; border: 1px dashed rgba(0, 0, 0, .18); pointer-events: none; }
-.wb-ocr-box { position: absolute; border: 1px solid rgba(15, 157, 107, .55); background: rgba(15, 157, 107, .10); }
-.wb-ocr-box.is-flagged { border-color: #ba1a1a; background: rgba(186, 26, 26, .16); }
-.wb-ocr-box.is-ignored { border: 1px dashed rgba(0, 0, 0, .35); background: none; }
-.wb-ocr-box.is-focus { outline: 2px solid var(--ink-2); outline-offset: 2px; z-index: 1; }
-/* A detected table and its columns in the selection's blue, not orange (2026-11-06, the owner's rule). */
-.wb-ocr-table { position: absolute; border: 1.5px solid rgba(47, 111, 228, .55); pointer-events: none; }
-.wb-ocr-col { position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(47, 111, 228, .45); }
-.wb-ocr-wait { display: grid; place-items: center; min-height: 240px; padding: 20px; border: 1px dashed var(--rule-strong); border-radius: 10px; font-size: 13px; color: var(--ink-faint); text-align: center; }
-.wb-ocr-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--ink-faint); }
-.wb-ocr-key { display: inline-block; width: 12px; height: 9px; margin-left: 8px; border: 1px solid rgba(15, 157, 107, .55); background: rgba(15, 157, 107, .10); }
-.wb-ocr-key:first-child { margin-left: 0; }
-.wb-ocr-key.is-flagged { border-color: #ba1a1a; background: rgba(186, 26, 26, .16); }
-.wb-ocr-key.is-ignored { border-style: dashed; border-color: var(--ink-faint); background: none; }
-.wb-ocr-key.is-table { border: 1.5px solid rgba(47, 111, 228, .55); background: none; }
-.wb-ocr-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.wb-ocr-runs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 13px; }
-.wb-ocr-run-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-ocr-run-state { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
-.wb-ocr-runs li.is-failed .wb-ocr-run-state { color: var(--bad-ink); }
-.wb-ocr-bar { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: var(--rule); overflow: hidden; }
-.wb-ocr-bar > span { display: block; height: 100%; background: var(--accent); transition: width .2s ease; }
-.wb-ocr-counts { margin: 0; font-size: 13px; }
-.wb-ocr-counts b { font-weight: 600; }
-.wb-ocr-counts b.is-flagged { color: var(--bad-ink); }
-.wb-ocr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
-.wb-ocr-list button { display: flex; width: 100%; justify-content: space-between; gap: 10px; padding: 6px 9px; border: 1px solid var(--bad-line); border-radius: 8px; background: var(--bad-wash); color: var(--ink); font-size: 12.5px; text-align: left; cursor: pointer; }
-.wb-ocr-list button.is-focus { border-color: var(--ink-2); }
-.wb-ocr-list-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-ocr-list-meta { flex: none; font-family: var(--mono); font-size: 11px; color: var(--bad-ink); }
-.wb-ocr-problems { padding: 10px 12px; border: 1px solid var(--bad-line); border-radius: 10px; background: var(--bad-wash); font-size: 12.5px; color: var(--ink); }
-.wb-ocr-problems p, .wb-ocr-problems ul { margin: 0 0 6px; }
-.wb-ocr-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
-/* The sheet keeps its drawn width; on a narrow screen it scrolls rather than squeezing the boxes off their text. */
-.wb-ocr-scroll { max-width: 100%; overflow-x: auto; }
+   2026-11-01. Its rules, the sheet, the boxes, the runs and the list, moved to
+   components/ocr.css on 2026-11-07, beside the dialog's lazy chunk, when it
+   took the shape of Settings and the account dialog. */
 
 /* ------------------------------------------------------------ one chat box
    2026-11-01. Describe-a-report and OCR folded into the composer: a
