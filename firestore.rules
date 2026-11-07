@@ -146,6 +146,35 @@ service cloud.firestore {
         && existing().userId == request.auth.uid;
     }
 
+    // The account's index of its projects (2026-11-08, site audit item 63):
+    // what the list shows and searches, so the list no longer downloads every
+    // project in full. Pinned like the report it describes, and owner-only.
+    function isValidReportIndex(data) {
+      return data.keys().hasOnly(['id', 'name', 'timestamp', 'search', 'notes', 'userId'])
+        && data.keys().hasAll(['id', 'name', 'timestamp', 'search', 'notes', 'userId'])
+        && data.notes is int && data.notes >= 0
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 256
+        && data.search is string && data.search.size() <= 4000
+        && data.timestamp is number && data.timestamp > 0 && data.timestamp < 4102444800000
+        && data.userId == request.auth.uid;
+    }
+
+    match /users/{userId}/reportIndex/{reportId} {
+      allow read: if isSignedIn() && userId == request.auth.uid;
+
+      allow create, update: if isSignedIn()
+        && isValidId(userId)
+        && isValidId(reportId)
+        && userId == request.auth.uid
+        && isValidReportIndex(incoming())
+        && incoming().id == reportId;
+
+      allow delete: if isSignedIn()
+        && isValidId(reportId)
+        && userId == request.auth.uid;
+    }
+
     // Validation Blueprint for a shared report (2026-11-06, the Share dialog).
     //
     // A COPY, written by its owner, never their saved project: users/{uid}

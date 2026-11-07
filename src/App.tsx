@@ -103,6 +103,9 @@ import { OperationType } from './lib/firestoreOps';
 import {
   toFirestoreDocument,
   fromFirestoreDocument,
+  toIndexDocument,
+  fromIndexDocument,
+  mergeIndexed,
   projectName,
   saveReportsLocally,
   loadReportsLocally,
@@ -773,6 +776,10 @@ export interface SavedReport {
   timestamp: string;
   messages: ChatMessage[];
   result: DesignResult | null;
+  /** Listed from the account's index, its content not yet fetched (lib/savedReport.ts, site audit item 63). */
+  stub?: boolean;
+  search?: string;
+  notes?: number;
 }
 
 
@@ -1579,35 +1586,115 @@ export default function App() {
     };
   }, [user, firebase]);
 
-  // Fetch from Firebase
+  /*
+   * The account's projects, from its index (2026-11-08, site audit item 63).
+   *
+   * The list listened to the projects themselves, so every visit downloaded
+   * every project in full, images included, and every autosave went to every
+   * open tab, about 1 MB a turn. It listens to `users/{uid}/reportIndex` now,
+   * one small entry per project, and a project's content is fetched when it
+   * is opened (`fullReport`). Three things keep it whole:
+   *
+   * - A reconciliation once a week per device (`forma:indexCheckedAt:<uid>`),
+   *   and at once when the index is empty: the projects read in full, as the
+   *   list did, and an entry written for any without one. That fills the
+   *   index the first time and heals one a save could not write.
+   * - If the index cannot be read at all (its rules not yet deployed), the
+   *   list falls back to listening to the projects as it did before.
+   * - Nothing writes a listed entry back as a project: an entry has no content
+   *   (`stub`), and rename changes only the name.
+   */
+  const RECONCILE_EVERY_MS = 7 * 24 * 60 * 60 * 1000;
   useEffect(() => {
     if (!user || !firebase) return;
     const { sdk, paths, db } = firebase;
-    try {
-      const q = sdk.query(paths.reportsCollectionRef(db, user.uid));
-      const unsubscribe = sdk.onSnapshot(q, (snapshot) => {
-        const reports: SavedReport[] = [];
-        snapshot.forEach((doc) => {
-          // fromFirestoreDocument never throws. That matters here specifically:
-          // this callback fires long after the try/catch below has returned, so
-          // one malformed document would empty the whole projects panel rather
-          // than skip a row. See src/lib/savedReport.ts.
-          reports.push(fromFirestoreDocument<ChatMessage, DesignResult>(doc.data()));
-        });
+    const uid = user.uid;
+    const loadFailed = (error: unknown) =>
+      // Reported, not rethrown (2026-11-08, site audit item 62): this callback
+      // runs long after the try below, so the rethrow was an uncaught error
+      // whose text carried the account's email.
+      reportFirestoreFailure(error, OperationType.GET, 'users/{uid}/reports', 'Your saved projects could not be loaded just now. What is open here is safe; reload to try again.');
+    let unsubscribe: () => void = () => {};
+    let gone = false;
+
+    /** The projects in full, as the list read them before the index. */
+    const readAll = async (): Promise<SavedReport[]> => {
+      const snapshot = await sdk.getDocs(paths.reportsCollectionRef(db, uid));
+      // fromFirestoreDocument never throws, so one malformed document skips a
+      // row rather than emptying the panel. See src/lib/savedReport.ts.
+      return snapshot.docs.map((d) => fromFirestoreDocument<ChatMessage, DesignResult>(d.data()));
+    };
+    const reconcile = async (indexed: ReadonlySet<string>) => {
+      const all = await readAll();
+      if (gone) return;
+      // In full, newest first: everything the index would list, with content.
+      setSavedReports(mergeIndexed(all, []));
+      await Promise.all(
+        all.filter((r) => !indexed.has(r.id)).map((r) => sdk.setDoc(paths.reportIndexDocRef(db, uid, r.id), toIndexDocument(r, uid))),
+      );
+      try {
+        localStorage.setItem(`forma:indexCheckedAt:${uid}`, String(Date.now()));
+      } catch {
+        /* storage blocked: it reconciles again next time */
+      }
+    };
+    const listenToProjects = () => {
+      unsubscribe = sdk.onSnapshot(sdk.query(paths.reportsCollectionRef(db, uid)), (snapshot) => {
+        const reports = snapshot.docs.map((d) => fromFirestoreDocument<ChatMessage, DesignResult>(d.data()));
         reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setSavedReports(reports);
+      }, loadFailed);
+    };
+
+    let checked = false;
+    try {
+      unsubscribe = sdk.onSnapshot(sdk.query(paths.reportIndexCollectionRef(db, uid)), (snapshot) => {
+        const rows = snapshot.docs.map((d) => fromIndexDocument<ChatMessage, DesignResult>(d.data()));
+        setSavedReports((prev) => mergeIndexed(rows, prev));
+        if (checked) return;
+        checked = true;
+        let last = 0;
+        try {
+          last = Number(localStorage.getItem(`forma:indexCheckedAt:${uid}`)) || 0;
+        } catch {
+          /* storage blocked: reconcile */
+        }
+        if (snapshot.empty || Date.now() - last > RECONCILE_EVERY_MS) {
+          void reconcile(new Set(rows.map((r) => r.id))).catch(loadFailed);
+        }
       }, (error) => {
-        // Reported, not rethrown (2026-11-08, site audit item 62): this callback
-        // runs long after the try below, so the rethrow was an uncaught error
-        // whose text carried the account's email.
-        reportFirestoreFailure(error, OperationType.GET, 'users/{uid}/reports', 'Your saved projects could not be loaded just now. What is open here is safe; reload to try again.');
+        // The index cannot be read (its rules not deployed yet): the list as before.
+        console.warn('The projects index could not be read; listing the projects in full.', error);
+        unsubscribe();
+        if (!gone) listenToProjects();
       });
-      return () => unsubscribe();
     } catch (error) {
-      reportFirestoreFailure(error, OperationType.GET, 'users/{uid}/reports', 'Your saved projects could not be loaded just now. What is open here is safe; reload to try again.');
+      console.warn('The projects index could not be opened; listing the projects in full.', error);
+      listenToProjects();
     }
+    return () => {
+      gone = true;
+      unsubscribe();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reportFirestoreFailure only sets state and logs
   }, [user, firebase]);
+
+  /** A listed project with its content, fetched when the list holds only its index entry. */
+  const fullReport = async (listed: SavedReport): Promise<SavedReport | null> => {
+    if (!listed.stub) return listed;
+    if (!user) return null;
+    try {
+      const { sdk, paths, db } = await loadFirebase();
+      const snap = await sdk.getDoc(paths.reportDocRef(db, user.uid, listed.id));
+      if (!snap.exists()) return null;
+      const full = fromFirestoreDocument<ChatMessage, DesignResult>(snap.data());
+      setSavedReports((prev) => prev.map((r) => (r.id === full.id && r.timestamp === full.timestamp ? full : r)));
+      return full;
+    } catch (err) {
+      reportFirestoreFailure(err, OperationType.GET, 'users/{uid}/reports', 'That project could not be opened just now. Try again in a moment.');
+      return null;
+    }
+  };
 
   const [error, setError] = useState<string | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -2922,6 +3009,12 @@ export default function App() {
         const { payload, imagesDropped } = fitted;
 
         await sdk.setDoc(docRef, payload);
+        // Its index entry after it (site audit item 63), which is what the
+        // list listens to; tolerated, since the weekly reconciliation writes
+        // a missing one and the save itself has already succeeded.
+        await sdk.setDoc(paths.reportIndexDocRef(db, user.uid, reportId), toIndexDocument(draft, user.uid)).catch((error) => {
+          console.warn('The project was saved; its entry in the projects index was not.', error);
+        });
         saved();
 
         // After the report, and only after: a version filed under a report that
@@ -3181,7 +3274,11 @@ export default function App() {
    * project's versions stay in the panel and read as belonging to this one — the
    * one way a revision list can be actively misleading rather than merely empty.
    */
-  const handleLoadReport = async (report: SavedReport) => {
+  const handleLoadReport = async (listed: SavedReport) => {
+    // Its content first, when the list holds only its index entry (2026-11-08,
+    // site audit item 63): an entry has no conversation and no report.
+    const report = await fullReport(listed);
+    if (!report) return;
     // The session being left keeps its last turn (2026-11-05) and stops what
     // it was doing (2026-11-06, `leaveSession`); the one opened is already
     // saved as it is.
@@ -3281,8 +3378,16 @@ export default function App() {
     if (user) {
       try {
         const { sdk, paths, db } = await loadFirebase();
-        // The whole document again, as a save writes it; the list follows through onSnapshot.
-        await sdk.setDoc(paths.reportDocRef(db, user.uid, id), toFirestoreDocument(renamed, user.uid));
+        // The name alone (2026-11-08, site audit item 63), never the whole
+        // document from the list: an entry listed from the index has no
+        // content, and writing it back would empty the project. The rules
+        // check the merged document, which keeps every other field. Then its
+        // index entry, which the list follows.
+        const stored = toFirestoreDocument(renamed, user.uid);
+        await sdk.updateDoc(paths.reportDocRef(db, user.uid, id), { name: stored.name });
+        await sdk.setDoc(paths.reportIndexDocRef(db, user.uid, id), toIndexDocument(renamed, user.uid)).catch((error) => {
+          console.warn('The project was renamed; its entry in the projects index was not.', error);
+        });
       } catch (err) {
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${id}`, 'That project could not be renamed in your account. Try again in a moment.');
       }
@@ -3303,7 +3408,10 @@ export default function App() {
    * a save would keep it. The copy is listed; the original stays open.
    */
   const duplicateProject = async (id: string | null = openProjectId) => {
-    const source = savedReports.find((r) => r.id === id);
+    const listed = savedReports.find((r) => r.id === id);
+    if (!listed) return;
+    // Its content first, when the list holds only its index entry (item 63).
+    const source = listed.id === openProjectId ? listed : await fullReport(listed);
     if (!source) return;
     // The open project as it is on screen; another, from the list's row
     // (2026-11-06), as it was saved.
@@ -3324,6 +3432,9 @@ export default function App() {
         }
         const { sdk, paths, db } = await loadFirebase();
         await sdk.setDoc(paths.reportDocRef(db, user.uid, copy.id), fitted.payload);
+        await sdk.setDoc(paths.reportIndexDocRef(db, user.uid, copy.id), toIndexDocument(copy, user.uid)).catch((error) => {
+          console.warn('The copy was saved; its entry in the projects index was not.', error);
+        });
         setSaveNotice(`Duplicated as ${copy.name}`);
       } catch (err) {
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${copy.id}`, 'That project could not be duplicated in your account. Try again in a moment.');
@@ -6135,7 +6246,7 @@ export default function App() {
                       )}
                       <div className="wb-sub">
                         {stamp && `${stamp} · `}
-                        {noteCountLabel(report.messages.length)}
+                        {noteCountLabel(report.stub ? report.notes ?? 0 : report.messages.length)}
                       </div>
                       <div className="wb-row-actions">
                         <button

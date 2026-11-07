@@ -340,6 +340,28 @@ describe('shared copies go with what they were shared from', () => {
     expect(shareDocRef(asUser(ALICE), 'abc').path).toBe('shares/abc');
   });
 
+  it("removes a project's index entry with it, and every entry with the account (2026-11-08, site audit item 63)", async () => {
+    const entry = (id: string) => ({ id, name: 'Invoice', timestamp: Date.now(), search: '', notes: 0, userId: ALICE });
+    await seed(['users', ALICE, 'reports', 'r1'], validReport('r1', ALICE));
+    await seed(['users', ALICE, 'reports', 'r2'], validReport('r2', ALICE));
+    await seed(['users', ALICE, 'reportIndex', 'r1'], entry('r1'));
+    await seed(['users', ALICE, 'reportIndex', 'r2'], entry('r2'));
+    await seed(['users', ALICE, 'reportIndex', 'orphan'], entry('orphan'));
+    const indexIds = async () => {
+      let ids: string[] = [];
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        ids = (await getDocs(collection(ctx.firestore(), 'users', ALICE, 'reportIndex'))).docs.map((d) => d.id);
+      });
+      return ids.sort();
+    };
+
+    await deleteReportAndVersions(asUser(ALICE), ALICE, 'r1');
+    expect(await indexIds()).toEqual(['orphan', 'r2']);
+
+    await deleteAccountData(asUser(ALICE), ALICE);
+    expect(await indexIds()).toEqual([]);
+  });
+
   it('removes shares made through the count, and the count itself (2026-11-08, site audit item 57)', async () => {
     const verified = testEnv.authenticatedContext(ALICE, { email: 'alice@example.com', email_verified: true }).firestore() as unknown as Firestore;
     await seed(['users', ALICE, 'reports', 'r1'], validReport('r1', ALICE));

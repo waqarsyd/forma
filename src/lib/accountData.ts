@@ -173,6 +173,22 @@ export function reportDocRef(db: Firestore, uid: string, reportId: string): Docu
   return doc(db, USERS_COLLECTION, uid, REPORTS_COLLECTION, reportId);
 }
 
+/**
+ * The account's index of its projects (2026-11-08, site audit item 63): one
+ * small document per project, `lib/savedReport.ts`'s `StoredReportIndex`,
+ * which the list listens to instead of the projects themselves. Written beside
+ * the project on every save, and deleted with it and with the account.
+ */
+export const REPORT_INDEX_COLLECTION = 'reportIndex';
+
+export function reportIndexCollectionRef(db: Firestore, uid: string): CollectionReference {
+  return collection(db, USERS_COLLECTION, uid, REPORT_INDEX_COLLECTION);
+}
+
+export function reportIndexDocRef(db: Firestore, uid: string, reportId: string): DocumentReference {
+  return doc(db, USERS_COLLECTION, uid, REPORT_INDEX_COLLECTION, reportId);
+}
+
 export function vaultDocRef(db: Firestore, uid: string): DocumentReference {
   return doc(db, USERS_COLLECTION, uid, VAULT_COLLECTION, VAULT_DOC_ID);
 }
@@ -215,6 +231,11 @@ export async function deleteReportAndVersions(
   const versions = await getDocs(versionsCollectionRef(db, uid, reportId));
   await Promise.all(versions.docs.map((entry) => deleteDoc(entry.ref)));
   await deleteDoc(reportDocRef(db, uid, reportId));
+  // Its index entry last (2026-11-08): a report gone and still listed opens
+  // to nothing, which is better than one gone from the list and still stored.
+  await deleteDoc(reportIndexDocRef(db, uid, reportId)).catch((error) => {
+    console.warn('Could not remove the project from the index:', error);
+  });
 }
 
 /**
@@ -246,6 +267,11 @@ export async function deleteAccountData(db: Firestore, uid: string): Promise<voi
   // would ever find it once the account does.
   const shares = await getDocs(ownedShares(db, uid));
   await deleteShares(db, uid, shares.docs.map((entry) => entry.id));
+  // And any index entry whose project had already gone (2026-11-08);
+  // tolerated, since the index is a copy of what the deletions above removed.
+  await getDocs(reportIndexCollectionRef(db, uid))
+    .then((index) => Promise.all(index.docs.map((entry) => deleteDoc(entry.ref))))
+    .catch((error) => console.warn('Could not clear the projects index while deleting the account:', error));
   // The count itself, at zero now (2026-11-08); tolerated like the vault.
   await deleteDoc(quotaDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the share count while deleting the account:', error);

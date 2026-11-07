@@ -35,6 +35,11 @@ import {
   readIdList,
   writeIdList,
   toggleId,
+  searchTextOf,
+  toIndexDocument,
+  fromIndexDocument,
+  mergeIndexed,
+  SEARCH_TEXT_LIMIT,
   type SavedReportLike,
 } from './savedReport';
 
@@ -399,5 +404,60 @@ describe('loadReportsLocally', () => {
     const reports = [report({ id: 'a' }), report({ id: 'b' })];
     expect(saveReportsLocally(reports).ok).toBe(true);
     expect(loadReportsLocally()).toEqual(reports);
+  });
+});
+
+/*
+ * The account's index of its projects (2026-11-08, site audit item 63): the
+ * list listens to one small entry per project instead of the projects.
+ */
+describe('the projects index', () => {
+  const conversation = [
+    { role: 'user', text: 'An invoice with a total per customer' },
+    { role: 'model', text: 'Here it is.', clarify: { questions: [{ question: 'Which currency?' }] } },
+    { role: 'user', text: 'Euros' },
+  ];
+
+  it("searches the person's words and Forma's questions, capped at the rules' limit", () => {
+    expect(searchTextOf(conversation)).toBe('An invoice with a total per customer\nWhich currency?\nEuros');
+    expect(searchTextOf([{ role: 'user', text: 'x'.repeat(SEARCH_TEXT_LIMIT + 50) }])).toHaveLength(SEARCH_TEXT_LIMIT);
+    expect(searchTextOf([null, 3, { role: 'user' }])).toBe('');
+  });
+
+  it("writes an entry from a saved project with the project's own name and time, and the count of its messages", () => {
+    const saved = report({ messages: conversation as never[] });
+    const entry = toIndexDocument(saved, UID);
+    expect(entry).toEqual({
+      id: saved.id,
+      name: toFirestoreDocument(saved, UID).name,
+      timestamp: new Date(saved.timestamp).getTime(),
+      search: searchTextOf(conversation),
+      notes: 3,
+      userId: UID,
+    });
+  });
+
+  it('lists an entry with no content, and never throws on a bad one', () => {
+    const listed = fromIndexDocument({ id: 'p1', name: 'Invoice', timestamp: 1_790_000_000_000, search: 'euros', notes: 4 });
+    expect(listed).toMatchObject({ id: 'p1', name: 'Invoice', messages: [], result: null, stub: true, search: 'euros', notes: 4 });
+    expect(() => fromIndexDocument({ timestamp: Number.NaN, notes: -2 } as never)).not.toThrow();
+    expect(fromIndexDocument({ notes: -2 } as never).notes).toBe(0);
+    // An entry rewritten from a listed one keeps its words and its count.
+    expect(toIndexDocument(listed, UID)).toMatchObject({ search: 'euros', notes: 4 });
+  });
+
+  it("keeps a project's content where the same save is already here, newest first", () => {
+    const full = report({ id: 'a', timestamp: '2026-11-01T00:00:00.000Z', messages: conversation as never[] });
+    const rows = [
+      fromIndexDocument({ id: 'a', name: 'Renamed', timestamp: Date.parse('2026-11-01T00:00:00.000Z') }),
+      fromIndexDocument({ id: 'b', name: 'Newer', timestamp: Date.parse('2026-11-05T00:00:00.000Z') }),
+    ];
+    const merged = mergeIndexed(rows, [full]);
+    expect(merged.map((r) => r.id)).toEqual(['b', 'a']);
+    expect(merged[1]).toMatchObject({ name: 'Renamed', messages: conversation });
+    expect(merged[1].stub).toBeUndefined();
+    // A newer save than the one held: the entry, until it is opened again.
+    const later = fromIndexDocument({ id: 'a', name: 'A', timestamp: Date.parse('2026-11-07T00:00:00.000Z') });
+    expect(mergeIndexed([later], [full])[0].stub).toBe(true);
   });
 });

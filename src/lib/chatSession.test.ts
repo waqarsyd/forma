@@ -530,6 +530,13 @@ describe('projectMatches', () => {
   it('matches every project while nothing is typed', () => {
     expect(projectMatches({ name: 'x', messages: [] }, '  ')).toBe(true);
   });
+
+  it("finds a project listed from the account's index, not yet opened, by its search text (site audit item 63)", () => {
+    const listed = { name: 'Untitled Report', messages: [], search: 'Group it by region\nWhich paper size?' };
+    expect(projectMatches(listed, 'region')).toBe(true);
+    expect(projectMatches(listed, 'PAPER')).toBe(true);
+    expect(projectMatches(listed, 'landscape')).toBe(false);
+  });
 });
 
 describe('noteCountLabel', () => {

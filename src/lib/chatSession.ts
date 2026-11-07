@@ -422,11 +422,15 @@ export function messageMatches(message: { text: string; clarify?: { questions: {
  * the sidebar's Search (2026-11-05), which searches the projects as ChatGPT's
  * searches its chats. Every project matches an empty query.
  */
-export function projectMatches(project: { name: string; messages: readonly { text: string; clarify?: { questions: { question: string }[] } }[] }, query: string): boolean {
+export function projectMatches(project: { name: string; messages: readonly { text: string; clarify?: { questions: { question: string }[] } }[]; search?: string }, query: string): boolean {
   const pattern = searchPattern(query);
   if (!pattern) return true;
   pattern.lastIndex = 0;
-  return pattern.test(project.name) || project.messages.some((m) => messageMatches(m, query));
+  if (pattern.test(project.name) || project.messages.some((m) => messageMatches(m, query))) return true;
+  // A project listed from the account's index, not yet opened (2026-11-08,
+  // site audit item 63): its words are the index's search text.
+  pattern.lastIndex = 0;
+  return !!project.search && pattern.test(project.search);
 }
 
 /**

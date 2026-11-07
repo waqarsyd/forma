@@ -203,6 +203,42 @@ describe('shares (2026-11-06)', () => {
   });
 });
 
+/** Exactly what lib/savedReport.ts's toIndexDocument writes (2026-11-08, site audit item 63). */
+const validIndex = (id: string, owner: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  name: 'Quarterly Invoice',
+  timestamp: Date.now(),
+  search: 'an invoice by region',
+  notes: 3,
+  userId: owner,
+  ...extra,
+});
+
+describe('the projects index (2026-11-08, site audit item 63)', () => {
+  it('lets the owner write, list and delete their entries, and nobody else touch them', async () => {
+    await assertSucceeds(setDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'r1'), validIndex('r1', ALICE)));
+    await assertSucceeds(getDocs(collection(aliceDb(), 'users', ALICE, 'reportIndex')));
+    await assertFails(getDocs(collection(bobDb(), 'users', ALICE, 'reportIndex')));
+    await assertFails(setDoc(doc(bobDb(), 'users', ALICE, 'reportIndex', 'r2'), validIndex('r2', ALICE)));
+    await assertFails(deleteDoc(doc(bobDb(), 'users', ALICE, 'reportIndex', 'r1')));
+    await assertSucceeds(deleteDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'r1')));
+  });
+
+  it('pins the shape, as the project it describes is pinned', async () => {
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'r1'), validIndex('r1', ALICE, { messages: '[]' })));
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'r1'), validIndex('other', ALICE)));
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'r1'), validIndex('r1', BOB)));
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'r1'), validIndex('r1', ALICE, { search: 'x'.repeat(4001) })));
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'r1'), validIndex('r1', ALICE, { notes: -1 })));
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'r1'), validIndex('r1', ALICE, { timestamp: 4102444800001 })));
+  });
+
+  it('renames a project by its name alone, keeping everything else the rules require', async () => {
+    await seed(['users', ALICE, 'reports', 'r1'], { id: 'r1', name: 'Invoice', timestamp: Date.now(), messages: '[]', result: '{}', userId: ALICE });
+    await assertSucceeds(updateDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), { name: 'Renamed' }));
+  });
+});
+
 describe('global deny', () => {
   it('refuses a path no rule matches, even when signed in', async () => {
     await assertFails(getDoc(doc(aliceDb(), 'test/connection')));

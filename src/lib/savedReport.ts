@@ -31,6 +31,95 @@ export interface SavedReportLike<M = unknown, R = unknown> {
   timestamp: string;
   messages: M[];
   result: R | null;
+  /**
+   * Listed from the account's index, its content not fetched (2026-11-08,
+   * site audit item 63): `messages` is empty and `result` null until the
+   * project is opened, so nothing may write this entry back as a project.
+   */
+  stub?: boolean;
+  /** The index's search text, for a listed project's search before it is opened. */
+  search?: string;
+  /** How many messages it holds, for the row's count before it is opened. */
+  notes?: number;
+}
+
+/**
+ * One project in the account's index, `users/{uid}/reportIndex/{id}`
+ * (2026-11-08, site audit item 63): what the list shows and searches, without
+ * the conversation, the images or the report. The list listened to the whole
+ * projects, so every visit downloaded every project in full, images
+ * included, and every autosave (about 1 MB a turn) went to every open tab;
+ * on the free plan's daily egress that is the first limit a real account
+ * meets. Written beside the project on every save.
+ */
+export interface StoredReportIndex {
+  id: string;
+  name: string;
+  /** Epoch milliseconds, as the project's. */
+  timestamp: number;
+  /** What a search reads: the person's words and Forma's questions, capped. */
+  search: string;
+  /** How many messages the conversation holds, which the list's row shows. */
+  notes: number;
+  userId: string;
+}
+
+/** `firestore.rules` bounds the index's search text at this many characters. */
+export const SEARCH_TEXT_LIMIT = 4000;
+
+/** The words of a conversation a project search matches: the person's messages and Forma's questions. */
+export function searchTextOf(messages: readonly unknown[]): string {
+  const parts: string[] = [];
+  for (const raw of messages) {
+    const m = raw as { role?: unknown; text?: unknown; clarify?: { questions?: { question?: unknown }[] } };
+    if (m?.role === 'user' && typeof m.text === 'string') parts.push(m.text);
+    for (const q of m?.clarify?.questions ?? []) if (typeof q?.question === 'string') parts.push(q.question);
+  }
+  return parts.join('\n').slice(0, SEARCH_TEXT_LIMIT);
+}
+
+/** The index entry for a project as it is saved. */
+export function toIndexDocument<M, R>(report: SavedReportLike<M, R>, userId: string): StoredReportIndex {
+  const millis = new Date(report.timestamp).getTime();
+  return {
+    id: report.id,
+    // The name exactly as the project's own document stores it (toFirestoreDocument).
+    name: reportDisplayName(report.name).substring(0, 256),
+    timestamp: Number.isFinite(millis) && millis > 0 ? millis : Date.now(),
+    search: report.stub ? (report.search ?? '').slice(0, SEARCH_TEXT_LIMIT) : searchTextOf(report.messages),
+    notes: report.stub ? Math.max(0, Math.floor(report.notes ?? 0)) : report.messages.length,
+    userId,
+  };
+}
+
+/** A listed project from its index entry. Never throws, as `fromFirestoreDocument` never does. */
+export function fromIndexDocument<M = unknown, R = unknown>(data: Partial<StoredReportIndex>): SavedReportLike<M, R> {
+  const millis = Number(data.timestamp);
+  const timestamp = Number.isFinite(millis) && millis > 0 ? new Date(millis) : new Date(0);
+  return {
+    id: String(data.id ?? ''),
+    name: String(data.name ?? ''),
+    timestamp: timestamp.toISOString(),
+    messages: [],
+    result: null,
+    stub: true,
+    search: typeof data.search === 'string' ? data.search : '',
+    notes: Number.isFinite(Number(data.notes)) ? Math.max(0, Math.floor(Number(data.notes))) : 0,
+  };
+}
+
+/**
+ * The list from the index, keeping a project's content where it is already
+ * here and unchanged (the same save), and newest first.
+ */
+export function mergeIndexed<M, R>(rows: ReadonlyArray<SavedReportLike<M, R>>, before: ReadonlyArray<SavedReportLike<M, R>>): Array<SavedReportLike<M, R>> {
+  const held = new Map(before.filter((r) => !r.stub).map((r) => [r.id, r]));
+  return rows
+    .map((row) => {
+      const full = held.get(row.id);
+      return full && full.timestamp === row.timestamp ? { ...full, name: row.name } : row;
+    })
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }
 
 /** A report as Firestore stores it — the exact shape `firestore.rules` allows. */
