@@ -184,6 +184,64 @@ describe('the request a chat turn sends', () => {
   });
 });
 
+/*
+ * A turn on an open report, end to end (2026-11-07, agent audit item 37):
+ * only its instruction string was tested, so what comes back, how it is
+ * typed out and what a cut-off or unreadable answer does were checked by
+ * using the app.
+ */
+describe('a chat turn on an open report', () => {
+  const open = { outline: 'REPORT "Invoice"\n  title: XRLabel at 0,0 size 200x30, "Invoice"', ops: ['font', 'text'], tools: { names: [], panes: [], formats: [] } };
+  const chunk = (text: string, finishReason = 'STOP') =>
+    `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text }], role: 'model' }, finishReason }] })}\r\n\r\n`;
+  const answer = (o: object, finishReason = 'STOP') => () => streamOf(chunk(JSON.stringify(o), finishReason));
+  async function onReport(onPartial?: (text: string) => void) {
+    const turn = chatReply([{ role: 'user', text: 'make the title bold' }], config, undefined, onPartial, open);
+    turn.catch(() => undefined);
+    for (let i = 0; i < 3; i++) await vi.advanceTimersByTimeAsync(10_000);
+    return turn;
+  }
+
+  it('returns the edits as the model wrote them, and asks for room for them', async () => {
+    const fetchMock = stubSequence(answer({ reply: 'Made the title bold.', action: 'edit', edits: [{ op: 'font', control: 'title', bold: true }] }));
+    const outcome = await onReport();
+    expect(outcome).toMatchObject({ reply: 'Made the title bold.', action: 'edit', wantsReport: false, edits: [{ op: 'font', control: 'title', bold: true }] });
+    const body = String((fetchMock.mock.calls[0][1] as { body?: unknown }).body);
+    expect(body).toContain('"maxOutputTokens":4096');
+    expect(body).toMatch(/"edits"/);
+    expect(body).toMatch(/"action"/);
+  });
+
+  it('hands a redesign on with the whole request, and marks it as wanting a report', async () => {
+    stubSequence(answer({ reply: 'That needs a redesign.', action: 'rebuild', brief: 'An invoice with a chart of totals by month.' }));
+    expect(await onReport()).toMatchObject({ action: 'rebuild', wantsReport: true, brief: 'An invoice with a chart of totals by month.' });
+  });
+
+  it('types out the reply as it streams, never the object around it', async () => {
+    const whole = JSON.stringify({ reply: 'Made the title bold.', action: 'edit', edits: [] });
+    stubSequence(() => streamOf(chunk(whole.slice(0, 24)) + chunk(whole.slice(24))));
+    const seen: string[] = [];
+    await onReport((text) => seen.push(text));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((t) => !t.startsWith('{'))).toBe(true);
+    expect(seen.filter(Boolean).at(-1)).toBe('Made the title bold.');
+  });
+
+  it('changes nothing when the answer is cut off, and says so (item 9)', async () => {
+    stubSequence(answer({ reply: 'Made the title bold.', action: 'edit', edits: [{ op: 'font', control: 'title', bold: true }] }, 'MAX_TOKENS'));
+    const outcome = await onReport();
+    expect(outcome).toMatchObject({ action: 'answer', edits: [], wantsReport: false });
+    expect(outcome.reply).toMatch(/^The answer was cut off before it finished, so nothing was changed/);
+  });
+
+  it('changes nothing when the answer is not an object it can read', async () => {
+    stubSequence(() => streamOf(chunk('Sure, I made the title bold for you.')));
+    const outcome = await onReport();
+    expect(outcome).toMatchObject({ action: 'answer', edits: [] });
+    expect(outcome.reply).toMatch(/^The answer came back incomplete, so nothing was changed/);
+  });
+});
+
 describe('a chat turn that hits a 503', () => {
   it('retries and returns the reply instead of failing', async () => {
     const fetchMock = stubSequence(

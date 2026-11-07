@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,710 tests in 156 files** — under the `node` environment
+`npm test` runs Vitest over **2,726 tests in 156 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -106,7 +106,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/aiProvider` | 8 | jsdom (storage); since 2026-11-07 which model answers when it is not Gemini's, for the box (`answeringModel`); the workspace open only with the Gemini key in, whichever AI is chosen, and that AI ready (2026-11-05); which AI answers: Automatic as Gemini, key or no key, since Forma Offline went into it on 2026-11-05, and the retired Gemini and Forma Offline choices read as Automatic, ready only with what each provider needs, Forma's vision model found as a helper beside any AI or as the Local AI model itself and alone only then, the choice kept in localStorage and the OpenRouter key only in this tab's sessionStorage, an unknown provider ignored |
 | `lib/announcements` | 8 | since 2026-11-07 the notes are the releases marked to announce, and the ids readers had seen are kept |
 | `lib/composerStore` | 7 | what the box keeps over a reload (2026-11-07, agent audit items 69 and 71): a draft per project, an older build's single draft given to the project its tab had open, a new report's words moved to its id at its first save, the newest kept when there are too many; the queue only for its own project, kept as its words when its files will not fit, each saying so |
-| `lib/chatTurn` | 5 | how the chat box routes a message before any AI is asked (2026-11-07, the agent audit's batch B): a memory only from "remember" or "from now on", a plain build only when it says what the report shows, a reply to Forma's questions read as the answer, a question or a new request, and the selection named for a redesign |
+| `lib/chatTurn` | 16 | since 2026-11-08 (batch K) the turn's control flow out of App: the queue's next step and its pauses, Resume, Steer, the questions waited on, the report a resend starts from, and how a turn that ended is said; how the chat box routes a message before any AI is asked (2026-11-07, the agent audit's batch B): a memory only from "remember" or "from now on", a plain build only when it says what the report shows, a reply to Forma's questions read as the answer, a question or a new request, and the selection named for a redesign |
 | `lib/replyChanges` | 4 | the replies' changes kept in the tab for a reload (2026-11-07, agent audit item 52): only the open project's come back, the newest kept and fewer while too large, and anything unreadable or empty is nothing |
 | `lib/releases` | 16 | the release notes behind /changelog (2026-11-07): newest first, slug ids and ISO dates, every release with a change of a known kind and area, 1.0.0's version; grouping by kind and month, filtering and its query string, and the Atom feed's shape, links and escaping |
 | `lib/clipboard` | 3 | one copy for every Copy in the workspace (2026-11-06, the workspace audit): the clipboard when the page has one, a hidden field and `execCommand` where there is none, as on plain HTTP, and false when neither works; the document is stubbed, so `node` |
@@ -219,7 +219,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `server/hostingConfig` | 9 | reads `firebase.json` off disk |
 | `server/securityHeaders` | 28 | since 2026-11-05 the microphone the page's own and no frame's |
 | `server/staticCache` | 10 |  |
-| `services/chatRetry` | 13 | since 2026-11-07 (batch F) the request a turn sends: instructions in the system part, the report and conversation fenced as data, a picture after them; since 2026-11-07 a retired model looked for again once, where the test pinned giving up at the first 404 |
+| `services/chatRetry` | 18 | since 2026-11-08 (batch K) a turn on an open report end to end: its edits and a redesign's brief as written, the reply typed out without its object, and a cut-off or unreadable answer changing nothing; since 2026-11-07 (batch F) the request a turn sends: instructions in the system part, the report and conversation fenced as data, a picture after them; since 2026-11-07 a retired model looked for again once, where the test pinned giving up at the first 404 |
 | `services/compatClient` | 12 | since 2026-11-07 a 400 not about the format asked once, a reasoning model that wrote no answer named, a context too small caught, and the output floor; local AI and OpenRouter in the shape of Gemini's SDK, against a fake OpenAI-compatible server: text and images as chat messages, the response schema as a JSON Schema, the answer read back in Gemini's words (`length` as `MAX_TOKENS`), a server refusing the schema asked for a JSON object then plain text, a streamed answer, a 429 keeping its status, the models offered (OpenRouter's free ones, image readers first), and `compatEndpoint` |
 | `services/draftCorrection` | 5 | Forma drafts and the AI corrects, against a stubbed network (2026-11-05): the rules, the draft and the picture sent, not the mega-prompt or OCR's text, thinking at `DRAFT_THINKING_BUDGET` unless the user set one; the report built from the answer; an answer that is no draft refused; a refinement or another unit designing as before |
 | `services/embeddings` | 20 | SDK mocked, as `geminiService` is |
@@ -233,7 +233,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,710 in 156 files** — and that total is the arithmetic sum of the column above
+**Total: 2,726 in 156 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -247,7 +247,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2592** against a real 2,710 (2026-11-07, after the agent audit's batch J; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
+A grep for `\bit(` answers **2608** against a real 2,726 (2026-11-08, after the agent audit's batch K; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

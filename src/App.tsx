@@ -252,7 +252,6 @@ import {
   noteCountLabel,
   projectMatches,
   requestsOf,
-  requestState,
   truncateFrom,
   withdrawTurn,
   type ChatMessage as ChatSessionMessage,
@@ -260,7 +259,7 @@ import {
 import { packChanges, unpackChanges, REPLY_CHANGES_KEY } from './lib/replyChanges';
 import { copyText } from './lib/clipboard';
 import { DRAFTS_KEY, keepQueue, keptQueueFor, LEGACY_DRAFT_KEY, movedDraft, NEW_DRAFT, parseDrafts, QUEUE_KEY, queuedFiles, withDraft, withoutFiles, type Drafts } from './lib/composerStore';
-import { isPlainBuild, isRememberMessage, pendingReplyKind, withSelection } from './lib/chatTurn';
+import { isPlainBuild, isRememberMessage, pendingQuestions, pendingReplyKind, queueStep, resumed, steered, turnBase, turnEnding, withSelection } from './lib/chatTurn';
 import { formatSessionStamp } from './lib/datetime';
 import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
 // LogoPulse, the progress ring of the generation card, went with the card on
@@ -1651,12 +1650,7 @@ export default function App() {
    * unanswered and carry their description. For a project opened and a
    * version flipped, where the ref above had been emptied.
    */
-  const pendingClarifyOf = (list: readonly ChatMessage[]): { request: ReportDescriptionRequest; messageId: string } | null => {
-    const last = list[list.length - 1];
-    return last?.role === 'assistant' && last.clarify && !last.clarify.answered && last.clarify.request
-      ? { request: last.clarify.request as ReportDescriptionRequest, messageId: last.id }
-      : null;
-  };
+  const pendingClarifyOf = (list: readonly ChatMessage[]) => pendingQuestions<ReportDescriptionRequest>(list);
   /*
    * The transcript as requests (2026-11-05), for the card and the log. A new
    * request shows itself and opens the card, as Stitch's does when a prompt
@@ -1895,7 +1889,7 @@ export default function App() {
   })());
   /** Resume: the next message goes whatever is waiting, the person having said so. */
   const resumeQueue = () => {
-    setQueue((q) => (q.length ? [{ ...q[0], go: true }, ...q.slice(1)] : q));
+    setQueue((q) => resumed(q));
     setQueuePaused(false);
   };
   /**
@@ -1915,17 +1909,17 @@ export default function App() {
   /** A different report the chat was asked for, waiting for its turn to end to open a project of its own (agent audit item 20). */
   const [startNewFrom, setStartNewFrom] = useState<Omit<Queued, 'id'> | null>(null);
   useEffect(() => {
-    if (isAnalyzing || isChatting || turnBusy || queue.length === 0 || queuePaused) return;
-    const [next, ...rest] = queue;
+    if (isAnalyzing || isChatting || turnBusy || queuePaused) return;
     // A question waiting, or a request that failed, holds what was queued
-    // before it was known (item 28); a steer is the person's own word, and goes.
-    const last = messages[messages.length - 1];
-    const asking = last?.role === 'assistant' && ((last.clarify && !last.clarify.answered) || (last.confirm && !last.confirm.answered));
-    const failed = [...messages].reverse().find((m) => m.role === 'user')?.error;
-    if (!next.steer && !next.go && (asking || failed)) {
+    // before it was known (item 28); a steer is the person's own word, and
+    // goes (lib/chatTurn.ts, `queueStep`).
+    const step = queueStep(queue, messages);
+    if (!step) return;
+    if (step === 'pause') {
       setQueuePaused(true);
       return;
     }
+    const { send: next, rest } = step;
     setQueue(rest);
     void handleGenerate(next.text, {
       ...(next.images?.length ? { images: next.images, imageMeta: next.imageMeta } : {}),
@@ -2004,13 +1998,7 @@ export default function App() {
     if (!wasWorking.current) return;
     wasWorking.current = false;
     const last = requests[requests.length - 1];
-    if (!last) return;
-    const state = requestState(last);
-    announceReady(
-      state === 'failed' ? 'Request failed'
-        : state === 'waiting' ? 'Question waiting'
-          : last.replies.some((r) => r.result || chatChanges[r.id]) ? 'Report ready' : 'Reply ready',
-    );
+    if (last) announceReady(turnEnding(last, chatChanges));
   }, [isAnalyzing, isChatting, turnBusy, requests, chatChanges, announceReady]);
 
   useEffect(() => {
@@ -4139,17 +4127,7 @@ export default function App() {
    * report a reply to it changed, from the change kept for its Undo. Undefined
    * when nothing says, and the report as it is now is used, as before.
    */
-  const baseFor = (ask: ChatMessage): DesignResult | null | undefined => {
-    if (turnBases.current.has(ask.id)) return turnBases.current.get(ask.id) ?? null;
-    if (ask.fresh) return null;
-    const at = messages.indexOf(ask);
-    for (const m of messages.slice(at + 1)) {
-      if (m.role === 'user') break;
-      const change = chatChanges[m.id];
-      if (change) return change.before;
-    }
-    return undefined;
-  };
+  const baseFor = (ask: ChatMessage): DesignResult | null | undefined => turnBase(ask, messages, turnBases.current, chatChanges);
 
   /**
    * One of Forma's replies, written again (2026-11-05), as ChatGPT's
@@ -6942,18 +6920,7 @@ export default function App() {
                * pictures when it had some, rather than alone. Stop here does
                * not pause the queue: the steer is the person's next message.
                */
-              const working = [...messages].reverse().find((m) => m.role === 'user');
-              setQueue((q) => {
-                const item = q.find((x) => x.id === id);
-                if (!item) return q;
-                const steer: Queued = {
-                  ...item,
-                  steer: true,
-                  ...(working?.text ? { steerFrom: working.text } : {}),
-                  ...(working?.images?.length ? { images: working.images, imageMeta: working.imageMeta } : {}),
-                };
-                return [steer, ...q.filter((x) => x.id !== id)];
-              });
+              setQueue((q) => steered(q, id, messages));
               setQueuePaused(false);
               handleStop({ steering: true });
             }}

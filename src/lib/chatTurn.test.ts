@@ -4,7 +4,7 @@
  * before, or one the change must not break.
  */
 import { describe, expect, it } from 'vitest';
-import { isPlainBuild, isRememberMessage, pendingReplyKind, withSelection } from './chatTurn';
+import { isPlainBuild, isRememberMessage, pendingQuestions, pendingReplyKind, queueStep, resumed, steered, turnBase, turnEnding, withSelection, type TurnMessage, type TurnQueued } from './chatTurn';
 
 describe('isRememberMessage', () => {
   it('keeps only "remember" and "from now on" (items 2 and 92)', () => {
@@ -47,5 +47,99 @@ describe('withSelection', () => {
     const words = withSelection('make these a table', ['labelQty', 'labelPrice']);
     expect(words.startsWith('make these a table')).toBe(true);
     expect(words).toContain('labelQty, labelPrice');
+  });
+});
+
+/*
+ * The turn's control flow, out of App.tsx (2026-11-07, agent audit item 36).
+ * Each case is a way it went wrong before, or a rule a change must keep.
+ */
+const you = (id: string, text: string, extra: Partial<TurnMessage> = {}): TurnMessage => ({ id, role: 'user', text, ...extra });
+const forma = (id: string, text: string, extra: Partial<TurnMessage> = {}): TurnMessage => ({ id, role: 'assistant', text, ...extra });
+
+describe('queueStep', () => {
+  const queue = [{ id: 'q1', text: 'make it bold' }, { id: 'q2', text: 'and red' }];
+
+  it('sends the next message when nothing waits on the person, and nothing from an empty queue', () => {
+    expect(queueStep(queue, [you('u', 'an invoice'), forma('a', 'Built it.')])).toEqual({ send: queue[0], rest: [queue[1]] });
+    expect(queueStep([], [])).toBeNull();
+  });
+
+  it('pauses rather than take a queued message as the answer to a question it predates (item 28)', () => {
+    const asked = [you('u', 'a report'), forma('a', 'Two questions.', { clarify: { answered: false } })];
+    expect(queueStep(queue, asked)).toBe('pause');
+    const redesign = [you('u', 'add a chart'), forma('a', 'Redesign?', { confirm: {} })];
+    expect(queueStep(queue, redesign)).toBe('pause');
+    expect(queueStep(queue, [you('u', 'add a chart'), forma('a', 'Done.', { confirm: { answered: 'no' } })])).not.toBe('pause');
+  });
+
+  it('pauses after a request that failed, so the queue does not carry on as if nothing happened', () => {
+    expect(queueStep(queue, [you('u', 'an invoice', { error: 'Google was busy.' })])).toBe('pause');
+  });
+
+  it('sends a steer, and a message Resume released, whatever waits', () => {
+    const asked = [you('u', 'a report', { error: 'failed' })];
+    expect(queueStep([{ ...queue[0], steer: true as const }], asked)).toEqual({ send: { ...queue[0], steer: true }, rest: [] });
+    expect(queueStep(resumed(queue), asked)).toEqual({ send: { ...queue[0], go: true }, rest: [queue[1]] });
+  });
+});
+
+describe('resumed and steered', () => {
+  it('releases only the next message on Resume', () => {
+    const out = resumed<TurnQueued>([{ id: 'q1', text: 'a' }, { id: 'q2', text: 'b' }]);
+    expect(out.map((q) => q.go)).toEqual([true, undefined]);
+    expect(resumed([])).toEqual([]);
+  });
+
+  it('puts a steer first, carrying the words and pictures of the request it changes (item 86)', () => {
+    const queue = [{ id: 'q1', text: 'first' }, { id: 'q2', text: 'smaller font instead' }];
+    const messages = [you('u', 'an invoice like this', { images: ['data:a'], imageMeta: [{ uploadId: 'x' }] })];
+    expect(steered(queue, 'q2', messages)).toEqual([
+      { id: 'q2', text: 'smaller font instead', steer: true, steerFrom: 'an invoice like this', images: ['data:a'], imageMeta: [{ uploadId: 'x' }] },
+      { id: 'q1', text: 'first' },
+    ]);
+    expect(steered(queue, 'gone', messages)).toEqual(queue);
+  });
+});
+
+describe('pendingQuestions', () => {
+  it("finds Forma's unanswered questions with what they are about, only when they are the last word (item 24)", () => {
+    const asking = forma('a', 'Two questions.', { clarify: { answered: false, request: { description: 'sales by region' } } });
+    expect(pendingQuestions([you('u', 'a report'), asking])).toEqual({ request: { description: 'sales by region' }, messageId: 'a' });
+    expect(pendingQuestions([you('u', 'a report'), asking, you('v', 'never mind')])).toBeNull();
+    expect(pendingQuestions([you('u', 'a report'), { ...asking, clarify: { answered: true, request: {} } }])).toBeNull();
+    // Saved before the description was kept with them: nothing to build from.
+    expect(pendingQuestions([you('u', 'a report'), forma('a', 'Questions.', { clarify: { answered: false } })])).toBeNull();
+  });
+});
+
+describe('turnBase', () => {
+  const ask = you('u2', 'make it bold');
+  const messages = [you('u1', 'an invoice'), forma('a1', 'Built.'), ask, forma('a2', 'Made it bold.'), you('u3', 'and red'), forma('a3', 'Red.')];
+
+  it('starts a message sent again from the report it first found (item 3)', () => {
+    expect(turnBase(ask, messages, new Map([['u2', 'v1']]), {})).toBe('v1');
+    expect(turnBase(ask, messages, new Map([['u2', null]]), {})).toBeNull();
+  });
+
+  it('starts from before the change its reply made, and not a later reply\'s', () => {
+    expect(turnBase(ask, messages, new Map(), { a2: { before: 'before bold' }, a3: { before: 'before red' } })).toBe('before bold');
+    expect(turnBase(ask, messages, new Map(), { a3: { before: 'before red' } })).toBeUndefined();
+  });
+
+  it('starts a message that opened a project of its own from no report, and an unknown one from the report as it is', () => {
+    expect(turnBase(you('n', 'a different report', { fresh: true }), messages, new Map(), {})).toBeNull();
+    expect(turnBase(you('x', 'not in the transcript'), messages, new Map(), {})).toBeUndefined();
+  });
+});
+
+describe('turnEnding', () => {
+  it('says how a turn ended: a failure, a question, a report made or changed, or a reply (item 63)', () => {
+    expect(turnEnding({ ask: you('u', 'x', { error: 'busy' }), replies: [] }, {})).toBe('Request failed');
+    expect(turnEnding({ ask: you('u', 'x'), replies: [forma('a', 'Questions.', { clarify: { answered: false } })] }, {})).toBe('Question waiting');
+    expect(turnEnding({ ask: you('u', 'x'), replies: [forma('a', 'Built.', { result: {} })] }, {})).toBe('Report ready');
+    expect(turnEnding({ ask: you('u', 'x'), replies: [forma('a', 'Made it bold.')] }, { a: { before: 'v1' } })).toBe('Report ready');
+    expect(turnEnding({ ask: you('u', 'x'), replies: [forma('a', 'Hello.')] }, {})).toBe('Reply ready');
+    expect(turnEnding({ ask: null, replies: [forma('a', 'Opened.')] }, {})).toBe('Reply ready');
   });
 });

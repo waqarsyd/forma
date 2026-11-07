@@ -61,6 +61,131 @@ export function pendingReplyKind(text: string): 'answer' | 'new' | 'question' {
   return 'answer';
 }
 
+/*
+ * The turn's control flow, out of App.tsx (2026-11-07, agent audit item 36):
+ * the queue's next step, Steer and Resume, the questions a turn waits on, the
+ * report a message sent again starts from, and how a turn that ended is said
+ * in a hidden tab's title. Each was written inline in App, where nothing
+ * tested it, and three of them had been wrong there before (items 3, 24, 28).
+ * Generic over the message, so App's own types pass through unchanged.
+ */
+
+/** What these rules read of a message. */
+export interface TurnMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  error?: string;
+  images?: string[];
+  imageMeta?: unknown[];
+  fresh?: true;
+  result?: unknown;
+  clarify?: { answered: boolean; request?: unknown };
+  confirm?: { answered?: 'yes' | 'no' };
+}
+
+/** What these rules read of a queued message. */
+export interface TurnQueued {
+  id: string;
+  text: string;
+  steer?: true;
+  steerFrom?: string;
+  go?: true;
+  images?: string[];
+  imageMeta?: unknown[];
+}
+
+/**
+ * The queue's next step once Forma is free (items 27 and 28): nothing when it
+ * is empty; a pause when Forma asked something, or the last request failed,
+ * and the next message was queued before that was known; otherwise the next
+ * message and what is left. A steer, or one Resume released, goes anyway:
+ * the person said so.
+ */
+export function queueStep<Q extends TurnQueued>(queue: readonly Q[], messages: readonly TurnMessage[]): { send: Q; rest: Q[] } | 'pause' | null {
+  if (!queue.length) return null;
+  const [next, ...rest] = queue;
+  const last = messages[messages.length - 1];
+  const asking = last?.role === 'assistant' && ((last.clarify && !last.clarify.answered) || (last.confirm && !last.confirm.answered));
+  const failed = [...messages].reverse().find((m) => m.role === 'user')?.error;
+  if (!next.steer && !next.go && (asking || failed)) return 'pause';
+  return { send: next, rest };
+}
+
+/** Resume (item 27): the next message goes whatever is waiting. */
+export function resumed<Q extends TurnQueued>(queue: readonly Q[]): Q[] {
+  return queue.length ? [{ ...queue[0], go: true }, ...queue.slice(1)] : [...queue];
+}
+
+/**
+ * Steer (item 86): the queued message goes next, carrying the words of the
+ * request it changes, and its pictures when it had some. Unchanged when the
+ * message is no longer queued.
+ */
+export function steered<Q extends TurnQueued>(queue: readonly Q[], id: string, messages: readonly TurnMessage[]): Q[] {
+  const item = queue.find((x) => x.id === id);
+  if (!item) return [...queue];
+  const working = [...messages].reverse().find((m) => m.role === 'user');
+  const steer: Q = {
+    ...item,
+    steer: true,
+    ...(working?.text ? { steerFrom: working.text } : {}),
+    ...(working?.images?.length ? { images: working.images, imageMeta: working.imageMeta } : {}),
+  };
+  return [steer, ...queue.filter((x) => x.id !== id)];
+}
+
+/**
+ * The questions the conversation waits on (item 24): Forma's last message,
+ * when it asked and has not been answered, with the description it asked
+ * about, which it carries so they can be answered after a reload.
+ */
+export function pendingQuestions<R>(messages: readonly TurnMessage[]): { request: R; messageId: string } | null {
+  const last = messages[messages.length - 1];
+  return last?.role === 'assistant' && last.clarify && !last.clarify.answered && last.clarify.request
+    ? { request: last.clarify.request as R, messageId: last.id }
+    : null;
+}
+
+/**
+ * The report a message sent again starts from (item 3): the one it found when
+ * first sent, kept this session (`bases`); none, for a message that started a
+ * project of its own (`fresh`); otherwise the report before the first change
+ * a reply to it made (`changes`); undefined, the report as it is now, when it
+ * made none.
+ */
+export function turnBase<R>(
+  ask: TurnMessage,
+  messages: readonly TurnMessage[],
+  bases: ReadonlyMap<string, R | null>,
+  changes: Readonly<Record<string, { before: R } | undefined>>,
+): R | null | undefined {
+  if (bases.has(ask.id)) return bases.get(ask.id) ?? null;
+  if (ask.fresh) return null;
+  const at = messages.indexOf(ask);
+  if (at === -1) return undefined;
+  for (const m of messages.slice(at + 1)) {
+    if (m.role === 'user') break;
+    const change = changes[m.id];
+    if (change) return change.before;
+  }
+  return undefined;
+}
+
+/**
+ * How a turn that ended is said in a hidden tab's title (item 63): a failure,
+ * a question waiting, a report made or changed, or a reply. Reads the newest
+ * request: its ask and the replies after it.
+ */
+export function turnEnding(
+  request: { ask?: TurnMessage | null; replies: readonly TurnMessage[] },
+  changes: Readonly<Record<string, unknown>>,
+): 'Request failed' | 'Question waiting' | 'Report ready' | 'Reply ready' {
+  if ([request.ask, ...request.replies].some((m) => m?.error)) return 'Request failed';
+  if (request.replies.some((m) => (m.clarify && !m.clarify.answered) || (m.confirm && !m.confirm.answered))) return 'Question waiting';
+  return request.replies.some((m) => m.result || changes[m.id]) ? 'Report ready' : 'Reply ready';
+}
+
 /**
  * The selection on the Preview as words for a redesign (agent audit item 19):
  * the chat turn sees it in the outline, and a redesign the turn hands on did
