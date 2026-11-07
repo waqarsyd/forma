@@ -19,7 +19,6 @@ import { flushSync } from 'react-dom';
  * so `hidden sm:inline` on an icon now does what it says.
  */
 import {
-  IconAlert,
   IconCheck,
   IconChevronDown,
   IconChevronsLeft,
@@ -27,8 +26,6 @@ import {
   IconClose,
   IconCopy,
   IconDownload,
-  IconEye,
-  IconEyeOff,
   IconFolder,
   IconHelp,
   IconRedo,
@@ -37,7 +34,6 @@ import {
   IconMinus,
   IconPlus,
   IconStack,
-  IconKey,
   IconSearch,
   IconShieldCheck,
   IconDoc,
@@ -89,17 +85,7 @@ import type { DraftSource, TeamMember } from './lib/formaTeam';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
 import { clearCachedModel, readCachedModelSet } from './lib/modelCache';
 import { requestsToday } from './lib/requestCount';
-import {
-  encryptApiKey,
-  decryptApiKey,
-  isVaultAvailable,
-  WrongPassphraseError,
-  cacheKeyForSession,
-  readSessionKey,
-  clearSessionKey,
-  purgeLegacyPlaintextKey,
-  EncryptedKeyRecord,
-} from './services/keyVault';
+import { cacheKeyForSession, readSessionKey, clearSessionKey, purgeLegacyPlaintextKey } from './services/keyVault';
 /* Only DURATION survives here. The workspace's motion is now the artifact's own
    CSS keyframes and transitions, so the Framer Motion presets it used to import
    are unused — see the note in CLAUDE.md about this being a deliberate departure
@@ -163,15 +149,15 @@ const RevisionsPanel = lazy(() => import('./components/RevisionsPanel'));
 const LibraryPanel = lazy(() => import('./components/LibraryPanel'));
 /* OCR's dialog, and the engine it loads, are fetched only when someone opens it. */
 const OcrDialog = lazy(() => import('./components/OcrDialog'));
-// The AI provider choice (2026-11-02), in the settings dialog only.
-const ProviderSettings = lazy(() => import('./components/ProviderSettings'));
-// What Forma remembers (2026-11-02), in the settings dialog only.
-const MemorySettings = lazy(() => import('./components/MemorySettings'));
+/* Settings (redesigned 2026-11-07, as ChatGPT's): its sections, the key check
+   and the encrypted copy of the key load when it opens. The AI provider
+   (ProviderSettings), what Forma remembers (MemorySettings) and the day's
+   requests (UsageSettings) are its sections, no longer lazy from here. */
+const SettingsDialog = lazy(() => import('./components/SettingsDialog'));
 /* DataSettings (right to left, stored procedure) and OcrSettings (languages,
    handwriting) went on 2026-11-04, with the choices they offered: Forma works
    those out per request now (lib/autoConfig.ts, lib/ocrScript.ts).
    `git log --diff-filter=D -- src/components/OcrSettings.tsx` finds them. */
-import { useFocusTrap } from './components/useFocusTrap';
 import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
    chunk, and a visitor renders exactly one of the six. Sourcemap attribution put
@@ -280,7 +266,6 @@ import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
    does: the card and the log draw it, the thread inside the card. */
 const RequestCard = lazy(() => import('./components/RequestCard'));
 const RequestLog = lazy(() => import('./components/RequestLog'));
-const UsageSettings = lazy(() => import('./components/UsageSettings'));
 const CommandMenu = lazy(() => import('./components/CommandMenu'));
 const ZoomField = lazy(() => import('./components/ZoomField'));
 const HelpMenu = lazy(() => import('./components/HelpMenu'));
@@ -1610,7 +1595,6 @@ export default function App() {
    */
   const [testRows, setTestRows] = useState<Record<string, string>[] | null>(null);
   const [testDataBusy, setTestDataBusy] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
   /**
    * The attachment being viewed full size. Carries every image of that upload so
    * a multi-page PDF can be paged through in place — the pages exist, they just
@@ -1734,8 +1718,6 @@ export default function App() {
    * without one; that went, and this comment kept saying it until 2026-11-06.
    */
   const hasApiKey = workspaceOpen(config);
-  /** The Gemini key field's own state, whichever provider answers. */
-  const hasGeminiKey = Boolean(config.customApiKey?.trim());
 
   /** A short conversational turn is in flight (not a report generation). */
   const [isChatting, setIsChatting] = useState(false);
@@ -1817,236 +1799,11 @@ export default function App() {
     }
   }, [config.customApiKey]);
 
-  /* ---- Encrypted key vault (see src/services/keyVault.ts) ---- */
-  const [passphrase, setPassphrase] = useState('');
-  const [passphraseConfirm, setPassphraseConfirm] = useState('');
-  const [vaultRecord, setVaultRecord] = useState<EncryptedKeyRecord | null>(null);
-  const [vaultBusy, setVaultBusy] = useState(false);
-  const [vaultNotice, setVaultNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const [keyCheck, setKeyCheck] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-
-  const canUseVault = !!user && isVaultAvailable();
-  // The path comes from lib/accountData rather than being spelled out here: the
-  // account-deletion path needs the identical one, the vault has no `list` rule
-  // so deletion cannot discover it, and two copies of the id meant a rename
-  // here would silently orphan every stored key.
-  const vaultDocRef = useCallback(
-    () => (user && firebase ? firebase.paths.vaultDocRef(firebase.db, user.uid) : null),
-    [user, firebase]
-  );
-
-  // Does this account have a stored key? Only the existence is fetched here —
-  // decrypting needs the passphrase, which the user supplies on demand.
-  useEffect(() => {
-    if (!canUseVault) {
-      setVaultRecord(null);
-      return;
-    }
-    const ref = vaultDocRef();
-    if (!ref || !firebase) return;
-    firebase.sdk.getDoc(ref)
-      .then((snap) => setVaultRecord(snap.exists() ? (snap.data() as EncryptedKeyRecord) : null))
-      .catch((err) => {
-        console.warn('Could not check for a stored API key:', err);
-        setVaultRecord(null);
-      });
-  }, [canUseVault, vaultDocRef, firebase]);
-
-  /**
-   * The config panel edits `config` live — every field's onChange writes straight
-   * through. That was fine while both footer buttons did the same thing, which
-   * is to say it was never fine: "Cancel" and "Save Changes" were both bare
-   * `setIsConfigOpen(false)`, so a cancelled edit was already saved and the Save
-   * button did nothing at all.
-   *
-   * Rather than rewrite every field to a draft object, the committed value is
-   * snapshotted when the panel opens and restored if the user leaves by any
-   * route other than Save — the footer Cancel, the X, or the backdrop.
-   *
-   * Explicit key actions (unlock, sync) refresh the snapshot themselves: those
-   * are deliberate button presses with their own confirmation, and undoing one
-   * because the panel was later dismissed would be its own surprise.
-   */
-  const configSnapshotRef = useRef<ReportConfig | null>(null);
-
-  /**
-   * What Forma remembered when Settings opened (2026-11-06, the workspace
-   * audit). Memory writes as it is edited, so Close without saving put the
-   * config back and left "Forget everything" done; it is put back too.
-   */
-  const memorySnapshotRef = useRef<import('./lib/memory').MemoryState | null>(null);
-  useEffect(() => {
-    if (isConfigOpen) {
-      configSnapshotRef.current = config;
-      void import('./lib/memory').then((m) => { memorySnapshotRef.current = m.readMemory(); }).catch(() => undefined);
-    } else {
-      memorySnapshotRef.current = null;
-    }
-    // `config` intentionally omitted: the snapshot must be the value as it was
-    // when the panel opened, not follow edits made while it is open.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConfigOpen]);
-
-  const dismissConfigWithoutSaving = () => {
-    if (configSnapshotRef.current) setConfig(configSnapshotRef.current);
-    configSnapshotRef.current = null;
-    const memory = memorySnapshotRef.current;
-    if (memory) void import('./lib/memory').then((m) => m.writeMemory(memory)).catch(() => undefined);
-    memorySnapshotRef.current = null;
-    setIsConfigOpen(false);
-  };
-
-  /**
-   * The dialog's keyboard contract, which `role="dialog" aria-modal="true"`
-   * promises and nothing was keeping.
-   *
-   * Three things were wrong, all confirmed in a real browser rather than
-   * reasoned about: Escape did nothing (only the attachment lightbox listened
-   * for it), focus stayed on `document.body` when the dialog opened, and Tab
-   * from the Save button walked out into the rail behind the scrim — a set of
-   * controls the user cannot see and did not ask for.
-   *
-   * The dismiss function is reached through a ref so this effect depends on
-   * `isConfigOpen` alone. Listing the handler instead would re-run the whole
-   * effect on every render, which means re-focusing the dialog on every
-   * keystroke typed into it.
-   */
-  const configDialogRef = useRef<HTMLDivElement>(null);
-
-  // This dialog stays mounted while closed, so the trap is armed by
-  // `isConfigOpen` rather than by the component's lifetime. The rationale that
-  // used to sit inline here — focus the dialog and not its first <select>, and
-  // recompute the focusable list per keystroke because the vault section comes
-  // and goes — now lives in useFocusTrap, which is the only copy of it.
-  useFocusTrap(configDialogRef, dismissConfigWithoutSaving, isConfigOpen);
-
-  /* A check result belongs to the session it was run in. Left alone, "That key
-     looks valid" was still sitting there the next time the dialog opened, over
-     a key that may since have been cleared. */
-  useEffect(() => {
-    if (!isConfigOpen) {
-      setKeyCheck(null);
-      setVaultNotice(null);
-    }
-  }, [isConfigOpen]);
-
-  const saveConfigAndClose = () => {
-    configSnapshotRef.current = null;
-    setIsConfigOpen(false);
-  };
-
-  const handleCheckKey = async () => {
-    setKeyCheck(null);
-    setVaultBusy(true);
-    try {
-      const { validateApiKey } = await loadGemini();
-      const { valid, message } = await validateApiKey(config.customApiKey || '');
-      setKeyCheck({ tone: valid ? 'ok' : 'error', text: message });
-    } finally {
-      setVaultBusy(false);
-    }
-  };
-
-  // Encrypt in the browser, upload ciphertext. The passphrase is never stored or
-  // sent anywhere, which is exactly why a forgotten one cannot be recovered.
-  const handleSyncKeyToAccount = async () => {
-    setVaultNotice(null);
-    const key = (config.customApiKey || '').trim();
-
-    if (!key) return setVaultNotice({ tone: 'error', text: 'Enter your API key first.' });
-    if (passphrase.length < 8) {
-      return setVaultNotice({ tone: 'error', text: 'Use a passphrase of at least 8 characters.' });
-    }
-    if (passphrase !== passphraseConfirm) {
-      return setVaultNotice({ tone: 'error', text: 'The two passphrases do not match.' });
-    }
-
-    const ref = vaultDocRef();
-    if (!ref) return;
-
-    setVaultBusy(true);
-    try {
-      const record = await encryptApiKey(key, passphrase);
-      await (await loadFirebase()).sdk.setDoc(ref, record);
-      setVaultRecord(record);
-      setPassphrase('');
-      setPassphraseConfirm('');
-      setVaultNotice({
-        tone: 'ok',
-        text: 'Key encrypted and synced. Unlock it with your passphrase on any device.',
-      });
-    } catch (err: any) {
-      console.error('Failed to sync key:', err);
-      setVaultNotice({ tone: 'error', text: err?.message || 'Could not sync the key.' });
-    } finally {
-      setVaultBusy(false);
-    }
-  };
-
-  const handleUnlockKey = async () => {
-    setVaultNotice(null);
-    if (!vaultRecord) return;
-    if (!passphrase) return setVaultNotice({ tone: 'error', text: 'Enter your passphrase.' });
-
-    setVaultBusy(true);
-    try {
-      const key = await decryptApiKey(vaultRecord, passphrase);
-      setConfig((prev) => ({ ...prev, customApiKey: key }));
-      // Unlocking is a deliberate action with its own confirmation below, so it
-      // survives a later Cancel — fold it into the snapshot the panel would
-      // otherwise restore.
-      if (configSnapshotRef.current) {
-        configSnapshotRef.current = { ...configSnapshotRef.current, customApiKey: key };
-      }
-      setPassphrase('');
-      setVaultNotice({ tone: 'ok', text: 'Key unlocked for this session.' });
-    } catch (err: any) {
-      setVaultNotice({
-        tone: 'error',
-        text: err instanceof WrongPassphraseError ? err.message : 'Could not unlock the key.',
-      });
-    } finally {
-      setVaultBusy(false);
-    }
-  };
-
-  const handleForgetStoredKey = async () => {
-    const ref = vaultDocRef();
-    if (!ref) return;
-    setVaultBusy(true);
-    try {
-      await (await loadFirebase()).sdk.deleteDoc(ref);
-      setVaultRecord(null);
-      setVaultNotice({ tone: 'ok', text: 'Stored key removed from your account.' });
-    } catch (err: any) {
-      console.error('Failed to remove stored key:', err);
-      setVaultNotice({ tone: 'error', text: 'Could not remove the stored key.' });
-    } finally {
-      setVaultBusy(false);
-    }
-  };
-
-  /**
-   * Wipe the key from this session without touching the encrypted copy.
-   *
-   * The confirmation goes through `keyCheck`, not `vaultNotice`, and that is
-   * the whole point: `vaultNotice` renders inside the `canUseVault` block,
-   * which is `!!user && isVaultAvailable()`. The **Clear** button beside the
-   * key field appears whenever `hasApiKey`, signed in or not — so signed out
-   * this told the user nothing at all. Measured 2026-09-08: the key really was
-   * cleared and no element on the page said the word "cleared".
-   *
-   * `keyCheck` is the right home anyway, gated on nothing and rendered
-   * directly under the key row, which is where the thing just happened.
-   * `vaultNotice` is cleared alongside so a stale sync message cannot sit
-   * under a key that is no longer here.
-   */
-  const handleClearKeyFromSession = () => {
-    setConfig((prev) => ({ ...prev, customApiKey: '' }));
-    clearSessionKey();
-    setVaultNotice(null);
-    setKeyCheck({ tone: 'ok', text: 'Key cleared from this browser session.' });
-  };
+  /* The encrypted copy of the key (services/keyVault.ts), checking the key,
+     and clearing it from this tab live in Settings since its redesign of
+     2026-11-07 (components/SettingsDialog.tsx), which loads them when it
+     opens. A change there takes effect as it is made, as in ChatGPT and
+     Gemini, so the snapshot that Cancel put back went with Cancel. */
   const [activeTab, setActiveTab] = useState<ActiveTab>('ui');
   // Sub-view inside the "Specs & REPX" tab. The tab has always been named for
   // both, but only ever rendered the specification.
@@ -3413,11 +3170,10 @@ export default function App() {
   const forgetSignedOut = () => {
     setConfig((prev) => ({ ...prev, customApiKey: '', openRouterKey: '' }));
     clearSessionKey();
-    setPassphrase('');
-    setPassphraseConfirm('');
-    setVaultRecord(null);
-    setVaultNotice(null);
-    setKeyCheck(null);
+    // Settings closes, and with it go a passphrase typed there, the stored
+    // key's record and any line about either: they are the dialog's own
+    // state since its redesign (2026-11-07), and leave when it unmounts.
+    setIsConfigOpen(false);
     handleClearChat('drop');
     setRailPanel('review');
   };
@@ -4815,7 +4571,7 @@ export default function App() {
    * on mount; false for everyone who has not installed it, which is the normal
    * case. It gates whether **Open in designer** can be clicked, not whether it
    * is drawn — the button is always in the bar and explains itself when the
-   * companion is not answering. Same detection contract as `canUseVault`; the
+   * companion is not answering. Same detection contract as `canUseVault` in SettingsDialog; the
    * difference is that an undiscoverable capability is its own failure.
    */
   const [designerReady, setDesignerReady] = useState(false);
@@ -6526,222 +6282,15 @@ export default function App() {
         </Suspense>
       )}
       {isConfigOpen && (
-        <div className="wb-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) dismissConfigWithoutSaving(); }}>
-          <div
-            className="wb-modal wb-reg-marks"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="config-title"
-            ref={configDialogRef}
-            /* Focusable only programmatically: the effect above puts focus here
-               on open so the dialog is where the keyboard is, without making it
-               a Tab stop of its own afterwards. */
-            tabIndex={-1}
-          >
-            <div className="wb-modal-head">
-              <h2 id="config-title">Settings</h2>
-              <button className="wb-pill wb-pill--round" onClick={dismissConfigWithoutSaving} aria-label="Close without saving">
-                <IconClose size={16} />
-              </button>
-            </div>
-
-            {/* Two columns above 760px, one below — see workspace.css. The split
-                is the one the code already makes: everything on the left is a
-                property of the document and goes through `reportConfigStore`'s
-                allowlist; everything on the right is the key, which goes to
-                `sessionStorage` and the vault and must never travel with it. */}
-            <div className="wb-modal-body">
-              <div className="wb-modal-col">
-              {/* Usage today first, as Stitch's settings open with its daily credits (2026-11-05). */}
-              <Suspense fallback={null}>
-                <UsageSettings />
-              </Suspense>
-              {/* What used to be chosen here is worked out for each request
-                  since 2026-11-04 (lib/autoConfig.ts, lib/ocrScript.ts): the
-                  DevExpress version, unit, paper, direction and data source,
-                  and the language and handwriting of a picture, from what the
-                  request brings. The owner's rule is that nobody is asked what
-                  the input already says. A header and footer are reproduced
-                  from the source, or asked for in words, like anything else. */}
-              <div className="wb-fset">
-                <div className="wb-eyebrow"><b>auto</b>Worked out for you<span className="wb-fade" /></div>
-                <p className="wb-hint">
-                  Forma reads the DevExpress version and unit from a report you bring, the paper from your page or
-                  your words, right to left from the text, the stored procedure from your words or data, and the
-                  language of a picture as it reads it. Ask in the chat for anything else.
-                </p>
-                {detectedRef.current && (
-                  <ul className="wb-hint" aria-label="Worked out for the last request">
-                    {detectedRef.current.reasons.map((reason) => <li key={reason}>{reason}</li>)}
-                  </ul>
-                )}
-              </div>
-              <Suspense fallback={null}>
-                <MemorySettings />
-              </Suspense>
-
-              </div>
-
-              <div className="wb-modal-col">
-              <Suspense fallback={null}>
-                <ProviderSettings config={config} onChange={(changes) => setConfig(prev => ({ ...prev, ...changes }))} />
-              </Suspense>
-              <div className="wb-fset">
-                <div className="wb-eyebrow"><b>key</b>Your Gemini key<span className="wb-fade" /></div>
-                <div>
-                  <label className="wb-lbl" htmlFor="cfg-key">
-                    API key <span className="wb-req">(required)</span>
-                  </label>
-                  <div className="wb-keyrow">
-                    <span className="wb-wrap">
-                      <input
-                        className="wb-ctl"
-                        id="cfg-key"
-                        type={showApiKey ? 'text' : 'password'}
-                        placeholder="AIza… or AQ.…"
-                        style={{ paddingRight: 38 }}
-                        value={config.customApiKey || ''}
-                        onChange={(e) => setConfig({ ...config, customApiKey: e.target.value })}
-                        /* The whole point of this app is that the key is not
-                           written to disk. A password manager offering to save
-                           it, or the browser offering to fill it, undoes that
-                           from outside — and the field is revealed as plain text
-                           by the eye button, where autocorrect would happily
-                           rewrite an API key.
-
-                           For the same reason this input is deliberately NOT
-                           inside a <form>. Chromium logs a warning about that on
-                           every load — "[DOM] Password field is not contained in
-                           a form" — and it is the browser objecting to the
-                           correct behaviour: that hint exists to help password
-                           managers recognise sign-in forms, which is the one
-                           thing this field must never look like. Do not silence
-                           it by adding a form wrapper; that trades a console
-                           line for the security property the app is built on.
-                           If Enter-to-submit is ever wanted here, wire an
-                           onKeyDown to the check-key handler instead. */
-                        aria-describedby="cfg-key-note"
-                        autoComplete="off"
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                        spellCheck={false}
-                      />
-                      <button
-                        className="wb-peek"
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        aria-label={showApiKey ? 'Hide key' : 'Show key'}
-                      >
-                        {showApiKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                      </button>
-                    </span>
-                    {/* Disabled while it runs: the check is a network round trip
-                        to Google, and nothing about the button said so, so a
-                        second click fired a second request. */}
-                    <button
-                      className="wb-pill wb-pill--outline"
-                      onClick={handleCheckKey}
-                      disabled={vaultBusy || !(config.customApiKey || '').trim()}
-                    >
-                      {vaultBusy ? 'Checking…' : 'Check key'}
-                    </button>
-                    {hasGeminiKey && (
-                      <button className="wb-pill" onClick={handleClearKeyFromSession} title="Clear the key from this tab">
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {keyCheck && (
-                  <div className={`wb-note-line ${keyCheck.tone === 'ok' ? 'wb-ok' : 'wb-warn'}`}>
-                    <span className="wb-ic">{keyCheck.tone === 'ok' ? <IconCheck size={13} /> : <IconAlert size={13} />}</span>
-                    <span>{keyCheck.text}</span>
-                  </div>
-                )}
-
-                <div className="wb-note-line" id="cfg-key-note">
-                  <span className="wb-ic"><IconKey size={13} /></span>
-                  <span>
-                    The key goes from this browser straight to Google. It is held for this tab
-                    only and never written to disk.
-                  </span>
-                </div>
-              </div>
-
-              {canUseVault && (
-                <div className="wb-fset">
-                  <div className="wb-eyebrow"><b>opt in</b>Encrypted sync<span className="wb-fade" /></div>
-                  <div className="wb-grid2">
-                    <div>
-                      <label className="wb-lbl" htmlFor="cfg-pass">Passphrase</label>
-                      <input
-                        className="wb-ctl"
-                        id="cfg-pass"
-                        type="password"
-                        placeholder="At least 8 characters"
-                        value={passphrase}
-                        onChange={(e) => setPassphrase(e.target.value)}
-                        /* `new-password` rather than `off`: this is the one
-                           field a manager may legitimately generate for, and it
-                           stops it being autofilled with the account password,
-                           which would silently become the vault passphrase. */
-                        autoComplete="new-password"
-                      />
-                    </div>
-                    <div>
-                      <label className="wb-lbl" htmlFor="cfg-pass2">Confirm</label>
-                      <input
-                        className="wb-ctl"
-                        id="cfg-pass2"
-                        type="password"
-                        placeholder="Confirm passphrase"
-                        value={passphraseConfirm}
-                        onChange={(e) => setPassphraseConfirm(e.target.value)}
-                        autoComplete="new-password"
-                      />
-                    </div>
-                  </div>
-
-                  {/* The artifact drew the fields; these are the actions behind them. */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <button className="wb-pill wb-pill--outline" onClick={handleSyncKeyToAccount} disabled={vaultBusy}>
-                      <IconShieldCheck size={14} />
-                      {vaultRecord ? 'Replace stored key' : 'Store encrypted'}
-                    </button>
-                    {vaultRecord && (
-                      <>
-                        <button className="wb-pill wb-pill--outline" onClick={handleUnlockKey} disabled={vaultBusy}>Unlock</button>
-                        <button className="wb-pill" onClick={handleForgetStoredKey} disabled={vaultBusy}>Forget</button>
-                      </>
-                    )}
-                  </div>
-
-                  {vaultNotice && (
-                    <div className={`wb-note-line ${vaultNotice.tone === 'ok' ? 'wb-ok' : 'wb-warn'}`}>
-                      <span className="wb-ic">{vaultNotice.tone === 'ok' ? <IconCheck size={13} /> : <IconAlert size={13} />}</span>
-                      <span>{vaultNotice.text}</span>
-                    </div>
-                  )}
-
-                  {/* Stated plainly because it is true and unrecoverable. */}
-                  <div className="wb-note-line wb-warn">
-                    <span className="wb-ic"><IconWarn size={13} /></span>
-                    <span>
-                      <b>There is no reset.</b> Your passphrase never leaves this browser, so if you
-                      forget it the stored key cannot be recovered — by you or by anyone running Forma.
-                    </span>
-                  </div>
-                </div>
-              )}
-              </div>
-            </div>
-
-            <div className="wb-modal-foot">
-              <button className="wb-pill wb-pill--outline" onClick={dismissConfigWithoutSaving}>Cancel</button>
-              <button className="wb-pill wb-pill--accent" onClick={saveConfigAndClose}>Save configuration</button>
-            </div>
-          </div>
-        </div>
+        <Suspense fallback={null}>
+          <SettingsDialog
+            config={config}
+            onChange={(changes) => setConfig((prev) => ({ ...prev, ...changes }))}
+            user={user ? { uid: user.uid } : null}
+            workedOut={detectedRef.current?.reasons ?? null}
+            onClose={() => setIsConfigOpen(false)}
+          />
+        </Suspense>
       )}
 
       {/* Rendered from the shell rather than from the rail's menu, which

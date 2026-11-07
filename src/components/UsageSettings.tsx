@@ -1,6 +1,7 @@
 /**
  * Usage today, at the top of Settings (2026-11-05), as Google Stitch's
- * settings page opens with its daily credits. Forma has no credits of its own:
+ * settings page opens with its daily credits; the first row of its General
+ * section since the redesign of 2026-11-07 (SettingsDialog.tsx). Forma has no credits of its own:
  * each Gemini model's free tier allows so many requests a day, and Forma
  * counts what this browser sent to each (`lib/requestCount.ts`). A bar is
  * drawn only against a limit Google has stated, which it does in the 429 that
@@ -21,12 +22,16 @@ export default function UsageSettings({ now = new Date() }: { now?: Date }) {
   const hours = Math.floor(reset / 3_600_000);
   const minutes = Math.floor((reset % 3_600_000) / 60_000);
   return (
-    <div className="wb-fset">
-      <div className="wb-eyebrow">
-        <b>day</b>Usage today<span className="wb-fade" />
+    <div className="wb-set-row is-stack">
+      <div className="wb-set-text">
+        <span className="wb-set-label">Requests today</span>
+        <p>
+          Sent from this browser. Google's free limits are per model per day and start again at midnight Pacific time, in {hours} h {minutes} min. A
+          model's limit shows once Google has stated it.
+        </p>
       </div>
       {models.length === 0 ? (
-        <p className="wb-hint">No requests from this browser today.</p>
+        <p className="wb-set-note">No requests from this browser today.</p>
       ) : (
         <ul className="wb-usage" aria-label="Requests sent today, by model">
           {models.map((id) => {
@@ -46,10 +51,6 @@ export default function UsageSettings({ now = new Date() }: { now?: Date }) {
           })}
         </ul>
       )}
-      <p className="wb-hint">
-        Sent from this browser. Google's free limits are per model per day and start again at midnight Pacific time, in {hours} h {minutes} min. A
-        model's limit shows once Google has stated it.
-      </p>
     </div>
   );
 }

@@ -282,12 +282,16 @@ src/
                        OcrDialog (the review the image viewer opens: the text
                        OCR read, its detected layout drawn over the source,
                        and Build .repx with no model),
-                       ProviderSettings (which AI answers, in Settings:
+                       SettingsDialog (Settings as ChatGPT's: General, AI,
+                       Gemini key and Memory, a change taking effect as it is
+                       made, with settings.css beside it), whose sections are
+                       ProviderSettings (which AI answers:
                        Automatic, which is Gemini, a local AI or OpenRouter's
                        free models; Forma Offline went into Automatic on
                        2026-11-05),
                        MemorySettings (what Forma remembers, to switch off,
-                       change or forget),
+                       change or forget) and UsageSettings (the day's
+                       requests),
                        ChatThread
                        (the review column's transcript, lifted out of App.tsx
                        once chatSession.ts held its rules — Forma's working
@@ -313,8 +317,8 @@ src/
                        hooks (useFocusTrap; useLayer, which puts a menu or
                        dialog on the Escape stack; useMenuKeys, a menu's
                        arrow keys and focus return; useFitScale, the zoom
-                       that fits a page to its pane), overlays.css and the
-                       tests:
+                       that fits a page to its pane), overlays.css,
+                       settings.css and the tests:
                        legalDisclosure, which reads ContactPage and
                        index.html off disk, and the component render tests,
                        the only ones outside lib/, services/ and server/.

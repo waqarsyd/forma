@@ -1206,7 +1206,6 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-fset { display: flex; flex-direction: column; gap: 11px; }
 .wb-fset > .wb-eyebrow { padding-bottom: 2px; }
 .wb-lbl { display: block; margin-bottom: 5px; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
-.wb-lbl .wb-req { color: var(--bad-ink); }
 .wb-ctl {
   width: 100%;
   padding: 9px 12px;
@@ -1219,44 +1218,16 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 }
 .wb-ctl:focus { outline: none; border-color: var(--ink-2); }
 .wb-ctl::placeholder { color: var(--ink-faint); }
-/* appearance:none strips the native caret, so the field looked like a text
-   input. The chevron is markup rather than a background image because a data-URI
-   SVG cannot read a theme token for its stroke. */
-select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
-.wb-sel { position: relative; display: block; }
-.wb-sel .wb-caret {
-  position: absolute;
-  right: 11px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  color: var(--ink-faint);
-}
-.wb-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+/* The settings dialog's select with its drawn chevron, the key row with its
+   eye, the two-column passphrase grid, the required mark and the green note
+   went on 2026-11-07 with the dialog's redesign (components/settings.css),
+   nothing else having used them. */
 /* A row of pills that wraps: the OCR dialog's pages. `textarea.wb-area` went
    on 2026-11-06 with nothing left using it, the Describe dialog it styled
    having gone on 2026-11-01. */
 .wb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .wb-checkrow { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink); cursor: pointer; }
 .wb-checkrow input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
-.wb-keyrow { display: flex; gap: 8px; align-items: flex-start; }
-.wb-keyrow .wb-wrap { position: relative; flex: 1; }
-.wb-keyrow .wb-peek {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  color: var(--ink-faint);
-  cursor: pointer;
-}
-.wb-keyrow .wb-peek:hover { color: var(--ink); background: var(--track); }
 /* Notes under a field. Previously a bare icon-plus-text row, which left the two
    stacked notes reading as loose sentences with no relationship to the field
    above. They are now inset blocks with the icon in a tinted disc, and the tint
@@ -1285,8 +1256,6 @@ select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
   background: var(--track);
   color: var(--ink-faint);
 }
-.wb-note-line.wb-ok { border-color: var(--ok-line); background: var(--ok-wash); }
-.wb-note-line.wb-ok .wb-ic { background: color-mix(in srgb, var(--ok-ink) 16%, transparent); color: var(--ok-ink); }
 .wb-note-line.wb-warn { border-color: var(--rule); background: var(--accent-wash); }
 .wb-note-line.wb-warn .wb-ic { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
 /* The error line's close (2026-11-06). */
@@ -1662,7 +1631,11 @@ select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
    (`reportConfigStore`'s allowlist versus `keyVault`), it halves the height, and
    it is the difference between a form you read and a form you scroll. Under
    760px it collapses back to the single column, which is the artifact's own
-   arrangement and the only one that fits a phone. */
+   arrangement and the only one that fits a phone.
+
+   The config dialog itself left this shape on 2026-11-07, redesigned as
+   ChatGPT's settings (components/settings.css); the account and OCR dialogs
+   are the two still drawn by these rules. */
 .wb-root .wb-modal { max-width: 720px; }
 
 /* The dialog takes focus on open so the keyboard is inside it, and `.wb-root
@@ -1693,16 +1666,6 @@ select.wb-ctl { appearance: none; cursor: pointer; padding-right: 34px; }
 @media (max-width: 760px) {
   .wb-root .wb-modal-body { grid-template-columns: 1fr; }
 }
-
-/* The row was `align-items: flex-start`, which was invisible while the field
-   and the button were both 30px and became a button stuck to the top of a 49px
-   field once they were not. Centred instead, and allowed to wrap: at 372px the
-   field was squeezed to 221px with the button beside it. */
-.wb-root .wb-keyrow {
-  align-items: center;
-  flex-wrap: wrap;
-}
-.wb-root .wb-keyrow .wb-wrap { min-width: 190px; }
 
 /* Nothing to resize once the layout has stacked. The hide toggle survives,
    because hiding is the one width change that still means something in a

@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,585 tests in 150 files** — under the `node` environment
+`npm test` runs Vitest over **2,593 tests in 151 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -83,7 +83,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/RequestCard` | 9 | the conversation a request at a time (2026-11-05), as Stitch's agent card: the ask pinned in a pill and opened by its arrow, the card folded to its mark, Edit and Try again from the pill; since 2026-11-06 the pill's edit, withdraw and versions, moved from `ChatThread`: nothing sent for unchanged text, a message sent with pictures edited and sent again, which version shows, none drawn for one, withdrawing only once asked twice, and both held while something runs. jsdom |
 | `components/RequestLog` | 3 | every request beneath the card (2026-11-05), as Stitch's Agent log: the count folded, newest first with a mark each, picking one, the search and the export; since 2026-11-06 Stop lives in the box alone. jsdom |
 | `components/SelectionToolbar` | 2 | the toolbar over a selection on Preview (2026-11-05), as Stitch's: the selection named, Format from its menu, Edit text for one control only, Delete and Clear under More. jsdom |
-| `components/UsageSettings` | 2 | Usage today at the top of Settings (2026-11-05), as Stitch's daily credits: requests by model, most first, a bar only against a limit Google stated, the time to the reset, and the empty day. jsdom |
+| `components/UsageSettings` | 2 | Usage today at the top of Settings (2026-11-05), as Stitch's daily credits, the General section's first row since 2026-11-07: requests by model, most first, a bar only against a limit Google stated, the time to the reset, and the empty day. jsdom |
 | `components/CommandMenu` | 4 | the command menu, Ctrl+K (2026-11-06), as Stitch's: narrowed by every word typed, the arrows and Enter running the highlighted command, the empty answer and Escape; and the shortcuts list beside it, by group, with Cmd on a Mac and Ctrl on a PC. jsdom |
 | `components/ExportPanel` | 3 | every way out in one panel (2026-11-06), as Stitch's Export: the .repx from its first row, each print format asked of the Preview by its own name, the designer greyed for a report with no XML, and Escape. jsdom |
 | `components/ProjectMenu` | 4 | the open project's menu from its title (2026-11-06), as Stitch's: Rename in place and nothing sent for an unchanged name, a Delete that asks once and Keep, opened at Rename's field or Delete's question, Duplicate and Archive and no Download (Export has it), and what an unsaved project cannot do greyed. jsdom |
@@ -94,6 +94,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/SharedReportPage` | 2 | a shared link opened (2026-11-06): the report, its name and its download when it may be read, and otherwise a page asking a visitor to sign in or naming the account that is signed in. jsdom |
 | `components/ZoomField` | 6 | the zoom's number as a field you type a size into (2026-11-06, the owner's request): 150 and 150% alike inside 10% to 400%, nothing set when nothing changed, Escape putting the number back, the arrows stepping by ten, Stitch's 100% / Fit / Selection, and a choice from the menu kept over the size typed before it, the bug the owner's Chrome found. jsdom |
 | `components/useMenuKeys` | 2 | what a menu owes a keyboard (2026-11-06, the workspace audit): focus on its first item, the arrows past a disabled item and round the ends, Home and End, and focus back to the button that opened it. jsdom |
+| `components/SettingsDialog` | 8 | Settings as ChatGPT's (2026-11-07, the owner's request): opened at the Gemini key while there is none and at General once there is, the sections by click and by the arrows, Home and End, a choice applied as it is made with no Save or Cancel, Add it from the AI section to the key, the key checked and cleared with a line that says so, Forget everything asking first and Cancel keeping the memory, the stored key forgotten only after asking, and Close and Escape. Firebase and the Gemini client are stand-ins. jsdom |
 | `components/DataBinding` | 18 | jsdom |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
@@ -227,7 +228,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,585 in 150 files** — and that total is the arithmetic sum of the column above
+**Total: 2,593 in 151 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -241,7 +242,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2467** against a real 2,585 (2026-11-06; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
+A grep for `\bit(` answers **2475** against a real 2,593 (2026-11-07; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

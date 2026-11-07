@@ -1,25 +1,29 @@
 /**
  * Which AI designs a report: the provider setup the owner asked for on
  * 2026-11-02, in the manner of Hermes Agent (docs/proposals/own-model.md,
- * milestone 3). Lives in the settings dialog, loaded only when it opens.
+ * milestone 3). The AI section of Settings (SettingsDialog.tsx), loaded only
+ * when it opens.
  *
  * Three choices, all free to use, since the owner merged Automatic and Forma
  * Offline on 2026-11-05 and made an AI the entry point to any work:
- * - Automatic: Gemini, with the key below.
+ * - Automatic: Gemini, with the key in the Gemini key section.
  * - Local AI: Ollama or LM Studio on this computer.
  * - OpenRouter: its free models, with a key of the user's own.
  * For a local server or OpenRouter, "Find models" asks the server what it
  * offers, and a model that reads images is listed first. Below them,
  * Forma's vision model can be named as a helper to any of them
  * (2026-11-03, lib/formaTeam.ts).
+ *
+ * The three are a segmented control since the redesign of 2026-11-07, as the
+ * theme is in the corner's "?" menu; they were radio buttons in a column.
  */
-import { useEffect, useRef, useState } from 'react';
-import { IconAlert, IconCheck, IconChevronDown } from './landing/icons';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { IconAlert, IconCheck } from './landing/icons';
 import { aiReady, DEFAULT_LOCAL_URL, isVisionOnly, OPENROUTER_URL, PROVIDER_NAMES, PROVIDERS, type AiProvider } from '../lib/aiProvider';
 import type { ReportConfig } from '../services/geminiService';
 
 const NOTES: Record<AiProvider, string> = {
-  auto: 'Google Gemini with your own free key, below. Forma starts once a key is in.',
+  auto: 'Google Gemini with your own free key. Forma starts once a key is in.',
   local: 'Ollama or LM Studio on this computer: free, unlimited and private. Choose a model that reads images to design from pictures.',
   openrouter: "OpenRouter's free models, with a key of your own. Free models have daily limits, and their providers may log requests.",
 };
@@ -27,9 +31,11 @@ const NOTES: Record<AiProvider, string> = {
 export interface ProviderSettingsProps {
   config: ReportConfig;
   onChange: (changes: Partial<ReportConfig>) => void;
+  /** Open the Gemini key section, which Forma needs whichever AI designs. */
+  onKey: () => void;
 }
 
-export default function ProviderSettings({ config, onChange }: ProviderSettingsProps) {
+export default function ProviderSettings({ config, onChange, onKey }: ProviderSettingsProps) {
   const provider = (config.provider ?? 'auto') as AiProvider;
   const [models, setModels] = useState<{ id: string; vision: boolean }[] | null>(null);
   const [finding, setFinding] = useState(false);
@@ -43,6 +49,21 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
     setModels(null);
     setNote(null);
   }, [provider]);
+
+  const choose = (p: AiProvider) => {
+    onChange({ provider: p });
+    setModels(null);
+    setNote(null);
+  };
+  // A radio group's keys: the arrows move the choice and the focus with it.
+  const step = (e: KeyboardEvent<HTMLDivElement>) => {
+    const by = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!by) return;
+    e.preventDefault();
+    const next = (PROVIDERS.indexOf(provider) + by + PROVIDERS.length) % PROVIDERS.length;
+    choose(PROVIDERS[next]);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+  };
 
   const find = async () => {
     const asked = provider;
@@ -71,71 +92,85 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
   };
 
   const modelField = (value: string | undefined, set: (v: string) => void, id: string) => (
-    <div>
-      <label className="wb-lbl" htmlFor={id}>
-        Model
-      </label>
-      <div className="wb-keyrow">
+    <div className="wb-set-row is-stack">
+      <div className="wb-set-text">
+        <label className="wb-set-label" htmlFor={id}>Model</label>
+        <p>{provider === 'openrouter' ? 'Find free models lists the ones your key can use.' : 'Find models lists what the server has, those that read images first.'}</p>
+      </div>
+      <div className="wb-set-field">
         {models?.length ? (
-          <span className="wb-sel">
-            <select className="wb-ctl" id={id} value={value || ''} onChange={(e) => set(e.target.value)}>
-              <option value="">Choose a model</option>
-              {/* The model already chosen stays chosen when the list lacks it (2026-11-06). */}
-              {value && !models.some((m) => m.id === value) && <option value={value}>{value}</option>}
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                  {m.vision ? ' (reads images)' : ''}
-                </option>
-              ))}
-            </select>
-            {/* The chevron `.wb-sel .wb-caret` draws, which the field had no
-                markup for, so it read as a text field (2026-11-06). */}
-            <IconChevronDown size={14} className="wb-caret" />
-          </span>
+          <select className="wb-set-input" id={id} value={value || ''} onChange={(e) => set(e.target.value)}>
+            <option value="">Choose a model</option>
+            {/* The model already chosen stays chosen when the list lacks it (2026-11-06). */}
+            {value && !models.some((m) => m.id === value) && <option value={value}>{value}</option>}
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id}
+                {m.vision ? ' (reads images)' : ''}
+              </option>
+            ))}
+          </select>
         ) : (
-          <input className="wb-ctl" id={id} type="text" placeholder={provider === 'local' ? 'e.g. qwen2.5vl:7b' : 'e.g. a model ending :free'} value={value || ''} onChange={(e) => set(e.target.value)} autoComplete="off" spellCheck={false} />
+          <input className="wb-set-input" id={id} type="text" placeholder={provider === 'local' ? 'e.g. qwen2.5vl:7b' : 'e.g. a model ending :free'} value={value || ''} onChange={(e) => set(e.target.value)} autoComplete="off" spellCheck={false} />
         )}
-        <button className="wb-pill wb-pill--outline" onClick={find} disabled={finding || (provider === 'openrouter' && !config.openRouterKey?.trim())}>
+        <button type="button" className="wb-pill wb-pill--outline" onClick={find} disabled={finding || (provider === 'openrouter' && !config.openRouterKey?.trim())}>
           {finding ? 'Finding…' : provider === 'openrouter' ? 'Find free models' : 'Find models'}
         </button>
       </div>
+      {note && (
+        <p className="wb-set-note" role="status">
+          <IconAlert size={13} />
+          <span>{note}</span>
+        </p>
+      )}
     </div>
   );
 
   return (
-    <div className="wb-fset">
-      <div className="wb-eyebrow">
-        <b>ai</b>AI provider<span className="wb-fade" />
-      </div>
-      <div role="radiogroup" aria-label="AI provider">
-        {PROVIDERS.map((p) => (
-          <label key={p} className="wb-checkrow" style={{ alignItems: 'flex-start' }}>
-            <input
-              type="radio"
-              name="ai-provider"
-              checked={provider === p}
-              onChange={() => {
-                onChange({ provider: p });
-                setModels(null);
-                setNote(null);
-              }}
-            />
+    <>
+      <div className="wb-set-row is-stack">
+        <div className="wb-set-text">
+          <span className="wb-set-label" id="wb-set-provider">AI provider</span>
+          <p>{NOTES[provider]}</p>
+        </div>
+        <div className="wb-set-seg" role="radiogroup" aria-labelledby="wb-set-provider" onKeyDown={step}>
+          {PROVIDERS.map((p) => (
+            <button key={p} type="button" role="radio" aria-checked={provider === p} tabIndex={provider === p ? 0 : -1} onClick={() => choose(p)}>
+              {PROVIDER_NAMES[p]}
+            </button>
+          ))}
+        </div>
+        {(provider === 'local' || provider === 'openrouter') && (
+          <p className={`wb-set-note ${aiReady(config) ? 'is-ok' : 'is-bad'}`}>
+            {aiReady(config) ? <IconCheck size={13} /> : <IconAlert size={13} />}
             <span>
-              <b>{PROVIDER_NAMES[p]}</b>
-              {provider === p && <span style={{ display: 'block', opacity: 0.75, fontSize: '0.92em' }}>{NOTES[p]}</span>}
+              {aiReady(config)
+                ? `${PROVIDER_NAMES[provider]} is ready.`
+                : `${PROVIDER_NAMES[provider]} needs ${provider === 'openrouter' && !config.openRouterKey?.trim() ? 'a key and ' : ''}a model.`}
             </span>
-          </label>
-        ))}
+          </p>
+        )}
+        {/* The Gemini key opens the workspace whichever AI designs (2026-11-05),
+            so choosing another one does not let anyone past it. */}
+        {provider !== 'auto' && !config.customApiKey?.trim() && (
+          <p className="wb-set-note is-bad">
+            <IconAlert size={13} />
+            <span>
+              Forma also needs your Gemini key to start.{' '}
+              <button type="button" className="wb-set-link" onClick={onKey}>Add it</button>
+            </span>
+          </p>
+        )}
       </div>
 
       {provider === 'local' && (
         <>
-          <div>
-            <label className="wb-lbl" htmlFor="cfg-local-url">
-              Server address
-            </label>
-            <input className="wb-ctl" id="cfg-local-url" type="text" value={config.localUrl || DEFAULT_LOCAL_URL} onChange={(e) => onChange({ localUrl: e.target.value })} autoComplete="off" spellCheck={false} />
+          <div className="wb-set-row is-stack">
+            <div className="wb-set-text">
+              <label className="wb-set-label" htmlFor="cfg-local-url">Server address</label>
+              <p>Ollama answers at port 11434, LM Studio at 1234.</p>
+            </div>
+            <input className="wb-set-input" id="cfg-local-url" type="text" value={config.localUrl || DEFAULT_LOCAL_URL} onChange={(e) => onChange({ localUrl: e.target.value })} autoComplete="off" spellCheck={false} />
           </div>
           {modelField(config.localModel, (v) => onChange({ localModel: v }), 'cfg-local-model')}
         </>
@@ -143,14 +178,15 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
 
       {provider === 'openrouter' && (
         <>
-          <div>
-            <label className="wb-lbl" htmlFor="cfg-or-key">
-              OpenRouter key
-            </label>
+          <div className="wb-set-row is-stack">
+            <div className="wb-set-text">
+              <label className="wb-set-label" htmlFor="cfg-or-key">OpenRouter key</label>
+              <p>Held for this tab only, like the Gemini key.</p>
+            </div>
             {/* Not in a form, for the reason the Gemini key field gives: a
                 password manager offering to save it would undo keeping it off disk. */}
             <input
-              className="wb-ctl"
+              className="wb-set-input"
               id="cfg-or-key"
               type="password"
               placeholder="sk-or-…"
@@ -166,63 +202,42 @@ export default function ProviderSettings({ config, onChange }: ProviderSettingsP
         </>
       )}
 
-      {note && (
-        <div className="wb-note-line" role="status"><span className="wb-ic"><IconAlert size={13} /></span><span>
-          {note}
-        </span></div>
-      )}
-      {(provider === 'local' || provider === 'openrouter') && (
-        <div className={`wb-note-line ${aiReady(config) ? 'wb-ok' : 'wb-warn'}`}>
-          <span className="wb-ic">{aiReady(config) ? <IconCheck size={13} /> : <IconAlert size={13} />}</span>
-          <span>{aiReady(config) ? `${PROVIDER_NAMES[provider]} is ready.` : `${PROVIDER_NAMES[provider]} needs ${provider === 'openrouter' && !config.openRouterKey?.trim() ? 'a key and ' : ''}a model.`}</span>
-        </div>
-      )}
-      {/* The Gemini key opens the workspace whichever AI designs (2026-11-05),
-          so choosing another one does not let anyone past it. */}
-      {provider !== 'auto' && !config.customApiKey?.trim() && (
-        <div className="wb-note-line wb-warn">
-          <span className="wb-ic"><IconAlert size={13} /></span>
-          <span>Forma also needs your Gemini key, below, to start.</span>
-        </div>
-      )}
-
       {/* Forma's team (2026-11-03, lib/formaTeam.ts): the vision model as a
           helper beside whichever AI designs. Hidden when the AI chosen above
           is the vision model itself, which then works alone. */}
       {!isVisionOnly(config) && (
         <>
-          <div className="wb-eyebrow" style={{ marginTop: 14 }}>
-            <b>team</b>Forma&apos;s vision model<span className="wb-fade" />
-          </div>
-          <p style={{ margin: 0, opacity: 0.75, fontSize: '0.92em' }}>
-            Optional. Forma&apos;s own vision model, on Ollama or LM Studio on this computer, reads a picture&apos;s layout and OCR places its words in it. The AI above
-            designs from that draft, and if it cannot answer, the draft is your report.
-          </p>
-          {provider !== 'local' && (
-            <div>
-              <label className="wb-lbl" htmlFor="cfg-vision-url">
-                Server address
-              </label>
-              <input className="wb-ctl" id="cfg-vision-url" type="text" value={config.localUrl || DEFAULT_LOCAL_URL} onChange={(e) => onChange({ localUrl: e.target.value })} autoComplete="off" spellCheck={false} />
+          <h4 className="wb-set-sub">Forma&apos;s vision model</h4>
+          <div className="wb-set-row is-stack">
+            <div className="wb-set-text">
+              <label className="wb-set-label" htmlFor="cfg-vision-model">Vision model</label>
+              <p>
+                Optional. Forma&apos;s own vision model, on Ollama or LM Studio on this computer, reads a picture&apos;s layout and OCR places its
+                words in it. The AI above designs from that draft, and if it cannot answer, the draft is your report. Leave it empty for none.
+              </p>
             </div>
-          )}
-          <div>
-            <label className="wb-lbl" htmlFor="cfg-vision-model">
-              Vision model
-            </label>
             <input
-              className="wb-ctl"
+              className="wb-set-input"
               id="cfg-vision-model"
               type="text"
-              placeholder="e.g. forma-vision (empty: none)"
+              placeholder="e.g. forma-vision"
               value={config.visionModel || ''}
               onChange={(e) => onChange({ visionModel: e.target.value })}
               autoComplete="off"
               spellCheck={false}
             />
           </div>
+          {provider !== 'local' && (
+            <div className="wb-set-row is-stack">
+              <div className="wb-set-text">
+                <label className="wb-set-label" htmlFor="cfg-vision-url">Server address</label>
+                <p>Where the vision model runs.</p>
+              </div>
+              <input className="wb-set-input" id="cfg-vision-url" type="text" value={config.localUrl || DEFAULT_LOCAL_URL} onChange={(e) => onChange({ localUrl: e.target.value })} autoComplete="off" spellCheck={false} />
+            </div>
+          )}
         </>
       )}
-    </div>
+    </>
   );
 }
