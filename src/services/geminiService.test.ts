@@ -49,6 +49,14 @@ describe('REPORT_CHAT_INSTRUCTIONS', () => {
     expect(REPORT_CHAT_INSTRUCTIONS).not.toContain('never say you cannot see the report');
     expect(REPORT_CHAT_INSTRUCTIONS).toContain('say it does not show rather than guessing');
   });
+
+  // The agent audit's batch D (2026-11-07): items 22 and 85.
+  it('describes every new edit, the table row and column rule, and the undo tool', () => {
+    for (const op of ['duplicate:', 'border:', 'line:', 'format:', 'bind:', 'pageNumber:']) expect(REPORT_CHAT_INSTRUCTIONS).toContain(`- ${op}`);
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain('bandHeight: band, height');
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain('a whole row by row alone (a header row), a column by cell alone');
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain('undo (takes back the last change');
+  });
 });
 
 describe('extractPartialReply', () => {

@@ -136,9 +136,14 @@ export function resizeControl(xml: string, ref: ControlRef, width: number, heigh
   );
 }
 
-/** Retype a control's text. Escaped on the way in; `&` in a label is ordinary. */
+/**
+ * Retype a control's text. Escaped on the way in; `&` in a label is ordinary.
+ * A line break is written as the serializer writes one (`&#xD;&#xA;`, see
+ * xmlEscape.ts) and turns `Multiline` on (2026-11-07, agent audit item 49),
+ * without which DevExpress prints the lines run together.
+ */
 export function setControlText(xml: string, ref: ControlRef, text: string): EditResult {
-  return applyAttributes(xml, ref, { Text: text }, 'retyped');
+  return applyAttributes(xml, ref, { Text: text, ...(/[\r\n]/.test(text) ? { Multiline: 'true' } : {}) }, 'retyped');
 }
 
 /**
@@ -378,7 +383,60 @@ function bandElement(xml: string, name: string): Element | null {
  * report too. Its box is 100 by 23 hundredths of an inch, as the designer
  * makes one.
  */
-export function addLabel(xml: string, bandIndex: number, x: number, y: number, text = 'New label'): EditResult {
+export function addLabel(xml: string, bandIndex: number, x: number, y: number, text = 'New label', name?: string): EditResult {
+  return insertControl(xml, bandIndex, 'XRLabel', 'label', ({ dpi, per, scale }) =>
+    `Text="${escapeXmlAttribute(text)}" TextAlignment="TopLeft"` +
+      ` LocationFloat="${unit(Math.max(0, x / scale))}, ${unit(Math.max(0, y / scale))}" SizeF="${unit(100 * per)}, ${unit(23 * per)}"` +
+      ` Padding="2,2,0,0,${dpi}"`, name);
+}
+
+/**
+ * Retype one cell of a table, by its row and its place in the row, in file
+ * order. A cell whose text is bound to a field is declined: the binding wins
+ * when it prints, so typed text would never be seen.
+ */
+export function setCellText(xml: string, ref: ControlRef, row: number, cell: number, text: string): EditResult {
+  return updateCellElement(xml, ref, row, cell, (_, bound) => (bound ? null : { Text: text, ...(/[\r\n]/.test(text) ? { Multiline: 'true' } : {}) }), 'retyped', 'the cell prints a field, not typed text: bind another in the Data tab');
+}
+
+/**
+ * A band's height, in its own units as the file writes them (2026-11-07,
+ * agent audit item 22). Never below the lowest edge of what it holds, which
+ * would leave a control hanging below its band, where DevExpress grows the
+ * band anyway and the report no longer reads as designed.
+ */
+export function setBandHeight(xml: string, bandIndex: number, height: number): EditResult {
+  const band = parseReportStructure(xml).bands[bandIndex];
+  if (!band) return decline(xml, `no band at ${bandIndex}`);
+  if (band.sub) return decline(xml, 'a detail report has no height of its own; set one of its bands');
+  const el = bandElement(xml, band.name);
+  if (!el) return decline(xml, `band "${band.name}" was not found in the file`);
+  const scale = band.dpiScale ?? 1;
+  const lowest = Math.max(0, ...band.controls.filter((c) => c.panel === undefined).map((c) => (c.y + c.height) / scale));
+  if (!(height > 0)) return decline(xml, 'no height was given');
+  if (height < lowest) return decline(xml, `${band.name} holds a control reaching ${unit(lowest)}; move or shrink it first`);
+  const openTag = xml.slice(el.start, el.openEnd);
+  return {
+    xml: xml.slice(0, el.start) + withAttributes(openTag, { HeightF: String(unit(height)) }) + xml.slice(el.openEnd),
+    applied: true,
+    reason: `set the height of ${band.name} to ${unit(height)}`,
+  };
+}
+
+/**
+ * Put a new control into a band (2026-11-07): a fresh `Ref` above every
+ * other, a name no control has, the band's own `Dpi` when it writes one, and
+ * the attributes `build` returns. `addLabel` and the chat's line and page
+ * number go through it.
+ */
+function insertControl(
+  xml: string,
+  bandIndex: number,
+  type: 'XRLabel' | 'XRLine' | 'XRPageInfo',
+  stem: string,
+  build: (ctx: { dpi: number; per: number; scale: number }) => string,
+  wantedName?: string,
+): EditResult {
   const band = parseReportStructure(xml).bands[bandIndex];
   if (!band) return decline(xml, `no band at ${bandIndex}`);
   if (band.sub) return decline(xml, 'a detail report holds bands, not controls');
@@ -386,15 +444,16 @@ export function addLabel(xml: string, bandIndex: number, x: number, y: number, t
   if (!el) return decline(xml, `band "${band.name}" was not found in the file`);
   const openTag = xml.slice(el.start, el.openEnd);
   const dpi = Number(/\sDpi="([\d.]+)"/.exec(openTag)?.[1] ?? 100);
-  const per = dpi / 100;
-  const scale = band.dpiScale ?? 1;
   const ref = Math.max(0, ...[...xml.matchAll(/\sRef="(\d+)"/g)].map((r) => Number(r[1]))) + 1;
-  const n = Math.max(0, ...[...xml.matchAll(/\sName="label(\d+)"/g)].map((r) => Number(r[1]))) + 1;
-  const name = `label${n}`;
+  const taken = new Set([...xml.matchAll(/\sName="([^"]*)"/g)].map((m) => m[1]));
+  const clean = (wantedName ?? '').trim();
+  const name = /^[A-Za-z_][\w]*$/.test(clean) && !taken.has(clean)
+    ? clean
+    : `${stem}${Math.max(0, ...[...xml.matchAll(new RegExp(`\\sName="${stem}(\\d+)"`, 'g'))].map((r) => Number(r[1]))) + 1}`;
   const attrs =
-    `Ref="${ref}" ControlType="XRLabel" Name="${name}" Text="${escapeXmlAttribute(text)}" TextAlignment="TopLeft"` +
-    ` LocationFloat="${unit(Math.max(0, x / scale))}, ${unit(Math.max(0, y / scale))}" SizeF="${unit(100 * per)}, ${unit(23 * per)}"` +
-    ` Padding="2,2,0,0,${dpi}"${/\sDpi="/.test(openTag) ? ` Dpi="${dpi}"` : ''}`;
+    `Ref="${ref}" ControlType="${type}" Name="${name}" ` +
+    build({ dpi, per: dpi / 100, scale: band.dpiScale ?? 1 }) +
+    (/\sDpi="/.test(openTag) ? ` Dpi="${dpi}"` : '');
 
   const controls = el.selfClosing ? undefined : childrenIn(xml, el.openEnd, el.end).find((c) => c.name === 'Controls');
   let out: string;
@@ -410,16 +469,86 @@ export function addLabel(xml: string, bandIndex: number, x: number, y: number, t
   } else {
     out = xml.slice(0, el.openEnd) + `<Controls><Item1 ${attrs} /></Controls>` + xml.slice(el.openEnd);
   }
-  return { xml: out, applied: true, reason: `added XRLabel "${name}"` };
+  return { xml: out, applied: true, reason: `added ${type} "${name}"` };
 }
 
 /**
- * Retype one cell of a table, by its row and its place in the row, in file
- * order. A cell whose text is bound to a field is declined: the binding wins
- * when it prints, so typed text would never be seen.
+ * A horizontal line across a band (2026-11-07, agent audit item 22), at `x`,
+ * `y` in report units, `width` long: an `XRLine` the height of its weight
+ * plus a little, as the designer draws one, `LineWidth` written only when it
+ * is not the default 1.
  */
-export function setCellText(xml: string, ref: ControlRef, row: number, cell: number, text: string): EditResult {
-  return updateCellElement(xml, ref, row, cell, (_, bound) => (bound ? null : { Text: text }), 'retyped', 'the cell prints a field, not typed text: bind another in the Data tab');
+export function addLine(xml: string, bandIndex: number, x: number, y: number, width: number, lineWidth = 1, name?: string): EditResult {
+  return insertControl(xml, bandIndex, 'XRLine', 'line', ({ per, scale }) =>
+    `LocationFloat="${unit(Math.max(0, x / scale))}, ${unit(Math.max(0, y / scale))}" SizeF="${unit(Math.max(1, width / scale))}, ${unit(Math.max(2, lineWidth + 1) * per)}"` +
+      (lineWidth !== 1 ? ` LineWidth="${unit(lineWidth)}"` : ''), name);
+}
+
+/**
+ * A page number (2026-11-07, agent audit item 22): an `XRPageInfo`, which
+ * DevExpress fills in as it prints (parity row 15, `pageInfoText`). `kind` is
+ * left unwritten for NumberOfTotal, the serializer's default; `format` is its
+ * `TextFormatString`, such as "Page {0} of {1}".
+ */
+export function addPageInfo(
+  xml: string,
+  bandIndex: number,
+  x: number,
+  y: number,
+  options: { width?: number; kind?: string; format?: string; align?: 'left' | 'center' | 'right'; name?: string } = {},
+): EditResult {
+  const H = { left: 'Left', center: 'Center', right: 'Right' } as const;
+  return insertControl(xml, bandIndex, 'XRPageInfo', 'pageInfo', ({ dpi, per, scale }) =>
+    (options.kind && options.kind !== 'NumberOfTotal' ? `PageInfo="${escapeXmlAttribute(options.kind)}" ` : '') +
+      (options.format ? `TextFormatString="${escapeXmlAttribute(options.format)}" ` : '') +
+      `TextAlignment="Top${H[options.align ?? 'right']}" ` +
+      `LocationFloat="${unit(Math.max(0, x / scale))}, ${unit(Math.max(0, y / scale))}" SizeF="${unit((options.width ?? 200) / scale)}, ${unit(23 * per)}" Padding="2,2,0,0,${dpi}"`, options.name);
+}
+
+/**
+ * Bind what a control or a table's cell prints to an expression, `[Field]`
+ * for a field (2026-11-07, agent audit item 22), as the Data tab binds a
+ * column and as the serializer writes one: an `ExpressionBindings` item with
+ * no `Ref` (repxBindingPlan.ts says why), its `Text` kept as the fallback.
+ * An existing Text binding has its expression replaced.
+ */
+export function bindText(xml: string, ref: ControlRef, expression: string, row?: number, cell?: number): EditResult {
+  const control = locate(xml, ref);
+  if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
+  let target: Element | null = elementAt(xml, control.openStart);
+  if (!target) return decline(xml, 'the control span does not look like an element');
+  if (control.type === 'XRTable') {
+    if (row === undefined || cell === undefined) return decline(xml, `${control.name} is a table: name the row and the cell`);
+    const rows = childrenIn(xml, target.openEnd, target.end).find((c) => c.name === 'Rows');
+    const rowEl = rows && childrenIn(xml, rows.openEnd, rows.end).filter((c) => /^Item\d+$/.test(c.name))[row];
+    const cells = rowEl && childrenIn(xml, rowEl.openEnd, rowEl.end).find((c) => c.name === 'Cells');
+    target = (cells && childrenIn(xml, cells.openEnd, cells.end).filter((c) => /^Item\d+$/.test(c.name))[cell]) ?? null;
+    if (!target) return decline(xml, `no cell ${cell + 1} in row ${row + 1} of ${control.name || 'the table'}`);
+  }
+  const value = escapeXmlAttribute(expression);
+  const bindings = target.selfClosing ? undefined : childrenIn(xml, target.openEnd, target.end).find((c) => c.name === 'ExpressionBindings');
+  const textItem = bindings && childrenIn(xml, bindings.openEnd, bindings.end).find((c) => /\sPropertyName="Text"/.test(xml.slice(c.start, c.openEnd)));
+  const what = `bound ${control.type === 'XRTable' ? `row ${(row ?? 0) + 1}, cell ${(cell ?? 0) + 1} of ` : ''}${control.name || control.type} to ${expression}`;
+  if (textItem) {
+    const open = xml.slice(textItem.start, textItem.openEnd);
+    const rewritten = open.replace(/(\sExpression=")[^"]*(")/, `$1${value}$2`);
+    return { xml: xml.slice(0, textItem.start) + rewritten + xml.slice(textItem.openEnd), applied: rewritten !== open, reason: what };
+  }
+  const item = `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="${value}" />`;
+  const tag = /^<([A-Za-z_][\w.:-]*)/.exec(xml.slice(target.start, target.openEnd))![1];
+  let out: string;
+  if (bindings && !bindings.selfClosing) {
+    const count = childrenIn(xml, bindings.openEnd, bindings.end).filter((c) => /^Item\d+$/.test(c.name)).length;
+    const closeAt = bindings.end - '</ExpressionBindings>'.length;
+    out = xml.slice(0, closeAt) + item.replace('<Item1', `<Item${count + 1}`) + xml.slice(closeAt);
+  } else if (target.selfClosing) {
+    const open = xml.slice(target.start, target.openEnd);
+    out = xml.slice(0, target.start) + open.replace(/\s*\/>$/, '>') + `<ExpressionBindings>${item}</ExpressionBindings></${tag}>` + xml.slice(target.end);
+  } else {
+    const closeAt = target.end - `</${tag}>`.length;
+    out = xml.slice(0, closeAt) + `<ExpressionBindings>${item}</ExpressionBindings>` + xml.slice(closeAt);
+  }
+  return { xml: out, applied: true, reason: what };
 }
 
 /**

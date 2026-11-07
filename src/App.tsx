@@ -4493,9 +4493,11 @@ export default function App() {
          */
         const tools = agent ? outcome.tools ?? [] : [];
         const toolsDone = agent
-          ? tools.map((t) => (t.name === 'testData' && boundFields.length === 0 ? 'no sample rows: the report prints no fields' : agent.toolLine(t)))
+          ? tools.map((t) =>
+              t.name === 'testData' && boundFields.length === 0 ? 'no sample rows: the report prints no fields'
+              : t.name === 'undo' && !undoableIds.size && historyDepth.back === 0 ? 'nothing to take back: no change has been made since the report opened'
+              : agent.toolLine(t))
           : [];
-        if (tools.length) setPendingTools(tools);
         // Tools asked for and refused, said under "Not done" (agent audit item 82).
         const toolsRefused = agent && 'toolsDeclined' in outcome ? outcome.toolsDeclined ?? [] : [];
 
@@ -4507,22 +4509,63 @@ export default function App() {
            * project or New report is not this turn's, and the signal says so.
            */
           const now = reportNow.current?.repxContent ? reportNow.current : open;
-          const done = agent.applyEdits(now.repxContent!, outcome.edits ?? []);
+          let done = agent.applyEdits(now.repxContent!, outcome.edits ?? []);
+          const { auditRepx } = await import('./lib/repxAudit');
+          if (turn.signal.aborted) return;
+          const errorsOf = (xml: string) => auditRepx(xml, now.layout).findings.filter((f) => f.severity === 'error').map((f) => f.message);
+          const errorsBefore = new Set(errorsOf(now.repxContent!));
+          const errorsBrought = done.changed ? errorsOf(done.xml).filter((m) => !errorsBefore.has(m)) : [];
+          /*
+           * One more pass (2026-11-07, agent audit item 23), as an agent checks
+           * its own work: when an edit could not be made, or the checks find an
+           * error the edits brought, the model is told which, against the
+           * report as the edits left it, and its edits are made too. Bounded at
+           * one: it costs a request only when something went wrong, and a
+           * second answer that changes nothing leaves the first as it was.
+           */
+          let secondPass = false;
+          if (done.declined.length || errorsBrought.length) {
+            try {
+              const again = await chatReply(
+                [...history, { role: 'assistant', text: outcome.reply || 'Made the edits.' }, { role: 'user', text: agent.followUpMessage(done.declined, errorsBrought) }],
+                config,
+                turn.signal,
+                undefined,
+                { outline: agent.reportOutline(done.xml, { selected: previewSelection }), ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS },
+                remembered,
+              );
+              if (turn.signal.aborted) return;
+              const second = agent.readReportOutcome(again);
+              const more = second.action === 'edit' && second.edits.length ? agent.applyEdits(done.xml, second.edits) : null;
+              if (more?.changed) {
+                done = { xml: more.xml, applied: [...done.applied, ...more.applied], declined: more.declined, changed: true };
+                secondPass = true;
+              }
+            } catch (err) {
+              if (turn.signal.aborted) return;
+              console.warn('The second pass did not answer; the first stands.', err);
+            }
+          }
           const id = nextMessageId();
           if (done.changed) {
             const next: DesignResult = { ...now, repxContent: done.xml };
             setResult(next);
             recordRevision('Changed in the chat', next);
             rememberChange(id, now, next);
+            // The tools run once the edits are made (agent audit item 38).
+            if (tools.length) setPendingTools(tools);
             const changes = agent.describeChanges(now.repxContent!, done.xml);
             // Whatever the edit brought that the checks find, said here (2026-11-05).
-            const { auditRepx } = await import('./lib/repxAudit');
-            if (turn.signal.aborted) return;
             const brought = agent.checksMarkdown(auditRepx(done.xml, now.layout).findings, auditRepx(now.repxContent!, now.layout).findings);
             setMessages(prev => [...prev, {
               id,
               role: 'assistant',
-              text: [outcome.reply, agent.changesMarkdown(changes, [...done.declined, ...toolsRefused], toolsDone), brought].filter(Boolean).join('\n\n'),
+              text: [
+                outcome.reply,
+                secondPass ? 'Forma took a second pass for what the first could not make.' : '',
+                agent.changesMarkdown(changes, [...done.declined, ...toolsRefused], toolsDone),
+                brought,
+              ].filter(Boolean).join('\n\n'),
             }]);
             announceReady('Report ready');
             return;
@@ -4533,6 +4576,7 @@ export default function App() {
            * a title that was bold). Said so, with no redesign offered.
            */
           if (done.applied.length) {
+            if (tools.length) setPendingTools(tools);
             setMessages(prev => [...prev, {
               id,
               role: 'assistant',
@@ -4541,11 +4585,15 @@ export default function App() {
             announceReady('Reply ready');
             return;
           }
-          // Nothing could be made in place: say why, and ask before redesigning.
+          /*
+           * Nothing could be made in place: say why, and ask before
+           * redesigning. The tools asked for with the edits do not run on a
+           * report the edits never reached (agent audit item 38).
+           */
           setMessages(prev => [...prev, {
             id,
             role: 'assistant',
-            text: `That could not be changed in place. Redesign the report from your words? It rewrites the whole report and takes a minute or two.\n\n${agent.changesMarkdown([], done.declined)}`,
+            text: `That could not be changed in place. Redesign the report from your words? It rewrites the whole report and takes a minute or two.\n\n${agent.changesMarkdown([], [...done.declined, ...tools.map((t) => `${agent.toolLine(t)}: not started, as the edits were not made`)])}`,
             confirm: { prompt: designWords },
           }]);
           return;
@@ -4564,6 +4612,7 @@ export default function App() {
           }]);
           return;
         } else if (!outcome.wantsReport) {
+          if (tools.length) setPendingTools(tools);
           setMessages(prev => [...prev, {
             id: nextMessageId(),
             role: 'assistant',
@@ -5461,6 +5510,7 @@ export default function App() {
 
   runToolsRef.current = (tools) => {
     const PANE_PLATES: Record<string, Plate> = { mockup: 'proof', preview: 'print', data: 'data', spec: 'spec', repx: 'xml' };
+    let exports = 0;
     tools.forEach((tool, i) => {
       if (tool.name === 'show') showPlate(PANE_PLATES[tool.pane ?? 'preview'] ?? 'print');
       else if (tool.name === 'testData') {
@@ -5470,9 +5520,19 @@ export default function App() {
         if (tool.format === 'repx') downloadDesign();
         else if (tool.format) {
           showPlate('print');
-          setExportRequest({ format: tool.format, nonce: Date.now() + i });
+          // One at a time (agent audit item 38): the Preview holds one
+          // request, and two set in one go made one export.
+          const request = { format: tool.format, nonce: Date.now() + i };
+          window.setTimeout(() => setExportRequest(request), exports++ * 1500);
         }
       } else if (tool.name === 'designer') void openInDesigner();
+      // "Undo that" (agent audit item 85): the reply's own Undo when the last
+      // change is a reply's, else the corner's.
+      else if (tool.name === 'undo') {
+        const last = [...undoableIds].pop();
+        if (last) handleUndo(last);
+        else undoReport();
+      }
     });
   };
   const railBtn = (panel: RailPanel, label: string, icon: React.ReactNode) => (

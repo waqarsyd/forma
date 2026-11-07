@@ -187,6 +187,18 @@ describe('escapeXmlAttribute', () => {
   it('covers all five', () => {
     expect(escapeXmlAttribute(`&<>"'`)).toBe('&amp;&lt;&gt;&quot;&apos;');
   });
+
+  // Agent audit item 49: a raw line break in an attribute is read back as a space.
+  it('writes a line break as the serializer does, and a tab as a reference', () => {
+    expect(escapeXmlAttribute('one\ntwo\r\nthree\tfour')).toBe('one&#xD;&#xA;two&#xD;&#xA;three&#x9;four');
+  });
+
+  it('turns Multiline on for text written over two lines, so it prints over two', () => {
+    const { xml } = setControlText(report, TITLE, 'INVOICE\nNo. 42');
+    expect(xml).toContain('Text="INVOICE&#xD;&#xA;No. 42"');
+    expect(xml).toMatch(/Multiline="true"/);
+    expect(controlAt(xml, TITLE).text).toBe('INVOICE\r\nNo. 42');
+  });
 });
 
 describe('declining rather than corrupting', () => {

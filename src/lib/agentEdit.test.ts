@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changedControls, formatEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, changedControls, distinctTools, followUpMessage, formatEdits, changesMarkdown, checksMarkdown, describeChanges, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -149,6 +149,124 @@ describe('what the agent sees, and edits that reach the control meant', () => {
   });
 });
 
+/* The agent audit's batch D (2026-11-07): the new edits, and edits that do what they say. */
+describe('the new edits, and edits that do what they say', () => {
+  const ROOT = 'SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1"';
+  const doc = (detail: string, footer = '') =>
+    `<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer ${ROOT}><Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>${detail}</Controls></Item1>${footer}</Bands></XtraReportsLayoutSerializer>`;
+  const lbl = (ref: number, name: string, extra = '') => `<Item${ref} Ref="${ref + 10}" ControlType="XRLabel" Name="${name}" Text="${name}" LocationFloat="10,${ref * 25}" SizeF="100,20" ${extra} />`;
+  const grid = '<Item1 Ref="2" ControlType="XRTable" Name="grid" LocationFloat="0,0" SizeF="600,50"><Rows>' +
+    [1, 2].map((r) => `<Item${r} Ref="${r + 2}" ControlType="XRTableRow" Name="r${r}" Weight="1"><Cells><Item1 Ref="${r + 5}" ControlType="XRTableCell" Name="a${r}" Text="A${r}" Weight="1" Font="Arial, 9pt" /><Item2 Ref="${r + 8}" ControlType="XRTableCell" Name="b${r}" Text="B${r}" Weight="1" Font="Arial, 9pt" /></Cells></Item${r}>`).join('') +
+    '</Rows></Item1>';
+  const cellsOf = (xml: string) => parseReportStructure(xml).bands[0].controls[0].rows.map((r) => r.cells);
+
+  it('duplicates a control and puts the copy where it was asked', () => {
+    const out = applyEdits(doc(lbl(1, 'total')), [{ op: 'duplicate', control: 'total', x: 300, y: 25 }]);
+    expect(out.applied[0]).toMatch(/duplicated XRLabel "total" as "total1"/);
+    expect(control(out.xml, 'total1')).toMatchObject({ x: 300, y: 25 });
+    expect(control(out.xml, 'total')).toMatchObject({ x: 10, y: 25 });
+  });
+
+  it("sets a band's height, and refuses one that would cut through what it holds", () => {
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 60 }]).xml).toContain('HeightF="60"');
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 30 }]).declined[0]).toMatch(/holds a control reaching 45/);
+    expect(describeChanges(doc(lbl(1, 'a')), applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 60 }]).xml)).toContain('set the height of Detail to 60');
+  });
+
+  it('writes borders as BorderSide writes them, and refuses sides it does not know', () => {
+    const out = applyEdits(doc(lbl(1, 'a')), [{ op: 'border', control: 'a', borders: 'bottom and top', borderColor: 'navy', borderWidth: 2 }]);
+    expect(out.xml).toMatch(/Borders="Top, Bottom"/);
+    expect(out.xml).toMatch(/BorderColor="Navy"/);
+    expect(out.xml).toMatch(/BorderWidth="2"/);
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'border', control: 'a', borders: 'left, right, top, bottom' }]).xml).toMatch(/Borders="All"/);
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'border', control: 'a', borders: 'diagonal' }]).declined[0]).toMatch(/not a set of sides/);
+  });
+
+  it('adds a line the printable width, and a page number in the page footer with its default words', () => {
+    const footer = '<Item2 Ref="50" ControlType="PageFooterBand" Name="PageFooter" HeightF="30" />';
+    const out = applyEdits(doc(lbl(1, 'a'), footer), [{ op: 'line', band: 'Detail', x: 0, y: 70 }, { op: 'pageNumber', x: 550 }]);
+    expect(out.xml).toMatch(/ControlType="XRLine" Name="line1" LocationFloat="0, 70" SizeF="750, 2"/);
+    expect(out.xml).toMatch(/<PageFooterBand|Name="PageFooter" HeightF="30"><Controls><Item1 Ref="\d+" ControlType="XRPageInfo" Name="pageInfo1" TextFormatString="Page \{0\} of \{1\}" TextAlignment="TopRight"/);
+    expect(out.xml).not.toMatch(/PageInfo="NumberOfTotal"/);
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'pageNumber', pageInfo: 'Roman' }]).declined[0]).toMatch(/not a page number/);
+  });
+
+  it('formats a control, refusing a format with no {0}', () => {
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'format', control: 'a', format: '{0:N2}' }]).xml).toContain('TextFormatString="{0:N2}"');
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'format', control: 'a', format: 'N2' }]).declined[0]).toMatch(/not a format/);
+  });
+
+  it('binds a label and a cell to a field, and rebinds one already bound', () => {
+    const bound = applyEdits(doc(lbl(1, 'a')), [{ op: 'bind', control: 'a', field: 'Customer' }]);
+    expect(bound.xml).toContain('<ExpressionBindings><Item1 EventName="BeforePrint" PropertyName="Text" Expression="[Customer]" /></ExpressionBindings></Item1>');
+    expect(control(bound.xml, 'a').field).toBe('Customer');
+    const again = applyEdits(bound.xml, [{ op: 'bind', control: 'a', field: '[Client]' }]);
+    expect(control(again.xml, 'a').field).toBe('Client');
+    expect(again.xml.match(/ExpressionBindings>/g)).toHaveLength(2);
+    expect(cellsOf(applyEdits(doc(grid), [{ op: 'bind', control: 'grid', row: 2, cell: 2, field: 'Amount' }]).xml)[1][1].field).toBe('Amount');
+    expect(applyEdits(doc(grid), [{ op: 'bind', control: 'grid', field: 'Amount' }]).declined[0]).toMatch(/name the row and the cell/);
+  });
+
+  // Items 22 and 40: a header row, a column, and the whole table.
+  it('styles a table row by its row, a column by its cell, and every cell with neither', () => {
+    const row = cellsOf(applyEdits(doc(grid), [{ op: 'font', control: 'grid', row: 1, bold: true }]).xml);
+    expect(row[0].map((c) => c.bold)).toEqual([true, true]);
+    expect(row[1].map((c) => c.bold)).toEqual([false, false]);
+    const column = cellsOf(applyEdits(doc(grid), [{ op: 'color', control: 'grid', cell: 2, backColor: '#eeeeee' }]).xml);
+    expect(column.map((r) => r[1].appearance.BackColor)).toEqual(['238, 238, 238', '238, 238, 238']);
+    expect(column.map((r) => r[0].appearance.BackColor ?? null)).toEqual([null, null]);
+    const all = applyEdits(doc(grid), [{ op: 'font', control: 'grid', bold: true }]);
+    expect(cellsOf(all.xml).flat().every((c) => c.bold)).toBe(true);
+    expect(all.applied).toEqual(['restyled every cell of grid']);
+  });
+
+  it('accepts only colours .NET knows by name, spelled as it spells them', () => {
+    expect(repxColor('red')).toBe('Red');
+    expect(repxColor('light grey')).toBe('LightGray');
+    expect(repxColor('Text')).toBeNull();
+    expect(repxColor('Bluish')).toBeNull();
+  });
+
+  it("keeps a font's charSet when it is made bold", () => {
+    const arabic = applyEdits(doc(lbl(1, 'a', 'Font="Tahoma, 10pt, charSet=178"')), [{ op: 'font', control: 'a', bold: true }]);
+    expect(arabic.xml).toContain('Font="Tahoma, 10pt, style=Bold, charSet=178"');
+  });
+
+  it('gives an added label its band’s font, and the name asked for when it is free', () => {
+    const out = applyEdits(doc(lbl(1, 'a', 'Font="Tahoma, 9pt"') + lbl(2, 'b', 'Font="Tahoma, 9pt"')), [{ op: 'add', band: 'Detail', text: 'Note', x: 10, y: 75, name: 'labelNote' }]);
+    expect(control(out.xml, 'labelNote')).toMatchObject({ fontFamily: 'Tahoma', fontSize: 9, text: 'Note' });
+  });
+
+  // Item 50: a colour is a recolour, not a restyle.
+  it('says a colour changed as a recolour, a cell’s colour too, and a format and a binding in their own words', () => {
+    const before = doc(lbl(1, 'title', 'Font="Arial, 18pt"') + grid.replace('Ref="2"', 'Ref="90"').replace('Name="grid"', 'Name="grid2"').replace(/Ref="(\d)"/g, 'Ref="9$1"'));
+    const after = applyEdits(before, [
+      { op: 'color', control: 'title', foreColor: 'Red' },
+      { op: 'color', control: 'grid2', row: 1, cell: 1, backColor: 'Yellow' },
+      { op: 'format', control: 'title', format: '{0:N0}' },
+    ]).xml;
+    const lines = describeChanges(before, after);
+    expect(lines).toContain('recoloured **title** (text Red)');
+    expect(lines).toContain('formatted **title** as "{0:N0}"');
+    expect(lines).toContain('recoloured row 1, cell 1 of **grid2** (fill Yellow)');
+    expect(lines.some((l) => l.startsWith('restyled'))).toBe(false);
+  });
+
+  // Items 23 and 38.
+  it('runs each tool once, and tells the second pass what was not made and what the edits broke', () => {
+    expect(distinctTools([{ name: 'export', format: 'pdf' }, { name: 'export', format: 'pdf' }, { name: 'show', pane: 'repx' }, { name: 'show', pane: 'preview' }, { name: 'export', format: 'csv' }])).toEqual([
+      { name: 'export', format: 'pdf' },
+      { name: 'show', pane: 'preview' },
+      { name: 'export', format: 'csv' },
+    ]);
+    const message = followUpMessage(['font x: no control is named "x"'], ['A total prints blank.']);
+    expect(message).toContain('- font x: no control is named "x"');
+    expect(message).toContain('- A total prints blank.');
+    expect(message).toContain('answer with "edit" and only those edits');
+    expect(readReportOutcome({ reply: 'Undone.', action: 'answer', tools: [{ name: 'undo' }] }).tools).toEqual([{ name: 'undo' }]);
+  });
+});
+
 describe('reportOutline: the report as the model is shown it', () => {
   const outline = reportOutline(report, { findings: ['A total prints blank.'] });
 
@@ -281,14 +399,16 @@ describe('readReportOutcome: the answer as Forma acts on it', () => {
     expect(readReportOutcome({ reply: '', action: 'edit', edits: [], tools: [{ name: 'export', format: 'csv' }] })).toMatchObject({ action: 'answer', wantsReport: false, reply: '' });
   });
 
-  it('says what each tool did, under Done', () => {
-    expect([{ name: 'show', pane: 'repx' }, { name: 'testData' }, { name: 'export', format: 'xlsx' }, { name: 'designer' }].map((t) => toolLine(t as AgentTool))).toEqual([
-      'opened the REPX',
-      'filled the Preview with sample rows',
-      'exported it as XLSX',
-      'asked the DevExpress designer on this computer to open it',
+  // In the present since 2026-11-07 (agent audit item 38): the reply is written before a tool runs.
+  it('says what each tool is starting, under Started', () => {
+    expect([{ name: 'show', pane: 'repx' }, { name: 'testData' }, { name: 'export', format: 'xlsx' }, { name: 'designer' }, { name: 'undo' }].map((t) => toolLine(t as AgentTool))).toEqual([
+      'opening the REPX',
+      'filling the Preview with sample rows',
+      'exporting it as XLSX',
+      'asking the DevExpress designer on this computer to open it',
+      'taking back the last change',
     ]);
-    expect(changesMarkdown([], [], ['opened the Preview'])).toBe('**Done**\n- opened the Preview');
+    expect(changesMarkdown([], [], ['opening the Preview'])).toBe('**Started**\n- opening the Preview');
   });
 
   it('reads a redesign as wanting a report, and an edit with nothing to make as a redesign', () => {

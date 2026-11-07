@@ -774,10 +774,17 @@ The edits, by "op", and the fields each reads:
 - delete: control. visible: control, visible.
 - add: a new label: band (its name or kind), text, x, y, and optionally width, height, family, size, bold, italic. Match the report's own font unless asked otherwise.
 - paper: paper (${SUPPORTED_PAGE_SIZES.join(', ')}), landscape; landscape alone turns the paper the report has. margins: any of left, right, top, bottom.
+- duplicate: control, and optionally x, y for the copy. bandHeight: band, height.
+- border: control (row, cell), any of borders (All, None, or sides such as "Top, Bottom"), borderColor, borderWidth.
+- line: a horizontal line: band, x, y, and optionally width (the printable width when absent), borderWidth (its weight), name.
+- format: control (row, cell), format: a .NET format with {0}, such as {0:N2}, {0:C2}, {0:P0} or {0:dd/MM/yyyy}.
+- bind: control (row, cell), field: what it prints from the data. Use a field from FIELDS PRINTED or one the user names.
+- pageNumber: band (the page footer when absent), x, y, and optionally width, align, format ("Page {0} of {1}" when absent), pageInfo (NumberOfTotal, Number, Total or DateTime).
+On a table, font, color, align, border and format name a cell by row and cell, a whole row by row alone (a header row), a column by cell alone, and every cell with neither.
 
 When the outline ends with SELECTED ON THE PREVIEW, the user has selected those controls, and "this", "it", "these" and "them" in the message mean them.
 
-"tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows, which costs a request), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer).
+"tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows, which costs a request), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer), undo (takes back the last change to the report, when the user asks to undo one).
 
 "reply": one or two sentences to the user, drawn as Markdown with no headings. For an edit, say briefly what you changed; Forma lists the changes itself, so do not list them. For a rebuild, say what Forma will redesign. Never claim a change you did not list.
 
@@ -846,6 +853,12 @@ function buildMockReportReply(userText: string, outline: string): ChatOutcome {
   if (first && side) return edit(`Aligned \`${first}\` ${side}.`, [{ op: 'align', control: first, align: side === 'centre' ? 'center' : (side as 'left' | 'right' | 'center') }]);
   const colour = /\b(red|blue|green|navy)\b/i.exec(text)?.[1];
   if (first && colour) return edit(`Coloured \`${first}\` ${colour.toLowerCase()}.`, [{ op: 'color', control: first, foreColor: colour[0].toUpperCase() + colour.slice(1).toLowerCase() }]);
+  // The new edits and the undo tool (2026-11-07, agent audit items 22 and 85), so they can be exercised offline too.
+  if (/\bundo\b/i.test(text)) return { ...answer('Taking back the last change.'), tools: [{ name: 'undo' }] };
+  if (/\bpage numbers?\b/i.test(text)) return edit('Added a page number.', [{ op: 'pageNumber', x: 550, y: 0 }]);
+  if (first && /\bduplicate|copy\b/i.test(text)) return edit(`Duplicated \`${first}\`.`, [{ op: 'duplicate', control: first }]);
+  if (first && /\bborder\b/i.test(text)) return edit(`Gave \`${first}\` a border.`, [{ op: 'border', control: first, borders: 'All', borderColor: 'Black' }]);
+  if (/\bline\b/i.test(text)) return edit('Drew a line under the header.', [{ op: 'line', band: 'ReportHeader', x: 0, y: 0 }]);
   const paper = /\b(A4|A3|Letter|Legal)\b/i.exec(text)?.[1];
   if (paper) return edit(`Set the paper to ${paper}.`, [{ op: 'paper', paper, landscape: /landscape/i.test(text) }]);
   const format = /\bexport\b.*?\b(pdf|csv|xlsx|docx|rtf|html|png|repx)\b/i.exec(text)?.[1]?.toLowerCase();
@@ -1151,6 +1164,14 @@ export async function chatReply(
           top: { type: Type.NUMBER },
           bottom: { type: Type.NUMBER },
           visible: { type: Type.BOOLEAN },
+          // The new edits' fields (2026-11-07, agent audit item 22).
+          borders: { type: Type.STRING },
+          borderColor: { type: Type.STRING },
+          borderWidth: { type: Type.NUMBER },
+          format: { type: Type.STRING },
+          field: { type: Type.STRING },
+          pageInfo: { type: Type.STRING },
+          name: { type: Type.STRING },
         },
         required: ['op'],
       }
@@ -2407,7 +2428,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
 
           - APPEARANCE IS PART OF THE REPORT.
             Every visual property of the source must appear on the matching control. A .repx that has the right boxes in the right places but default styling is a failed reproduction — it is the file the user actually opens and prints.
-            - Font: <Font>Arial, 9.75pt, style=Bold</Font> as a child element, or Font="Arial, 9.75pt" as an attribute. Styles: style=Bold, style=Italic, style=Bold, Italic. Bold any text visibly heavier than body text — titles, column headings, totals — and use the closest family you can identify.
+            - Font: Font="Arial, 9.75pt, style=Bold" as an attribute, never a <Font> child element, which Forma's Preview, Mockup and checks do not read. Styles: style=Bold, style=Italic, style=Bold, Italic. Bold any text visibly heavier than body text — titles, column headings, totals — and use the closest family you can identify.
             - **FONT SIZE IS ALWAYS IN POINTS (1/72"), NEVER IN REPORT UNITS.** It is one of exactly TWO things in the file that do not follow ReportUnit — the other is BorderWidth, below. A size measured in report units converts as points = size * 72 / ${unitsPerInchForReport}: a size of 16 units is ${(unitsToPoints(16, reportUnit)).toFixed(2)}pt, NOT 16pt. Writing a unit number straight into the Font makes every piece of text far too large.
             - **Measure the EM SIZE, not the ink.** This is the single most common way a reproduction comes out uniformly small. Capital letters stand only about 70% of the em size and lowercase about half of it, so a heading whose capitals measure 21 units is a 30-unit font, not a 21-unit one. Baseline to baseline of two consecutive lines in one paragraph is 1.15-1.25x the font size; or measure a capital and divide by 0.7. Then CHECK THE ANSWER: ordinary body text in a printed business document is 9-11pt (${bodyFontMinUnits}-${bodyFontMaxUnits} units). If the body text you measured comes out below that, you measured the ink and EVERY size is small by the same fraction — scale them all up together, keeping their ratios. A title must be visibly larger than body text.
             - ForeColor="Black" or ForeColor="#1A2B3C" for text colour, sampled from the design; BackColor for fills. Omit BackColor entirely when the area is white or transparent — do not paint every control white.

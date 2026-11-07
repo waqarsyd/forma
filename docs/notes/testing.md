@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,654 tests in 155 files** — under the `node` environment
+`npm test` runs Vitest over **2,669 tests in 155 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -173,7 +173,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxChunks` | 22 |  |
 | `lib/repxCrossTabs` | 37 | 24 from one loop: every field shape DevExpress's `GenerateLayout()` produced, cell for cell, ten of them unseen when the rule was written |
 | `lib/repxDpi` | 11 | Dpi in millimetre and pixel reports; the expectations are files DevExpress saved, stripped and repaired back |
-| `lib/repxEdit` | 37 | since 2026-11-06 duplicating a control (fresh Refs and free names in everything it holds, a self-referring one declined, and one linking outside itself, such as to its formatting rule, copied with the link); since 2026-11-04 also deleting a control (its siblings numbered again, an emptied Controls removed, one named by `#Ref` declined), adding a label in its band's Dpi, and retyping a table cell (a bound one declined) |
+| `lib/repxEdit` | 39 | since 2026-11-07 a line break written as the serializer writes one, with Multiline on; since 2026-11-06 duplicating a control (fresh Refs and free names in everything it holds, a self-referring one declined, and one linking outside itself, such as to its formatting rule, copied with the link); since 2026-11-04 also deleting a control (its siblings numbered again, an emptied Controls removed, one named by `#Ref` declined), adding a label in its band's Dpi, and retyping a table cell (a bound one declined) |
 | `lib/repxGroups` | 12 | nested groups written without `Level`; parity case s19, written as DevExpress printed it inside out, repaired and paginated into the nesting it printed with `Level` |
 | `lib/repxGroupField` | 7 | the field a group breaks on, rewritten with its heading's binding and nothing outside the band; a header grouping by nothing given a field list with a fresh Ref; two groups by region becoming three by country over the same rows |
 | `lib/repxItems` | 12 |  |
@@ -188,7 +188,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/repxSummaries` | 19 | totals with no running scope, which DevExpress prints blank; each fixture is a shape it was made to print |
 | `lib/repxTruncation` | 19 |  |
 | `lib/repxViews` | 12 | the Mockup, the Spec and the title read off the REPX (2026-11-05): a section per content band in print order, x from the paper's edge and the top margin in the first section, font sizes in report units, a field as `[Field]`, a picture cropped from the upload only before the Detail band, what DevExpress does not print left out; the title from `DisplayName`, the largest text before Detail, or the `Name` |
-| `lib/agentEdit` | 38 | since 2026-11-07 (batch C) a right-to-left report outlined and edited as written with alignments as they print, a control in a panel, two controls of one name, a long table, colours, borders, a format, a total and an expression in the outline and an expression not retyped, landscape on a Custom paper, absent margins, and tools with no pane or format; since 2026-11-07 an added label's font, and the brief and a new report read from the answer; since 2026-11-06 an alignment sent with no side taking the one side the request names; since 2026-11-05 formatEdits, for the selection toolbar; since 2026-11-05 changedControls, for the log's outline; since its first day also the tools the chat runs; the chat's edits to an open report (2026-11-05): the outline the model is shown, its answer checked before Forma acts on it, each edit made by splices and found by name, a font made bold keeping its family and size, a style priority set back, declines with their reasons, the paper and margins, the 40-edit limit, and what changed read off the file |
+| `lib/agentEdit` | 50 | since 2026-11-07 (batch D) duplicate, band height, borders, a line, a format, a binding and a page number, a table's row, column and every cell, .NET's colour names, a charSet kept, an added label's band font and name, a colour described as a recolour, each tool once, the second pass's message and the undo tool, tool lines under Started; since 2026-11-07 (batch C) a right-to-left report outlined and edited as written with alignments as they print, a control in a panel, two controls of one name, a long table, colours, borders, a format, a total and an expression in the outline and an expression not retyped, landscape on a Custom paper, absent margins, and tools with no pane or format; since 2026-11-07 an added label's font, and the brief and a new report read from the answer; since 2026-11-06 an alignment sent with no side taking the one side the request names; since 2026-11-05 formatEdits, for the selection toolbar; since 2026-11-05 changedControls, for the log's outline; since its first day also the tools the chat runs; the chat's edits to an open report (2026-11-05): the outline the model is shown, its answer checked before Forma acts on it, each edit made by splices and found by name, a font made bold keeping its family and size, a style priority set back, declines with their reasons, the paper and margins, the 40-edit limit, and what changed read off the file |
 | `lib/revisions` | 21 |  |
 | `lib/revisionStore` | 26 |  |
 | `lib/router` | 20 | jsdom; since 2026-11-07 a fragment that is not a route is kept as the section it names, and `scrollToHash` reaches a section already there or one that renders later |
@@ -224,7 +224,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/embeddings` | 20 | SDK mocked, as `geminiService` is |
 | `services/formaVision` | 5 | Forma's vision model through the Local AI endpoint, against a stubbed server: the picture then the instruction at temperature 0, the answer read as a skeleton with its text kept, a page that is not an image refused before asking; the model known by the name it was imported under |
 | `services/generationRetry` | 18 | since 2026-11-05 an answer that finishes before its REPX does made again, what it wrote kept once the retries are spent, and the Mockup, the Spec and the title read off the REPX; since 2026-11-04 a retry after a loop asked at temperature 0.4 and the retry of a truncated stream left at 0; since 2026-11-02 also a model out of its daily allowance left for the next, every model out named as a daily limit, and an answer cut off by its thinking asked once more with thinking capped, not when the user set a budget; the generation path's runaway and truncated-stream retries, against a stubbed stream |
-| `services/geminiService` | 41 | since 2026-11-07 the papers offered being the edit's own, and the model allowed to say what the outline does not show; since 2026-11-07 the new report, the brief and the memory in the chat's instructions; since 2026-11-05 the report turn's instructions; 7 of these come from one loop; since 2026-11-02 also the chat turn's instructions taking a written description as enough, and `generateSmall` turning thinking off for the small calls, asking a refusing model again with room, and not mistaking a rejected key for a refusal |
+| `services/geminiService` | 42 | since 2026-11-07 (batch D) every new edit, the table rule and the undo tool in the instructions; since 2026-11-07 the papers offered being the edit's own, and the model allowed to say what the outline does not show; since 2026-11-07 the new report, the brief and the memory in the chat's instructions; since 2026-11-05 the report turn's instructions; 7 of these come from one loop; since 2026-11-02 also the chat turn's instructions taking a written description as enough, and `generateSmall` turning thinking off for the small calls, asking a refusing model again with room, and not mistaking a rejected key for a refusal |
 | `services/keyVault` | 21 | jsdom |
 | `services/library` | 15 | storage and embedding injected |
 | `services/modelResolution` | 35 | jsdom; since 2026-11-02 also the curated list probed without the catalogue when one of it answers, the choice remembered a day for the same key only, and the small calls sent to a Flash-Lite |
@@ -232,7 +232,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,654 in 155 files** — and that total is the arithmetic sum of the column above
+**Total: 2,669 in 155 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -246,7 +246,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2536** against a real 2,654 (2026-11-07, after the agent audit's batch C; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
+A grep for `\bit(` answers **2551** against a real 2,669 (2026-11-07, after the agent audit's batch D; the gap of 118 unchanged since the last count, as no new loop came in) and will talk you into
 "correcting" numbers that were already right. **Ten** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

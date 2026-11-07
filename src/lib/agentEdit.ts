@@ -33,7 +33,12 @@
 import { marginsOf, parseReportStructure, type PreviewBand, type PreviewControl } from './reportPreview';
 import {
   addLabel,
+  addLine,
+  addPageInfo,
+  bindText,
   deleteControl,
+  duplicateControl,
+  setBandHeight,
   moveControl,
   resizeControl,
   setCellText,
@@ -45,8 +50,17 @@ import {
 } from './repxEdit';
 import { SUPPORTED_PAGE_SIZES, pageSizeInUnits } from './reportGeometry';
 
-/** What the model can ask for. Anything else is a redesign. */
-export const EDIT_OPS = ['text', 'move', 'resize', 'font', 'color', 'align', 'delete', 'add', 'paper', 'margins', 'visible'] as const;
+/**
+ * What the model can ask for. Anything else is a redesign. The last seven
+ * came on 2026-11-07 (agent audit item 22, the owner's four groups): each
+ * was a full redesign, some 20,000 tokens, for what is one splice here.
+ * A table's row or column is styled by `font`, `color`, `align`, `border`
+ * and `format` naming the row or the cell alone.
+ */
+export const EDIT_OPS = [
+  'text', 'move', 'resize', 'font', 'color', 'align', 'delete', 'add', 'paper', 'margins', 'visible',
+  'duplicate', 'bandHeight', 'border', 'line', 'format', 'bind', 'pageNumber',
+] as const;
 export type EditOp = (typeof EDIT_OPS)[number];
 
 /** One edit, as the model writes it: the op and the fields that op reads. */
@@ -81,6 +95,19 @@ export interface AgentEdit {
   top?: number;
   bottom?: number;
   visible?: boolean;
+  /** For `border`: which sides, "All", "None", or a list such as "Top, Bottom". */
+  borders?: string;
+  borderColor?: string;
+  /** Pixels, as DevExpress writes `BorderWidth`; for `line`, its weight. */
+  borderWidth?: number;
+  /** For `format` and `pageNumber`: a .NET format such as "{0:N2}" or "Page {0} of {1}". */
+  format?: string;
+  /** For `bind`: the field a control or cell prints. */
+  field?: string;
+  /** For `pageNumber`: NumberOfTotal (the default), Number, Total or DateTime. */
+  pageInfo?: string;
+  /** For `add`, `line` and `pageNumber`: the new control's name, when it is free. */
+  name?: string;
 }
 
 export interface EditsOutcome {
@@ -272,6 +299,24 @@ function findControl(xml: string, name: string | undefined): Found | null {
   return null;
 }
 
+/**
+ * The font most of a band's labels print in (2026-11-07, agent audit item
+ * 39), for a label added to it with none named; null with no labels.
+ */
+function bandFont(band: PreviewBand): { family?: string; size?: number } | null {
+  const labels = band.controls.filter((c) => c.type === 'XRLabel' && c.fontFamily);
+  if (!labels.length) return null;
+  const count = new Map<string, { n: number; family: string; size: number | null }>();
+  for (const c of labels) {
+    const key = `${c.fontFamily}|${c.fontSize}`;
+    const seen = count.get(key) ?? { n: 0, family: c.fontFamily!, size: c.fontSize };
+    seen.n++;
+    count.set(key, seen);
+  }
+  const top = [...count.values()].sort((a, b) => b.n - a.n)[0];
+  return { family: top.family, size: top.size ?? undefined };
+}
+
 function findBand(bands: PreviewBand[], key: string | undefined): number {
   if (key === undefined || key === '') return bands.findIndex((b) => b.kind === 'Detail');
   const k = key.trim();
@@ -283,7 +328,31 @@ function findBand(bands: PreviewBand[], key: string | undefined): number {
 
 const decline = (xml: string, reason: string): EditResult => ({ xml, applied: false, reason });
 
-/** `#RRGGBB` as the serializer writes an opaque colour; a colour's name as it is. */
+/**
+ * The colours .NET knows by name, as `System.Drawing.Color` spells them: the
+ * web colours and Transparent. DevExpress reads a `ForeColor="Red"` through
+ * that table, so a name outside it is not a colour (2026-11-07, agent audit
+ * item 78: any word of three letters or more was accepted, "Text" included).
+ */
+const NAMED_COLORS = [
+  'AliceBlue', 'AntiqueWhite', 'Aqua', 'Aquamarine', 'Azure', 'Beige', 'Bisque', 'Black', 'BlanchedAlmond', 'Blue', 'BlueViolet', 'Brown',
+  'BurlyWood', 'CadetBlue', 'Chartreuse', 'Chocolate', 'Coral', 'CornflowerBlue', 'Cornsilk', 'Crimson', 'Cyan', 'DarkBlue', 'DarkCyan',
+  'DarkGoldenrod', 'DarkGray', 'DarkGreen', 'DarkKhaki', 'DarkMagenta', 'DarkOliveGreen', 'DarkOrange', 'DarkOrchid', 'DarkRed', 'DarkSalmon',
+  'DarkSeaGreen', 'DarkSlateBlue', 'DarkSlateGray', 'DarkTurquoise', 'DarkViolet', 'DeepPink', 'DeepSkyBlue', 'DimGray', 'DodgerBlue',
+  'Firebrick', 'FloralWhite', 'ForestGreen', 'Fuchsia', 'Gainsboro', 'GhostWhite', 'Gold', 'Goldenrod', 'Gray', 'Green', 'GreenYellow',
+  'Honeydew', 'HotPink', 'IndianRed', 'Indigo', 'Ivory', 'Khaki', 'Lavender', 'LavenderBlush', 'LawnGreen', 'LemonChiffon', 'LightBlue',
+  'LightCoral', 'LightCyan', 'LightGoldenrodYellow', 'LightGray', 'LightGreen', 'LightPink', 'LightSalmon', 'LightSeaGreen', 'LightSkyBlue',
+  'LightSlateGray', 'LightSteelBlue', 'LightYellow', 'Lime', 'LimeGreen', 'Linen', 'Magenta', 'Maroon', 'MediumAquamarine', 'MediumBlue',
+  'MediumOrchid', 'MediumPurple', 'MediumSeaGreen', 'MediumSlateBlue', 'MediumSpringGreen', 'MediumTurquoise', 'MediumVioletRed',
+  'MidnightBlue', 'MintCream', 'MistyRose', 'Moccasin', 'NavajoWhite', 'Navy', 'OldLace', 'Olive', 'OliveDrab', 'Orange', 'OrangeRed',
+  'Orchid', 'PaleGoldenrod', 'PaleGreen', 'PaleTurquoise', 'PaleVioletRed', 'PapayaWhip', 'PeachPuff', 'Peru', 'Pink', 'Plum', 'PowderBlue',
+  'Purple', 'Red', 'RosyBrown', 'RoyalBlue', 'SaddleBrown', 'Salmon', 'SandyBrown', 'SeaGreen', 'SeaShell', 'Sienna', 'Silver', 'SkyBlue',
+  'SlateBlue', 'SlateGray', 'Snow', 'SpringGreen', 'SteelBlue', 'Tan', 'Teal', 'Thistle', 'Tomato', 'Transparent', 'Turquoise', 'Violet',
+  'Wheat', 'White', 'WhiteSmoke', 'Yellow', 'YellowGreen',
+];
+const COLOR_BY_LOWER = new Map(NAMED_COLORS.map((n) => [n.toLowerCase(), n]));
+
+/** `#RRGGBB` as the serializer writes an opaque colour; a colour's name as .NET spells it; else null. */
 export function repxColor(value: string): string | null {
   const v = value.trim();
   const hex = /^#?([0-9a-f]{6})$/i.exec(v);
@@ -291,7 +360,8 @@ export function repxColor(value: string): string | null {
     const n = parseInt(hex[1], 16);
     return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
   }
-  return /^[A-Za-z]{3,30}$/.test(v) ? v : null;
+  // "light grey", "Dark-Blue": the words .NET runs together, grey as gray.
+  return COLOR_BY_LOWER.get(v.toLowerCase().replace(/[\s_-]+/g, '').replace(/grey/g, 'gray')) ?? null;
 }
 
 /** A `Font` value with the asked-for parts changed and the rest kept. */
@@ -306,7 +376,11 @@ function fontValue(current: string | null, resolved: { fontFamily: string | null
   const underline = e.underline ?? has('Underline');
   const strike = has('Strikeout');
   const styles = [bold && 'Bold', italic && 'Italic', underline && 'Underline', strike && 'Strikeout'].filter(Boolean);
-  return `${family}, ${round(size)}pt${styles.length ? `, style=${styles.join(', ')}` : ''}`;
+  // What follows the style is kept (2026-11-07, agent audit item 89): an
+  // Arabic report's "charSet=178" chose its glyphs, and a bold made by the
+  // chat dropped it.
+  const kept = parts.filter((p) => /^(charSet|gdiCharSet|gdiVerticalFont|unit)=/i.test(p));
+  return `${family}, ${round(size)}pt${styles.length ? `, style=${styles.join(', ')}` : ''}${kept.length ? `, ${kept.join(', ')}` : ''}`;
 }
 
 /** A style the control names would otherwise win over what is set on it. */
@@ -361,7 +435,43 @@ function styleAttrs(e: AgentEdit, openTag: string, resolved: { fontFamily: strin
     if (!side) return 'no alignment was given';
     return { TextAlignment: alignment(openTag, resolved.vAlign, side), ...priority(openTag, 'UseTextAlignment') };
   }
+  if (e.op === 'border') {
+    const attrs: Record<string, string> = {};
+    if (e.borders !== undefined) {
+      const sides = borderSides(e.borders);
+      if (!sides) return `"${e.borders}" is not a set of sides (All, None, or Left, Top, Right, Bottom)`;
+      Object.assign(attrs, { Borders: sides }, priority(openTag, 'UseBorders'));
+    }
+    if (e.borderColor) {
+      const c = repxColor(e.borderColor);
+      if (!c) return `"${e.borderColor}" is not a colour Forma can write`;
+      Object.assign(attrs, { BorderColor: c }, priority(openTag, 'UseBorderColor'));
+    }
+    if (e.borderWidth !== undefined) {
+      if (!(e.borderWidth >= 0 && e.borderWidth <= 20)) return `${e.borderWidth} is not a border width (0 to 20)`;
+      Object.assign(attrs, { BorderWidth: String(round(e.borderWidth)) }, priority(openTag, 'UseBorderWidth'));
+    }
+    return Object.keys(attrs).length ? attrs : 'no sides, colour or width was given';
+  }
+  if (e.op === 'format') {
+    const format = e.format?.trim() ?? '';
+    // A .NET composite format with the value as {0}, which is all TextFormatString takes.
+    if (!/\{0(?:[,:][^}]*)?\}/.test(format)) return `"${format}" is not a format: write it with {0}, such as {0:N2}, {0:C2} or {0:dd/MM/yyyy}`;
+    return { TextFormatString: format };
+  }
   return 'not a style';
+}
+
+/** Sides as `BorderSide` writes them: All, None, or the sides in its own order. */
+function borderSides(value: string): string | null {
+  const words = value.toLowerCase().split(/[\s,|+&]+|\band\b/).map((w) => w.trim()).filter(Boolean);
+  if (!words.length) return null;
+  if (words.includes('all') || words.includes('box')) return 'All';
+  if (words.every((w) => w === 'none' || w === 'no')) return 'None';
+  const order = ['Left', 'Top', 'Right', 'Bottom'];
+  const chosen = order.filter((s) => words.includes(s.toLowerCase()));
+  if (chosen.length !== words.filter((w) => w !== 'and').length) return null;
+  return chosen.length === 4 ? 'All' : chosen.join(', ');
 }
 
 /** Set, or with null remove, attributes on the report's root. */
@@ -423,22 +533,49 @@ function applyOne(xml: string, edit: AgentEdit): EditResult {
     const out = setRootAttributes(xml, { Margins: next.join(', ') });
     return { xml: out, applied: out !== xml, reason: `set the margins to ${next.join(', ')} (left, right, top, bottom)` };
   }
-  if (e.op === 'add') {
-    const bands = parseAsWritten(xml).bands;
-    const b = findBand(bands, e.band);
+  if (e.op === 'add' || e.op === 'line' || e.op === 'pageNumber' || e.op === 'bandHeight') {
+    const structure = parseAsWritten(xml);
+    const bands = structure.bands;
+    // A page number with no band goes where reports print one: the page footer, else the bottom margin.
+    const footer = ['PageFooter', 'BottomMargin'].find((k) => bands.some((band) => band.kind === k));
+    const b = findBand(bands, e.band ?? (e.op === 'pageNumber' ? footer : undefined));
     if (b === -1) return decline(xml, `no band "${e.band}"`);
-    const added = addLabel(xml, b, 0, 0, e.text?.trim() || 'New label');
+    // The band's own height, as the file writes it (agent audit item 22).
+    if (e.op === 'bandHeight') return setBandHeight(xml, b, e.height ?? NaN);
+    const s = bands[b].dpiScale ?? 1;
+    // The new control's numbers are the file's, as the outline gives them;
+    // the inserters take report units and divide by the band's Dpi.
+    if (e.op === 'line') {
+      const printable = structure.page.width - structure.margins.left - structure.margins.right;
+      return addLine(xml, b, (e.x ?? 0) * s, (e.y ?? 0) * s, e.width !== undefined ? e.width * s : printable - (e.x ?? 0) * s, e.borderWidth ?? 1, e.name);
+    }
+    if (e.op === 'pageNumber') {
+      const kind = ['NumberOfTotal', 'Number', 'Total', 'DateTime'].find((k) => k.toLowerCase() === (e.pageInfo ?? 'NumberOfTotal').trim().toLowerCase());
+      if (!kind) return decline(xml, `"${e.pageInfo}" is not a page number Forma writes (NumberOfTotal, Number, Total, DateTime)`);
+      return addPageInfo(xml, b, (e.x ?? 0) * s, (e.y ?? 0) * s, {
+        width: e.width !== undefined ? e.width * s : undefined,
+        kind,
+        format: e.format?.trim() || (kind === 'NumberOfTotal' ? 'Page {0} of {1}' : undefined),
+        align: readAlign(e.align) ?? 'right',
+        name: e.name,
+      });
+    }
+    const added = addLabel(xml, b, 0, 0, e.text?.trim() || 'New label', e.name);
     if (!added.applied) return added;
     const name = /"([^"]+)"/.exec(added.reason)?.[1];
     const found = findControl(added.xml, name);
     if (!found) return added;
-    const s = found.control.dpiScale ?? 1;
-    // addLabel takes report units and divides by the band's Dpi; the outline's numbers are the file's.
     const placed = moveControl(added.xml, found.ref, e.x ?? 0, e.y ?? 0);
     const sized = e.width || e.height ? resizeControl(placed.xml, found.ref, e.width ?? found.control.width / s, e.height ?? found.control.height / s) : placed;
-    // Its font, when one is asked for or remembered (2026-11-07, agent audit item 13).
-    const styled = name && (e.family || e.size || e.bold !== undefined || e.italic !== undefined)
-      ? applyOne(sized.xml, { op: 'font', control: name, family: e.family, size: e.size, bold: e.bold, italic: e.italic })
+    /*
+     * Its font: the one asked for, the remembered one App passes (agent audit
+     * item 13), or the band's own (item 39), so a label added beside 9pt
+     * Tahoma is not Times New Roman, the report's default.
+     */
+    const own = !e.family && !e.size ? bandFont(bands[b]) : null;
+    const font = { family: e.family ?? own?.family, size: e.size ?? own?.size, bold: e.bold, italic: e.italic };
+    const styled = name && (font.family || font.size || font.bold !== undefined || font.italic !== undefined)
+      ? applyOne(sized.xml, { op: 'font', control: name, ...font })
       : null;
     return { xml: styled?.applied ? styled.xml : sized.xml, applied: true, reason: added.reason };
   }
@@ -450,6 +587,22 @@ function applyOne(xml: string, edit: AgentEdit): EditResult {
   const cellAt = e.row && e.cell ? { row: e.row - 1, cell: e.cell - 1 } : null;
 
   switch (e.op) {
+    case 'duplicate': {
+      // Beside itself, as Ctrl+D makes one; then where it was asked to go.
+      const copied = duplicateControl(xml, ref);
+      if (!copied.applied || (e.x === undefined && e.y === undefined)) return copied;
+      const copy = findControl(copied.xml, /as "([^"]+)"/.exec(copied.reason)?.[1]);
+      if (!copy) return copied;
+      const at = fileBox(copy.control);
+      const moved = moveControl(copied.xml, copy.ref, e.x ?? at.x, e.y ?? at.y);
+      return { ...moved, reason: copied.reason };
+    }
+    case 'bind': {
+      const field = (e.field ?? '').trim().replace(/^\[|\]$/g, '');
+      if (!field || /[[\]"<>]/.test(field)) return decline(xml, e.field ? `"${e.field}" is not a field name` : 'no field was named');
+      if (control.type === 'XRTable' && !cellAt) return decline(xml, `${control.name} is a table: name the row and the cell to bind`);
+      return bindText(xml, ref, `[${field}]`, cellAt?.row, cellAt?.cell);
+    }
     case 'text':
       if (e.text === undefined) return decline(xml, 'no text was given');
       if (control.type === 'XRTable') {
@@ -471,21 +624,43 @@ function applyOne(xml: string, edit: AgentEdit): EditResult {
       return updateControl(xml, ref, () => ({ Visible: e.visible === false ? 'false' : 'true' }), e.visible === false ? 'hid' : 'showed');
     case 'font':
     case 'color':
-    case 'align': {
-      const what = e.op === 'font' ? 'restyled' : e.op === 'color' ? 'recoloured' : 'aligned';
-      if (control.type === 'XRTable' && cellAt) {
-        const cell = control.rows[cellAt.row]?.cells[cellAt.cell];
-        if (!cell) return decline(xml, `no cell ${cellAt.cell + 1} in row ${cellAt.row + 1} of ${control.name}`);
-        let refusal = '';
-        const out = updateCell(xml, ref, cellAt.row, cellAt.cell, (openTag) => {
-          const attrs = styleAttrs(e, openTag, cell);
-          if (typeof attrs === 'string') {
-            refusal = attrs;
-            return {};
-          }
-          return attrs;
-        }, what);
-        return refusal ? decline(xml, refusal) : out;
+    case 'align':
+    case 'border':
+    case 'format': {
+      const what = { font: 'restyled', color: 'recoloured', align: 'aligned', border: 'bordered', format: 'formatted' }[e.op];
+      /*
+       * A table's cells (2026-11-07, agent audit items 22 and 40): one cell
+       * by its row and place; a row by the row alone, as a header row is
+       * styled; a column by the place alone; and with neither, every cell,
+       * since a cell's own Font or ForeColor wins over the table's, and bold
+       * set on the table alone was reported as made while nothing printed bold.
+       */
+      if (control.type === 'XRTable') {
+        const targets: { row: number; cell: number }[] = [];
+        control.rows.forEach((row, r) =>
+          row.cells.forEach((_, k) => {
+            if ((e.row === undefined || e.row - 1 === r) && (e.cell === undefined || e.cell - 1 === k)) targets.push({ row: r, cell: k });
+          }),
+        );
+        if (!targets.length) return decline(xml, `no ${e.row ? `row ${e.row}` : ''}${e.row && e.cell ? ', ' : ''}${e.cell ? `cell ${e.cell}` : ''} in ${control.name}`);
+        let out = xml;
+        for (const t of targets) {
+          const cell = parseAsWritten(out).bands[ref.band].controls[ref.control].rows[t.row]?.cells[t.cell];
+          if (!cell) continue;
+          let refusal = '';
+          const next = updateCell(out, ref, t.row, t.cell, (openTag) => {
+            const attrs = styleAttrs(e, openTag, cell);
+            if (typeof attrs === 'string') {
+              refusal = attrs;
+              return {};
+            }
+            return attrs;
+          }, what);
+          if (refusal) return decline(xml, refusal);
+          out = next.xml;
+        }
+        const scope = e.row && e.cell ? `row ${e.row}, cell ${e.cell} of` : e.row ? `row ${e.row} of` : e.cell ? `column ${e.cell} of` : 'every cell of';
+        return { xml: out, applied: out !== xml, reason: `${what} ${scope} ${control.name}` };
       }
       let refusal = '';
       const out = updateControl(xml, ref, (openTag) => {
@@ -508,7 +683,8 @@ function applyOne(xml: string, edit: AgentEdit): EditResult {
  * pane, fill the Preview with sample rows, export, or open the DevExpress
  * designer. They run after any edits, against the report those edits left.
  */
-export const TOOL_NAMES = ['show', 'testData', 'export', 'designer'] as const;
+/** `undo` (2026-11-07, agent audit item 85): "undo that" takes back the last change, as the corner's Undo does. */
+export const TOOL_NAMES = ['show', 'testData', 'export', 'designer', 'undo'] as const;
 export const PANES = ['mockup', 'preview', 'data', 'spec', 'repx'] as const;
 export const EXPORT_FORMATS = ['repx', 'pdf', 'csv', 'xlsx', 'docx', 'rtf', 'html', 'png'] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -528,18 +704,54 @@ export const TOOL_LISTS = { names: TOOL_NAMES, panes: PANES, formats: EXPORT_FOR
 
 const PANE_WORDS: Record<Pane, string> = { mockup: 'the Mockup', preview: 'the Preview', data: 'the Data tab', spec: 'the Spec', repx: 'the REPX' };
 
-/** What a tool did, a line for the reply. */
+/**
+ * What a tool is doing, a line for the reply. In the present (2026-11-07,
+ * agent audit item 38): the reply is written before the tools run, and
+ * "exported it as PDF" was said of an export not yet made.
+ */
 export function toolLine(tool: AgentTool): string {
   switch (tool.name) {
     case 'show':
-      return `opened ${PANE_WORDS[tool.pane ?? 'preview']}`;
+      return `opening ${PANE_WORDS[tool.pane ?? 'preview']}`;
     case 'testData':
-      return 'filled the Preview with sample rows';
+      return 'filling the Preview with sample rows';
     case 'export':
-      return `exported it as ${(tool.format ?? 'repx').toUpperCase()}`;
+      return `exporting it as ${(tool.format ?? 'repx').toUpperCase()}`;
     case 'designer':
-      return 'asked the DevExpress designer on this computer to open it';
+      return 'asking the DevExpress designer on this computer to open it';
+    case 'undo':
+      return 'taking back the last change';
   }
+}
+
+/**
+ * The tools to run, once each (agent audit item 38): the same tool asked
+ * for twice runs once, and a second pane to show replaces the first.
+ */
+export function distinctTools(tools: readonly AgentTool[]): AgentTool[] {
+  const out: AgentTool[] = [];
+  for (const t of tools) {
+    if (t.name === 'show') {
+      const at = out.findIndex((o) => o.name === 'show');
+      if (at !== -1) out.splice(at, 1);
+    } else if (out.some((o) => o.name === t.name && o.format === t.format)) continue;
+    out.push(t);
+  }
+  return out;
+}
+
+/**
+ * What the agent is told for its one more pass (2026-11-07, agent audit item
+ * 23): what it asked for that could not be made, and what the checks found
+ * that its edits brought. Until then a declined edit offered a whole
+ * redesign, and an error an edit brought was reported and left.
+ */
+export function followUpMessage(declined: readonly string[], brought: readonly string[]): string {
+  const parts = ['Forma applied your edits.'];
+  if (declined.length) parts.push(`These could not be made:\n${declined.map((d) => `- ${d}`).join('\n')}`);
+  if (brought.length) parts.push(`The checks found these errors the edits brought:\n${brought.map((b) => `- ${b}`).join('\n')}`);
+  parts.push('If the edits can make what was meant another way, or fix those errors, answer with "edit" and only those edits, against the report as it now is (the outline above). Otherwise answer with "answer" and say plainly what could not be done.');
+  return parts.join('\n\n');
 }
 
 /** A report turn's answer, as `chatReply` hands it over and as Forma acts on it. */
@@ -607,7 +819,7 @@ export function readReportOutcome(parsed: { reply?: string; action?: string; edi
     .filter((e): e is AgentEdit => Boolean(e) && typeof e === 'object' && (EDIT_OPS as readonly string[]).includes((e as AgentEdit).op))
     .map((e) => (e.op === 'align' && named && !readAlign(e.align ?? (e as { alignment?: unknown }).alignment) ? { ...e, align: named } : e));
   const read = (Array.isArray(parsed.tools) ? parsed.tools : []).map(readTool);
-  const tools = read.filter((t): t is AgentTool => !!t && typeof t === 'object').slice(0, 4);
+  const tools = distinctTools(read.filter((t): t is AgentTool => !!t && typeof t === 'object')).slice(0, 4);
   const toolsDeclined = read.filter((t): t is string => typeof t === 'string');
   let action: ReportOutcome['action'] =
     parsed.action === 'answer' || parsed.action === 'edit' || parsed.action === 'rebuild' || parsed.action === 'new'
@@ -728,6 +940,35 @@ export function changedControls(before: string, after: string): string[] {
   return out;
 }
 
+type Look = {
+  fontFamily: string | null;
+  fontSize: number | null;
+  bold: boolean;
+  italic: boolean;
+  align: 'left' | 'center' | 'right';
+  appearance: Partial<Record<string, string>>;
+  field: string | null;
+  data?: { expression: string | null; format: string | null };
+};
+
+/** What changed in how a control or a cell prints, a line each: font, colour, borders, alignment, format, binding. */
+function lookChanges(name: string, was: Look, now: Look): string[] {
+  const out: string[] = [];
+  if (fontWords(was) !== fontWords(now)) out.push(`restyled ${name} (${fontWords(now) || 'its default font'})`);
+  const [a, b] = [was.appearance, now.appearance];
+  if (a.ForeColor !== b.ForeColor || a.BackColor !== b.BackColor) {
+    const parts = [a.ForeColor !== b.ForeColor && `text ${b.ForeColor ?? 'default'}`, a.BackColor !== b.BackColor && `fill ${b.BackColor ?? 'none'}`].filter(Boolean);
+    out.push(`recoloured ${name} (${parts.join(', ')})`);
+  }
+  if (a.Borders !== b.Borders || a.BorderColor !== b.BorderColor || a.BorderWidth !== b.BorderWidth) out.push(`set the borders of ${name} to ${b.Borders ?? 'None'}`);
+  if (was.align !== now.align) out.push(`aligned ${name} ${now.align}`);
+  if ((was.data?.format ?? null) !== (now.data?.format ?? null)) out.push(`formatted ${name} as ${now.data?.format ? `"${now.data.format}"` : 'plain'}`);
+  if (was.field !== now.field || (was.data?.expression ?? null) !== (now.data?.expression ?? null)) {
+    out.push(`bound ${name} to ${now.field ? `[${now.field}]` : now.data?.expression ? clip(now.data.expression) : 'nothing'}`);
+  }
+  return out;
+}
+
 /**
  * What differs between two reports, a line each, for a reply: controls added,
  * removed, retyped, moved, resized, restyled, aligned, hidden or shown, a
@@ -753,23 +994,35 @@ export function describeChanges(before: string, after: string, limit = 10): stri
     const [p, q] = [fileBox(was), fileBox(now)];
     if (p.x !== q.x || p.y !== q.y) lines.push(`moved ${name} to ${q.x}, ${q.y}`);
     if (p.width !== q.width || p.height !== q.height) lines.push(`resized ${name} to ${q.width} x ${q.height}`);
-    if (fontWords(was) !== fontWords(now) || JSON.stringify(was.appearance) !== JSON.stringify(now.appearance)) {
-      lines.push(`restyled ${name}${fontWords(now) ? ` (${fontWords(now)})` : ''}`);
-    }
-    if (was.align !== now.align) lines.push(`aligned ${name} ${now.align}`);
+    // Each kind of change in its own words (2026-11-07, agent audit item 50):
+    // a colour made red read "restyled labelTitle (Arial 18pt)", the
+    // appearance having changed and the font not.
+    lines.push(...lookChanges(name, was, now));
     if (was.visible !== now.visible) lines.push(`${now.visible ? 'showed' : 'hid'} ${name}`);
+    const cells: string[] = [];
     now.rows.forEach((row, r) =>
       row.cells.forEach((cell, k) => {
         const old = was.rows[r]?.cells[k];
-        if (old && old.text !== cell.text && !cell.field) lines.push(`retyped row ${r + 1}, cell ${k + 1} of ${name} to "${clip(cell.text)}"`);
-        else if (old && (fontWords(old) !== fontWords(cell) || old.align !== cell.align)) lines.push(`restyled row ${r + 1}, cell ${k + 1} of ${name}`);
+        if (!old) return;
+        const where = `row ${r + 1}, cell ${k + 1} of ${name}`;
+        if (old.text !== cell.text && !cell.field) cells.push(`retyped ${where} to "${clip(cell.text)}"`);
+        cells.push(...lookChanges(where, old, cell));
       }),
     );
+    // A whole table restyled is one line, not one per cell.
+    lines.push(...(cells.length > 6 ? [`changed ${cells.length} cells of ${name}`] : cells));
   }
   const [ra, rb] = [ROOT.exec(before)?.[1] ?? '', ROOT.exec(after)?.[1] ?? ''];
   const paper = (attrs: string) => `${attrOf(attrs, 'PaperKind') ?? 'Letter'}${(attrOf(attrs, 'Landscape') ?? '').toLowerCase() === 'true' ? ' landscape' : ''}`;
   if (paper(ra) !== paper(rb)) lines.push(`the paper is now ${paper(rb)}`);
   if ((attrOf(ra, 'Margins') ?? '') !== (attrOf(rb, 'Margins') ?? '')) lines.push(`the margins are now ${attrOf(rb, 'Margins') ?? 'the default'}`);
+  // A band made taller or shorter (2026-11-07, `bandHeight`).
+  const [sa, sb] = [parseAsWritten(before).bands, parseAsWritten(after).bands];
+  sb.forEach((band) => {
+    const old = sa.find((x) => x.name === band.name);
+    const h = (x: PreviewBand) => round(x.height / (x.dpiScale ?? 1));
+    if (old && h(old) !== h(band)) lines.push(`set the height of ${band.name} to ${h(band)}`);
+  });
   if (lines.length > limit) return [...lines.slice(0, limit), `and ${lines.length - limit} more changes`];
   return lines;
 }
@@ -795,6 +1048,6 @@ export function changesMarkdown(changes: readonly string[], declined: readonly s
   const parts: string[] = [];
   if (changes.length) parts.push(`**Changed**\n${changes.map((c) => `- ${c}`).join('\n')}`);
   if (declined.length) parts.push(`**Not changed**\n${declined.map((d) => `- ${d}`).join('\n')}`);
-  if (done.length) parts.push(`**Done**\n${done.map((d) => `- ${d}`).join('\n')}`);
+  if (done.length) parts.push(`**Started**\n${done.map((d) => `- ${d}`).join('\n')}`);
   return parts.join('\n\n');
 }
