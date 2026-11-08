@@ -33,6 +33,17 @@ export interface RepxQuery {
   allColumns: boolean;
   filter?: string;
   parameters: RepxQueryParameter[];
+  /**
+   * A built query's joins, sort, Top and distinct (2026-11-09, batch DG), as
+   * DevExpress 20.1 wrote them in batch DA: a `<Relation Type Parent Nested>`
+   * with its `<KeyColumn>`s inside `<Tables>`, `<Sorting>`'s columns, and
+   * `Top` and `Distinct` on the query. Enough to rebuild the query a report
+   * already reads (`queryFromRepx` in sqlDrift.ts).
+   */
+  joins: { type: string; parent: string; nested: string; keys: { parent: string; nested: string }[] }[];
+  sort: { table: string; name: string; descending: boolean }[];
+  top?: number;
+  distinct?: boolean;
 }
 
 export interface RepxRelation {
@@ -102,7 +113,21 @@ function readQuery(open: string, body: string): RepxQuery {
     columns: [...columnsBlock.matchAll(/<Column\s([^>]*?)\/>/g)].map((m) => ({ table: attr(` ${m[1]}`, 'Table') ?? '', name: attr(` ${m[1]}`, 'Name') ?? '' })),
     allColumns: /<AllColumns\s*\/>/.test(columnsBlock),
     parameters,
+    joins: [...tablesBlock.matchAll(/<Relation\s([^>]*?)>([\s\S]*?)<\/Relation>/g)].map((m) => ({
+      type: attr(` ${m[1]}`, 'Type') ?? 'Inner',
+      parent: attr(` ${m[1]}`, 'Parent') ?? '',
+      nested: attr(` ${m[1]}`, 'Nested') ?? '',
+      keys: [...m[2].matchAll(/<KeyColumn\s([^>]*?)\/>/g)].map((k) => ({ parent: attr(` ${k[1]}`, 'Parent') ?? '', nested: attr(` ${k[1]}`, 'Nested') ?? '' })),
+    })),
+    sort: [...(/<Sorting>([\s\S]*?)<\/Sorting>/.exec(body)?.[1] ?? '').matchAll(/<Column\s([^>]*?)\/>/g)].map((m) => ({
+      table: attr(` ${m[1]}`, 'Table') ?? '',
+      name: attr(` ${m[1]}`, 'Name') ?? '',
+      descending: attr(` ${m[1]}`, 'Descending') === 'true',
+    })),
   };
+  const top = Number(attr(open, 'Top'));
+  if (top > 0) q.top = top;
+  if (attr(open, 'Distinct') === 'true') q.distinct = true;
   const proc = /<ProcName>([\s\S]*?)<\/ProcName>/.exec(body);
   if (proc) q.procName = decodeEntities(proc[1]);
   const sql = /<Sql>([\s\S]*?)<\/Sql>/.exec(body);
@@ -246,6 +271,93 @@ export function topLevelItems(inner: string): number {
  * which is what 20.1 writes with StoreConnectionNameOnly, so no password
  * leaves in a report Forma produced.
  */
+/** The parameters a data source uses: its queries' `?Name`s, and those whose lookup list it fills (2026-11-09). */
+export function sourceParameters(repx: string, ds: { ref: string; queries: { filter?: string; parameters: { value: string }[] }[] }): Set<string> {
+  const names = new Set(ds.queries.flatMap((q) => [q.filter ?? '', ...q.parameters.map((p) => p.value)]).flatMap((s) => [...s.matchAll(/\?([A-Za-z_]\w*)/g)].map((m) => m[1])));
+  const storage = /<ObjectStorage>([\s\S]*?)<\/ObjectStorage>/.exec(repx)?.[1] ?? '';
+  const lookups = new Set([...storage.matchAll(/<Item\d+\s[^>]*>/g)].map((m) => m[0]).filter((t) => /DynamicListLookUpSettings/.test(t) && t.includes(`DataSource="#Ref-${ds.ref}"`)).map((t) => /\sRef="(\d+)"/.exec(t)?.[1]));
+  const block = /<Parameters>([\s\S]*?)<\/Parameters>/.exec(repx)?.[1] ?? '';
+  for (const m of block.matchAll(/<Item\d+\s[^>]*>/g)) {
+    const lookup = /ValueSourceSettings="#Ref-(\d+)"/.exec(m[0])?.[1];
+    const name = /\sName="([^"]*)"/.exec(m[0])?.[1];
+    if (name && lookup && lookups.has(lookup)) names.add(name);
+  }
+  return names;
+}
+
+const maxRefIn = (xml: string) => Math.max(0, ...[...xml.matchAll(/\sRef="(\d+)"/g)].map((m) => Number(m[1])));
+
+/** Appends items to a top-level block, numbering them on from its last, or creates it before `before`. */
+function appendItems(xml: string, block: string, items: string[], before: RegExp): string {
+  if (!items.length) return xml;
+  const found = new RegExp(`<${block}>([\\s\\S]*?)</${block}>`).exec(xml);
+  const count = found ? topLevelItems(found[1]) : 0;
+  const numbered = items.map((it, i) => it.replace(/^<Item\d+/, `<Item${count + i + 1}`)).join('');
+  if (found) return xml.replace(`</${block}>`, `${numbered}</${block}>`);
+  const at = before.exec(xml);
+  const index = at ? at.index : xml.lastIndexOf('</XtraReportsLayoutSerializer>');
+  return `${xml.slice(0, index)}<${block}>${numbered}</${block}>${xml.slice(index)}`;
+}
+
+/**
+ * A report's SQL data source carried through a redesign (2026-11-09, the SQL
+ * Server programme, batch DG, item 29). A redesign is a new REPX the AI wrote
+ * from the old one, and a model asked to keep a Base64 blob it cannot read
+ * drops or garbles it; the report then opens bound to nothing. When the old
+ * report had a source the new one lacks, the old one is put back as it was:
+ * its `ComponentStorage` item, the report's `DataSource` and `DataMember`, and
+ * the parameters its queries use with their lifted types and lookup lists,
+ * each under a fresh `Ref` where the new report already uses its number. A
+ * new report with a source of its own (the chat's data edit, or the query
+ * the AI named) keeps that one.
+ */
+export function carryDataSource(before: string, after: string): { xml: string; applied: boolean; reason: string } {
+  const old = readRepxDataSources(before);
+  if (!old.length) return { xml: after, applied: false, reason: 'the report had no data source' };
+  if (!/<XtraReportsLayoutSerializer\b/.test(after)) return { xml: after, applied: false, reason: 'there is no new report' };
+  if (readRepxDataSources(after).length) return { xml: after, applied: false, reason: 'the new report has a data source of its own' };
+  let next = Math.max(maxRefIn(after), maxRefIn(before)) + 1;
+  const remap = new Map<string, string>();
+  const fresh = (ref: string) => {
+    if (!remap.has(ref)) remap.set(ref, new RegExp(`\\sRef="${ref}"`).test(after) ? String(next++) : ref);
+    return remap.get(ref)!;
+  };
+  const tagsOf = (xml: string, block: string) => [...(new RegExp(`<${block}>([\\s\\S]*?)</${block}>`).exec(xml)?.[1] ?? '').matchAll(/<Item\d+\s[^>]*?\/>/g)].map((m) => m[0]);
+  const withRefs = (tag: string) => tag.replace(/\sRef="(\d+)"/, (_, r: string) => ` Ref="${fresh(r)}"`).replace(/"#Ref-(\d+)"/g, (_, r: string) => `"#Ref-${fresh(r)}"`);
+
+  let xml = after;
+  const sources = tagsOf(before, 'ComponentStorage').filter((t) => /DevExpress\.DataAccess\.Sql\.SqlDataSource/.test(t));
+  xml = appendItems(xml, 'ComponentStorage', sources.map(withRefs), /<ObjectStorage>|<\/XtraReportsLayoutSerializer>/);
+
+  // The report reads the source by reference and the query by name, as before.
+  const rootBefore = /<XtraReportsLayoutSerializer\b[^>]*>/.exec(before)?.[0] ?? '';
+  const pointer = /\sDataSource="#Ref-(\d+)"/.exec(rootBefore)?.[1];
+  const member = /\sDataMember="([^"]*)"/.exec(rootBefore)?.[1];
+  if (pointer) {
+    xml = xml.replace(/<XtraReportsLayoutSerializer\b[^>]*>/, (open) =>
+      open.replace(/\sDataSource="[^"]*"/, '').replace(/\sDataMember="[^"]*"/, '').replace(/\s*>$/, `${member ? ` DataMember="${member}"` : ''} DataSource="#Ref-${fresh(pointer)}">`),
+    );
+  }
+  // A detail report the redesign kept still names the old source by its old number.
+  for (const ds of old) if (remap.get(ds.ref) !== ds.ref) xml = xml.split(`DataSource="#Ref-${ds.ref}"`).join(`DataSource="#Ref-${remap.get(ds.ref)}"`);
+
+  // The parameters its queries use, and what they point at in ObjectStorage.
+  const have = new Set(tagsOf(xml, 'Parameters').map((t) => /\sName="([^"]*)"/.exec(t)?.[1]));
+  const wanted = new Set(old.flatMap((ds) => [...sourceParameters(before, ds)]));
+  const params = tagsOf(before, 'Parameters').filter((t) => {
+    const name = /\sName="([^"]*)"/.exec(t)?.[1];
+    return name && wanted.has(name) && !have.has(name);
+  });
+  const pointed = new Set(params.flatMap((t) => [...t.matchAll(/"#Ref-(\d+)"/g)].map((m) => m[1])));
+  const storage = tagsOf(before, 'ObjectStorage').filter((t) => pointed.has(/\sRef="(\d+)"/.exec(t)?.[1] ?? ''));
+  xml = appendItems(xml, 'Parameters', params.map(withRefs), /<CalculatedFields>|<Bands>/);
+  xml = appendItems(xml, 'ObjectStorage', storage.map(withRefs), /<\/XtraReportsLayoutSerializer>/);
+
+  const names = old.flatMap((ds) => ds.queries.map((q) => q.name)).join(', ');
+  const kept = params.length ? `, with parameter${params.length === 1 ? '' : 's'} ${params.map((t) => /\sName="([^"]*)"/.exec(t)![1]).join(', ')}` : '';
+  return { xml, applied: true, reason: `kept the data source (${names} on connection "${old[0].connectionName}") through the redesign${kept}` };
+}
+
 export function stripStoredCredentials(repx: string): { xml: string; applied: boolean; reason: string } {
   const sources = readRepxDataSources(repx).filter((d) => d.storesCredentials || !d.fromAppConfig);
   if (!sources.length) return { xml: repx, applied: false, reason: 'no data source stores a login' };

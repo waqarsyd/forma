@@ -684,6 +684,8 @@ src/
                        column matched to a field by heading and value),
                        sqlPreview (the Preview over the database's sample
                        rows, typed as DevExpress prints each SQL type),
+                       sqlDrift (a report's own data source read back, kept
+                       through a redesign and checked against a newer layout),
                        layers (the stack of open menus and dialogs, so one
                        Escape closes only the topmost and keys meant for
                        one stay there), clipboard (every Copy, with a

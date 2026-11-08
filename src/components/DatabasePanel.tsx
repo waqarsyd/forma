@@ -17,6 +17,9 @@ import type { SqlObject, SqlProcedure, SqlSchema } from '../lib/sqlSchema';
 import { resultFix, summarizeSchema, typeLabel } from '../lib/sqlSchema';
 import { SCHEMA_SCRIPT, sampleScript } from '../lib/sqlSchemaScript';
 import { checkSqlAgainstSchema } from '../lib/databaseAi';
+import { driftOf, mainQueryOf, mergeLayouts, queryFromRepx, refreshDataSource } from '../lib/sqlDrift';
+import { schemaFromRepx, type RepxQuery } from '../lib/repxSqlDataSource';
+import { parseParameters } from '../lib/repxParameters';
 import {
   checkCustomSql,
   describeQuery,
@@ -60,6 +63,12 @@ interface Props {
   onShare?: (on: boolean) => void;
   /** Custom SQL from a sentence (item 26): the AI writes it over the layout, and this panel holds it to the layout. */
   onAskSql?: (sentence: string) => Promise<{ sql: string; name: string; explanation: string }>;
+  /** The open report, whose own data source is shown and checked (batch DG). */
+  repx?: string | null;
+  /** A REPX changed here (a drift fixed), for App to apply with a revision. */
+  onApplyRepx?: (xml: string, reason: string) => void;
+  /** A layout to make the active database: the report's own, or one with the report's tables kept. */
+  onAdopt?: (schema: SqlSchema) => void;
 }
 
 export type WriteOptions = Pick<DataSourceSpec, 'connectionName' | 'multiValue' | 'lookups' | 'calculatedFields'>;
@@ -104,6 +113,97 @@ function matches(text: string, o: SqlObject | SqlProcedure): boolean {
   return columns.some((c) => c.name.toLowerCase().includes(t));
 }
 
+/**
+ * The report's own SQL data source (2026-11-09, the SQL Server programme,
+ * batch DG, items 29 and 30): its connection, queries, relations, fields and
+ * parameters as the file holds them, read back by `lib/sqlDrift.ts`. With a
+ * layout imported, it is checked against it, and each difference is said with
+ * its fix: a renamed column renamed, the source written again for a changed
+ * type or a procedure's parameters, or the report's own copy of what the
+ * export left out kept in the layout. With none, the layout it uses can be
+ * browsed as the database.
+ */
+function ReportSource({ repx, database, onQuery, onApplyRepx, onAdopt }: {
+  repx: string;
+  database: SqlSchema | null;
+  onQuery: (query: ReportQuery | null) => void;
+  onApplyRepx?: (xml: string, reason: string) => void;
+  onAdopt?: (schema: SqlSchema) => void;
+}) {
+  const main = useMemo(() => mainQueryOf(repx), [repx]);
+  const own = useMemo(() => schemaFromRepx(repx), [repx]);
+  const drift = useMemo(() => (database && main && database.source !== 'repx' ? driftOf(repx, database) : []), [repx, database, main]);
+  const [done, setDone] = useState('');
+  if (!main) return null;
+  const { ds } = main;
+  const parameters = parseParameters(repx);
+  const fields = ds.views.find((v) => v.name === main.query.name)?.fields ?? [];
+  const describe = (q: RepxQuery) =>
+    q.type === 'StoredProcQuery'
+      ? `stored procedure ${q.procName}${q.parameters.length ? ` (${q.parameters.map((p) => p.name).join(', ')})` : ''}`
+      : q.type === 'CustomSqlQuery'
+        ? 'custom SQL'
+        : `${q.tables.join(' with ')}${q.filter ? `, filtered by ${q.filter}` : ''}${q.sort.length ? `, sorted by ${q.sort.map((s) => `${s.name}${s.descending ? ' descending' : ''}`).join(', ')}` : ''}${q.top ? `, top ${q.top}` : ''}${q.distinct ? ', distinct rows' : ''}`;
+  const apply = (out: { xml: string; applied: boolean; reason: string }) => {
+    if (out.applied) onApplyRepx?.(out.xml, out.reason);
+    setDone(out.applied ? `${out.reason}.` : `Not changed: ${out.reason}.`);
+  };
+  const renames = drift.filter((d) => d.rename).map((d) => d.rename!);
+  const rewrite = drift.some((d) => d.kind === 'retyped' || d.kind === 'output-param' || d.kind === 'missing-param' || d.kind === 'new-param');
+  return (
+    <section className="dbx-card" aria-label="The report’s own data source">
+      <div className="dbx-head">
+        <h3>The report’s data source</h3>
+        <span className="dbx-sub">connection “{ds.connectionName}”{ds.fromAppConfig ? ', by name' : ''}</span>
+        <span style={{ flex: 1 }} />
+        {database && <button type="button" className="dbx-btn" onClick={() => onQuery(queryFromRepx(repx, database))}>Use it as what the report reads</button>}
+        {!database && own && onAdopt && <button type="button" className="dbx-btn dbx-btn--solid" onClick={() => onAdopt(own)}>Browse the layout it uses</button>}
+      </div>
+      <ul className="dbx-sub" style={{ margin: '8px 0', paddingLeft: 18, lineHeight: 1.6 }}>
+        {ds.queries.map((q) => (
+          <li key={q.name}><strong>{q.name}</strong>{q.name === main.query.name ? ' (the report reads it)' : ''}: {describe(q)}</li>
+        ))}
+        {ds.relations.map((r) => (
+          <li key={r.name}>{r.master} to {r.detail}, a detail band, on {r.keys.map((k) => `${k.master} = ${k.detail}`).join(' and ')}</li>
+        ))}
+      </ul>
+      {fields.length > 0 && (
+        <div className="dbx-fields">
+          {fields.map((f) => <span className="dbx-field" key={f.name}>{f.name} <code>{f.type}</code></span>)}
+        </div>
+      )}
+      {parameters.length > 0 && (
+        <p className="dbx-sub" style={{ margin: '8px 0 0' }}>
+          Parameters: {parameters.map((p) => `${p.name} (${(p.resolvedType ?? p.type).replace('System.', '')}${p.multiValue ? ', several values' : ''})`).join(', ')}
+        </p>
+      )}
+      {database && database.source !== 'repx' && (drift.length === 0 ? (
+        <p className="dbx-sub" role="status" style={{ margin: '8px 0 0' }}>Every table, column and procedure it reads is in {database.database || 'this layout'}, with the same types.</p>
+      ) : (
+        <div className="dbx-group" aria-label="Against the layout">
+          <h4>Against the layout of {database.database || 'this database'} ({drift.length})</h4>
+          {drift.map((d, i) => (
+            <p key={i} className="dbx-warn" style={{ margin: '2px 0' }}>
+              {d.message}
+              {d.rename && onApplyRepx && (
+                <> <button type="button" className="dbx-btn" onClick={() => apply(refreshDataSource(repx, database, [d.rename!]))}>Rename to {d.rename.to}</button></>
+              )}
+            </p>
+          ))}
+          <div className="dbx-row" style={{ marginTop: 6 }}>
+            {renames.length > 1 && onApplyRepx && <button type="button" className="dbx-btn" onClick={() => apply(refreshDataSource(repx, database, renames))}>Rename all {renames.length}</button>}
+            {rewrite && onApplyRepx && <button type="button" className="dbx-btn dbx-btn--solid" onClick={() => apply(refreshDataSource(repx, database))}>Write the data source again from this layout</button>}
+            {drift.some((d) => d.kind === 'missing-object') && onAdopt && own && (
+              <button type="button" className="dbx-btn" onClick={() => onAdopt(mergeLayouts(database, own))}>Keep the report’s own copy of what this layout lacks</button>
+            )}
+          </div>
+        </div>
+      ))}
+      {done && <p className="dbx-sub" role="status" style={{ margin: '8px 0 0' }}>{done}</p>}
+    </section>
+  );
+}
+
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
   const a = document.createElement('a');
@@ -113,7 +213,7 @@ function download(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function DatabasePanel({ database, recent, onSwitch, onForget, query, onQuery, selectionLabel, onBindField, onCopy, onFieldsChange, onWrite, shared = false, onShare, onAskSql }: Props) {
+export default function DatabasePanel({ database, recent, onSwitch, onForget, query, onQuery, selectionLabel, onBindField, onCopy, onFieldsChange, onWrite, shared = false, onShare, onAskSql, repx, onApplyRepx, onAdopt }: Props) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [copied, setCopied] = useState('');
@@ -179,6 +279,7 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
             </div>
           )}
         </section>
+        {repx && <ReportSource repx={repx} database={null} onQuery={onQuery} onApplyRepx={onApplyRepx} onAdopt={onAdopt} />}
       </div>
     );
   }
@@ -350,6 +451,8 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
           </div>
         )}
       </section>
+
+      {repx && <ReportSource repx={repx} database={database} onQuery={onQuery} onApplyRepx={onApplyRepx} onAdopt={onAdopt} />}
 
       {query && (
         <section className="dbx-card" aria-label="What the report reads">

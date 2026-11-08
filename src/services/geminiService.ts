@@ -47,7 +47,7 @@ import { liftStyles } from "../lib/repxStyles";
 import { repairSummaries } from "../lib/repxSummaries";
 import { repairGroupLevels } from "../lib/repxGroups";
 import { repairCrossTabs } from "../lib/repxCrossTabs";
-import { stripStoredCredentials } from "../lib/repxSqlDataSource";
+import { carryDataSource, stripStoredCredentials } from "../lib/repxSqlDataSource";
 import { repairDpi } from "../lib/repxDpi";
 import { repairPaper } from "../lib/repxPaper";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
@@ -2291,7 +2291,10 @@ export async function analyzeReportDesign(
     // With a database shared, the mock names the likeliest object listed, as a
     // real answer's <?forma-query?> would, so writing the source runs offline (2026-11-09).
     const mockTable = options?.database ? /^- (\S+) \((?:table|view)\)/m.exec(options.database)?.[1] : undefined;
-    return mockTable ? { ...MOCK_INVOICE_RESPONSE, dataQuery: { table: mockTable } } : MOCK_INVOICE_RESPONSE;
+    // A redesign keeps the report's data source here too, so it can be seen offline (2026-11-09).
+    const carried = previousState?.repxContent ? carryDataSource(previousState.repxContent, MOCK_INVOICE_RESPONSE.repxContent) : null;
+    const mock = carried?.applied ? { ...MOCK_INVOICE_RESPONSE, repxContent: carried.xml } : MOCK_INVOICE_RESPONSE;
+    return mockTable ? { ...mock, dataQuery: { table: mockTable } } : mock;
   }
 
   // No key means no request. Surfaced as a distinct type so the caller can open
@@ -3195,6 +3198,19 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
      * `RepxProbe emit-sql`; a report that arrives carrying one, or a model that
      * writes one, leaves here with the connection by name only.
      */
+    /*
+     * The report's data source, carried through a redesign (2026-11-09, the
+     * SQL Server programme, item 29): a model asked to keep a Base64 blob it
+     * cannot read drops or garbles it, and the report opened bound to nothing.
+     */
+    if (previousState?.repxContent) {
+      const kept = carryDataSource(previousState.repxContent, parsed.repxContent);
+      if (kept.applied) {
+        parsed.repxContent = kept.xml;
+        console.warn(`Data source: ${kept.reason}.`);
+      }
+    }
+
     const logins = stripStoredCredentials(parsed.repxContent);
     if (logins.applied) {
       parsed.repxContent = logins.xml;

@@ -238,6 +238,11 @@ describe('a .repx’s own data source', () => {
     expect(orders.tables).toEqual(['Orders', 'Customers']);
     expect(orders.filter).toBe('[Customers.Region] = ?Region');
     expect(orders.parameters).toEqual([{ name: 'Region', type: 'DevExpress.DataAccess.Expression', value: '(System.String)(?Region)' }]);
+    // Its join, sort and Top (batch DG), the sort on the joined table as the fluent builder put it (batch DA).
+    expect(orders.joins).toEqual([{ type: 'Inner', parent: 'Orders', nested: 'Customers', keys: [{ parent: 'CustomerID', nested: 'CustomerID' }] }]);
+    expect(orders.sort).toEqual([{ table: 'Customers', name: 'OrderDate', descending: false }]);
+    expect(orders.top).toBe(500);
+    expect(ds.queries[1].joins).toEqual([]);
     expect(ds.queries[1].allColumns).toBe(true);
     expect(ds.queries[2].sql).toBe('SELECT TOP (@n) CompanyName, City FROM dbo.Customers ORDER BY CompanyName');
     const sales = ds.queries[3];

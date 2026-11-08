@@ -18,9 +18,9 @@
 import type { SqlSchema } from './sqlSchema';
 import { findObject, findProcedure, queryFields, queryName, type QueryField, type ReportQuery } from './sqlQuery';
 import { escapeXmlAttribute } from './xmlEscape';
-import { liftParameterTypes } from './repxParameters';
+import { liftParameterTypes, parameterReferences } from './repxParameters';
 import { ensureUniqueRefs } from './repxRefs';
-import { encodeBase64, readRepxDataSources, topLevelItems } from './repxSqlDataSource';
+import { encodeBase64, readRepxDataSources, sourceParameters, topLevelItems } from './repxSqlDataSource';
 export { connectionStringsSnippet, encodeBase64, stripStoredCredentials } from './repxSqlDataSource';
 
 /** What a report reads, to be written into it as a SqlDataSource. */
@@ -321,10 +321,24 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
   let next = maxRef(xml) + 1;
   const lookupRefs = new Map<string, number>();
   const objectStorage: string[] = [];
+  const parameterTag = (name: string) =>
+    [...(/<Parameters>([\s\S]*?)<\/Parameters>/.exec(xml)?.[1] ?? '').matchAll(/<Item\d+\s[^>]*?\/>/g)].map((m) => m[0]).find((t) => new RegExp(`\\sName="${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(t));
   for (const l of spec.lookups ?? []) {
+    const settings = `ObjectType="DevExpress.XtraReports.Parameters.DynamicListLookUpSettings, DevExpress.Printing.v20.1.Core" DataSource="#Ref-${ref}" DataMember="${attrOf(lookupName(l.parameter))}" ValueMember="${attrOf(l.valueColumn)}" DisplayMember="${attrOf(l.displayColumn ?? l.valueColumn)}"${l.filter ? ` FilterString="${attrOf(l.filter)}"` : ''}`;
+    // A parameter already there (a source written again, 2026-11-09): its own lookup entry
+    // is rewritten in place, or a new one attached to it, rather than a second nothing points at.
+    const tag = present.has(l.parameter) ? parameterTag(l.parameter) : undefined;
+    const current = tag ? /ValueSourceSettings="#Ref-(\d+)"/.exec(tag)?.[1] : undefined;
+    const entry = current ? new RegExp(`<Item(\\d+)(?=[^>]*\\sRef="${current}")[^>]*?DynamicListLookUpSettings[^>]*?/>`).exec(xml) : null;
+    if (entry) {
+      xml = xml.replace(entry[0], `<Item${entry[1]} Ref="${current}" ${settings} />`);
+      continue;
+    }
     const r = next++;
     lookupRefs.set(l.parameter, r);
-    objectStorage.push(`<Item1 Ref="${r}" ObjectType="DevExpress.XtraReports.Parameters.DynamicListLookUpSettings, DevExpress.Printing.v20.1.Core" DataSource="#Ref-${ref}" DataMember="${attrOf(lookupName(l.parameter))}" ValueMember="${attrOf(l.valueColumn)}" DisplayMember="${attrOf(l.displayColumn ?? l.valueColumn)}"${l.filter ? ` FilterString="${attrOf(l.filter)}"` : ''} />`);
+    objectStorage.push(`<Item1 Ref="${r}" ${settings} />`);
+    // One ValueSourceSettings, whatever the tag held: a second is an XML error the loader refuses (measured 2026-11-09).
+    if (tag) xml = xml.replace(tag, tag.replace(/\sValueSourceSettings="[^"]*"/, '').replace(/\s*\/>$/, ` ValueSourceSettings="#Ref-${r}" />`));
   }
   const items: string[] = [];
   for (const p of needs) {
@@ -374,9 +388,57 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
   }
 
   xml = liftParameterTypes(xml, version).xml;
-  xml = ensureUniqueRefs(xml).xml;
+  // A replaced source's parameters that nothing uses any more, with their lookups (2026-11-09, batch DG).
+  const dropped = existing ? dropUnusedParameters(xml, sourceParameters(repx, existing)) : { xml, dropped: [] };
+  xml = ensureUniqueRefs(dropped.xml).xml;
   const what = `${existing ? 'Replaced' : 'Wrote'} the data source: ${queryName(spec.query)} on connection "${connection}"`;
-  return { xml, applied: true, reason: added.length ? `${what}, with parameter${added.length === 1 ? '' : 's'} ${added.join(', ')}` : what, parameters: added };
+  const withAdded = added.length ? `${what}, with parameter${added.length === 1 ? '' : 's'} ${added.join(', ')}` : what;
+  return { xml, applied: true, reason: dropped.dropped.length ? `${withAdded}; removed ${dropped.dropped.join(', ')}, which only the old one used` : withAdded, parameters: added };
+}
+
+/** `<Item…>` children of a block renumbered from Item1, in order: a collection finds its members by that name. */
+function renumber(xml: string, block: 'Parameters' | 'ObjectStorage'): string {
+  return xml.replace(new RegExp(`<${block}>([\\s\\S]*?)</${block}>`), (_whole, inner: string) => {
+    let n = 0;
+    // A self-closing item, or one with content up to its own close; these collections do not nest items.
+    const body = inner.replace(/<Item\d+(\s[^>]*?)\/>|<Item\d+(\s[^>]*?)>([\s\S]*?)<\/Item\d+>/g, (_m, selfAttrs: string | undefined, attrs: string | undefined, content: string | undefined) => {
+      n++;
+      return selfAttrs !== undefined ? `<Item${n}${selfAttrs}/>` : `<Item${n}${attrs}>${content ?? ''}</Item${n}>`;
+    });
+    return body.trim() ? `<${block}>${body}</${block}>` : '';
+  });
+}
+
+/**
+ * Removes candidates nothing references any more: a report parameter, its
+ * lookup entry, and its lifted type when no other parameter shares it. Run
+ * until nothing more goes, since a removed lookup's filter may have been the
+ * last use of another parameter.
+ */
+function dropUnusedParameters(xml: string, candidates: ReadonlySet<string>): { xml: string; dropped: string[] } {
+  const dropped: string[] = [];
+  for (let pass = 0; pass < 4; pass++) {
+    const used = new Set([
+      ...parameterReferences(xml.replace(/<ComponentStorage>[\s\S]*?<\/ComponentStorage>/, '')),
+      ...readRepxDataSources(xml).flatMap((d) => d.queries.flatMap((q) => [q.filter ?? '', ...q.parameters.map((p) => p.value)])).flatMap((s) => [...s.matchAll(/\?([A-Za-z_]\w*)/g)].map((m) => m[1])),
+    ]);
+    const block = /<Parameters>([\s\S]*?)<\/Parameters>/.exec(xml)?.[1] ?? '';
+    const gone = [...block.matchAll(/<Item\d+\s[^>]*?\/>/g)].map((m) => m[0]).filter((tag) => {
+      const name = /\sName="([^"]*)"/.exec(tag)?.[1] ?? '';
+      return candidates.has(name) && !used.has(name) && !dropped.includes(name);
+    });
+    if (!gone.length) break;
+    for (const tag of gone) {
+      dropped.push(/\sName="([^"]*)"/.exec(tag)![1]);
+      xml = xml.replace(tag, '');
+      const lookup = /ValueSourceSettings="#Ref-(\d+)"/.exec(tag)?.[1];
+      if (lookup) xml = xml.replace(new RegExp(`<Item\\d+(?=[^>]*\\sRef="${lookup}")[^>]*?/>`), '');
+      const type = /\sType="#Ref-(\d+)"/.exec(tag)?.[1];
+      if (type && !xml.includes(`"#Ref-${type}"`)) xml = xml.replace(new RegExp(`<Item\\d+(?=[^>]*\\sRef="${type}")[^>]*?/>`), '');
+    }
+    xml = renumber(renumber(xml, 'Parameters'), 'ObjectStorage');
+  }
+  return { xml, dropped };
 }
 
 /**

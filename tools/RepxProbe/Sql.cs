@@ -347,10 +347,22 @@ static class SqlProbe {
         System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
         try {
             CreateDatabase();
+            // --before <script.sql>: the made-up database changed first, as a newer layout of it would be
+            // (batch DG, 2026-11-09): a column renamed, a type altered. Each GO-separated batch runs on its own.
+            for (int i = 2; i + 1 < args.Length; i++) {
+                if (args[i] != "--before") continue;
+                using (SqlConnection c = new SqlConnection("Data Source=" + Server + ";Initial Catalog=" + Database + ";Integrated Security=True;Connect Timeout=60")) {
+                    c.Open();
+                    foreach (string batch in System.Text.RegularExpressions.Regex.Split(File.ReadAllText(args[i + 1]), @"^\s*GO\s*$", System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                        if (batch.Trim().Length > 0) Exec(c, batch);
+                }
+                Console.WriteLine("changed  : " + args[i + 1]);
+            }
             XtraReport report = new XtraReport();
             report.LoadLayoutFromXml(path);
             int problems = Inspect(report);
             for (int i = 2; i < args.Length; i++) {
+                if (args[i] == "--before") { i++; continue; }
                 int eq = args[i].IndexOf('=');
                 if (eq < 0) continue;
                 Parameter p = report.Parameters[args[i].Substring(0, eq)];

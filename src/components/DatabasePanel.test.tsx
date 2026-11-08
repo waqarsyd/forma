@@ -184,3 +184,34 @@ describe('sharing the database with the AI', () => {
     expect((screen.getByText('Use this SQL') as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+/* The report's own data source and its drift (2026-11-09, batch DG, items 29 and 30). */
+describe('the report’s own data source', () => {
+  const orders: ReportQuery = { kind: 'table', object: 'dbo.Orders', columns: [], joins: [{ table: 'dbo.Customers', type: 'Inner', on: [{ from: 'CustomerID', to: 'CustomerID' }] }] };
+  const base = '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" PageWidth="850" PageHeight="1100" Version="20.1" Dpi="100"><Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="25" Dpi="100"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="labelCompany" Text="x" SizeF="150,20" Dpi="100"><ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="Text" Expression="[CompanyName]" /></ExpressionBindings></Item1></Controls></Item1></Bands></XtraReportsLayoutSerializer>';
+
+  it('is shown, checked against a newer layout, and a renamed column fixed in one click', async () => {
+    const { writeSqlDataSource } = await import('../lib/repxSqlWriter');
+    const repx = writeSqlDataSource(base, { connectionName: 'ShopDemo', schema, query: orders }).xml;
+    const newer = readSchemaScript(`
+CREATE TABLE dbo.Customers (CustomerID int NOT NULL PRIMARY KEY, CompanyNameFull nvarchar(80) NOT NULL);
+CREATE TABLE dbo.Orders (OrderID int NOT NULL PRIMARY KEY, CustomerID int NOT NULL REFERENCES dbo.Customers(CustomerID), Freight decimal(10,2) NOT NULL);
+`, 'ShopDemo')!;
+    const onApplyRepx = vi.fn();
+    panel({ database: newer, repx, onApplyRepx });
+    expect(screen.getByText('connection “ShopDemo”, by name')).toBeTruthy();
+    expect(screen.getByText(/Customers\.CompanyName is not in ShopDemo, so DevExpress refuses the query/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Rename to CompanyNameFull'));
+    expect(onApplyRepx).toHaveBeenCalledWith(expect.stringContaining('Expression="[CompanyNameFull]"'), 'Replaced the data source: Orders on connection "ShopDemo"; renamed [CompanyName] to [CompanyNameFull] in 1 place');
+  });
+
+  it('with no layout imported, offers the layout the report uses as the database', async () => {
+    const { writeSqlDataSource } = await import('../lib/repxSqlWriter');
+    const repx = writeSqlDataSource(base, { connectionName: 'ShopDemo', schema, query: orders }).xml;
+    const onAdopt = vi.fn();
+    panel({ database: null, repx, onAdopt });
+    expect(screen.getByText(/Orders with Customers/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Browse the layout it uses'));
+    expect(onAdopt).toHaveBeenCalledWith(expect.objectContaining({ source: 'repx', database: 'ShopDemo' }));
+  });
+});

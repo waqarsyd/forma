@@ -6827,6 +6827,18 @@ export default function App() {
                       recent={keptDatabases}
                       shared={databaseShared}
                       onShare={setDatabaseShared}
+                      // The report's own data source, shown and checked against the layout (batch DG).
+                      repx={result.repxContent}
+                      onApplyRepx={(xml, reason) => {
+                        const next = { ...result, repxContent: xml };
+                        setResult(next);
+                        recordRevision('Data source updated', next);
+                        setSaveNotice(reason);
+                      }}
+                      onAdopt={(schema) => {
+                        setActiveDatabase(schema);
+                        setDatabaseShared(false);
+                      }}
                       onAskSql={async (sentence) => {
                         const [{ layoutFor }, { promptToSql }] = await Promise.all([import('./lib/databaseAi'), loadGemini()]);
                         return promptToSql(sentence, layoutFor(activeDatabase!, sentence), effectiveConfig());
