@@ -47,6 +47,7 @@ import { findSummaryProblems } from './repxSummaries';
 import { crossTabsWithoutData, findCrossTabProblems } from './repxCrossTabs';
 import { findDpiProblem } from './repxDpi';
 import { findPaperProblem } from './repxPaper';
+import { auditDataSources } from './repxSqlDataSource';
 import { parseReportStructure } from './reportPreview';
 import type { ReportLayout } from './reportTypes';
 
@@ -205,6 +206,11 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
     );
   }
 
+  // The SQL data source (2026-11-08, the SQL Server programme): a stored login,
+  // a query or DataMember the source lacks, a parameter nothing supplies, a
+  // field its band's query does not return, no result schema.
+  for (const f of auditDataSources(text)) add(f.severity, f.code, f.message);
+
   // --- warnings: it opens, but it is a worse report than it should be --------
 
   const grid = biggestGrid(layout);
@@ -257,7 +263,10 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
   // enforced that until now, and the band count shown in the UI comes from the
   // layout while the file the user exports is the REPX.
   if (layout?.sections?.length) {
-    const contentBands = (text.match(/ControlType="(?!TopMarginBand|BottomMarginBand)\w*Band"/g) ?? []).length;
+    // A DetailReportBand holds bands and prints none of its own: its inner
+    // bands are counted, as the Mockup's sections are (repxViews' contentBands).
+    // Counted as well until 2026-11-08, it put a detail report one over.
+    const contentBands = (text.match(/ControlType="(?!TopMarginBand|BottomMarginBand|DetailReportBand)\w*Band"/g) ?? []).length;
     if (contentBands && contentBands !== layout.sections.length) {
       add(
         'warning',

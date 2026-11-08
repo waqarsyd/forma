@@ -63,7 +63,87 @@ static class SqlProbe {
         "CREATE PROCEDURE dbo.usp_Dynamic AS EXEC sp_executesql N'SELECT CompanyName FROM dbo.Customers';",
         "CREATE VIEW dbo.vOrderTotals AS SELECT o.OrderID, c.CompanyName, SUM(l.Qty * l.UnitPrice) AS Total FROM dbo.Orders o " +
             "JOIN dbo.Customers c ON c.CustomerID = o.CustomerID JOIN dbo.OrderLines l ON l.OrderID = o.OrderID GROUP BY o.OrderID, c.CompanyName",
+        // One column of every common type, for the result schema's type names (batch DD).
+        "CREATE TABLE dbo.Types (cInt int, cBigint bigint, cSmallint smallint, cTinyint tinyint, cBit bit, cDecimal decimal(12,4), cNumeric numeric(9,2), " +
+            "cMoney money, cFloat float, cReal real, cDate date, cDateTime datetime, cDateTime2 datetime2, cSmallDateTime smalldatetime, cTime time, " +
+            "cDto datetimeoffset, cChar char(3), cVarchar varchar(20), cNvarchar nvarchar(20), cNvarcharMax nvarchar(max), cText text, cXml xml, " +
+            "cGuid uniqueidentifier, cBinary binary(4), cVarbinary varbinary(50), cImage image)",
+        "INSERT dbo.Types (cInt) VALUES (1)",
+        "CREATE PROCEDURE dbo.usp_ByRegions @Regions nvarchar(400) AS SELECT CompanyName, Region FROM dbo.Customers WHERE Region IN (SELECT value FROM STRING_SPLIT(@Regions, ','))",
     };
+
+    /// emit-sql-params <out.repx>: what 20.1 writes for the result schema's
+    /// type names, report parameters (multi-value, nullable, hidden, a lookup
+    /// list from a query, cascading), a multi-value parameter into a SelectQuery
+    /// filter and into a stored procedure, a left outer join, distinct and a
+    /// descending sort (2026-11-08, batch DD). Over FormaSample, then dropped.
+    public static int EmitParams(string outPath) {
+        try {
+            CreateDatabase();
+            SqlDataSource.DisableCustomQueryValidation = true;
+            SqlDataSource ds = new SqlDataSource("FormaSample", LocalParameters());
+            ds.Name = "sqlDataSource1";
+
+            ds.Queries.Add(SelectQueryFluentBuilder.AddTable("Types").SelectAllColumns().Build("Types"));
+
+            // The sort is put on the first table, before the join, and descending.
+            SelectQuery orders = SelectQueryFluentBuilder
+                .AddTable("Orders").SelectColumns("OrderID", "OrderDate", "Freight")
+                .SortBy("OrderDate", System.ComponentModel.ListSortDirection.Descending)
+                .Join("Customers", DevExpress.Xpo.DB.JoinType.LeftOuter, "CustomerID").SelectColumns("CompanyName", "Region")
+                .Filter("[Customers.Region] In (?Regions)")
+                .Distinct()
+                .Build("Orders");
+            orders.Parameters.Add(new QueryParameter("Regions", typeof(Expression), new Expression("?Regions", typeof(string[]))));
+            ds.Queries.Add(orders);
+
+            // A procedure taking the same multi-value parameter as one string.
+            StoredProcQuery byRegions = new StoredProcQuery("ByRegions", "dbo.usp_ByRegions");
+            byRegions.Parameters.Add(new QueryParameter("@Regions", typeof(Expression), new Expression("Join(?Regions, ',')", typeof(string))));
+            ds.Queries.Add(byRegions);
+
+            // The lookup list's query.
+            ds.Queries.Add(SelectQueryFluentBuilder.AddTable("Customers").SelectColumns("Region", "City").Distinct().Build("RegionList"));
+
+            ds.RebuildResultSchema();
+            ds.Connection.StoreConnectionNameOnly = true;
+
+            XtraReport report = new XtraReport { Name = "RepxProbeSqlParams" };
+            report.ComponentStorage.Add(ds);
+            report.DataSource = ds;
+            report.DataMember = "Orders";
+
+            Parameter regions = new Parameter { Name = "Regions", Description = "Regions", Type = typeof(string), MultiValue = true, Visible = true };
+            regions.ValueSourceSettings = new DynamicListLookUpSettings { DataSource = ds, DataMember = "RegionList", ValueMember = "Region", DisplayMember = "Region" };
+            Parameter city = new Parameter { Name = "City", Description = "City", Type = typeof(string), AllowNull = true };
+            // Cascading: the cities offered are those of the regions chosen.
+            city.ValueSourceSettings = new DynamicListLookUpSettings { DataSource = ds, DataMember = "RegionList", ValueMember = "City", DisplayMember = "City", FilterString = "[Region] In (?Regions)" };
+            report.Parameters.AddRange(new Parameter[] {
+                regions,
+                city,
+                new Parameter { Name = "MinFreight", Description = "Min freight", Type = typeof(decimal), Value = 10.5m },
+                new Parameter { Name = "Since", Description = "Since", Type = typeof(DateTime), Value = new DateTime(2026, 1, 1) },
+                new Parameter { Name = "Paid", Description = "Paid", Type = typeof(bool), Value = true },
+                new Parameter { Name = "Count", Description = "Count", Type = typeof(int), Value = 5, Visible = false },
+            });
+
+            DetailBand detail = new DetailBand { Name = "Detail", HeightF = 25 };
+            detail.Controls.Add(Label("labelCompany", "[CompanyName]", 0, 0));
+            report.Bands.AddRange(new Band[] { new TopMarginBand(), detail, new BottomMarginBand() });
+
+            report.SaveLayoutToXml(outPath);
+            string xml = File.ReadAllText(outPath);
+            Console.WriteLine("written: " + Path.GetFullPath(outPath));
+            Console.WriteLine();
+            Console.WriteLine(xml);
+            PrintStorage(xml);
+            return 0;
+        } finally {
+            DropDatabase();
+            Console.WriteLine();
+            Console.WriteLine("dropped " + Database + " on " + Server);
+        }
+    }
 
     /// sql-run <script.sql> <out.txt>: runs a script over a fresh FormaSample on
     /// LocalDB and writes the first column of the last row it returns, then
@@ -250,6 +330,49 @@ static class SqlProbe {
             Console.WriteLine("user in the file:     " + (xml.Contains(fakeUser) || decoded.Contains(fakeUser)));
             Console.WriteLine(decoded);
             File.Delete(path);
+        }
+    }
+
+    /// sql-fill <in.repx> [Param=a,b ...]: loads a report Forma wrote, points its
+    /// SqlDataSource at FormaSample on LocalDB (the connection name resolves
+    /// nowhere here, so its parameters are set in code, never stored), runs
+    /// CreateDocument, and prints what each query returned and the pages: the
+    /// end-to-end check of the writer (2026-11-08, batch DD). Report parameters
+    /// can be given values; a comma makes a multi-value one an array.
+    public static int Fill(string[] args) {
+        string path = args[1];
+        try {
+            CreateDatabase();
+            XtraReport report = new XtraReport();
+            report.LoadLayoutFromXml(path);
+            int problems = Inspect(report);
+            for (int i = 2; i < args.Length; i++) {
+                int eq = args[i].IndexOf('=');
+                if (eq < 0) continue;
+                Parameter p = report.Parameters[args[i].Substring(0, eq)];
+                if (p == null) { Console.WriteLine("no parameter " + args[i].Substring(0, eq)); continue; }
+                string value = args[i].Substring(eq + 1);
+                p.Value = p.MultiValue ? (object)value.Split(',') : Convert.ChangeType(value, p.Type, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            var sources = new List<SqlDataSource>();
+            foreach (object o in report.ComponentStorage) if (o is SqlDataSource) sources.Add((SqlDataSource)o);
+            foreach (SqlDataSource ds in sources) ds.ConnectionParameters = LocalParameters();
+            // Every query, lookups included, which CreateDocument fills only when asked for.
+            foreach (SqlDataSource ds in sources) ds.Fill(report.Parameters.Cast<DevExpress.Data.IParameter>());
+            report.RequestParameters = false;
+            report.CreateDocument();
+            foreach (SqlDataSource ds in sources) {
+                Console.WriteLine("filled   : " + ds.Name + " on \"" + ds.ConnectionName + "\"");
+                foreach (SqlQuery q in ds.Queries) {
+                    var table = ds.Result[q.Name];
+                    Console.WriteLine("             " + q.Name + ": " + (table == null ? "no result" : table.Count() + " row(s), columns " + string.Join(", ", table.Columns.Select(c => c.Name + ":" + c.Type.Name))));
+                }
+            }
+            Console.WriteLine("printed  : " + report.Pages.Count + " page(s)");
+            return problems > 0 ? 1 : 0;
+        } finally {
+            DropDatabase();
+            Console.WriteLine("dropped " + Database + " on " + Server);
         }
     }
 

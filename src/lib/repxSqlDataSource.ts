@@ -5,14 +5,14 @@
  * whose `Base64` attribute is an XML document of its own. Its form was
  * measured, not read off the API docs: `RepxProbe emit-sql` wrote one over a
  * made-up LocalDB database, and docs/notes/gemini.md, *The SQL data source,
- * measured*, has it verbatim. This file reads that form (checklist item 8);
- * the writer joins it in batch DD.
+ * measured*, has it verbatim. This file reads that form (checklist item 8)
+ * and, from batch DD, writes it (items 15 to 19), with the second measurement,
+ * RepxProbe emit-sql-params, for parameters, lookups and type names.
  *
  * Plain string work, no DOMParser: it runs in the suite's node environment and
  * in the browser alike, and the decoded document's shape is fixed.
  */
 import type { SqlColumn, SqlObject, SqlParameter, SqlProcedure, SqlSchema } from './sqlSchema';
-import { parseQualifiedName } from './sqlSchema';
 
 export interface RepxQueryParameter {
   name: string;
@@ -158,6 +158,12 @@ export function readRepxDataSources(repx: string): RepxDataSource[] {
   return out;
 }
 
+/** `dbo.usp_X` or `usp_X` into `{ schema, name }`, `dbo` when unqualified. */
+function splitName(text: string): { schema: string; name: string } {
+  const parts = text.split('.').map((p) => p.trim().replace(/^\[|\]$/g, ''));
+  return parts.length >= 2 ? { schema: parts[parts.length - 2], name: parts[parts.length - 1] } : { schema: 'dbo', name: parts[0] };
+}
+
 /** DevExpress's .NET type names, back to the SQL type a column most likely has. */
 const SQL_OF_DOTNET: Record<string, string> = {
   String: 'nvarchar', Int32: 'int', Int64: 'bigint', Int16: 'smallint', Byte: 'tinyint', Boolean: 'bit',
@@ -184,13 +190,13 @@ export function schemaFromRepx(repx: string): SqlSchema | null {
     for (const q of ds.queries) {
       const view = ds.views.find((v) => v.name === q.name);
       if (q.type === 'StoredProcQuery' && q.procName) {
-        const name = parseQualifiedName(q.procName);
+        const name = splitName(q.procName);
         if (procedures.some((p) => p.schema === name.schema && p.name === name.name)) continue;
         const parameters: SqlParameter[] = q.parameters.map((p) => ({ name: p.name, type: SQL_OF_DOTNET[(/\(System\.(\w+)\)/.exec(p.value)?.[1] ?? p.type.replace(/^System\./, ''))] ?? '', output: false }));
         procedures.push({ ...name, parameters, result: (view?.fields ?? []).map((f) => columnOf(f, f.name)) });
       } else if (q.type === 'SelectQuery') {
         for (const table of q.tables) {
-          const name = parseQualifiedName(table);
+          const name = splitName(table);
           let target = objects.find((o) => o.schema === name.schema && o.name === name.name);
           if (!target) {
             target = { ...name, kind: 'table', columns: [], primaryKey: [] };
@@ -203,4 +209,148 @@ export function schemaFromRepx(repx: string): SqlSchema | null {
     }
   }
   return { source: 'repx', database: sources[0].connectionName, objects, foreignKeys: [], procedures };
+}
+
+/* ------------------------------------------------ small writes, read-side */
+
+/** An attribute value with XML's five characters escaped. */
+function attrOf(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+/** Text to Base64 as UTF-8, the inverse of `decodeBase64`. */
+export function encodeBase64(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+/** How many `ItemN` children sit directly in a collection's inner text, nested ones not counted. */
+export function topLevelItems(inner: string): number {
+  let depth = 0;
+  let count = 0;
+  for (const m of inner.matchAll(/<(\/?)Item\d+\b[^>]*?(\/?)>/g)) {
+    if (m[1]) depth--;
+    else {
+      if (depth === 0) count++;
+      if (!m[2]) depth++;
+    }
+  }
+  return count;
+}
+
+/**
+ * The repair for a stored login (checklist item 20): a SqlDataSource whose
+ * connection carries parameters is rewritten to the same connection by name,
+ * which is what 20.1 writes with StoreConnectionNameOnly, so no password
+ * leaves in a report Forma produced.
+ */
+export function stripStoredCredentials(repx: string): { xml: string; applied: boolean; reason: string } {
+  const sources = readRepxDataSources(repx).filter((d) => d.storesCredentials || !d.fromAppConfig);
+  if (!sources.length) return { xml: repx, applied: false, reason: 'no data source stores a login' };
+  let xml = repx;
+  for (const ds of sources) {
+    const tag = new RegExp(`(<Item\\d+\\s[^>]*?Ref="${ds.ref}"[^>]*?Base64=")([^"]*)(")`).exec(xml);
+    if (!tag) continue;
+    const decoded = decodeBase64(tag[2]).replace(/<Connection\s[^>]*?(?:\/>|>[\s\S]*?<\/Connection>)/, `<Connection Name="${attrOf(ds.connectionName || 'Database')}" FromAppConfig="true" />`);
+    xml = xml.replace(tag[0], `${tag[1]}${encodeBase64(decoded)}${tag[3]}`);
+  }
+  return { xml, applied: true, reason: `the connection${sources.length === 1 ? '' : 's'} ${sources.map((s) => `"${s.connectionName}"`).join(', ')} now stored by name only, with no login or password` };
+}
+
+/** The `<connectionStrings>` entry the application needs for a report's connection names (checklist item 21). */
+export function connectionStringsSnippet(names: readonly string[], database = ''): string {
+  const lines = [...new Set(names)].map((n) => `    <add name="${attrOf(n)}" providerName="System.Data.SqlClient" connectionString="Data Source=YOUR_SERVER;Initial Catalog=${attrOf(database || n)};Integrated Security=True" />`);
+  return `<connectionStrings>\n${lines.join('\n')}\n</connectionStrings>`;
+}
+
+/* ------------------------------------------------------------- the audit */
+
+/** The span of every `DetailReportBand` item, with its DataMember, innermost spans found by position. */
+function detailRegions(xml: string): { start: number; end: number; member: string }[] {
+  const regions: { start: number; end: number; member: string }[] = [];
+  const opens = [...xml.matchAll(/<(Item\d+)\s[^>]*ControlType="DetailReportBand"[^>]*>/g)];
+  for (const open of opens) {
+    const member = attr(open[0], 'DataMember') ?? '';
+    let depth = 0;
+    const tag = /<(\/?)Item\d+\b[^>]*?(\/?)>/g;
+    tag.lastIndex = open.index!;
+    let end = xml.length;
+    for (let m = tag.exec(xml); m; m = tag.exec(xml)) {
+      if (m[1]) {
+        depth--;
+        if (depth === 0) {
+          end = m.index + m[0].length;
+          break;
+        }
+      } else if (!m[2]) depth++;
+    }
+    regions.push({ start: open.index!, end, member });
+  }
+  return regions;
+}
+
+/**
+ * The SQL data source's own checks (2026-11-08, the SQL Server programme,
+ * checklist item 20), for `auditRepx`: a stored login, a report or query
+ * reading a query the source does not have, a query parameter with no report
+ * parameter, a binding to a field its band's query does not return, and a
+ * source with no result schema. What each costs is measured: 20.1 writes a
+ * stored password in plain text, and a field the schema lacks prints blank.
+ */
+export function auditDataSources(xml: string): { severity: 'error' | 'warning'; code: string; message: string }[] {
+  const out: { severity: 'error' | 'warning'; code: string; message: string }[] = [];
+  const sources = readRepxDataSources(xml);
+  if (!sources.length) return out;
+  const root = /<XtraReportsLayoutSerializer\b[^>]*>/.exec(xml)?.[0] ?? '';
+  const rootMember = attr(root, 'DataMember') ?? '';
+  const reportParams = new Set([...(/<Parameters>([\s\S]*?)<\/Parameters>/.exec(xml)?.[1] ?? '').matchAll(/\sName="([^"]*)"/g)].map((m) => m[1]));
+  const calculated = new Set([...(/<CalculatedFields>([\s\S]*?)<\/CalculatedFields>/.exec(xml)?.[1] ?? '').matchAll(/\sName="([^"]*)"/g)].map((m) => m[1]));
+  const views = new Map<string, Set<string>>();
+  const relations = new Map<string, string>();
+  for (const ds of sources) {
+    if (ds.storesCredentials) out.push({ severity: 'error', code: 'connection-has-credentials', message: `The data source "${ds.name}" stores a login or password for "${ds.connectionName}", in plain text inside the report. Store the connection by name only, as your application's <connectionStrings> knows it.` });
+    if (!ds.views.length) out.push({ severity: 'warning', code: 'schema-missing', message: `The data source "${ds.name}" has no result schema, so the designer lists no fields until it connects to the database.` });
+    for (const v of ds.views) views.set(v.name, new Set(v.fields.map((f) => f.name)));
+    for (const r of ds.relations) relations.set(r.name, r.detail);
+    const queryNames = new Set(ds.queries.map((q) => q.name));
+    for (const q of ds.queries) {
+      for (const p of q.parameters) {
+        for (const m of p.value.matchAll(/\?([A-Za-z_]\w*)/g)) {
+          if (!reportParams.has(m[1])) out.push({ severity: 'error', code: 'query-param-unbound', message: `The query "${q.name}" takes ?${m[1]}, and the report has no parameter of that name, so the query cannot run.` });
+        }
+      }
+    }
+    if (rootMember && attr(root, 'DataSource') === `#Ref-${ds.ref}` && !queryNames.has(rootMember.split('.')[0])) {
+      out.push({ severity: 'error', code: 'datamember-unknown', message: `The report reads "${rootMember}", which the data source "${ds.name}" has no query for.` });
+    }
+  }
+  if (!views.size) return out;
+
+  // Each binding against the view of its band: a detail report reads its relation's detail query.
+  const viewOf = (member: string): string | null => {
+    const path = member.split('.');
+    let view: string | null = views.has(path[0]) ? path[0] : null;
+    for (let i = 1; i < path.length && view; i++) view = relations.get(path[i]) ?? null;
+    return view;
+  };
+  const regions = detailRegions(xml);
+  const reported = new Set<string>();
+  for (const m of xml.matchAll(/\sExpression="([^"]*)"/g)) {
+    const at = m.index!;
+    const inside = regions.filter((r) => r.start <= at && at < r.end).sort((a, b) => a.end - a.start - (b.end - b.start))[0];
+    const member = inside ? inside.member : rootMember;
+    const view = viewOf(member);
+    if (!view) continue;
+    for (const f of decodeEntities(m[1]).matchAll(/\[([^\[\]]+)\]/g)) {
+      const field = f[1];
+      if (/^(Parameters|DataSource|ReportItems)\./.test(field) || calculated.has(field) || views.get(view)!.has(field)) continue;
+      const key = `${view}.${field}`;
+      if (reported.has(key)) continue;
+      reported.add(key);
+      out.push({ severity: 'warning', code: 'field-not-in-schema', message: `[${field}] is bound in a band reading "${view}", which returns no field of that name, so it prints blank.` });
+    }
+  }
+  return out;
 }

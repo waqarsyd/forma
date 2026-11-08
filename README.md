@@ -676,7 +676,9 @@ src/
                        device), repxSqlDataSource (the SQL data source inside
                        a .repx), sqlQuery (what a report reads from it: a
                        table with its joins, a procedure, or checked custom
-                       SQL),
+                       SQL), repxSqlWriter (that query written into the
+                       report as DevExpress's SqlDataSource, by connection
+                       name, as measured and run by DevExpress),
                        layers (the stack of open menus and dialogs, so one
                        Escape closes only the topmost and keys meant for
                        one stay there), clipboard (every Copy, with a

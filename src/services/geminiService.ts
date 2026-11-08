@@ -47,6 +47,7 @@ import { liftStyles } from "../lib/repxStyles";
 import { repairSummaries } from "../lib/repxSummaries";
 import { repairGroupLevels } from "../lib/repxGroups";
 import { repairCrossTabs } from "../lib/repxCrossTabs";
+import { stripStoredCredentials } from "../lib/repxSqlDataSource";
 import { repairDpi } from "../lib/repxDpi";
 import { repairPaper } from "../lib/repxPaper";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
@@ -3036,6 +3037,19 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       console.warn(`Cross-tabs: ${crossTabs.reason}.`);
     } else {
       console.debug(`Cross-tabs: ${crossTabs.reason}.`);
+    }
+
+    /*
+     * A SQL data source's stored login, removed (2026-11-08, the SQL Server
+     * programme). DevExpress 20.1 writes a connection's user and password in
+     * plain text inside the report unless it is stored by name, measured with
+     * `RepxProbe emit-sql`; a report that arrives carrying one, or a model that
+     * writes one, leaves here with the connection by name only.
+     */
+    const logins = stripStoredCredentials(parsed.repxContent);
+    if (logins.applied) {
+      parsed.repxContent = logins.xml;
+      console.warn(`Data source: ${logins.reason}.`);
     }
 
     /*

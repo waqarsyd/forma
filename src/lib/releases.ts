@@ -85,6 +85,9 @@ export const RELEASES: Release[] = [
       { kind: 'new', area: 'data', text: 'Sample rows from the tables you pick, by a second read-only script, so the AI can match a printed column to the right field by what it holds.' },
       { kind: 'new', area: 'data', text: 'The Data tab browses the database: find a table, view, procedure or column, see each one\u2019s types and keys, choose what the report reads (a table with the joins its foreign keys suggest, a stored procedure, or a checked SELECT of your own) with its filter, sort and limit, and bind a field to the control you last selected on the Preview.' },
       { kind: 'fixed', area: 'data', text: 'Binding one label no longer hides the Data tab\u2019s table mapping behind a message about a table nobody had bound.' },
+      { kind: 'new', area: 'data', text: 'Write into the report: the query becomes DevExpress\u2019s own SQL data source, connected by name as your application\u2019s config knows it, never with a password, with its report parameters (defaults, several values, a lookup list and one that depends on another), master-detail bands and calculated fields. The report opens in the designer with its fields listed and no connection needed, and the Spec shows the config entry and the code that runs it.' },
+      { kind: 'security', area: 'data', text: 'A report that arrives carrying a database login or password leaves Forma with the connection by name only, and the REPX checks say so.' },
+      { kind: 'fixed', area: 'generation', text: 'A report with a detail band no longer warns that its Mockup and its file disagree on the number of sections.' },
     ],
   },
   {

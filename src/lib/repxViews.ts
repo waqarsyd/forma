@@ -39,6 +39,7 @@
 import { pageInfoText, parseReportStructure, type BandKind, type PreviewBand, type PreviewControl, type ReportStructure } from './reportPreview';
 import { pointsToUnits } from './reportGeometry';
 import type { ReportCell, ReportElement, ReportLayout, ReportRow, ReportSection } from './reportTypes';
+import { connectionStringsSnippet, readRepxDataSources } from './repxSqlDataSource';
 
 const SECTION_TYPE: Record<BandKind, ReportSection['type'] | null> = {
   TopMargin: null,
@@ -333,6 +334,30 @@ export function specFromRepx(xml: string | undefined | null, title = reportTitle
   if (s.parameters.length) out.push('', `Parameters: ${s.parameters.map((p) => `${p.name} (${p.type.replace(/^System\./, '')})`).join(', ')}.`);
   if (s.calculatedFields.length) out.push('', `Calculated fields: ${s.calculatedFields.map((f) => `${f.name} = ${f.expression}`).join('; ')}.`);
   if (s.filterString) out.push('', `Filtered by ${s.filterString}.`);
+  // The SQL data source and what running the report needs (2026-11-08, the SQL Server programme, item 21).
+  const sources = readRepxDataSources(xml ?? '');
+  if (sources.length) {
+    const names = sources.map((d) => d.connectionName).filter(Boolean);
+    for (const ds of sources) {
+      const reads = ds.queries.map((q) => (q.type === 'StoredProcQuery' ? `${q.name} (stored procedure ${q.procName})` : q.type === 'CustomSqlQuery' ? `${q.name} (custom SQL)` : `${q.name} (${q.tables.join(', ')})`));
+      out.push('', `**Data source**: SQL Server, connection "${ds.connectionName}"${ds.fromAppConfig ? ', by name' : ''}. Reads ${reads.join('; ')}.${ds.relations.length ? ` Master-detail: ${ds.relations.map((r) => `${r.master} to ${r.detail}`).join(', ')}.` : ''}`);
+    }
+    out.push(
+      '',
+      'Your application supplies the connection, in its config file:',
+      '',
+      '```xml',
+      connectionStringsSnippet(names),
+      '```',
+      '',
+      'And runs the report with it:',
+      '',
+      '```csharp',
+      'var report = DevExpress.XtraReports.UI.XtraReport.FromFile("report.repx", true);',
+      'report.ExportToPdf("report.pdf");',
+      '```',
+    );
+  }
   for (const band of s.bands) {
     if (!SECTION_TYPE[band.kind]) continue;
     out.push('', ...bandLines(band));

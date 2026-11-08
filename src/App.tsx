@@ -6817,6 +6817,19 @@ export default function App() {
                       }}
                       onCopy={copyText}
                       onFieldsChange={(fields, label) => setQueryFieldList({ fields, label })}
+                      // The chosen query into the report as DevExpress's SqlDataSource, by connection name (batch DD).
+                      onWrite={async (options) => {
+                        const now = reportNow.current;
+                        if (!now?.repxContent || !activeDatabase || !activeQuery) return 'Open a report and choose what it reads first.';
+                        const { writeSqlDataSource } = await import('./lib/repxSqlWriter');
+                        const done = writeSqlDataSource(now.repxContent, { ...options, schema: activeDatabase, query: activeQuery }, config.version);
+                        if (!done.applied) return `Not written: ${done.reason}.`;
+                        const written = { ...now, repxContent: done.xml };
+                        setResult(written);
+                        recordRevision('Data source written', written);
+                        setSaveNotice(done.reason);
+                        return `${done.reason}.`;
+                      }}
                     />
                     <DataBinding
                       repxContent={result.repxContent}

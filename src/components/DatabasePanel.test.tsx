@@ -124,3 +124,32 @@ describe('what the report reads', () => {
     expect(props.onQuery).toHaveBeenCalledWith({ kind: 'custom', name: 'Query', sql: 'SELECT OrderID FROM dbo.Orders WHERE Freight > @Min' });
   });
 });
+
+/* Into the report (2026-11-08, batch DD): the connection by name, several
+   values, a lookup list and its cascade, handed to App's writer. */
+describe('writing into the report', () => {
+  it('hands the connection, multi-value, a lookup and a cascade to the writer', async () => {
+    const onWrite = vi.fn(async () => 'Wrote the data source: Orders on connection "Shop", with parameters Customer, Region.');
+    const query: ReportQuery = { kind: 'table', object: 'dbo.Orders', columns: [], joins: [], filter: '[Orders.Region] = ?Region And [Orders.CustomerID] = ?CustomerID' };
+    const regions = {
+      ...schema,
+      objects: schema.objects.map((o) => (o.name === 'Orders' ? { ...o, columns: [...o.columns, { name: 'Region', type: 'nvarchar', length: 20 }] } : o.name === 'Customers' ? { ...o, columns: [...o.columns, { name: 'Region', type: 'nvarchar', length: 20 }] } : o)),
+    };
+    render(<DatabasePanel database={regions} recent={[]} onSwitch={vi.fn()} onForget={vi.fn()} query={query} onQuery={vi.fn()} selectionLabel="" onBindField={vi.fn()} onCopy={vi.fn(async () => true)} onWrite={onWrite} />);
+    fireEvent.change(screen.getByLabelText('Connection name'), { target: { value: 'Shop;Password=x' } });
+    // A connection string's ; and = cannot be typed: the box takes a name.
+    expect((screen.getByLabelText('Connection name') as HTMLInputElement).value).toBe('ShopPasswordx');
+    fireEvent.change(screen.getByLabelText('Connection name'), { target: { value: 'Shop' } });
+    fireEvent.click(screen.getAllByLabelText(/several values/)[0]);
+    fireEvent.change(screen.getByLabelText('Values of CustomerID from'), { target: { value: 'dbo.Customers.CustomerID' } });
+    fireEvent.change(screen.getByLabelText('CustomerID depends on'), { target: { value: 'Region' } });
+    fireEvent.click(screen.getByText('Write into the report'));
+    await Promise.resolve();
+    expect(onWrite).toHaveBeenCalledWith({
+      connectionName: 'Shop',
+      multiValue: ['Region'],
+      lookups: [{ parameter: 'CustomerID', object: 'dbo.Customers', valueColumn: 'CustomerID', filter: '[Region] In (?Region)' }],
+      calculatedFields: [],
+    });
+  });
+});

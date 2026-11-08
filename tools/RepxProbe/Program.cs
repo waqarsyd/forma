@@ -61,6 +61,8 @@ static class Program {
             Console.WriteLine("    emit-pdf       render to PDF bricks");
             Console.WriteLine("    emit-sql       a SQL Server data source, over a made-up LocalDB database it creates and drops");
             Console.WriteLine("    sql-run <script.sql> <out.txt>  run a script over that made-up database and keep its last value");
+            Console.WriteLine("    emit-sql-params  result-schema types, report parameters and lookups, multi-value into a filter and a procedure");
+            Console.WriteLine("    sql-fill <in.repx> [P=v]  run a report Forma wrote over that made-up database: rows per query, pages");
             Console.WriteLine("    render-cols    column render check (no file argument)");
             Console.WriteLine();
             Console.WriteLine("  what DevExpress PRINTS, with data:");
@@ -96,6 +98,8 @@ static class Program {
             case "emit-pdf":   EmitPdfContent(args[1]); return 0;
             case "emit-sql":   return SqlProbe.Emit(args[1]);
             case "sql-run":    return SqlProbe.Run(args);
+            case "emit-sql-params": return SqlProbe.EmitParams(args[1]);
+            case "sql-fill":   return SqlProbe.Fill(args);
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);

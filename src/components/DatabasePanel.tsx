@@ -12,6 +12,7 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { DataField } from '../lib/dataSource';
+import type { CalcType, DataSourceSpec } from '../lib/repxSqlWriter';
 import type { SqlObject, SqlProcedure, SqlSchema } from '../lib/sqlSchema';
 import { resultFix, summarizeSchema, typeLabel } from '../lib/sqlSchema';
 import { SCHEMA_SCRIPT, sampleScript } from '../lib/sqlSchemaScript';
@@ -42,7 +43,17 @@ interface Props {
   onCopy: (text: string) => Promise<boolean>;
   /** The chosen query's fields, as the Data tab's mapping reads fields, whenever they change. */
   onFieldsChange?: (fields: DataField[], label: string) => void;
+  /**
+   * Writes the chosen query into the report as DevExpress's SqlDataSource
+   * (batch DD): App runs `writeSqlDataSource` with the layout and the query,
+   * and returns the line to show.
+   */
+  onWrite?: (options: WriteOptions) => Promise<string>;
 }
+
+export type WriteOptions = Pick<DataSourceSpec, 'connectionName' | 'multiValue' | 'lookups' | 'calculatedFields'>;
+
+const CALC_TYPES: CalcType[] = ['String', 'Decimal', 'Int32', 'Double', 'DateTime', 'Boolean'];
 
 const CSS = `
 .dbx { display: grid; gap: 14px; margin-bottom: 22px; }
@@ -91,13 +102,20 @@ function download(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function DatabasePanel({ database, recent, onSwitch, onForget, query, onQuery, selectionLabel, onBindField, onCopy, onFieldsChange }: Props) {
+export default function DatabasePanel({ database, recent, onSwitch, onForget, query, onQuery, selectionLabel, onBindField, onCopy, onFieldsChange, onWrite }: Props) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [copied, setCopied] = useState('');
   const [customOpen, setCustomOpen] = useState(false);
   const [customName, setCustomName] = useState('Query');
   const [customSql, setCustomSql] = useState('');
+  // What goes into the report with the query (batch DD).
+  const [connection, setConnection] = useState('');
+  const [multi, setMulti] = useState<string[]>([]);
+  const [lookups, setLookups] = useState<Record<string, { source: string; dependsOn: string }>>({});
+  const [calcs, setCalcs] = useState<{ name: string; expression: string; type: CalcType }[]>([]);
+  const [written, setWritten] = useState('');
+  const [writing, setWriting] = useState(false);
 
   const copy = async (label: string, text: string) => setCopied((await onCopy(text)) ? `${label} copied.` : `Copy did not work here; use Download instead.`);
 
@@ -214,8 +232,15 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
   const setTableQuery = (patch: Partial<Extract<ReportQuery, { kind: 'table' }>>) => {
     if (query?.kind === 'table') onQuery({ ...query, ...patch });
   };
-  const toggleJoin = (join: QueryJoin) => {
+  // A table pointing back (an order's lines) is a detail band, not a join, which would repeat the order once per line.
+  const toggleJoin = (join: QueryJoin, detail: boolean) => {
     if (query?.kind !== 'table') return;
+    if (detail) {
+      const list = query.details ?? [];
+      const has = list.some((j) => j.table === join.table);
+      setTableQuery({ details: has ? list.filter((j) => j.table !== join.table) : [...list, join] });
+      return;
+    }
     const has = query.joins.some((j) => j.table === join.table);
     setTableQuery({ joins: has ? query.joins.filter((j) => j.table !== join.table) : [...query.joins, join] });
   };
@@ -276,9 +301,9 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
                   <h4>Join, from its foreign keys</h4>
                   {suggestJoins(database, query.object).map((s) => (
                     <label key={s.join.table} className="dbx-row dbx-sub" style={{ gap: 6 }}>
-                      <input type="checkbox" checked={query.joins.some((j) => j.table === s.join.table)} onChange={() => toggleJoin(s.join)} />
+                      <input type="checkbox" checked={s.direction === 'referencedBy' ? !!query.details?.some((j) => j.table === s.join.table) : query.joins.some((j) => j.table === s.join.table)} onChange={() => toggleJoin(s.join, s.direction === 'referencedBy')} />
                       {s.label}
-                      {s.direction === 'referencedBy' && <span className="dbx-badge" title="Many rows for each of yours: usually a detail band, not a join">detail</span>}
+                      {s.direction === 'referencedBy' && <span className="dbx-badge" title="Many rows for each of yours: printed as a detail band under each row, not joined">detail band</span>}
                     </label>
                   ))}
                 </div>
@@ -314,6 +339,80 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
             </div>
             <p className="dbx-sub">{selectionLabel ? `Bind sets what ${selectionLabel}, last selected on the Preview, prints.` : 'Select a control on the Preview, then Bind a field to it. Or map a table’s columns below.'}</p>
           </div>
+          {onWrite && (
+            <div className="dbx-group" style={{ display: 'grid', gap: 8 }} aria-label="Into the report">
+              <h4>Into the report</h4>
+              <label className="dbx-sub" style={{ display: 'grid', gap: 4 }}>
+                Connection name, as your application’s &lt;connectionStrings&gt; knows it (never a password)
+                <input className="dbx-input" aria-label="Connection name" value={connection || database.database} onChange={(e) => setConnection(e.target.value.replace(/[;=]/g, ''))} />
+              </label>
+              {params.map((p) => {
+                const lk = lookups[p.name] ?? { source: '', dependsOn: '' };
+                const lookupObject = lk.source ? findObject(database, lk.source.split('.').slice(0, -1).join('.')) : undefined;
+                const others = params.filter((o) => o.name !== p.name && lookupObject?.columns.some((c) => c.name === o.name));
+                return (
+                  <div key={p.name} className="dbx-row" style={{ gap: 10 }}>
+                    <span className="dbx-sub" style={{ minWidth: 90 }}>{p.name}</span>
+                    <label className="dbx-sub"><input type="checkbox" checked={multi.includes(p.name)} onChange={(e) => setMulti(e.target.checked ? [...multi, p.name] : multi.filter((m) => m !== p.name))} /> several values</label>
+                    <select className="dbx-input" style={{ width: 'auto' }} aria-label={`Values of ${p.name} from`} value={lk.source} onChange={(e) => setLookups({ ...lookups, [p.name]: { source: e.target.value, dependsOn: '' } })}>
+                      <option value="">Typed in</option>
+                      {database.objects.flatMap((o) => o.columns.map((c) => `${o.schema}.${o.name}.${c.name}`)).map((v) => <option key={v} value={v}>{`Values from ${v}`}</option>)}
+                    </select>
+                    {others.length > 0 && (
+                      <select className="dbx-input" style={{ width: 'auto' }} aria-label={`${p.name} depends on`} value={lk.dependsOn} onChange={(e) => setLookups({ ...lookups, [p.name]: { ...lk, dependsOn: e.target.value } })}>
+                        <option value="">For every value</option>
+                        {others.map((o) => <option key={o.name} value={o.name}>{`Only those for the ${o.name} chosen`}</option>)}
+                      </select>
+                    )}
+                  </div>
+                );
+              })}
+              <div style={{ display: 'grid', gap: 6 }}>
+                {calcs.map((c, i) => (
+                  <div className="dbx-row" key={i}>
+                    <input className="dbx-input" style={{ width: 140 }} aria-label="Calculated field name" placeholder="Name" value={c.name} onChange={(e) => setCalcs(calcs.map((x, j) => (j === i ? { ...x, name: e.target.value.replace(/[^\w]/g, '') } : x)))} />
+                    <input className="dbx-input" style={{ flex: 1, minWidth: 180 }} aria-label="Calculated field expression" placeholder="[Qty] * [UnitPrice]" value={c.expression} onChange={(e) => setCalcs(calcs.map((x, j) => (j === i ? { ...x, expression: e.target.value } : x)))} />
+                    <select className="dbx-input" style={{ width: 'auto' }} aria-label="Calculated field type" value={c.type} onChange={(e) => setCalcs(calcs.map((x, j) => (j === i ? { ...x, type: e.target.value as CalcType } : x)))}>
+                      {CALC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <button type="button" className="dbx-btn" onClick={() => setCalcs(calcs.filter((_, j) => j !== i))}>Remove</button>
+                  </div>
+                ))}
+                <div><button type="button" className="dbx-btn" onClick={() => setCalcs([...calcs, { name: '', expression: '', type: 'Decimal' }])}>Add a calculated field</button></div>
+              </div>
+              <div className="dbx-row">
+                <button
+                  type="button"
+                  className="dbx-btn dbx-btn--solid"
+                  disabled={writing || !fields.length}
+                  onClick={async () => {
+                    setWriting(true);
+                    try {
+                      const chosen = Object.entries(lookups).filter(([, l]) => l.source);
+                      setWritten(
+                        await onWrite({
+                          connectionName: (connection || database.database).trim(),
+                          multiValue: multi,
+                          lookups: chosen.map(([parameter, l]) => {
+                            const parts = l.source.split('.');
+                            const column = parts.pop()!;
+                            return { parameter, object: parts.join('.'), valueColumn: column, ...(l.dependsOn ? { filter: `[${l.dependsOn}] ${multi.includes(l.dependsOn) ? 'In (?' + l.dependsOn + ')' : '= ?' + l.dependsOn}` } : {}) };
+                          }),
+                          calculatedFields: calcs.filter((c) => c.name && c.expression),
+                        }),
+                      );
+                    } finally {
+                      setWriting(false);
+                    }
+                  }}
+                >
+                  Write into the report
+                </button>
+                {written && <span className="dbx-sub" role="status">{written}</span>}
+              </div>
+              <p className="dbx-sub" style={{ margin: 0 }}>The report then names the connection, never a login, and opens in the designer with its fields listed, no connection needed.</p>
+            </div>
+          )}
           {tablesInQuery.length > 0 && (
             <div className="dbx-row">
               <button type="button" className="dbx-btn" onClick={() => copy('The sample script', sampleScript(tablesInQuery.map((t) => findObject(database, t)).filter((o): o is SqlObject => !!o).map((o) => ({ schema: o.schema, name: o.name }))))}>Copy a sample script for these tables</button>

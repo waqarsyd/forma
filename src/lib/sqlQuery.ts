@@ -41,6 +41,12 @@ export type ReportQuery =
       sort?: { column: string; descending?: boolean }[];
       top?: number;
       distinct?: boolean;
+      /**
+       * Tables pointing back at this one (an order's lines), each printed as a
+       * master-detail band rather than joined, which would repeat the order
+       * once per line (batch DD writes the relation and the band).
+       */
+      details?: QueryJoin[];
     }
   | { kind: 'procedure'; procedure: string }
   | { kind: 'custom'; name: string; sql: string };
@@ -197,6 +203,7 @@ export function describeQuery(query: ReportQuery): string {
   if (query.sort?.length) parts.push(`sorted by ${query.sort.map((s) => `${s.column.replace(/^.*\./, '')}${s.descending ? ' descending' : ''}`).join(', ')}`);
   if (query.top) parts.push(`top ${query.top}`);
   if (query.distinct) parts.push('distinct rows');
+  if (query.details?.length) parts.push(`each with its ${query.details.map((d) => d.table).join(', ')}`);
   return parts.join(', ');
 }
 
