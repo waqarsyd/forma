@@ -674,7 +674,9 @@ src/
                        Server database's layout, read from Forma's script or
                        an SSMS file with no connection, and kept on the
                        device), repxSqlDataSource (the SQL data source inside
-                       a .repx),
+                       a .repx), sqlQuery (what a report reads from it: a
+                       table with its joins, a procedure, or checked custom
+                       SQL),
                        layers (the stack of open menus and dialogs, so one
                        Escape closes only the topmost and keys meant for
                        one stay there), clipboard (every Copy, with a

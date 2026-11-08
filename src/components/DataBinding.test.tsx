@@ -260,3 +260,17 @@ describe('a pasted database layout', () => {
     expect(onDatabase).not.toHaveBeenCalled();
   });
 });
+
+/* A label bound on its own, from the database's field list or by the chat
+   (2026-11-08): the table below it is still unbound and still mappable. */
+describe('a label bound on its own', () => {
+  it('leaves the table\'s mapping open', () => {
+    const labelBound = bindable.replace(
+      '</Bands>',
+      '<Item9 Ref="90" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="20"><Controls><Item1 Ref="91" ControlType="XRLabel" Name="labelCustomer" Text="x"><ExpressionBindings><Item1 EventName="BeforePrint" PropertyName="Text" Expression="[CompanyName]" /></ExpressionBindings></Item1></Controls></Item9></Bands>',
+    );
+    render(<DataBinding repxContent={labelBound} onApply={() => {}} />);
+    expect(screen.getByLabelText('Paste a data sample or schema')).toBeTruthy();
+    expect(screen.queryByText(/Bound to 1 field/)).toBeNull();
+  });
+});

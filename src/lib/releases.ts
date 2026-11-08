@@ -83,6 +83,8 @@ export const RELEASES: Release[] = [
     changes: [
       { kind: 'new', area: 'data', text: 'A database\u2019s layout, from Forma\u2019s read-only script or an SSMS \u201cGenerate Scripts\u201d file, attached in the box or pasted on the Data tab: tables, views, keys, and each stored procedure\u2019s parameters, defaults and result columns, read without running it, with the reason when a procedure cannot be described. Kept in this browser, never in the cloud.' },
       { kind: 'new', area: 'data', text: 'Sample rows from the tables you pick, by a second read-only script, so the AI can match a printed column to the right field by what it holds.' },
+      { kind: 'new', area: 'data', text: 'The Data tab browses the database: find a table, view, procedure or column, see each one\u2019s types and keys, choose what the report reads (a table with the joins its foreign keys suggest, a stored procedure, or a checked SELECT of your own) with its filter, sort and limit, and bind a field to the control you last selected on the Preview.' },
+      { kind: 'fixed', area: 'data', text: 'Binding one label no longer hides the Data tab\u2019s table mapping behind a message about a table nobody had bound.' },
     ],
   },
   {

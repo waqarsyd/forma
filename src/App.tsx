@@ -146,6 +146,8 @@ const ReportPreview = lazy(() => import('./components/ReportPreview'));
 /* The binding screen. Lazy for the same reason as the preview: workspace-only,
    reachable only with a finished report, and it carries its own styles. */
 const DataBinding = lazy(() => import('./components/DataBinding'));
+/* The Data tab's SQL Server database (2026-11-08): lazy with the binding screen, and it carries the query model. */
+const DatabasePanel = lazy(() => import('./components/DatabasePanel'));
 /* Batch intake. Lazy for the same reason as the other two, and it carries the
    ZIP writer, which nobody generating a single report ever needs. */
 const BatchPanel = lazy(() => import('./components/BatchPanel'));
@@ -297,6 +299,8 @@ import type { OcrBuiltReport } from './components/OcrDialog';
 import type { ReaderBuiltReport } from './lib/ocrAttach';
 import type { ReadPage } from './lib/ocrAttach';
 import type { DatabaseText, SqlSchema } from './lib/sqlSchema';
+import type { ReportQuery } from './lib/sqlQuery';
+import type { DataField } from './lib/dataSource';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
   clampReviewWidth,
@@ -1131,6 +1135,26 @@ export default function App() {
   const [activeDatabase, setActiveDatabase] = useState<SqlSchema | null>(null);
   const activeDatabaseRef = useRef<SqlSchema | null>(null);
   activeDatabaseRef.current = activeDatabase;
+  /** What the report reads from it, chosen on the Data tab (batch DC); written into the .repx from batch DD. */
+  const [activeQuery, setActiveQuery] = useState<ReportQuery | null>(null);
+  /** The databases kept on this device, by name, newest first. */
+  const [keptDatabases, setKeptDatabases] = useState<string[]>([]);
+  /** The chosen query's fields, for the Data tab's column mapping. */
+  const [queryFieldList, setQueryFieldList] = useState<{ fields: DataField[]; label: string }>({ fields: [], label: '' });
+  // Another database means another layout: what was chosen from the last one no longer applies.
+  const activeDatabaseName = activeDatabase?.database ?? '';
+  useEffect(() => {
+    setActiveQuery(null);
+  }, [activeDatabaseName]);
+  useEffect(() => {
+    let live = true;
+    void import('./lib/sqlSchemaStore').then((store) => store.loadDatabases()).then((kept) => {
+      if (live) setKeptDatabases(kept.map((d) => d.name));
+    });
+    return () => {
+      live = false;
+    };
+  }, [activeDatabase]);
   /** Warnings from the last upload: skipped files, dropped pages, bad XML. */
   const [uploadNotices, setUploadNotices] = useState<string[]>([]);
   const [isIngesting, setIsIngesting] = useState(false);
@@ -2619,10 +2643,18 @@ export default function App() {
    * would then remove.
    */
   const previewEditedXml = useRef<string | null>(null);
+  /**
+   * What was last selected on the Preview, for the Data tab's Bind (2026-11-08,
+   * the SQL Server programme): the Preview clears its selection when another
+   * pane replaces it, rightly for the box's chips, and the Data tab is that
+   * other pane. Forgotten whenever the report changes from anywhere else.
+   */
+  const [bindTarget, setBindTarget] = useState<string[]>([]);
   useEffect(() => {
     if (result?.repxContent === previewEditedXml.current) return;
     previewEditedXml.current = null;
     setSelectionReset((n) => n + 1);
+    setBindTarget([]);
   }, [result?.repxContent]);
   /**
    * What the last save kept (`sessionSignature`, 2026-11-05): the ref for the
@@ -6706,7 +6738,11 @@ export default function App() {
                       testDataBusy={testDataBusy}
                       exportRequest={exportRequest}
                       onExportRequestDone={() => setExportRequest(null)}
-                      onSelectionChange={setPreviewSelection}
+                      onSelectionChange={(names) => {
+                        setPreviewSelection(names);
+                        // An empty list on leaving the Preview is not a choice to forget it.
+                        if (names.length) setBindTarget(names);
+                      }}
                       marking={previewTool === 'mark'}
                       onMarked={() => setPreviewTool('select')}
                       highlight={changedHighlight}
@@ -6746,8 +6782,46 @@ export default function App() {
                 <div className="wb-sheet wb-reg-marks">
                   <ErrorBoundary area="the Data view">
                   <Suspense fallback={null}>
+                    <DatabasePanel
+                      database={activeDatabase}
+                      recent={keptDatabases}
+                      onSwitch={async (name) => {
+                        const kept = await (await import('./lib/sqlSchemaStore')).loadDatabases();
+                        const hit = kept.find((d) => d.name === name);
+                        if (hit) setActiveDatabase(hit.schema);
+                      }}
+                      onForget={async (name) => {
+                        const store = await import('./lib/sqlSchemaStore');
+                        await store.forgetDatabase(name);
+                        if (activeDatabase && store.storedName(activeDatabase) === name) setActiveDatabase(null);
+                        setKeptDatabases((await store.loadDatabases()).map((d) => d.name));
+                        setSaveNotice(`${name || 'The database'} is forgotten in this browser.`);
+                      }}
+                      query={activeQuery}
+                      onQuery={setActiveQuery}
+                      selectionLabel={bindTarget.length === 1 ? bindTarget[0] : bindTarget.length > 1 ? `${bindTarget.length} controls` : ''}
+                      // A field bound to what was last selected on the Preview: the chat's own bind edit.
+                      onBindField={async (field) => {
+                        const agent = await import('./lib/agentEdit');
+                        const now = reportNow.current;
+                        if (!now?.repxContent || !bindTarget.length) return;
+                        const done = agent.applyEdits(now.repxContent, bindTarget.map((control) => ({ op: 'bind' as const, control, field })));
+                        if (!done.changed) {
+                          setSaveNotice(done.declined[0] ?? 'Nothing needed changing');
+                          return;
+                        }
+                        const bound = { ...now, repxContent: done.xml };
+                        setResult(bound);
+                        recordRevision('Bound to data', bound);
+                        setSaveNotice(done.applied.length === 1 ? done.applied[0] : `${done.applied.length} changes`);
+                      }}
+                      onCopy={copyText}
+                      onFieldsChange={(fields, label) => setQueryFieldList({ fields, label })}
+                    />
                     <DataBinding
                       repxContent={result.repxContent}
+                      databaseFields={activeDatabase ? queryFieldList.fields : undefined}
+                      databaseLabel={queryFieldList.label}
                       /* A database's layout or sample rows pasted on the tab (2026-11-08):
                          kept on this device and made the active database. */
                       onDatabase={async (text) => {

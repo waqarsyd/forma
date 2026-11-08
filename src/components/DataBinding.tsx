@@ -54,6 +54,14 @@ interface Props {
    * line to show, or null when the text was not one after all.
    */
   onDatabase?: (text: string) => Promise<string | null>;
+  /**
+   * The fields of the query chosen from the SQL Server database (2026-11-08,
+   * batch DC), mapped onto the table's columns as a pasted sample's are. A
+   * paste in the box still wins: it is the user's latest word.
+   */
+  databaseFields?: DataField[];
+  /** Where those fields come from, for the line that names them. */
+  databaseLabel?: string;
 }
 
 /** Forma's layout or sample script output: the marker its JSON always carries. */
@@ -78,7 +86,7 @@ const KIND_LABEL: Record<string, string> = {
   none: '',
 };
 
-export default function DataBinding({ repxContent, onApply, onPromptToExpression, onDatabase }: Props) {
+export default function DataBinding({ repxContent, onApply, onPromptToExpression, onDatabase, databaseFields, databaseLabel }: Props) {
   const [pasted, setPasted] = useState('');
   const [databaseLine, setDatabaseLine] = useState<string | null>(null);
 
@@ -108,7 +116,12 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
   const [exprBusy, setExprBusy] = useState(false);
   const [exprColumn, setExprColumn] = useState(0);
 
-  const source = useMemo(() => parseDataSource(pasted), [pasted]);
+  const source = useMemo(() => {
+    const read = parseDataSource(pasted);
+    if (read.kind !== 'none' || !databaseFields?.length) return read;
+    return { kind: 'sql' as const, fields: databaseFields, rowCount: 0, problems: [] };
+  }, [pasted, databaseFields]);
+  const fromDatabase = !pasted.trim() && !!databaseFields?.length;
   const { plan, reason } = useMemo(() => planDetailBinding(repxContent), [repxContent]);
   const alreadyBound = useMemo(() => readBoundFields(repxContent), [repxContent]);
 
@@ -233,7 +246,10 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
         confirmation in the review column. Same fact, opposite meaning, and the
         difference is entirely whether bindings already exist.
       */}
-      {alreadyBound.length > 0 ? (
+      {/* Only when the table itself cannot be mapped (2026-11-08): a single
+          label bound from the database's field list, or by the chat, used to
+          bring this screen up and hide the mapping of a table nobody bound. */}
+      {alreadyBound.length > 0 && !plan ? (
         <div className="db-ok" role="status">
           <strong>Bound to {alreadyBound.length} field{alreadyBound.length === 1 ? '' : 's'}.</strong>
           <p className="db-note" style={{ opacity: 1, marginTop: 6 }}>
@@ -290,7 +306,7 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
               <>
                 <p className="db-note">
                   Read {source.fields.length} field{source.fields.length === 1 ? '' : 's'} from{' '}
-                  {KIND_LABEL[source.kind]}
+                  {fromDatabase ? databaseLabel || 'the database' : KIND_LABEL[source.kind]}
                   {source.rowCount > 0 && `, ${source.rowCount} row${source.rowCount === 1 ? '' : 's'}`}:
                 </p>
                 <div className="db-fields" style={{ marginTop: 8 }}>
