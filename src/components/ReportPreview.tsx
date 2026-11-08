@@ -107,7 +107,7 @@ interface Props {
   onSelectionChange?: (names: string[]) => void;
   /**
    * The controls a request changed, by name, outlined while that request is
-   * the one picked in the request log (2026-11-05), as Stitch outlines the
+   * the one shown from the conversation (the request log's pick until 2026-11-08), as Stitch outlines the
    * screens a request changed. The first is scrolled into view.
    */
   highlight?: readonly string[];

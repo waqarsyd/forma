@@ -861,15 +861,17 @@ y_top = pageHeight − (baseline + height)`}
 
               <h3 className={H3}>The conversation</h3>
               <dl className="mt-4 border-t border-outline-variant">
-                <Def t="The request card">
-                  Floats over the report and shows one request at a time. Your message carries its time, Copy,
-                  Edit and Withdraw, and its versions when you edited it (1/2, with arrows between them). Forma's
-                  reply carries Copy, Good reply and Bad reply, Try again, and for a change what was Changed, with
-                  Undo and Redo. Fold the reply away to see the report under it.
+                <Def t="The conversation panel">
+                  Down the left of the report: every request of the project in one thread, with the message box at
+                  its foot. Each message stays pinned at the top while you read Forma's replies to it, and carries
+                  its time, Copy, Edit and Withdraw, and its versions when you edited it (1/2, with arrows between
+                  them). Forma's reply carries Copy, Good reply and Bad reply, Try again, and for a change what was
+                  Changed, with Undo and Redo; the eye on a message shows what it changed on the Preview.
                 </Def>
-                <Def t="The request log">
-                  Every request of the project, each marked Working, Failed, Waiting for you or Answered, with a
-                  search box, and an export of the whole chat as a Markdown file.
+                <Def t="Search, download and fold">
+                  The panel's search marks every match and Enter goes to the next; its download saves the whole
+                  chat as a Markdown file. The fold button folds the panel and the box to one button at the top left,
+                  to see the whole report.
                 </Def>
                 <Def t="The command menu">
                   Ctrl+K, then type: a view, an export, Share, test data, a zoom, Go to a control, a project or a

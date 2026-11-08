@@ -116,6 +116,18 @@ export interface ChatThreadProps<R> {
   showWorking?: boolean;
   /** Forma's working line during a generation, rendered after the transcript. */
   children?: ReactNode;
+  /**
+   * The conversation as requests (2026-11-08), as Stitch's panel draws it
+   * since it went back to a thread: each request a section, what was asked
+   * pinned at its top while its replies scroll under it (`renderAsk`), and
+   * Forma working in the newest. `messages` then holds every reply, for the
+   * search count and the follow; absent, `messages` is drawn as one run of
+   * replies, as the card of 2026-11-05 drew one request's.
+   */
+  turns?: ReadonlyArray<{ id: string; ask: ChatMessage<R, PreviewMeta> | null; replies: ReadonlyArray<ChatMessage<R, PreviewMeta>> }>;
+  renderAsk?: (turn: { id: string; ask: ChatMessage<R, PreviewMeta> }) => ReactNode;
+  /** The request picked to show what it changed, marked as the current one. */
+  currentTurn?: string | null;
 }
 
 /** A message's text with every match of the search marked; the card's pill marks the words asked with it. */
@@ -462,8 +474,9 @@ const ChatNote = memo(function ChatNote<R>({
 }) {
   /*
    * Forma's replies only. What the person asked, with its pictures, its
-   * error and Try again, its Copy, Edit, Withdraw and versions, is the card's
-   * pill (RequestCard.tsx). This note drew the person's message too, with its
+   * error and Try again, its Copy, Edit, Withdraw and versions, is the
+   * pinned pill at the top of its request (ConversationPanel.tsx; the card's,
+   * RequestCard.tsx, until 2026-11-08). This note drew the person's message too, with its
    * pictures and its error, until 2026-11-07 (agent audit item 61): the card
    * has passed the replies alone since the workspace audit, so none of that
    * was ever reached. `git log -S"wb-note--me"` finds it.
@@ -550,6 +563,9 @@ export default function ChatThread<R>({
   query = '',
   showWorking = true,
   children,
+  turns,
+  renderAsk,
+  currentTurn = null,
 }: ChatThreadProps<R>) {
   /*
    * Stable dispatchers, so memoising `ChatNote` is not defeated by the callback
@@ -634,47 +650,39 @@ export default function ChatThread<R>({
     // updates many times a second, and successive smooth scrolls queue up and
     // lag behind the text they are meant to be following.
     el.scrollTop = el.scrollHeight;
-  }, [messages, streamingReply, isChatting, isAnalyzing]);
+    // `turns` too (2026-11-08): a message sent adds a request before any reply.
+  }, [messages, turns, streamingReply, isChatting, isAnalyzing]);
 
-  return (
-    <div className="wb-thread" ref={threadRef} onScroll={notePinned}>
-      {/* An empty conversation is empty (2026-11-05). It opened with a note
-          saying what the box takes and six predefined descriptions as chips,
-          until the owner asked for all of that to go behind the scenes, as the
-          chat apps people know do it; `git log -S"wb-note--start"` finds it. */}
-      {searching && hits > 0 && (
-        <p className="wb-search-count" role="status">
-          {hits === 1 ? '1 reply holds that' : `${hits} replies hold that`}
-        </p>
-      )}
-      {messages.map((msg) => (
-        <ChatNote
-          key={msg.id}
-          message={msg}
-          retryDisabled={retryDisabled}
-          latest={msg.id === lastReplyId}
-          onUndo={onUndo && undoable?.has(msg.id) ? undo : undefined}
-          onRedo={onRedo && redoable?.has(msg.id) ? redo : undefined}
-          onAction={onAction ? act : undefined}
-          onConfirm={onConfirm ? confirm : undefined}
-          usageOf={usageOf ? usage : undefined}
-          onAnswer={onAnswer ? answer : undefined}
-          // Not on a reply Forma wrote of its own accord: it answers no message (agent audit item 75).
-          onRegenerate={onRegenerate && !msg.standalone ? regenerate : undefined}
-          onRate={onRate ? rate : undefined}
-          // Only a reply holding the words is drawn plain to mark them; the rest stay Markdown.
-          query={searching && messageMatches(msg, query) ? query : ''}
-        />
-      ))}
+  const note = (msg: ChatMessage<R, PreviewMeta>) => (
+    <ChatNote
+      key={msg.id}
+      message={msg}
+      retryDisabled={retryDisabled}
+      latest={msg.id === lastReplyId}
+      onUndo={onUndo && undoable?.has(msg.id) ? undo : undefined}
+      onRedo={onRedo && redoable?.has(msg.id) ? redo : undefined}
+      onAction={onAction ? act : undefined}
+      onConfirm={onConfirm ? confirm : undefined}
+      usageOf={usageOf ? usage : undefined}
+      onAnswer={onAnswer ? answer : undefined}
+      // Not on a reply Forma wrote of its own accord: it answers no message (agent audit item 75).
+      onRegenerate={onRegenerate && !msg.standalone ? regenerate : undefined}
+      onRate={onRate ? rate : undefined}
+      // Only a reply holding the words is drawn plain to mark them; the rest stay Markdown.
+      query={searching && messageMatches(msg, query) ? query : ''}
+    />
+  );
 
-      {/* `!isAnalyzing` is not redundant. A message the assistant judges to be a
-          real build request runs the chat turn *and then* falls through to
-          generation, so both flags are briefly true; without this the thinking
-          placeholder sits above the progress card claiming a second job. */}
-      {/* No live region of its own since 2026-11-07 (agent audit item 7):
-          one mounted with its content is not announced, and a streamed reply
-          in one is read a few words at a time. The card's status region says
-          when Forma starts and what it answered (RequestCard.tsx). */}
+  /* `!isAnalyzing` is not redundant. A message the assistant judges to be a
+     real build request runs the chat turn *and then* falls through to
+     generation, so both flags are briefly true; without this the thinking
+     placeholder sits above the progress card claiming a second job.
+     No live region of its own since 2026-11-07 (agent audit item 7): one
+     mounted with its content is not announced, and a streamed reply in one
+     is read a few words at a time. The panel's status region says when Forma
+     starts and what it answered (ConversationPanel.tsx). */
+  const working = (
+    <>
       {showWorking && isChatting && !isAnalyzing && (
         <article className="wb-note">
           <div>
@@ -692,8 +700,47 @@ export default function ChatThread<R>({
           </div>
         </article>
       )}
-
       {children}
+    </>
+  );
+
+  return (
+    <div className="wb-thread" ref={threadRef} onScroll={notePinned}>
+      {/* An empty conversation is empty (2026-11-05). It opened with a note
+          saying what the box takes and six predefined descriptions as chips,
+          until the owner asked for all of that to go behind the scenes, as the
+          chat apps people know do it; `git log -S"wb-note--start"` finds it. */}
+      {searching && hits > 0 && (
+        <p className="wb-search-count" role="status">
+          {hits === 1 ? '1 reply holds that' : `${hits} replies hold that`}
+        </p>
+      )}
+      {turns ? (
+        <>
+          {/* A section per request, what was asked pinned at its top while
+              its replies scroll under it (2026-11-08). Forma working shows in
+              the newest, so its pill stays pinned over the dots. */}
+          {turns.map((turn, i) => (
+            <section
+              key={turn.id}
+              className="wb-turn"
+              data-turn={turn.id}
+              aria-current={turn.id === currentTurn ? 'true' : undefined}
+              aria-label={turn.ask ? undefined : 'From Forma'}
+            >
+              {turn.ask && renderAsk ? <div className="wb-turn-ask">{renderAsk({ id: turn.id, ask: turn.ask })}</div> : null}
+              {turn.replies.map(note)}
+              {i === turns.length - 1 ? working : null}
+            </section>
+          ))}
+          {turns.length === 0 ? working : null}
+        </>
+      ) : (
+        <>
+          {messages.map(note)}
+          {working}
+        </>
+      )}
 
       {/* Back to the latest message, while the reader is scrolled away from it
           (2026-11-05), as in ChatGPT and Gemini. Sticky at the foot of the

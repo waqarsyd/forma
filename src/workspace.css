@@ -1724,13 +1724,9 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; container: stage / inline-size; }
 .wb-float { position: absolute; z-index: 4; pointer-events: none; }
 .wb-float > * { pointer-events: auto; }
-/* The report's foot clears the box at its height (2026-11-07, agent audit item
-   62): the box publishes it as --composer-h on the bench, and a long message,
-   staged files or the queue made it taller than the 176px this was. */
-.wb-bench-body { padding-bottom: max(176px, calc(var(--composer-h, 128px) + 48px)); }
-/* The card makes room for the request log while it is open (agent audit item
-   76): the log opens upward, over the card's foot, as far as 340px. */
-.wb-bench[data-log='open'] .wb-float-card { max-height: calc(100% - 16px - 360px); min-height: 0; }
+/* The report's foot clears the corner's row (2026-11-08); it cleared the box
+   at its height until the box moved into the conversation panel. */
+.wb-bench-body { padding-bottom: 72px; }
 /* "Drop to attach" while files are dragged over the workspace (item 70): grey, no orange. */
 .wb-drop-veil {
   position: absolute; inset: 8px; z-index: 6; pointer-events: none;
@@ -1739,26 +1735,60 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   background: color-mix(in srgb, var(--panel) 72%, transparent); backdrop-filter: blur(2px);
 }
 .wb-drop-veil span { padding: 10px 18px; border-radius: 999px; background: var(--panel); color: var(--ink); font-size: 14px; box-shadow: var(--shadow-md); }
-.wb-bench[data-card='open'] .wb-bench-body { padding-left: 344px; }
-.wb-reply, .wb-log {
+/* The report keeps clear of the open panel, so it centres in what is left. */
+.wb-bench[data-panel='open'] .wb-bench-body { padding-left: 392px; }
+/* The conversation, a thread in a panel down the left (2026-11-08), as
+   Stitch's workspace has it since it changed: one column, full height, every
+   request a section whose ask stays pinned at its top while its replies
+   scroll under it, the box at the foot; folded, the panel and the box go to
+   one mark at the top left. It replaced the card, the log and the bar of
+   2026-11-05. */
+.wb-float-panel { top: 16px; left: 16px; bottom: 16px; width: 360px; display: flex; flex-direction: column; }
+.wb-panel {
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; border-radius: 20px; overflow: hidden;
   border: 1px solid var(--rule);
   background: color-mix(in srgb, var(--panel-2) 90%, transparent);
   backdrop-filter: blur(14px) saturate(1.3);
   box-shadow: var(--shadow-md);
 }
-
-.wb-float-card { top: 16px; left: 16px; width: 304px; max-height: calc(100% - 16px - 88px); display: flex; flex-direction: column; }
-.wb-reply { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; border-radius: 18px; overflow: hidden; }
-.wb-reply.wb-is-collapsed { flex: none; align-self: flex-start; width: 60px; height: 60px; display: grid; place-items: center; }
+.wb-panel.wb-is-collapsed { flex: none; align-self: flex-start; width: 60px; height: 60px; display: grid; place-items: center; }
+.wb-panel.wb-is-collapsed .wb-panel-foot { display: none; }
+.wb-panel-head { flex: none; display: flex; align-items: center; gap: 2px; padding: 10px 10px 2px 12px; }
+.wb-panel.wb-is-collapsed .wb-panel-head { padding: 0; }
+.wb-panel-gap { flex: 1; }
+.wb-panel-tool {
+  width: 28px; height: 28px; display: inline-grid; place-items: center; padding: 0;
+  border: 0; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer;
+}
+.wb-panel-tool:hover, .wb-panel-tool[aria-expanded='true'] { background: var(--track); color: var(--ink); }
+.wb-panel-convo { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.wb-panel-convo[hidden] { display: none; }
+.wb-panel-search {
+  flex: none; display: flex; align-items: center; gap: 8px; margin: 6px 12px 0; padding: 0 12px; height: 32px;
+  border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); color: var(--ink-2);
+}
+.wb-panel-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 12.5px; outline: none; }
+.wb-panel-thread { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* A request: its ask pinned over its own replies, as Stitch's pins the
+   request being read; the next request's ask takes over at its section. */
+.wb-turn { display: flex; flex-direction: column; gap: 14px; }
+.wb-turn-ask {
+  position: sticky; top: 0; z-index: 1; margin: 0 -14px; padding: 8px 14px 10px;
+  background: linear-gradient(var(--panel-2) 80%, transparent);
+}
+.wb-turn-ask .wb-ask { margin: 0; }
+/* The request whose change is shown on the Preview: a firmer edge, no accent. */
+.wb-turn[aria-current='true'] .wb-ask { border-color: var(--ink-faint); }
+.wb-panel-foot { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 6px 10px 10px; }
 /* The fold mark (agent audit item 98): a minimise line while open, a chat
    bubble folded; it was two dots on a dark pill, which read as typing. */
 .wb-reply-mark {
-  position: relative; flex: none; align-self: flex-end; margin: 10px 10px -6px 0; width: 28px; height: 28px; padding: 0;
+  position: relative; flex: none; align-self: center; margin: 0; width: 28px; height: 28px; padding: 0;
   display: inline-grid; place-items: center;
   border: 0; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer;
 }
 .wb-reply-mark:hover { background: var(--track); color: var(--ink); }
-.wb-reply.wb-is-collapsed .wb-reply-mark { margin: 0; align-self: center; width: 44px; height: 44px; color: var(--ink); }
+.wb-panel.wb-is-collapsed .wb-reply-mark { width: 44px; height: 44px; color: var(--ink); }
 .wb-reply-busy { position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-2); animation: wb-breathe 1.2s ease-in-out infinite; }
 @keyframes wb-breathe { 50% { opacity: .25; } }
 
@@ -1779,78 +1809,43 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-canvas-empty { align-self: center; max-width: 420px; margin: auto; padding: 24px; text-align: center; }
 .wb-canvas-empty h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; color: var(--ink); }
 .wb-canvas-empty p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
-/* The card's contents, hidden rather than dropped while it is folded (agent
-   audit item 32); no box of its own, so the pill and the thread stay the
-   card's flex children. */
-.wb-reply-body { display: contents; }
-.wb-reply-body[hidden] { display: none; }
 /* When it was sent, its versions, Copy, Edit and Withdraw, under the words (items 61 and 65). */
 .wb-ask-foot { margin: 4px 0 0; padding-left: 28px; gap: 2px; flex-wrap: wrap; }
 .wb-ask-foot .wb-note-meta { font-size: 11.5px; }
 .wb-ask-foot-gap { flex: 1; }
 .wb-ask-error { margin: 8px 0 0; font-size: 12.5px; color: var(--bad-ink); }
-/* The replies, under the pill: no column padding for a box below them, and a
-   fade at the card's lower edge, as Stitch's reply fades. */
-.wb-reply .wb-thread {
-  padding: 12px 16px 24px; gap: 14px;
+/* The thread in the panel: no padding for a box over it, since the box is
+   below, and a fade at its lower edge, over the box, as Stitch's fades. */
+.wb-panel .wb-thread {
+  padding: 0 14px 20px; gap: 18px;
   -webkit-mask-image: linear-gradient(#000 calc(100% - 24px), transparent);
   mask-image: linear-gradient(#000 calc(100% - 24px), transparent);
 }
 
-.wb-float-log { bottom: 16px; left: 16px; width: 304px; }
-.wb-log { border-radius: 16px; overflow: hidden; }
-.wb-log-head {
-  width: 100%; display: flex; align-items: center; gap: 10px; padding: 14px 16px;
-  border: 0; background: none; color: var(--ink); font-size: 13.5px; cursor: pointer;
-}
-.wb-log-head > span:nth-of-type(1) { flex: 1; text-align: left; }
-.wb-log-count { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
-.wb-log.wb-is-open .wb-log-head > svg:last-child { transform: rotate(180deg); }
-.wb-log-body { display: grid; gap: 6px; padding: 8px; border-bottom: 1px solid var(--rule); }
-.wb-log-tools { display: flex; align-items: center; gap: 6px; }
-.wb-log-tools input {
-  flex: 1; min-width: 0; height: 30px; padding: 0 12px;
-  border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); color: var(--ink); font-size: 12.5px;
-}
-.wb-log-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; display: grid; gap: 2px; }
-.wb-log-list button {
-  width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-  border: 0; border-radius: 999px; background: none; color: var(--ink); font-size: 13px; text-align: left; cursor: pointer;
-}
-.wb-log-list button:hover { background: var(--track); }
-.wb-log-list button[aria-current='true'] { background: color-mix(in srgb, var(--ink) 9%, transparent); }
-.wb-log-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-log-mark { flex: none; width: 16px; display: grid; place-items: center; color: var(--ink-2); }
-.wb-log-mark--failed { color: var(--bad-ink); }
-.wb-log-none { padding: 8px 10px; font-size: 12.5px; color: var(--ink-faint); }
 .wb-spin { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink-faint); border-top-color: transparent; animation: wb-spin .8s linear infinite; }
 .wb-queue-files { color: var(--ink-faint); }
 @keyframes wb-spin { to { transform: rotate(360deg); } }
 
-/* The box: centred at the foot of the report, between the card's column and
-   the right edge while there is a card, and two rows, as Stitch's bar. */
-.wb-float-bar { bottom: 16px; left: 50%; transform: translateX(-50%); width: min(640px, calc(100% - 672px)); display: flex; flex-direction: column; gap: 8px; }
 /* A tip above the box while Forma works (2026-11-06), as Stitch's: quiet, one line, fading in. */
 .wb-tip { margin: 0; text-align: center; font-size: 12px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: wb-tip-in .4s ease both; }
 @keyframes wb-tip-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-.wb-bench:not([data-card]) .wb-float-bar { width: min(640px, calc(100% - 48px)); }
-.wb-float-bar .wb-box {
+.wb-panel-foot .wb-box {
   display: grid; grid-template-columns: auto 1fr auto auto auto; align-items: center; row-gap: 4px;
   padding: 12px 10px 8px 12px; border-radius: 22px;
   background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(14px); box-shadow: var(--shadow-md);
 }
-.wb-float-bar .wb-box textarea.wb-line { grid-column: 1 / -1; grid-row: 1; padding: 2px 4px; font-size: 14px; }
-.wb-float-bar .wb-box > .wb-tool:first-child { grid-column: 1; grid-row: 2; }
-.wb-float-bar .wb-box > .wb-model { grid-column: 3; grid-row: 2; }
-.wb-float-bar .wb-box > .wb-tool:not(:first-child) { grid-column: 4; grid-row: 2; }
-.wb-float-bar .wb-box > .wb-send { grid-column: 5; grid-row: 2; }
+.wb-panel-foot .wb-box textarea.wb-line { grid-column: 1 / -1; grid-row: 1; padding: 2px 4px; font-size: 14px; }
+.wb-panel-foot .wb-box > .wb-tool:first-child { grid-column: 1; grid-row: 2; }
+.wb-panel-foot .wb-box > .wb-model { grid-column: 3; grid-row: 2; }
+.wb-panel-foot .wb-box > .wb-tool:not(:first-child) { grid-column: 4; grid-row: 2; }
+.wb-panel-foot .wb-box > .wb-send { grid-column: 5; grid-row: 2; }
 /* Stop and Queue together while Forma works and words are typed (2026-11-06). */
-.wb-float-bar .wb-box > .wb-send-pair { grid-column: 5; grid-row: 2; display: flex; gap: 6px; }
+.wb-panel-foot .wb-box > .wb-send-pair { grid-column: 5; grid-row: 2; display: flex; gap: 6px; }
 /* Its chips (an attachment, the Preview's selection) grey, as Stitch's, not the accent. */
-.wb-float-bar .wb-attach { border-color: var(--rule); background: color-mix(in srgb, var(--panel) 92%, transparent); }
-.wb-float-bar .wb-attach svg { color: var(--ink-2); }
+.wb-panel-foot .wb-attach { border-color: var(--rule); background: color-mix(in srgb, var(--panel) 92%, transparent); }
+.wb-panel-foot .wb-attach svg { color: var(--ink-2); }
 /* Focus as Stitch's bar shows it: the edge turns a soft blue to violet. */
-.wb-float-bar .wb-box:not(.wb-is-locked):focus-within {
+.wb-panel-foot .wb-box:not(.wb-is-locked):focus-within {
   border-color: transparent;
   background:
     linear-gradient(var(--panel), var(--panel)) padding-box,
@@ -1895,42 +1890,39 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-corner button:hover:not(:disabled) { background: var(--track); }
 .wb-corner button:disabled { color: var(--ink-faint); cursor: default; }
 .wb-corner .wb-corner-zoom { min-width: 48px; font-family: var(--mono); font-size: 11px; }
-/* The box between the card's column and the corner, by the stage's width, not
-   the window's (2026-11-06): with the sidebar and a panel open, a window-keyed
-   rule left the box 170px wide, or 28, under the corner's "?". Where the two
-   cannot share the foot, the box rises above the corner's row and takes the
-   width, and the toast sits beside the corner. */
-@container stage (max-width: 1311px) {
-  .wb-bench[data-card] .wb-float-bar { left: 336px; right: 256px; width: auto; transform: none; }
-}
-@container stage (max-width: 1151px) {
-  .wb-bench:not([data-card]) .wb-float-bar { left: 16px; right: 256px; width: auto; transform: none; }
-}
+/* Where the stage is narrow, the toast sits beside the corner. */
 @container stage (max-width: 900px) {
-  .wb-bench[data-card] .wb-float-bar, .wb-bench:not([data-card]) .wb-float-bar { right: 16px; bottom: 62px; }
   .wb-float-corner .wb-toast { right: calc(100% + 10px); bottom: 0; }
-  .wb-bench-body { padding-bottom: 224px; }
 }
 @media (max-width: 880px) { .wb-float-corner { justify-content: flex-end; } }
-/* On a phone (2026-11-07, agent audit item 34), as the chat apps and Stitch
-   are there: the box stays at the foot of the screen, the report scrolls in
-   the space above it, and the card is a sheet over the report's lower part,
-   above the log, folded with its mark. Until then every piece was stacked
-   under the report in the page's flow, so the report's pane shrank to what
-   the card, the log, the box and the corner left of the screen, often a
-   sliver. The heights come from the box's own (`--composer-h`, published on
-   the bench): the log sits on the box, the card on the log. The open log
-   takes the card's place, as a phone has no room for both. */
+/* On a phone (2026-11-07, agent audit item 34; the panel's since 2026-11-08),
+   as the chat apps and Stitch are there: the box stays at the foot of the
+   screen, the report scrolls in the space above it, and the thread is a sheet
+   over the report's lower part, folded with its mark. Folding leaves the box,
+   since a phone has no other place to type. An empty conversation draws no
+   sheet. */
 @media (max-width: 880px) {
   .wb-float { position: static; transform: none; width: auto; max-height: none; margin: 0; }
-  .wb-float-bar { padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--rule); background: var(--surface); }
-  .wb-float.wb-float-log { position: absolute; left: 8px; right: 8px; bottom: calc(var(--composer-h, 110px) + 26px); width: auto; }
-  .wb-float.wb-float-card { position: absolute; left: 8px; right: 8px; top: auto; bottom: calc(var(--composer-h, 110px) + 94px); width: auto; max-height: min(55%, 460px); }
-  .wb-bench[data-log='open'] .wb-float-card { display: none; }
+  .wb-float.wb-float-panel { display: block; }
+  .wb-panel {
+    position: relative; overflow: visible; border: 0; border-top: 1px solid var(--rule); border-radius: 0;
+    background: var(--surface); backdrop-filter: none; box-shadow: none;
+  }
+  .wb-panel.wb-is-collapsed { width: auto; height: auto; display: flex; }
+  .wb-panel.wb-is-collapsed .wb-panel-foot { display: flex; }
+  .wb-panel.wb-is-collapsed .wb-panel-head { padding: 6px 10px 0; }
+  .wb-panel-head { padding: 6px 10px 0; }
+  .wb-panel-convo {
+    position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); max-height: min(55vh, 460px);
+    border: 1px solid var(--rule); border-radius: 18px; overflow: hidden;
+    background: color-mix(in srgb, var(--panel-2) 96%, transparent); backdrop-filter: blur(14px); box-shadow: var(--shadow-md);
+  }
+  .wb-panel.wb-is-empty .wb-panel-convo { display: none; }
+  .wb-panel-foot { padding: 4px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
   .wb-float.wb-float-corner { position: absolute; top: 8px; right: 8px; bottom: auto; }
   .wb-float-corner .wb-toast { right: 0; top: calc(100% + 10px); bottom: auto; }
   /* What the sheet covers is seen by folding it with its mark, as Stitch's
      sheet folds; a padding to scroll clear of it would count toward the
      pane's least height and push the box off the screen. */
-  .wb-bench-body, .wb-bench[data-card='open'] .wb-bench-body { padding: 20px 12px 30px; }
+  .wb-bench-body, .wb-bench[data-panel='open'] .wb-bench-body { padding: 20px 12px 30px; }
 }

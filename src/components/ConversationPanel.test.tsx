@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 /**
- * The conversation a request at a time (2026-11-05), as Google Stitch's agent
- * card shows it: what was asked in a pill at the top, Forma's replies under
- * it, and a mark that folds the card away. `requestsOf` in chatSession.test.ts
- * proves the grouping; this proves what the card draws from one request.
+ * The conversation as a thread in a panel down the left (2026-11-08), as
+ * Google Stitch's workspace draws it since it changed: every request a
+ * section, what was asked pinned at its top in a pill, Forma's replies under
+ * it, the box at the panel's foot, and a mark that folds the panel away.
+ * `requestsOf` in chatSession.test.ts proves the grouping; this proves what
+ * the panel draws from it. The pill's cases came from RequestCard.test.tsx,
+ * the card of 2026-11-05 that showed one request at a time.
  */
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
-import RequestCard from './RequestCard';
+import ConversationPanel from './ConversationPanel';
 import type { PreviewMeta } from '../lib/attachments';
 import type { ChatMessage, ChatRequest } from '../lib/chatSession';
 
@@ -18,34 +21,107 @@ beforeAll(async () => {
 }, 60_000);
 
 type Msg = ChatMessage<unknown, PreviewMeta>;
+type Req = ChatRequest<unknown, PreviewMeta>;
 const ask: Msg = { id: 'q1', role: 'user', text: 'Make the total bold\nand right-align the amounts' };
 const reply: Msg = { id: 'r1', role: 'assistant', text: 'Both are changed in place.' };
-const request: ChatRequest<unknown, PreviewMeta> = { id: 'q1', ask, replies: [reply] };
+const request: Req = { id: 'q1', ask, replies: [reply] };
+const second: Req = {
+  id: 'q2',
+  ask: { id: 'q2', role: 'user', text: 'Add a page number' },
+  replies: [{ id: 'r2', role: 'assistant', text: 'It is in the page footer now.' }],
+};
 
-const draw = (props: Partial<React.ComponentProps<typeof RequestCard<unknown>>> = {}) =>
-  render(
-    <RequestCard<unknown>
-      request={request}
-      latest
-      collapsed={false}
-      onToggle={() => {}}
-      isChatting={false}
-      isAnalyzing={false}
-      streamingReply=""
-      onRetry={() => {}}
-      onOpenAttachment={() => {}}
-      {...props}
-    />,
-  );
+type Props = React.ComponentProps<typeof ConversationPanel<unknown>>;
+const base: Props = {
+  requests: [request],
+  collapsed: false,
+  onToggle: () => {},
+  isChatting: false,
+  isAnalyzing: false,
+  streamingReply: '',
+  onRetry: () => {},
+  onOpenAttachment: () => {},
+};
+const draw = (props: Partial<Props> = {}) => render(<ConversationPanel<unknown> {...base} {...props} />);
 
-describe('RequestCard', () => {
+describe('the thread', () => {
+  it('draws every request in order, each a section with what was asked pinned at its top', () => {
+    draw({ requests: [request, second] });
+    const turns = [...document.querySelectorAll('.wb-turn')];
+    expect(turns.map((t) => t.getAttribute('data-turn'))).toEqual(['q1', 'q2']);
+    expect(turns[0].querySelector('.wb-turn-ask .wb-ask-text')?.textContent).toBe('Make the total bold');
+    expect(turns[1].querySelector('.wb-turn-ask .wb-ask-text')?.textContent).toBe('Add a page number');
+    expect(turns[1].textContent).toContain('It is in the page footer now.');
+    // The ask is the pill's, never a bubble of the thread as well.
+    expect(document.querySelector('.wb-note--me')).toBeNull();
+  });
+
+  it('shows Forma working in the newest request, under its pinned ask', () => {
+    draw({ requests: [request, { ...second, replies: [] }], isChatting: true });
+    const turns = document.querySelectorAll('.wb-turn');
+    expect(turns[1].querySelector('.wb-working')).toBeTruthy();
+    expect(turns[0].querySelector('.wb-working')).toBeNull();
+  });
+
+  it('holds the box at its foot, and folds the box away with the conversation', () => {
+    const { rerender } = draw({ foot: <textarea aria-label="Message" /> });
+    expect(document.querySelector('.wb-panel-foot textarea')).toBeTruthy();
+    rerender(<ConversationPanel<unknown> {...base} collapsed foot={<textarea aria-label="Message" />} />);
+    expect(document.querySelector('.wb-panel')?.className).toContain('wb-is-collapsed');
+    // Hidden, not dropped: what was typed in the box survives a fold.
+    expect(document.querySelector('.wb-panel-foot textarea')).toBeTruthy();
+  });
+
+  it('offers to show on the Preview what a request changed, and marks the one shown', () => {
+    const onShowChange = vi.fn();
+    draw({ requests: [request, second], changed: new Set(['q2']), onShowChange, currentId: 'q2' });
+    const buttons = screen.getAllByRole('button', { name: 'Show what it changed' });
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]);
+    expect(onShowChange).toHaveBeenCalledWith('q2');
+    expect(document.querySelector('.wb-turn[aria-current="true"]')?.getAttribute('data-turn')).toBe('q2');
+  });
+});
+
+describe("the panel's header", () => {
+  it('searches the conversation, marking matches in what was asked and in the replies, and Escape closes it', () => {
+    const onQuery = vi.fn();
+    const { rerender } = draw({ requests: [request, second], onQuery });
+    fireEvent.click(screen.getByRole('button', { name: 'Search the conversation' }));
+    const field = screen.getByRole('searchbox', { name: 'Search the conversation' });
+    fireEvent.change(field, { target: { value: 'page' } });
+    expect(onQuery).toHaveBeenLastCalledWith('page');
+    rerender(<ConversationPanel<unknown> {...base} requests={[request, second]} onQuery={onQuery} query="page" />);
+    expect([...document.querySelectorAll('mark.wb-hit')].map((m) => m.textContent)).toEqual(['page', 'page']);
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search the conversation' }), { key: 'Escape' });
+    expect(onQuery).toHaveBeenLastCalledWith('');
+    expect(screen.queryByRole('searchbox')).toBeNull();
+  });
+
+  it('opens the search when told to, as the command menu does', () => {
+    const { rerender } = draw();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    rerender(<ConversationPanel<unknown> {...base} revealSearch={1} />);
+    expect(screen.getByRole('searchbox', { name: 'Search the conversation' })).toBeTruthy();
+  });
+
+  it('downloads the conversation, and offers neither tool before there is one', () => {
+    const onExport = vi.fn();
+    const { rerender } = draw({ onExport });
+    fireEvent.click(screen.getByRole('button', { name: 'Download the conversation' }));
+    expect(onExport).toHaveBeenCalledTimes(1);
+    rerender(<ConversationPanel<unknown> {...base} requests={[]} onExport={onExport} />);
+    expect(screen.queryByRole('button', { name: 'Download the conversation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Search the conversation' })).toBeNull();
+  });
+});
+
+describe('the pill and the fold', () => {
   it('pins what was asked in a pill, its first line until opened, with the reply under it', () => {
     draw();
     const pill = screen.getByText('Make the total bold');
     expect(pill.className).toContain('wb-ask-text');
     expect(screen.getByText('Both are changed in place.')).toBeTruthy();
-    // The ask is the pill's, never a bubble of the thread as well.
-    expect(document.querySelector('.wb-note--me')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Show the whole message' }));
     expect(screen.getByText(/and right-align the amounts/)).toBeTruthy();
   });
@@ -53,39 +129,38 @@ describe('RequestCard', () => {
   it('folds to its mark, and the mark opens it again', () => {
     const onToggle = vi.fn();
     draw({ collapsed: true, onToggle });
-    expect((document.querySelector('.wb-reply-body') as HTMLElement).hidden).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Show the reply' }));
+    expect((document.querySelector('.wb-panel-convo') as HTMLElement).hidden).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Show the conversation' }));
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
   // Agent audit item 98: two dots on a pill read as someone typing.
-  it('marks folding with icons, not dots, and shows a quiet dot on the folded card while Forma works', () => {
+  it('marks folding with icons, not dots, and shows a quiet dot on the folded panel while Forma works', () => {
     const { rerender } = draw();
-    const mark = screen.getByRole('button', { name: 'Fold the reply away' });
+    const mark = screen.getByRole('button', { name: 'Fold the conversation away' });
     expect(mark.querySelector('svg')).toBeTruthy();
     expect(mark.querySelectorAll('i')).toHaveLength(0);
-    const props = { request, latest: true, onToggle: () => {}, isAnalyzing: false, streamingReply: '', onRetry: () => {}, onOpenAttachment: () => {} };
-    rerender(<RequestCard<unknown> {...props} collapsed isChatting={false} />);
+    rerender(<ConversationPanel<unknown> {...base} collapsed />);
     expect(document.querySelector('.wb-reply-busy')).toBeNull();
-    rerender(<RequestCard<unknown> {...props} collapsed isChatting />);
+    rerender(<ConversationPanel<unknown> {...base} collapsed isChatting />);
     expect(document.querySelector('.wb-reply-busy')).toBeTruthy();
   });
 
   // Agent audit item 32: a fold hid the card by dropping it, and with it an edit being typed.
   it('keeps an edit being typed over a fold', () => {
-    const { rerender } = draw({ onEdit: vi.fn() });
+    const onEdit = vi.fn();
+    const { rerender } = draw({ onEdit });
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(screen.getByLabelText('Edit your message'), { target: { value: 'Make the total red' } });
-    const props = { request, latest: true, onToggle: () => {}, isChatting: false, isAnalyzing: false, streamingReply: '', onRetry: () => {}, onOpenAttachment: () => {}, onEdit: vi.fn() };
-    rerender(<RequestCard<unknown> {...props} collapsed />);
-    rerender(<RequestCard<unknown> {...props} collapsed={false} />);
+    rerender(<ConversationPanel<unknown> {...base} onEdit={onEdit} collapsed />);
+    rerender(<ConversationPanel<unknown> {...base} onEdit={onEdit} collapsed={false} />);
     expect((screen.getByLabelText('Edit your message') as HTMLTextAreaElement).value).toBe('Make the total red');
   });
 
   it('edits what was asked from the pill, and offers Try again when the turn failed', () => {
     const onEdit = vi.fn();
     const onRetry = vi.fn();
-    draw({ onEdit, onRetry, request: { id: 'q1', ask: { ...ask, error: 'Google was busy.' }, replies: [] } });
+    draw({ onEdit, onRetry, requests: [{ id: 'q1', ask: { ...ask, error: 'Google was busy.' }, replies: [] }] });
     expect(screen.getByRole('alert').textContent).toContain('Google was busy.');
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledWith('q1');
@@ -100,31 +175,30 @@ describe('RequestCard', () => {
     const { unmount } = draw({ onRegenerate: vi.fn() });
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
     unmount();
-    draw({ onRegenerate: vi.fn(), request: { id: 'r1', ask: null, replies: [reply] } });
+    draw({ onRegenerate: vi.fn(), requests: [{ id: 'r1', ask: null, replies: [{ ...reply, standalone: true }] }] });
     expect(screen.getByText('Both are changed in place.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
-  // Moved from ChatThread.test.tsx with the branch (agent audit item 61).
   it('refuses a retry while something runs', () => {
-    draw({ isAnalyzing: true, request: { id: 'q1', ask: { ...ask, error: 'failed' }, replies: [] } });
+    draw({ isAnalyzing: true, requests: [{ id: 'q1', ask: { ...ask, error: 'failed' }, replies: [] }] });
     expect((screen.getByRole('button', { name: 'Try again' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  // Agent audit item 61: the pill showed no time; the thread's never reached the card.
+  // Agent audit item 61: the pill showed no time.
   it('says when the message was sent', () => {
     const at = new Date();
     at.setHours(10, 42, 0, 0);
-    draw({ request: { id: 'q1', ask: { ...ask, id: `${at.getTime()}-0` }, replies: [reply] } });
+    draw({ requests: [{ id: 'q1', ask: { ...ask, id: `${at.getTime()}-0` }, replies: [reply] }] });
     expect(screen.getByRole('group', { name: 'Your message' }).querySelector('.wb-note-meta')?.textContent).toMatch(/^Today, /);
   });
 
-  // Moved from ChatThread.test.tsx: pages of one upload are one thumbnail, and the viewer gets them all.
+  // Pages of one upload are one thumbnail, and the viewer gets them all.
   it('shows the pictures sent, a file of pages as one, and opens all its pages', () => {
     const onOpenAttachment = vi.fn();
     const pages = ['data:image/png;base64,A', 'data:image/png;base64,B', 'data:image/png;base64,C'];
     const imageMeta = [1, 2, 3].map((page) => ({ uploadId: 'u1', file: 'invoice.pdf', page }));
-    draw({ onOpenAttachment, request: { id: 'q1', ask: { ...ask, images: [...pages, 'data:image/png;base64,D'], imageMeta: [...imageMeta, { uploadId: 'u2', file: 'invoice.pdf' }] }, replies: [] } });
+    draw({ onOpenAttachment, requests: [{ id: 'q1', ask: { ...ask, images: [...pages, 'data:image/png;base64,D'], imageMeta: [...imageMeta, { uploadId: 'u2', file: 'invoice.pdf' }] }, replies: [] }] });
     fireEvent.click(screen.getByRole('button', { name: 'Show the whole message and its pictures' }));
     const shots = document.querySelectorAll('.wb-attach-shot');
     expect(shots).toHaveLength(2);
@@ -134,37 +208,25 @@ describe('RequestCard', () => {
   });
 
   // Agent audit item 7: one region, mounted empty and kept, says when Forma starts and what came of it.
-  it('announces when Forma starts and what came of the request, once it ends', () => {
-    const asked: typeof request = { id: 'q1', ask, replies: [] };
-    const props = { latest: true, collapsed: false, onToggle: () => {}, isAnalyzing: false, streamingReply: '', onRetry: () => {}, onOpenAttachment: () => {} };
-    const { rerender } = render(<RequestCard<unknown> {...props} request={asked} isChatting={false} />);
+  it('announces when Forma starts and what came of the newest request, once it ends', () => {
+    const asked: Req = { id: 'q1', ask, replies: [] };
+    const { rerender } = render(<ConversationPanel<unknown> {...base} requests={[asked]} />);
     const region = screen.getByRole('status');
     expect(region.textContent).toBe('');
-    rerender(<RequestCard<unknown> {...props} request={asked} isChatting />);
+    rerender(<ConversationPanel<unknown> {...base} requests={[asked]} isChatting />);
     expect(region.textContent).toBe('Forma is working on it.');
     // A pause between a turn's steps is not its end.
-    rerender(<RequestCard<unknown> {...props} request={asked} isChatting={false} busy />);
+    rerender(<ConversationPanel<unknown> {...base} requests={[asked]} busy />);
     expect(region.textContent).toBe('Forma is working on it.');
-    rerender(<RequestCard<unknown> {...props} request={request} isChatting={false} />);
+    rerender(<ConversationPanel<unknown> {...base} requests={[request]} />);
     expect(region.textContent).toBe('Forma replied: Both are changed in place.');
     expect(screen.getByRole('status')).toBe(region);
-  });
-
-  // Agent audit item 30: a request the log found by its question marks it there, and hides no reply.
-  it('marks a search in what was asked, and still shows the replies', () => {
-    draw({ query: 'total' });
-    expect(document.querySelector('.wb-ask mark.wb-hit')?.textContent).toBe('total');
-    expect(screen.getByText('Both are changed in place.')).toBeTruthy();
-    expect(screen.queryByText('No message holds that.')).toBeNull();
   });
 });
 
 /*
- * The pill's own controls (2026-11-04, and the pill's alone since 2026-11-06,
- * when the workspace audit removed the thread's copy of them, which the card
- * never reached). Moved here from ChatThread.test.tsx with them. In a row of
- * their own under the words since 2026-11-07 (agent audit item 65): they were
- * behind the arrow, so `open` is gone from these cases.
+ * The pill's own controls (2026-11-04), in a row of their own under the words
+ * since 2026-11-07 (agent audit item 65).
  */
 describe("the pill's edit, withdraw and versions", () => {
   it('offers them without opening the message', () => {
@@ -186,7 +248,7 @@ describe("the pill's edit, withdraw and versions", () => {
   });
 
   it('offers editing a message sent with pictures, which an edit sends again', () => {
-    draw({ onEdit: vi.fn(), onWithdraw: vi.fn(), request: { id: 'q1', ask: { ...ask, images: ['data:image/png;base64,AA'] }, replies: [] } });
+    draw({ onEdit: vi.fn(), onWithdraw: vi.fn(), requests: [{ id: 'q1', ask: { ...ask, images: ['data:image/png;base64,AA'] }, replies: [] }] });
     expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Withdraw' })).toBeTruthy();
   });
@@ -194,7 +256,7 @@ describe("the pill's edit, withdraw and versions", () => {
   it('shows which version of a message is showing, and asks for the one before or after', () => {
     const onShowVersion = vi.fn();
     const branches = [{ text: 'make it blue', tail: [] }, { text: 'make it green', tail: [] }, { text: 'make it red', tail: [] }];
-    draw({ onShowVersion, request: { id: 'q1', ask: { ...ask, text: 'make it green', branches, branch: 1 }, replies: [] } });
+    draw({ onShowVersion, requests: [{ id: 'q1', ask: { ...ask, text: 'make it green', branches, branch: 1 }, replies: [] }] });
     const versions = screen.getByRole('group', { name: 'Versions of this message' });
     expect(versions.textContent).toBe('2/3');
     fireEvent.click(screen.getByLabelText('Previous version'));

@@ -275,8 +275,7 @@ import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
    index- entry in scripts/check-bundle-size.mjs. Since the same evening the
    conversation floats over the report a request at a time, as Google Stitch's
    does: the card and the log draw it, the thread inside the card. */
-const RequestCard = lazy(() => import('./components/RequestCard'));
-const RequestLog = lazy(() => import('./components/RequestLog'));
+const ConversationPanel = lazy(() => import('./components/ConversationPanel'));
 const CommandMenu = lazy(() => import('./components/CommandMenu'));
 const ZoomField = lazy(() => import('./components/ZoomField'));
 const HelpMenu = lazy(() => import('./components/HelpMenu'));
@@ -1029,12 +1028,15 @@ export default function App() {
    * it goes when what held it goes away, an edit sent or a message
    * withdrawn (agent audit item 59), and after words put in the box.
    */
-  const focusBox = () =>
+  const focusBox = () => {
+    // The box folds away with the conversation (2026-11-08): open it first.
+    setIsPanelCollapsed(false);
     requestAnimationFrame(() => {
       const box = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]');
       box?.focus();
       box?.setSelectionRange(box.value.length, box.value.length);
     });
+  };
   /*
    * /workspace?start=<id> puts a starting point in the box (2026-11-08, the
    * site audit's batch SJ): the Examples page's "Open it in the workspace".
@@ -1171,7 +1173,7 @@ export default function App() {
    * conversation floats over the report* in docs/notes/app-shell.md.
    */
   const [shownRequestId, setShownRequestId] = useState<string | null>(null);
-  const [isCardCollapsed, setIsCardCollapsed] = useState(false);
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
   /** The controls the request picked in the log changed, outlined on Preview. */
   const [changedHighlight, setChangedHighlight] = useState<string[]>([]);
   /*
@@ -1323,7 +1325,7 @@ export default function App() {
     setIsReviewCollapsed(false);
     rememberReviewCollapsed(false);
     // The chat has no column since 2026-11-05: choosing it opens the card.
-    if (panel === 'review') setIsCardCollapsed(false);
+    if (panel === 'review') setIsPanelCollapsed(false);
     // Choosing somewhere to go closes the drawer, as Gemini's does.
     setIsRailDrawerOpen(false);
   }, [rememberReviewCollapsed]);
@@ -1757,21 +1759,18 @@ export default function App() {
    */
   const pendingClarifyOf = (list: readonly ChatMessage[]) => pendingQuestions<ReportDescriptionRequest>(list);
   /*
-   * The transcript as requests (2026-11-05), for the card and the log. A new
-   * request shows itself and opens the card, as Stitch's does when a prompt
-   * is sent; the search the chat column's head had is the log's now.
+   * The transcript as requests (2026-11-05), the sections of the conversation
+   * panel's thread since 2026-11-08 (the card's and the log's until then). A
+   * new request opens the panel, as Stitch's does when a prompt is sent.
    */
   const requests = useMemo(() => requestsOf(messages), [messages]);
   const requestCount = requests.length;
-  // A request withdrawn while shown falls back to the newest.
-  const shownRequest = requests.find((r) => r.id === shownRequestId) ?? requests[requestCount - 1] ?? null;
-  const shownIsNewest = !shownRequest || shownRequest.id === requests[requestCount - 1]?.id;
-  /** A request to keep in the card when the count changes under it: a version flipped (agent audit item 31). */
+  /** A request to keep shown when the count changes under it: a version flipped (agent audit item 31). */
   const keepShownRef = useRef<string | null>(null);
   useEffect(() => {
     setShownRequestId(keepShownRef.current);
     keepShownRef.current = null;
-    setIsCardCollapsed(false);
+    setIsPanelCollapsed(false);
     setChangedHighlight([]);
   }, [requestCount]);
   /**
@@ -1782,6 +1781,8 @@ export default function App() {
    * listed what it changed. Older versions are in Revisions.
    */
   const [chatChanges, setChatChanges] = useState<Record<string, { before: DesignResult; after: DesignResult }>>({});
+  /** The requests whose change is known this session, which the panel offers to show on the Preview (2026-11-08). */
+  const changedRequests = useMemo(() => new Set(requests.filter((r) => r.replies.some((m) => chatChanges[m.id])).map((r) => r.id)), [requests, chatChanges]);
   /** What the tab kept before this load, read once, for the project the reload opens again. */
   const keptChanges = useRef<string | null>((() => {
     try {
@@ -2486,15 +2487,13 @@ export default function App() {
   /** Bumped to clear the Preview's selection from the toolbar. */
   const [selectionReset, setSelectionReset] = useState(0);
   /**
-   * What the request log is searching for (2026-11-06, the workspace audit):
+   * What the conversation is searched for (the request log's until 2026-11-08):
    * the card marks it in its replies, as the chat column's search did. The
    * log searched its titles only, and the thread's marking was never reached.
    */
   const [logQuery, setLogQuery] = useState('');
-  /** Bumped to open the request log from the command menu (agent audit item 66). */
-  const [logReveal, setLogReveal] = useState(0);
-  /** Whether the request log is open, so the card above it makes room (agent audit item 76). */
-  const [logOpen, setLogOpen] = useState(false);
+  /** Bumped to open the conversation's search from the command menu (agent audit item 66; the log's until 2026-11-08). */
+  const [searchReveal, setSearchReveal] = useState(0);
   /**
    * The REPX the Preview itself last wrote. Any other change to the file (a
    * chat edit, Undo, a restore, another project) clears the Preview's
@@ -5640,7 +5639,7 @@ export default function App() {
    */
   const showRequest = async (id: string) => {
     setShownRequestId(id === requests[requests.length - 1]?.id ? null : id);
-    setIsCardCollapsed(false);
+    setIsPanelCollapsed(false);
     const change = requests.find((r) => r.id === id)?.replies.map((m) => chatChanges[m.id]).find(Boolean);
     if (!change?.before.repxContent || !change.after.repxContent) {
       setChangedHighlight([]);
@@ -5758,10 +5757,10 @@ export default function App() {
       { id: 'sidebar', label: 'Show or hide the sidebar', keys: keysFor('Ctrl+B'), run: toggleSidebar },
       { id: 'clean', label: isClean ? 'Leave the clean screen' : 'Clean screen', keys: keysFor('Ctrl+\\'), run: () => setIsClean((c) => !c) },
     ];
-    if (requests.length) list.push({ id: 'card', label: isCardCollapsed ? 'Show the reply' : 'Fold the reply away', run: () => setIsCardCollapsed((c) => !c) });
-    // Stop, the request log and a paused queue, in the menu too (2026-11-07, agent audit item 66).
+    list.push({ id: 'card', label: isPanelCollapsed ? 'Show the conversation' : 'Fold the conversation away', run: () => setIsPanelCollapsed((c) => !c) });
+    // Stop, the search and a paused queue, in the menu too (2026-11-07, agent audit item 66).
     if (isAnalyzing || isChatting) list.push({ id: 'stop', label: 'Stop what Forma is doing', keys: 'Esc', run: () => handleStop() });
-    if (requests.length) list.push({ id: 'log', label: 'Open the request log', run: () => setLogReveal((n) => n + 1) });
+    if (requests.length) list.push({ id: 'search', label: 'Search the conversation', run: () => { setIsPanelCollapsed(false); setSearchReveal((n) => n + 1); } });
     if (queuePaused && queue.length && !isAnalyzing && !isChatting) list.push({ id: 'resume', label: 'Resume the queue', run: resumeQueue });
     if (result) {
       const panes: [Plate, string][] = [['proof', 'Mockup'], ['print', 'Preview'], ['data', 'Data'], ['spec', 'Spec'], ['xml', 'REPX']];
@@ -6397,8 +6396,7 @@ export default function App() {
           dropped anywhere on it is attached, as on the chat column it replaced. */}
       <main
         className="wb-bench"
-        data-card={requests.length > 0 || isAnalyzing || isChatting ? (isCardCollapsed ? 'folded' : 'open') : undefined}
-        data-log={logOpen ? 'open' : undefined}
+        data-panel={isPanelCollapsed ? 'folded' : 'open'}
         onDragOver={handleDragOver}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -6544,8 +6542,9 @@ export default function App() {
             follows the bar whatever its height; pinned 74px from the bench's
             top, it went under a bar that wrapped. */}
         <div className="wb-stage">
-        {/* A click on the empty ground folds the card away, as on Stitch's canvas. */}
-        <div className="wb-bench-body" onClick={(e) => { if (e.target === e.currentTarget) setIsCardCollapsed(true); }}>
+        {/* A click on the empty ground folded the card until 2026-11-08; the
+            panel holds the box now, and Stitch's stays open on such a click. */}
+        <div className="wb-bench-body">
           {result ? (
             <>
               {plate === 'proof' && (
@@ -6735,16 +6734,17 @@ export default function App() {
           )}
         </div>
 
-        {/* ------------------------------------------- the floating conversation */}
-        {(requests.length > 0 || isAnalyzing || isChatting) && (
-          <div className="wb-float wb-float-card">
-            <ErrorBoundary area="the conversation">
+        {/* ------------------------------------------- the conversation */}
+        {/* A thread in a panel down the left (2026-11-08), as Stitch's
+            workspace has it since it changed: every request, what was asked
+            pinned at the top of its own, and the box at the panel's foot.
+            Always there, since the box is in it; folded, it is one mark. */}
+        <div className="wb-float wb-float-panel">
             <Suspense fallback={null}>
-              <RequestCard
-                request={shownRequest}
-                latest={shownIsNewest}
-                collapsed={isCardCollapsed}
-                onToggle={() => setIsCardCollapsed((folded) => !folded)}
+              <ConversationPanel
+                requests={requests}
+                collapsed={isPanelCollapsed}
+                onToggle={() => setIsPanelCollapsed((folded) => !folded)}
                 initials={user ? initialsOf(user) : 'Y'}
                 isChatting={isChatting}
                 isAnalyzing={isAnalyzing}
@@ -6776,11 +6776,129 @@ export default function App() {
                 }}
                 onConfirm={(id, yes) => void handleConfirm(id, yes)}
                 onShowVersion={handleShowVersion}
-                // The log's search, marked in the card's replies too (2026-11-06).
+                // The search, marked in the asks and the replies (the log's until 2026-11-08).
                 query={logQuery}
                 // The lazy component loses its generic; the result is App's own DesignResult.
                 // A generation's cost from its report; a chat reply's from itself (agent audit item 79).
                 usageOf={(m) => summariseUsage((m.result as DesignResult | undefined)?.usage ?? m.usage)}
+                // A request's change shown on the Preview, the log's pick until 2026-11-08.
+                changed={changedRequests}
+                onShowChange={(id) => void showRequest(id)}
+                currentId={shownRequestId}
+                onQuery={setLogQuery}
+                revealSearch={searchReveal}
+                onExport={exportConversation}
+                foot={
+                  <>
+                    {/* A tip while Forma works (2026-11-06, lib/workingTips.ts), as Stitch
+                        shows one above its bar during a task. The owner chose it knowing
+                        it adds a line to the minimal workspace of 2026-11-04. */}
+                    {(isAnalyzing || isChatting) && (
+                      <p className="wb-tip" key={tipStep}>
+                        Tip: {forPlatform(tipAt(tipStart.current, tipStep), mac)}
+                      </p>
+                    )}
+                    {/* Unverified means an address nobody has proved they can read. It is
+                        a nudge, not a gate: nothing here is withheld until it is done,
+                        because the account only ever holds this person's own reports and
+                        locking them out of their own work would cost more than it buys.
+                        Google accounts never see this — the popup already proved it. */}
+                    {user && !user.emailVerified && user.providerData.some((p) => p.providerId === 'password') && (
+                      <div className="wb-note-line wb-warn">
+                        <span className="wb-ic"><IconWarn size={13} /></span>
+                        <span>
+                          <b>Verify your email.</b> We sent a link when you created the account.{' '}
+                          <button
+                            type="button"
+                            onClick={() => setIsAccountOpen(true)}
+                            style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}
+                          >
+                            Send it again
+                          </button>
+                        </span>
+                      </div>
+                    )}
+                    <Suspense fallback={null}>
+                    <Composer
+                      previews={previews}
+                      previewGroups={previewGroups}
+                      previewMeta={previewMeta}
+                      textGroups={textGroups}
+                      onOpenAttachment={openAttachment}
+                      onRemoveFile={removeFile}
+                      onRemoveText={removeTextAttachment}
+                      uploadNotices={uploadNotices}
+                      error={error}
+                      onDismissError={() => setError(null)}
+                      prompt={prompt}
+                      onPromptChange={setPrompt}
+                      onSend={handleGenerate}
+                      onStop={handleStop}
+                      fileInputRef={fileInputRef}
+                      onFileChange={handleFileChange}
+                      hasApiKey={hasApiKey}
+                      onAddKey={() => setIsConfigOpen(true)}
+                      isAnalyzing={isAnalyzing}
+                      // Between a turn's steps the box still queues and stops (see `turnBusy`).
+                      isChatting={isChatting || (turnBusy && !isAnalyzing)}
+                      isIngesting={isIngesting}
+                      onPasteFiles={ingestFiles}
+                      selection={result?.repxContent ? previewSelection : []}
+                      models={modelPicker}
+                      // Local AI's or OpenRouter's model, where Gemini's picker is (agent audit item 74).
+                      answering={answeringModel(config)}
+                      onChooseAi={() => {
+                        setConfigStart('ai');
+                        setIsConfigOpen(true);
+                      }}
+                      queue={queue.map((q) => ({ id: q.id, text: q.text, files: queuedFiles(q), dropped: q.dropped }))}
+                      onQueue={(text) => {
+                        // The files in the box go with the words (agent audit item 71):
+                        // they stayed behind, and the message was sent without them, unsaid.
+                        const files = previews.length || attachmentTexts.length
+                          ? { ...(previews.length ? { images: previews, imageMeta: previewMeta } : {}), ...(attachmentTexts.length ? { texts: attachmentTexts } : {}) }
+                          : {};
+                        setQueue((q) => [...q, { id: nextMessageId(), text, ...files }]);
+                        if (previews.length || attachmentTexts.length) {
+                          setPreviews([]);
+                          setPreviewMeta([]);
+                          setAttachmentTexts([]);
+                          setUploadNotices([]);
+                        }
+                        setPrompt('');
+                      }}
+                      onSteer={(id) => {
+                        /*
+                         * A steer changes the request under way (2026-11-07, agent audit
+                         * item 86): it goes next, carrying that request's words, and its
+                         * pictures when it had some, rather than alone. Stop here does
+                         * not pause the queue: the steer is the person's next message.
+                         */
+                        setQueue((q) => steered(q, id, messages));
+                        setQueuePaused(false);
+                        handleStop({ steering: true });
+                      }}
+                      queuePaused={queuePaused}
+                      onResumeQueue={resumeQueue}
+                      onEditQueued={(id) => {
+                        const item = queue.find((x) => x.id === id);
+                        setQueue((q) => q.filter((x) => x.id !== id));
+                        // What was being typed stays, under the queued words (2026-11-06,
+                        // the workspace audit): Edit replaced it, and it was lost.
+                        if (item) setPrompt((typed) => (typed.trim() ? `${item.text}\n${typed}` : item.text));
+                        // Its files come back to the box with it (agent audit item 71).
+                        if (item?.images?.length) {
+                          setPreviews((p) => [...p, ...item.images!]);
+                          setPreviewMeta((m) => [...m, ...item.images!.map((_, i) => item.imageMeta?.[i] ?? { uploadId: `queued-${item.id}-${i}`, file: 'image' })]);
+                        }
+                        if (item?.texts?.length) setAttachmentTexts((t) => [...t, ...item.texts!]);
+                      }}
+                      onCancelQueued={(id) => setQueue((q) => q.filter((x) => x.id !== id))}
+                      history={requests.map((r) => r.ask?.text ?? '').filter(Boolean)}
+                    />
+                    </Suspense>
+                  </>
+                }
               >
                 {/* Generation, as Forma's answer being written: three dots
                     (2026-11-04). Until then a card held a progress ring, the step,
@@ -6810,140 +6928,8 @@ export default function App() {
                     </div>
                   </article>
                 )}
-              </RequestCard>
+              </ConversationPanel>
             </Suspense>
-            </ErrorBoundary>
-          </div>
-        )}
-        {requests.length > 0 && (
-          <div className="wb-float wb-float-log">
-            <Suspense fallback={null}>
-              <RequestLog
-                requests={requests}
-                shownId={shownRequest?.id ?? null}
-                working={isAnalyzing || isChatting}
-                onShow={(id) => void showRequest(id)}
-                onExport={exportConversation}
-                // App holds the search (agent audit item 29), so the card and
-                // the log agree; leaving a project clears it (`leaveSession`).
-                // The log is no longer keyed by project, whose first save
-                // remounted it and emptied its own copy of the words.
-                query={logQuery}
-                onQuery={setLogQuery}
-                reveal={logReveal}
-                onOpenChange={setLogOpen}
-              />
-            </Suspense>
-          </div>
-        )}
-        <div className="wb-float wb-float-bar">
-          {/* A tip while Forma works (2026-11-06, lib/workingTips.ts), as Stitch
-              shows one above its bar during a task. The owner chose it knowing
-              it adds a line to the minimal workspace of 2026-11-04. */}
-          {(isAnalyzing || isChatting) && (
-            <p className="wb-tip" key={tipStep}>
-              Tip: {forPlatform(tipAt(tipStart.current, tipStep), mac)}
-            </p>
-          )}
-          {/* Unverified means an address nobody has proved they can read. It is
-              a nudge, not a gate: nothing here is withheld until it is done,
-              because the account only ever holds this person's own reports and
-              locking them out of their own work would cost more than it buys.
-              Google accounts never see this — the popup already proved it. */}
-          {user && !user.emailVerified && user.providerData.some((p) => p.providerId === 'password') && (
-            <div className="wb-note-line wb-warn">
-              <span className="wb-ic"><IconWarn size={13} /></span>
-              <span>
-                <b>Verify your email.</b> We sent a link when you created the account.{' '}
-                <button
-                  type="button"
-                  onClick={() => setIsAccountOpen(true)}
-                  style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}
-                >
-                  Send it again
-                </button>
-              </span>
-            </div>
-          )}
-          <Suspense fallback={null}>
-          <Composer
-            previews={previews}
-            previewGroups={previewGroups}
-            previewMeta={previewMeta}
-            textGroups={textGroups}
-            onOpenAttachment={openAttachment}
-            onRemoveFile={removeFile}
-            onRemoveText={removeTextAttachment}
-            uploadNotices={uploadNotices}
-            error={error}
-            onDismissError={() => setError(null)}
-            prompt={prompt}
-            onPromptChange={setPrompt}
-            onSend={handleGenerate}
-            onStop={handleStop}
-            fileInputRef={fileInputRef}
-            onFileChange={handleFileChange}
-            hasApiKey={hasApiKey}
-            onAddKey={() => setIsConfigOpen(true)}
-            isAnalyzing={isAnalyzing}
-            // Between a turn's steps the box still queues and stops (see `turnBusy`).
-            isChatting={isChatting || (turnBusy && !isAnalyzing)}
-            isIngesting={isIngesting}
-            onPasteFiles={ingestFiles}
-            selection={result?.repxContent ? previewSelection : []}
-            models={modelPicker}
-            // Local AI's or OpenRouter's model, where Gemini's picker is (agent audit item 74).
-            answering={answeringModel(config)}
-            onChooseAi={() => {
-              setConfigStart('ai');
-              setIsConfigOpen(true);
-            }}
-            queue={queue.map((q) => ({ id: q.id, text: q.text, files: queuedFiles(q), dropped: q.dropped }))}
-            onQueue={(text) => {
-              // The files in the box go with the words (agent audit item 71):
-              // they stayed behind, and the message was sent without them, unsaid.
-              const files = previews.length || attachmentTexts.length
-                ? { ...(previews.length ? { images: previews, imageMeta: previewMeta } : {}), ...(attachmentTexts.length ? { texts: attachmentTexts } : {}) }
-                : {};
-              setQueue((q) => [...q, { id: nextMessageId(), text, ...files }]);
-              if (previews.length || attachmentTexts.length) {
-                setPreviews([]);
-                setPreviewMeta([]);
-                setAttachmentTexts([]);
-                setUploadNotices([]);
-              }
-              setPrompt('');
-            }}
-            onSteer={(id) => {
-              /*
-               * A steer changes the request under way (2026-11-07, agent audit
-               * item 86): it goes next, carrying that request's words, and its
-               * pictures when it had some, rather than alone. Stop here does
-               * not pause the queue: the steer is the person's next message.
-               */
-              setQueue((q) => steered(q, id, messages));
-              setQueuePaused(false);
-              handleStop({ steering: true });
-            }}
-            queuePaused={queuePaused}
-            onResumeQueue={resumeQueue}
-            onEditQueued={(id) => {
-              const item = queue.find((x) => x.id === id);
-              setQueue((q) => q.filter((x) => x.id !== id));
-              // What was being typed stays, under the queued words (2026-11-06,
-              // the workspace audit): Edit replaced it, and it was lost.
-              if (item) setPrompt((typed) => (typed.trim() ? `${item.text}\n${typed}` : item.text));
-              // Its files come back to the box with it (agent audit item 71).
-              if (item?.images?.length) {
-                setPreviews((p) => [...p, ...item.images!]);
-                setPreviewMeta((m) => [...m, ...item.images!.map((_, i) => item.imageMeta?.[i] ?? { uploadId: `queued-${item.id}-${i}`, file: 'image' })]);
-              }
-              if (item?.texts?.length) setAttachmentTexts((t) => [...t, ...item.texts!]);
-            }}
-            onCancelQueued={(id) => setQueue((q) => q.filter((x) => x.id !== id))}
-            history={requests.map((r) => r.ask?.text ?? '').filter(Boolean)}
-          />
-          </Suspense>
         </div>
         {/* The clean screen's way back, the one thing it leaves (2026-11-05). */}
         {isClean && (

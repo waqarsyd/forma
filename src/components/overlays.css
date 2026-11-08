@@ -72,12 +72,6 @@
 .wb-usage-bar { grid-column: 1 / -1; height: 5px; border-radius: 999px; background: var(--track); overflow: hidden; }
 .wb-usage-bar i { display: block; height: 100%; border-radius: inherit; background: var(--ink-2); }
 
-/* The request log (RequestLog.tsx), as Stitch's Agent log: a long title
-   sliding to its end while hovered. Its Stop went on 2026-11-06; the box's is
-   the one Stop. */
-.wb-log-list li { display: flex; align-items: center; gap: 2px; }
-.wb-log-text.is-scrolling { text-overflow: clip; }
-.wb-log-text.is-scrolling > span { display: inline-block; transform: translateX(var(--shift)); transition: transform var(--slide) linear .25s; }
 
 /* The Share dialog (ShareDialog.tsx), as Stitch's. */
 .wb-share { width: min(480px, 100%); border: 1px solid var(--rule); border-radius: 18px; background: var(--panel); box-shadow: var(--shadow-md); }

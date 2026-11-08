@@ -983,7 +983,7 @@ export function formatEdits(xml: string, names: readonly string[], action: Forma
 /**
  * The names of the controls `after` adds or changes against `before`
  * (2026-11-05), for Preview to outline what a request changed when it is
- * picked in the request log, as Stitch outlines the screens a request
+ * shown from the conversation (picked in the request log until 2026-11-08), as Stitch outlines the screens a request
  * changed. Named controls only, and not removed ones: there is nothing left
  * to outline.
  */

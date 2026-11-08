@@ -1,34 +1,36 @@
 /**
- * The conversation a request at a time, floating over the report (2026-11-05).
+ * The conversation, a thread in a panel down the left of the report
+ * (2026-11-08), as Google Stitch's workspace has it since it changed.
  *
- * The owner found the chat-app column did not fit Forma and asked for Google
- * Stitch's workspace instead, measured in their own signed-in Stitch that
- * evening: the canvas fills the window, and the agent's card floats at its top
- * left, showing one request, with the person's prompt pinned in a pill at the
- * top and the reply under it, and a mark that collapses the card to itself.
- * Every request is in the log beneath it (`RequestLog.tsx`); the box is a bar
- * of its own at the foot of the canvas. See *The conversation floats over the
- * report* in docs/notes/app-shell.md.
+ * On 2026-11-05 the owner chose Stitch's layout of the day: a card at the top
+ * left showing one request at a time, a log of every request beneath it, and
+ * the box a bar of its own at the foot. On 2026-11-08 Stitch had moved on, and
+ * the owner asked to follow: one full-height panel on the left, every request
+ * in one scrolling thread with what was asked pinned at the top of its section
+ * while its replies scroll under it, and the box at the panel's foot. Folding
+ * the panel folds the box with it, to one mark, as Stitch's does. The log went:
+ * its search and its download are the panel's header now, and a request that
+ * changed the report offers to show what it changed on the Preview. See *The
+ * conversation is a thread in a panel* in docs/notes/app-shell.md.
  *
  * The replies are drawn by `ChatThread`, so every reply keeps what it had:
  * Markdown, Copy, the rating, Try again, Undo, the questions and the redesign
  * buttons. What the person asked is drawn here, as the pill, with its own
- * Copy, Edit, Withdraw, versions and pictures behind the arrow; the thread's
- * own copy of those went in the workspace audit (2026-11-06).
+ * Copy, Edit, Withdraw, versions and pictures behind the arrow. This file was
+ * RequestCard.tsx until then; `git log --follow` reads its history.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import ChatThread, { CopyButton, EditForm, Marked, type AttachmentView, type ChatThreadProps } from './ChatThread';
 import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachments';
 import { messageTime, requestAnnouncement, requestTitle, type ChatMessage, type ChatRequest } from '../lib/chatSession';
 import { formatSessionStamp } from '../lib/datetime';
-import { IconChat, IconChevronDown, IconMinus, IconPencil, IconTrash } from './landing/icons';
+import ErrorBoundary from './ErrorBoundary';
+import { IconChat, IconChevronDown, IconDownload, IconEye, IconMinus, IconPencil, IconSearch, IconTrash } from './landing/icons';
 
-export interface RequestCardProps<R> extends Omit<ChatThreadProps<R>, 'messages' | 'showWorking'> {
-  /** The request shown, or null before the first message. */
-  request: ChatRequest<R, PreviewMeta> | null;
-  /** It is the newest: only there does a reply being written, or Forma working, show. */
-  latest: boolean;
-  /** Folded to its mark, as Stitch's card folds. */
+export interface ConversationPanelProps<R> extends Omit<ChatThreadProps<R>, 'messages' | 'showWorking' | 'turns' | 'renderAsk' | 'currentTurn'> {
+  /** Every request, oldest first (`requestsOf`). */
+  requests: ReadonlyArray<ChatRequest<R, PreviewMeta>>;
+  /** Folded to its mark, the box with it, as Stitch's panel folds. */
   collapsed: boolean;
   onToggle: () => void;
   /** The person's initials, for the pill; "Y", for you, signed out. */
@@ -37,12 +39,12 @@ export interface RequestCardProps<R> extends Omit<ChatThreadProps<R>, 'messages'
    * The pill's own: an edit sends the changed text again from that message
    * on, as Try again does; a withdrawal takes the message and Forma's answers
    * to it out of the transcript; a version is another the message had (see
-   * `ChatMessage.branches`). Only the pill offers them since 2026-11-06.
+   * `ChatMessage.branches`).
    */
   onEdit?: (id: string, text: string) => void;
   onWithdraw?: (id: string) => void;
   onShowVersion?: (id: string, to: number) => void;
-  /** The pill's Try again, on a request that failed; the thread's own went with its dead branches (agent audit item 61). */
+  /** The pill's Try again, on a request that failed. */
   onRetry: (id: string) => void;
   /** A picture sent with the request, opened in the viewer. */
   onOpenAttachment: (view: AttachmentView) => void;
@@ -52,10 +54,23 @@ export interface RequestCardProps<R> extends Omit<ChatThreadProps<R>, 'messages'
    * steps, as between a picture read and the chat asked.
    */
   busy?: boolean;
+  /** The requests whose change to the report can be shown, outlined on the Preview, as the log's pick did. */
+  changed?: ReadonlySet<string>;
+  onShowChange?: (id: string) => void;
+  /** The request whose change is shown, marked current. */
+  currentId?: string | null;
+  /** The search, held by App so a project left clears it. */
+  onQuery?: (query: string) => void;
+  /** Bumped to open the search from outside, as the command menu does. */
+  revealSearch?: number;
+  /** The conversation downloaded as Markdown, the log's download until 2026-11-08. */
+  onExport?: () => void;
+  /** What sits at the panel's foot: the tip, a notice and the box. */
+  foot?: ReactNode;
 }
 
 /**
- * The card's one status region (2026-11-07, agent audit item 7): mounted
+ * The panel's one status region (2026-11-07, agent audit item 7): mounted
  * empty and kept, so a screen reader hears "Forma is working on it." when a
  * request starts and, when it settles, what came of it (`requestAnnouncement`).
  * Each announcement is a new child, so the same words said twice are said.
@@ -80,7 +95,7 @@ function useAnnouncement<R>(request: ChatRequest<R, PreviewMeta> | null, latest:
   return said;
 }
 
-/** What the person asked, pinned at the top of the card. */
+/** What the person asked, pinned at the top of its request. */
 function AskPill<R>({
   ask,
   initials,
@@ -90,6 +105,7 @@ function AskPill<R>({
   onShowVersion,
   onOpenAttachment,
   onRetry,
+  onShowChange,
   query,
 }: {
   ask: ChatMessage<R, PreviewMeta>;
@@ -100,7 +116,9 @@ function AskPill<R>({
   onShowVersion?: (id: string, to: number) => void;
   onOpenAttachment: (view: AttachmentView) => void;
   onRetry: (id: string) => void;
-  /** The log's search, marked in the words asked as in the replies (agent audit item 30). */
+  /** Outline on the Preview what this request changed, the log's pick until 2026-11-08. */
+  onShowChange?: () => void;
+  /** The search, marked in the words asked as in the replies (agent audit item 30). */
   query: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -183,6 +201,11 @@ function AskPill<R>({
             </div>
           )}
           <span className="wb-ask-foot-gap" />
+          {onShowChange && (
+            <button type="button" className="wb-note-act wb-note-icon" title="Show what it changed on the Preview" aria-label="Show what it changed" onClick={onShowChange}>
+              <IconEye size={13} />
+            </button>
+          )}
           {ask.text && <CopyButton text={ask.text} />}
           {onEdit && ask.text && (
             <button type="button" className="wb-note-act wb-note-icon" title="Edit" aria-label="Edit" disabled={disabled} onClick={() => setEditing(true)}>
@@ -232,9 +255,29 @@ function AskPill<R>({
   );
 }
 
-export default function RequestCard<R>({
-  request,
-  latest,
+/**
+ * Every match of the search in turn (2026-11-08): the log's search marked the
+ * matches in the one request the card showed; in a thread the matches are
+ * spread down it, so Enter goes to the next, and a new search to the first.
+ */
+function useSearchJump(threadHost: React.RefObject<HTMLDivElement | null>, query: string) {
+  const at = useRef(-1);
+  const go = (step: number) => {
+    const hits = threadHost.current ? [...threadHost.current.querySelectorAll<HTMLElement>('mark.wb-hit')] : [];
+    if (!hits.length) return;
+    at.current = (at.current + step + hits.length) % hits.length;
+    hits[at.current].scrollIntoView?.({ block: 'center' });
+  };
+  useEffect(() => {
+    at.current = -1;
+    if (query.trim()) requestAnimationFrame(() => go(1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new query starts at its first match
+  }, [query]);
+  return go;
+}
+
+export default function ConversationPanel<R>({
+  requests,
   collapsed,
   onToggle,
   initials = 'Y',
@@ -246,68 +289,133 @@ export default function RequestCard<R>({
   onOpenAttachment,
   onRetry,
   busy = false,
+  changed,
+  onShowChange,
+  currentId = null,
+  onQuery,
+  revealSearch = 0,
+  onExport,
+  foot,
   children,
   ...thread
-}: RequestCardProps<R>) {
-  const said = useAnnouncement(request, latest, isChatting || isAnalyzing || busy);
+}: ConversationPanelProps<R>) {
+  const newest = requests[requests.length - 1] ?? null;
+  const said = useAnnouncement(newest, true, isChatting || isAnalyzing || busy);
+  const query = thread.query ?? '';
+  const [searching, setSearching] = useState(query.trim().length > 0);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const threadHost = useRef<HTMLDivElement>(null);
+  const jump = useSearchJump(threadHost, query);
+  useEffect(() => {
+    if (!revealSearch) return;
+    setSearching(true);
+    requestAnimationFrame(() => searchRef.current?.focus());
+  }, [revealSearch]);
+  const closeSearch = () => {
+    setSearching(false);
+    onQuery?.('');
+  };
+  const working = isChatting || isAnalyzing || busy;
   return (
-    <section
-      className={`wb-reply${collapsed ? ' wb-is-collapsed' : ''}`}
-      aria-label="Forma's reply"
-    >
+    <section className={`wb-panel${collapsed ? ' wb-is-collapsed' : ''}${requests.length || working ? '' : ' wb-is-empty'}`} aria-label="Conversation">
       <div className="wb-reply-said" role="status" aria-live="polite">
         {said.text ? <span key={said.n}>{said.text}</span> : null}
       </div>
-      {/* The mark that folds the card to itself and opens it again. Stitch's
-          two dots until 2026-11-07 (agent audit item 98), which read as
-          someone typing: a minimise line while open, a chat bubble folded,
-          with a quiet dot on it while Forma works. */}
-      <button
-        type="button"
-        className="wb-reply-mark"
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? 'Show the reply' : 'Fold the reply away'}
-        title={collapsed ? 'Show the reply' : 'Fold the reply away'}
-        onClick={onToggle}
-      >
-        {collapsed ? <IconChat size={18} /> : <IconMinus size={14} />}
-        {collapsed && latest && (isChatting || isAnalyzing || busy) ? <span className="wb-reply-busy" aria-hidden="true" /> : null}
-      </button>
-      {/* Folded, the card hides what it holds rather than dropping it
-          (2026-11-07, agent audit item 32): answers typed into Forma's
-          questions and an edit of the message were lost on a fold. */}
-      <div className="wb-reply-body" hidden={collapsed}>
-          {request?.ask && (
-            <AskPill
-              key={request.id}
-              ask={request.ask}
-              initials={initials}
-              disabled={isChatting || isAnalyzing}
-              onEdit={onEdit}
-              onWithdraw={onWithdraw}
-              onShowVersion={onShowVersion}
-              onOpenAttachment={onOpenAttachment}
-              onRetry={onRetry}
-              query={thread.query ?? ''}
+      <div className="wb-panel-head">
+        {!collapsed && requests.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="wb-panel-tool"
+              aria-expanded={searching}
+              aria-label="Search the conversation"
+              title="Search the conversation"
+              onClick={() => (searching ? closeSearch() : (setSearching(true), requestAnimationFrame(() => searchRef.current?.focus())))}
+            >
+              <IconSearch size={14} />
+            </button>
+            {onExport && (
+              <button type="button" className="wb-panel-tool" aria-label="Download the conversation" title="Download the conversation as Markdown" onClick={onExport}>
+                <IconDownload size={14} />
+              </button>
+            )}
+          </>
+        )}
+        <span className="wb-panel-gap" />
+        {/* The mark that folds the panel, and the box with it, to itself and
+            opens it again: a minimise line while open, a chat bubble folded,
+            with a quiet dot on it while Forma works (agent audit item 98). */}
+        <button
+          type="button"
+          className="wb-reply-mark"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Show the conversation' : 'Fold the conversation away'}
+          title={collapsed ? 'Show the conversation' : 'Fold the conversation away'}
+          onClick={onToggle}
+        >
+          {collapsed ? <IconChat size={18} /> : <IconMinus size={14} />}
+          {collapsed && working ? <span className="wb-reply-busy" aria-hidden="true" /> : null}
+        </button>
+      </div>
+      {/* Folded, the panel hides what it holds rather than dropping it
+          (agent audit item 32): answers typed into Forma's questions, an edit
+          of a message and the words in the box are kept. */}
+      <div className="wb-panel-convo" hidden={collapsed}>
+        {searching && !collapsed && (
+          <div className="wb-panel-search">
+            <IconSearch size={13} />
+            <input
+              ref={searchRef}
+              type="search"
+              aria-label="Search the conversation"
+              placeholder="Search the conversation"
+              value={query}
+              onChange={(e) => onQuery?.(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  jump(e.shiftKey ? -1 : 1);
+                } else if (e.key === 'Escape') {
+                  e.stopPropagation();
+                  closeSearch();
+                }
+              }}
             />
-          )}
-          {/* One thread per request (2026-11-06): its scroll state, the
-              "go to latest" arrow and whether it follows the latest, carried
-              over to another request picked in the log. */}
+          </div>
+        )}
+        <div className="wb-panel-thread" ref={threadHost}>
+          {/* A fault in the thread stays in it: the box below is outside, so
+              it can still be typed in (the card's boundary held the card alone). */}
+          <ErrorBoundary area="the conversation">
           <ChatThread
-            key={`thread-${request?.id ?? 'none'}`}
             {...thread}
-            messages={request?.replies ?? []}
+            messages={requests.flatMap((r) => r.replies)}
+            turns={requests}
+            currentTurn={currentId}
             isChatting={isChatting}
             isAnalyzing={isAnalyzing}
-            showWorking={latest}
-            // A request Forma started, as a project opening on its own report,
-            // has no message to send again (agent audit item 75).
-            onRegenerate={request?.ask ? thread.onRegenerate : undefined}
+            renderAsk={({ id, ask }) => (
+              <AskPill
+                key={id}
+                ask={ask}
+                initials={initials}
+                disabled={isChatting || isAnalyzing}
+                onEdit={onEdit}
+                onWithdraw={onWithdraw}
+                onShowVersion={onShowVersion}
+                onOpenAttachment={onOpenAttachment}
+                onRetry={onRetry}
+                onShowChange={changed?.has(id) && onShowChange ? () => onShowChange(id) : undefined}
+                query={query}
+              />
+            )}
           >
-            {latest ? children : null}
+            {children}
           </ChatThread>
+          </ErrorBoundary>
+        </div>
       </div>
+      <div className="wb-panel-foot">{foot}</div>
     </section>
   );
 }

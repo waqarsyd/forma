@@ -11,7 +11,7 @@
  * proves what those rules look like on screen. Since 2026-11-07 (agent audit
  * item 61) the thread draws Forma's replies only: the person's message, its
  * pictures and its failure are the card's pill, and their tests moved to
- * RequestCard.test.tsx with them.
+ * RequestCard.test.tsx with them (ConversationPanel.test.tsx since 2026-11-08).
  */
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
