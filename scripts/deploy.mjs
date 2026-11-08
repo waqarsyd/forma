@@ -149,8 +149,25 @@ if (preview) {
 }
 run('npx firebase deploy --only hosting,firestore:rules');
 
-// 4. The live sites, expecting this commit.
-run(`node scripts/smoke.mjs --expect ${commit}`, { after: true });
+// 4. The live sites, expecting this commit. Firebase's edge can go on serving
+// the previous index.html for some seconds after a release: on 2026-11-08 the
+// check ran the moment both sites said "release complete", found openforma
+// still on the old build, whose entry chunk the new version no longer has
+// (404), and stopped before the tag and the release, though a run a minute
+// later passed. So a failed check is tried again, four times in all, before
+// anything stops.
+const smoke = `node scripts/smoke.mjs --expect ${commit}`;
+for (let attempt = 1; ; attempt++) {
+  console.log(`\n> ${smoke}${attempt > 1 ? ` (attempt ${attempt} of 4)` : ''}`);
+  const r = spawnSync(smoke, { stdio: 'inherit', shell: true });
+  if (r.status === 0) break;
+  if (attempt === 4) {
+    console.error(`\nStopped: "${smoke}" failed four times (exit ${r.status}). Nothing was deployed after it.`);
+    process.exit(r.status || 1);
+  }
+  console.log('The live check failed; trying again in 20 seconds, as a release can take a moment to reach every edge.');
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20_000);
+}
 console.log(`\nDeployed ${commit.slice(0, 12)} to every site, with the rules, and the live checks passed.`);
 
 // 5. The release (item 43): the tag on this commit, then its GitHub release.
