@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,919 tests in 174 files** — under the `node` environment
+`npm test` runs Vitest over **2,920 tests in 174 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -216,7 +216,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/startingPoints` | 2 | the empty workspace's starting points (2026-11-06), the six removed on 2026-11-05 back word for word with a one-line gist each, and the recent projects newest first with the archived left out |
 | `lib/shares` | 7 | a shared report's copy (2026-11-06): 22 base64url random characters for its id, invitees trimmed, lower-cased, unique and capped as the rules compare them, exactly the fields the rules pin with the conversation left out, a report too large declined, and the link built and read back |
 | `lib/requestCount` | 4 | since 2026-11-05 the limits Google stated; requests sent to each Gemini model today (2026-11-05): the Pacific day, a count per model that starts again at zero the next day, and storage that will not read or write |
-| `lib/modelTiers` | 3 | the box's model menu as named tiers (2026-11-05), as Stitch names its two: a model's id read as a person would, Fast as the first Flash-Lite and Balanced the first Flash in the probe's order, a tier with no model left out |
+| `lib/modelTiers` | 4 | since 2026-11-08 Auto naming the model it runs on once the key's probe has found it, and each tier worded as Stitch's ("Gemini 3.6 Flash for new reports and redesigns"); the box's model menu as named tiers (2026-11-05), as Stitch names its two: a model's id read as a person would, Fast as the first Flash-Lite and Balanced the first Flash in the probe's order, a tier with no model left out |
 | `lib/dataFiles` | 7 | data files attached in the chat (2026-11-05): the kinds taken, quoted CSV, a CSV and a JSON array as fields and first rows, a workbook's first sheet with shared strings, a deflated Word document read through the zip reader, and what a bad file says |
 | `lib/runawayOutput` | 10 |  |
 | `lib/savedReport` | 45 | since 2026-11-08 (site audit item 63) the projects index: the search text and its cap, an entry with the project's own name, time and message count, a listed entry with no content that never throws, and content kept where the same save is already here; earlier: since 2026-11-07 a name from the first words giving way to the report's title; since 2026-11-05 pinned and archived projects kept on this device; since 2026-11-05 the session signature the workspace saves on, and a project's name; jsdom |
@@ -251,7 +251,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,919 in 174 files** — and that total is the arithmetic sum of the column above
+**Total: 2,920 in 174 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -265,7 +265,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2708** against a real 2,919 (2026-11-08, after the thread panel, the box's menus, the main menu and Mark an area, which added no loop; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2709** against a real 2,920 (2026-11-08, after the thread panel, the box's menus, the main menu, Mark an area and Auto's model named, which added no loop; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Fourteen** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

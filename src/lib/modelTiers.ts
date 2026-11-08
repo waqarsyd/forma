@@ -42,7 +42,19 @@ export function modelTiers(choices: ReadonlyArray<{ id: string; used: number }>)
   const fast = usable.find((c) => /flash-lite/.test(c.id));
   const balanced = usable.find((c) => !/lite/.test(c.id));
   const tiers: TierChoice[] = [];
-  if (fast) tiers.push({ tier: 'fast', id: fast.id, used: fast.used, label: 'Fast', note: `${displayModel(fast.id)}. Quick answers and edits.` });
-  if (balanced) tiers.push({ tier: 'balanced', id: balanced.id, used: balanced.used, label: 'Balanced', note: `${displayModel(balanced.id)}. New reports and redesigns.` });
+  // Worded as Stitch's: "Gemini 3.5 Flash-Lite for rapid collaboration" (2026-11-08).
+  if (fast) tiers.push({ tier: 'fast', id: fast.id, used: fast.used, label: 'Fast', note: `${displayModel(fast.id)} for quick answers and edits.` });
+  if (balanced) tiers.push({ tier: 'balanced', id: balanced.id, used: balanced.used, label: 'Balanced', note: `${displayModel(balanced.id)} for new reports and redesigns.` });
   return tiers;
+}
+
+/**
+ * Auto's line, naming the model it runs on now (2026-11-08), as Stitch names
+ * the model behind each of its tiers: the probe's winner for this key
+ * (`readCachedModel`), unknown until the key's first request.
+ */
+export function autoNote(auto: string | null | undefined): string {
+  return auto
+    ? `${displayModel(auto)} for now. Forma picks the best model your key can use.`
+    : 'Forma picks the best model your key can use.';
 }

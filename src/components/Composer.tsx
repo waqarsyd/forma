@@ -25,7 +25,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEventHandler, type RefObject } from 'react';
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
-import { modelTiers } from '../lib/modelTiers';
+import { autoNote, modelTiers } from '../lib/modelTiers';
 import { hasOpenLayer } from '../lib/layers';
 import { useLayer } from './useLayer';
 import { useMenuKeys } from './useMenuKeys';
@@ -139,7 +139,7 @@ export interface ComposerProps {
    * or one of the models this key has answered for, with the requests sent
    * to each from this browser today. Absent for another AI.
    */
-  models?: { current: string; choices: readonly { id: string; used: number }[]; onChoose: (id: string) => void } | null;
+  models?: { current: string; auto?: string | null; choices: readonly { id: string; used: number }[]; onChoose: (id: string) => void } | null;
   /**
    * The AI that answers when it is not Gemini (2026-11-07, agent audit item
    * 74): Local AI or OpenRouter and its model (`answeringModel`), shown where
@@ -743,7 +743,7 @@ export default function Composer({
               /* Named tiers (2026-11-05), as Stitch names its "Speed" and
                  "Balanced", each with the model behind it: see lib/modelTiers.ts. */
               <div className="wb-model-menu" role="menu" aria-label="Model">
-                {[{ id: '', label: 'Auto', note: 'Forma picks the best model your key can use.', used: -1 }, ...tiers].map((choice) => (
+                {[{ id: '', label: 'Auto', note: autoNote(models.auto), used: -1 }, ...tiers].map((choice) => (
                   <button
                     key={choice.id || 'auto'}
                     type="button"

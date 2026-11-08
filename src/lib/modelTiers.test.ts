@@ -3,7 +3,7 @@
  * pick here sends a report to an image model, or calls Flash-Lite "Balanced".
  */
 import { describe, it, expect } from 'vitest';
-import { displayModel, modelTiers } from './modelTiers';
+import { autoNote, displayModel, modelTiers } from './modelTiers';
 
 describe('displayModel', () => {
   it('reads a model id as a person would', () => {
@@ -25,7 +25,14 @@ describe('modelTiers', () => {
       ['Fast', 'gemini-flash-lite-latest', 9],
       ['Balanced', 'gemini-3.6-flash', 4],
     ]);
-    expect(tiers[1].note).toBe('Gemini 3.6 Flash. New reports and redesigns.');
+    expect(tiers[1].note).toBe('Gemini 3.6 Flash for new reports and redesigns.');
+    expect(tiers[0].note).toBe('Gemini Flash-Lite (latest) for quick answers and edits.');
+  });
+
+  // 2026-11-08: Auto names the model it runs on, once the key's first request has found it.
+  it("names Auto's model once it is known", () => {
+    expect(autoNote('gemini-3.6-flash')).toBe('Gemini 3.6 Flash for now. Forma picks the best model your key can use.');
+    expect(autoNote(null)).toBe('Forma picks the best model your key can use.');
   });
 
   it('leaves out a tier the key has no model for', () => {

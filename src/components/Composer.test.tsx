@@ -285,8 +285,8 @@ describe('a clean composer', () => {
     const items = screen.getAllByRole('menuitemradio');
     expect(items.map((i) => i.textContent)).toEqual([
       'AutoForma picks the best model your key can use.',
-      'FastGemini 2.5 Flash-Lite. Quick answers and edits. 0 today.',
-      'BalancedGemini 2.5 Flash. New reports and redesigns. 7 today.',
+      'FastGemini 2.5 Flash-Lite for quick answers and edits. 0 today.',
+      'BalancedGemini 2.5 Flash for new reports and redesigns. 7 today.',
     ]);
     expect(items[0].getAttribute('aria-checked')).toBe('true');
     fireEvent.click(items[2]);

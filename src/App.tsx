@@ -86,7 +86,7 @@ import { answeringModel, effectiveProvider, isVisionOnly, PROVIDER_NAMES, readPr
 import type { SettingsSection } from './components/SettingsDialog';
 import type { DraftSource, TeamMember } from './lib/formaTeam';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
-import { clearCachedModel, readCachedModelSet } from './lib/modelCache';
+import { clearCachedModel, readCachedModel, readCachedModelSet } from './lib/modelCache';
 import { requestsToday } from './lib/requestCount';
 import { cacheKeyForSession, readSessionKey, clearSessionKey, purgeLegacyPlaintextKey } from './services/keyVault';
 import { startKeyHandoff } from './lib/keyHandoff';
@@ -2084,6 +2084,8 @@ export default function App() {
     const used = requestsToday();
     return {
       current: config.modelName?.trim() ?? '',
+      // The model Auto runs on, named in the menu as Stitch names its tiers' (2026-11-08).
+      auto: readCachedModel(),
       choices: (readCachedModelSet() ?? []).map((id) => ({ id, used: used[id] ?? 0 })),
       onChoose: (id: string) => setConfig((prev) => ({ ...prev, modelName: id || undefined })),
     };
