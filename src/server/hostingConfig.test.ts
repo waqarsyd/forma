@@ -211,6 +211,6 @@ describe('firebase.json hosting', () => {
 
   it('keeps the emulator and rules config the other suites depend on', () => {
     expect(config.firestore?.rules).toBe('firestore.rules');
-    expect(config.emulators?.firestore?.port).toBe(8080);
+    expect(config.emulators?.firestore?.port).toBe(8181);
   });
 });

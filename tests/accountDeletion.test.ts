@@ -74,9 +74,9 @@ beforeAll(async () => {
     firestore: {
       rules: fs.readFileSync('firestore.rules', 'utf8'),
       // Where `firebase emulators:exec` started it, which it tells this process;
-      // 8080, as firebase.json sets it, when run some other way (2026-11-06).
-      host: (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':')[0],
-      port: Number((process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':')[1]),
+      // 8181, as firebase.json sets it, when run some other way (2026-11-06; 8080 until 2026-11-08).
+      host: (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8181').split(':')[0],
+      port: Number((process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8181').split(':')[1]),
     },
   });
 });
