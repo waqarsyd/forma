@@ -36,7 +36,11 @@ describe('HelpMenu', () => {
   it('opens help and feedback in a new tab, says Forma can make mistakes, and closes on Escape', () => {
     const onClose = vi.fn();
     render(<HelpMenu theme="light" onTheme={vi.fn()} onShortcuts={vi.fn()} onClose={onClose} />);
-    expect(screen.getByRole('link', { name: /Help/ }).getAttribute('href')).toBe('/docs');
+    // Docs, the FAQ, Discussions and the privacy notice, as Stitch's "?" lists them (2026-11-08).
+    expect(screen.getByRole('link', { name: /^Docs/ }).getAttribute('href')).toBe('/docs');
+    expect(screen.getByRole('link', { name: /^FAQ/ }).getAttribute('href')).toBe('/faq');
+    expect(screen.getByRole('link', { name: /^Discussions/ }).getAttribute('href')).toBe('https://github.com/waqarsyd/forma/discussions');
+    expect(screen.getByRole('link', { name: /^Privacy/ }).getAttribute('href')).toBe('/privacy');
     expect(screen.getByRole('link', { name: /Send feedback/ }).getAttribute('target')).toBe('_blank');
     expect(screen.getByText(/Forma can make mistakes/)).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });

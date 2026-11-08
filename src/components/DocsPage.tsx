@@ -56,7 +56,7 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
   { id: 'account', n: '04', title: 'Your account', keys: 'account sign in signup register google email password forgot reset sync devices optional verify delete' },
   { id: 'upload', n: '05', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan ocr photo' },
   { id: 'run', n: '06', title: 'Running and refining', keys: 'run generate working dots stop escape queue steer resume cancel read result specification mockup preview export refine change edit undo redo changed iterate conversation' },
-  { id: 'workspace', n: '07', title: 'The workspace', keys: 'workspace tour sidebar rail home starting points views panes request card log reply project menu rename duplicate archive delete pin command menu clean screen zoom' },
+  { id: 'workspace', n: '07', title: 'The workspace', keys: 'workspace tour sidebar rail home starting points views panes conversation panel thread search tools house style main menu reply project menu rename duplicate archive delete pin command menu clean screen zoom' },
   { id: 'data', n: '08', title: 'Data and binding', keys: 'data tab bind binding fields schema json csv create table map columns expression prompt-to-expression test data rows sample' },
   // xrchart and xrgauge are searchable because both are now written into the
   // file — a real XRChart with its series, and a real XRGauge with its value
@@ -849,9 +849,10 @@ y_top = pageHeight − (baseline + height)`}
                   Click a control to select it, drag it or nudge it with the arrows, double-click to retype it, and
                   right-click for its menu. Ctrl+L puts the selection in the chat, so a request can name it.
                 </Def>
-                <Def t="The title">
-                  The project's name, with its menu: Rename, Duplicate, Archive and Delete for a saved project. The
-                  pin beside it pins the project on this device.
+                <Def t="The main menu and the title">
+                  The button before the project's name opens the main menu: all your projects, Share, Export;
+                  Rename, Duplicate and Archive for a saved project; Settings, the command menu, the keyboard
+                  shortcuts, help and feedback; and Delete. The pin beside the name pins the project on this device.
                 </Def>
                 <Def t="Save, Share, Export">
                   In the bar above the report. Export opens every format in one panel, the .repx first;{' '}

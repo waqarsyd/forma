@@ -89,8 +89,23 @@ export default function HelpMenu({ theme, onTheme, onShortcuts, onClose }: Props
         <span>Keyboard shortcuts</span>
         <kbd>?</kbd>
       </button>
+      {/* Docs, the FAQ, the community and the privacy notice (2026-11-08), as
+          Stitch's "?" lists Docs, FAQ, Forum and Privacy Notice; Forma's
+          forum is its GitHub Discussions. */}
       <a className="wb-help-row" href="/docs" target="_blank" rel="noopener">
-        <span>Help</span>
+        <span>Docs</span>
+        <IconExternal size={13} />
+      </a>
+      <a className="wb-help-row" href="/faq" target="_blank" rel="noopener">
+        <span>FAQ</span>
+        <IconExternal size={13} />
+      </a>
+      <a className="wb-help-row" href="https://github.com/waqarsyd/forma/discussions" target="_blank" rel="noopener">
+        <span>Discussions</span>
+        <IconExternal size={13} />
+      </a>
+      <a className="wb-help-row" href="/privacy" target="_blank" rel="noopener">
+        <span>Privacy</span>
         <IconExternal size={13} />
       </a>
       <a className="wb-help-row" href="/contact" target="_blank" rel="noopener">

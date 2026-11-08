@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,914 tests in 174 files** — under the `node` environment
+`npm test` runs Vitest over **2,916 tests in 174 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -86,9 +86,9 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/UsageSettings` | 2 | Usage today at the top of Settings (2026-11-05), as Stitch's daily credits, the General section's first row since 2026-11-07: requests by model, most first, a bar only against a limit Google stated, the time to the reset, and the empty day. jsdom |
 | `components/CommandMenu` | 4 | the command menu, Ctrl+K (2026-11-06), as Stitch's: narrowed by every word typed, the arrows and Enter running the highlighted command, the empty answer and Escape; and the shortcuts list beside it, by group, with Cmd on a Mac and Ctrl on a PC. jsdom |
 | `components/ExportPanel` | 3 | every way out in one panel (2026-11-06), as Stitch's Export: the .repx from its first row, each print format asked of the Preview by its own name, the designer greyed for a report with no XML, and Escape. jsdom |
-| `components/ProjectMenu` | 4 | the open project's menu from its title (2026-11-06), as Stitch's: Rename in place and nothing sent for an unchanged name, a Delete that asks once and Keep, opened at Rename's field or Delete's question, Duplicate and Archive and no Download (Export has it), and what an unsaved project cannot do greyed. jsdom |
+| `components/ProjectMenu` | 6 | since 2026-11-08 the workspace's main menu from the button at the top left, as Stitch's: its twelve rows in order, each handing up its own action and closing, Help and Send feedback as links in a new tab, and no Share or Export before there is a report; the open project's menu from its title (2026-11-06), as Stitch's: Rename in place and nothing sent for an unchanged name, a Delete that asks once and Keep, opened at Rename's field or Delete's question, Duplicate and Archive and no Download (Export has it), and what an unsaved project cannot do greyed. jsdom |
 | `components/ChangelogPage` | 7 | the changelog (2026-11-07): every release drawn newest first as an article with its anchor and date, the version linked to its GitHub release, a kind filter kept in the address and cleared, a filter read from the address, the empty result with Clear filters, a link copied per entry, and the feed and GitHub offered to follow it. jsdom |
-| `components/HelpMenu` | 3 | the corner's "?" (2026-11-06), as Stitch's: the theme in force marked and the one chosen handed back, What's new opening on the newest note, the shortcuts closing the menu, help and feedback in a new tab, the line that Forma can make mistakes, and Escape. jsdom |
+| `components/HelpMenu` | 3 | the corner's "?" (2026-11-06), as Stitch's (with Docs, the FAQ, Discussions and Privacy since 2026-11-08): the theme in force marked and the one chosen handed back, What's new opening on the newest note, the shortcuts closing the menu, help and feedback in a new tab, the line that Forma can make mistakes, and Escape. jsdom |
 | `components/HomeStart` | 2 | the empty workspace as a home (2026-11-06), as Stitch's: a recent project opened and All projects, the starting point picked handed back, and no project list when there is none. jsdom |
 | `components/PinProject` | 1 | the pin beside the title (2026-11-06, `RateReport` until then, whose star and thumbs it replaced): pinning and unpinning the project, saying which, and no rating, which the reply card keeps. jsdom |
 | `components/ShareDialog` | 5 | sharing a report (2026-11-06), as Stitch's: sign-in asked for and nothing written when signed out, the project saved first and a restricted copy written with the people added, an existing share's access changed at once and sharing stopped, a person put back when their removal could not be written, and a typed address that is not one. Firebase is a stand-in; the emulator suite proves the rules. jsdom |
@@ -251,7 +251,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,914 in 174 files** — and that total is the arithmetic sum of the column above
+**Total: 2,916 in 174 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -265,7 +265,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2703** against a real 2,914 (2026-11-08, after the thread panel and the box's menus, which added no loop; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2705** against a real 2,916 (2026-11-08, after the thread panel, the box's menus and the main menu, which added no loop; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Fourteen** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

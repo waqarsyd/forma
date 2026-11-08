@@ -6434,34 +6434,38 @@ export default function App() {
         )}
         <div className="wb-bench-bar">
           <div className="wb-doc-id">
-            {/* The title opens the project's menu (2026-11-06), as Stitch's
-                project name does. A saved project shows its name, the one the
-                projects list shows, so a rename is seen where it was made. */}
-            {/* A menu only for a saved project, the one its items act on
-                (2026-11-06, the workspace audit): before, it opened four
-                disabled items over the empty home. */}
+            {/* The main menu, from a button at the top left (2026-11-08), as
+                Stitch's since its workspace changed; the project's menu from
+                its title until then. A saved project shows its name, the one
+                the projects list shows, so a rename is seen where it was made. */}
+            <button
+              type="button"
+              className="wb-menu-btn"
+              data-project-toggle
+              aria-label="Main menu"
+              aria-haspopup="menu"
+              aria-expanded={isProjectMenuOpen}
+              title="Main menu"
+              onClick={() => setIsProjectMenuOpen((open) => !open)}
+            >
+              <IconMenu size={17} />
+            </button>
             <h1>
-              {openProjectId && savedReports.some((r) => r.id === openProjectId) ? (
-                <button
-                  type="button"
-                  className="wb-title-btn"
-                  data-project-toggle
-                  aria-haspopup="menu"
-                  aria-expanded={isProjectMenuOpen}
-                  title="Rename, duplicate, archive or delete this project"
-                  onClick={() => setIsProjectMenuOpen((open) => !open)}
-                >
-                  <span>{savedReports.find((r) => r.id === openProjectId)?.name || result?.title || 'Untitled report'}</span>
-                  <IconChevronDown size={15} />
-                </button>
-              ) : (
-                <span className="wb-title-btn wb-title-plain"><span>{result?.title || 'Untitled report'}</span></span>
-              )}
+              <span className="wb-title-btn wb-title-plain">
+                <span>{(openProjectId && savedReports.find((r) => r.id === openProjectId)?.name) || result?.title || 'Untitled report'}</span>
+              </span>
             </h1>
             {isProjectMenuOpen && (
               <Suspense fallback={null}>
                 <ProjectMenu
                   name={savedReports.find((r) => r.id === openProjectId)?.name || result?.title || 'Untitled report'}
+                  onAllProjects={() => showRailPanel('projects')}
+                  onShare={result?.repxContent ? () => setIsShareOpen(true) : undefined}
+                  onExport={result ? () => setIsExportOpen(true) : undefined}
+                  onSettings={() => setIsConfigOpen(true)}
+                  onCommandMenu={() => setIsCommandOpen(true)}
+                  commandKeys={keysFor('Ctrl+K')}
+                  onShortcuts={() => setIsShortcutsOpen(true)}
                   onRename={openProjectId && savedReports.some((r) => r.id === openProjectId) ? (name) => void handleRenameProject(openProjectId, name) : undefined}
                   onDuplicate={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => void duplicateProject() : undefined}
                   onArchive={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => toggleArchived(openProjectId) : undefined}

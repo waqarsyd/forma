@@ -164,6 +164,14 @@
 }
 .wb-project-menu > button:hover:not(:disabled), .wb-project-confirm button:hover, .wb-project-rename button:hover { background: var(--track); }
 .wb-project-menu > button:disabled { color: var(--ink-faint); cursor: default; }
+/* The main menu's links, keys and rules (2026-11-08), as Stitch's main menu. */
+.wb-project-menu > a {
+  padding: 8px 10px; border-radius: 8px; color: var(--ink); font-size: 13px; text-decoration: none;
+}
+.wb-project-menu > a:hover, .wb-project-menu > a:focus-visible { background: var(--track); outline: none; }
+.wb-project-menu > button { display: flex; align-items: center; gap: 8px; }
+.wb-project-menu kbd { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+.wb-project-menu hr { margin: 4px 6px; border: 0; border-top: 1px solid var(--rule); }
 .wb-project-menu .is-danger { color: var(--bad-ink); }
 .wb-project-menu .is-danger:disabled { color: var(--ink-faint); }
 .wb-project-rename { display: flex; gap: 4px; padding: 3px; }

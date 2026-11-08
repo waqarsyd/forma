@@ -1,7 +1,11 @@
 /**
- * What can be done to the open project, from its title (2026-11-06), as
- * Google Stitch's main menu offers Duplicate and Delete beside its project's
- * name: Rename in place, Duplicate, Archive, and Delete, which asks once in
+ * The workspace's main menu, from the button at the top left (2026-11-08), as
+ * Google Stitch's has been since its workspace changed: Go to all projects,
+ * Share and Export first; the project's own Rename, Duplicate and Archive;
+ * then Settings, the command menu, the shortcuts, help and feedback; and
+ * Delete last. Until then it was the project's menu, from its title
+ * (2026-11-06), as Stitch's main menu offers Duplicate and Delete beside its
+ * project's name: Rename in place, Duplicate, Archive, and Delete, which asks once in
  * the menu itself before it does anything. They act on what is kept, so App
  * opens the menu only for a saved project. Download the .repx left it in the
  * workspace audit of the same day, being the Export panel's first row, and
@@ -16,6 +20,15 @@ import { useMenuKeys } from './useMenuKeys';
 
 interface Props {
   name: string;
+  /** The main menu's own rows (2026-11-08); each is drawn only when given. */
+  onAllProjects?: () => void;
+  onShare?: () => void;
+  onExport?: () => void;
+  onSettings?: () => void;
+  onCommandMenu?: () => void;
+  /** The command menu's keys as this platform writes them, "Ctrl+K" or "\u2318K". */
+  commandKeys?: string;
+  onShortcuts?: () => void;
   onRename?: (name: string) => void;
   onDuplicate?: () => void;
   /** Archive or bring back; `archived` says which this is. */
@@ -27,7 +40,7 @@ interface Props {
   start?: 'rename' | 'delete';
 }
 
-export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, archived = false, onDelete, onClose, start }: Props) {
+export default function ProjectMenu({ name, onAllProjects, onShare, onExport, onSettings, onCommandMenu, commandKeys = 'Ctrl+K', onShortcuts, onRename, onDuplicate, onArchive, archived = false, onDelete, onClose, start }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState<string | null>(start === 'rename' && onRename ? name : null);
   const [confirming, setConfirming] = useState(start === 'delete' && !!onDelete);
@@ -46,7 +59,11 @@ export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, ar
     action();
   };
   return (
-    <div className="wb-project-menu" ref={box} role="menu" aria-label="Project">
+    <div className="wb-project-menu" ref={box} role="menu" aria-label="Main menu">
+      {onAllProjects && <button type="button" role="menuitem" onClick={run(onAllProjects)}>Go to all projects</button>}
+      {onShare && <button type="button" role="menuitem" onClick={run(onShare)}>Share</button>}
+      {onExport && <button type="button" role="menuitem" onClick={run(onExport)}>Export</button>}
+      {(onAllProjects || onShare || onExport) && <hr />}
       {renaming !== null && onRename ? (
         <form
           className="wb-project-rename"
@@ -65,6 +82,25 @@ export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, ar
       )}
       <button type="button" role="menuitem" disabled={!onDuplicate} onClick={onDuplicate ? run(onDuplicate) : undefined}>Duplicate</button>
       <button type="button" role="menuitem" disabled={!onArchive} onClick={onArchive ? run(onArchive) : undefined}>{archived ? 'Bring back from the archive' : 'Archive'}</button>
+      {(onSettings || onCommandMenu || onShortcuts) && <hr />}
+      {onSettings && <button type="button" role="menuitem" onClick={run(onSettings)}>Settings</button>}
+      {onCommandMenu && (
+        <button type="button" role="menuitem" onClick={run(onCommandMenu)}>
+          Command menu <kbd>{commandKeys}</kbd>
+        </button>
+      )}
+      {onShortcuts && (
+        <button type="button" role="menuitem" onClick={run(onShortcuts)}>
+          Keyboard shortcuts <kbd>?</kbd>
+        </button>
+      )}
+      {onSettings && (
+        <>
+          <a role="menuitem" href="/docs" target="_blank" rel="noopener" onClick={onClose}>Help</a>
+          <a role="menuitem" href="/contact" target="_blank" rel="noopener" onClick={onClose}>Send feedback</a>
+          <hr />
+        </>
+      )}
       {confirming && onDelete ? (
         <div className="wb-project-confirm" role="group" aria-label="Delete this project?">
           <span>Delete this project?</span>
