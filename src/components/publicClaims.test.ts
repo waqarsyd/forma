@@ -15,6 +15,10 @@ import { readFileSync } from 'node:fs';
 import { DATA_FILE_EXTENSIONS } from '../lib/dataFiles';
 import { SUPPORTED_PAGE_SIZES } from '../lib/reportGeometry';
 import { BATCH_PARALLEL } from '../lib/batchQueue';
+import { MAX_ATTACHMENTS, MAX_FILE_BYTES, MAX_PDF_PAGES } from '../lib/attachmentBudget';
+import { MIN_PASSWORD } from '../lib/passwordPolicy';
+import { MAX_PERSISTED_REVISIONS } from '../lib/revisionStore';
+import { STARTING_POINTS } from '../lib/startingPoints';
 
 const page = (name: string) => readFileSync(`src/components/${name}.tsx`, 'utf8');
 const landing = page('LandingPage');
@@ -79,6 +83,42 @@ describe('what the pages state, the code answers', () => {
     expect(Math.max(...BATCH_PARALLEL)).toBe(3);
     expect(visible(features)).toMatch(/two or three at once/);
     expect(visible(docs)).toMatch(/two or\s+three at once/);
+  });
+
+  /*
+   * The numbers (2026-11-08, site audit item 88): every figure the pages give
+   * a visitor is the constant the code enforces, read here rather than
+   * remembered. Tags and `{' '}` are taken out first, so "Up to <strong>8
+   * pages</strong>" reads as the sentence a visitor sees.
+   */
+  const prose = (src: string) => visible(src).replace(/\{' '\}/g, ' ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+  const numbers = (src: string, pattern: RegExp) => [...prose(src).matchAll(pattern)].map((m) => (/^\d+$/.test(m[1]) ? Number(m[1]) : WORDS.indexOf(m[1].toLowerCase())));
+
+  it('gives the PDF page limit the intake enforces, on every page that names it', () => {
+    for (const [name, src] of [['home', landing], ['Features', features], ['Docs', docs]] as const) {
+      const said = numbers(src, /up to (\d+) pages/gi);
+      expect(said.length, name).toBeGreaterThan(0);
+      for (const n of said) expect(n, name).toBe(MAX_PDF_PAGES);
+    }
+  });
+
+  it('gives the attachment count and file size the intake enforces', () => {
+    expect(numbers(docs, /up to (\d+) attachments/gi)).toEqual([MAX_ATTACHMENTS]);
+    expect(numbers(docs, /each up to (\d+) MB/gi)).toEqual([MAX_FILE_BYTES / 1024 / 1024]);
+  });
+
+  it('gives the password length sign-up enforces, and the revisions a project keeps', () => {
+    expect(numbers(docs, /at least (\w+) characters/gi)).toEqual([MIN_PASSWORD]);
+    for (const src of [features, docs]) {
+      const said = numbers(src, /the newest (\w+) are saved/gi);
+      expect(said.length).toBeGreaterThan(0);
+      for (const n of said) expect(n).toBe(MAX_PERSISTED_REVISIONS);
+    }
+  });
+
+  it('counts the examples it offers', () => {
+    expect(numbers(info, /(\w+) reports to start from/gi)).toEqual([STARTING_POINTS.length]);
   });
 
   it("names every format the Export panel offers, and OCR, on each page that describes intake", () => {

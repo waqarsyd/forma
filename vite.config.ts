@@ -223,6 +223,12 @@ function pagesAndCrawlers(): Plugin {
       const ssr = await createServer({
         configFile: false,
         root: process.cwd(),
+        // A cache of its own (2026-11-08). On the default, node_modules/.vite,
+        // this server rewrote the dependency cache a running dev server reads,
+        // in production mode, on every build, and the dev server's next page
+        // load died with "jsxDEV is not a function" and drew nothing: the blank
+        // page CLAUDE.md had been putting down to config edits.
+        cacheDir: 'node_modules/.vite-prerender',
         logLevel: 'error',
         plugins: [react()],
         server: { middlewareMode: true, hmr: false, ws: false, watch: null },

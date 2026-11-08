@@ -198,7 +198,7 @@ import { TIP_INTERVAL_MS, WORKING_TIPS, forPlatform, tipAt } from './lib/working
 /* App.tsx's own view state, extracted so it can be tested — see the header of
    each for the failure it was carrying while it lived here. */
 import { plateFor, stateForPlate, type Plate, type ActiveTab, type SpecView } from './lib/workspaceView';
-import { countStagedUploads, admitFiles } from './lib/attachmentBudget';
+import { countStagedUploads, admitFiles, MAX_ATTACHMENTS, MAX_FILE_BYTES, MAX_PDF_PAGES } from './lib/attachmentBudget';
 import { pushRevision, type Revision } from './lib/revisions';
 /* The report library: filling it, using it, and listing what it holds.
    docs/proposals/rag.md carries the reasoning; this file only wires it up.
@@ -362,11 +362,8 @@ type ChatMessage = ChatSessionMessage<DesignResult, PreviewMeta>;
  * cannot drift again.
  * ------------------------------------------------------------------ */
 
-/** Beyond this the request gets slow and expensive with little added signal. */
-const MAX_ATTACHMENTS = 12;
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
-/** Pages past this are reported to the user rather than silently dropped. */
-const MAX_PDF_PAGES = 8;
+// MAX_ATTACHMENTS, MAX_FILE_BYTES and MAX_PDF_PAGES live in
+// lib/attachmentBudget.ts since 2026-11-08, where the public pages' tests read them.
 /**
  * ~250 DPI. The previous 1.5 (~150 DPI) left small footers and dense table
  * figures soft, and soft text becomes wrong Text= values and wrong coordinates

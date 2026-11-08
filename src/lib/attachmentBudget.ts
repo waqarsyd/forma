@@ -16,6 +16,18 @@
  * hits the limit — which is exactly the shape this project keeps finding.
  */
 
+/*
+ * The intake limits (moved here from App.tsx on 2026-11-08, site audit item
+ * 88): the Docs, Features and home pages state all three, and
+ * `publicClaims.test.ts` holds what they say to these numbers, which it could
+ * not reach while they were constants inside App.
+ */
+/** Beyond this the request gets slow and expensive with little added signal. */
+export const MAX_ATTACHMENTS = 12;
+export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+/** Pages past this are reported to the user rather than silently dropped. */
+export const MAX_PDF_PAGES = 8;
+
 /** Anything carrying the id that identifies one dropped file. */
 export interface Staged {
   uploadId: string;
