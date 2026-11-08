@@ -310,8 +310,10 @@ describe('the legal copy and its date change together', () => {
      the words a reader sees today did not change. Batch SI changed them the
      same day (the key reaching a new tab, the request to keep local
      projects, the download of every project), which is substantive, but
-     the date is already that day's. */
-  const EXPECTED_COPY_HASH = '2286dea54e91';
+     the date is already that day's. The governing-law clause the owner chose
+     (the laws of India) joined the terms the same day: substantive, and
+     again already that day's date. */
+  const EXPECTED_COPY_HASH = 'e8687eab3726';
   const EXPECTED_UPDATED = '8 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

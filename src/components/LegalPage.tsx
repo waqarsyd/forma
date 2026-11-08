@@ -105,6 +105,13 @@ const TERMS: Section[] = [
     ],
   },
   {
+    // The owner's choice, 2026-11-08 (site audit item 33 had left it to them).
+    heading: 'Governing law',
+    paragraphs: [
+      'These terms are governed by the laws of India. Nothing in them takes away a protection that the law where you live gives you and that no agreement can set aside.',
+    ],
+  },
+  {
     heading: 'Changes',
     paragraphs: [
       'These terms may change as the software does. The date at the top is when they last did. Continuing to use Forma after a change means you accept the current version.',
