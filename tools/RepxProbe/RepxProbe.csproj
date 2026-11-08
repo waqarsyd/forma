@@ -41,6 +41,8 @@
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Core" />
     <!-- render: data.json becomes a DataSet, read with the framework's own JSON reader. -->
     <Reference Include="System.Data" />
     <Reference Include="System.Web.Extensions" />
@@ -56,6 +58,9 @@
          Worth knowing before assuming a gauge is as cheap as a label. -->
     <Reference Include="DevExpress.XtraGauges.v20.1.Core">
       <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.XtraGauges.v20.1.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="DevExpress.DataAccess.v20.1">
+      <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.DataAccess.v20.1.dll</HintPath>
     </Reference>
     <Reference Include="DevExpress.Data.v20.1">
       <HintPath>C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework\DevExpress.Data.v20.1.dll</HintPath>
@@ -96,6 +101,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="Render.cs" />
     <Compile Include="TextLines.cs" />
+    <Compile Include="Sql.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

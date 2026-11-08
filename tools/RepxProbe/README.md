@@ -23,6 +23,7 @@ RepxProbe emit-gauge <out.repx>  # the same, for XRGauge and XRSparkline
 RepxProbe emit-toc <out.repx>    # the same, for a TABLE OF CONTENTS
 RepxProbe emit-comb <out.repx>   # the same, for a CHARACTER COMB
 RepxProbe emit-pdf <out.repx>    # the same, for XRPdfContent
+RepxProbe emit-sql <out.repx>    # the same, for a SQL Server DATA SOURCE, over a made-up LocalDB database it creates and drops
 RepxProbe render-cols            # what does DevExpress DRAW? bricks from CreateDocument()
 RepxProbe render <case-dir> [out-dir] # what does it PRINT over real data, and what do the exports hold?
 RepxProbe emit-chart-titles <out.repx> # a chart's TITLE, axis titles and legend, read back after loading

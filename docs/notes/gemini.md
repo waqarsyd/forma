@@ -1271,3 +1271,73 @@ total 44/44 (100%)
 ```
 
 The two standard cases scored the same 30/30 at 10,139 tokens as the draft run of 2026-11-06 did at 10,131, so two days of the agent and site audits moved nothing in generation. It is also the after-scorecard that the source-precedence bullet for OCR's text (`8124657`) never had, since both cases send OCR's reading through the draft. **For rows 29 and 30 the file says what the checks cannot, and it is a case for keeping both as code.** The model wrote both group headers without `Level`, although the prompt asks for it, which DevExpress would have nested inside out; `repairGroupLevels` numbered them outermost-highest (Region 1, City 0, the footers matching) and said so in the log. It wrote the cross-tab as its fields alone (Region down, Quarter across, the sum of Amount), as the prompt asks, and `repairCrossTabs` wrote the 3x3 layout DevExpress generates, nine cells. Both group totals came back as `sumSum([Amount])` with `Running="Group"`, so neither prints blank (*A total with no running scope prints blank*). On this run the instruction was ignored and the code was not.
+
+## The SQL data source, measured (2026-11-08)
+
+**The owner's SQL Server programme starts here** (checklist `DevFiles/forma-audit/database-integration-2026-11-08.md`, batch DA). Until it, no .repx Forma wrote carried a data source: the prompt said "assume the stored procedure X" and the designer opened every report bound to nothing. Before anything writes one, `RepxProbe emit-sql` asked DevExpress 20.1 what it writes, over a made-up database (`FormaSample`, three customers, three orders, five lines and five procedures) that the probe creates on the current user's **LocalDB** and drops at the end. **The server name is a constant in `tools/RepxProbe/Sql.cs` and there is no argument for another**: the SQL Server instance on the machine this was measured on holds a company's data and is never opened.
+
+**Where it lives.** The report names the source by reference and the source is a `ComponentStorage` item whose `Base64` is an XML document of its own:
+
+```
+<XtraReportsLayoutSerializer ... DataMember="Orders" DataSource="#Ref-0">
+  ...
+  <ComponentStorage>
+    <Item1 Ref="0" ObjectType="DevExpress.DataAccess.Sql.SqlDataSource,DevExpress.DataAccess.v20.1" Name="sqlDataSource1" Base64="..." />
+  </ComponentStorage>
+```
+
+`Ref="0"` is the serializer's own choice for the component; a writer must keep it unique against every other `Ref` (*DevExpress can be asked directly, and it answers* records what a duplicate does). A `DetailReportBand` names the same source and a relation path: `DataMember="Orders.OrderLinesOfOrder" DataSource="#Ref-0"`.
+
+**The decoded source**, verbatim apart from line breaks:
+
+```
+<SqlDataSource Name="sqlDataSource1">
+  <Connection Name="FormaSample" FromAppConfig="true" />
+  <Query Type="SelectQuery" Name="Orders" Top="500">
+    <Parameter Name="Region" Type="DevExpress.DataAccess.Expression">(System.String)(?Region)</Parameter>
+    <Tables><Table Name="Orders" /><Table Name="Customers" />
+      <Relation Type="Inner" Parent="Orders" Nested="Customers"><KeyColumn Parent="CustomerID" Nested="CustomerID" /></Relation></Tables>
+    <Columns><Column Table="Orders" Name="OrderID" /> ... <Column Table="Customers" Name="Region" /></Columns>
+    <Sorting><Column Table="Customers" Name="OrderDate" /></Sorting>
+    <Filter>[Customers.Region] = ?Region</Filter>
+  </Query>
+  <Query Type="SelectQuery" Name="OrderLines"><Tables><Table Name="OrderLines" /></Tables><Columns><AllColumns /></Columns></Query>
+  <Query Type="CustomSqlQuery" Name="TopCustomers">
+    <Parameter Name="@n" Type="System.Int32">2</Parameter>
+    <Sql>SELECT TOP (@n) CompanyName, City FROM dbo.Customers ORDER BY CompanyName</Sql></Query>
+  <Query Type="StoredProcQuery" Name="SalesByRegion">
+    <Parameter Name="@Region" Type="DevExpress.DataAccess.Expression">(System.String)(?Region)</Parameter>
+    <Parameter Name="@From" Type="System.DateTime">639028224000000000</Parameter>
+    <Parameter Name="@To" Type="DevExpress.DataAccess.Expression">(System.DateTime)(?To)</Parameter>
+    <ProcName>dbo.usp_SalesByRegion</ProcName></Query>
+  <Relation Master="Orders" Detail="OrderLines" Name="OrderLinesOfOrder"><KeyColumn Master="OrderID" Detail="OrderID" /></Relation>
+  <ResultSchema><DataSet Name="sqlDataSource1">
+    <View Name="Orders"><Field Name="OrderID" Type="Int32" /><Field Name="OrderDate" Type="DateTime" /><Field Name="Freight" Type="Decimal" /> ...</View>
+    <View Name="OrderLines"> ... </View> <View Name="TopCustomers"> ... </View> <View Name="SalesByRegion"><Field Name="Region" Type="String" /><Field Name="Total" Type="Decimal" /></View>
+    <Relation Name="OrderLinesOfOrder" Master="Orders" Detail="OrderLines"><KeyColumn Master="OrderID" Detail="OrderID" /></Relation>
+  </DataSet></ResultSchema>
+  <ConnectionOptions CloseConnection="true" />
+</SqlDataSource>
+```
+
+What it settles, each a rule for the writer:
+
+- **The connection is a name.** `StoreConnectionNameOnly` writes `<Connection Name="..." FromAppConfig="true" />` and nothing else; the application resolves the name from its own `<connectionStrings>`. **Without it, the user and the password are written in plain text** inside the Base64 (`ProviderKey="MSSqlServer"` with `<Parameter Name="userid" .../>` and `<Parameter Name="password" .../>`), which settles the conflict between DevExpress's storage page and its WinForms designer page in favour of the latter's warning. Forma writes the name only, and `RepxProbe inspect` now fails on a stored login.
+- **A query parameter bound to a report parameter** is an `Expression` whose text carries the type: `(System.String)(?Region)`. A static value is its type's name and the value, and **a `DateTime` is .NET ticks**, not a date.
+- **The report parameters themselves** are the ordinary `<Parameters>` block (*Parameters, and the first measurement that was a negative result*): `Type="#Ref-N"` into `ObjectStorage` for anything but a string.
+- **The result schema is what fills the designer's Field List without connecting.** `RebuildResultSchema` wrote it here from the database; a writer can compose the same `View`/`Field` list from an imported schema. `Field Type` is the .NET type's short name (`String`, `Int32`, `Decimal`, `DateTime`, and so on), and the relations are restated inside it.
+- **A sort names a table, and the fluent builder named the wrong one**: `SortBy("OrderDate")` after a join wrote `Table="Customers"` for a column of `Orders`. A writer names the owning table itself.
+- **A calculated field on the source** is the report's `<CalculatedFields>` entry with `DataMember="Orders"` (the `emit-calc` measurement); `DataSource` was not written when it is the report's own.
+
+**Procedures DevExpress cannot fully describe** (checklist item 4), each `RebuildResultSchema` over a procedure of `FormaSample`:
+
+| Procedure | 20.1's result schema |
+|---|---|
+| two result sets | **the first set only** (`CustomerID`, `CompanyName`); the second is invisible |
+| an `OUTPUT` parameter, listed or not | the result set, no error either way |
+| a temp table (`#t`) | **fails**: `Invalid object name '#t'`, so the schema is read without running the body |
+| dynamic SQL (`sp_executesql`) | read correctly |
+
+So a procedure built on a temp table needs its schema from somewhere else, which is why the schema script reads `sys.dm_exec_describe_first_result_set_for_object` and reports its error type, and the Data tab offers the fixes (`WITH RESULT SETS`, a table variable).
+
+**`RepxProbe inspect` reads a data source too** (checklist item 3): the connection (name only or stored), each query with its parameters, the relations and the result schema's views, and then every binding's `[Field]` against the view of its band (a `DetailReportBand`'s relation path followed to its detail view; calculated fields allowed). A binding to a field the schema lacks, or a stored login, exits 1. Checked on the measured file (exit 0, five references), the same file with `[Product]` misspelt (exit 1, naming `DetailLines.labelProduct` and `OrderLines`), and with a login put back into its Base64 (exit 1, CREDENTIALS STORED).

@@ -59,6 +59,7 @@ static class Program {
             Console.WriteLine("    emit-grow      CanGrow / WordWrap defaults");
             Console.WriteLine("    emit-rich      XRRichText");
             Console.WriteLine("    emit-pdf       render to PDF bricks");
+            Console.WriteLine("    emit-sql       a SQL Server data source, over a made-up LocalDB database it creates and drops");
             Console.WriteLine("    render-cols    column render check (no file argument)");
             Console.WriteLine();
             Console.WriteLine("  what DevExpress PRINTS, with data:");
@@ -92,6 +93,7 @@ static class Program {
             case "render":     return Render.Run(args[1], args.Length > 2 ? args[2] : Path.Combine(args[1], "out"));
             case "text-lines": return TextLines.Run(args);
             case "emit-pdf":   EmitPdfContent(args[1]); return 0;
+            case "emit-sql":   return SqlProbe.Emit(args[1]);
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);
@@ -1834,6 +1836,9 @@ static class Program {
             Console.WriteLine("           PARAMETERS LOST: declared " + rawParams
                               + ", loaded " + r.Parameters.Count + ".");
 
+        // SQL data sources and the fields every binding names (2026-11-08).
+        int sqlProblems = SqlProbe.Inspect(r);
+
         r.SaveLayoutToXml(path + ".resaved");
         Console.WriteLine("           re-saved OK -> " + Path.GetFileName(path) + ".resaved");
 
@@ -1847,6 +1852,11 @@ static class Program {
         }
 
         Console.WriteLine("           nothing lost: every declared cell survived the load.");
+        if (sqlProblems > 0) {
+            Console.WriteLine();
+            Console.WriteLine("DATA SOURCE PROBLEMS: " + sqlProblems + " (a stored login, or a binding to a field the result schema lacks).");
+            return 1;
+        }
         return 0;
     }
 }
