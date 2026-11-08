@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 // Only for the theme swap: a view transition snapshots the DOM around its
 // callback, so the state change has to land inside it rather than on React's
 // own schedule. See setTheme.
@@ -39,6 +39,7 @@ import {
   IconLogin,
   IconLogout,
   IconMenu,
+  IconCollapse,
   IconMarquee,
   IconPointer,
   IconImage,
@@ -1340,6 +1341,24 @@ export default function App() {
     showRailPanel('projects');
     setProjectQuery((q) => q ?? '');
   }, [showRailPanel]);
+
+  /*
+   * The bench's bar height, on the shell as --wb-bar-h (2026-11-08), so a side
+   * panel floating over the report lines up with the chat, whose float starts
+   * under the bar. The bar's height moves with what it holds, so it is
+   * measured rather than written down.
+   */
+  useLayoutEffect(() => {
+    if (!showWorkspace) return;
+    const bar = document.querySelector<HTMLElement>('.wb-bench-bar');
+    const shell = bar?.closest<HTMLElement>('.wb-shell');
+    if (!bar || !shell) return;
+    const publish = () => shell.style.setProperty('--wb-bar-h', `${bar.offsetHeight}px`);
+    publish();
+    const watch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null;
+    watch?.observe(bar);
+    return () => watch?.disconnect();
+  }, [showWorkspace]);
 
   /* Ctrl+B / Cmd+B opens and closes the sidebar, and Escape closes the drawer.
      Only while the workspace is what is on screen: a marketing page has no
@@ -5933,8 +5952,9 @@ export default function App() {
          they are down there rather than at the top with everything else. */
       style={{
         '--wb-rail-w': `${railWidth}px`,
-        // No column for the chat, which floats over the report (2026-11-05).
-        '--wb-review-w': isReviewCollapsed || railPanel === 'review' ? '0px' : `${appliedReviewWidth}px`,
+        // No column at all since 2026-11-08: the side panels float over the
+        // report in the chat's place, as the chat does (workspace.css).
+        '--wb-review-w': '0px',
       } as React.CSSProperties}
       data-resizing={isResizingReview ? 'true' : undefined}
       /* Stacked, the drawer always shows the labelled column, whatever the
@@ -5942,6 +5962,8 @@ export default function App() {
       data-rail={isRailExpanded || isStackedLayout ? 'wide' : undefined}
       data-drawer={isStackedLayout && isRailDrawerOpen ? 'open' : undefined}
       data-clean={isClean ? 'true' : undefined}
+      // A side panel floats in the chat's place while it is open (2026-11-08).
+      data-side={isReviewCollapsed || railPanel === 'review' ? undefined : 'open'}
     >
       {/* ============================================================ top bar
           Stacked only (CSS hides it above 880px): the menu button that opens
@@ -6130,6 +6152,17 @@ export default function App() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
+        {/* Back to the conversation (2026-11-08): the side panels float in the
+            chat's place, as the chat floats, and close with its Collapse. */}
+        <button
+          type="button"
+          className="wb-panel-tool wb-panel-collapse wb-review-close"
+          aria-label="Close the panel"
+          title="Close"
+          onClick={() => showRailPanel('review')}
+        >
+          <IconCollapse size={18} />
+        </button>
         {/* New report and Search are the sidebar's since 2026-11-05, as in
             ChatGPT, where they are always in reach. They sat here, as an orange
             "+ New report" pill and a magnifier above every panel. */}
