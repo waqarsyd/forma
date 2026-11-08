@@ -1,14 +1,14 @@
 /**
- * The box's "+" and "/" menus (2026-11-08), as Google Stitch's box has them
- * since it changed: "+" for what to bring (files, a starting point) and "/"
- * for Tools, which for Forma are the things people ask of a report (see
- * lib/boxTools.ts). Each opens upward from its button, takes the arrow keys
- * as every menu here does (useMenuKeys), and closes on Escape, a click
- * elsewhere or a choice.
+ * The box's "/" Tools menu (2026-11-08), as Google Stitch's box has its
+ * Tools since it changed: for Forma, the things people ask of a report (see
+ * lib/boxTools.ts). It opens upward from its button, takes the arrow keys as
+ * every menu here does (useMenuKeys), and closes on Escape, a click elsewhere
+ * or a choice. A "+" menu beside it, Upload files and the starting points,
+ * went the same day with the workspace's repeated options; "+" opens the
+ * picker again.
  */
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { BOX_TOOLS, type BoxTool } from '../lib/boxTools';
-import type { StartingPoint } from '../lib/startingPoints';
 import './overlays.css';
 import { useLayer } from './useLayer';
 import { useMenuKeys } from './useMenuKeys';
@@ -45,53 +45,6 @@ export function ToolsMenu({ hasReport, onPick, onClose }: { hasReport: boolean; 
         >
           <span>{tool.label}</span>
           <small>{tool.needsReport && !hasReport ? 'With a report open' : tool.note}</small>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function PlusMenu({ onUpload, onStart, onClose }: { onUpload: () => void; onStart: (point: StartingPoint) => void; onClose: () => void }) {
-  const box = useRef<HTMLDivElement>(null);
-  /* The starting points load with the menu, not with the box: six
-     descriptions are three kilobytes nobody needs until they look. */
-  const [points, setPoints] = useState<readonly StartingPoint[]>([]);
-  useEffect(() => {
-    let live = true;
-    void import('../lib/startingPoints').then((m) => live && setPoints(m.STARTING_POINTS));
-    return () => {
-      live = false;
-    };
-  }, []);
-  useOutside(box, 'plus', onClose);
-  useLayer(onClose, true, 'box-plus');
-  useMenuKeys(box, points.length > 0);
-  return (
-    <div className="wb-box-menu" ref={box} role="menu" aria-label="Add">
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onClose();
-          onUpload();
-        }}
-      >
-        <span>Upload files</span>
-        <small>A picture, a scan, a PDF, a .repx or a data file</small>
-      </button>
-      {points.length > 0 && <p className="wb-box-menu-head">Start from an example</p>}
-      {points.map((point) => (
-        <button
-          key={point.id}
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            onClose();
-            onStart(point);
-          }}
-        >
-          <span>{point.title}</span>
-          <small>{point.gist}</small>
         </button>
       ))}
     </div>

@@ -294,8 +294,7 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
                     ) : (
                       versionLabel()
                     )}
-                    {' · '}
-                    <a href="/changelog">What&apos;s new</a>
+                    {/* What's new is the corner's "?" (2026-11-08): it was linked here too. */}
                   </p>
                 </div>
               </div>

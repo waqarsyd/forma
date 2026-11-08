@@ -20,8 +20,6 @@ import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMe
 import {
   IconCheck,
   IconChevronDown,
-  IconChevronsLeft,
-  IconChevronsRight,
   IconClose,
   IconCopy,
   IconDownload,
@@ -42,7 +40,6 @@ import {
   IconCollapse,
   IconMarquee,
   IconPointer,
-  IconImage,
   IconPanelLeft,
   IconCompose,
   IconSave,
@@ -6061,25 +6058,10 @@ export default function App() {
           <span className="wb-rail-label">Configure</span>
         </button>
 
-        {/* The panel's only hide control, and the only way back once it is
-            hidden — which is why it lives in the rail rather than in the panel
-            it collapses. `aria-expanded` rather than `aria-current`: that
-            attribute is the rail's "this section is showing" paint, and this is
-            not a section. Chevrons since 2026-11-04: the panel icon went to the
-            sidebar's own toggle, which is where Gemini and ChatGPT put it, and
-            two toggles wearing one icon would be guesswork. */}
-        {/* Only for a panel the column shows: the chat has none since 2026-11-05. */}
-        {railPanel !== 'review' && <button
-          data-toggle-panel
-          title={isReviewCollapsed ? 'Show the side panel' : 'Hide the side panel'}
-          aria-label={isReviewCollapsed ? 'Show the side panel' : 'Hide the side panel'}
-          aria-expanded={!isReviewCollapsed}
-          aria-controls="wb-review-panel"
-          onClick={() => { setIsRailDrawerOpen(false); toggleReviewPanel(); }}
-        >
-          {isReviewCollapsed ? <IconChevronsRight size={19} /> : <IconChevronsLeft size={19} />}
-          <span className="wb-rail-label">{isReviewCollapsed ? 'Show panel' : 'Hide panel'}</span>
-        </button>}
+        {/* The "Hide panel" chevrons stood here until 2026-11-08, a third way to
+            close a side panel beside its own Collapse and its icon here pressed
+            again; they went when the workspace's repeated options were taken
+            out, at the owner's request. `git log -S"data-toggle-panel"`. */}
         <span className="wb-spacer" />
         {/* The theme is the corner's "?" menu's, Light, System or Dark, as
             Gemini keeps it under Settings and help (2026-11-06, the workspace
@@ -6483,18 +6465,20 @@ export default function App() {
         )}
         <div className="wb-bench-bar">
           <div className="wb-doc-id">
-            {/* The main menu, from a button at the top left (2026-11-08), as
-                Stitch's since its workspace changed; the project's menu from
-                its title until then. A saved project shows its name, the one
-                the projects list shows, so a rename is seen where it was made. */}
+            {/* The project's menu, from a button at the top left (2026-11-08),
+                where Stitch keeps its hamburger: Rename, Duplicate, Archive and
+                Delete. It held the workspace's other options for a day, each a
+                repeat of its own place, and the owner asked for those to go. A
+                saved project shows its name, the one the projects list shows,
+                so a rename is seen where it was made. */}
             <button
               type="button"
               className="wb-menu-btn"
               data-project-toggle
-              aria-label="Main menu"
+              aria-label="Project menu"
               aria-haspopup="menu"
               aria-expanded={isProjectMenuOpen}
-              title="Main menu"
+              title="Rename, duplicate, archive or delete this project"
               onClick={() => setIsProjectMenuOpen((open) => !open)}
             >
               <IconMenu size={17} />
@@ -6508,13 +6492,6 @@ export default function App() {
               <Suspense fallback={null}>
                 <ProjectMenu
                   name={savedReports.find((r) => r.id === openProjectId)?.name || result?.title || 'Untitled report'}
-                  onAllProjects={() => showRailPanel('projects')}
-                  onShare={result?.repxContent ? () => setIsShareOpen(true) : undefined}
-                  onExport={result ? () => setIsExportOpen(true) : undefined}
-                  onSettings={() => setIsConfigOpen(true)}
-                  onCommandMenu={() => setIsCommandOpen(true)}
-                  commandKeys={keysFor('Ctrl+K')}
-                  onShortcuts={() => setIsShortcutsOpen(true)}
                   onRename={openProjectId && savedReports.some((r) => r.id === openProjectId) ? (name) => void handleRenameProject(openProjectId, name) : undefined}
                   onDuplicate={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => void duplicateProject() : undefined}
                   onArchive={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => toggleArchived(openProjectId) : undefined}
@@ -6975,13 +6952,8 @@ export default function App() {
                       }}
                       onCancelQueued={(id) => setQueue((q) => q.filter((x) => x.id !== id))}
                       history={requests.map((r) => r.ask?.text ?? '').filter(Boolean)}
-            // The box's Tools (2026-11-08): a sentence tool fills the box itself; these run.
+            // The box's Tools (2026-11-08): sentences for a report, so they wait for one.
             hasReport={!!result?.repxContent}
-            onTool={(tool) => {
-              if (tool.kind === 'accessibility') showPlate('xml');
-              else if (tool.kind === 'test-data') void handleTestData();
-              else if (tool.kind === 'export') setIsExportOpen(true);
-            }}
             houseStyle={{ on: houseStyleOn, onToggle: toggleHouseStyle }}
                     />
                     </Suspense>
@@ -7031,8 +7003,8 @@ export default function App() {
             Since 2026-11-06 the corner is always there, for Stitch's "?" at
             its end; the history and the zoom still come with a report. */}
         {/* The Preview's tools at the bench's right edge (2026-11-08), as
-            Stitch's rail: Select, Mark an area, and Upload files. Only on the
-            Preview, the one pane where a control can be picked. */}
+            Stitch's rail: Select and Mark an area. Only on the Preview, the one
+            pane where a control can be picked. */}
         {result?.repxContent && plate === 'print' && (
           <div className="wb-float wb-float-rail" role="toolbar" aria-label="Preview tools" aria-orientation="vertical">
             <button type="button" aria-label="Select" title="Select (V)" aria-pressed={previewTool === 'select'} onClick={() => setPreviewTool('select')}>
@@ -7047,9 +7019,8 @@ export default function App() {
             >
               <IconMarquee size={16} />
             </button>
-            <button type="button" aria-label="Upload files" title="Upload files: a picture, a scan, a PDF, a .repx or a data file" onClick={() => fileInputRef.current?.click()}>
-              <IconImage size={16} />
-            </button>
+            {/* Upload files stood here for a day (2026-11-08), a repeat of the
+                box's "+", and went with the workspace's other repeats. */}
           </div>
         )}
         <div className="wb-float wb-float-corner">
@@ -7111,6 +7082,8 @@ export default function App() {
                       else setTheme(choice === 'dark');
                     }}
                     onShortcuts={() => setIsShortcutsOpen(true)}
+                    onCommandMenu={() => setIsCommandOpen(true)}
+                    commandKeys={keysFor('Ctrl+K')}
                     onClose={() => setIsHelpOpen(false)}
                   />
                 </Suspense>

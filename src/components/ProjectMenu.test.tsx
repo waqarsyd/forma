@@ -72,30 +72,16 @@ describe('ProjectMenu', () => {
   });
 });
 
-/* The workspace's main menu since 2026-11-08, from the button at the top
-   left, as Stitch's main menu: the workspace's rows around the project's. */
-describe('the main menu', () => {
-  it('goes to every project, shares, exports, opens Settings, the command menu and the shortcuts, and links help', () => {
-    const rows = { onAllProjects: vi.fn(), onShare: vi.fn(), onExport: vi.fn(), onSettings: vi.fn(), onCommandMenu: vi.fn(), onShortcuts: vi.fn() };
-    const onClose = vi.fn();
-    render(<ProjectMenu name="Invoice" {...handlers()} {...rows} onClose={onClose} commandKeys="Ctrl+K" />);
-    expect(screen.getByRole('menu', { name: 'Main menu' })).toBeTruthy();
-    const names = screen.getAllByRole('menuitem').map((m) => m.textContent);
-    expect(names).toEqual(['Go to all projects', 'Share', 'Export', 'Rename', 'Duplicate', 'Archive', 'Settings', 'Command menu Ctrl+K', 'Keyboard shortcuts ?', 'Help', 'Send feedback', 'Delete']);
-    for (const [label, fn] of [['Go to all projects', rows.onAllProjects], ['Share', rows.onShare], ['Export', rows.onExport], ['Settings', rows.onSettings], [/^Command menu/, rows.onCommandMenu], [/^Keyboard shortcuts/, rows.onShortcuts]] as const) {
-      fireEvent.click(screen.getByRole('menuitem', { name: label }));
-      expect(fn).toHaveBeenCalledTimes(1);
+/* The project's menu again since 2026-11-08: for a day it was the workspace's
+   main menu, and every other row repeated an option with a place of its own,
+   which the owner asked to go. */
+describe('the project menu', () => {
+  it('holds the project\'s own actions and nothing else', () => {
+    render(<ProjectMenu name="Invoice" {...handlers()} />);
+    expect(screen.getByRole('menu', { name: 'Project' })).toBeTruthy();
+    expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Rename', 'Duplicate', 'Archive', 'Delete']);
+    for (const gone of ['Go to all projects', 'Share', 'Export', 'Settings', 'Help', 'Send feedback']) {
+      expect(screen.queryByRole('menuitem', { name: gone })).toBeNull();
     }
-    expect(onClose).toHaveBeenCalled();
-    expect(screen.getByRole('menuitem', { name: 'Help' }).getAttribute('href')).toBe('/docs');
-    expect(screen.getByRole('menuitem', { name: 'Send feedback' }).getAttribute('target')).toBe('_blank');
-  });
-
-  it('offers no Share or Export before there is a report, and holds the project rows until it is saved', () => {
-    render(<ProjectMenu name="Untitled report" onClose={vi.fn()} onAllProjects={vi.fn()} onSettings={vi.fn()} />);
-    expect(screen.queryByRole('menuitem', { name: 'Share' })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: 'Export' })).toBeNull();
-    expect(screen.getByRole('menuitem', { name: 'Go to all projects' })).toBeTruthy();
-    expect((screen.getByRole('menuitem', { name: 'Rename' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

@@ -29,7 +29,7 @@ import { autoNote, modelTiers } from '../lib/modelTiers';
 import { hasOpenLayer } from '../lib/layers';
 import { useLayer } from './useLayer';
 import { useMenuKeys } from './useMenuKeys';
-import { PlusMenu, ToolsMenu } from './BoxMenus';
+import { ToolsMenu } from './BoxMenus';
 import { toolText, type BoxTool } from '../lib/boxTools';
 import {
   IconAlert,
@@ -170,13 +170,7 @@ export interface ComposerProps {
    * back to an empty box, as a terminal's history and Stitch's box do.
    */
   history?: readonly string[];
-  /**
-   * The "/" Tools menu (2026-11-08, lib/boxTools.ts): a tool that names a
-   * change puts its sentence in the box, here; one that is a step of its own
-   * (a check, test data, an export) is handed up to run.
-   */
-  onTool?: (tool: BoxTool) => void;
-  /** A report is open, which most tools need. */
+  /** A report is open, which the "/" Tools need (lib/boxTools.ts). */
   hasReport?: boolean;
   /**
    * The house style switch (2026-11-08), as Stitch's "Use DESIGN.md": on,
@@ -226,18 +220,13 @@ export default function Composer({
   onEditQueued,
   onCancelQueued,
   history = [],
-  onTool,
   hasReport = false,
   houseStyle = null,
 }: ComposerProps) {
-  /* The "+" and "/" menus (2026-11-08), one open at a time. */
-  const [boxMenu, setBoxMenu] = useState<'plus' | 'tools' | null>(null);
-  /** A prompt tool's words into the box, after what is typed, the caret where the person fills in. */
+  /* The "/" Tools menu (2026-11-08). */
+  const [boxMenu, setBoxMenu] = useState<'tools' | null>(null);
+  /** A tool's words into the box, after what is typed, the caret where the person fills in. */
   const insertTool = (tool: BoxTool) => {
-    if (tool.kind !== 'prompt') {
-      onTool?.(tool);
-      return;
-    }
     const { text, caret } = toolText(tool);
     const typed = prompt.replace(/\s+$/, '');
     const base = typed ? `${typed}\n` : '';
@@ -580,31 +569,23 @@ export default function Composer({
       <div className={`wb-box${hasApiKey ? '' : ' wb-is-locked'}`}>
         {/* A plus at the left of the box, as ChatGPT's and Gemini's are
             (2026-11-05, at the owner's request): it was a paperclip. */}
-        {/* A menu since 2026-11-08, as Stitch's "+": upload, or start from an example. */}
+        {/* Upload, straight to the picker, as ChatGPT's and Gemini's plus. It
+            was a menu for a day (2026-11-08) that also offered the starting
+            points, which are the empty workspace's home and the Examples
+            page's; the owner asked for repeated options to go. */}
         <span className="wb-box-plus">
           <button
             type="button"
             className="wb-tool"
-            data-menu-toggle="plus"
             aria-label="Add photos and files"
-            aria-haspopup="menu"
-            aria-expanded={boxMenu === 'plus'}
-            title="Add photos and files: an image, a PDF, a .repx, or data (CSV, Excel, JSON, Word, text, SQL); or start from an example"
-            onClick={() => setBoxMenu((open) => (open === 'plus' ? null : 'plus'))}
+            title="Add photos and files: an image, a PDF, a .repx, or data (CSV, Excel, JSON, Word, text, SQL)"
+            onClick={() => fileInputRef.current?.click()}
             disabled={!hasApiKey}
           >
             <IconPlus size={18} />
           </button>
-          {boxMenu === 'plus' && (
-            <PlusMenu
-              onUpload={() => fileInputRef.current?.click()}
-              onStart={(point) => insertTool({ id: point.id, label: point.title, note: point.gist, kind: 'prompt', text: point.text, needsReport: false })}
-              onClose={() => setBoxMenu(null)}
-            />
-          )}
         </span>
         {/* Tools (2026-11-08), Stitch's "/": typing "/" in an empty box opens it too. */}
-        {onTool && (
           <span className="wb-box-tools">
             <button
               type="button"
@@ -613,7 +594,7 @@ export default function Composer({
               aria-label="Tools"
               aria-haspopup="menu"
               aria-expanded={boxMenu === 'tools'}
-              title="Tools: a total, a group, a column, the paper, a check, test data, an export (/)"
+              title="Tools: a total, a group, a column, the paper, the headings (/)"
               onClick={() => setBoxMenu((open) => (open === 'tools' ? null : 'tools'))}
               disabled={!hasApiKey}
             >
@@ -621,7 +602,6 @@ export default function Composer({
             </button>
             {boxMenu === 'tools' && <ToolsMenu hasReport={hasReport} onPick={insertTool} onClose={() => setBoxMenu(null)} />}
           </span>
-        )}
         <input
           ref={fileInputRef}
           type="file"
@@ -659,7 +639,7 @@ export default function Composer({
               onStop();
               return;
             }
-            if (e.key === '/' && prompt === '' && onTool) {
+            if (e.key === '/' && prompt === '' && hasApiKey) {
               e.preventDefault();
               setBoxMenu('tools');
               return;

@@ -642,54 +642,54 @@ describe('one chat box', () => {
 });
 
 /*
- * The box's "+" and "/" menus and its house style switch (2026-11-08), as
- * Google Stitch's box has them since it changed (lib/boxTools.ts).
+ * The box's "+", its "/" Tools and its house style switch (2026-11-08), as
+ * Google Stitch's box has them since it changed (lib/boxTools.ts). "+" is
+ * the picker again and Tools holds sentences alone since the same day, when
+ * the workspace's repeated options went: the starting points are the home's,
+ * and the check, test data and Export are their own views'.
  */
-describe("the box's menus and its house style", () => {
-  it('opens "+" into Upload files and the examples, and Upload files opens the picker', async () => {
+describe("the box's +, Tools and house style", () => {
+  it('opens the picker straight from "+", with no menu between', () => {
     const fileInputRef = createRef<HTMLInputElement>();
     draw({ fileInputRef });
     const click = vi.fn();
-    fireEvent.click(screen.getByRole('button', { name: 'Add photos and files' }));
     fileInputRef.current!.click = click;
-    expect(screen.getByRole('menu', { name: 'Add' })).toBeTruthy();
-    expect(await screen.findByRole('menuitem', { name: /^Invoice/ })).toBeTruthy();
-    fireEvent.click(screen.getByRole('menuitem', { name: /^Upload files/ }));
-    expect(click).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('menu', { name: 'Add' })).toBeNull();
-  });
-
-  it('puts an example in the box under what is typed', async () => {
-    const onPromptChange = vi.fn();
-    draw({ prompt: 'Two copies', onPromptChange });
     fireEvent.click(screen.getByRole('button', { name: 'Add photos and files' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /^Invoice/ }));
-    expect(onPromptChange.mock.calls[0][0]).toMatch(/^Two copies\nAn invoice\./);
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('opens Tools from "/" in an empty box, and from its button; a sentence tool fills the box, a step is handed up', () => {
+  it('opens Tools from "/" in an empty box and from its button, and a tool fills the box under what is typed', () => {
     const onPromptChange = vi.fn();
-    const onTool = vi.fn();
-    draw({ prompt: '', onPromptChange, onTool, hasReport: true });
+    const { unmount } = draw({ prompt: '', onPromptChange, hasReport: true });
     fireEvent.keyDown(field(), { key: '/' });
     expect(screen.getByRole('menu', { name: 'Tools' })).toBeTruthy();
     fireEvent.click(screen.getByRole('menuitem', { name: /^Add a total/ }));
     expect(onPromptChange).toHaveBeenLastCalledWith('Add a total of  at the end of the report.');
-    expect(onTool).not.toHaveBeenCalled();
+    unmount();
+    const typed = vi.fn();
+    draw({ prompt: 'Two copies', onPromptChange: typed, hasReport: true });
     fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^Export/ }));
-    expect(onTool).toHaveBeenCalledWith(expect.objectContaining({ id: 'export', kind: 'export' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Change the paper/ }));
+    expect(typed).toHaveBeenLastCalledWith('Two copies\nPut the report on A4 landscape.');
   });
 
-  it('holds the report tools until a report is open, and types "/" as a character once words are in the box', () => {
+  it('offers sentences only: no check, no test data and no Export, each being its own view\'s', () => {
+    draw({ hasReport: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
+    const names = screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent);
+    expect(names).toEqual(['Add a total', 'Group the records', 'Add a calculated column', 'Change the paper', 'Restyle the headings']);
+  });
+
+  it('holds the tools until a report is open, and types "/" as a character once words are in the box', () => {
     const onPromptChange = vi.fn();
-    const { unmount } = draw({ onTool: vi.fn(), hasReport: false });
+    const { unmount } = draw({ hasReport: false });
     fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
     const total = screen.getByRole('menuitem', { name: /^Add a total/ }) as HTMLButtonElement;
     expect(total.disabled).toBe(true);
     expect(total.textContent).toContain('With a report open');
     unmount();
-    draw({ prompt: 'A/B', onPromptChange, onTool: vi.fn() });
+    draw({ prompt: 'A/B', onPromptChange });
     fireEvent.keyDown(field(), { key: '/' });
     expect(screen.queryByRole('menu', { name: 'Tools' })).toBeNull();
   });

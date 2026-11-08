@@ -7,7 +7,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import HelpMenu from './HelpMenu';
-import { ANNOUNCEMENTS } from '../lib/announcements';
 
 afterEach(cleanup);
 
@@ -21,13 +20,20 @@ describe('HelpMenu', () => {
     expect(onTheme).toHaveBeenCalledWith('dark');
   });
 
-  it('opens What\'s new on the newest note, and the shortcuts closing the menu', () => {
+  /* One What's new, the changelog, and the command menu beside the shortcuts
+     (2026-11-08): What's new and the changelog were two rows for the same
+     news, and the command menu's row was the main menu's. */
+  it("opens What's new as the changelog, once, and the command menu and the shortcuts, each closing the menu", () => {
     const onShortcuts = vi.fn();
+    const onCommandMenu = vi.fn();
     const onClose = vi.fn();
+    const { unmount } = render(<HelpMenu theme="light" onTheme={vi.fn()} onShortcuts={vi.fn()} onCommandMenu={onCommandMenu} commandKeys="Ctrl+K" onClose={onClose} />);
+    expect(screen.getAllByRole('link', { name: /What's new|Changelog/ }).map((a) => a.getAttribute('href'))).toEqual(['/changelog']);
+    fireEvent.click(screen.getByRole('button', { name: /^Command menu/ }));
+    expect(onCommandMenu).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalled();
+    unmount();
     render(<HelpMenu theme="light" onTheme={vi.fn()} onShortcuts={onShortcuts} onClose={onClose} />);
-    expect(screen.queryByText(ANNOUNCEMENTS[0].title)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /What's new/ }));
-    expect(screen.getByText(ANNOUNCEMENTS[0].title)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Keyboard shortcuts/ }));
     expect(onShortcuts).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();

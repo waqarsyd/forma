@@ -849,10 +849,11 @@ y_top = pageHeight − (baseline + height)`}
                   Click a control to select it, drag it or nudge it with the arrows, double-click to retype it, and
                   right-click for its menu. Ctrl+L puts the selection in the chat, so a request can name it.
                 </Def>
-                <Def t="The main menu and the title">
-                  The button before the project's name opens the main menu: all your projects, Share, Export;
-                  Rename, Duplicate and Archive for a saved project; Settings, the command menu, the keyboard
-                  shortcuts, help and feedback; and Delete. The pin beside the name pins the project on this device.
+                <Def t="The project menu and the title">
+                  The button before the project's name renames, duplicates, archives or deletes a saved project.
+                  The pin beside the name pins it on this device. Each of the workspace's options has one place:
+                  projects and Settings in the sidebar, Share and Export in the bar, help, the shortcuts and the
+                  command menu in the ? at the corner.
                 </Def>
                 <Def t="Save, Share, Export">
                   In the bar above the report. Export opens every format in one panel, the .repx first;{' '}
@@ -870,12 +871,12 @@ y_top = pageHeight − (baseline + height)`}
                   Changed, with Undo and Redo; the eye on a message shows what it changed on the Preview.
                 </Def>
                 <Def t="+, Tools and the house style">
-                  In the box: + uploads files or starts from an example; Tools (the / button, or / typed in an empty
-                  box) puts a request in the box to finish, a total, a group, a column, the paper, the headings, or
-                  runs the accessibility check, test data or Export; the palette turns your house style on or off.
+                  In the box: + uploads files; Tools (the / button, or / typed in an empty box) puts a request in the
+                  box to finish: a total, a group, a column, the paper or the headings; the palette turns your house
+                  style on or off. The examples are on the empty workspace's home.
                 </Def>
                 <Def t="Mark an area">
-                  On the Preview, the rail at the right holds Select, Mark an area and Upload files. Mark (or M) lets you
+                  On the Preview, the rail at the right holds Select and Mark an area. Mark (or M) lets you
                   drag a box over the report: every control in it is selected and goes to the box as one chip, to ask
                   the chat about or to change with the toolbar. V goes back to selecting one at a time.
                 </Def>

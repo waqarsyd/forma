@@ -1,16 +1,16 @@
 /**
  * The corner's help (2026-11-06), as Google Stitch's "?" at the bottom right:
- * the theme as Light, System or Dark, What's new (the notes the landing page's
- * dock shows, from lib/announcements.ts), the keyboard shortcuts, the help
- * pages and a way to send feedback, and the line every AI product owes its
- * reader. Opens upward from its button; Escape or a click elsewhere closes
+ * the theme as Light, System or Dark, What's new (the changelog, since
+ * 2026-11-08), the command menu and the keyboard shortcuts, the help pages
+ * and a way to send feedback, and the line every AI product owes its reader.
+ * The one place for each of those in the workspace since 2026-11-08, when
+ * their repeats elsewhere went at the owner's request. Opens upward from its button; Escape or a click elsewhere closes
  * it. The help pages and the contact page open in a new tab, so the open
  * report stays where it is. See *The conversation floats over the report* in
  * docs/notes/app-shell.md.
  */
-import { useEffect, useRef, useState } from 'react';
-import { ANNOUNCEMENTS } from '../lib/announcements';
-import { IconChevronDown, IconExternal, IconMonitor, IconMoon, IconSun } from './landing/icons';
+import { useEffect, useRef } from 'react';
+import { IconExternal, IconMonitor, IconMoon, IconSun } from './landing/icons';
 import './overlays.css';
 import { useLayer } from './useLayer';
 import { useReturnFocus } from './useMenuKeys';
@@ -21,6 +21,10 @@ interface Props {
   theme: ThemeChoice;
   onTheme: (choice: ThemeChoice) => void;
   onShortcuts: () => void;
+  /** The command menu (Ctrl+K), opened from here since 2026-11-08. */
+  onCommandMenu?: () => void;
+  /** Its keys as this platform writes them, "Ctrl+K" or "⌘K". */
+  commandKeys?: string;
   onClose: () => void;
 }
 
@@ -30,9 +34,8 @@ const THEMES: [ThemeChoice, string, typeof IconSun][] = [
   ['dark', 'Dark', IconMoon],
 ];
 
-export default function HelpMenu({ theme, onTheme, onShortcuts, onClose }: Props) {
+export default function HelpMenu({ theme, onTheme, onShortcuts, onCommandMenu, commandKeys = 'Ctrl+K', onClose }: Props) {
   const box = useRef<HTMLDivElement>(null);
-  const [news, setNews] = useState(false);
   useEffect(() => {
     const away = (e: PointerEvent) => {
       // The "?" that opened it toggles it itself.
@@ -66,25 +69,22 @@ export default function HelpMenu({ theme, onTheme, onShortcuts, onClose }: Props
           </button>
         ))}
       </div>
-      <button type="button" className="wb-help-row" aria-expanded={news} onClick={() => setNews((open) => !open)}>
-        <span>What's new</span>
-        <IconChevronDown size={14} />
-      </button>
-      {news && (
-        <ul className="wb-help-news">
-          {ANNOUNCEMENTS.map((a) => (
-            <li key={a.id}>
-              <b>{a.title}</b> <time dateTime={a.date}>{a.date}</time>
-              <p>{a.body}</p>
-            </li>
-          ))}
-        </ul>
-      )}
-      {/* Every release, not only the ones announced here (2026-11-07). */}
+      {/* What's new is the changelog, every release (2026-11-08): it was two
+          rows, the dock's announcements unfolding here and the changelog
+          beside them, the same news twice, and the owner asked for repeats to
+          go. Settings' version line linked it a third time. */}
       <a className="wb-help-row" href="/changelog" target="_blank" rel="noopener">
-        <span>Changelog</span>
+        <span>What's new</span>
         <IconExternal size={13} />
       </a>
+      {/* The command menu here, beside the shortcuts (2026-11-08): its row was
+          the main menu's, which went back to being the project's menu. */}
+      {onCommandMenu && (
+        <button type="button" className="wb-help-row" onClick={() => { onClose(); onCommandMenu(); }}>
+          <span>Command menu</span>
+          <kbd>{commandKeys}</kbd>
+        </button>
+      )}
       <button type="button" className="wb-help-row" onClick={() => { onClose(); onShortcuts(); }}>
         <span>Keyboard shortcuts</span>
         <kbd>?</kbd>
