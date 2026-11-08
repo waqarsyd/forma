@@ -75,6 +75,17 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-08-app-check',
+    date: '2026-11-08',
+    version: '1.1.1',
+    title: 'A check that requests come from Forma',
+    summary:
+      'Requests to Forma’s database now carry a check from Google reCAPTCHA, through Firebase App Check, that they come from Forma’s own pages. It runs only once you sign in or open a shared report.',
+    changes: [
+      { kind: 'security', area: 'workspace', text: 'Requests to Forma’s database carry a token from Google reCAPTCHA, through Firebase App Check, showing they come from Forma’s own pages. It runs only once you sign in or open a shared report, never while you read a public page, and the privacy policy names it.' },
+    ],
+  },
+  {
     id: '2026-11-07-chat-keeps-its-word',
     date: '2026-11-07',
     // Tagged and released on GitHub by the deploy that publishes it (item 43).

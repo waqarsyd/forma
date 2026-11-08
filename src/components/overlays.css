@@ -118,6 +118,7 @@
 .wb-shared-foot nav { display: flex; gap: 14px; }
 .wb-shared-foot a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; }
 .wb-shared-foot a:hover { color: var(--ink); }
+.wb-shared-recaptcha { flex-basis: 100%; text-align: center; font-size: 11.5px; color: var(--ink-faint); }
 
 /* The pin beside the title (PinProject.tsx); a star and thumbs until 2026-11-06. */
 .wb-rate { display: inline-flex; align-items: center; gap: 1px; align-self: center; }

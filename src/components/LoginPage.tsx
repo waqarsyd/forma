@@ -6,6 +6,7 @@ import Logo from './Logo';
 import SiteFooter from './SiteFooter';
 import { currentPath, navigate, onRouteChange } from '../lib/router';
 import { MIN_PASSWORD } from '../lib/passwordPolicy';
+import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
 import { IconEye, IconEyeOff, IconClose, IconWarn, IconInfo, IconSun, IconMoon } from './landing/icons';
 
 interface LoginPageProps {
@@ -692,6 +693,24 @@ export default function LoginPage({
               </svg>
               <span>{signup ? 'Sign up with Google' : 'Sign in with Google'}</span>
             </button>
+
+            {APP_CHECK_SITE_KEY && (
+              /* reCAPTCHA's notice (2026-11-08), which Google asks for wherever
+                 its badge is hidden: the badge is hidden in index.css because it
+                 sat over the workspace's corner buttons, and App Check (lib/appCheck.ts)
+                 starts once someone signs in. */
+              <p className="mt-3 text-center font-body-lg text-[11.5px] leading-[1.5] text-[color:var(--ink-faint)]">
+                This site is protected by reCAPTCHA, and Google&apos;s{' '}
+                <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" className="u-focus-ring underline hover:text-on-surface">
+                  Privacy Policy
+                </a>{' '}
+                and{' '}
+                <a href="https://policies.google.com/terms" target="_blank" rel="noopener" className="u-focus-ring underline hover:text-on-surface">
+                  Terms of Service
+                </a>{' '}
+                apply.
+              </p>
+            )}
 
             {/* People arrive here having been told Forma needs a Gemini key,
                 and this screen asks for a password. Saying which is which at

@@ -185,7 +185,8 @@ function directives(development: boolean): Record<string, string[]> {
     // SDK also mounts a hidden iframe on the auth domain to carry the result.
     // 'self' once sign-in runs on the site's own host (lib/authDomain.ts, item
     // 98), whose /__/auth/ iframe is then this origin's; reCAPTCHA's frame
-    // once App Check has a key (lib/appCheck.ts, item 56). Neither today.
+    // once App Check has a key (lib/appCheck.ts, item 56): App Check's since
+    // 2026-11-08, the site's own sign-in host not yet.
     'frame-src': [
       ...(OWN_AUTH_HOSTS.length ? ["'self'"] : []),
       'https://*.firebaseapp.com',

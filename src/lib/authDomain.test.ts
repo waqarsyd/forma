@@ -21,13 +21,17 @@ describe('authDomainFor', () => {
   });
 });
 
-describe('both are off today, and the policy says no more than that', () => {
-  it('lists no host and sets no key, so the CSP gains no origin for either', () => {
+describe('what is on today, and the policy says no more than that', () => {
+  /* App Check since 2026-11-08, when the owner created the reCAPTCHA key: its
+     script and frame, and its token exchange, enter the CSP with it, and
+     nothing else does. Sign-in's own hosts are still unlisted. */
+  it('App Check is on, with exactly its origins in the CSP; sign-in still on the default host', () => {
     expect(OWN_AUTH_HOSTS).toEqual([]);
-    expect(APP_CHECK_SITE_KEY).toBe('');
+    expect(APP_CHECK_SITE_KEY).toMatch(/^6L[\w-]{38}$/);
     const csp = buildContentSecurityPolicy(false);
-    expect(csp).not.toContain('recaptcha');
-    expect(csp).not.toContain('firebaseappcheck');
+    expect(csp).toMatch(/script-src [^;]*https:\/\/www\.google\.com\/recaptcha\/ https:\/\/www\.gstatic\.com\/recaptcha\//);
+    expect(csp).toMatch(/frame-src [^;]*https:\/\/www\.google\.com\/recaptcha\/ https:\/\/recaptcha\.google\.com\/recaptcha\//);
+    expect(csp).toMatch(/connect-src [^;]*https:\/\/content-firebaseappcheck\.googleapis\.com/);
     expect(csp).toMatch(/frame-src https:\/\/\*\.firebaseapp\.com/);
   });
 });

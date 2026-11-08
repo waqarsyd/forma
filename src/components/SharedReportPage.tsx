@@ -9,6 +9,7 @@
  */
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { loadFirebase } from '../lib/firebaseClient';
+import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
 import { readSharedReport, type SharedReport } from '../lib/shares';
 import type { ReportLayout } from '../lib/reportTypes';
 import { IconDownload } from './landing/icons';
@@ -138,6 +139,14 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
           <a href="/terms">Terms</a>
           <a href="/contact#form">Report this link</a>
         </nav>
+        {/* reCAPTCHA's notice in place of its hidden badge (2026-11-08): App
+            Check runs when a shared report is read, as LoginPage says. */}
+        {APP_CHECK_SITE_KEY && (
+          <small className="wb-shared-recaptcha">
+            Protected by reCAPTCHA: Google&apos;s <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacy Policy</a> and{' '}
+            <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Terms of Service</a> apply.
+          </small>
+        )}
       </footer>
     </div>
   );

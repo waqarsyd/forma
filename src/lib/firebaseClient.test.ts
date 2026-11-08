@@ -11,9 +11,22 @@ import { describe, expect, it, vi } from 'vitest';
  * only the order they load in changes. So the loaders are checked against
  * mocks, and the imports that would undo them against the source.
  */
-const state = vi.hoisted(() => ({ firestoreLoads: 0, accountDataLoads: 0 }));
+const state = vi.hoisted(() => ({ firestoreLoads: 0, accountDataLoads: 0, appCheckLoads: 0, appCheckApps: [] as unknown[] }));
 
 vi.mock('../services/firebase', () => ({ app: { name: 'test-app' }, firestoreDatabaseId: 'test-db' }));
+/* App Check, on since the owner's reCAPTCHA key (2026-11-08): started once,
+   on the auth client's app, and only on the way to the database. */
+vi.mock('firebase/app-check', () => {
+  state.appCheckLoads++;
+  return {
+    initializeAppCheck: vi.fn((app: unknown) => {
+      state.appCheckApps.push(app);
+    }),
+    ReCaptchaV3Provider: class {
+      constructor(readonly siteKey: string) {}
+    },
+  };
+});
 vi.mock('firebase/firestore', () => {
   state.firestoreLoads++;
   return { getFirestore: vi.fn((app: unknown, id: string) => ({ app, id })) };
@@ -30,6 +43,8 @@ describe('firebaseClient', () => {
     expect(client.service.app).toEqual({ name: 'test-app' });
     expect(state.firestoreLoads).toBe(0);
     expect(state.accountDataLoads).toBe(0);
+    // A signed-out reader never loads reCAPTCHA.
+    expect(state.appCheckLoads).toBe(0);
     expect(await loadAuth()).toBe(client);
   });
 
@@ -41,6 +56,7 @@ describe('firebaseClient', () => {
     expect(state.firestoreLoads).toBe(1);
     expect(state.accountDataLoads).toBe(1);
     expect(await loadFirebase()).toBe(client);
+    expect(state.appCheckApps).toEqual([{ name: 'test-app' }]);
   });
 
   const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');

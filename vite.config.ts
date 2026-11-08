@@ -443,6 +443,12 @@ export default defineConfig(() => {
             if (/node_modules[\\/](@firebase[\\/](firestore|webchannel-wrapper)|firebase[\\/]firestore)[\\/]/.test(id)) {
               return 'firestore';
             }
+            // App Check (2026-11-08), a third chunk: lib/appCheck.ts imports it
+            // only on the way to the database, and named into `firebase` it
+            // put 13 kB in front of every page instead.
+            if (/node_modules[\\/](@firebase[\\/]app-check|firebase[\\/]app-check)[\\/]/.test(id)) {
+              return 'appcheck';
+            }
             if (id.includes('node_modules/@firebase') || id.includes('node_modules/firebase')) {
               return 'firebase';
             }

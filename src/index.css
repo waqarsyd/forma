@@ -1169,3 +1169,7 @@ body {
     text-decoration: none;
 }
 .wb-fault-actions > *:hover { background: var(--color-surface-container-low, #f8fafd); }
+/* reCAPTCHA v3's badge (App Check, 2026-11-08) sat over the workspace's corner
+   buttons; Google allows hiding it where its notice is shown instead, which
+   LoginPage and SharedReportPage do. */
+.grecaptcha-badge { visibility: hidden; }

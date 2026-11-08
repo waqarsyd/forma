@@ -1,6 +1,8 @@
 /**
  * Firebase App Check (2026-11-08, the site audit's batch SH, item 56).
- * Prepared, and off until the owner sets the key below.
+ * On since 2026-11-08 (release 1.1.1): the owner created the key (step 1) and
+ * the site key below is step 3. Step 2, its secret in the Firebase console's
+ * App Check, is done there; step 4, enforcement, waits on a week of metrics.
  *
  * Without it any program holding the public Firebase key can call the
  * database's REST API as if it were this site: sign up, write, read link
@@ -21,13 +23,20 @@
  *    Firestore. Enforcing before step 3 has reached every visitor locks them
  *    out of their saved projects.
  */
-export const APP_CHECK_SITE_KEY = '';
+// reCAPTCHA v3, created by the owner on 2026-11-08 in the Forma-Dev project
+// (forma-201ba) for openforma.web.app, forma-201ba.web.app and localhost. A
+// site key is public by design (every page that uses it carries it); the
+// secret is in the Firebase console only. Enforcement waits on step 4.
+export const APP_CHECK_SITE_KEY = '6LdJrhYuAAAAAEuymM54-Xzf0YbXljEetcJ6GxIV';
 
 /** What the CSP must allow once the key is set: reCAPTCHA's script and frame, and App Check's token exchange. */
 export const APP_CHECK_ORIGINS = {
   script: ['https://www.google.com/recaptcha/', 'https://www.gstatic.com/recaptcha/'],
   frame: ['https://www.google.com/recaptcha/', 'https://recaptcha.google.com/recaptcha/'],
-  connect: ['https://content-firebaseappcheck.googleapis.com'],
+  // reCAPTCHA's own script also posts to /recaptcha/api2/ from the page, which
+  // the CSP refused when the key was first set (2026-11-08); a refused call
+  // can lower its score, and App Check turns a low score away.
+  connect: ['https://content-firebaseappcheck.googleapis.com', 'https://www.google.com/recaptcha/'],
 } as const;
 
 /** Starts App Check for the app once, when the key is set; nothing otherwise. */

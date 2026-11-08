@@ -141,6 +141,13 @@ describe('buildContentSecurityPolicy', () => {
       'http://localhost:1234',
       'http://127.0.0.1:1234',
       'https://openrouter.ai',
+      // App Check's token exchange (2026-11-08, site audit item 56), decided
+      // when the owner set the reCAPTCHA key: it carries a reCAPTCHA token for
+      // a Firebase one, from a page using the database, and no report data.
+      'https://content-firebaseappcheck.googleapis.com',
+      // reCAPTCHA's own calls from its script, path-limited to /recaptcha/,
+      // which the browser refused until they were listed (the same day).
+      'https://www.google.com/recaptcha/',
     ]);
   });
 
