@@ -76,10 +76,11 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 export const RELEASES: Release[] = [
   {
     id: '2026-11-08-sql-server',
-    date: '2026-11-08',
-    title: 'Your SQL Server database, with no connection',
+    date: '2026-11-09',
+    version: '1.2.0',
+    title: 'Your SQL Server database, in your reports',
     summary:
-      'Run one read-only script in SSMS and drop its result in the box: Forma reads your database\u2019s tables, views, keys and stored procedures, what each procedure returns included, without ever connecting to it. The layout stays in your browser.',
+      'Run one read-only script in SSMS and drop its result in the box: Forma reads your database\u2019s tables, views, keys and stored procedures without connecting to it, and a report reads your database by connection name, as DevExpress writes it, never with a password. The AI binds to your real columns when you share the layout, the Preview prints your sample rows as DevExpress would, a report is checked against a newer export, and on your own PC the companion reads the database itself.',
     changes: [
       { kind: 'new', area: 'data', text: 'A database\u2019s layout, from Forma\u2019s read-only script or an SSMS \u201cGenerate Scripts\u201d file, attached in the box or pasted on the Data tab: tables, views, keys, and each stored procedure\u2019s parameters, defaults and result columns, read without running it, with the reason when a procedure cannot be described. Kept in this browser, never in the cloud.' },
       { kind: 'new', area: 'data', text: 'Sample rows from the tables you pick, by a second read-only script, so the AI can match a printed column to the right field by what it holds.' },
