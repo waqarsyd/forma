@@ -313,9 +313,16 @@ describe('the legal copy and its date change together', () => {
      the date is already that day's. The governing-law clause the owner chose
      (the laws of India) joined the terms the same day: substantive, and
      again already that day's date. So did the box's house style switch the
-     same day, which local storage keeps and the policy now names. */
-  const EXPECTED_COPY_HASH = 'c2c6ca46d5de';
-  const EXPECTED_UPDATED = '8 November 2026';
+     same day, which local storage keeps and the policy now names.
+
+     Moved again on 2026-11-09 for the SQL Server programme (checklist item
+     32): a shared database's names and sample values go to the AI only when
+     the user shares it, no connection string, login or password is ever
+     asked for, stored or sent, the layouts kept in IndexedDB are named, and
+     signing out now deletes them (lib/signOut.ts, forgetDevice).
+     Substantive, so the date moved. */
+  const EXPECTED_COPY_HASH = 'f3b2b8a25f5b';
+  const EXPECTED_UPDATED = '9 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);

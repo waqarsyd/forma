@@ -58,27 +58,28 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
   { id: 'run', n: '06', title: 'Running and refining', keys: 'run generate working dots stop escape queue steer resume cancel read result specification mockup preview export refine change edit undo redo changed iterate conversation' },
   { id: 'workspace', n: '07', title: 'The workspace', keys: 'workspace tour sidebar rail home starting points views panes conversation panel thread search tools house style main menu reply project menu rename duplicate archive delete pin command menu clean screen zoom' },
   { id: 'data', n: '08', title: 'Data and binding', keys: 'data tab bind binding fields schema json csv create table map columns expression prompt-to-expression test data rows sample' },
+  { id: 'sql', n: '09', title: 'Your SQL Server data', keys: 'sql server database ssms script layout schema sample rows connection name connectionstrings app.config stored procedure query join filter parameter lookup drift renamed column share ai never connects' },
   // xrchart and xrgauge are searchable because both are now written into the
   // file — a real XRChart with its series, and a real XRGauge with its value
   // and range. This comment used to say the opposite, and was left behind by
   // the work that added them.
-  { id: 'controls', n: '09', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrpageinfo pageinfo page numbers xrchart xrgauge chart gauge xrcheckbox checkbox xrpanel panel xrshape shape crossband cross-band xrcrosstab cross-tab pivot xrsubreport subreport table of contents elements supported' },
-  { id: 'repx', n: '10', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download audit warnings errors checks accessibility' },
-  { id: 'config', n: '11', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
-  { id: 'saving', n: '12', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
-  { id: 'share', n: '13', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
-  { id: 'memory', n: '14', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting' },
+  { id: 'controls', n: '10', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrpageinfo pageinfo page numbers xrchart xrgauge chart gauge xrcheckbox checkbox xrpanel panel xrshape shape crossband cross-band xrcrosstab cross-tab pivot xrsubreport subreport table of contents elements supported' },
+  { id: 'repx', n: '11', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download audit warnings errors checks accessibility' },
+  { id: 'config', n: '12', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
+  { id: 'saving', n: '13', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
+  { id: 'share', n: '14', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
+  { id: 'memory', n: '15', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting' },
   /* Batch and Revisions are two of the five rail panels and both shipped on
      2026-09-05, and neither appeared anywhere on this page or on Features
      until 2026-09-08 — on a page whose sibling is titled "Everything it does".
      Batch in particular is the migration story: it is the thing a
      prompt-driven competitor structurally cannot offer, and it was the one
      feature a visitor could not discover without opening the app. */
-  { id: 'batch', n: '15', title: 'Batch generation', keys: 'batch bulk many folder drop queue multiple files parallel two three zip archive migration legacy convert retry stop download all at once' },
-  { id: 'revisions', n: '16', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
-  { id: 'shortcuts', n: '17', title: 'Keyboard shortcuts', keys: 'keyboard shortcuts keys hotkeys ctrl cmd command' },
-  { id: 'trouble', n: '18', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem draft local not answering context sign in login pop-up popup password' },
-  { id: 'faq', n: '19', title: 'FAQ', keys: 'faq questions common help cost price free billing visual studio photo' },
+  { id: 'batch', n: '16', title: 'Batch generation', keys: 'batch bulk many folder drop queue multiple files parallel two three zip archive migration legacy convert retry stop download all at once' },
+  { id: 'revisions', n: '17', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
+  { id: 'shortcuts', n: '18', title: 'Keyboard shortcuts', keys: 'keyboard shortcuts keys hotkeys ctrl cmd command' },
+  { id: 'trouble', n: '19', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem draft local not answering context sign in login pop-up popup password' },
+  { id: 'faq', n: '20', title: 'FAQ', keys: 'faq questions common help cost price free billing visual studio photo' },
 ];
 
 /** The furniture the newer articles share (2026-11-08). */
@@ -925,6 +926,74 @@ y_top = pageHeight − (baseline + height)`}
                 <strong className="font-semibold text-on-surface">Test data</strong> on the Preview's toolbar asks
                 the AI for up to twenty made-up rows, one request, so you can see the report page, group and total
                 as it will with real records. They are never written into the file, and Clear takes them away.
+              </Note>
+            </Article>
+
+            {/* The SQL Server programme (2026-11-09, batch DH, checklist item 31). Every number below is
+                read from the code by publicClaims.test.ts. */}
+            <Article id="sql" kicker="Guide" title="Your SQL Server data" hidden={!matches('sql')}>
+              <p className={PROSE}>
+                Forma never connects to your server. It reads your database’s layout from a script you run
+                yourself, writes the report’s data source the way DevExpress does, and leaves the connection to
+                your application, which already has it. The steps are on the{' '}
+                <strong className="font-semibold text-on-surface">Data</strong> view.
+              </p>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="1 · The layout script">
+                  Copy the layout script and run it in SSMS on your database. It reads SQL Server’s catalog only:
+                  no rows, no logins, nothing changed. Click its one result cell, copy all of it, and paste it on
+                  the Data view or drop the file into the chat. Up to 5 databases are kept in this browser.
+                </Def>
+                <Def t="2 · Sample rows, if you like">
+                  A second read-only script takes 5 rows from each table the report reads, so columns can be matched
+                  by the values they print and the Preview can show real rows. Forma keeps at most 10 rows a table
+                  and 200 characters a value.
+                </Def>
+                <Def t="3 · What the report reads">
+                  A table or view with the joins its foreign keys suggest, a stored procedure, or custom SQL: one
+                  SELECT, checked against the layout, so a table or column your database does not have is refused.
+                  A table pointing back, such as an order’s lines, prints as a detail band under each record.
+                </Def>
+                <Def t="4 · Into the report">
+                  <strong className="font-semibold text-on-surface">Write into the report</strong> writes DevExpress’s
+                  own SQL data source, its parameters (several values, a list of values, one list depending on
+                  another) and calculated fields. The connection is a name, as your application’s config knows it,
+                  never a connection string or a password.
+                </Def>
+                <Def t="5 · In your application">
+                  The Spec shows the <code className="doc-code">connectionStrings</code> entry the name needs and the
+                  code that runs the report.
+                </Def>
+              </dl>
+              <div className="mt-5 overflow-hidden rounded-[10px] border border-outline-variant">
+                <div className="flex items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-low px-3.5 py-2.5">
+                  <span className={KICKER}>app.config</span>
+                  <span className={`${KICKER} text-secondary`}>your server, your login</span>
+                </div>
+                <pre className="m-0 overflow-x-auto bg-[color:var(--code-bg)] p-4 font-code-sm text-[11.5px] leading-[1.75] text-[color:var(--code-ink)]">
+{`<connectionStrings>
+  <add name="Sales" providerName="System.Data.SqlClient"
+       connectionString="Data Source=YOUR_SERVER;Initial Catalog=Sales;Integrated Security=True" />
+</connectionStrings>
+
+var report = XtraReport.FromFile("report.repx", true);
+report.ExportToPdf("report.pdf");`}
+                </pre>
+              </div>
+              <Note label="What the AI sees" tone="safe">
+                Nothing of your database unless you share it: attaching the layout in the chat shares it, and{' '}
+                <strong className="font-semibold text-on-surface">Send names and sample values to the AI</strong> on
+                the Data view says which and turns it off. Shared, a report designed or changed in the chat is given
+                the 12 likeliest tables, views and procedures for your request, with up to 3 sample values a column,
+                and binds to your real columns; Forma checks every name it uses and writes the data source itself.
+              </Note>
+              <Note label="A report that already has one">
+                Its data source shows on the Data view, a redesign keeps it, and with a newer export it is checked
+                for a renamed or missing column, a changed type or a stored procedure’s changed parameters, each
+                with its fix. It matters: DevExpress refuses to print a report whose query names a column your
+                database no longer has. On the Preview,{' '}
+                <strong className="font-semibold text-on-surface">Sample rows</strong> prints your sample rows,
+                typed as SQL Server hands them to DevExpress.
               </Note>
             </Article>
 

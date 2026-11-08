@@ -41,7 +41,7 @@ import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
  * Corrected, along with the deletion note, which knew about deleting projects
  * one at a time and not about Clear all.
  */
-const UPDATED = '8 November 2026';
+const UPDATED = '9 November 2026';
 
 type Section = { heading: string; paragraphs: string[] };
 
@@ -133,6 +133,7 @@ const PRIVACY: Section[] = [
     heading: 'What the AI providers do with your requests',
     paragraphs: [
       'Your browser sends your files, your words and the report straight to the AI you chose, and that provider’s terms decide what happens to them next. Forma’s own server is never in the path.',
+      'Your SQL Server database: its table, view, procedure and column names, and up to three sample values a column, go with your requests only if you share it with the AI, by attaching its layout in the chat or with “Send names and sample values to the AI” on the Data view, which also turns it off. Otherwise none of it is sent. Forma never asks for, stores or sends a connection string, a login or a password: a report names its connection, and your application supplies it.',
       'Google Gemini: on the free tier, Google’s terms say it may use what you send and what comes back to improve its products, and that people may read it to do so. Do not send confidential or personal information with a free-tier key. With billing turned on, Google says it does not use them that way.',
       'OpenRouter: its free models come from providers that may log and keep your requests.',
       'A local AI (Ollama or LM Studio on your computer): the request never leaves your machine. For a confidential report, this is the choice to make.',
@@ -159,8 +160,8 @@ const PRIVACY: Section[] = [
       'Signed out, your projects are saved automatically in your browser’s local storage on that machine only — the conversation, the report, your attachments and your ratings — and Forma asks the browser to keep them rather than clear them to free space. Revisions last only while the tab is open. Settings, under General, downloads every project you saved, signed in or not.',
       'Local storage also keeps: the theme; the DevExpress version and unit last used; the AI you chose, with its server address and model, never a key; your memories and the style of reports you kept; which projects you pinned or archived; which library reports are your house style, and whether it is used; the workspace’s layout; today’s request counts and the daily limits Google reported; the models your key can reach, with a short fingerprint of the key rather than the key; and the last announcement you saw.',
       'Session storage, which the browser erases when the tab closes, keeps your keys, the unsent text in the box and any messages waiting in the queue, the open project, the changes a reply’s Undo can take back, and the model in use.',
-      'IndexedDB keeps the report library — the stripped reports you add and their index — and, once you sign in, Firebase’s record that you are signed in.',
-      'None of this is a cookie, nothing but Forma in this browser reads it, and all of it is there only to make Forma work, which is why there is no cookie banner. Clearing your browser storage removes it. Signing out clears the workspace — the uploads, the extracted text and the generated report — so the next person at that browser does not see your work.',
+      'IndexedDB keeps the report library — the stripped reports you add and their index —, the SQL Server layouts you add with any sample rows, up to five databases, until you forget them on the Data view or sign out, and, once you sign in, Firebase’s record that you are signed in.',
+      'None of this is a cookie, nothing but Forma in this browser reads it, and all of it is there only to make Forma work, which is why there is no cookie banner. Clearing your browser storage removes it. Signing out clears the workspace — the uploads, the extracted text, the generated report and the database layouts kept on this device — so the next person at that browser does not see your work.',
     ],
   },
   {

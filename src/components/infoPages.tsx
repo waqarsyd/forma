@@ -235,7 +235,7 @@ export const EXAMPLES: InfoDoc = {
 export const COMPARE: InfoDoc = {
   eyebrow: 'Compare and migrate',
   title: 'Forma beside DevExpress’s own AI, and moving reports in.',
-  reviewed: '8 November 2026',
+  reviewed: '9 November 2026',
   lede: (
     <p>
       Forma writes DevExpress reports, so the honest comparison is with DevExpress’s own AI features, and the useful
@@ -266,6 +266,7 @@ export const COMPARE: InfoDoc = {
           <li><span className={STRONG}>Free, and in a browser.</span> No subscription and nothing to install; a free Gemini key, a local AI or OpenRouter’s free models.</li>
           <li><span className={STRONG}>From what you already have.</span> A screenshot, a scan, a PDF or a .repx, read with OCR in your browser, as well as a description.</li>
           <li><span className={STRONG}>Checked as DevExpress prints.</span> A Preview that pages the report as DevExpress does, exports, and an audit for what the designer would drop.</li>
+          <li><span className={STRONG}>Your SQL Server database without a connection.</span> DevExpress’s Data Source Wizard connects to the server; Forma reads its layout from a read-only script you run, writes DevExpress’s own SQL data source by connection name, and checks a report against a newer export. <a href="/docs#sql" className={A}>How</a></li>
           <li><span className={STRONG}>Not a designer.</span> Forma writes the .repx; DevExpress’s designer is still where a report is finished, and its subscription is still what runs it in your application.</li>
         </ul>
       ),

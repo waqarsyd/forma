@@ -3752,8 +3752,9 @@ export default function App() {
     keptQueue.current = null;
     setRailPanel('review');
     // And every session key a sign-out removes, the list the public site
-    // uses too (lib/signOut.ts, 2026-11-08).
+    // uses too (lib/signOut.ts, 2026-11-08), and the database layouts kept here (2026-11-09).
     forgetSession();
+    setActiveDatabase(null);
   };
   useEffect(() => {
     forgetSignedOutRef.current = forgetSignedOut;

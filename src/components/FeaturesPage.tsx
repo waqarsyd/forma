@@ -70,6 +70,12 @@ const FORMATS = [
     title: 'The data it will print',
     body: 'A CSV, TSV, JSON, text, SQL, Excel or Word file is read in your browser for its columns and first rows, so the report is bound to the fields you actually have.',
   },
+  {
+    Icon: IconGrid,
+    kind: 'SQL Server',
+    title: 'Your SQL Server database',
+    body: 'Its layout, from a read-only script you run in SSMS, and a few sample rows if you like. Forma never connects to your server: the report reads your database by connection name, as your application’s config knows it, never with a password.',
+  },
 ];
 
 /* ------------------------------------------------------------------- setup */
@@ -109,8 +115,8 @@ const SETUP: Array<{ Icon: typeof IconText; k: string; v: string; d: string }> =
   {
     Icon: IconStack,
     k: 'Data',
-    v: 'fields · a stored procedure',
-    d: 'The fields from a data file you attach or the columns your words name, and a stored procedure from your words or your data.',
+    v: 'fields · a SQL Server query · a stored procedure',
+    d: 'The fields from a data file you attach or the columns your words name. With your SQL Server database’s layout shared, the table, view or procedure the AI chose, every name checked against the layout and written as DevExpress’s own data source.',
   },
 ];
 
@@ -235,6 +241,13 @@ const CARRIES: Array<{ Icon: typeof IconText; k: string; d: string; mock: Cell; 
     d: 'Kept from a report you bring: Forma does not invent a subreport. A table of contents is built from the report’s bookmarks.',
     mock: { mark: 'standin', note: 'labelled box' },
     repx: { mark: 'full', note: 'XRSubreport' },
+  },
+  {
+    Icon: IconGrid,
+    k: 'A SQL Server data source',
+    d: 'Its queries, joins, parameters, lookup lists and master-detail bands, by connection name, as DevExpress writes them; the Preview prints your sample rows typed as SQL Server hands them over, and the Data tab checks the report against a newer export of your database.',
+    mock: { mark: 'standin', note: 'Preview' },
+    repx: { mark: 'full', note: 'SqlDataSource' },
   },
 ];
 

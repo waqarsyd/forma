@@ -89,6 +89,8 @@ export interface SqlSchema {
 /** Rows kept per object and characters kept per value, whatever the script returned. */
 export const MAX_SAMPLE_ROWS = 10;
 export const MAX_SAMPLE_VALUE = 200;
+/** Sample values per column the AI is shown, when the database is shared with it (the Docs page states it). */
+export const AI_SAMPLE_VALUES = 3;
 
 /* ------------------------------------------------------------- types */
 
@@ -570,7 +572,7 @@ export function summarizeSamples(samples: Record<string, Record<string, unknown>
 /** Sample rows on their own, before the layout they belong to has been read. */
 export function samplesForAi(database: string, samples: Record<string, Record<string, unknown>[]>): string {
   const lines = [`SAMPLE ROWS from database "${database || 'unnamed'}". Bind the report's fields to these column names exactly.`];
-  for (const [name, rows] of Object.entries(samples)) lines.push(`- ${name}: ${JSON.stringify(rows.slice(0, 3))}`);
+  for (const [name, rows] of Object.entries(samples)) lines.push(`- ${name}: ${JSON.stringify(rows.slice(0, AI_SAMPLE_VALUES))}`);
   return lines.join('\n');
 }
 
@@ -583,7 +585,7 @@ function sampleText(rows: Record<string, unknown>[] | undefined, columns: string
   if (!rows?.length) return '';
   const values = columns
     .map((name) => {
-      const seen = rows.map((r) => r[name]).filter((v) => v !== null && v !== undefined && v !== '').slice(0, 3);
+      const seen = rows.map((r) => r[name]).filter((v) => v !== null && v !== undefined && v !== '').slice(0, AI_SAMPLE_VALUES);
       return seen.length ? `${name}=${seen.map((v) => JSON.stringify(v)).join('|')}` : '';
     })
     .filter(Boolean);

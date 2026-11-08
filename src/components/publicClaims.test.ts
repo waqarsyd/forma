@@ -19,6 +19,10 @@ import { MAX_ATTACHMENTS, MAX_FILE_BYTES, MAX_PDF_PAGES } from '../lib/attachmen
 import { MIN_PASSWORD } from '../lib/passwordPolicy';
 import { MAX_PERSISTED_REVISIONS } from '../lib/revisionStore';
 import { STARTING_POINTS } from '../lib/startingPoints';
+import { AI_SAMPLE_VALUES, MAX_SAMPLE_ROWS, MAX_SAMPLE_VALUE } from '../lib/sqlSchema';
+import { SAMPLE_SCRIPT_ROWS } from '../lib/sqlSchemaScript';
+import { MAX_DATABASES } from '../lib/sqlSchemaStore';
+import { MAX_AI_OBJECTS } from '../lib/databaseAi';
 
 const page = (name: string) => readFileSync(`src/components/${name}.tsx`, 'utf8');
 const landing = page('LandingPage');
@@ -53,6 +57,8 @@ describe('the public pages do not claim what Forma no longer does', () => {
     ['a docs fix promised for feedback nobody receives', /gets fixed in the next pass/],
     // Batch SE (2026-11-08): projects are saved as you work.
     ['a project saved only when you choose to', /Projects you choose to save|Save the session to your account|sign in and save a project/],
+    // The SQL Server programme (2026-11-09): Forma reads a layout you export; it never connects.
+    ['a connection to your database', /Forma (connects|logs in) to your (SQL Server|database|server)|live connection to your/i],
   ])('no longer claims %s', (_what, pattern) => {
     expect(all).not.toMatch(pattern);
   });
@@ -115,6 +121,16 @@ describe('what the pages state, the code answers', () => {
       expect(said.length).toBeGreaterThan(0);
       for (const n of said) expect(n).toBe(MAX_PERSISTED_REVISIONS);
     }
+  });
+
+  it('gives the numbers the SQL Server article states, from the code (2026-11-09)', () => {
+    expect(numbers(docs, /Up to (\d+) databases/gi)).toEqual([MAX_DATABASES]);
+    expect(numbers(docs, /takes (\d+) rows from each table/gi)).toEqual([SAMPLE_SCRIPT_ROWS]);
+    expect(numbers(docs, /at most (\d+) rows a table/gi)).toEqual([MAX_SAMPLE_ROWS]);
+    expect(numbers(docs, /(\d+) characters a value/gi)).toEqual([MAX_SAMPLE_VALUE]);
+    expect(numbers(docs, /the (\d+) likeliest/gi)).toEqual([MAX_AI_OBJECTS]);
+    expect(numbers(docs, /up to (\d+) sample values/gi)).toEqual([AI_SAMPLE_VALUES]);
+    expect(docs).toContain('<Article id="sql"');
   });
 
   it('counts the examples it offers', () => {

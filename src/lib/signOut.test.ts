@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { forgetSession, SIGNED_OUT_SESSION_KEYS } from './signOut';
+import { forgetDevice, forgetSession, SIGNED_OUT_DATABASES, SIGNED_OUT_SESSION_KEYS } from './signOut';
 
 describe('forgetSession', () => {
   it('removes every session key the workspace keeps, and nothing else', () => {
@@ -26,5 +26,20 @@ describe('forgetSession', () => {
     expect(src('lib/composerStore.ts')).toContain("'forma:queue'");
     expect(src('App.tsx')).toContain("'forma:openProject'");
     expect(src('lib/replyChanges.ts')).toContain("'forma:replyChanges'");
+  });
+});
+
+/* The database layouts kept on this device (2026-11-09, the SQL Server programme, item 32). */
+describe('the device', () => {
+  it('loses the SQL Server layouts and sample rows on sign-out, by the name the store uses', () => {
+    const deleted: string[] = [];
+    forgetDevice({ deleteDatabase: (name: string) => { deleted.push(name); return {} as IDBOpenDBRequest; } });
+    expect(deleted).toEqual(['forma-databases']);
+    expect(readFileSync('src/lib/sqlSchemaStore.ts', 'utf8')).toContain(`const DB_NAME = '${SIGNED_OUT_DATABASES[0]}'`);
+  });
+
+  it('survives IndexedDB that throws, or none', () => {
+    expect(() => forgetDevice({ deleteDatabase: () => { throw new Error('blocked'); } })).not.toThrow();
+    expect(() => forgetDevice(null)).not.toThrow();
   });
 });

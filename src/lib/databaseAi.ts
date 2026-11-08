@@ -25,7 +25,7 @@
  * does not have, beside `checkCustomSql`'s SELECT-only check.
  */
 import type { SqlSchema } from './sqlSchema';
-import { schemaForAi, stripComments, typeLabel } from './sqlSchema';
+import { AI_SAMPLE_VALUES, schemaForAi, stripComments, typeLabel } from './sqlSchema';
 import { checkCustomSql, describeQuery, findObject, findProcedure, queryFields, suggestJoins, type QueryJoin, type ReportQuery } from './sqlQuery';
 import { readRepxDataSources } from './repxSqlDataSource';
 import { writeSqlDataSource } from './repxSqlWriter';
@@ -327,7 +327,7 @@ export function checkSqlAgainstSchema(sql: string, schema: SqlSchema): string[] 
 function fieldsLine(schema: SqlSchema, query: ReportQuery): string {
   const sampleOf = (source: string, name: string) => {
     const rows = schema.samples?.[source] ?? [];
-    const seen = rows.map((r) => r[name]).filter((v) => v !== null && v !== undefined && v !== '').slice(0, 3);
+    const seen = rows.map((r) => r[name]).filter((v) => v !== null && v !== undefined && v !== '').slice(0, AI_SAMPLE_VALUES);
     return seen.length ? ` e.g. ${seen.map((v) => JSON.stringify(v)).join('|')}` : '';
   };
   return queryFields(schema, query)

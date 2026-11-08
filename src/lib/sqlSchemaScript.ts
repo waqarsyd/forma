@@ -116,7 +116,10 @@ function literal(text: string): string {
  * match a printed column to a field by what it holds. Read-only: a SELECT TOP
  * per object, nothing else.
  */
-export function sampleScript(targets: readonly SampleTarget[], rows = 5): string {
+/** Rows the sample script asks for from each table by default (the Docs page states it). */
+export const SAMPLE_SCRIPT_ROWS = 5;
+
+export function sampleScript(targets: readonly SampleTarget[], rows = SAMPLE_SCRIPT_ROWS): string {
   const count = Math.max(1, Math.min(50, Math.floor(rows)));
   const picked = targets.filter((t) => t.name.trim());
   if (!picked.length) throw new Error('Pick at least one table or view to sample.');
