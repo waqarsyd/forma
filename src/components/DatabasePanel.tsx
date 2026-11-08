@@ -16,6 +16,7 @@ import type { CalcType, DataSourceSpec } from '../lib/repxSqlWriter';
 import type { SqlObject, SqlProcedure, SqlSchema } from '../lib/sqlSchema';
 import { resultFix, summarizeSchema, typeLabel } from '../lib/sqlSchema';
 import { SCHEMA_SCRIPT, sampleScript } from '../lib/sqlSchemaScript';
+import { checkSqlAgainstSchema } from '../lib/databaseAi';
 import {
   checkCustomSql,
   describeQuery,
@@ -49,6 +50,16 @@ interface Props {
    * and returns the line to show.
    */
   onWrite?: (options: WriteOptions) => Promise<string>;
+  /**
+   * Whether the layout's names and sample values go to the AI with a
+   * generation, a chat turn about the report, and a sentence turned into SQL
+   * (2026-11-09, batch DE). On when the user attached the export; off for a
+   * layout pasted here or chosen from those kept, until ticked.
+   */
+  shared?: boolean;
+  onShare?: (on: boolean) => void;
+  /** Custom SQL from a sentence (item 26): the AI writes it over the layout, and this panel holds it to the layout. */
+  onAskSql?: (sentence: string) => Promise<{ sql: string; name: string; explanation: string }>;
 }
 
 export type WriteOptions = Pick<DataSourceSpec, 'connectionName' | 'multiValue' | 'lookups' | 'calculatedFields'>;
@@ -102,7 +113,7 @@ function download(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function DatabasePanel({ database, recent, onSwitch, onForget, query, onQuery, selectionLabel, onBindField, onCopy, onFieldsChange, onWrite }: Props) {
+export default function DatabasePanel({ database, recent, onSwitch, onForget, query, onQuery, selectionLabel, onBindField, onCopy, onFieldsChange, onWrite, shared = false, onShare, onAskSql }: Props) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [copied, setCopied] = useState('');
@@ -116,6 +127,10 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
   const [calcs, setCalcs] = useState<{ name: string; expression: string; type: CalcType }[]>([]);
   const [written, setWritten] = useState('');
   const [writing, setWriting] = useState(false);
+  // Custom SQL from a sentence (item 26).
+  const [sentence, setSentence] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [asked, setAsked] = useState('');
 
   const copy = async (label: string, text: string) => setCopied((await onCopy(text)) ? `${label} copied.` : `Copy did not work here; use Download instead.`);
 
@@ -123,11 +138,17 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
   const duplicates = useMemo(() => duplicateFields(fields), [fields]);
   const params = useMemo(() => (database && query ? queryParameters(database, query) : []), [database, query]);
   const custom = useMemo(() => checkCustomSql(customSql), [customSql]);
+  // Held to the layout too (item 26): a table or column it does not have is refused, not run.
+  const unknownNames = useMemo(() => (database && customSql.trim() ? checkSqlAgainstSchema(customSql, database) : []), [customSql, database]);
 
   // The mapping below the panel reads these as it reads a pasted sample's fields.
   useEffect(() => {
     onFieldsChange?.(
-      fields.map((f) => ({ name: f.name, type: fieldKind(f.column), sample: '' })),
+      fields.map((f) => {
+        // The layout's sample values, so the mapping can match a column by what it shows (item 23).
+        const samples = (database?.samples?.[f.source] ?? []).map((r) => r[f.name]).filter((v) => v !== null && v !== undefined && v !== '').map(String).slice(0, 10);
+        return { name: f.name, type: fieldKind(f.column), sample: samples[0] ?? '', samples };
+      }),
       query ? describeQuery(query) : '',
     );
     // Keyed on the fields alone: App passes a new onFieldsChange on every render.
@@ -262,6 +283,20 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
           <button type="button" className="dbx-btn" onClick={() => onForget(database.database)}>Forget</button>
         </div>
         <p className="dbx-sub" style={{ margin: '6px 0 10px' }}>Read from {database.source === 'repx' ? 'the report' : database.source === 'script' ? 'an SSMS script' : 'Forma’s layout script'}; kept in this browser, never connected to.</p>
+        {onShare && (
+          /* The owner's rule (2026-11-08): names and sample values go to the AI only when the user says so. */
+          <label className="dbx-row" style={{ margin: '0 0 10px', fontSize: 13 }}>
+            <input type="checkbox" checked={shared} onChange={(e) => onShare(e.target.checked)} />
+            <span>
+              Send names and sample values to the AI
+              <span className="dbx-sub" style={{ display: 'block' }}>
+                {shared
+                  ? 'On: a report generated or changed in the chat binds to these columns, and Forma writes the data source. Never a login: Forma has none.'
+                  : 'Off: the AI sees none of this database, and binding stays on this tab.'}
+              </span>
+            </span>
+          </label>
+        )}
         <input className="dbx-input" type="search" placeholder="Find a table, view, procedure or column" aria-label="Find in the database" value={search} onChange={(e) => setSearch(e.target.value)} />
         {[['Tables', tables.map(objectRow)], ['Views', views.map(objectRow)], ['Stored procedures', procedures.map(procRow)]].map(([label, rows]) => (
           <div className="dbx-group" key={label as string}>
@@ -277,11 +312,41 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
         {customOpen && (
           <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
             <p className="dbx-sub" style={{ margin: 0 }}>A SELECT only. The report runs it with whatever rights its connection has, so give the report a read-only login, as DevExpress and Telerik advise.</p>
+            {onAskSql && (
+              /* Text-to-SQL (item 26): the AI writes it over the layout; the checks below hold it to the layout. */
+              <div className="dbx-row">
+                <input className="dbx-input" style={{ flex: 1, minWidth: 220 }} aria-label="Describe the query" placeholder="Or describe it: orders from last month with the customer's city" value={sentence} onChange={(e) => setSentence(e.target.value)} />
+                <button
+                  type="button"
+                  className="dbx-btn"
+                  disabled={!shared || !sentence.trim() || asking}
+                  title={shared ? undefined : 'Tick “Send names and sample values to the AI” first: the sentence goes to the AI with the layout.'}
+                  onClick={async () => {
+                    setAsking(true);
+                    setAsked('');
+                    try {
+                      const out = await onAskSql(sentence);
+                      setCustomSql(out.sql);
+                      setCustomName(out.name);
+                      setAsked(out.explanation || 'Written. Check it below before using it.');
+                    } catch (err) {
+                      setAsked(err instanceof Error ? err.message : 'The SQL could not be written.');
+                    } finally {
+                      setAsking(false);
+                    }
+                  }}
+                >
+                  {asking ? 'Writing…' : 'Write the SQL'}
+                </button>
+              </div>
+            )}
+            {onAskSql && !shared && <p className="dbx-sub" style={{ margin: 0 }}>Writing it from a sentence sends the sentence and this layout to the AI, so it needs “Send names and sample values to the AI”.</p>}
+            {asked && <p className="dbx-sub" role="status" style={{ margin: 0 }}>{asked}</p>}
             <input className="dbx-input" aria-label="Query name" value={customName} onChange={(e) => setCustomName(e.target.value.replace(/[^\w]/g, ''))} />
             <textarea className="dbx-input" aria-label="Custom SQL" value={customSql} onChange={(e) => setCustomSql(e.target.value)} placeholder="SELECT o.OrderID, c.CompanyName FROM dbo.Orders o JOIN dbo.Customers c ON c.CustomerID = o.CustomerID WHERE c.Region = @Region" spellCheck={false} />
-            {customSql && custom.problems.map((p) => <p key={p} className="dbx-warn" style={{ margin: 0 }}>{p}</p>)}
+            {customSql && [...custom.problems, ...unknownNames].map((p) => <p key={p} className="dbx-warn" style={{ margin: 0 }}>{p}</p>)}
             {customSql && custom.ok && custom.parameters.length > 0 && <p className="dbx-sub" style={{ margin: 0 }}>Parameters: {custom.parameters.join(', ')}, each a report parameter.</p>}
-            <div><button type="button" className="dbx-btn dbx-btn--solid" disabled={!custom.ok} onClick={() => onQuery({ kind: 'custom', name: customName || 'Query', sql: customSql.trim() })}>Use this SQL</button></div>
+            <div><button type="button" className="dbx-btn dbx-btn--solid" disabled={!custom.ok || unknownNames.length > 0} onClick={() => onQuery({ kind: 'custom', name: customName || 'Query', sql: customSql.trim() })}>Use this SQL</button></div>
           </div>
         )}
       </section>

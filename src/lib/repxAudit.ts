@@ -47,7 +47,7 @@ import { findSummaryProblems } from './repxSummaries';
 import { crossTabsWithoutData, findCrossTabProblems } from './repxCrossTabs';
 import { findDpiProblem } from './repxDpi';
 import { findPaperProblem } from './repxPaper';
-import { auditDataSources } from './repxSqlDataSource';
+import { auditDataSources, readRepxDataSources } from './repxSqlDataSource';
 import { parseReportStructure } from './reportPreview';
 import type { ReportLayout } from './reportTypes';
 
@@ -387,7 +387,9 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
 
   // The other direction: a parameter nobody uses still appears in the
   // parameters panel, so the reader is asked a question that changes nothing.
-  const referenced = new Set(parameterReferences(text));
+  // A SQL data source's queries name parameters inside its Base64 (2026-11-09): `?Region` in a filter or a bound query parameter.
+  const queryUses = readRepxDataSources(text).flatMap((d) => d.queries.flatMap((q) => [q.filter ?? '', ...q.parameters.map((p) => p.value)]));
+  const referenced = new Set([...parameterReferences(text), ...queryUses.flatMap((s) => [...s.matchAll(/\?([A-Za-z_]\w*)/g)].map((m) => m[1]))]);
   const unused = [...declared].filter((name) => !referenced.has(name));
   if (unused.length) {
     add(

@@ -369,6 +369,15 @@ static class SqlProbe {
                 }
             }
             Console.WriteLine("printed  : " + report.Pages.Count + " page(s)");
+            // What printed, as DevExpress's own text export lays it out (2026-11-09):
+            // a group's header and its total are only proved by reading them here.
+            using (var ms = new System.IO.MemoryStream()) {
+                report.ExportToText(ms, new DevExpress.XtraPrinting.TextExportOptions { Separator = " | ", Encoding = System.Text.Encoding.UTF8 });
+                string text = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+                var lines = text.Split('\n').Select(l => l.TrimEnd('\r').Trim()).Where(l => l.Trim('|', ' ').Length > 0).Take(60).ToList();
+                Console.WriteLine("text     : " + lines.Count + " line(s)");
+                foreach (string line in lines) Console.WriteLine("             " + line);
+            }
             return problems > 0 ? 1 : 0;
         } finally {
             DropDatabase();

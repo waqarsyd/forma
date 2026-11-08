@@ -32,6 +32,7 @@
  */
 import { marginsOf, parseReportStructure, type PreviewBand, type PreviewControl } from './reportPreview';
 import {
+  addGroupBand,
   addLabel,
   addLine,
   addPageInfo,
@@ -49,6 +50,7 @@ import {
   type EditResult,
 } from './repxEdit';
 import { SUPPORTED_PAGE_SIZES, pageSizeInUnits } from './reportGeometry';
+import { readRepxDataSources } from './repxSqlDataSource';
 
 /**
  * What the model can ask for. Anything else is a redesign. The last seven
@@ -60,6 +62,10 @@ import { SUPPORTED_PAGE_SIZES, pageSizeInUnits } from './reportGeometry';
 export const EDIT_OPS = [
   'text', 'move', 'resize', 'font', 'color', 'align', 'delete', 'add', 'paper', 'margins', 'visible',
   'duplicate', 'bandHeight', 'border', 'line', 'format', 'bind', 'pageNumber',
+  // The database's two (2026-11-09, the SQL Server programme, item 24): what
+  // the report reads, written by Forma from the shared layout through the
+  // `data` hook of `applyEdits`, and a group band on a field.
+  'data', 'group',
 ] as const;
 export type EditOp = (typeof EDIT_OPS)[number];
 
@@ -108,6 +114,19 @@ export interface AgentEdit {
   pageInfo?: string;
   /** For `add`, `line` and `pageNumber`: the new control's name, when it is free. */
   name?: string;
+  /** For `data`: what the report reads, as `databaseAi.ts`'s `QueryJson`, checked against the shared layout. */
+  query?: unknown;
+  /** For `group`: a field to total in the group's footer. */
+  total?: string;
+}
+
+/**
+ * What only App can do for an edit (2026-11-09): `data` needs the shared
+ * database's layout, which this module does not hold, so App passes the
+ * function that writes the data source (`databaseAi.ts`'s `dataEditHook`).
+ */
+export interface EditHooks {
+  data?: (xml: string, edit: AgentEdit) => EditResult;
 }
 
 export interface EditsOutcome {
@@ -515,11 +534,21 @@ function setRootAttributes(xml: string, attrs: Record<string, string | null>): s
   return xml.slice(0, root.index) + tag + xml.slice(root.index + root[0].length);
 }
 
-function applyOne(xml: string, edit: AgentEdit): EditResult {
+function applyOne(xml: string, edit: AgentEdit, hooks: EditHooks = {}): EditResult {
   // An alignment is asked for as it should print; a right-to-left report
   // prints the file's flipped, so the file is written the other way (item 6).
   const side = edit.op === 'align' ? readAlign(edit.align ?? (edit as { alignment?: unknown }).alignment) : null;
   const e: AgentEdit = side && rightToLeftOf(xml).rtl ? { ...edit, align: flipSide(side) } : edit;
+  if (e.op === 'data') {
+    return hooks.data ? hooks.data(xml, e) : decline(xml, 'no database is shared with the AI, so what the report reads cannot change: attach the database layout and tick "Send names and sample values to the AI" on the Data tab');
+  }
+  if (e.op === 'group') {
+    const field = (e.field ?? '').trim().replace(/^\[|\]$/g, '');
+    const total = (e.total ?? '').trim().replace(/^\[|\]$/g, '');
+    if (!field || /[[\]"<>]/.test(field)) return decline(xml, e.field ? `"${e.field}" is not a field name` : 'no field was named to group by');
+    if (/[[\]"<>]/.test(total)) return decline(xml, `"${e.total}" is not a field name`);
+    return addGroupBand(xml, field, total ? { total } : {});
+  }
   if (e.op === 'paper') {
     const paper = SUPPORTED_PAGE_SIZES.find((p) => p.toLowerCase() === (e.paper ?? '').trim().toLowerCase());
     const rootAttrs = ROOT.exec(xml)?.[1] ?? '';
@@ -910,16 +939,18 @@ export function readReportOutcome(parsed: { reply?: string; action?: string; edi
 }
 
 /** The edits made in order, each against the report as the last one left it. */
-export function applyEdits(xml: string, edits: readonly AgentEdit[]): EditsOutcome {
+export function applyEdits(xml: string, edits: readonly AgentEdit[], hooks: EditHooks = {}): EditsOutcome {
   let current = xml;
   const applied: string[] = [];
   const declined: string[] = [];
-  for (const e of edits.slice(0, MAX_EDITS)) {
+  // What the report reads first (2026-11-09): a field the same answer binds may come with it.
+  const ordered = [...edits.slice(0, MAX_EDITS)].sort((a, b) => Number(b?.op === 'data') - Number(a?.op === 'data'));
+  for (const e of ordered) {
     if (!e || !EDIT_OPS.includes(e.op)) {
       declined.push(`"${e?.op}": not an edit Forma can make`);
       continue;
     }
-    const r = applyOne(current, e);
+    const r = applyOne(current, e, hooks);
     if (r.applied) {
       current = r.xml;
       applied.push(r.reason);
@@ -1034,7 +1065,8 @@ function lookChanges(name: string, was: Look, now: Look): string[] {
   if (was.align !== now.align) out.push(`aligned ${name} ${now.align}`);
   if ((was.data?.format ?? null) !== (now.data?.format ?? null)) out.push(`formatted ${name} as ${now.data?.format ? `"${now.data.format}"` : 'plain'}`);
   if (was.field !== now.field || (was.data?.expression ?? null) !== (now.data?.expression ?? null)) {
-    out.push(`bound ${name} to ${now.field ? `[${now.field}]` : now.data?.expression ? clip(now.data.expression) : 'nothing'}`);
+    // "unbound", not "bound to nothing" (2026-11-09), which read as a binding made.
+    out.push(now.field ? `bound ${name} to [${now.field}]` : now.data?.expression ? `bound ${name} to ${clip(now.data.expression)}` : `unbound ${name}`);
   }
   return out;
 }
@@ -1092,7 +1124,14 @@ export function describeChanges(before: string, after: string, limit = 10): stri
     const old = sa.find((x) => x.name === band.name);
     const h = (x: PreviewBand) => round(x.height / (x.dpiScale ?? 1));
     if (old && h(old) !== h(band)) lines.push(`set the height of ${band.name} to ${h(band)}`);
+    // A band the edit added: a group above all (2026-11-09, the chat's `group`).
+    const grouping = band.kind === 'GroupHeader' && band.fields.length ? `, grouping by ${band.fields.map((f) => `[${f.field}]`).join(', ')}` : '';
+    if (!old) lines.unshift(`added the band ${band.name}${grouping}`);
   });
+  // What the report reads (2026-11-09): the data source the chat or the Data tab wrote.
+  const reads = (xml: string) => readRepxDataSources(xml).map((d) => `${d.queries.map((q) => q.name).join(', ')} on connection "${d.connectionName}"`).join('; ');
+  const [da, db] = [reads(before), reads(after)];
+  if (da !== db) lines.unshift(db ? `the report now reads ${db}` : 'removed the data source');
   if (lines.length > limit) return [...lines.slice(0, limit), `and ${lines.length - limit} more changes`];
   return lines;
 }

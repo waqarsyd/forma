@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Customer List</title>
+<style>
+  /* US Letter at 150 dpi: 1275 x 1650. Margins 0.5in = 75px. */
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { width: 1275px; height: 1650px; font-family: Arial, Helvetica, sans-serif; color: #111; }
+  .page { position: relative; box-sizing: border-box; width: 1275px; height: 1650px; padding: 75px; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid #1f3a5f; padding-bottom: 10px; }
+  .head h1 { margin: 0; font-size: 28px; color: #1f3a5f; }
+  .head .run { font-size: 12px; color: #555; }
+  table { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 13px; }
+  th { text-align: left; font-weight: bold; padding: 7px 6px; border-bottom: 1px solid #1f3a5f; color: #1f3a5f; font-size: 12px; }
+  td { padding: 7px 6px; border-bottom: 1px solid #e3e3e3; }
+  .num { text-align: right; }
+  .footer { position: absolute; left: 75px; right: 75px; bottom: 75px; display: flex; justify-content: space-between; font-size: 11px; color: #555; border-top: 1px solid #bbb; padding-top: 6px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    <h1>Customer List</h1>
+    <div class="run">Run on 28 Oct 2026 &middot; Sorted by Customer ID</div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:12%">Customer ID</th>
+        <th style="width:30%">Company</th>
+        <th style="width:20%">Contact</th>
+        <th style="width:14%">City</th>
+        <th style="width:12%">Country</th>
+        <th class="num" style="width:12%">Balance</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>ALFKI</td><td>Alfreds Futterkiste</td><td>Maria Anders</td><td>Berlin</td><td>Germany</td><td class="num">1,240.50</td></tr>
+      <tr><td>ANATR</td><td>Ana Trujillo Emparedados y helados</td><td>Ana Trujillo</td><td>Mexico D.F.</td><td>Mexico</td><td class="num">0.00</td></tr>
+      <tr><td>ANTON</td><td>Antonio Moreno Taqueria</td><td>Antonio Moreno</td><td>Mexico D.F.</td><td>Mexico</td><td class="num">312.75</td></tr>
+      <tr><td>AROUT</td><td>Around the Horn</td><td>Thomas Hardy</td><td>London</td><td>UK</td><td class="num">1,957.86</td></tr>
+      <tr><td>BERGS</td><td>Berglunds snabbkop</td><td>Christina Berglund</td><td>Lulea</td><td>Sweden</td><td class="num">845.00</td></tr>
+      <tr><td>BLAUS</td><td>Blauer See Delikatessen</td><td>Hanna Moos</td><td>Mannheim</td><td>Germany</td><td class="num">120.00</td></tr>
+      <tr><td>BLONP</td><td>Blondesddsl pere et fils</td><td>Frederique Citeaux</td><td>Strasbourg</td><td>France</td><td class="num">0.00</td></tr>
+      <tr><td>BOLID</td><td>Bolido Comidas preparadas</td><td>Martin Sommer</td><td>Madrid</td><td>Spain</td><td class="num">66.40</td></tr>
+      <tr><td>BONAP</td><td>Bon app'</td><td>Laurence Lebihan</td><td>Marseille</td><td>France</td><td class="num">2,310.00</td></tr>
+      <tr><td>BOTTM</td><td>Bottom-Dollar Markets</td><td>Elizabeth Lincoln</td><td>Tsawassen</td><td>Canada</td><td class="num">498.20</td></tr>
+      <tr><td>BSBEV</td><td>B's Beverages</td><td>Victoria Ashworth</td><td>London</td><td>UK</td><td class="num">0.00</td></tr>
+      <tr><td>CACTU</td><td>Cactus Comidas para llevar</td><td>Patricio Simpson</td><td>Buenos Aires</td><td>Argentina</td><td class="num">75.00</td></tr>
+      <tr><td>CENTC</td><td>Centro comercial Moctezuma</td><td>Francisco Chang</td><td>Mexico D.F.</td><td>Mexico</td><td class="num">1,005.90</td></tr>
+      <tr><td>CHOPS</td><td>Chop-suey Chinese</td><td>Yang Wang</td><td>Bern</td><td>Switzerland</td><td class="num">430.00</td></tr>
+      <tr><td>COMMI</td><td>Comercio Mineiro</td><td>Pedro Afonso</td><td>Sao Paulo</td><td>Brazil</td><td class="num">0.00</td></tr>
+      <tr><td>CONSH</td><td>Consolidated Holdings</td><td>Elizabeth Brown</td><td>London</td><td>UK</td><td class="num">1,120.00</td></tr>
+      <tr><td>DRACD</td><td>Drachenblut Delikatessen</td><td>Sven Ottlieb</td><td>Aachen</td><td>Germany</td><td class="num">89.99</td></tr>
+      <tr><td>DUMON</td><td>Du monde entier</td><td>Janine Labrune</td><td>Nantes</td><td>France</td><td class="num">0.00</td></tr>
+      <tr><td>EASTC</td><td>Eastern Connection</td><td>Ann Devon</td><td>London</td><td>UK</td><td class="num">650.00</td></tr>
+      <tr><td>ERNSH</td><td>Ernst Handel</td><td>Roland Mendel</td><td>Graz</td><td>Austria</td><td class="num">3,480.25</td></tr>
+    </tbody>
+  </table>
+  <div class="footer">
+    <span>Northwind Traders &middot; Customer List &middot; Confidential</span>
+    <span>Page 1 of 1</span>
+  </div>
+</div>
+</body>
+</html>

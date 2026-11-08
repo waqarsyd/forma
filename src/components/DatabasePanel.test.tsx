@@ -89,7 +89,8 @@ describe('what the report reads', () => {
     expect(props.onQuery).toHaveBeenCalledWith({ ...orders, joins: [{ table: 'dbo.Customers', type: 'Inner', on: [{ from: 'CustomerID', to: 'CustomerID' }] }] });
     expect(screen.getByText('Fields (3)')).toBeTruthy();
     expect(props.onFieldsChange).toHaveBeenCalledWith(
-      [{ name: 'OrderID', type: 'number', sample: '' }, { name: 'CustomerID', type: 'number', sample: '' }, { name: 'Freight', type: 'number', sample: '' }],
+      // With their sample values, none in this layout, for the mapping's matching (batch DE).
+      [{ name: 'OrderID', type: 'number', sample: '', samples: [] }, { name: 'CustomerID', type: 'number', sample: '', samples: [] }, { name: 'Freight', type: 'number', sample: '', samples: [] }],
       'dbo.Orders',
     );
   });
@@ -151,5 +152,35 @@ describe('writing into the report', () => {
       lookups: [{ parameter: 'CustomerID', object: 'dbo.Customers', valueColumn: 'CustomerID', filter: '[Region] In (?Region)' }],
       calculatedFields: [],
     });
+  });
+});
+
+/* Sharing with the AI and SQL from a sentence (2026-11-09, batch DE, items 22 and 26). */
+describe('sharing the database with the AI', () => {
+  it('is the user’s to switch, and says what each state means', () => {
+    const onShare = vi.fn();
+    panel({ shared: false, onShare });
+    expect(screen.getByText(/Off: the AI sees none of this database/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Send names and sample values to the AI/));
+    expect(onShare).toHaveBeenCalledWith(true);
+  });
+
+  it('writes SQL from a sentence only when shared, and holds it to the layout', async () => {
+    const onAskSql = vi.fn(async () => ({ sql: 'SELECT o.OrderID, o.Discount FROM dbo.Orders o', name: 'Orders', explanation: 'Every order.' }));
+    panel({ shared: false, onShare: vi.fn(), onAskSql });
+    fireEvent.click(screen.getByText('Write custom SQL'));
+    fireEvent.change(screen.getByLabelText('Describe the query'), { target: { value: 'every order' } });
+    expect((screen.getByText('Write the SQL') as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    panel({ shared: true, onShare: vi.fn(), onAskSql });
+    fireEvent.click(screen.getByText('Write custom SQL'));
+    fireEvent.change(screen.getByLabelText('Describe the query'), { target: { value: 'every order' } });
+    fireEvent.click(screen.getByText('Write the SQL'));
+    await screen.findByText('Every order.');
+    expect(onAskSql).toHaveBeenCalledWith('every order');
+    expect((screen.getByLabelText('Custom SQL') as HTMLTextAreaElement).value).toBe('SELECT o.OrderID, o.Discount FROM dbo.Orders o');
+    // A column the layout does not have is refused, not run.
+    expect(screen.getByText('dbo.Orders has no column "Discount"')).toBeTruthy();
+    expect((screen.getByText('Use this SQL') as HTMLButtonElement).disabled).toBe(true);
   });
 });

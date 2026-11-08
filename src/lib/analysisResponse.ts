@@ -50,6 +50,27 @@ const CUT_OFF =
   'or split it into two requests. Generating again with the same input will hit the same limit.';
 
 /**
+ * The query the AI named for a shared database (2026-11-09, the SQL Server
+ * programme, item 22): one `<?forma-query {...}?>` anywhere in its answer,
+ * taken out before anything parses the REPX, so neither the extraction nor a
+ * repair has to know about it and DevExpress never sees it. The JSON is
+ * returned as read; `databaseAi.ts` holds it to the layout. A processing
+ * instruction because one can sit before the root and carry any text but
+ * `?>`, and because the corrected-draft path, which is not XML, can lift it
+ * the same way.
+ */
+export function takeQueryInstruction(text: string): { text: string; query?: unknown } {
+  const m = /<\?forma-query\s+([\s\S]*?)\?>\s*/.exec(text);
+  if (!m) return { text };
+  const rest = text.slice(0, m.index) + text.slice(m.index + m[0].length);
+  try {
+    return { text: rest, query: JSON.parse(m[1]) };
+  } catch {
+    return { text: rest, query: m[1].trim() };
+  }
+}
+
+/**
  * The REPX in a model's answer: the document itself, unwrapped from a fence,
  * a sentence of preamble or an old-style JSON answer.
  */

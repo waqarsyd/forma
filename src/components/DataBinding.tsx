@@ -28,7 +28,8 @@
  * decline is rendered as the content of the pane rather than as an error state.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { parseDataSource, suggestMapping, type DataField } from '../lib/dataSource';
+import { parseDataSource, type DataField } from '../lib/dataSource';
+import { matchColumns, renameField, scoreMatch, type ColumnMatch } from '../lib/fieldMatch';
 import { planDetailBinding, bindDetailRow, bindFooterTotals, readBoundFields, isExpressionEntry, EXPRESSION_PREFIX } from '../lib/repxBindingPlan';
 
 /** What the Prompt-to-Expression call returns; see `promptToExpression` in geminiService.ts. */
@@ -127,12 +128,47 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
 
   const headings = plan?.headings ?? [];
 
+  /*
+   * Matched by heading and by the value each column shows, with how sure
+   * (2026-11-09, the SQL Server programme, item 23, lib/fieldMatch.ts). Until
+   * then names alone, exactly or by containment, with no word on how sure.
+   */
+  const matches = useMemo<ColumnMatch[]>(
+    () =>
+      matchColumns(
+        headings.map((heading, i) => ({ heading, sample: plan?.cells[i]?.text })),
+        source.fields.map((f) => ({ name: f.name, type: f.type, samples: f.samples ?? (f.sample ? [f.sample] : []) })),
+      ),
+    [headings.join('\u0000'), source.fields.map((f) => f.name).join('\u0000')],
+  );
+
   // Re-suggest whenever either side changes. The user's edits are deliberately
   // discarded here: the columns or the fields they were made against are gone.
   useEffect(() => {
-    setMapping(suggestMapping(headings, source.fields));
+    setMapping(matches.map((m) => m.field));
     setApplied(null);
-  }, [headings.join('\u0000'), source.fields.map((f) => f.name).join('\u0000')]);
+  }, [matches]);
+
+  /*
+   * A report already bound, against the fields it should read (item 23): each
+   * field it prints that they lack, with the likeliest of theirs to rename it
+   * to, in one click (enameField).
+   */
+  const outside = useMemo(() => {
+    if (!source.fields.length) return [];
+    const have = new Set(source.fields.map((f) => f.name.toLowerCase()));
+    return alreadyBound
+      .filter((f) => !have.has(f.toLowerCase()))
+      .map((bound) => ({
+        bound,
+        fixes: source.fields
+          .map((f) => ({ name: f.name, score: scoreMatch({ heading: bound }, { name: f.name, type: f.type }).score }))
+          .filter((f) => f.score >= 0.3)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3)
+          .map((f) => f.name),
+      }));
+  }, [alreadyBound, source.fields]);
 
   const mapped = mapping.filter(Boolean).length;
 
@@ -255,6 +291,39 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
           <p className="db-note" style={{ opacity: 1, marginTop: 6 }}>
             <code>{alreadyBound.join(', ')}</code>
           </p>
+          {source.fields.length > 0 && (
+            /* Checked against the fields it should read (2026-11-09, item 23). */
+            <div className="db-note" style={{ opacity: 1 }} aria-label="Fields the report prints, checked">
+              {outside.length === 0 ? (
+                <p style={{ margin: 0 }}>Every field it prints is one of {fromDatabase ? databaseLabel || 'the database' : 'the sample'}’s.</p>
+              ) : (
+                <>
+                  <p style={{ margin: '0 0 6px' }}>
+                    {outside.length} field{outside.length === 1 ? '' : 's'} it prints {outside.length === 1 ? 'is' : 'are'} not in {fromDatabase ? databaseLabel || 'the database' : 'the sample'}, so {outside.length === 1 ? 'it prints' : 'they print'} blank:
+                  </p>
+                  {outside.map(({ bound, fixes }) => (
+                    <div key={bound} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <code>[{bound}]</code>
+                      {fixes.length ? fixes.map((to) => (
+                        <button
+                          key={to}
+                          type="button"
+                          className="db-chip"
+                          style={{ cursor: 'pointer', background: 'none', color: 'inherit' }}
+                          onClick={() => {
+                            const r = renameField(repxContent ?? '', bound, to);
+                            if (r.count) onApply(r.xml, `Bound [${bound}] to [${to}] in ${r.count} place${r.count === 1 ? '' : 's'}`);
+                          }}
+                        >
+                          Use {to}
+                        </button>
+                      )) : <span>no field of a similar name; choose one on the Preview with Bind</span>}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
           <p className="db-note">
             {/* `{' '}` because JSX drops whitespace that spans a line break
                 between an element and the text after it — without it this
@@ -328,6 +397,7 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
                   <th scope="col">Report column</th>
                   <th scope="col">Sample in the report</th>
                   <th scope="col">Data field</th>
+                  <th scope="col">Match</th>
                 </tr>
               </thead>
               <tbody>
@@ -363,6 +433,34 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
                           </option>
                         )}
                       </select>
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      {/* How sure the suggestion is, and for a column with none the likeliest fields (item 23). */}
+                      {mapping[i] && matches[i]?.field === mapping[i] && matches[i].level ? (
+                        <span title={matches[i].why}>{{ high: 'Sure', medium: 'Likely', low: 'A guess' }[matches[i].level!]}: {matches[i].why}</span>
+                      ) : mapping[i] ? (
+                        <span style={{ opacity: .6 }}>your choice</span>
+                      ) : source.fields.length ? (
+                        <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                          <span style={{ opacity: .7 }}>not matched</span>
+                          {[matches[i]?.field, ...(matches[i]?.alternatives ?? [])].filter((a): a is string => !!a && !mapping.includes(a)).map((a) => (
+                            <button
+                              key={a}
+                              type="button"
+                              className="db-chip"
+                              style={{ cursor: 'pointer', background: 'none', color: 'inherit' }}
+                              onClick={() => {
+                                const next = [...mapping];
+                                next[i] = a;
+                                setMapping(next);
+                                setApplied(null);
+                              }}
+                            >
+                              Use {a}
+                            </button>
+                          ))}
+                        </span>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

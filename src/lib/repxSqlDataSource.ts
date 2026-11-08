@@ -337,14 +337,15 @@ export function auditDataSources(xml: string): { severity: 'error' | 'warning'; 
   };
   const regions = detailRegions(xml);
   const reported = new Set<string>();
-  for (const m of xml.matchAll(/\sExpression="([^"]*)"/g)) {
+  // Every field an expression prints, and a group's FieldName (2026-11-09: a group on a field the query lacks prints one empty group).
+  for (const m of xml.matchAll(/\s(Expression|FieldName)="([^"]*)"/g)) {
     const at = m.index!;
     const inside = regions.filter((r) => r.start <= at && at < r.end).sort((a, b) => a.end - a.start - (b.end - b.start))[0];
     const member = inside ? inside.member : rootMember;
     const view = viewOf(member);
     if (!view) continue;
-    for (const f of decodeEntities(m[1]).matchAll(/\[([^\[\]]+)\]/g)) {
-      const field = f[1];
+    const named = m[1] === 'FieldName' ? [decodeEntities(m[2])] : [...decodeEntities(m[2]).matchAll(/\[([^\[\]]+)\]/g)].map((f) => f[1]);
+    for (const field of named) {
       if (/^(Parameters|DataSource|ReportItems)\./.test(field) || calculated.has(field) || views.get(view)!.has(field)) continue;
       const key = `${view}.${field}`;
       if (reported.has(key)) continue;

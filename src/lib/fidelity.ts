@@ -29,6 +29,8 @@ import { parseReportStructure, decodeXmlText } from './reportPreview';
 import { auditRepx } from './repxAudit';
 import { checkRepxComplete } from './repxTruncation';
 import type { ReportLayout } from './reportTypes';
+import { readBoundFields } from './repxBindingPlan';
+import { readRepxDataSources } from './repxSqlDataSource';
 
 /** What a case file may ask of a generation. Every field is optional. */
 export interface FidelityExpectations {
@@ -54,6 +56,14 @@ export interface FidelityExpectations {
   sectionsMatchBands?: boolean;
   /** The exact root `SerializerVersion`, e.g. `20.1.3.0`. */
   serializerVersion?: string;
+  /**
+   * Fields of a shared database the report must print (2026-11-09, the SQL
+   * Server programme, item 23): each bound by name, matched case-insensitively.
+   * `minRatio` is the fraction of `fields` that must be bound, default 1.
+   */
+  bindings?: { fields: string[]; minRatio?: number };
+  /** The query the written SQL data source must read, by its name (`Customers`). */
+  dataSource?: { query: string };
 }
 
 export interface FidelityMeasurements {
@@ -80,6 +90,10 @@ export interface FidelityMeasurements {
   audit: { errors: number; warnings: number; codes: string[] };
   /** `layout.sections.length`, or null when no layout was given. */
   layoutSections: number | null;
+  /** Every field the report binds, as `readBoundFields` reads them (2026-11-09). */
+  boundFields: string[];
+  /** The queries of its SQL data sources, by name. */
+  dataSourceQueries: string[];
   /** Non-fatal parse complaints from the structure reader. */
   problems: string[];
 }
@@ -183,6 +197,8 @@ export function measureReport(repxContent: string | null | undefined, layout?: R
     fontMedianPt: median(fontSizesPt),
     audit: { errors: audit.errors, warnings: audit.warnings, codes: audit.findings.map((f) => f.code) },
     layoutSections: layout ? layout.sections.length : null,
+    boundFields: readBoundFields(xml),
+    dataSourceQueries: readRepxDataSources(xml).flatMap((d) => d.queries.map((q) => q.name)),
     problems: structure.problems,
   };
 }
@@ -296,6 +312,28 @@ export function checkFidelity(m: FidelityMeasurements, expect: FidelityExpectati
       pass: m.serializerVersion === expect.serializerVersion,
       expected: expect.serializerVersion,
       actual: m.serializerVersion ?? 'absent',
+    });
+  }
+
+  // The database's two (2026-11-09): which of its fields the report binds, and what the source reads.
+  if (expect.bindings) {
+    const bound = new Set(m.boundFields.map((f) => f.toLowerCase()));
+    const found = expect.bindings.fields.filter((f) => bound.has(f.toLowerCase()));
+    const need = Math.ceil(expect.bindings.fields.length * (expect.bindings.minRatio ?? 1));
+    const missing = expect.bindings.fields.filter((f) => !bound.has(f.toLowerCase()));
+    checks.push({
+      id: 'bindings',
+      pass: found.length >= need,
+      expected: `>= ${need} of ${expect.bindings.fields.length} fields bound`,
+      actual: `${found.length}${missing.length ? ` (missing ${missing.join(', ')})` : ''}`,
+    });
+  }
+  if (expect.dataSource) {
+    checks.push({
+      id: 'dataSource',
+      pass: m.dataSourceQueries.some((q) => q.toLowerCase() === expect.dataSource!.query.toLowerCase()),
+      expected: `reads ${expect.dataSource.query}`,
+      actual: m.dataSourceQueries.length ? m.dataSourceQueries.join(', ') : 'no data source',
     });
   }
 

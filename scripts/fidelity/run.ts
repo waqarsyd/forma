@@ -83,6 +83,8 @@ import { buildWithReader, sourceLayoutOf } from '../../src/lib/ocrAttach';
 import { draftBrief } from '../../src/lib/formaTeam';
 import { draftToText } from '../../src/lib/draftText';
 import { readWithOcr } from '../model/ocrPages';
+import { readDatabaseText } from '../../src/lib/sqlSchema';
+import { designSection, writeFromAnswer } from '../../src/lib/databaseAi';
 import {
   checkFidelity,
   measureReport,
@@ -101,6 +103,13 @@ interface CaseFile {
   prompt?: string;
   config?: Partial<ReportConfig>;
   render?: { width?: number; height?: number };
+  /**
+   * A made-up database's layout beside the source (2026-11-09, the SQL Server
+   * programme, item 23): a CREATE script or Forma's layout export, shared with
+   * the AI as the app shares an attached one (`designSection`), and the data
+   * source written from its answer (`writeFromAnswer`) before scoring.
+   */
+  database?: string;
   expect: FidelityExpectations;
   notes?: string;
 }
@@ -395,9 +404,18 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
     const draft = opts.draft ? team.draft : null;
     if (opts.draft) console.log(`[${c.name}] Forma's draft: ${draft ? `${draft.text.split('\n').length} lines, ${draft.text.length} characters` : 'none (not a PNG, or the reader declined the page)'}`);
     if (opts.brief) console.log(`[${c.name}] box reader brief: ${formaBrief ? `${formaBrief.split('\n').length} lines` : 'none (not a PNG, or the reader declined the page)'}`);
+    // The case's database, shared as the app shares an attached one (2026-11-09).
+    const schema = c.file.database ? readDatabaseText(readFileSync(join(c.dir, c.file.database), 'utf8'), basename(c.file.database).replace(/\.[^.]+$/, '')) : null;
+    const layout = schema?.kind === 'schema' ? schema.schema : null;
+    const database = layout ? designSection(layout, { words: [prompt, formaBrief].join('\n') }) : undefined;
     record.response = await capturingConsole(record.log, () =>
-      analyzeReportDesign(prompt, parts, config, undefined, undefined, undefined, formaBrief || draft ? { formaBrief, evidence, draft } : undefined),
+      analyzeReportDesign(prompt, parts, config, undefined, undefined, undefined, formaBrief || draft || database ? { formaBrief, evidence, draft, database } : undefined),
     );
+    if (layout && record.response?.repxContent) {
+      const out = writeFromAnswer(record.response.repxContent, layout, { dataQuery: record.response.dataQuery, version: config.version });
+      record.log.push(`[runner] database: ${out.note}`);
+      if (out.query) record.response = { ...record.response, repxContent: out.xml };
+    }
   } catch (error: any) {
     record.error = error?.message ?? String(error);
     // The service attaches what it could not parse. Kept as its own file so

@@ -596,9 +596,15 @@ function sampleText(rows: Record<string, unknown>[] | undefined, columns: string
  * names and values on 2026-11-08). Capped at `maxObjects`, with the rest
  * counted, so a large database does not spend the free tier.
  */
-export function schemaForAi(schema: SqlSchema, maxObjects = 80): string {
+export function schemaForAi(schema: SqlSchema, maxObjects = 80, order?: readonly string[]): string {
   const lines: string[] = [`DATABASE "${schema.database || 'unnamed'}" (SQL Server${schema.sqlVersion ? ` ${schema.sqlVersion}` : ''}). Bind the report's fields to these names exactly.`];
-  const items = [...schema.objects.map((o) => ({ o })), ...schema.procedures.map((p) => ({ p }))];
+  const listed = [...schema.objects.map((o) => ({ o })), ...schema.procedures.map((p) => ({ p }))];
+  // The likeliest first when the caller ranked them (databaseAi.ts, 2026-11-09), so the cap drops the least likely.
+  const at = (item: (typeof listed)[number]) => {
+    const i = order?.indexOf('o' in item ? `${item.o.schema}.${item.o.name}` : `${item.p.schema}.${item.p.name}`) ?? -1;
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  const items = order ? [...listed].sort((a, b) => at(a) - at(b)) : listed;
   for (const item of items.slice(0, maxObjects)) {
     if ('o' in item) {
       const o = item.o;

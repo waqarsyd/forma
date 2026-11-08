@@ -1,0 +1,20 @@
+{
+  "source": "source.html",
+  "prompt": "",
+  "database": "database.sql",
+  "config": { "version": "20.1", "unit": "HundredthsOfAnInch", "pageSize": "Letter" },
+  "render": { "width": 1275, "height": 1650 },
+  "notes": "The customer-list page with a made-up database shared (2026-11-09, the SQL Server programme, item 23). The layout spells the columns CustomerID, CompanyName, ContactName, City, Country and CurrentBalance, where the page heads them Customer ID, Company, Contact, City, Country and Balance, so a report that turns headings into names binds [Company] and [Balance] and prints blank. Suppliers holds lookalike columns and is the wrong table. Scored: which of the six fields the report binds, and that the data source Forma writes from the AI's <?forma-query?> reads Customers. Spends the owner's quota: npm run bench:fidelity -- --only database-customers.",
+  "expect": {
+    "bands": ["PageHeader", "Detail"],
+    "tables": { "min": 1 },
+    "texts": {
+      "all": ["Customer List", "Customer ID", "Company", "Contact", "City", "Country", "Balance"],
+      "minRatio": 0.85
+    },
+    "audit": { "errors": 0, "maxWarnings": 6 },
+    "bindings": { "fields": ["CustomerID", "CompanyName", "ContactName", "City", "Country", "CurrentBalance"], "minRatio": 0.83 },
+    "dataSource": { "query": "Customers" },
+    "serializerVersion": "20.1.3.0"
+  }
+}

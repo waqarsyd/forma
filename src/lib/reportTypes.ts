@@ -153,6 +153,12 @@ export interface AnalysisResponse {
   usage?: TokenUsage | null;
   /** True when the AI corrected Forma's draft and Forma built the report (2026-11-05, lib/draftText.ts). */
   fromDraft?: boolean;
+  /**
+   * The query the AI named for a shared database, as its `<?forma-query?>`
+   * read it (2026-11-09, lib/databaseAi.ts), for App to hold to the layout
+   * and write as the data source. Absent when no database was shared.
+   */
+  dataQuery?: unknown;
 }
 
 import type { TokenUsage } from './tokenUsage';

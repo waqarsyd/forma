@@ -391,6 +391,101 @@ export function addLabel(xml: string, bandIndex: number, x: number, y: number, t
 }
 
 /**
+ * A group band on a field (2026-11-09, the SQL Server programme, item 24:
+ * "group by Region" in the chat), in the form `RepxProbe emit-group`
+ * measured (gemini.md, *Grouping, measured the same way*): `<GroupFields>`
+ * before `<Controls>`, its field item with no `ControlType`, and a caption
+ * bound to the field. Placed outside every group the report has: the higher
+ * `Level` is the outer group whatever the file order (measured 2026-10-30),
+ * so it takes one above the highest, and writes none when it is the only
+ * group, as the designer does. With `total`, a footer at the same level sums
+ * that field with `Running="Group"`, the scope a group total needs to print
+ * at all (*A total with no running scope prints blank*).
+ */
+export function addGroupBand(xml: string, field: string, options: { total?: string } = {}): EditResult {
+  const s = parseReportStructure(xml);
+  const groups = s.bands.filter((b) => b.kind === 'GroupHeader');
+  if (groups.some((g) => g.fields.some((f) => f.field.toLowerCase() === field.toLowerCase()))) return decline(xml, `the report already groups by [${field}]`);
+  const open = /<Bands>/.exec(xml);
+  const bands = open ? elementAt(xml, open.index) : null;
+  if (!bands || bands.selfClosing) return decline(xml, 'the report has no bands');
+  const count = childrenIn(xml, bands.openEnd, bands.end).filter((c) => /^Item\d+$/.test(c.name)).length;
+  const detail = s.bands.find((b) => b.kind === 'Detail');
+  const detailEl = detail ? bandElement(xml, detail.name) : null;
+  const detailXml = detailEl ? xml.slice(detailEl.start, detailEl.end) : '';
+  const dpiAttr = /\sDpi="([\d.]+)"/.exec(detailXml)?.[1];
+  const dpi = Number(dpiAttr ?? 100);
+  const per = dpi / 100;
+  const scale = detail?.dpiScale ?? 1;
+  const width = unit(Math.max(100 * per, (s.page.width - s.margins.left - s.margins.right) / scale));
+  const height = unit(25 * per);
+  const font = /\sFont="([^"]*)"/.exec(detailXml)?.[1];
+  const bold = !font ? 'Arial, 9.75pt, style=Bold' : !/style=/.test(font) ? `${font}, style=Bold` : /style=[^"]*Bold/.test(font) ? font : font.replace('style=', 'style=Bold, ');
+  const level = groups.length ? Math.max(...groups.map((g) => g.level)) + 1 : 0;
+  const taken = new Set([...xml.matchAll(/\sName="([^"]*)"/g)].map((m) => m[1]));
+  const fresh = (stem: string) => {
+    const base = stem.replace(/\W/g, '') || 'Group';
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base}${n}`;
+    taken.add(name);
+    return name;
+  };
+  let ref = Math.max(0, ...[...xml.matchAll(/\sRef="(\d+)"/g)].map((r) => Number(r[1]))) + 1;
+  const tail = `${level ? ` Level="${level}"` : ''}${dpiAttr ? ` Dpi="${dpiAttr}"` : ''}`;
+  const dpiOf = dpiAttr ? ` Dpi="${dpiAttr}"` : '';
+  const f = escapeXmlAttribute(field);
+  const header =
+    `<Item${count + 1} Ref="${ref++}" ControlType="GroupHeaderBand" Name="${fresh(`GroupHeader${field}`)}" HeightF="${height}"${tail}>` +
+    `<GroupFields><Item1 Ref="${ref++}" FieldName="${f}" /></GroupFields>` +
+    `<Controls><Item1 Ref="${ref++}" ControlType="XRLabel" Name="${fresh(`labelGroup${field}`)}" Text="${f}" TextAlignment="MiddleLeft" Font="${escapeXmlAttribute(bold)}"` +
+    ` LocationFloat="0, 0" SizeF="${width}, ${height}" Padding="2,2,0,0,${dpi}"${dpiOf}>` +
+    `<ExpressionBindings><Item1 Ref="${ref++}" EventName="BeforePrint" PropertyName="Text" Expression="[${f}]" /></ExpressionBindings></Item1></Controls>` +
+    `</Item${count + 1}>`;
+  let footer = '';
+  if (options.total) {
+    const t = escapeXmlAttribute(options.total);
+    const third = unit(width / 3);
+    footer =
+      `<Item${count + 2} Ref="${ref++}" ControlType="GroupFooterBand" Name="${fresh(`GroupFooter${field}`)}" HeightF="${height}"${tail}>` +
+      `<Controls><Item1 Ref="${ref++}" ControlType="XRLabel" Name="${fresh(`labelGroupTotal${options.total}`)}" Text="Total" TextAlignment="MiddleLeft" Font="${escapeXmlAttribute(bold)}"` +
+      ` LocationFloat="0, 0" SizeF="${third}, ${height}" Padding="2,2,0,0,${dpi}"${dpiOf} />` +
+      `<Item2 Ref="${ref++}" ControlType="XRLabel" Name="${fresh(`labelGroupSum${options.total}`)}" Text="${t}" TextFormatString="{0:N2}" TextAlignment="MiddleRight" Font="${escapeXmlAttribute(bold)}"` +
+      ` LocationFloat="${unit(width - third)}, 0" SizeF="${third}, ${height}" Padding="2,2,0,0,${dpi}"${dpiOf}>` +
+      `<Summary Ref="${ref++}" Running="Group" />` +
+      `<ExpressionBindings><Item1 Ref="${ref++}" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([${t}])" /></ExpressionBindings></Item2></Controls>` +
+      `</Item${count + 2}>`;
+  }
+  /*
+   * In print order, as the designer writes them and the audit's band-order
+   * check expects: the header before every group header there is (it is the
+   * outermost) or before Detail, the footer after every group footer or after
+   * Detail. A band's tag is its place in the collection, so all are renumbered.
+   */
+  const items = childrenIn(xml, bands.openEnd, bands.end).filter((c) => /^Item\d+$/.test(c.name));
+  const kinds = items.map((c) => /\sControlType="(\w+)"/.exec(xml.slice(c.start, c.openEnd))?.[1] ?? '');
+  const slices = items.map((c) => xml.slice(c.start, c.end));
+  const firstGroup = kinds.indexOf('GroupHeaderBand');
+  const detailAt = kinds.indexOf('DetailBand');
+  const tailAt = kinds.findIndex((k) => /^(ReportFooter|PageFooter|BottomMargin)Band$/.test(k));
+  const headerAt = firstGroup >= 0 ? firstGroup : detailAt >= 0 ? detailAt : tailAt >= 0 ? tailAt : slices.length;
+  const lastFooter = kinds.lastIndexOf('GroupFooterBand');
+  const footerAt = lastFooter >= 0 ? lastFooter + 1 : detailAt >= 0 ? detailAt + 1 : headerAt;
+  const ordered = [...slices];
+  if (footer) ordered.splice(footerAt, 0, footer);
+  ordered.splice(headerAt, 0, header);
+  const renamed = ordered.map((s, i) => s.replace(/^<Item\d+/, `<Item${i + 1}`).replace(/<\/Item\d+>$/, `</Item${i + 1}>`));
+  const inner = xml.slice(bands.openEnd, bands.end - '</Bands>'.length);
+  const lead = /^\s*/.exec(inner)?.[0] ?? '';
+  const trail = /\s*$/.exec(inner)?.[0] ?? '';
+  const sep = items.length > 1 ? xml.slice(items[0].end, items[1].start) : '';
+  return {
+    xml: xml.slice(0, bands.openEnd) + lead + renamed.join(sep) + trail + xml.slice(bands.end - '</Bands>'.length),
+    applied: true,
+    reason: `grouped the report by [${field}]${options.total ? `, with a total of [${options.total}] for each` : ''}`,
+  };
+}
+
+/**
  * Retype one cell of a table, by its row and its place in the row, in file
  * order. A cell whose text is bound to a field is declined: the binding wins
  * when it prints, so typed text would never be seen.

@@ -39,6 +39,8 @@ export interface DataField {
   type: FieldType;
   /** A real value from the source, for the format inference and the preview. */
   sample: string;
+  /** More of them, when the source has several: a database's sample rows (2026-11-09, lib/fieldMatch.ts). */
+  samples?: string[];
 }
 
 export type DataSourceKind = 'json' | 'csv' | 'sql' | 'list' | 'none';

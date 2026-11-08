@@ -1137,6 +1137,8 @@ export default function App() {
   activeDatabaseRef.current = activeDatabase;
   /** What the report reads from it, chosen on the Data tab (batch DC); written into the .repx from batch DD. */
   const [activeQuery, setActiveQuery] = useState<ReportQuery | null>(null);
+  /** Whether its names and sample values go to the AI (batch DE): on when attached, until unticked on the Data tab. */
+  const [databaseShared, setDatabaseShared] = useState(false);
   /** The databases kept on this device, by name, newest first. */
   const [keptDatabases, setKeptDatabases] = useState<string[]>([]);
   /** The chosen query's fields, for the Data tab's column mapping. */
@@ -2339,7 +2341,11 @@ export default function App() {
       await store.saveDatabase(schema);
       setActiveDatabase(schema);
     }
-    const text = schema ? db.schemaForAi(schema) : db.samplesForAi(found.kind === 'sample' ? found.database : '', found.kind === 'sample' ? found.samples : {});
+    // Shared with the AI when attached; a layout pasted on the Data tab is not, until ticked (batch DE).
+    if (attach) setDatabaseShared(true);
+    else if (found.kind === 'schema') setDatabaseShared(false);
+    // The layout itself goes in the request's own section (lib/databaseAi.ts); the attachment names it.
+    const text = schema ? `${db.summarizeSchema(schema)}: the layout and sample values of this SQL Server database are shared with the request.` : db.samplesForAi(found.kind === 'sample' ? found.database : '', found.kind === 'sample' ? found.samples : {});
     // Attached in the box it goes to the AI with the message; pasted on the Data tab it does not.
     if (attach) setAttachmentTexts((prev) => [...prev.filter((t) => t.uploadId !== found.uploadId), { id: `${Date.now()}-${found.file}`, uploadId: found.uploadId, file: found.file, text }]);
     return line;
@@ -4048,6 +4054,9 @@ export default function App() {
       // ahead of the request, never mixed into the words they typed.
       const remembered = await import('./lib/memory').then(m => m.instructionsOf(m.readMemory())).catch(() => '');
       if (remembered && team.members.length) team.members.push('memory');
+      // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE).
+      const db = databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
+      const database = db ? db.designSection(activeDatabase!, { query: activeQuery, words: [currentPrompt, team.brief, ...currentTexts.map((t) => t.text)].join('\n') }) : undefined;
       let response = await analyzeReportDesign(
         // Passed through empty when the user typed nothing. It used to become
         // "Generate a professional DevExpress report layout based on these
@@ -4067,6 +4076,7 @@ export default function App() {
           // Forma drafts and the AI corrects, on a first generation from a
           // picture (2026-11-05); the service designs as before otherwise.
           draft: open ? null : team.correct ?? null,
+          database,
         },
       );
 
@@ -4104,7 +4114,7 @@ export default function App() {
             { repxContent: response.repxContent },
             signal,
             handleStreamProgress,
-            { description: describeRequest },
+            { description: describeRequest, database },
           );
           if (signal.aborted) {
             console.debug('Generation aborted/paused by user during repair.');
@@ -4114,12 +4124,31 @@ export default function App() {
           const next = auditRepx(fixed.repxContent, fixed.layout);
           // Keep the better of the two; a repair that made things worse is not applied.
           if (next.errors <= audit.errors) {
-            response = fixed;
+            // The query the first answer named stands unless the repair names another (batch DE).
+            response = { ...fixed, dataQuery: fixed.dataQuery ?? response.dataQuery };
             audit = next;
           } else {
             console.warn(`The repair attempt had ${next.errors} error(s) against ${audit.errors}; keeping the earlier report.`);
             break;
           }
+        }
+      }
+
+      /*
+       * The data source, written by Forma from what the AI named (batch DE,
+       * lib/databaseAi.ts): the query chosen on the Data tab, the AI's
+       * <?forma-query?>, or the object holding most of what it bound. The
+       * Mockup and the Spec are read again, since a detail band may be added.
+       */
+      let dataNote = '';
+      if (db && response.repxContent) {
+        const out = db.writeFromAnswer(response.repxContent, activeDatabase!, { query: activeQuery, dataQuery: response.dataQuery, version: config.version });
+        dataNote = out.note;
+        if (out.query) {
+          const views = await import('./lib/repxViews');
+          const title = response.layout.title;
+          response = { ...response, repxContent: out.xml, markdown: views.specFromRepx(out.xml, title), layout: views.layoutFromRepx(out.xml, title) };
+          setActiveQuery(out.query);
         }
       }
 
@@ -4164,7 +4193,7 @@ export default function App() {
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
         role: 'assistant',
-        text: [credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)), changed, checked].filter(Boolean).join('\n\n'),
+        text: [credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)), dataNote, changed, checked].filter(Boolean).join('\n\n'),
         result: newResult
       };
       // The two imports above are a wait: a session left meanwhile is not this one.
@@ -4966,10 +4995,14 @@ export default function App() {
           ? agent.reportOutline(open.repxContent!, { findings: repxAudit?.findings.map((f) => f.message), selected: previewSelection })
           : undefined;
         reportTurnRef.current = Boolean(outline);
+        // A shared database: its layout and what the report reads, and the `data` edit's writer (batch DE).
+        const dbAi = open && databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
+        const database = dbAi ? dbAi.chatSection(activeDatabase!, { query: activeQuery, words: currentPrompt, repx: open!.repxContent }) : undefined;
+        const hooks = dbAi ? { data: dbAi.dataEditHook(activeDatabase!, config.version, setActiveQuery) } : {};
         const answered = await chatReply(history, config, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
-        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined);
+        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined);
         if (turn.signal.aborted) return;
         /*
          * What the turn cost, kept on the reply it writes (2026-11-07, agent
@@ -5034,7 +5067,7 @@ export default function App() {
            * project or New report is not this turn's, and the signal says so.
            */
           const now = reportNow.current?.repxContent ? reportNow.current : open;
-          let done = agent.applyEdits(now.repxContent!, outcome.edits ?? []);
+          let done = agent.applyEdits(now.repxContent!, outcome.edits ?? [], hooks);
           const { auditRepx } = await import('./lib/repxAudit');
           if (turn.signal.aborted) return;
           const errorsOf = (xml: string) => auditRepx(xml, now.layout).findings.filter((f) => f.severity === 'error').map((f) => f.message);
@@ -5056,13 +5089,13 @@ export default function App() {
                 config,
                 turn.signal,
                 undefined,
-                { outline: agent.reportOutline(done.xml, { selected: previewSelection }), ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS },
+                { outline: agent.reportOutline(done.xml, { selected: previewSelection }), ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database },
                 remembered,
               );
               if (turn.signal.aborted) return;
               turnUsage = addUsage(turnUsage, again.usage);
               const second = agent.readReportOutcome(again);
-              const more = second.action === 'edit' && second.edits.length ? agent.applyEdits(done.xml, second.edits) : null;
+              const more = second.action === 'edit' && second.edits.length ? agent.applyEdits(done.xml, second.edits, hooks) : null;
               if (more?.changed) {
                 done = { xml: more.xml, applied: [...done.applied, ...more.applied], declined: more.declined, changed: true };
                 secondPass = true;
@@ -5082,7 +5115,9 @@ export default function App() {
             if (tools.length) setPendingTools(tools);
             const changes = agent.describeChanges(now.repxContent!, done.xml);
             // Whatever the edit brought that the checks find, said here (2026-11-05).
-            const brought = agent.checksMarkdown(auditRepx(done.xml, now.layout).findings, auditRepx(now.repxContent!, now.layout).findings);
+            // File against file: the Mockup is read again from the edited file a moment later, so a band
+            // the edit added (a group, 2026-11-09) is not a mismatch with the Mockup it had before.
+            const brought = agent.checksMarkdown(auditRepx(done.xml, null).findings, auditRepx(now.repxContent!, null).findings);
             setMessages(prev => [...prev, withCost({
               id,
               role: 'assistant',
@@ -6785,10 +6820,19 @@ export default function App() {
                     <DatabasePanel
                       database={activeDatabase}
                       recent={keptDatabases}
+                      shared={databaseShared}
+                      onShare={setDatabaseShared}
+                      onAskSql={async (sentence) => {
+                        const [{ layoutFor }, { promptToSql }] = await Promise.all([import('./lib/databaseAi'), loadGemini()]);
+                        return promptToSql(sentence, layoutFor(activeDatabase!, sentence), effectiveConfig());
+                      }}
                       onSwitch={async (name) => {
                         const kept = await (await import('./lib/sqlSchemaStore')).loadDatabases();
                         const hit = kept.find((d) => d.name === name);
-                        if (hit) setActiveDatabase(hit.schema);
+                        if (hit) {
+                          setActiveDatabase(hit.schema);
+                          setDatabaseShared(false);
+                        }
                       }}
                       onForget={async (name) => {
                         const store = await import('./lib/sqlSchemaStore');

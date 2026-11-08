@@ -274,3 +274,38 @@ describe('a label bound on its own', () => {
     expect(screen.queryByText(/Bound to 1 field/)).toBeNull();
   });
 });
+
+/* Matching with how sure, and the one-click fixes (2026-11-09, the SQL Server programme, item 23). */
+describe('matching against a database', () => {
+  const fields = [
+    { name: 'Description', type: 'string' as const, sample: 'Widget', samples: ['Widget', 'Gadget'] },
+    { name: 'NetAmount', type: 'number' as const, sample: '1', samples: ['1', '2.5'] },
+  ];
+
+  it('says how sure each suggestion is, and why', () => {
+    render(<DataBinding repxContent={bindable} onApply={() => {}} databaseFields={fields} databaseLabel="dbo.Lines" />);
+    expect(screen.getByText('Sure: the heading is its name, its value is in the samples')).toBeTruthy();
+    expect(screen.getByText('Sure: the heading holds its name, its value is in the samples')).toBeTruthy();
+  });
+
+  it('offers the likeliest field in one click for a column left unmatched', () => {
+    render(<DataBinding repxContent={bindable} onApply={() => {}} databaseFields={fields} databaseLabel="dbo.Lines" />);
+    const first = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+    fireEvent.change(first, { target: { value: '' } });
+    expect(screen.getByText('not matched')).toBeTruthy();
+    fireEvent.click(screen.getByText('Use Description'));
+    expect((screen.getAllByRole('combobox')[0] as HTMLSelectElement).value).toBe('Description');
+  });
+
+  it('on a bound report, renames a field the database lacks to its likeliest one', () => {
+    const bound = bindable.replace(
+      '<Item1 Ref="10" ControlType="XRTableCell" Name="c1" Text="Widget" Weight="3" />',
+      '<Item1 Ref="10" ControlType="XRTableCell" Name="c1" Text="Widget" Weight="3"><ExpressionBindings><Item1 EventName="BeforePrint" PropertyName="Text" Expression="[DESCR]" /></ExpressionBindings></Item1>',
+    );
+    const onApply = vi.fn();
+    render(<DataBinding repxContent={bound} onApply={onApply} databaseFields={fields} databaseLabel="dbo.Lines" />);
+    expect(screen.getByText(/1 field it prints is not in dbo\.Lines, so it prints blank/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Use Description'));
+    expect(onApply).toHaveBeenCalledWith(expect.stringContaining('Expression="[Description]"'), 'Bound [DESCR] to [Description] in 1 place');
+  });
+});

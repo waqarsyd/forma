@@ -211,3 +211,22 @@ describe('helpers', () => {
     expect(scoreChecks([])).toEqual({ passed: 0, total: 0, ratio: 1 });
   });
 });
+
+/* The database case's two checks (2026-11-09, the SQL Server programme, item 23). */
+describe('bindings and the data source', () => {
+  const repx = `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" PageWidth="850" PageHeight="1100" Version="20.1">
+  <Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="25"><Controls>
+    <Item1 Ref="3" ControlType="XRLabel" Name="a" Text="x"><ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="Text" Expression="[CompanyName]" /></ExpressionBindings></Item1>
+    <Item2 Ref="5" ControlType="XRLabel" Name="b" Text="y"><ExpressionBindings><Item1 Ref="6" EventName="BeforePrint" PropertyName="Text" Expression="[Balance]" /></ExpressionBindings></Item2>
+  </Controls></Item1></Bands>
+</XtraReportsLayoutSerializer>`;
+
+  it('scores which of the database’s fields are bound, and reports no data source when none was written', () => {
+    const m = measureReport(repx, null);
+    expect(m.boundFields).toEqual(['CompanyName', 'Balance']);
+    const checks = checkFidelity(m, { bindings: { fields: ['CompanyName', 'CurrentBalance'], minRatio: 0.5 }, dataSource: { query: 'Customers' } });
+    expect(checks.find((c) => c.id === 'bindings')).toEqual({ id: 'bindings', pass: true, expected: '>= 1 of 2 fields bound', actual: '1 (missing CurrentBalance)' });
+    expect(checks.find((c) => c.id === 'dataSource')).toEqual({ id: 'dataSource', pass: false, expected: 'reads Customers', actual: 'no data source' });
+  });
+});

@@ -679,6 +679,9 @@ src/
                        SQL), repxSqlWriter (that query written into the
                        report as DevExpress's SqlDataSource, by connection
                        name, as measured and run by DevExpress),
+                       databaseAi (a shared database shown to the AI, the
+                       query it names held to the layout), fieldMatch (a
+                       column matched to a field by heading and value),
                        layers (the stack of open menus and dialogs, so one
                        Escape closes only the topmost and keys meant for
                        one stay there), clipboard (every Copy, with a
