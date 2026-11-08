@@ -378,6 +378,18 @@ export const IconSlash = (p: Props) => (
     <path d="M14 8l-4 8" />
   </Svg>
 );
+/* The conversation panel's Collapse and Expand (2026-11-08), Stitch's own:
+   Material Symbols' collapse_content and expand_content, measured from
+   Stitch scaled six times. Two solid square-ended corners, at the upper
+   right and the lower left, pointing in or out. Filled shapes, not strokes,
+   as Material draws them, so they are as heavy as Stitch's at any size. */
+const Solid = ({ size = 17, className = '', d }: Props & { d: string }) => (
+  <svg width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className={className} aria-hidden="true" focusable="false">
+    <path d={d} />
+  </svg>
+);
+export const IconCollapse = (p: Props) => <Solid {...p} d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" />;
+export const IconExpand = (p: Props) => <Solid {...p} d="M200-200v-240h80v160h160v80H200Zm480-280v-160H520v-80h240v240h-80Z" />;
 /* The Preview's rail (2026-11-08), as Stitch's: Select, an arrow pointer. */
 export const IconPointer = (p: Props) => (
   <Svg {...p}>

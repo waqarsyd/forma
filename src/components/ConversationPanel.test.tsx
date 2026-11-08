@@ -130,20 +130,31 @@ describe('the pill and the fold', () => {
     const onToggle = vi.fn();
     draw({ collapsed: true, onToggle });
     expect((document.querySelector('.wb-panel-convo') as HTMLElement).hidden).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Show the conversation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand the conversation' }));
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  // Agent audit item 98: two dots on a pill read as someone typing.
-  it('marks folding with icons, not dots, and shows a quiet dot on the folded panel while Forma works', () => {
+  /* Stitch's own icons, the owner's choice (2026-11-08): the agent's mark,
+     two dots on a pill, at the top left and in the folded square; Collapse
+     and Expand titled as Stitch's; the mark's dots moving while Forma works.
+     Agent audit item 98 had replaced the dots with a minimise line and a
+     chat bubble the day before. */
+  it("shows Stitch's mark, Collapse and Expand, and moves the mark's dots while Forma works", () => {
     const { rerender } = draw();
-    const mark = screen.getByRole('button', { name: 'Fold the conversation away' });
-    expect(mark.querySelector('svg')).toBeTruthy();
-    expect(mark.querySelectorAll('i')).toHaveLength(0);
+    const head = document.querySelector('.wb-panel-head')!;
+    expect(head.querySelector('.wb-agent-mark')?.querySelectorAll('i')).toHaveLength(2);
+    expect(head.firstElementChild?.className).toContain('wb-agent-mark');
+    const collapse = screen.getByRole('button', { name: 'Collapse the conversation' });
+    expect(collapse.getAttribute('title')).toBe('Collapse');
+    expect(collapse.querySelector('svg')).toBeTruthy();
     rerender(<ConversationPanel<unknown> {...base} collapsed />);
-    expect(document.querySelector('.wb-reply-busy')).toBeNull();
+    const expand = screen.getByRole('button', { name: 'Expand the conversation' });
+    expect(expand.getAttribute('title')).toBe('Expand');
+    expect(expand.querySelector('.wb-agent-mark')).toBeTruthy();
+    expect(expand.querySelector('.wb-panel-expand-ic svg')).toBeTruthy();
+    expect(document.querySelector('.wb-agent-mark.is-working')).toBeNull();
     rerender(<ConversationPanel<unknown> {...base} collapsed isChatting />);
-    expect(document.querySelector('.wb-reply-busy')).toBeTruthy();
+    expect(document.querySelector('.wb-panel-expand .wb-agent-mark.is-working')).toBeTruthy();
   });
 
   // Agent audit item 32: a fold hid the card by dropping it, and with it an edit being typed.

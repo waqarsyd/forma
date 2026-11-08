@@ -881,7 +881,7 @@ y_top = pageHeight − (baseline + height)`}
                 </Def>
                 <Def t="Search, download and fold">
                   The panel's search marks every match and Enter goes to the next; its download saves the whole
-                  chat as a Markdown file. The fold button folds the panel and the box to one button at the top left,
+                  chat as a Markdown file. Collapse, at the panel's top right, folds the panel and the box to one square at the top left, with Forma's mark in it; Expand opens it again,
                   to see the whole report.
                 </Def>
                 <Def t="The command menu">

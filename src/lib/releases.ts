@@ -83,6 +83,7 @@ export const RELEASES: Release[] = [
     summary:
       'What the chat changes now shows everywhere at once, Try again starts from where your message did, and a reply’s Undo and Redo survive a reload. The chat follows what you asked it to remember, and a new report gets a project of its own.',
     changes: [
+      { kind: 'changed', area: 'workspace', text: 'The conversation panel opens and closes as Google Stitch’s does: Forma’s mark at its top left, Collapse at its top right, and folded, a small square with the mark that turns to Expand when you point at it.' },
       { kind: 'improved', area: 'workspace', text: 'The model menu names the Gemini model behind every choice, Auto included, once your key has made its first request.' },
       { kind: 'new', area: 'preview', text: 'Mark an area: a tool at the right of the Preview, or the M key, lets you drag a box over the report to select every control in it, ready to ask the chat about or to change with the selection toolbar. V goes back to selecting one at a time.' },
       { kind: 'changed', area: 'workspace', text: 'A menu button before the project’s name holds everything the workspace does: all your projects, Share and Export, Rename, Duplicate and Archive, Settings, the command menu, the keyboard shortcuts, help and Delete. The ? in the corner links the docs, the FAQ, Discussions and the privacy notice too.' },

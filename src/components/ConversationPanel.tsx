@@ -25,7 +25,7 @@ import { groupAttachments, groupLabel, type PreviewMeta } from '../lib/attachmen
 import { messageTime, requestAnnouncement, requestTitle, type ChatMessage, type ChatRequest } from '../lib/chatSession';
 import { formatSessionStamp } from '../lib/datetime';
 import ErrorBoundary from './ErrorBoundary';
-import { IconChat, IconChevronDown, IconDownload, IconEye, IconMinus, IconPencil, IconSearch, IconTrash } from './landing/icons';
+import { IconChevronDown, IconCollapse, IconDownload, IconExpand, IconEye, IconPencil, IconSearch, IconTrash } from './landing/icons';
 
 export interface ConversationPanelProps<R> extends Omit<ChatThreadProps<R>, 'messages' | 'showWorking' | 'turns' | 'renderAsk' | 'currentTurn'> {
   /** Every request, oldest first (`requestsOf`). */
@@ -276,6 +276,22 @@ function useSearchJump(threadHost: React.RefObject<HTMLDivElement | null>, query
   return go;
 }
 
+/**
+ * The agent's mark, as Stitch's (2026-11-08): two white dots on a black pill,
+ * at the panel's top left and in its folded square, the dots taking turns
+ * while Forma works. The owner chose Stitch's own icons that day; agent audit
+ * item 98 had replaced them on 2026-11-07 with a minimise line and a chat
+ * bubble, judging the dots to read as someone typing.
+ */
+function AgentMark({ working }: { working: boolean }) {
+  return (
+    <span className={`wb-agent-mark${working ? ' is-working' : ''}`} aria-hidden="true">
+      <i />
+      <i />
+    </span>
+  );
+}
+
 export default function ConversationPanel<R>({
   requests,
   collapsed,
@@ -321,42 +337,51 @@ export default function ConversationPanel<R>({
       <div className="wb-reply-said" role="status" aria-live="polite">
         {said.text ? <span key={said.n}>{said.text}</span> : null}
       </div>
-      <div className="wb-panel-head">
-        {!collapsed && requests.length > 0 && (
-          <>
-            <button
-              type="button"
-              className="wb-panel-tool"
-              aria-expanded={searching}
-              aria-label="Search the conversation"
-              title="Search the conversation"
-              onClick={() => (searching ? closeSearch() : (setSearching(true), requestAnimationFrame(() => searchRef.current?.focus())))}
-            >
-              <IconSearch size={14} />
-            </button>
-            {onExport && (
-              <button type="button" className="wb-panel-tool" aria-label="Download the conversation" title="Download the conversation as Markdown" onClick={onExport}>
-                <IconDownload size={14} />
-              </button>
-            )}
-          </>
-        )}
-        <span className="wb-panel-gap" />
-        {/* The mark that folds the panel, and the box with it, to itself and
-            opens it again: a minimise line while open, a chat bubble folded,
-            with a quiet dot on it while Forma works (agent audit item 98). */}
+      {collapsed ? (
+        /* Folded, as Stitch's: a rounded square holding the agent's mark,
+           which turns to Expand under the pointer or the keyboard's focus
+           (2026-11-08, the owner's choice of Stitch's own icons). */
         <button
           type="button"
-          className="wb-reply-mark"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? 'Show the conversation' : 'Fold the conversation away'}
-          title={collapsed ? 'Show the conversation' : 'Fold the conversation away'}
+          className="wb-panel-expand"
+          aria-expanded={false}
+          aria-label="Expand the conversation"
+          title="Expand"
           onClick={onToggle}
         >
-          {collapsed ? <IconChat size={18} /> : <IconMinus size={14} />}
-          {collapsed && working ? <span className="wb-reply-busy" aria-hidden="true" /> : null}
+          <AgentMark working={working} />
+          <span className="wb-panel-expand-ic" aria-hidden="true">
+            <IconExpand size={18} />
+          </span>
         </button>
-      </div>
+      ) : (
+        <div className="wb-panel-head">
+          <AgentMark working={working} />
+          <span className="wb-panel-gap" />
+          {requests.length > 0 && (
+            <>
+              <button
+                type="button"
+                className="wb-panel-tool"
+                aria-expanded={searching}
+                aria-label="Search the conversation"
+                title="Search the conversation"
+                onClick={() => (searching ? closeSearch() : (setSearching(true), requestAnimationFrame(() => searchRef.current?.focus())))}
+              >
+                <IconSearch size={14} />
+              </button>
+              {onExport && (
+                <button type="button" className="wb-panel-tool" aria-label="Download the conversation" title="Download the conversation as Markdown" onClick={onExport}>
+                  <IconDownload size={14} />
+                </button>
+              )}
+            </>
+          )}
+          <button type="button" className="wb-panel-tool wb-panel-collapse" aria-expanded aria-label="Collapse the conversation" title="Collapse" onClick={onToggle}>
+            <IconCollapse size={18} />
+          </button>
+        </div>
+      )}
       {/* Folded, the panel hides what it holds rather than dropping it
           (agent audit item 32): answers typed into Forma's questions, an edit
           of a message and the words in the box are kept. */}

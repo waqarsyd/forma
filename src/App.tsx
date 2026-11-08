@@ -5798,7 +5798,7 @@ export default function App() {
       { id: 'sidebar', label: 'Show or hide the sidebar', keys: keysFor('Ctrl+B'), run: toggleSidebar },
       { id: 'clean', label: isClean ? 'Leave the clean screen' : 'Clean screen', keys: keysFor('Ctrl+\\'), run: () => setIsClean((c) => !c) },
     ];
-    list.push({ id: 'card', label: isPanelCollapsed ? 'Show the conversation' : 'Fold the conversation away', run: () => setIsPanelCollapsed((c) => !c) });
+    list.push({ id: 'card', label: isPanelCollapsed ? 'Expand the conversation' : 'Collapse the conversation', run: () => setIsPanelCollapsed((c) => !c) });
     // Stop, the search and a paused queue, in the menu too (2026-11-07, agent audit item 66).
     if (isAnalyzing || isChatting) list.push({ id: 'stop', label: 'Stop what Forma is doing', keys: 'Esc', run: () => handleStop() });
     if (requests.length) list.push({ id: 'search', label: 'Search the conversation', run: () => { setIsPanelCollapsed(false); setSearchReveal((n) => n + 1); } });

@@ -1765,7 +1765,7 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   width: 28px; height: 28px; display: inline-grid; place-items: center; padding: 0;
   border: 0; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer;
 }
-.wb-panel-tool:hover, .wb-panel-tool[aria-expanded='true'] { background: var(--track); color: var(--ink); }
+.wb-panel-tool:hover, .wb-panel-tool[aria-expanded='true']:not(.wb-panel-collapse) { background: var(--track); color: var(--ink); }
 .wb-panel-convo { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .wb-panel-convo[hidden] { display: none; }
 .wb-panel-search {
@@ -1785,17 +1785,33 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 /* The request whose change is shown on the Preview: a firmer edge, no accent. */
 .wb-turn[aria-current='true'] .wb-ask { border-color: var(--ink-faint); }
 .wb-panel-foot { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 6px 10px 10px; }
-/* The fold mark (agent audit item 98): a minimise line while open, a chat
-   bubble folded; it was two dots on a dark pill, which read as typing. */
-.wb-reply-mark {
-  position: relative; flex: none; align-self: center; margin: 0; width: 28px; height: 28px; padding: 0;
-  display: inline-grid; place-items: center;
-  border: 0; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer;
+/* The agent's mark, Collapse and Expand, as Stitch's (2026-11-08, the owner's
+   choice of Stitch's own icons; a minimise line and a chat bubble stood here
+   from agent audit item 98). The mark is two dots on a pill in the ink, which
+   is near black in the light theme and inverts in the dark; its dots take
+   turns while Forma works. */
+.wb-agent-mark {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  width: 38px; height: 18px; border-radius: 999px; background: var(--ink); transition: opacity .12s;
 }
-.wb-reply-mark:hover { background: var(--track); color: var(--ink); }
-.wb-panel.wb-is-collapsed .wb-reply-mark { width: 44px; height: 44px; color: var(--ink); }
-.wb-reply-busy { position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-2); animation: wb-breathe 1.2s ease-in-out infinite; }
-@keyframes wb-breathe { 50% { opacity: .25; } }
+.wb-agent-mark i { width: 5px; height: 5px; border-radius: 50%; background: var(--panel); }
+.wb-agent-mark.is-working i { animation: wb-mark-dot 1.1s ease-in-out infinite; }
+.wb-agent-mark.is-working i + i { animation-delay: .28s; }
+@keyframes wb-mark-dot { 0%, 100% { opacity: 1; transform: none; } 50% { opacity: .3; transform: translateY(-1px); } }
+/* Folded: the square holds the mark, which turns to Expand under the pointer or the keyboard. */
+.wb-panel-expand {
+  position: relative; width: 56px; height: 56px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 18px; background: none; cursor: pointer;
+}
+.wb-panel-expand .wb-agent-mark { width: 32px; height: 20px; gap: 5px; }
+.wb-panel-expand .wb-agent-mark i { width: 5px; height: 5px; }
+.wb-panel-expand-ic {
+  position: absolute; inset: 0; margin: auto; width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--track); color: var(--ink); opacity: 0; transition: opacity .12s;
+}
+.wb-panel-expand:hover .wb-panel-expand-ic, .wb-panel-expand:focus-visible .wb-panel-expand-ic { opacity: 1; }
+.wb-panel-expand:hover .wb-agent-mark, .wb-panel-expand:focus-visible .wb-agent-mark { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .wb-agent-mark.is-working i { animation: none; opacity: .6; } }
 
 .wb-ask { flex: none; margin: 12px 12px 0; padding: 8px 6px 8px 10px; border: 1px solid var(--rule); border-radius: 14px; background: var(--panel); }
 .wb-ask-line { display: flex; align-items: flex-start; gap: 6px; }
