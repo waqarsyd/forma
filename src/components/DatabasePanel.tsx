@@ -20,6 +20,7 @@ import { checkSqlAgainstSchema } from '../lib/databaseAi';
 import { driftOf, mainQueryOf, mergeLayouts, queryFromRepx, refreshDataSource } from '../lib/sqlDrift';
 import { schemaFromRepx, type RepxQuery } from '../lib/repxSqlDataSource';
 import { parseParameters } from '../lib/repxParameters';
+import { companionConnections, companionLayout, companionReachableFrom, companionSamples, type CompanionConnection } from '../lib/sqlCompanion';
 import {
   checkCustomSql,
   describeQuery,
@@ -69,6 +70,8 @@ interface Props {
   onApplyRepx?: (xml: string, reason: string) => void;
   /** A layout to make the active database: the report's own, or one with the report's tables kept. */
   onAdopt?: (schema: SqlSchema) => void;
+  /** Layout or sample output read through the companion (Phase 2), for App to read as a pasted one; the line to show. */
+  onLayoutText?: (text: string) => Promise<string | null>;
 }
 
 export type WriteOptions = Pick<DataSourceSpec, 'connectionName' | 'multiValue' | 'lookups' | 'calculatedFields'>;
@@ -204,6 +207,71 @@ function ReportSource({ repx, database, onQuery, onApplyRepx, onAdopt }: {
   );
 }
 
+/**
+ * Read from my SQL Server (2026-11-09, the SQL Server programme, Phase 2,
+ * item 36): with Forma served from this PC and the companion running, its
+ * connections are listed and the layout or sample rows read through it, as
+ * the scripts would read them, with no copy and paste. Anywhere else, the
+ * deployed site above all, the page never calls 127.0.0.1 and says how.
+ */
+function CompanionCard({ onLayoutText, sampleObjects }: { onLayoutText: (text: string) => Promise<string | null>; sampleObjects: string[] }) {
+  const reachable = typeof window !== 'undefined' && companionReachableFrom(window.location.origin);
+  const [connections, setConnections] = useState<CompanionConnection[] | null | undefined>(undefined);
+  const [chosen, setChosen] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [line, setLine] = useState('');
+  if (!reachable) {
+    return (
+      <p className="dbx-sub" style={{ margin: '10px 0 0' }}>
+        Forma on your own PC, with its companion running, reads your SQL Server directly, with no script to copy:{' '}
+        <a href="/docs#sql" style={{ color: 'inherit' }}>how</a>. This page cannot reach your PC, so it does not try.
+      </p>
+    );
+  }
+  const run = async (what: () => Promise<string>) => {
+    setBusy(true);
+    setLine('');
+    try {
+      setLine((await onLayoutText(await what())) ?? 'Read, but it did not look like Forma’s layout or sample output.');
+    } catch (err) {
+      setLine(err instanceof Error ? err.message : 'The companion could not read it.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="dbx-group" aria-label="Read from my SQL Server">
+      <h4>Read from my SQL Server</h4>
+      {connections === undefined ? (
+        <button
+          type="button"
+          className="dbx-btn"
+          onClick={async () => {
+            const found = await companionConnections();
+            setConnections(found);
+            if (found?.length) setChosen(found[0].name);
+          }}
+        >
+          Look for the companion on this PC
+        </button>
+      ) : connections === null ? (
+        <p className="dbx-sub" style={{ margin: 0 }}>No companion answered. Start <code>RepxDesigner.exe --serve</code> on this PC, then look again.</p>
+      ) : connections.length === 0 ? (
+        <p className="dbx-sub" style={{ margin: 0 }}>The companion keeps no connections yet. Add one from its tray menu, <em>SQL Server connections</em>: a login’s password is typed there and stays on this PC.</p>
+      ) : (
+        <div className="dbx-row">
+          <select className="dbx-input" style={{ width: 'auto' }} aria-label="Connection on this PC" value={chosen} onChange={(e) => setChosen(e.target.value)}>
+            {connections.map((c) => <option key={c.name} value={c.name}>{c.name} ({c.database})</option>)}
+          </select>
+          <button type="button" className="dbx-btn dbx-btn--solid" disabled={busy || !chosen} onClick={() => run(() => companionLayout(chosen))}>{busy ? 'Reading…' : 'Read the layout'}</button>
+          <button type="button" className="dbx-btn" disabled={busy || !chosen || !sampleObjects.length} title={sampleObjects.length ? undefined : 'Choose what the report reads first'} onClick={() => run(() => companionSamples(chosen, sampleObjects))}>Read sample rows</button>
+        </div>
+      )}
+      {line && <p className="dbx-sub" role="status" style={{ margin: '6px 0 0' }}>{line}</p>}
+    </div>
+  );
+}
+
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
   const a = document.createElement('a');
@@ -213,7 +281,7 @@ function download(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function DatabasePanel({ database, recent, onSwitch, onForget, query, onQuery, selectionLabel, onBindField, onCopy, onFieldsChange, onWrite, shared = false, onShare, onAskSql, repx, onApplyRepx, onAdopt }: Props) {
+export default function DatabasePanel({ database, recent, onSwitch, onForget, query, onQuery, selectionLabel, onBindField, onCopy, onFieldsChange, onWrite, shared = false, onShare, onAskSql, repx, onApplyRepx, onAdopt, onLayoutText }: Props) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [copied, setCopied] = useState('');
@@ -278,6 +346,7 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
               ))}
             </div>
           )}
+          {onLayoutText && <CompanionCard onLayoutText={onLayoutText} sampleObjects={[]} />}
         </section>
         {repx && <ReportSource repx={repx} database={null} onQuery={onQuery} onApplyRepx={onApplyRepx} onAdopt={onAdopt} />}
       </div>
@@ -410,6 +479,12 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
           <button type="button" className="dbx-btn" onClick={() => copy('The layout script', SCHEMA_SCRIPT)}>Copy the layout script again</button>
           {copied && <span className="dbx-sub" role="status">{copied}</span>}
         </div>
+        {onLayoutText && (
+          <CompanionCard
+            onLayoutText={onLayoutText}
+            sampleObjects={query?.kind === 'table' ? [query.object, ...query.joins.map((j) => j.table), ...(query.details ?? []).map((d) => d.table)] : []}
+          />
+        )}
         {customOpen && (
           <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
             <p className="dbx-sub" style={{ margin: 0 }}>A SELECT only. The report runs it with whatever rights its connection has, so give the report a read-only login, as DevExpress and Telerik advise.</p>

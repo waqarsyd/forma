@@ -933,9 +933,9 @@ y_top = pageHeight − (baseline + height)`}
                 read from the code by publicClaims.test.ts. */}
             <Article id="sql" kicker="Guide" title="Your SQL Server data" hidden={!matches('sql')}>
               <p className={PROSE}>
-                Forma never connects to your server. It reads your database’s layout from a script you run
-                yourself, writes the report’s data source the way DevExpress does, and leaves the connection to
-                your application, which already has it. The steps are on the{' '}
+                Forma in your browser never connects to your server. It reads your database’s layout from a script
+                you run yourself, writes the report’s data source the way DevExpress does, and leaves the connection
+                to your application, which already has it. The steps are on the{' '}
                 <strong className="font-semibold text-on-surface">Data</strong> view.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
@@ -986,6 +986,18 @@ report.ExportToPdf("report.pdf");`}
                 the Data view says which and turns it off. Shared, a report designed or changed in the chat is given
                 the 12 likeliest tables, views and procedures for your request, with up to 3 sample values a column,
                 and binds to your real columns; Forma checks every name it uses and writes the data source itself.
+              </Note>
+              <Note label="On your own PC, straight from the database">
+                Run Forma on your own computer with its companion,{' '}
+                <code className="doc-code">RepxDesigner.exe --serve</code>, and add your connection from the
+                companion’s tray menu, <em className="not-italic text-on-surface">SQL Server connections</em>: a
+                login’s password is typed there, encrypted for your Windows user, and never reaches the browser.{' '}
+                <strong className="font-semibold text-on-surface">Read from my SQL Server</strong> on the Data view
+                then reads the layout and sample rows with no script to copy,{' '}
+                <strong className="font-semibold text-on-surface">Live rows</strong> on the Preview prints the report
+                from your database with the values you type, a stored procedure only when you press the button that
+                names it, and the designer opens with the connection set, saving still only its name. The site on
+                the web never reaches your PC, so there it is the scripts.
               </Note>
               <Note label="A report that already has one">
                 Its data source shows on the Data view, a redesign keeps it, and with a newer export it is checked

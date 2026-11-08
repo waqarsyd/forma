@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -70,6 +71,36 @@ namespace RepxDesigner
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            // The SQL Server connections (2026-11-09, Sql.cs). --store moves where they
+            // are kept, so a test never writes into the profile.
+            int store = Array.IndexOf(args, "--store");
+            if (store >= 0 && store + 1 < args.Length) SqlCompanion.StorePath = Path.GetFullPath(args[store + 1]);
+
+            int add = Array.IndexOf(args, "--sql-add");
+            if (add >= 0 && add + 1 < args.Length)
+            {
+                // Windows authentication only: a login's password is typed in the window, never on a command line.
+                int server = Array.IndexOf(args, "--server"), database = Array.IndexOf(args, "--database");
+                if (SqlCompanion.IsName(args[add + 1]) && server > 0 && database > 0 && server + 1 < args.Length && database + 1 < args.Length)
+                {
+                    SqlCompanion.Put(new StoredConnection { Name = args[add + 1], Mode = "windows", Server = args[server + 1], Database = args[database + 1] });
+                }
+                return;
+            }
+
+            int remove = Array.IndexOf(args, "--sql-remove");
+            if (remove >= 0 && remove + 1 < args.Length)
+            {
+                SqlCompanion.Remove(args[remove + 1]);
+                return;
+            }
+
+            if (Array.IndexOf(args, "--sql-connections") >= 0)
+            {
+                Application.Run(new ConnectionsForm());
+                return;
+            }
+
             if (Array.IndexOf(args, "--register") >= 0)
             {
                 RegisterProtocol();
@@ -133,6 +164,10 @@ namespace RepxDesigner
             try
             {
                 XtraReport report = XtraReport.FromFile(path, true);
+
+                // Item 38 (2026-11-09): each connection the report names that this PC keeps,
+                // set so the designer's preview reads it, and saved as its name alone.
+                SqlCompanion.PrepareForDesigner(report);
 
                 using (ReportDesignTool tool = new ReportDesignTool(report))
                 {
@@ -362,6 +397,10 @@ namespace RepxDesigner
                     string picked = PickFile();
                     if (!string.IsNullOrEmpty(picked)) OpenDesigner(picked);
                 });
+                menu.MenuItems.Add("SQL Server connections...", (s, e) =>
+                {
+                    using (var form = new ConnectionsForm()) form.ShowDialog();
+                });
                 menu.MenuItems.Add("-");
                 menu.MenuItems.Add("Quit", (s, e) => Application.Exit());
                 tray.ContextMenu = menu;
@@ -473,7 +512,75 @@ namespace RepxDesigner
                 return;
             }
 
+            if (target.StartsWith("/sql/"))
+            {
+                HandleSql(stream, method, target, headers, body, allowed);
+                return;
+            }
+
             Respond(stream, 404, "text/plain", "Not found", allowed);
+        }
+
+        /// <summary>
+        /// The SQL Server companion's routes (2026-11-09, Sql.cs). Both guards, on
+        /// every one and before any work: a Forma origin, and the x-forma-client
+        /// header, which forces the browser's preflight. A page from anywhere else
+        /// never reaches a database, not even to be refused by CORS afterwards.
+        /// </summary>
+        private static void HandleSql(NetworkStream stream, string method, string target, Dictionary<string, string> headers, string body, string allowed)
+        {
+            if (allowed == null) { Respond(stream, 403, "text/plain", "", null); return; }
+            if (!headers.ContainsKey(ClientHeader)) { Respond(stream, 400, "text/plain", "Missing " + ClientHeader, allowed); return; }
+            string path = target.Split('?')[0];
+            var query = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            int q = target.IndexOf('?');
+            if (q >= 0)
+            {
+                foreach (string pair in target.Substring(q + 1).Split('&'))
+                {
+                    int eq = pair.IndexOf('=');
+                    if (eq > 0) query[Uri.UnescapeDataString(pair.Substring(0, eq).Replace('+', ' '))] = Uri.UnescapeDataString(pair.Substring(eq + 1).Replace('+', ' '));
+                }
+            }
+            try
+            {
+                if (method == "GET" && path == "/sql/connections")
+                {
+                    Respond(stream, 200, "application/json", SqlCompanion.Connections(), allowed);
+                    return;
+                }
+                string name;
+                query.TryGetValue("connection", out name);
+                if (method == "GET" && (path == "/sql/schema" || path == "/sql/sample"))
+                {
+                    StoredConnection c = SqlCompanion.IsName(name) ? SqlCompanion.Find(name) : null;
+                    if (c == null) { Respond(stream, 404, "application/json", "{\"missing\":[" + SqlCompanion.Json(name ?? "") + "]}", allowed); return; }
+                    if (path == "/sql/schema") { Respond(stream, 200, "text/plain", SqlCompanion.Schema(c), allowed); return; }
+                    string objects, rows;
+                    query.TryGetValue("objects", out objects);
+                    query.TryGetValue("rows", out rows);
+                    int n;
+                    Respond(stream, 200, "text/plain", SqlCompanion.Samples(c, (objects ?? "").Split(',').Where(o => o.Length > 0), int.TryParse(rows, out n) ? n : 5), allowed);
+                    return;
+                }
+                if (method == "POST" && path == "/sql/fill")
+                {
+                    if (string.IsNullOrEmpty(body)) { Respond(stream, 400, "text/plain", "Empty body", allowed); return; }
+                    var values = query.Where(kv => kv.Key.StartsWith("p.")).ToDictionary(kv => kv.Key.Substring(2), kv => kv.Value);
+                    string run;
+                    query.TryGetValue("procedures", out run);
+                    int status;
+                    string json = SqlCompanion.Fill(body, values, run == "1", out status);
+                    Respond(stream, status, "application/json", json, allowed);
+                    return;
+                }
+                Respond(stream, 404, "text/plain", "Not found", allowed);
+            }
+            catch (Exception ex)
+            {
+                // SQL Server's own words, which name what is wrong; never a connection string.
+                Respond(stream, 502, "application/json", "{\"error\":" + SqlCompanion.Json(ex.GetType().Name + ": " + ex.Message.Split('\n')[0]) + "}", allowed);
+            }
         }
 
         /// <summary>
@@ -630,6 +737,8 @@ namespace RepxDesigner
                 case 204: return "No Content";
                 case 400: return "Bad Request";
                 case 403: return "Forbidden";
+                case 409: return "Conflict";
+                case 502: return "Bad Gateway";
                 default: return "Not Found";
             }
         }

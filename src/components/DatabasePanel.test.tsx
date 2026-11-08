@@ -215,3 +215,30 @@ CREATE TABLE dbo.Orders (OrderID int NOT NULL PRIMARY KEY, CustomerID int NOT NU
     expect(onAdopt).toHaveBeenCalledWith(expect.objectContaining({ source: 'repx', database: 'ShopDemo' }));
   });
 });
+
+/* Read from my SQL Server, through the companion on this PC (2026-11-09, Phase 2, item 36). */
+describe('the companion on this PC', () => {
+  it('lists its connections and reads a layout through one, for App to keep', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/sql/connections')) return new Response(JSON.stringify({ connections: [{ name: 'FormaSample', mode: 'windows', database: 'FormaSample' }] }), { status: 200 });
+      if (url.includes('/sql/schema?connection=FormaSample')) return new Response('<?forma {"format":"forma-sql-schema"}?>', { status: 200 });
+      return new Response('', { status: 404 });
+    }));
+    const onLayoutText = vi.fn(async () => 'Database layout read: FormaSample.');
+    panel({ database: null, onLayoutText });
+    fireEvent.click(screen.getByText('Look for the companion on this PC'));
+    expect(await screen.findByText('FormaSample (FormaSample)')).toBeTruthy();
+    fireEvent.click(screen.getByText('Read the layout'));
+    expect(await screen.findByText('Database layout read: FormaSample.')).toBeTruthy();
+    expect(onLayoutText).toHaveBeenCalledWith('<?forma {"format":"forma-sql-schema"}?>');
+    vi.unstubAllGlobals();
+  });
+
+  it('says how to start one when none answers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    panel({ database: null, onLayoutText: vi.fn(async () => null) });
+    fireEvent.click(screen.getByText('Look for the companion on this PC'));
+    expect(await screen.findByText(/No companion answered/)).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+});

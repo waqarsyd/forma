@@ -51,7 +51,9 @@ import {
   type PaginatedReport,
 } from '../lib/reportPreview';
 import { parseParameters } from '../lib/repxParameters';
-import { choicesFor, sqlPreview } from '../lib/sqlPreview';
+import { choicesFor, parameterLookups, sqlPreview } from '../lib/sqlPreview';
+import { companionFill, companionReachableFrom, previewFromFill } from '../lib/sqlCompanion';
+import { readRepxDataSources } from '../lib/repxSqlDataSource';
 import type { SqlSchema } from '../lib/sqlSchema';
 import type { ReportQuery } from '../lib/sqlQuery';
 import { readBoundFields } from '../lib/repxBindingPlan';
@@ -1296,18 +1298,62 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   const sql = useMemo(() => (database ? sqlPreview(repxContent, database.schema, database.query) : null), [repxContent, database]);
   const [dbRowsOn, setDbRowsOn] = useState(false);
   useEffect(() => setDbRowsOn(false), [database]);
-  const records = given ?? (dbRowsOn && sql?.rows?.length ? sql.rows : null);
+  /*
+   * Live rows (2026-11-09, the SQL Server programme, Phase 2, item 37): the
+   * report's own data source filled on this PC by the companion, with the
+   * parameter values typed here, the database applying its filter. Offered
+   * only on a page the companion answers (lib/sqlCompanion.ts); a stored
+   * procedure runs only from the button that names it.
+   */
+  const ownSource = useMemo(() => readRepxDataSources(repxContent ?? '')[0] ?? null, [repxContent]);
+  const liveReachable = typeof window !== 'undefined' && companionReachableFrom(window.location.origin);
+  const [live, setLive] = useState<ReturnType<typeof previewFromFill> | null>(null);
+  const [liveLine, setLiveLine] = useState('');
+  const [liveProcedures, setLiveProcedures] = useState<string[]>([]);
+  // Once the person has run this report's procedure, a refresh runs it again; another source asks again.
+  const [consented, setConsented] = useState(false);
+  const liveKey = ownSource ? `${ownSource.connectionName}|${ownSource.queries.map((q) => q.name).join(',')}` : '';
+  useEffect(() => {
+    setLive(null);
+    setLiveLine('');
+    setLiveProcedures([]);
+    setConsented(false);
+  }, [liveKey]);
+  const records = given ?? (live ? live.rows : dbRowsOn && sql?.rows?.length ? sql.rows : null);
   const choices = useMemo(() => {
+    if (live) return live.choices;
     if (!database) return {} as Record<string, string[]>;
     const multi = new Set(parseParameters(repxContent).filter((p) => p.multiValue).map((p) => p.name));
     return choicesFor(database.schema, repxContent ?? '', typedParams, multi);
-  }, [database, repxContent, typedParams]);
+  }, [database, repxContent, typedParams, live]);
   const paramValues = useMemo(() => {
     const defaults: Record<string, string> = {};
     for (const p of parseParameters(repxContent)) if (p.multiValue && !p.value && choices[p.name]?.length) defaults[p.name] = choices[p.name].join(',');
     return { ...defaults, ...typedParams };
   }, [repxContent, choices, typedParams]);
-  const dataOptions = useMemo(() => ({ rowTypes: sql?.hints, sourceFilter: sql?.sourceFilter ?? null, related: sql?.related }), [sql]);
+  const dataOptions = useMemo(
+    () => (live ? { rowTypes: live.hints, sourceFilter: null, related: live.related } : { rowTypes: sql?.hints, sourceFilter: sql?.sourceFilter ?? null, related: sql?.related }),
+    [sql, live],
+  );
+  const fillLive = async (procedures = consented) => {
+    if (!repxContent || !ownSource) return;
+    if (procedures) setConsented(true);
+    setLiveLine('Reading from your SQL Server…');
+    const out = await companionFill(repxContent, paramValues, procedures);
+    if (out.kind === 'filled') {
+      const member = /<XtraReportsLayoutSerializer\b[^>]*\sDataMember="([^"]*)"/.exec(repxContent)?.[1]?.split('.')[0] ?? ownSource.queries[0]?.name ?? '';
+      setLive(previewFromFill(out.queries, member, ownSource.relations, parameterLookups(repxContent)));
+      setLiveProcedures([]);
+      setLiveLine('');
+    } else if (out.kind === 'procedures') {
+      setLiveProcedures(out.names);
+      setLiveLine(`The report runs the stored procedure ${out.names.join(', ')}, which could change data: run it only if you know it only reads.`);
+    } else if (out.kind === 'missing') {
+      setLiveLine(`The companion keeps no connection named ${out.names.join(', ')}: add it from its tray menu, SQL Server connections.`);
+    } else {
+      setLiveLine(out.message);
+    }
+  };
   /*
    * The drill-down groups the reader has opened or closed (s56), by key. The
    * toggle beside a group's label flips one, as a click on the label does in
@@ -2409,7 +2455,20 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             Undo
           </button>
         )}
-        {sql && !given && (
+        {ownSource && liveReachable && !given && (
+          /* Live rows from the database on this PC (2026-11-09, Phase 2, item 37). */
+          <>
+            <button type="button" className="wb-pill wb-pill--outline" onClick={() => void fillLive()} title="The report’s own data source, filled on this PC by the companion, with the values asked for above">
+              {live ? `Live: ${live.rows.length} rows · Refresh` : 'Live rows'}
+            </button>
+            {live && <button type="button" className="wb-pill wb-pill--outline" onClick={() => setLive(null)}>Clear</button>}
+            {liveProcedures.length > 0 && (
+              <button type="button" className="wb-pill wb-pill--outline" onClick={() => void fillLive(true)}>Run {liveProcedures.join(', ')}</button>
+            )}
+            {liveLine && <span className="rp-stat" role="status">{liveLine}</span>}
+          </>
+        )}
+        {sql && !given && !live && (
           /* The database's own sample rows (2026-11-09, batch DF): no request,
              typed from its layout; the AI's test data below when it has none. */
           sql.rows?.length ? (
@@ -2507,7 +2566,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           {parameters.map((p) =>
             // With test data each parameter takes a value, as DevExpress asks
             // for one before printing; without it there is nothing to apply it to.
-            records ? (
+            // Before the first live fill too (Phase 2): a procedure's parameter with no default is typed first.
+            records || (ownSource && liveReachable) ? (
               <label className="rp-param" key={p.name}>
                 {p.description || p.name}
                 <small>{(p.resolvedType ?? (p.lifted ? 'typed' : p.type)).replace('System.', '')}{p.multiValue ? ' · many' : ''}</small>

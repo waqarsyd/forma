@@ -56,6 +56,23 @@ Verified 2026-08-13: health 200 with the origin echoed, a POST missing the heade
 
 It uses a raw `TcpListener` rather than `HttpListener` because `HttpListener` wants a URL reservation or an elevated process, and this has to run by double-clicking it.
 
+## SQL Server, from this PC (2026-11-09)
+
+The SQL Server programme's Phase 2 (`Sql.cs`, `ConnectionsForm.cs`, `SqlScripts.cs`). The owner's rule of 2026-11-08: a database credential is held on the user's own PC and nowhere else. So the companion keeps the connections and the page only ever names one.
+
+| | |
+|---|---|
+| `GET /sql/connections` | each connection's name, how it signs in, and its database; never a secret |
+| `GET /sql/schema?connection=NAME` | Forma's read-only layout script's one value, run here: what `readDatabaseText` reads |
+| `GET /sql/sample?connection=NAME&objects=dbo.A,dbo.B&rows=N` | the sample script's own format, built here: each name checked against the catalog and quoted by `QUOTENAME`, N from 1 to 50, a name the catalog lacks left out |
+| `POST /sql/fill?procedures=0\|1&p.NAME=value` | body is the `.repx`; its own data source filled as DevExpress fills it, each query's first 500 rows |
+
+- **Both guards, on every route, before any work.** An origin outside `IsAllowedOrigin` gets 403 and a request without `x-forma-client` 400, so a page from anywhere else never reaches a database, not even to be refused by CORS afterwards. Checked 2026-11-09: foreign origin 403, no header 400, unknown connection 404.
+- **No SQL from the page.** The layout script is `SqlScripts.Schema`, written by `npx tsx scripts/companion-scripts.ts` from `SCHEMA_SCRIPT` and held equal to it by `src/lib/sqlCompanion.test.ts`. Samples are built here. A fill runs the report's own data source: custom SQL must be one SELECT, and **a stored procedure runs only with `procedures=1`**, which the Preview sends only from the button that names the procedure (it could write; 409 lists them otherwise).
+- **The connections** are in `%LOCALAPPDATA%\Forma\connections.tsv`: name, sign-in, server, database, and for a SQL Server login its login and password encrypted with DPAPI for the current Windows user. Windows authentication stores no secret. Add one from the tray menu, *SQL Server connections...* (or `--sql-connections`), where a password is typed into a masked box; `--sql-add NAME --server S --database D` adds a Windows-authentication one from a command line, `--sql-remove NAME` removes one, and `--store <path>` moves the file, which is how a test keeps out of the profile. Name a connection as your application's `connectionStrings` does, so a report reads the same database here.
+- **The designer reads the connection too (item 38).** `OpenDesigner` sets each data source's connection from the store and marks it `StoreConnectionNameOnly`, so the designer's own preview works at once and saving writes only the name. Measured with `RepxProbe sql-fill --name-only`: filled, and the saved layout read `<Connection Name="FormaSample" FromAppConfig="true" />`. Supplying it through `ConfigureDataConnection` instead does not work for a connection stored by name: DevExpress looks the name up in the config file first and throws ("Cannot find the following connection in the config file"), measured with `--event`.
+- **Only from a page served on this PC**, as for `/open`: the deployed site never calls 127.0.0.1 and the Data tab says how instead. Tested against LocalDB's made-up FormaSample only (`RepxProbe sql-keep` and `sql-drop`).
+
 ## Version compatibility
 
 The tool targets **DevExpress 20.1**, the version installed on this machine.

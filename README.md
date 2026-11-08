@@ -686,6 +686,8 @@ src/
                        rows, typed as DevExpress prints each SQL type),
                        sqlDrift (a report's own data source read back, kept
                        through a redesign and checked against a newer layout),
+                       sqlCompanion (the companion on your PC reading your SQL
+                       Server for the Data tab and the Preview, by connection name),
                        layers (the stack of open menus and dialogs, so one
                        Escape closes only the topmost and keys meant for
                        one stay there), clipboard (every Copy, with a

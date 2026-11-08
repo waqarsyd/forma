@@ -2320,6 +2320,12 @@ export default function App() {
    * the AI is given the result as text, which the owner allowed for names and
    * values. Returns the line to show.
    */
+  /** A layout or sample output pasted on the Data tab, or read through the companion: kept, not shared with the AI. */
+  const databaseFromText = async (text: string) => {
+    const { readDatabaseText } = await import('./lib/sqlSchema');
+    const found = readDatabaseText(text);
+    return found ? takeDatabase({ ...found, file: 'the Data tab', uploadId: 'data-tab' }, false) : null;
+  };
   const takeDatabase = useCallback(async (found: DatabaseText & { file: string; uploadId: string }, attach = true): Promise<string> => {
     const [db, store] = await Promise.all([import('./lib/sqlSchema'), import('./lib/sqlSchemaStore')]);
     const kept = await store.loadDatabases();
@@ -6840,6 +6846,8 @@ export default function App() {
                         setActiveDatabase(schema);
                         setDatabaseShared(false);
                       }}
+                      // Read through the companion on this PC (Phase 2), as a pasted layout is.
+                      onLayoutText={databaseFromText}
                       onAskSql={async (sentence) => {
                         const [{ layoutFor }, { promptToSql }] = await Promise.all([import('./lib/databaseAi'), loadGemini()]);
                         return promptToSql(sentence, layoutFor(activeDatabase!, sentence), effectiveConfig());
@@ -6899,11 +6907,7 @@ export default function App() {
                       databaseLabel={queryFieldList.label}
                       /* A database's layout or sample rows pasted on the tab (2026-11-08):
                          kept on this device and made the active database. */
-                      onDatabase={async (text) => {
-                        const { readDatabaseText } = await import('./lib/sqlSchema');
-                        const found = readDatabaseText(text);
-                        return found ? takeDatabase({ ...found, file: 'the Data tab', uploadId: 'data-tab' }, false) : null;
-                      }}
+                      onDatabase={databaseFromText}
                       /* Prompt-to-Expression. The call is here, not in the
                          pane, so the pane renders and is tested with no key. */
                       onPromptToExpression={async (prompt, fields) => {

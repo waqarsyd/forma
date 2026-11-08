@@ -320,8 +320,10 @@ describe('the legal copy and its date change together', () => {
      the user shares it, no connection string, login or password is ever
      asked for, stored or sent, the layouts kept in IndexedDB are named, and
      signing out now deletes them (lib/signOut.ts, forgetDevice).
-     Substantive, so the date moved. */
-  const EXPECTED_COPY_HASH = 'f3b2b8a25f5b';
+     Substantive, so the date moved. Phase 2 the same day added what the
+     companion reads from a SQL Server on the user's own computer to the
+     paragraph on 127.0.0.1: substantive, and already that day's date. */
+  const EXPECTED_COPY_HASH = 'f04cde856951';
   const EXPECTED_UPDATED = '9 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

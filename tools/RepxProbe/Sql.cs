@@ -151,6 +151,11 @@ static class SqlProbe {
     /// LocalDB and writes the first column of the last row it returns, then
     /// drops the database. How Forma's schema and sample scripts were checked
     /// against a real engine (2026-11-08); the server is the constant above.
+    /// sql-keep and sql-drop (batch DP, 2026-11-09): FormaSample created and left up, for the companion
+    /// to be tested against, then dropped. Still made up, still created and dropped only by this probe.
+    public static int Keep() { CreateDatabase(); Console.WriteLine("kept     : " + Database + " on " + Server); return 0; }
+    public static int Drop() { DropDatabase(); Console.WriteLine("dropped " + Database + " on " + Server); return 0; }
+
     public static int Run(string[] args) {
         if (args.Length < 3) { Console.WriteLine("usage: RepxProbe sql-run <script.sql> <out.txt>"); return 2; }
         string script = File.ReadAllText(args[1]);
@@ -363,6 +368,7 @@ static class SqlProbe {
             int problems = Inspect(report);
             for (int i = 2; i < args.Length; i++) {
                 if (args[i] == "--before") { i++; continue; }
+                if (args[i] == "--event" || args[i] == "--name-only") continue;
                 int eq = args[i].IndexOf('=');
                 if (eq < 0) continue;
                 Parameter p = report.Parameters[args[i].Substring(0, eq)];
@@ -372,7 +378,20 @@ static class SqlProbe {
             }
             var sources = new List<SqlDataSource>();
             foreach (object o in report.ComponentStorage) if (o is SqlDataSource) sources.Add((SqlDataSource)o);
-            foreach (SqlDataSource ds in sources) ds.ConnectionParameters = LocalParameters();
+            // --event (batch DP, 2026-11-09): the connection supplied when DevExpress asks for it, by name,
+            // as the companion does, rather than set on the source, which the layout would then save.
+            // Measured: --event alone fails for a connection stored by name, before the event is raised
+            // ("Cannot find the following connection in the config file"). --name-only sets the connection
+            // and marks it StoreConnectionNameOnly, which is what the companion's designer needs.
+            bool byEvent = Array.IndexOf(args, "--event") >= 0;
+            bool nameOnly = Array.IndexOf(args, "--name-only") >= 0;
+            int asked = 0;
+            foreach (SqlDataSource ds in sources) {
+                if (byEvent) ds.ConfigureDataConnection += (s, e) => { asked++; Console.WriteLine("asked    : connection \"" + e.ConnectionName + "\""); e.ConnectionParameters = LocalParameters(); };
+                else ds.ConnectionParameters = LocalParameters();
+                if (nameOnly) ds.Connection.StoreConnectionNameOnly = true;
+            }
+            byEvent = byEvent || nameOnly;
             // Every query, lookups included, which CreateDocument fills only when asked for.
             foreach (SqlDataSource ds in sources) ds.Fill(report.Parameters.Cast<DevExpress.Data.IParameter>());
             report.RequestParameters = false;
@@ -385,6 +404,16 @@ static class SqlProbe {
                 }
             }
             Console.WriteLine("printed  : " + report.Pages.Count + " page(s)");
+            if (byEvent) {
+                // What the layout saves after a fill by event: the connection must still be a name.
+                using (var saved = new MemoryStream()) {
+                    report.SaveLayoutToXml(saved);
+                    string xml = Encoding.UTF8.GetString(saved.ToArray());
+                    var decoded = Regex.Matches(xml, "Base64=\"([^\"]+)\"").Cast<Match>().Select(m => Encoding.UTF8.GetString(Convert.FromBase64String(m.Groups[1].Value))).Where(s => s.Contains("<SqlDataSource")).ToList();
+                    Console.WriteLine("saved    : asked " + asked + " time(s); connection as saved: " + string.Join(" | ", decoded.Select(s => Regex.Match(s, "<Connection[^>]*>").Value)));
+                    Console.WriteLine("saved    : server or credential in the saved file: " + decoded.Any(s => s.IndexOf("localdb", StringComparison.OrdinalIgnoreCase) >= 0 || s.IndexOf("password", StringComparison.OrdinalIgnoreCase) >= 0 || s.IndexOf("Data Source", StringComparison.OrdinalIgnoreCase) >= 0));
+                }
+            }
             // What printed, as DevExpress's own text export lays it out (2026-11-09):
             // a group's header and its total are only proved by reading them here.
             using (var ms = new System.IO.MemoryStream()) {

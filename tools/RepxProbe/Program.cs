@@ -26,7 +26,8 @@ static class Program {
         // render-cols is the one command that takes no file, so it is let through
         // with a single argument. It used to need a dummy second one, because this
         // guard ran before the switch for every command alike.
-        bool takesNoFile = args.Length == 1 && args[0] == "render-cols";
+        // sql-keep and sql-drop (2026-11-09) take none either.
+        bool takesNoFile = args.Length == 1 && (args[0] == "render-cols" || args[0] == "sql-keep" || args[0] == "sql-drop");
         if (args.Length < 2 && !takesNoFile) {
             // Every case in the switch below, because a command missing from here
             // is a command nobody finds. This listed four of twenty-one until
@@ -98,6 +99,8 @@ static class Program {
             case "emit-pdf":   EmitPdfContent(args[1]); return 0;
             case "emit-sql":   return SqlProbe.Emit(args[1]);
             case "sql-run":    return SqlProbe.Run(args);
+                case "sql-keep":   return SqlProbe.Keep();
+                case "sql-drop":   return SqlProbe.Drop();
             case "emit-sql-params": return SqlProbe.EmitParams(args[1]);
             case "sql-fill":   return SqlProbe.Fill(args);
                 case "inspect":    return Inspect(args[1]);

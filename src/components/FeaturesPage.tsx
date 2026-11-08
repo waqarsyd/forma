@@ -74,7 +74,7 @@ const FORMATS = [
     Icon: IconGrid,
     kind: 'SQL Server',
     title: 'Your SQL Server database',
-    body: 'Its layout, from a read-only script you run in SSMS, and a few sample rows if you like. Forma never connects to your server: the report reads your database by connection name, as your application’s config knows it, never with a password.',
+    body: 'Its layout, from a read-only script you run in SSMS, and a few sample rows if you like; on your own PC its companion reads them straight from the database. Forma in the browser never connects to your server: the report reads your database by connection name, as your application’s config knows it, never with a password.',
   },
 ];
 
