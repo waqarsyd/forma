@@ -141,6 +141,13 @@ interface Props {
   onFocusSelection?: () => void;
   onNotice?: (text: string) => void;
   /**
+   * Mark an area (2026-11-08), Stitch's Mark (M): a box dragged over the
+   * pages selects every control it touches, a click the one under it, and
+   * `onMarked` hands the tool back to Select. Escape leaves it.
+   */
+  marking?: boolean;
+  onMarked?: () => void;
+  /**
    * The pane's own export buttons (2026-11-06). Off in the workspace, whose
    * Export panel offers every format and reaches these exports through
    * `exportRequest`; on where nothing else offers them, a shared report's page.
@@ -1023,7 +1030,7 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -1047,6 +1054,44 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * stays the one the toolbar describes and the handle resizes.
    */
   const [also, setAlso] = useState<ControlRef[]>([]);
+  /* The box being marked, in the window's coordinates, while it is dragged (2026-11-08). */
+  const [markBox, setMarkBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const markLayerRef = useRef<HTMLDivElement>(null);
+  const markDone = useRef(onMarked);
+  markDone.current = onMarked;
+  useEffect(() => {
+    if (!marking) return;
+    const leave = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setMarkBox(null);
+      markDone.current?.();
+    };
+    window.addEventListener('keydown', leave);
+    return () => window.removeEventListener('keydown', leave);
+  }, [marking]);
+  /** Every control the box touches, each once however many pages draw it; a click, the one under it. */
+  const finishMark = (box: { x0: number; y0: number; x1: number; y1: number }) => {
+    const left = Math.min(box.x0, box.x1);
+    const right = Math.max(box.x0, box.x1);
+    const top = Math.min(box.y0, box.y1);
+    const bottom = Math.max(box.y0, box.y1);
+    const click = right - left < 4 && bottom - top < 4;
+    const seen = new Set<string>();
+    const refs: ControlRef[] = [];
+    for (const el of viewportRef.current?.querySelectorAll<HTMLElement>('.rp-hit[data-band]') ?? []) {
+      const r = el.getBoundingClientRect();
+      const touched = click
+        ? left >= r.left && left <= r.right && top >= r.top && top <= r.bottom
+        : r.right >= left && r.left <= right && r.bottom >= top && r.top <= bottom;
+      const key = `${el.dataset.band}:${el.dataset.control}`;
+      if (!touched || seen.has(key)) continue;
+      seen.add(key);
+      refs.push({ band: Number(el.dataset.band), control: Number(el.dataset.control) });
+    }
+    setSelected(refs[0] ?? null);
+    setAlso(refs.slice(1));
+    markDone.current?.();
+  };
   // Cleared from outside: the selection toolbar's Clear and Delete (2026-11-05).
   useEffect(() => {
     if (resetSelection === undefined) return;
@@ -1866,6 +1911,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                              on a label and not on a table. */
                           <div
                             className={`rp-hit${isSelected || (editing && also.some((a) => a.band === bandIndex && a.control === c)) ? ' is-selected' : ''}${control.name && changedNames.has(control.name) ? ' is-changed' : ''}`}
+                            // Which control, for Mark an area to find (2026-11-08).
+                            data-band={bandIndex}
+                            data-control={c}
                             style={{
                               // Over the control where it is drawn, which after
                               // growth and push-down need not be where the file
@@ -2088,6 +2136,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         .rp-hit { position: absolute; cursor: move; outline: 1px solid transparent; touch-action: none; }
         .rp-hit:hover { outline-color: rgba(47, 111, 228, .45); }
         .rp-hit.is-selected { outline: 1.5px solid #2f6fe4; }
+        .rp-mark-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; touch-action: none; }
+        .rp-mark-rect { position: absolute; border: 1.5px dashed #2f6fe4; border-radius: 3px; background: rgba(47, 111, 228, 0.08); pointer-events: none; }
         /* What the request picked in the log changed (2026-11-05), in Stitch's violet. */
         .rp-hit.is-changed:not(.is-selected) { outline: 2px solid #7c6be0; background: rgba(124, 107, 224, .08); }
         .rp-handle {
@@ -2428,8 +2478,42 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
 
       {/* The paper clears the whole selection (2026-11-06): it cleared the
           first control only, and the rest stayed outlined. */}
-      <div ref={viewportRef} style={{ width: '100%' }} onPointerDown={() => { setSelected(null); setAlso([]); }}>
+      <div ref={viewportRef} style={{ width: '100%', position: 'relative' }} onPointerDown={() => { setSelected(null); setAlso([]); }}>
         {renderPages(scale, editable, true)}
+        {/* Mark an area (2026-11-08): over the pages while the tool is on. */}
+        {marking && editable && (
+          <div
+            ref={markLayerRef}
+            className="rp-mark-layer"
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              setMarkBox({ x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY });
+            }}
+            onPointerMove={(e) => setMarkBox((box) => (box ? { ...box, x1: e.clientX, y1: e.clientY } : box))}
+            onPointerUp={(e) => {
+              const box = markBox;
+              setMarkBox(null);
+              if (box) finishMark({ ...box, x1: e.clientX, y1: e.clientY });
+            }}
+          >
+            {markBox && markLayerRef.current && (() => {
+              const at = markLayerRef.current.getBoundingClientRect();
+              return (
+                <div
+                  className="rp-mark-rect"
+                  style={{
+                    left: Math.min(markBox.x0, markBox.x1) - at.left,
+                    top: Math.min(markBox.y0, markBox.y1) - at.top,
+                    width: Math.abs(markBox.x1 - markBox.x0),
+                    height: Math.abs(markBox.y1 - markBox.y0),
+                  }}
+                />
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       {menu && selected && selectedControl && editable && (

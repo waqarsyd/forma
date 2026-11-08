@@ -378,6 +378,19 @@ export const IconSlash = (p: Props) => (
     <path d="M14 8l-4 8" />
   </Svg>
 );
+/* The Preview's rail (2026-11-08), as Stitch's: Select, an arrow pointer. */
+export const IconPointer = (p: Props) => (
+  <Svg {...p}>
+    <path d="M6 3.5l12 7.2-5.3 1.4 3.1 5.6-2.4 1.3-3.1-5.6L6.5 17z" />
+  </Svg>
+);
+/* Mark an area, a dashed box with a corner mark, as Stitch's Mark. */
+export const IconMarquee = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 7V5a1 1 0 0 1 1-1h2M10 4h3M16 4h2a1 1 0 0 1 1 1v2M19 10v2M4 10v3M4 16v2a1 1 0 0 0 1 1h2M10 19h2" />
+    <path d="M16 16v5M13.5 18.5h5" />
+  </Svg>
+);
 /* The house style switch (2026-11-08), as Stitch's "Use DESIGN.md": a palette. */
 export const IconPalette = (p: Props) => (
   <Svg {...p}>

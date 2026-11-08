@@ -6,6 +6,15 @@ const press = (key: string, mods: Partial<ShortcutKey> = {}): ShortcutKey => ({ 
 
 // Stitch's own (2026-11-05): the command menu, the clean screen, the list, and the zoom.
 describe('workspaceShortcutOf', () => {
+  // The Preview's rail (2026-11-08): M marks an area and V selects, as Stitch's, never while typing.
+  it('reads M as Mark an area and V as Select, and leaves both to a field being typed in or to a modifier', () => {
+    expect(workspaceShortcutOf(press('m'), false)).toBe('mark');
+    expect(workspaceShortcutOf(press('V'), false)).toBe('select');
+    expect(workspaceShortcutOf(press('m'), true)).toBeNull();
+    expect(workspaceShortcutOf(press('v', { ctrlKey: true }), false)).toBeNull();
+    expect(workspaceShortcutOf(press('M', { shiftKey: true }), false)).toBeNull();
+  });
+
   it('reads Ctrl+K and Cmd+K as the command menu, and Ctrl+\\ as the clean screen, typing or not', () => {
     expect(workspaceShortcutOf(press('k', { ctrlKey: true }), true)).toBe('commands');
     expect(workspaceShortcutOf(press('K', { metaKey: true }), false)).toBe('commands');

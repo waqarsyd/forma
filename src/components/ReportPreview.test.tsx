@@ -286,6 +286,35 @@ describe('editing in the pane', () => {
   }
   const hits = () => [...document.querySelectorAll('.rp-hit')] as HTMLElement[];
 
+  /* Mark an area (2026-11-08), Stitch's Mark: jsdom gives every element an
+     empty box at the origin, so a box dragged from (0,0) to (10,10) touches
+     every control, which is enough to prove the collection, each control
+     once, and the hand back to Select. */
+  it('marks an area: every control the box touches selected, each once, and the tool handed back', () => {
+    const onSelectionChange = vi.fn();
+    const onMarked = vi.fn();
+    const { container, rerender } = render(<ReportPreview repxContent={editable} layout={null} title="Edit" onEdit={vi.fn()} onSelectionChange={onSelectionChange} />);
+    expect(container.querySelector('.rp-mark-layer')).toBeNull();
+    rerender(<ReportPreview repxContent={editable} layout={null} title="Edit" onEdit={vi.fn()} onSelectionChange={onSelectionChange} marking onMarked={onMarked} />);
+    const layer = container.querySelector('.rp-mark-layer') as HTMLElement;
+    fireEvent.pointerDown(layer, { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(layer, { clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(layer, { clientX: 10, clientY: 10 });
+    expect(onMarked).toHaveBeenCalledTimes(1);
+    expect([...(onSelectionChange.mock.calls.at(-1)?.[0] ?? [])].sort()).toEqual(['a', 'b', 't']);
+    expect(screen.getByText('3 selected')).toBeTruthy();
+    expect(container.querySelector('.rp-mark-layer')).toBeTruthy();
+  });
+
+  it('leaves the mark on Escape, selecting nothing', () => {
+    const onMarked = vi.fn();
+    const onSelectionChange = vi.fn();
+    render(<ReportPreview repxContent={editable} layout={null} title="Edit" onEdit={vi.fn()} onSelectionChange={onSelectionChange} marking onMarked={onMarked} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onMarked).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange.mock.calls.every(([names]) => names.length === 0)).toBe(true);
+  });
+
   // A request picked in the log outlines what it changed (2026-11-05).
   it('outlines the controls named in highlight, and only those', () => {
     render(<ReportPreview repxContent={editable} layout={null} title="Edit" onEdit={() => {}} highlight={['b', 't']} />);

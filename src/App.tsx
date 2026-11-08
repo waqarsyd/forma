@@ -39,6 +39,9 @@ import {
   IconLogin,
   IconLogout,
   IconMenu,
+  IconMarquee,
+  IconPointer,
+  IconImage,
   IconPanelLeft,
   IconCompose,
   IconSave,
@@ -1814,6 +1817,12 @@ export default function App() {
   }, [pendingTools]);
   /** The controls selected on the Preview, by name: what the chat's "this" means (2026-11-05). */
   const [previewSelection, setPreviewSelection] = useState<string[]>([]);
+  /*
+   * The Preview's tool (2026-11-08), from the rail at the bench's right as
+   * Stitch's: Select, one control at a time, or Mark, a box dragged over the
+   * report selecting what it touches, which returns to Select once drawn.
+   */
+  const [previewTool, setPreviewTool] = useState<'select' | 'mark'>('select');
   /** An export the chat or the Export panel asked the Preview for, made once per nonce. */
   const [exportRequest, setExportRequest] = useState<{ format: Exclude<AgentTool['format'], 'repx' | undefined> | 'pdf-outline'; nonce: number } | null>(null);
   /** The Export panel (2026-11-06, components/ExportPanel.tsx). */
@@ -5757,6 +5766,11 @@ export default function App() {
       if (shortcut === 'undo') undoReport();
       else redoReport();
     }
+    // The Preview's tools (2026-11-08): M marks an area, V selects; only on the Preview.
+    else if (shortcut === 'mark' || shortcut === 'select') {
+      if (!result?.repxContent || plate !== 'print') return false;
+      setPreviewTool(shortcut === 'mark' ? 'mark' : 'select');
+    }
     // The selection's zoom wants a selection (2026-11-06); it zoomed to twice the fit without one.
     else if (shortcut === 'zoomSelection' && !previewSelection.length) return false;
     else if (result && plate === 'print') zoomPreview(({ zoomIn: 'in', zoomOut: 'out', zoom100: '100', zoomFit: 'fit', zoomSelection: 'selection' } as const)[shortcut]);
@@ -6615,6 +6629,8 @@ export default function App() {
                       exportRequest={exportRequest}
                       onExportRequestDone={() => setExportRequest(null)}
                       onSelectionChange={setPreviewSelection}
+                      marking={previewTool === 'mark'}
+                      onMarked={() => setPreviewTool('select')}
                       highlight={changedHighlight}
                       historyElsewhere
                       onEditText={askForText}
@@ -6979,6 +6995,28 @@ export default function App() {
             (`undoReport`), and on Preview its scale, with Fit as the start.
             Since 2026-11-06 the corner is always there, for Stitch's "?" at
             its end; the history and the zoom still come with a report. */}
+        {/* The Preview's tools at the bench's right edge (2026-11-08), as
+            Stitch's rail: Select, Mark an area, and Upload files. Only on the
+            Preview, the one pane where a control can be picked. */}
+        {result?.repxContent && plate === 'print' && (
+          <div className="wb-float wb-float-rail" role="toolbar" aria-label="Preview tools" aria-orientation="vertical">
+            <button type="button" aria-label="Select" title="Select (V)" aria-pressed={previewTool === 'select'} onClick={() => setPreviewTool('select')}>
+              <IconPointer size={16} />
+            </button>
+            <button
+              type="button"
+              aria-label="Mark an area"
+              title="Mark an area (M): drag over the report to select everything in it"
+              aria-pressed={previewTool === 'mark'}
+              onClick={() => setPreviewTool((tool) => (tool === 'mark' ? 'select' : 'mark'))}
+            >
+              <IconMarquee size={16} />
+            </button>
+            <button type="button" aria-label="Upload files" title="Upload files: a picture, a scan, a PDF, a .repx or a data file" onClick={() => fileInputRef.current?.click()}>
+              <IconImage size={16} />
+            </button>
+          </div>
+        )}
         <div className="wb-float wb-float-corner">
           {/* A notice in its own words (2026-11-04), not always "Saved":
               "Restored the version from 10:15" or "8 sample rows generated" are

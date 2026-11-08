@@ -874,6 +874,11 @@ y_top = pageHeight − (baseline + height)`}
                   box) puts a request in the box to finish, a total, a group, a column, the paper, the headings, or
                   runs the accessibility check, test data or Export; the palette turns your house style on or off.
                 </Def>
+                <Def t="Mark an area">
+                  On the Preview, the rail at the right holds Select, Mark an area and Upload files. Mark (or M) lets you
+                  drag a box over the report: every control in it is selected and goes to the box as one chip, to ask
+                  the chat about or to change with the toolbar. V goes back to selecting one at a time.
+                </Def>
                 <Def t="Search, download and fold">
                   The panel's search marks every match and Enter goes to the next; its download saves the whole
                   chat as a Markdown file. The fold button folds the panel and the box to one button at the top left,

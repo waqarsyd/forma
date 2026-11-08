@@ -1891,6 +1891,17 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 }
 .wb-clean-leave:hover { color: var(--ink); }
 
+/* The Preview's tools at the bench's right edge (2026-11-08), as Stitch's
+   rail: the tool in use dark, as Stitch marks its own; none on a phone. */
+.wb-float-rail {
+  right: 16px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 2px; padding: 4px;
+  border: 1px solid var(--rule); border-radius: 999px; background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(12px); box-shadow: var(--shadow-sm); pointer-events: auto;
+}
+.wb-float-rail button { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer; }
+.wb-float-rail button:hover { background: var(--track); color: var(--ink); }
+.wb-float-rail button[aria-pressed='true'] { background: var(--ink); color: var(--panel); }
+@media (max-width: 880px) { .wb-float.wb-float-rail { display: none; } }
 /* Undo, Redo and the zoom at the bench's corner, as Stitch's. */
 .wb-float-corner { right: 16px; bottom: 16px; display: flex; align-items: center; gap: 8px; }
 .wb-corner {
