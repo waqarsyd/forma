@@ -29,6 +29,8 @@ import { modelTiers } from '../lib/modelTiers';
 import { hasOpenLayer } from '../lib/layers';
 import { useLayer } from './useLayer';
 import { useMenuKeys } from './useMenuKeys';
+import { PlusMenu, ToolsMenu } from './BoxMenus';
+import { toolText, type BoxTool } from '../lib/boxTools';
 import {
   IconAlert,
   IconArrowRight,
@@ -38,8 +40,10 @@ import {
   IconDoc,
   IconKey,
   IconMic,
+  IconPalette,
   IconPencil,
   IconPlus,
+  IconSlash,
   IconTarget,
   IconTrash,
   IconWarn,
@@ -166,6 +170,20 @@ export interface ComposerProps {
    * back to an empty box, as a terminal's history and Stitch's box do.
    */
   history?: readonly string[];
+  /**
+   * The "/" Tools menu (2026-11-08, lib/boxTools.ts): a tool that names a
+   * change puts its sentence in the box, here; one that is a step of its own
+   * (a check, test data, an export) is handed up to run.
+   */
+  onTool?: (tool: BoxTool) => void;
+  /** A report is open, which most tools need. */
+  hasReport?: boolean;
+  /**
+   * The house style switch (2026-11-08), as Stitch's "Use DESIGN.md": on,
+   * the reports ticked in the library and Forma's own style guide the design;
+   * off, the AI designs from the request alone. Absent, no switch.
+   */
+  houseStyle?: { on: boolean; onToggle: () => void } | null;
 }
 
 /** A model's name as the picker shows it: "2.5-flash" for "gemini-2.5-flash". */
@@ -208,7 +226,28 @@ export default function Composer({
   onEditQueued,
   onCancelQueued,
   history = [],
+  onTool,
+  hasReport = false,
+  houseStyle = null,
 }: ComposerProps) {
+  /* The "+" and "/" menus (2026-11-08), one open at a time. */
+  const [boxMenu, setBoxMenu] = useState<'plus' | 'tools' | null>(null);
+  /** A prompt tool's words into the box, after what is typed, the caret where the person fills in. */
+  const insertTool = (tool: BoxTool) => {
+    if (tool.kind !== 'prompt') {
+      onTool?.(tool);
+      return;
+    }
+    const { text, caret } = toolText(tool);
+    const typed = prompt.replace(/\s+$/, '');
+    const base = typed ? `${typed}\n` : '';
+    onPromptChange(base + text);
+    requestAnimationFrame(() => {
+      const el = promptRef.current;
+      el?.focus();
+      el?.setSelectionRange(base.length + caret, base.length + caret);
+    });
+  };
   /** Where ↑ has gone back to in `history`, or -1 while the box holds what was typed. */
   const recall = useRef(-1);
   /* The model menu, open over the box; Escape or a click elsewhere closes it. */
@@ -541,15 +580,48 @@ export default function Composer({
       <div className={`wb-box${hasApiKey ? '' : ' wb-is-locked'}`}>
         {/* A plus at the left of the box, as ChatGPT's and Gemini's are
             (2026-11-05, at the owner's request): it was a paperclip. */}
-        <button
-          className="wb-tool"
-          aria-label="Add photos and files"
-          title="Add photos and files: an image, a PDF, a .repx, or data (CSV, Excel, JSON, Word, text, SQL)"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={!hasApiKey}
-        >
-          <IconPlus size={18} />
-        </button>
+        {/* A menu since 2026-11-08, as Stitch's "+": upload, or start from an example. */}
+        <span className="wb-box-plus">
+          <button
+            type="button"
+            className="wb-tool"
+            data-menu-toggle="plus"
+            aria-label="Add photos and files"
+            aria-haspopup="menu"
+            aria-expanded={boxMenu === 'plus'}
+            title="Add photos and files: an image, a PDF, a .repx, or data (CSV, Excel, JSON, Word, text, SQL); or start from an example"
+            onClick={() => setBoxMenu((open) => (open === 'plus' ? null : 'plus'))}
+            disabled={!hasApiKey}
+          >
+            <IconPlus size={18} />
+          </button>
+          {boxMenu === 'plus' && (
+            <PlusMenu
+              onUpload={() => fileInputRef.current?.click()}
+              onStart={(point) => insertTool({ id: point.id, label: point.title, note: point.gist, kind: 'prompt', text: point.text, needsReport: false })}
+              onClose={() => setBoxMenu(null)}
+            />
+          )}
+        </span>
+        {/* Tools (2026-11-08), Stitch's "/": typing "/" in an empty box opens it too. */}
+        {onTool && (
+          <span className="wb-box-tools">
+            <button
+              type="button"
+              className="wb-tool"
+              data-menu-toggle="tools"
+              aria-label="Tools"
+              aria-haspopup="menu"
+              aria-expanded={boxMenu === 'tools'}
+              title="Tools: a total, a group, a column, the paper, a check, test data, an export (/)"
+              onClick={() => setBoxMenu((open) => (open === 'tools' ? null : 'tools'))}
+              disabled={!hasApiKey}
+            >
+              <IconSlash size={16} />
+            </button>
+            {boxMenu === 'tools' && <ToolsMenu hasReport={hasReport} onPick={insertTool} onClose={() => setBoxMenu(null)} />}
+          </span>
+        )}
         <input
           ref={fileInputRef}
           type="file"
@@ -587,6 +659,11 @@ export default function Composer({
               onStop();
               return;
             }
+            if (e.key === '/' && prompt === '' && onTool) {
+              e.preventDefault();
+              setBoxMenu('tools');
+              return;
+            }
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               recall.current = -1;
@@ -617,6 +694,20 @@ export default function Composer({
           aria-label="Message"
           aria-describedby={describedBy}
         />
+        {hasApiKey && houseStyle && (
+          <button
+            type="button"
+            className={`wb-tool wb-box-style${houseStyle.on ? ' wb-is-on' : ''}`}
+            aria-label="Use house style"
+            aria-pressed={houseStyle.on}
+            title={houseStyle.on
+              ? 'House style is on: the reports you ticked in the library and Forma\u2019s own style guide the design. Click to design from your request alone.'
+              : 'House style is off: the AI designs from your request alone. Click to follow your house style.'}
+            onClick={houseStyle.onToggle}
+          >
+            <IconPalette size={16} />
+          </button>
+        )}
         {/* Which model answers when it is not Gemini's (2026-11-07, agent
             audit item 74): Gemini has its picker here, and Local AI and
             OpenRouter said nothing. Their model is chosen in Settings, which

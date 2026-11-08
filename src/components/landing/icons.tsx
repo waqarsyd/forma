@@ -371,6 +371,22 @@ export const IconTrash = (p: Props) => (
     <path d="M10 11v6M14 11v6" />
   </Svg>
 );
+/* The box's Tools (2026-11-08), as Stitch's "/" button: a slash in a rounded square. */
+export const IconSlash = (p: Props) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="16" height="16" rx="4" />
+    <path d="M14 8l-4 8" />
+  </Svg>
+);
+/* The house style switch (2026-11-08), as Stitch's "Use DESIGN.md": a palette. */
+export const IconPalette = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 3a9 9 0 0 0 0 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z" />
+    <circle cx="7.5" cy="11" r="1" />
+    <circle cx="10" cy="7.5" r="1" />
+    <circle cx="14.5" cy="7.5" r="1" />
+  </Svg>
+);
 export const IconTune = (p: Props) => (
   <Svg {...p}>
     <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />

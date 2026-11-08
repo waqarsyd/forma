@@ -640,3 +640,71 @@ describe('one chat box', () => {
     expect(onPasteFiles).toHaveBeenCalledTimes(1);
   });
 });
+
+/*
+ * The box's "+" and "/" menus and its house style switch (2026-11-08), as
+ * Google Stitch's box has them since it changed (lib/boxTools.ts).
+ */
+describe("the box's menus and its house style", () => {
+  it('opens "+" into Upload files and the examples, and Upload files opens the picker', async () => {
+    const fileInputRef = createRef<HTMLInputElement>();
+    draw({ fileInputRef });
+    const click = vi.fn();
+    fireEvent.click(screen.getByRole('button', { name: 'Add photos and files' }));
+    fileInputRef.current!.click = click;
+    expect(screen.getByRole('menu', { name: 'Add' })).toBeTruthy();
+    expect(await screen.findByRole('menuitem', { name: /^Invoice/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Upload files/ }));
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu', { name: 'Add' })).toBeNull();
+  });
+
+  it('puts an example in the box under what is typed', async () => {
+    const onPromptChange = vi.fn();
+    draw({ prompt: 'Two copies', onPromptChange });
+    fireEvent.click(screen.getByRole('button', { name: 'Add photos and files' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Invoice/ }));
+    expect(onPromptChange.mock.calls[0][0]).toMatch(/^Two copies\nAn invoice\./);
+  });
+
+  it('opens Tools from "/" in an empty box, and from its button; a sentence tool fills the box, a step is handed up', () => {
+    const onPromptChange = vi.fn();
+    const onTool = vi.fn();
+    draw({ prompt: '', onPromptChange, onTool, hasReport: true });
+    fireEvent.keyDown(field(), { key: '/' });
+    expect(screen.getByRole('menu', { name: 'Tools' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Add a total/ }));
+    expect(onPromptChange).toHaveBeenLastCalledWith('Add a total of  at the end of the report.');
+    expect(onTool).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Export/ }));
+    expect(onTool).toHaveBeenCalledWith(expect.objectContaining({ id: 'export', kind: 'export' }));
+  });
+
+  it('holds the report tools until a report is open, and types "/" as a character once words are in the box', () => {
+    const onPromptChange = vi.fn();
+    const { unmount } = draw({ onTool: vi.fn(), hasReport: false });
+    fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
+    const total = screen.getByRole('menuitem', { name: /^Add a total/ }) as HTMLButtonElement;
+    expect(total.disabled).toBe(true);
+    expect(total.textContent).toContain('With a report open');
+    unmount();
+    draw({ prompt: 'A/B', onPromptChange, onTool: vi.fn() });
+    fireEvent.keyDown(field(), { key: '/' });
+    expect(screen.queryByRole('menu', { name: 'Tools' })).toBeNull();
+  });
+
+  it('switches the house style, saying which way it is', () => {
+    const onToggle = vi.fn();
+    const { rerender } = draw({ houseStyle: { on: true, onToggle } });
+    const button = screen.getByRole('button', { name: 'Use house style' });
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(button);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    rerender(
+      <Composer previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="An invoice" onPromptChange={vi.fn()} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} houseStyle={{ on: false, onToggle }} />,
+    );
+    expect(screen.getByRole('button', { name: 'Use house style' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Use house style' }).getAttribute('title')).toMatch(/^House style is off/);
+  });
+});

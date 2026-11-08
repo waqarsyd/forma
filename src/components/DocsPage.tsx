@@ -868,6 +868,11 @@ y_top = pageHeight − (baseline + height)`}
                   them). Forma's reply carries Copy, Good reply and Bad reply, Try again, and for a change what was
                   Changed, with Undo and Redo; the eye on a message shows what it changed on the Preview.
                 </Def>
+                <Def t="+, Tools and the house style">
+                  In the box: + uploads files or starts from an example; Tools (the / button, or / typed in an empty
+                  box) puts a request in the box to finish, a total, a group, a column, the paper, the headings, or
+                  runs the accessibility check, test data or Export; the palette turns your house style on or off.
+                </Def>
                 <Def t="Search, download and fold">
                   The panel's search marks every match and Enter goes to the next; its download saves the whole
                   chat as a Markdown file. The fold button folds the panel and the box to one button at the top left,

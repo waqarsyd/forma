@@ -232,3 +232,20 @@ input.wb-corner-zoom:hover { background: var(--track); }
 }
 .wb-corner .wb-zoom-menu button { width: 100%; height: auto; display: flex; justify-content: space-between; gap: 12px; padding: 7px 9px; border-radius: 8px; font-size: 12.5px; }
 .wb-zoom-menu kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+
+/* The box's + and / menus (2026-11-08, BoxMenus.tsx), as Stitch's: they open
+   upward from their buttons, a name over its line as the model menu has. */
+.wb-box-menu {
+  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 6; width: 280px; max-height: min(420px, 60vh); overflow-y: auto;
+  display: flex; flex-direction: column; padding: 6px;
+  border: 1px solid var(--rule); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-md);
+}
+.wb-box-menu button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px;
+  border: 0; border-radius: 10px; background: none; color: var(--ink); font-size: 13px; font-weight: 500; text-align: left; cursor: pointer;
+}
+.wb-box-menu button:hover:not(:disabled), .wb-box-menu button:focus-visible { background: var(--track); outline: none; }
+.wb-box-menu button:disabled { color: var(--ink-faint); cursor: default; }
+.wb-box-menu small { font-size: 11.5px; font-weight: 400; line-height: 1.4; color: var(--ink-2); }
+.wb-box-menu button:disabled small { color: var(--ink-faint); }
+.wb-box-menu-head { margin: 8px 10px 2px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }

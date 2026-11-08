@@ -312,8 +312,9 @@ describe('the legal copy and its date change together', () => {
      projects, the download of every project), which is substantive, but
      the date is already that day's. The governing-law clause the owner chose
      (the laws of India) joined the terms the same day: substantive, and
-     again already that day's date. */
-  const EXPECTED_COPY_HASH = 'e8687eab3726';
+     again already that day's date. So did the box's house style switch the
+     same day, which local storage keeps and the policy now names. */
+  const EXPECTED_COPY_HASH = 'c2c6ca46d5de';
   const EXPECTED_UPDATED = '8 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

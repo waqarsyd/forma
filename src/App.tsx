@@ -800,6 +800,8 @@ const RAIL_EXPANDED_KEY = 'railExpanded';
 /* Which library files are house style. Names only -- the library itself is in
    IndexedDB, and this is a handful of strings. */
 const CANONICAL_KEY = 'libraryCanonical';
+/** The box's house style switch (2026-11-08): 'off' when turned off, absent when on. */
+const HOUSE_STYLE_KEY = 'houseStyle';
 
 /**
  * Bump when a stored width stops meaning what it meant, and a browser carrying
@@ -1816,6 +1818,28 @@ export default function App() {
   const [exportRequest, setExportRequest] = useState<{ format: Exclude<AgentTool['format'], 'repx' | undefined> | 'pdf-outline'; nonce: number } | null>(null);
   /** The Export panel (2026-11-06, components/ExportPanel.tsx). */
   const [isExportOpen, setIsExportOpen] = useState(false);
+  /*
+   * The house style switch in the box (2026-11-08), as Stitch's "Use
+   * DESIGN.md": on by default, as it always was; off, neither the library's
+   * ticked reports nor Forma's own style guide a design. Kept on this device.
+   */
+  const [houseStyleOn, setHouseStyleOn] = useState(() => {
+    try {
+      return localStorage.getItem(HOUSE_STYLE_KEY) !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  const toggleHouseStyle = () =>
+    setHouseStyleOn((on) => {
+      try {
+        if (on) localStorage.setItem(HOUSE_STYLE_KEY, 'off');
+        else localStorage.removeItem(HOUSE_STYLE_KEY);
+      } catch {
+        /* a blocked storage keeps the choice for this visit */
+      }
+      return !on;
+    });
   /** The project's menu, opened from its title (2026-11-06, components/ProjectMenu.tsx). */
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   /** Where the project's menu opens when Ctrl+K opened it: at Rename, or at Delete's question (2026-11-06). */
@@ -3808,7 +3832,8 @@ export default function App() {
 
     const described = input.described;
     if (described) {
-      try {
+      // Forma's own style, unless the box's switch is off (2026-11-08).
+      if (houseStyleOn) try {
         const [{ loadFormaModel }, { houseStyleBrief }] = await Promise.all([import('./lib/formaModel'), import('./lib/formaTeam')]);
         const model = await loadFormaModel();
         brief = houseStyleBrief(model.style, model.reports, config.unit);
@@ -3876,7 +3901,7 @@ export default function App() {
        * generation they actually asked for.
        */
       let houseStyle = '';
-      if (open?.repxContent && canonicalSources.size > 0) {
+      if (houseStyleOn && open?.repxContent && canonicalSources.size > 0) {
         try {
           const { retrieveHouseStyle } = await loadLibrary();
           houseStyle = await retrieveHouseStyle(
@@ -6895,6 +6920,14 @@ export default function App() {
                       }}
                       onCancelQueued={(id) => setQueue((q) => q.filter((x) => x.id !== id))}
                       history={requests.map((r) => r.ask?.text ?? '').filter(Boolean)}
+            // The box's Tools (2026-11-08): a sentence tool fills the box itself; these run.
+            hasReport={!!result?.repxContent}
+            onTool={(tool) => {
+              if (tool.kind === 'accessibility') showPlate('xml');
+              else if (tool.kind === 'test-data') void handleTestData();
+              else if (tool.kind === 'export') setIsExportOpen(true);
+            }}
+            houseStyle={{ on: houseStyleOn, onToggle: toggleHouseStyle }}
                     />
                     </Suspense>
                   </>

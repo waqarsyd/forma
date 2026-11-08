@@ -1830,17 +1830,23 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-tip { margin: 0; text-align: center; font-size: 12px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: wb-tip-in .4s ease both; }
 @keyframes wb-tip-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .wb-panel-foot .wb-box {
-  display: grid; grid-template-columns: auto 1fr auto auto auto; align-items: center; row-gap: 4px;
+  display: grid; grid-template-columns: auto auto 1fr auto auto auto auto; align-items: center; row-gap: 4px;
   padding: 12px 10px 8px 12px; border-radius: 22px;
   background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(14px); box-shadow: var(--shadow-md);
 }
+/* Two rows, as Stitch's: the words, then + and / at the left and the house
+   style, the model, the mic and the send at the right (2026-11-08). */
 .wb-panel-foot .wb-box textarea.wb-line { grid-column: 1 / -1; grid-row: 1; padding: 2px 4px; font-size: 14px; }
-.wb-panel-foot .wb-box > .wb-tool:first-child { grid-column: 1; grid-row: 2; }
-.wb-panel-foot .wb-box > .wb-model { grid-column: 3; grid-row: 2; }
-.wb-panel-foot .wb-box > .wb-tool:not(:first-child) { grid-column: 4; grid-row: 2; }
-.wb-panel-foot .wb-box > .wb-send { grid-column: 5; grid-row: 2; }
+.wb-panel-foot .wb-box > .wb-box-plus { grid-column: 1; grid-row: 2; position: relative; }
+.wb-panel-foot .wb-box > .wb-box-tools { grid-column: 2; grid-row: 2; position: relative; }
+.wb-panel-foot .wb-box > .wb-box-style { grid-column: 4; grid-row: 2; }
+.wb-panel-foot .wb-box > .wb-model { grid-column: 5; grid-row: 2; }
+.wb-panel-foot .wb-box > .wb-tool:not(.wb-box-style) { grid-column: 6; grid-row: 2; }
+.wb-panel-foot .wb-box > .wb-send { grid-column: 7; grid-row: 2; }
 /* Stop and Queue together while Forma works and words are typed (2026-11-06). */
-.wb-panel-foot .wb-box > .wb-send-pair { grid-column: 5; grid-row: 2; display: flex; gap: 6px; }
+.wb-panel-foot .wb-box > .wb-send-pair { grid-column: 7; grid-row: 2; display: flex; gap: 6px; }
+/* The house style switch on: the tool's own pressed look, no accent. */
+.wb-box-style.wb-is-on { color: var(--ink); background: var(--track); }
 /* Its chips (an attachment, the Preview's selection) grey, as Stitch's, not the accent. */
 .wb-panel-foot .wb-attach { border-color: var(--rule); background: color-mix(in srgb, var(--panel) 92%, transparent); }
 .wb-panel-foot .wb-attach svg { color: var(--ink-2); }
