@@ -1,0 +1,17 @@
+{
+  "source": "source.repx",
+  "prompt": "Group these orders by Region, and by City inside each region, with a total of Amount under each city and under each region. In the report footer, add a cross-tab that sums Amount with Region down the side and Quarter across the top.",
+  "config": { "version": "20.1", "unit": "HundredthsOfAnInch", "pageSize": "Letter" },
+  "notes": "Parity rows 29 and 30 in a real run (2026-11-08): a flat order list, made up, asked for a grouping two deep and a cross-tab. Row 29: DevExpress nests groups by Level, not by file order, so the outer group (Region) must carry the higher Level, which the prompt asks for and repairGroupLevels supplies when the model forgets. Row 30: a cross-tab written as its fields alone throws when DevExpress prints it, so repairCrossTabs writes the generated layout. Neither the nesting order nor the cross-tab's cells is a check this harness has; read both off the saved .repx (the GroupHeader Levels, and the cross-tab's ColumnDefinitions, RowDefinitions and Cells) and record them with the scorecard.",
+  "expect": {
+    "bands": ["ReportHeader", "PageHeader", "GroupHeader", "Detail", "GroupFooter", "ReportFooter", "PageFooter"],
+    "controls": { "XRCrossTab": { "min": 1 } },
+    "texts": {
+      "all": ["Orders by Region", "Region", "City", "Quarter", "Amount", "Page"],
+      "minRatio": 0.85
+    },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 5 },
+    "serializerVersion": "20.1.3.0"
+  }
+}
