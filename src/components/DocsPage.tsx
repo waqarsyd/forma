@@ -298,7 +298,9 @@ export default function DocsPage({
             <p className="mt-4 max-w-[62ch] font-body-lg text-[clamp(16.5px,1.3vw,18.5px)] leading-[1.58] text-on-surface-variant">
               Everything below describes what the application actually does today — the file it produces, the
               limits it enforces, and where your API key lives. If something here disagrees with the app, the
-              app is right and this page is a bug.
+              app is right and this page is a bug. What changed, and when, is on the{' '}
+              {/* Site audit item 109 left this link for the Docs rewrite, which did not add it (2026-11-08). */}
+              <a href="/changelog" className={LINK}>changelog</a>.
             </p>
           </div>
         </section>
