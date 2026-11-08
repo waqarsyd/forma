@@ -60,6 +60,7 @@ static class Program {
             Console.WriteLine("    emit-rich      XRRichText");
             Console.WriteLine("    emit-pdf       render to PDF bricks");
             Console.WriteLine("    emit-sql       a SQL Server data source, over a made-up LocalDB database it creates and drops");
+            Console.WriteLine("    sql-run <script.sql> <out.txt>  run a script over that made-up database and keep its last value");
             Console.WriteLine("    render-cols    column render check (no file argument)");
             Console.WriteLine();
             Console.WriteLine("  what DevExpress PRINTS, with data:");
@@ -94,6 +95,7 @@ static class Program {
             case "text-lines": return TextLines.Run(args);
             case "emit-pdf":   EmitPdfContent(args[1]); return 0;
             case "emit-sql":   return SqlProbe.Emit(args[1]);
+            case "sql-run":    return SqlProbe.Run(args);
                 case "inspect":    return Inspect(args[1]);
                 default:
                     Console.WriteLine("unknown subcommand: " + args[0]);

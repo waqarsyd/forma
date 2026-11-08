@@ -61,7 +61,37 @@ static class SqlProbe {
         "CREATE PROCEDURE dbo.usp_WithOut @Region nvarchar(20), @Count int OUTPUT AS SELECT CompanyName FROM dbo.Customers WHERE Region = @Region; SET @Count = @@ROWCOUNT;",
         "CREATE PROCEDURE dbo.usp_TempTable AS CREATE TABLE #t (Name nvarchar(80)); INSERT #t SELECT CompanyName FROM dbo.Customers; SELECT Name FROM #t;",
         "CREATE PROCEDURE dbo.usp_Dynamic AS EXEC sp_executesql N'SELECT CompanyName FROM dbo.Customers';",
+        "CREATE VIEW dbo.vOrderTotals AS SELECT o.OrderID, c.CompanyName, SUM(l.Qty * l.UnitPrice) AS Total FROM dbo.Orders o " +
+            "JOIN dbo.Customers c ON c.CustomerID = o.CustomerID JOIN dbo.OrderLines l ON l.OrderID = o.OrderID GROUP BY o.OrderID, c.CompanyName",
     };
+
+    /// sql-run <script.sql> <out.txt>: runs a script over a fresh FormaSample on
+    /// LocalDB and writes the first column of the last row it returns, then
+    /// drops the database. How Forma's schema and sample scripts were checked
+    /// against a real engine (2026-11-08); the server is the constant above.
+    public static int Run(string[] args) {
+        if (args.Length < 3) { Console.WriteLine("usage: RepxProbe sql-run <script.sql> <out.txt>"); return 2; }
+        string script = File.ReadAllText(args[1]);
+        try {
+            CreateDatabase();
+            string last = null;
+            using (SqlConnection c = new SqlConnection("Data Source=" + Server + ";Initial Catalog=" + Database + ";Integrated Security=True;Connect Timeout=60")) {
+                c.Open();
+                using (SqlCommand cmd = new SqlCommand(script, c)) {
+                    cmd.CommandTimeout = 120;
+                    using (SqlDataReader r = cmd.ExecuteReader()) {
+                        do { while (r.Read()) last = r.IsDBNull(0) ? null : Convert.ToString(r.GetValue(0)); } while (r.NextResult());
+                    }
+                }
+            }
+            File.WriteAllText(args[2], last ?? "", new UTF8Encoding(false));
+            Console.WriteLine("written: " + Path.GetFullPath(args[2]) + " (" + (last ?? "").Length + " characters)");
+            return last == null ? 1 : 0;
+        } finally {
+            DropDatabase();
+            Console.WriteLine("dropped " + Database + " on " + Server);
+        }
+    }
 
     static void CreateDatabase() {
         using (SqlConnection c = new SqlConnection(MasterConnection())) {

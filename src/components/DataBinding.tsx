@@ -27,7 +27,7 @@
  * problem worth knowing about whether or not anyone wanted bindings. So the
  * decline is rendered as the content of the pane rather than as an error state.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseDataSource, suggestMapping, type DataField } from '../lib/dataSource';
 import { planDetailBinding, bindDetailRow, bindFooterTotals, readBoundFields, isExpressionEntry, EXPRESSION_PREFIX } from '../lib/repxBindingPlan';
 
@@ -48,7 +48,16 @@ interface Props {
    * absent, the section is not drawn. The call is App's, like every other.
    */
   onPromptToExpression?: (prompt: string, fields: string[]) => Promise<ExpressionResult>;
+  /**
+   * A database's layout or sample rows pasted here (2026-11-08, the SQL Server
+   * programme): App keeps it and makes it the active database, and returns the
+   * line to show, or null when the text was not one after all.
+   */
+  onDatabase?: (text: string) => Promise<string | null>;
 }
+
+/** Forma's layout or sample script output: the marker its JSON always carries. */
+const DATABASE_TEXT = /forma-sql-(schema|sample)/;
 
 const SAMPLE_PLACEHOLDER = `Paste one of:
 
@@ -69,8 +78,26 @@ const KIND_LABEL: Record<string, string> = {
   none: '',
 };
 
-export default function DataBinding({ repxContent, onApply, onPromptToExpression }: Props) {
+export default function DataBinding({ repxContent, onApply, onPromptToExpression, onDatabase }: Props) {
   const [pasted, setPasted] = useState('');
+  const [databaseLine, setDatabaseLine] = useState<string | null>(null);
+
+  // A pasted layout or sample block is a database, not a sample to map: handed
+  // to App, and the box cleared so the mapping below does not read it as JSON.
+  const handledRef = useRef('');
+  useEffect(() => {
+    if (!onDatabase || !DATABASE_TEXT.test(pasted) || handledRef.current === pasted) return;
+    handledRef.current = pasted;
+    let live = true;
+    onDatabase(pasted).then((line) => {
+      if (!live || !line) return;
+      setDatabaseLine(line);
+      setPasted('');
+    });
+    return () => {
+      live = false;
+    };
+  }, [pasted, onDatabase]);
   const [mapping, setMapping] = useState<(string | null)[]>([]);
   const [applied, setApplied] = useState<string | null>(null);
 
@@ -252,8 +279,10 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
             <p className="db-note">
               Read in the browser, never sent anywhere. Forma connects to no database — a sample
               gives the field names, the types and a real value to format against, which is
-              everything binding needs.
+              everything binding needs. Forma&apos;s SQL Server layout or sample script output can
+              be pasted here too.
             </p>
+            {databaseLine && <p className="db-note" role="status">{databaseLine}</p>}
             {source.problems.map((p, i) => (
               <p className="db-note" key={i} style={{ color: 'var(--warn, #b45309)' }}>{p}</p>
             ))}

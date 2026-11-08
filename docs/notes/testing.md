@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **2,919 tests in 174 files** — under the `node` environment
+`npm test` runs Vitest over **2,940 tests in 175 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -96,7 +96,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `components/ZoomField` | 6 | the zoom's number as a field you type a size into (2026-11-06, the owner's request): 150 and 150% alike inside 10% to 400%, nothing set when nothing changed, Escape putting the number back, the arrows stepping by ten, Stitch's 100% / Fit / Selection, and a choice from the menu kept over the size typed before it, the bug the owner's Chrome found. jsdom |
 | `components/useMenuKeys` | 2 | what a menu owes a keyboard (2026-11-06, the workspace audit): focus on its first item, the arrows past a disabled item and round the ends, Home and End, and focus back to the button that opened it. jsdom |
 | `components/SettingsDialog` | 8 | Settings as ChatGPT's (2026-11-07, the owner's request): opened at the Gemini key while there is none and at General once there is, the sections by click and by the arrows, Home and End, a choice applied as it is made with no Save or Cancel, Add it from the AI section to the key, the key checked and cleared with a line that says so, Forget everything asking first and Cancel keeping the memory, the stored key forgotten only after asking, and Close and Escape. Firebase and the Gemini client are stand-ins. jsdom |
-| `components/DataBinding` | 18 | jsdom |
+| `components/DataBinding` | 20 | jsdom; since 2026-11-08 a pasted SQL Server layout goes to App once, its line shown and the box emptied, and an ordinary sample is left to the mapping |
 | `components/LibraryPanel` | 17 | jsdom |
 | `components/MobileNav` | 2 | jsdom; the phone menu is a modal dialog (2026-11-08, site audit item 41): focus inside, Escape closes it and gives focus back to its button once the sheet's exit animation unmounts it, sentence-case labels and the repository's link |
 | `components/infoPages` | 10 | 7 from one table, one per page the site audit's batch SJ added (2026-11-08): a route, a title, a case in `viewForRoute`, a description, a sitemap entry, a prerendered file and a hosting rewrite on both sites; the list `publicPageFor` draws equal to the pages `infoPages.tsx` defines; the share limit, the six starting points and no shares listed until there are some, read from the code; and `public/security.txt` valid under RFC 9116, with the contact SECURITY.md gives and an `Expires` still to come, which fails on purpose once it passes |
@@ -112,6 +112,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/composerStore` | 7 | what the box keeps over a reload (2026-11-07, agent audit items 69 and 71): a draft per project, an older build's single draft given to the project its tab had open, a new report's words moved to its id at its first save, the newest kept when there are too many; the queue only for its own project, kept as its words when its files will not fit, each saying so |
 | `lib/assetPaths` | 2 | the served OCR, font and model files (2026-11-08, site audit item 91): each in its own folder and asked for by an absolute path, unversioned outside a build; written after a path lost its folder in the browser and nothing caught it |
 | `lib/seo` | 10 | jsdom (`applyHead`); each page's head (2026-11-08, the site audit's batch SB): every route its own title and description, the public pages indexed at their canonical address and the rest not, the file each path is served from, the head written into index.html and kept in step on the live page, the home page's JSON-LD, and the sitemap, robots.txt, security.txt (the public address, never the git one) and llms.txt |
+| `lib/sqlSchema` | 19 | the SQL Server programme (2026-11-08): over real engine output (the layout and sample scripts run over the made-up FormaSample on LocalDB, and the .repx `RepxProbe emit-sql` wrote), the scripts only read, every column, key, parameter default and described result, the first of two result sets, a temp table's reason, the one-cell and sqlcmd forms, SSMS Generate Scripts text, a .repx's data source and a stored login, the AI's text, and five layouts kept per device |
 | `lib/staleChunks` | 4 | jsdom; a tab open across a deploy (2026-11-08, site audit item 1): each browser's words for a chunk that could not be fetched, one reload and not a second soon after, and only for Vite's preload error or a failed import |
 | `lib/chatTurn` | 16 | since 2026-11-08 (batch K) the turn's control flow out of App: the queue's next step and its pauses, Resume, Steer, the questions waited on, the report a resend starts from, and how a turn that ended is said; how the chat box routes a message before any AI is asked (2026-11-07, the agent audit's batch B): a memory only from "remember" or "from now on", a plain build only when it says what the report shows, a reply to Forma's questions read as the answer, a question or a new request, and the selection named for a redesign |
 | `lib/replyChanges` | 4 | the replies' changes kept in the tab for a reload (2026-11-07, agent audit item 52): only the open project's come back, the newest kept and fewer while too large, and anything unreadable or empty is nothing |
@@ -251,7 +252,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 2,919 in 174 files** — and that total is the arithmetic sum of the column above
+**Total: 2,940 in 175 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -265,7 +266,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2708** against a real 2,919 (2026-11-08, after the thread panel, the box's menus, the main menu, Mark an area, Auto's model named and the repeated options taken out, which added no loop; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2729** against a real 2,940 (2026-11-08, after the thread panel, the box's menus, the main menu, Mark an area, Auto's model named, the repeated options taken out and the SQL Server programme's batch DB, which added no loop; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Fourteen** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

@@ -296,6 +296,7 @@ const Composer = lazy(() => import('./components/Composer'));
 import type { OcrBuiltReport } from './components/OcrDialog';
 import type { ReaderBuiltReport } from './lib/ocrAttach';
 import type { ReadPage } from './lib/ocrAttach';
+import type { DatabaseText, SqlSchema } from './lib/sqlSchema';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 import {
   clampReviewWidth,
@@ -440,6 +441,12 @@ interface IngestResult {
    */
   imageMeta: PreviewMeta[];
   texts: TextAttachment[];
+  /**
+   * A database's layout or sample rows (2026-11-08, the SQL Server programme):
+   * read here, kept on the device and summarised for the AI by `ingestFiles`,
+   * which knows the database already in use.
+   */
+  database?: DatabaseText & { file: string; uploadId: string };
   /** User-facing warnings: skipped files, dropped pages, invalid XML. */
   notices: string[];
 }
@@ -648,7 +655,19 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
   // put 8 kB on the entry chunk every landing-page visitor downloads.
   const data = await import('./lib/dataFiles');
   if (data.isDataFile(name)) {
-    const read = await data.readDataFile(name, new Uint8Array(await file.arrayBuffer()));
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    // A database's layout or sample rows, from Forma's scripts or an SSMS
+    // "Generate Scripts" file (2026-11-08, lib/sqlSchema.ts): recognised before
+    // it is read as plain data, and loaded only when such a file arrives.
+    if (/\.(json|sql|txt)$/i.test(name)) {
+      const { readDatabaseText } = await import('./lib/sqlSchema');
+      const found = readDatabaseText(new TextDecoder().decode(bytes).replace(/^﻿/, ''), name.replace(/\.[^.]+$/, ''));
+      if (found) {
+        out.database = { ...found, file: name, uploadId };
+        return out;
+      }
+    }
+    const read = await data.readDataFile(name, bytes);
     if (read.note) out.notices.push(read.note);
     if (read.text) out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text });
     return out;
@@ -1103,6 +1122,15 @@ export default function App() {
    * cropping and saved-report `images` all depend on that.
    */
   const [attachmentTexts, setAttachmentTexts] = useState<TextAttachment[]>([]);
+  /**
+   * The SQL Server database the report is designed against (2026-11-08, the
+   * SQL Server programme): its layout, read from Forma's script or an SSMS
+   * file, never a connection. Kept on this device (lib/sqlSchemaStore.ts); the
+   * report itself names it by connection from batch DD on.
+   */
+  const [activeDatabase, setActiveDatabase] = useState<SqlSchema | null>(null);
+  const activeDatabaseRef = useRef<SqlSchema | null>(null);
+  activeDatabaseRef.current = activeDatabase;
   /** Warnings from the last upload: skipped files, dropped pages, bad XML. */
   const [uploadNotices, setUploadNotices] = useState<string[]>([]);
   const [isIngesting, setIsIngesting] = useState(false);
@@ -2257,6 +2285,43 @@ export default function App() {
      the element that scrolls is not in this file any more. */
 
   /**
+   * A database's layout or sample rows, arrived in the box or on the Data tab
+   * (2026-11-08, the SQL Server programme, checklist items 9 and 10). The
+   * layout is kept on this device and becomes the active database; sample
+   * rows join the layout of the same database when one is known. Either way
+   * the AI is given the result as text, which the owner allowed for names and
+   * values. Returns the line to show.
+   */
+  const takeDatabase = useCallback(async (found: DatabaseText & { file: string; uploadId: string }, attach = true): Promise<string> => {
+    const [db, store] = await Promise.all([import('./lib/sqlSchema'), import('./lib/sqlSchemaStore')]);
+    const kept = await store.loadDatabases();
+    let schema: SqlSchema | null;
+    let line: string;
+    if (found.kind === 'schema') {
+      const previous = kept.find((d) => d.name === store.storedName(found.schema));
+      schema = previous?.schema.samples && !found.schema.samples ? db.withSamples(found.schema, previous.schema.samples) : found.schema;
+      line = `Database layout read${attach ? ` from "${found.file}"` : ''}: ${db.summarizeSchema(found.schema)}. It stays in this browser.`;
+    } else {
+      const name = found.database || 'Database';
+      const base = activeDatabaseRef.current && store.storedName(activeDatabaseRef.current) === name
+        ? activeDatabaseRef.current
+        : kept.find((d) => d.name === name)?.schema ?? null;
+      schema = base ? db.withSamples(base, found.samples) : null;
+      line = base
+        ? `Sample rows read for ${name}: ${db.summarizeSamples(found.samples)}.`
+        : `Sample rows read for ${name}: ${db.summarizeSamples(found.samples)}. Add its layout too (Forma's layout script) so the report can be bound to it.`;
+    }
+    if (schema) {
+      await store.saveDatabase(schema);
+      setActiveDatabase(schema);
+    }
+    const text = schema ? db.schemaForAi(schema) : db.samplesForAi(found.kind === 'sample' ? found.database : '', found.kind === 'sample' ? found.samples : {});
+    // Attached in the box it goes to the AI with the message; pasted on the Data tab it does not.
+    if (attach) setAttachmentTexts((prev) => [...prev.filter((t) => t.uploadId !== found.uploadId), { id: `${Date.now()}-${found.file}`, uploadId: found.uploadId, file: found.file, text }]);
+    return line;
+  }, []);
+
+  /**
    * The one intake path, shared by the picker and drag-and-drop. Runs files
    * sequentially so previews land in the order they were given, and reports
    * anything it could not use instead of failing silently.
@@ -2291,12 +2356,13 @@ export default function App() {
         }
         if (result.texts.length) setAttachmentTexts(prev => [...prev, ...result.texts]);
         notices.push(...result.notices);
+        if (result.database) notices.push(await takeDatabase(result.database));
       }
     } finally {
       setIsIngesting(false);
       setUploadNotices(notices);
     }
-  }, [stagedUploads]);
+  }, [stagedUploads, takeDatabase]);
 
   /**
    * One file, one report — the batch panel's unit of work.
@@ -6682,6 +6748,13 @@ export default function App() {
                   <Suspense fallback={null}>
                     <DataBinding
                       repxContent={result.repxContent}
+                      /* A database's layout or sample rows pasted on the tab (2026-11-08):
+                         kept on this device and made the active database. */
+                      onDatabase={async (text) => {
+                        const { readDatabaseText } = await import('./lib/sqlSchema');
+                        const found = readDatabaseText(text);
+                        return found ? takeDatabase({ ...found, file: 'the Data tab', uploadId: 'data-tab' }, false) : null;
+                      }}
                       /* Prompt-to-Expression. The call is here, not in the
                          pane, so the pane renders and is tested with no key. */
                       onPromptToExpression={async (prompt, fields) => {

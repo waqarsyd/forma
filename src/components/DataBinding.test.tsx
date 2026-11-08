@@ -235,3 +235,28 @@ describe('prompt-to-expression', () => {
     expect((screen.getByText('Use expression') as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+/* A database's layout pasted on the tab (2026-11-08, the SQL Server
+   programme): handed to App once, its line shown, and the box cleared so the
+   mapping does not read the layout as a JSON sample. */
+describe('a pasted database layout', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('goes to App once, says what was read, and empties the box', async () => {
+    const onDatabase = vi.fn(async () => 'Database layout read from the Data tab: ShopDemo: 2 tables, 0 views, 0 procedures.');
+    render(<DataBinding repxContent={bindable} onApply={() => {}} onDatabase={onDatabase} />);
+    paste('<?forma {"format":"forma-sql-schema","version":1,"database":"ShopDemo","objects":[]}?>');
+    await flush();
+    expect(onDatabase).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status').textContent).toMatch(/ShopDemo: 2 tables/);
+    expect((screen.getByLabelText('Paste a data sample or schema') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('leaves an ordinary sample to the mapping', async () => {
+    const onDatabase = vi.fn(async () => null);
+    render(<DataBinding repxContent={bindable} onApply={() => {}} onDatabase={onDatabase} />);
+    paste('Qty, Price');
+    await flush();
+    expect(onDatabase).not.toHaveBeenCalled();
+  });
+});

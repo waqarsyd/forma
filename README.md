@@ -670,6 +670,11 @@ src/
                        its model), dataFiles (CSV, JSON,
                        Excel, Word and the rest attached in the chat,
                        read in the browser as the report's data),
+                       sqlSchema + sqlSchemaScript + sqlSchemaStore (a SQL
+                       Server database's layout, read from Forma's script or
+                       an SSMS file with no connection, and kept on the
+                       device), repxSqlDataSource (the SQL data source inside
+                       a .repx),
                        layers (the stack of open menus and dialogs, so one
                        Escape closes only the topmost and keys meant for
                        one stay there), clipboard (every Copy, with a
