@@ -22,7 +22,8 @@ vi.mock('firebase/app-check', () => {
     initializeAppCheck: vi.fn((app: unknown) => {
       state.appCheckApps.push(app);
     }),
-    ReCaptchaV3Provider: class {
+    // The Enterprise provider since the owner registered the app with it (2026-11-08).
+    ReCaptchaEnterpriseProvider: class {
       constructor(readonly siteKey: string) {}
     },
   };
