@@ -3314,6 +3314,16 @@ export interface PaginateOptions {
   /** Parameter values the reader entered, by name; each wins over the file's default. */
   parameters?: Readonly<Record<string, string>>;
   /**
+   * Field types from a database's layout, as `typeRows` takes them (2026-11-09,
+   * lib/sqlPreview.ts): a decimal at its scale, a float, a date, a bit, text.
+   */
+  rowTypes?: Readonly<Record<string, string>>;
+  /**
+   * The SQL query's own filter, which the database applies before DevExpress
+   * sees a row (2026-11-09): applied here before the report's FilterString.
+   */
+  sourceFilter?: string | null;
+  /**
    * The drill-down groups the reader has toggled, by `DrillState.key`: each
    * prints the other way from the file's `DrillDownExpanded`, as a click on
    * the control does in DevExpress's viewer.
@@ -3515,8 +3525,14 @@ function paginateOnce(
   // Detail's SortFields -- printed, groups came out in ascending order whatever
   // order the rows arrived in, and a descending sort within them held.
   let data = options.rows
-    ? ReportData.from(options.rows, recordCount, structure.calculatedFields, structure.parameters, options.parameters)
+    ? ReportData.from(options.rows, recordCount, structure.calculatedFields, structure.parameters, options.parameters, options.rowTypes)
     : null;
+  // What the query's filter keeps, as the database would (2026-11-09).
+  if (data && options.sourceFilter) {
+    const kept = data.filtered(options.sourceFilter);
+    if (kept) data = kept;
+    else problems.push(`The query's filter "${options.sourceFilter}" could not be read, so the preview shows every sample row.`);
+  }
   /*
    * The report's FilterString keeps only the records it is true for, with the
    * parameter values the reader entered (parity row 11). Printed in c07:
@@ -3547,13 +3563,13 @@ function paginateOnce(
     data,
     rules: structure.rules,
     source: options.rows
-      ? ReportData.from(options.rows, options.rows.length, structure.calculatedFields, structure.parameters, options.parameters).records
+      ? ReportData.from(options.rows, options.rows.length, structure.calculatedFields, structure.parameters, options.parameters, options.rowTypes).records
       : null,
     contentWidth: structure.page.width - structure.margins.left - structure.margins.right,
     ...(options.toc ? { toc: options.toc } : {}),
   };
-  const rowFor = (i: number) =>
-    options.rows?.length ? options.rows[(order ? order[i] : i) % options.rows.length] : null;
+  // The row record i came from, through the filters and the sort (2026-11-09).
+  const rowFor = (i: number) => data?.originOf(i) ?? null;
 
   /*
    * The records each printed band reads; see `TextScope` for what DevExpress
@@ -3981,7 +3997,7 @@ function paginateOnce(
         const subHeaders = outerFirstOf(sub.bands, 'GroupHeader');
         const { footers: subFooters, left: subUnpaired } = pairFooters(sub.bands, subHeaders);
         const subDetail = sub.bands.find((b) => b.kind === 'Detail') ?? null;
-        let subData = data ? ReportData.from(rows, rows.length, [], structure.parameters, options.parameters) : null;
+        let subData = data ? ReportData.from(rows, rows.length, [], structure.parameters, options.parameters, options.rowTypes) : null;
         if (subData && sub.filterString) subData = subData.filtered(sub.filterString) ?? subData;
         if (subData) {
           subData = subData.reordered(sortedOrder(subData.records, [...subHeaders.flatMap((h) => h.fields), ...(subDetail?.fields ?? [])]));

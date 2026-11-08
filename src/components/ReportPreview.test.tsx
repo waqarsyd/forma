@@ -705,3 +705,35 @@ describe('a drill-down group in the pane', () => {
     expect(customers()).toBe(0);
   });
 });
+
+/* A database's sample rows and its parameters' lists (2026-11-09, the SQL Server programme, batch DF). */
+describe('over a database', () => {
+  it('fills the Preview with its sample rows on request, and asks a multi-value parameter from its list', async () => {
+    const { readSchemaScript, withSamples } = await import('../lib/sqlSchema');
+    const { writeSqlDataSource } = await import('../lib/repxSqlWriter');
+    const schema = withSamples(readSchemaScript(`
+CREATE TABLE dbo.Customers (CustomerID int PRIMARY KEY, CompanyName nvarchar(80) NOT NULL, Region nvarchar(20) NULL);
+CREATE TABLE dbo.Orders (OrderID int PRIMARY KEY, CustomerID int NOT NULL REFERENCES dbo.Customers(CustomerID), Freight decimal(10,2) NOT NULL);
+`, 'Shop')!, {
+      'dbo.Customers': [{ CustomerID: 1, CompanyName: 'Example Traders', Region: 'North' }, { CustomerID: 2, CompanyName: 'Sample Goods', Region: 'South' }],
+      'dbo.Orders': [{ OrderID: 1, CustomerID: 1, Freight: 12.5 }, { OrderID: 2, CustomerID: 2, Freight: 8 }, { OrderID: 3, CustomerID: 1, Freight: 3 }],
+    });
+    const query = { kind: 'table' as const, object: 'dbo.Orders', columns: [], joins: [{ table: 'dbo.Customers', type: 'Inner' as const, on: [{ from: 'CustomerID', to: 'CustomerID' }] }], filter: '[Customers.Region] In (?Regions)' };
+    const base = `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="O" PageWidth="850" PageHeight="1100" Version="20.1" Dpi="100">
+  <Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="25" Dpi="100"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="labelFreight" Text="x" SizeF="150,20" Dpi="100"><ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="Text" Expression="[Freight]" /></ExpressionBindings></Item1></Controls></Item1></Bands>
+</XtraReportsLayoutSerializer>`;
+    const repx = writeSqlDataSource(base, { connectionName: 'Shop', schema, query, multiValue: ['Regions'], lookups: [{ parameter: 'Regions', object: 'dbo.Customers', valueColumn: 'Region' }] }).xml;
+    render(<ReportPreview repxContent={repx} layout={null} title="Orders" database={{ schema, query }} />);
+    fireEvent.click(screen.getByText('Sample rows (3)'));
+    expect(screen.getByText('Sample rows: 3 · Clear')).toBeTruthy();
+    // Every region at first, as an empty list would keep no row; then South alone.
+    expect(screen.getByText('3 records')).toBeTruthy();
+    expect(screen.getByText('12.50')).toBeTruthy();
+    const north = screen.getByLabelText('North') as HTMLInputElement;
+    expect(north.checked).toBe(true);
+    fireEvent.click(north);
+    expect(screen.getByText('1 records')).toBeTruthy();
+    expect(screen.getByText('8.00')).toBeTruthy();
+  });
+});

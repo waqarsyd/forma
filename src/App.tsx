@@ -1139,6 +1139,8 @@ export default function App() {
   const [activeQuery, setActiveQuery] = useState<ReportQuery | null>(null);
   /** Whether its names and sample values go to the AI (batch DE): on when attached, until unticked on the Data tab. */
   const [databaseShared, setDatabaseShared] = useState(false);
+  /** What the Preview reads it as (batch DF), one object while neither changes. */
+  const previewDatabase = useMemo(() => (activeDatabase ? { schema: activeDatabase, query: activeQuery } : null), [activeDatabase, activeQuery]);
   /** The databases kept on this device, by name, newest first. */
   const [keptDatabases, setKeptDatabases] = useState<string[]>([]);
   /** The chosen query's fields, for the Data tab's column mapping. */
@@ -5411,9 +5413,11 @@ export default function App() {
     const session = sessionId.current;
     try {
       const { generateTestData } = await loadGemini();
+      // Each field's SQL type, when a database says it, so the rows come as it holds them (batch DF).
+      const types = activeDatabase && activeQuery ? (await import('./lib/sqlPreview')).fieldTypes(activeDatabase, activeQuery) : undefined;
       const rows = await generateTestData(
         boundFields,
-        { title: result.title, description: activeDescribeRef.current?.description ?? result.content?.slice(0, 600) },
+        { title: result.title, description: activeDescribeRef.current?.description ?? result.content?.slice(0, 600), types },
         20,
         config,
       );
@@ -6768,6 +6772,7 @@ export default function App() {
                       layout={result.layout}
                       title={result.title}
                       records={testRows}
+                      database={previewDatabase}
                       onTestData={handleTestData}
                       onClearTestData={() => setTestRows(null)}
                       testDataBusy={testDataBusy}

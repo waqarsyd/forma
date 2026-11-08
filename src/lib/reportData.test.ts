@@ -7,7 +7,8 @@
  * layout tests check end to end.
  */
 import { describe, it, expect } from 'vitest';
-import { ReportData, groupRuns, sortCompare, sortedOrder, typeRows, type TextData, type TextScope } from './reportData';
+import { ReportData, expandMultiValue, groupRuns, sortCompare, sortedOrder, typeRows, type TextData, type TextScope } from './reportData';
+import { valueText } from './criteria';
 
 type Spec = [name: string, expression: string, x: number, y: number, running?: string, format?: string];
 const SPEC: Record<string, Spec[]> = {
@@ -312,5 +313,27 @@ describe('filtering', () => {
 
   it('returns null for a filter that will not parse, rather than an empty report', () => {
     expect(ReportData.from(rows, 3, [], params).filtered('[Region] = (')).toBeNull();
+  });
+});
+
+/* A database's types and a multi-value parameter (2026-11-09, the SQL Server programme, batch DF). */
+describe('rows typed from a database and filtered by a list', () => {
+  it('reads a hinted column as the hint says, and a value of another shape as it looks', () => {
+    const [row] = typeRows([{ price: '12.5', code: '00123', qty: '2.5', flag: '1', when: '2026-01-05T13:45:00+05:30' }], { price: 'decimal:2', code: 'string', qty: 'int', flag: 'bool', when: 'dto' });
+    expect(Object.values(row).map(valueText)).toEqual(['12.50', '00123', '2.5', 'True', '1/5/2026 1:45:00 PM +05:30']);
+  });
+
+  it('expands a multi-value parameter into its values, and to NULL when none is chosen', () => {
+    const lists = new Map([['Regions', { type: 'System.String', values: ['North', "O'Hare"] }], ['Ids', { type: 'System.Int32', values: [] as string[] }]]);
+    expect(expandMultiValue('[Region] In (?Regions) And [Id] In (?Ids) And [X] = ?Other', lists)).toBe("[Region] In ('North', 'O''Hare') And [Id] In (NULL) And [X] = ?Other");
+  });
+
+  it('filters by a list and keeps each record’s own row through the filter and the sort', () => {
+    const rows = [{ Region: 'North', N: '1' }, { Region: 'South', N: '2' }, { Region: 'West', N: '3' }];
+    const data = ReportData.from(rows, 3, [], [{ name: 'Regions', type: 'System.String', value: '', multiValue: true }], { Regions: 'South,West' });
+    const kept = data.filtered('[Region] In (?Regions)')!.reordered([1, 0]);
+    expect(kept.records.map((r) => r.Region)).toEqual(['West', 'South']);
+    expect(kept.originOf(0)).toBe(rows[2]);
+    expect(kept.originOf(5)).toBeNull();
   });
 });

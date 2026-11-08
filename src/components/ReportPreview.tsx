@@ -51,6 +51,9 @@ import {
   type PaginatedReport,
 } from '../lib/reportPreview';
 import { parseParameters } from '../lib/repxParameters';
+import { choicesFor, sqlPreview } from '../lib/sqlPreview';
+import type { SqlSchema } from '../lib/sqlSchema';
+import type { ReportQuery } from '../lib/sqlQuery';
 import { readBoundFields } from '../lib/repxBindingPlan';
 import { groupHeaderFields, setGroupField } from '../lib/repxGroupField';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
@@ -88,6 +91,14 @@ interface Props {
    * Report Preview with AI-generated Test Data*.
    */
   records?: TestRow[] | null;
+  /**
+   * The SQL Server database the report reads, when one is active (2026-11-09,
+   * the SQL Server programme, batch DF, lib/sqlPreview.ts): its sample rows can
+   * fill the Preview with no request, every field is typed as SqlClient hands
+   * it to DevExpress, the query's filter and a detail report's rows apply, and
+   * each parameter is asked for with its type and its lookup list.
+   */
+  database?: { schema: SqlSchema; query: ReportQuery | null } | null;
   /** Asks App to generate rows; absent, no Test data button is drawn. */
   onTestData?: () => void;
   onClearTestData?: () => void;
@@ -1030,7 +1041,63 @@ function ControlBox({
   return <Box {...link}>{placed.text ?? printed(control.text, control.field, record)}</Box>;
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records, onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
+/**
+ * One parameter's field, as DevExpress's parameters panel asks for it
+ * (2026-11-09, the SQL Server programme, item 28): a number for a number, a
+ * date for a date, Yes or No for a Boolean, the lookup list's values when the
+ * report has one, a box per value for a multi-value list, and text otherwise.
+ * The value goes on as text, comma separated for a list, as before.
+ */
+function ParameterInput({ type, multi, choices, value, onChange, label }: { type: string; multi: boolean; choices?: string[]; value: string; onChange: (value: string) => void; label: string }) {
+  if (choices?.length && multi) {
+    const chosen = new Set(value.split(',').map((v) => v.trim()).filter(Boolean));
+    return (
+      <span role="group" aria-label={label} style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6 }}>
+        {choices.map((c) => (
+          <label key={c} style={{ display: 'inline-flex', gap: 3, alignItems: 'center', fontSize: 12 }}>
+            <input
+              type="checkbox"
+              checked={chosen.has(c)}
+              onChange={(e) => onChange(choices.filter((x) => (x === c ? e.target.checked : chosen.has(x))).join(','))}
+            />
+            {c}
+          </label>
+        ))}
+      </span>
+    );
+  }
+  if (choices?.length) {
+    return (
+      <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+        {!choices.includes(value) && <option value={value}>{value || '—'}</option>}
+        {choices.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+    );
+  }
+  if (type === 'System.Boolean') {
+    return (
+      <select value={/^(true|1)$/i.test(value) ? 'True' : 'False'} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+        <option value="True">Yes</option>
+        <option value="False">No</option>
+      </select>
+    );
+  }
+  const numeric = /^System\.(Int16|Int32|Int64|Decimal|Double|Single)$/.test(type);
+  const date = type === 'System.DateTime';
+  return (
+    <input
+      type={multi ? 'text' : numeric ? 'number' : date ? 'date' : 'text'}
+      step={numeric && /Int/.test(type) ? 1 : numeric ? 'any' : undefined}
+      value={date && !multi ? value.slice(0, 10) : value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label={label}
+      placeholder={multi ? 'values, comma between' : undefined}
+      spellCheck={false}
+    />
+  );
+}
+
+export default function ReportPreview({ repxContent, layout, title, onEdit, records: given, database,onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -1218,7 +1285,29 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
    * DevExpress printed in c07 (parity row 11). Kept across regenerations, so a
    * value typed once survives a refinement that keeps the parameter.
    */
-  const [paramValues, setParamValues] = useState<Record<string, string>>({});
+  const [typedParams, setParamValues] = useState<Record<string, string>>({});
+  /*
+   * The database's part (2026-11-09, batch DF): its sample rows, used when the
+   * reader asks for them and no AI rows are shown; the types every row is read
+   * with; and each parameter's lookup list, a cascade read from the values
+   * typed so far. A multi-value parameter with a list starts with all of it,
+   * as an empty one would keep no row at all.
+   */
+  const sql = useMemo(() => (database ? sqlPreview(repxContent, database.schema, database.query) : null), [repxContent, database]);
+  const [dbRowsOn, setDbRowsOn] = useState(false);
+  useEffect(() => setDbRowsOn(false), [database]);
+  const records = given ?? (dbRowsOn && sql?.rows?.length ? sql.rows : null);
+  const choices = useMemo(() => {
+    if (!database) return {} as Record<string, string[]>;
+    const multi = new Set(parseParameters(repxContent).filter((p) => p.multiValue).map((p) => p.name));
+    return choicesFor(database.schema, repxContent ?? '', typedParams, multi);
+  }, [database, repxContent, typedParams]);
+  const paramValues = useMemo(() => {
+    const defaults: Record<string, string> = {};
+    for (const p of parseParameters(repxContent)) if (p.multiValue && !p.value && choices[p.name]?.length) defaults[p.name] = choices[p.name].join(',');
+    return { ...defaults, ...typedParams };
+  }, [repxContent, choices, typedParams]);
+  const dataOptions = useMemo(() => ({ rowTypes: sql?.hints, sourceFilter: sql?.sourceFilter ?? null, related: sql?.related }), [sql]);
   /*
    * The drill-down groups the reader has opened or closed (s56), by key. The
    * toggle beside a group's label flips one, as a click on the label does in
@@ -1243,9 +1332,9 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     // The rows themselves too, now: a record's values decide how tall it grows.
     return {
       structure: parsed,
-      report: paginate(parsed, count, { measure, rows: records ?? null, parameters: paramValues, drillToggled }) as PaginatedReport,
+      report: paginate(parsed, count, { measure, rows: records ?? null, parameters: paramValues, drillToggled, ...dataOptions }) as PaginatedReport,
     };
-  }, [repxContent, layout, records, measure, paramValues, drillToggled]);
+  }, [repxContent, layout, records, measure, paramValues, drillToggled, dataOptions]);
 
   const boundFields = useMemo(() => readBoundFields(repxContent), [repxContent]);
   const structureBands = structure.bands;
@@ -1563,11 +1652,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     setExportNote(null);
     try {
       const count = records?.length ? records.length : recordCountFromLayout(layout);
-      download(reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues, drillToggled }), 'text/csv;charset=utf-8', 'csv');
+      download(reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues, drillToggled, ...dataOptions }), 'text/csv;charset=utf-8', 'csv');
     } catch (err) {
       failed('CSV file', err);
     }
-  }, [structure, records, layout, paramValues, drillToggled, download]);
+  }, [structure, records, layout, paramValues, drillToggled, download, dataOptions]);
 
   /*
    * An Excel workbook as DevExpress exports one (parity row 19): the layout as
@@ -1584,7 +1673,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       // workbook per page, which goes as one .zip since a page cannot hand over
       // several files at once.
       const xlsx = xlsxOptionsOf(repxContent);
-      const files = reportToXlsxFiles(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled }, xlsx);
+      const files = reportToXlsxFiles(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled, ...dataOptions }, xlsx);
       if (files.length === 1) {
         download(files[0].bytes as BlobPart, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
         return;
@@ -1596,7 +1685,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     } catch (err) {
       failed('Excel workbook', err);
     }
-  }, [structure, records, layout, paramValues, measure, drillToggled, repxContent, title, download]);
+  }, [structure, records, layout, paramValues, measure, drillToggled, repxContent, title, download, dataOptions]);
 
   /*
    * Word, RTF, HTML and image, as DevExpress exports them (parity row 21).
@@ -1613,8 +1702,8 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
   const continuous = useMemo(() => {
     if (exportKind !== 'html' && exportKind !== 'png') return null;
     const count = records?.length ? records.length : recordCountFromLayout(layout);
-    return layoutContinuous(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled });
-  }, [exportKind, structure, records, layout, paramValues, measure, drillToggled]);
+    return layoutContinuous(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled, ...dataOptions });
+  }, [exportKind, structure, records, layout, paramValues, measure, drillToggled, dataOptions]);
   useEffect(() => {
     if (!exportKind) return;
     let cancelled = false;
@@ -2320,7 +2409,24 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             Undo
           </button>
         )}
-        {onTestData && (
+        {sql && !given && (
+          /* The database's own sample rows (2026-11-09, batch DF): no request,
+             typed from its layout; the AI's test data below when it has none. */
+          sql.rows?.length ? (
+            <button
+              type="button"
+              className="wb-pill wb-pill--outline"
+              aria-pressed={dbRowsOn}
+              onClick={() => setDbRowsOn(!dbRowsOn)}
+              title={sql.note}
+            >
+              {dbRowsOn ? `Sample rows: ${sql.rows.length} · Clear` : `Sample rows (${sql.rows.length})`}
+            </button>
+          ) : (
+            <span className="rp-stat" title={sql.note}>No sample rows</span>
+          )
+        )}
+        {onTestData && !(dbRowsOn && sql?.rows?.length) && (
           /* DevExpress's "Show Report Preview with AI-generated Test Data".
              Needs bound fields, because the rows are keyed by them: a report
              with none has nothing to fill, and the Data tab is where that is
@@ -2404,12 +2510,14 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             records ? (
               <label className="rp-param" key={p.name}>
                 {p.description || p.name}
-                <small>{p.lifted ? 'typed' : p.type.replace('System.', '')}{p.multiValue ? ' · many' : ''}</small>
-                <input
+                <small>{(p.resolvedType ?? (p.lifted ? 'typed' : p.type)).replace('System.', '')}{p.multiValue ? ' · many' : ''}</small>
+                <ParameterInput
+                  type={p.resolvedType ?? p.type}
+                  multi={p.multiValue}
+                  choices={choices[p.name]}
                   value={paramValues[p.name] ?? p.value}
-                  onChange={(e) => setParamValues((v) => ({ ...v, [p.name]: e.target.value }))}
-                  aria-label={`Value for ${p.description || p.name}`}
-                  spellCheck={false}
+                  onChange={(value) => setParamValues((v) => ({ ...v, [p.name]: value }))}
+                  label={`Value for ${p.description || p.name}`}
                 />
               </label>
             ) : (

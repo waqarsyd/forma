@@ -68,7 +68,9 @@ static class SqlProbe {
             "cMoney money, cFloat float, cReal real, cDate date, cDateTime datetime, cDateTime2 datetime2, cSmallDateTime smalldatetime, cTime time, " +
             "cDto datetimeoffset, cChar char(3), cVarchar varchar(20), cNvarchar nvarchar(20), cNvarcharMax nvarchar(max), cText text, cXml xml, " +
             "cGuid uniqueidentifier, cBinary binary(4), cVarbinary varbinary(50), cImage image)",
-        "INSERT dbo.Types (cInt) VALUES (1)",
+        // One value of each, so sql-fill can show how DevExpress prints each type (batch DF).
+        "INSERT dbo.Types (cInt, cBigint, cSmallint, cTinyint, cBit, cDecimal, cNumeric, cMoney, cFloat, cReal, cDate, cDateTime, cDateTime2, cSmallDateTime, cTime, cDto, cChar, cVarchar, cNvarchar, cGuid) " +
+            "VALUES (12, 1234567890123, 7, 3, 1, 12.5, 12.5, 12.5, 12.5, 0.1, '2026-01-05', '2026-01-05 13:45:00', '2026-01-05 13:45:00.1234567', '2026-01-05 13:45', '13:45:30', '2026-01-05 13:45:00 +05:30', 'AB', '00123', N'Zoe', '6F9619FF-8B86-D011-B42D-00C04FC964FF')",
         "CREATE PROCEDURE dbo.usp_ByRegions @Regions nvarchar(400) AS SELECT CompanyName, Region FROM dbo.Customers WHERE Region IN (SELECT value FROM STRING_SPLIT(@Regions, ','))",
     };
 
@@ -341,6 +343,8 @@ static class SqlProbe {
     /// can be given values; a comma makes a multi-value one an array.
     public static int Fill(string[] args) {
         string path = args[1];
+        // Printed as the parity measurements were, in en-US (Render.cs).
+        System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
         try {
             CreateDatabase();
             XtraReport report = new XtraReport();

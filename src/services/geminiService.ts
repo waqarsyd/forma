@@ -2095,7 +2095,13 @@ export type TestRow = Record<string, string>;
  */
 export async function generateTestData(
   fields: readonly string[],
-  context: { title?: string; description?: string },
+  /**
+   * `types`: each field's SQL type from a database's layout (2026-11-09, the
+   * SQL Server programme, item 27, `fieldTypes` in lib/sqlPreview.ts). With
+   * them the rows are asked for as the database holds them, which the Preview
+   * then types as SqlClient does, rather than as they would print.
+   */
+  context: { title?: string; description?: string; types?: Readonly<Record<string, string>> },
   count: number,
   config?: ReportConfig,
   signal?: AbortSignal,
@@ -2128,9 +2134,11 @@ export async function generateTestData(
             text: `Invent ${wanted} realistic sample records for a business report, for previewing it before real data is connected.
 
 The report${context.title ? ` is titled "${context.title}"` : ''}${context.description ? ` and is described as: "${context.description.slice(0, 600)}"` : ''}.
-Its fields, in order: ${names.join(', ')}.
+Its fields, in order: ${names.map((n) => (context.types?.[n] ? `${n} (SQL ${context.types[n]})` : n)).join(', ')}.
 
-Return exactly ${wanted} rows. Each row is an array of ${names.length} values IN THAT FIELD ORDER, every value a string formatted as it would print: money with two decimals and thousands separators, dates as readable dates, quantities as whole numbers, names and places plausible and varied, identifiers consistent in shape. Keep values of one field consistent with each other across rows (one currency, one date style). No markdown.`,
+Return exactly ${wanted} rows. Each row is an array of ${names.length} values IN THAT FIELD ORDER, every value a string ${context.types
+              ? 'as the database holds it, fitting its SQL type: numbers plain, with a point and no separators or currency (1240.50), whole numbers for integer types, dates as yyyy-MM-dd (with THH:mm:ss for datetime), bit as true or false, text as text; names and places plausible and varied, identifiers consistent in shape'
+              : 'formatted as it would print: money with two decimals and thousands separators, dates as readable dates, quantities as whole numbers, names and places plausible and varied, identifiers consistent in shape'}. Keep values of one field consistent with each other across rows (one currency, one date style). No markdown.`,
           },
         ],
       },

@@ -24,7 +24,13 @@ import { formatComposite } from './netFormat';
 
 export type TypedRow = Record<string, Value>;
 
-type ColumnType = 'int' | 'decimal' | 'date' | 'bool' | 'string';
+/**
+ * A column's type. `double` and `decimal:<scale>` come only from a hint: a
+ * database's layout says what SqlClient hands DevExpress (2026-11-09,
+ * lib/sqlPreview.ts), which the look of the values cannot (a float looks like
+ * a decimal, and "12.5" in a `decimal(10,2)` column is 12.50).
+ */
+type ColumnType = 'int' | 'decimal' | 'double' | 'date' | 'bool' | 'string' | 'guid' | 'dto' | `decimal:${number}`;
 
 const INT = /^-?\d+$/;
 const DECIMAL = /^-?\d*\.?\d+$/;
@@ -41,22 +47,70 @@ function columnType(values: string[]): ColumnType {
   return 'string';
 }
 
+/** "12.5" at scale 2 is "12.50", as a `decimal(10,2)` column holds it. */
+function atScale(text: string, scale: number): string {
+  const m = /^(-?)(\d*)(?:\.(\d*))?$/.exec(text.trim());
+  if (!m || (m[3] ?? '').length > scale) return text.trim();
+  return scale ? `${m[1]}${m[2] || '0'}.${(m[3] ?? '').padEnd(scale, '0')}` : `${m[1]}${m[2] || '0'}`;
+}
+
 function typed(text: string | undefined, type: ColumnType): Value {
   if (text === undefined || text.trim() === '') return null;
+  if (type.startsWith('decimal:')) return NetDecimal.parse(atScale(text, Number(type.slice(8))));
   switch (type) {
-    case 'int': return BigInt(text.trim());
+    // A hinted column can still hold a value of another shape; it is read as what it looks like.
+    case 'int': return INT.test(text.trim()) ? BigInt(text.trim()) : NetDecimal.parse(text);
     case 'decimal': return NetDecimal.parse(text);
+    case 'double': {
+      const n = Number(text.trim());
+      return Number.isFinite(n) ? n : null;
+    }
     case 'date': return parseDate(text);
-    case 'bool': return text.trim().toLowerCase() === 'true';
+    case 'bool': return /^(true|1)$/i.test(text.trim());
+    // As DevExpress printed them over SqlClient in en-US (2026-11-09, `RepxProbe sql-fill`).
+    case 'guid': return text.trim().toLowerCase();
+    case 'dto': {
+      const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?\s*([+-]\d{2}:\d{2}|Z)?$/.exec(text.trim());
+      if (!m) return text;
+      const h = Number(m[4]);
+      return `${Number(m[2])}/${Number(m[3])}/${m[1]} ${h % 12 || 12}:${m[5]}:${m[6]} ${h < 12 ? 'AM' : 'PM'} ${!m[7] || m[7] === 'Z' ? '+00:00' : m[7]}`;
+    }
     default: return text;
   }
 }
 
-/** Type every column of string rows by what all of its values look like. */
-export function typeRows(rows: readonly Record<string, string>[]): TypedRow[] {
+const HINTS = /^(int|decimal|double|date|bool|string|guid|dto|decimal:\d+)$/;
+
+/**
+ * Type every column of string rows by what all of its values look like, or by
+ * the hint a database's layout gives for it (2026-11-09, lib/sqlPreview.ts).
+ */
+export function typeRows(rows: readonly Record<string, string>[], hints: Readonly<Record<string, string>> = {}): TypedRow[] {
   const fields = [...new Set(rows.flatMap((r) => Object.keys(r)))];
-  const types = Object.fromEntries(fields.map((f) => [f, columnType(rows.map((r) => r[f] ?? ''))]));
+  const types = Object.fromEntries(fields.map((f) => [f, HINTS.test(hints[f] ?? '') ? (hints[f] as ColumnType) : columnType(rows.map((r) => r[f] ?? ''))]));
   return rows.map((r) => Object.fromEntries(fields.map((f) => [f, typed(r[f], types[f])])));
+}
+
+/** A literal in the criteria language for a value of a parameter's type. */
+function literal(type: string, value: string): string {
+  if (/^System\.(Int16|Int32|Int64|Decimal|Double|Single)$/.test(type) && /^-?\d+(\.\d+)?$/.test(value)) return value;
+  if (type === 'System.Boolean') return /^(true|1)$/i.test(value) ? 'True' : 'False';
+  if (type === 'System.DateTime' && /^\d{4}-\d{2}-\d{2}/.test(value)) return `#${value}#`;
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * A multi-value parameter in a filter (2026-11-09, item 28): `In (?Regions)`
+ * reads its list, so each `?Name` becomes its values as literals, as
+ * DevExpress passes the array (`System.String[]`, measured in batch DD). With
+ * no values chosen it is `NULL`, which nothing equals.
+ */
+export function expandMultiValue(filter: string, lists: ReadonlyMap<string, { type: string; values: readonly string[] }>): string {
+  return filter.replace(/\?([A-Za-z_]\w*)/g, (whole, name: string) => {
+    const list = lists.get(name);
+    if (!list) return whole;
+    return list.values.length ? list.values.map((v) => literal(list.type, v)).join(', ') : 'NULL';
+  });
 }
 
 /** A calculated field, as the report declares it. */
@@ -318,8 +372,22 @@ export class ReportData {
     params: Map<string, Value>,
     /** Every total prints "?": the report has no Detail band (parity row 39). */
     private readonly unsummed = false,
+    /** The multi-value parameters' lists, which a filter reads (2026-11-09). */
+    private readonly lists: ReadonlyMap<string, { type: string; values: readonly string[] }> = new Map(),
+    /** Each typed record's string row, through every filter and reorder (2026-11-09). */
+    private readonly origin: WeakMap<TypedRow, Record<string, string>> = new WeakMap(),
   ) {
     this.params = params;
+  }
+
+  /**
+   * Record i's row as it arrived (2026-11-09). The paginator found it by
+   * position in the unfiltered rows, which a filter misaligned, so a detail
+   * report could read another master's lines.
+   */
+  originOf(i: number): Record<string, string> | null {
+    const row = this.records[i];
+    return row ? this.origin.get(row) ?? null : null;
   }
 
   /**
@@ -329,7 +397,7 @@ export class ReportData {
    * three records included.
    */
   withoutDetail(): ReportData {
-    return new ReportData(this.records, this.params, true);
+    return new ReportData(this.records, this.params, true, this.lists, this.origin);
   }
 
   /**
@@ -340,15 +408,24 @@ export class ReportData {
     rows: readonly Record<string, string>[],
     count: number,
     calculated: readonly CalculatedField[],
-    parameters: readonly { name: string; type: string; value: string }[],
+    parameters: readonly { name: string; type: string; value: string; resolvedType?: string; multiValue?: boolean }[],
     /** Values the reader entered, by parameter name; each wins over its default, as printed in c07. */
     supplied: Readonly<Record<string, string>> = {},
+    /** Field types from a database's layout (2026-11-09, lib/sqlPreview.ts); a field without one is typed by its values. */
+    hints: Readonly<Record<string, string>> = {},
   ): ReportData {
-    const params = new Map(parameters.map((p) => [p.name, parameterValue(p.type, supplied[p.name] ?? p.value)] as const));
+    // A lifted parameter's type is its ObjectStorage entry's, resolved by parseParameters.
+    const typeOf = (p: { type: string; resolvedType?: string }) => p.resolvedType ?? p.type;
+    const params = new Map(parameters.map((p) => [p.name, parameterValue(typeOf(p), supplied[p.name] ?? p.value)] as const));
+    // A multi-value parameter's values, comma separated as the Preview takes them.
+    const lists = new Map(
+      parameters.filter((p) => p.multiValue).map((p) => [p.name, { type: typeOf(p), values: (supplied[p.name] ?? p.value).split(',').map((v) => v.trim()).filter(Boolean) }] as const),
+    );
     const lookup = (name: string) => params.get(name) ?? null;
-    const typedRows = withCalculatedFields(typeRows(rows), calculated, lookup);
+    const typedRows = withCalculatedFields(typeRows(rows, hints), calculated, lookup);
+    const origin = new WeakMap<TypedRow, Record<string, string>>(typedRows.map((row, i) => [row, rows[i]] as const));
     const records = typedRows.length ? Array.from({ length: count }, (_, i) => typedRows[i % typedRows.length]) : [];
-    return new ReportData(records, params);
+    return new ReportData(records, params, false, lists, origin);
   }
 
   readonly param = (name: string): Value => this.params.get(name) ?? null;
@@ -362,7 +439,7 @@ export class ReportData {
   filtered(filter: string): ReportData | null {
     let node: Node;
     try {
-      node = parseCriteria(filter);
+      node = parseCriteria(this.lists.size ? expandMultiValue(filter, this.lists) : filter);
     } catch {
       return null;
     }
@@ -373,12 +450,12 @@ export class ReportData {
         return false;
       }
     });
-    return new ReportData(keep, this.params, this.unsummed);
+    return new ReportData(keep, this.params, this.unsummed, this.lists, this.origin);
   }
 
   /** The same data with its records in `order`, which is print order from then on. */
   reordered(order: readonly number[]): ReportData {
-    return new ReportData(order.map((i) => this.records[i]), this.params, this.unsummed);
+    return new ReportData(order.map((i) => this.records[i]), this.params, this.unsummed, this.lists, this.origin);
   }
 
   /** What a control bound to `data` prints in `scope`; null when it has no binding. */

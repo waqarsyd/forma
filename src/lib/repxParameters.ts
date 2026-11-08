@@ -67,6 +67,12 @@ export interface ReportParameter {
   value: string;
   /** True when `Type` is already a `#Ref-N` pointer, i.e. already lifted. */
   lifted: boolean;
+  /**
+   * A lifted parameter's type as its `ObjectStorage` entry names it
+   * (`Content="System.Int32"`), so the Preview can ask for and type a value
+   * as DevExpress does (2026-11-09, the SQL Server programme, item 28).
+   */
+  resolvedType?: string;
 }
 
 const attrOf = (attrs: string, name: string): string | null => {
@@ -87,6 +93,7 @@ export function parseParameters(xml: string | undefined | null): ReportParameter
   const block = parametersBlock(xml ?? '');
   if (!block) return [];
   const out: ReportParameter[] = [];
+  const storage = /<ObjectStorage>([\s\S]*?)<\/ObjectStorage>/.exec(xml ?? '')?.[1] ?? '';
   ITEM.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = ITEM.exec(block.text)) !== null) {
@@ -94,6 +101,8 @@ export function parseParameters(xml: string | undefined | null): ReportParameter
     const name = attrOf(attrs, 'Name');
     if (!name) continue;
     const type = attrOf(attrs, 'Type');
+    const ref = /^#Ref-(\d+)$/.exec(type ?? '')?.[1];
+    const entry = ref ? new RegExp(`<Item\\d+(?=[^>]*\\sRef="${ref}")[^>]*\\sContent="([^"]*)"[^>]*Type="System\\.Type"`).exec(storage)?.[1] : undefined;
     out.push({
       name,
       type: type ?? 'System.String',
@@ -102,6 +111,7 @@ export function parseParameters(xml: string | undefined | null): ReportParameter
       visible: attrOf(attrs, 'Visible') !== 'false',
       value: attrOf(attrs, 'ValueInfo') ?? '',
       lifted: (type ?? '').startsWith('#Ref-'),
+      ...(entry ? { resolvedType: entry } : {}),
     });
   }
   return out;

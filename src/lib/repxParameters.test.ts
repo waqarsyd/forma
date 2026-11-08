@@ -205,3 +205,13 @@ describe('lifting a type into ObjectStorage', () => {
     expect(withoutStorage).toBe(expected);
   });
 });
+
+/* A lifted parameter's own type, for the Preview to ask for it (2026-11-09, batch DF). */
+describe('a lifted parameter', () => {
+  it('reads its type from its ObjectStorage entry', () => {
+    const xml = '<XtraReportsLayoutSerializer><Parameters><Item1 Ref="2" Name="Min" Type="#Ref-9" /><Item2 Ref="3" Name="Who" /></Parameters><ObjectStorage><Item1 ObjectType="DevExpress.XtraReports.Serialization.ObjectStorageInfo, DevExpress.XtraReports.v20.1" Ref="9" Content="System.Int32" Type="System.Type" /></ObjectStorage></XtraReportsLayoutSerializer>';
+    const [min, who] = parseParameters(xml);
+    expect(min).toMatchObject({ type: '#Ref-9', lifted: true, resolvedType: 'System.Int32' });
+    expect(who).not.toHaveProperty('resolvedType');
+  });
+});

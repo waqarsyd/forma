@@ -26,7 +26,7 @@ RepxProbe emit-pdf <out.repx>    # the same, for XRPdfContent
 RepxProbe emit-sql <out.repx>    # the same, for a SQL Server DATA SOURCE, over a made-up LocalDB database it creates and drops
 RepxProbe emit-sql-params <out.repx> # the same, for the result schema's TYPE names, report PARAMETERS, lookups and multi-value
 RepxProbe sql-run <script.sql> <out.txt> # run a script over that made-up database and keep what it returns
-RepxProbe sql-fill <in.repx> [P=v]  # what DevExpress FILLS and PRINTS from a report Forma wrote, over that made-up database, with the printed text
+RepxProbe sql-fill <in.repx> [P=v]  # what DevExpress FILLS and PRINTS from a report Forma wrote, over that made-up database, with the printed text, in en-US
 RepxProbe render-cols            # what does DevExpress DRAW? bricks from CreateDocument()
 RepxProbe render <case-dir> [out-dir] # what does it PRINT over real data, and what do the exports hold?
 RepxProbe emit-chart-titles <out.repx> # a chart's TITLE, axis titles and legend, read back after loading
