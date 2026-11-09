@@ -7,10 +7,12 @@ import {
   waitForDesigner,
   DESIGNER_CLIENT_HEADER,
   DESIGNER_PROTOCOL,
-  DESIGNER_RECHECK_GAP_MS,
-  shouldRecheckDesigner,
   designerReachableFrom,
-  designerProbesOnLoad,
+  readDesignerHealth,
+  designerStep,
+  onWindows,
+  DesignerRefused,
+  type DesignerFacts,
   designerLocalOrigin,
   loopbackPermission,
   DESIGNER_SITE_ORIGINS,
@@ -31,9 +33,8 @@ describe('the website and the companion (2026-11-09)', () => {
     expect(designerReachableFrom('https://openforma.web.app.evil.example')).toBe(false);
   });
 
-  it('looks for it on its own only on a page served from this PC', () => {
-    expect(designerProbesOnLoad('http://localhost:3000')).toBe(true);
-    expect(designerProbesOnLoad('https://openforma.web.app')).toBe(false);
+  it('counts only a page served from this PC as local, the SQL routes\' one', () => {
+    expect(designerLocalOrigin('http://localhost:3000')).toBe(true);
     expect(designerLocalOrigin('https://openforma.web.app')).toBe(false);
   });
 
@@ -274,43 +275,6 @@ describe('designerFileName and Windows', () => {
  * which a web page may cause a local program to run. None of them was reachable
  * by a test.
  */
-/*
- * Four consecutive bug reports arrived with `ERR_CONNECTION_REFUSED` from this
- * probe outnumbering everything else in the console — one line per tab switch,
- * because the browser logs a refused connection itself and no `catch` can stop
- * it. That is the exact failure the call site's own comment warns about: a
- * predictable error hiding the unpredictable ones.
- */
-describe('shouldRecheckDesigner', () => {
-  const T = 1_800_000_000_000;
-
-  it('always probes when nothing has been probed yet', () => {
-    expect(shouldRecheckDesigner(null, T)).toBe(true);
-  });
-
-  it('refuses a second probe moments after the first', () => {
-    expect(shouldRecheckDesigner(T, T + 1_000)).toBe(false);
-  });
-
-  it('collapses a flurry of tab switches into nothing', () => {
-    for (const gap of [0, 200, 1_000, 5_000, 29_999]) {
-      expect(shouldRecheckDesigner(T, T + gap)).toBe(false);
-    }
-  });
-
-  // The behaviour that must survive: nobody launches a Windows desktop app and
-  // returns to the tab inside half a minute, so a real launch is still noticed.
-  it('probes again once the gap has passed', () => {
-    expect(shouldRecheckDesigner(T, T + DESIGNER_RECHECK_GAP_MS)).toBe(true);
-    expect(shouldRecheckDesigner(T, T + 120_000)).toBe(true);
-  });
-
-  it('takes an explicit gap for callers that want a different one', () => {
-    expect(shouldRecheckDesigner(T, T + 5_000, 1_000)).toBe(true);
-    expect(shouldRecheckDesigner(T, T + 500, 1_000)).toBe(false);
-  });
-});
-
 describe('pingDesigner', () => {
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -422,3 +386,67 @@ describe('waitForDesigner', () => {
  * is ever justified again, it will be about a specific control the older
  * assembly lacks, and the test should name that control.
  */
+
+/*
+ * The Open in designer dialog's steps (2026-11-09, batch WF): one pure function
+ * of what was found, drawn by components/OpenInDesigner.tsx.
+ */
+describe('what the companion says on /health', () => {
+  it('reads today\'s answer, and an older companion\'s, which ran on 20.1', () => {
+    expect(readDesignerHealth({ app: 'RepxDesigner', version: '1.0.0', designerVersion: '20.1.3.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1', compiled: '20.1' })).toEqual({
+      version: '1.0.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1',
+    });
+    expect(readDesignerHealth({ app: 'RepxDesigner', version: '1.0.0', designerVersion: null, devexpress: null, found: ['19.2'], oldest: '20.1' })).toEqual({
+      version: '1.0.0', devexpress: null, found: ['19.2'], oldest: '20.1',
+    });
+    expect(readDesignerHealth({ app: 'RepxDesigner', designerVersion: '20.1.3.0' })).toEqual({
+      version: null, devexpress: { version: '20.1', build: null }, found: ['20.1'], oldest: '20.1',
+    });
+    expect(readDesignerHealth({ app: 'Something else' })).toBeNull();
+    expect(readDesignerHealth('nope')).toBeNull();
+  });
+});
+
+describe('whether this browser is on Windows', () => {
+  it('reads the platform it states, else its user agent, else says nothing', () => {
+    expect(onWindows({ userAgentData: { platform: 'Windows' } })).toBe(true);
+    expect(onWindows({ userAgentData: { platform: 'macOS' } })).toBe(false);
+    expect(onWindows({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' })).toBe(true);
+    expect(onWindows({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)' })).toBe(false);
+    expect(onWindows({ userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' })).toBe(false);
+    expect(onWindows({ userAgent: 'SomeBrowser/1.0' })).toBeNull();
+  });
+});
+
+describe('a refusal with no DevExpress to open it in', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('carries the 424 the companion answers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"devexpress":null}', { status: 424 })));
+    const error = await sendToDesigner('<x/>', 'r.repx').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DesignerRefused);
+    expect((error as DesignerRefused).status).toBe(424);
+  });
+});
+
+describe('the Open in designer steps', () => {
+  const healthy = { version: '1.0.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1' };
+  const base: DesignerFacts = { origin: 'https://openforma.web.app', windows: true, permission: 'prompt', health: undefined, started: false, latest: '1.0.0' };
+  it('says, in order, what stands in the way', () => {
+    expect(designerStep({ ...base, origin: 'https://forma-201ba--preview-x.web.app' }).kind).toBe('unreachable');
+    expect(designerStep({ ...base, windows: false }).kind).toBe('not-windows');
+    expect(designerStep({ ...base, permission: 'denied' }).kind).toBe('blocked');
+    expect(designerStep(base).kind).toBe('checking');
+    expect(designerStep({ ...base, health: null }).kind).toBe('starting');
+    expect(designerStep({ ...base, health: null, started: true }).kind).toBe('no-companion');
+    expect(designerStep({ ...base, health: { ...healthy, devexpress: null, found: ['19.2'] } })).toEqual({ kind: 'no-devexpress', found: ['19.2'], oldest: '20.1' });
+    expect(designerStep({ ...base, health: healthy }).kind).toBe('sending');
+    expect(designerStep({ ...base, health: healthy, sent: { ok: false, status: 424, message: 'x' } }).kind).toBe('no-devexpress');
+    expect(designerStep({ ...base, health: healthy, sent: { ok: false, status: 500, message: 'boom' } })).toEqual({ kind: 'error', message: 'boom' });
+  });
+
+  it('opens, and names a newer download when there is one', () => {
+    expect(designerStep({ ...base, health: healthy, sent: { ok: true } })).toEqual({ kind: 'opened', version: '1.0.0', newer: null });
+    expect(designerStep({ ...base, health: healthy, sent: { ok: true }, latest: '1.1.0' })).toEqual({ kind: 'opened', version: '1.0.0', newer: '1.1.0' });
+    expect(designerStep({ ...base, health: { ...healthy, version: null }, sent: { ok: true } })).toEqual({ kind: 'opened', version: null, newer: '1.0.0' });
+  });
+});

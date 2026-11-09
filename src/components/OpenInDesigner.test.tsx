@@ -1,0 +1,90 @@
+// @vitest-environment jsdom
+/**
+ * Open in designer as a dialog that asks for what is missing (2026-11-09, the
+ * owner's download programme, batch WF). The companion is a stubbed fetch on
+ * 127.0.0.1:7317 answering as the real one was measured to: /health with or
+ * without DevExpress, /open 202. The forma-repx:// launch is stubbed too, since
+ * jsdom cannot hand a scheme to Windows.
+ */
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+
+vi.mock('../lib/designerBridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/designerBridge')>()),
+  launchDesigner: vi.fn(),
+}));
+
+import OpenInDesigner from './OpenInDesigner';
+import { launchDesigner } from '../lib/designerBridge';
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.mocked(launchDesigner).mockClear();
+});
+
+function companion(health: unknown | null, open = 202) {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (health === null) throw new TypeError('Failed to fetch');
+    if (url.endsWith('/health')) return new Response(JSON.stringify(health), { status: 200 });
+    if (url.endsWith('/open')) return new Response('{"opened":"Invoice.repx"}', { status: open });
+    return new Response('', { status: 404 });
+  }));
+}
+
+const props = (over: Partial<React.ComponentProps<typeof OpenInDesigner>> = {}) => ({
+  repxContent: '<XtraReportsLayoutSerializer />',
+  fileName: 'Invoice.repx',
+  onExport: vi.fn(),
+  onOpened: vi.fn(),
+  onClose: vi.fn(),
+  launchWaitMs: 30,
+  ...over,
+});
+
+describe('Open in designer', () => {
+  it('starts Forma Designer when nothing answers, then offers the download', async () => {
+    companion(null);
+    render(<OpenInDesigner {...props()} />);
+    expect(await screen.findByRole('heading', { name: 'Get Forma Designer' })).toBeTruthy();
+    expect(launchDesigner).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('link', { name: 'Download Forma Designer' }).getAttribute('href')).toBe('/download');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it('asks for DevExpress, by its own trial page, when Forma Designer has none', async () => {
+    companion({ app: 'RepxDesigner', version: '1.0.0', designerVersion: null, devexpress: null, found: [], oldest: '20.1' });
+    render(<OpenInDesigner {...props()} />);
+    expect(await screen.findByRole('heading', { name: 'DevExpress is not installed' })).toBeTruthy();
+    const trial = screen.getByRole('link', { name: 'Get the DevExpress trial' });
+    expect(trial.getAttribute('href')).toBe('https://www.devexpress.com/products/try/');
+    expect(trial.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(screen.getByText(/separate commercial product of Developer Express Inc/)).toBeTruthy();
+    expect(launchDesigner).not.toHaveBeenCalled();
+  });
+
+  it('names a DevExpress too old to use', async () => {
+    companion({ app: 'RepxDesigner', version: '1.0.0', designerVersion: null, devexpress: null, found: ['19.2'], oldest: '20.1' });
+    render(<OpenInDesigner {...props()} />);
+    expect(await screen.findByRole('heading', { name: 'DevExpress 19.2 is too old' })).toBeTruthy();
+  });
+
+  it('hands the report over and lets App say so', async () => {
+    companion({ app: 'RepxDesigner', version: '1.0.0', designerVersion: '20.1.3.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1' });
+    const onOpened = vi.fn();
+    render(<OpenInDesigner {...props({ onOpened })} />);
+    await waitFor(() => expect(onOpened).toHaveBeenCalledWith('Invoice.repx'));
+    const sent = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/open'));
+    expect((sent![1] as RequestInit).body).toBe('<XtraReportsLayoutSerializer />');
+  });
+
+  it('offers Export .repx at every step, which closes it', async () => {
+    companion(null);
+    const onExport = vi.fn();
+    const onClose = vi.fn();
+    render(<OpenInDesigner {...props({ onExport, onClose })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export .repx instead' }));
+    expect(onExport).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

@@ -238,7 +238,7 @@ import {
   type ReportDescriptionRequest,
 } from './lib/promptToReport';
 import { addUsage, summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
-import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner, designerReachableFrom, designerProbesOnLoad } from './lib/designerBridge';
+import { designerFileName } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import { makeRightToLeft } from './lib/repxRtl';
 import {
@@ -288,6 +288,7 @@ const HomeStart = lazy(() => import('./components/HomeStart'));
 const PinProject = lazy(() => import('./components/PinProject'));
 /* Sharing (2026-11-06): the dialog, and the page a shared link opens. */
 const ShareDialog = lazy(() => import('./components/ShareDialog'));
+const OpenInDesigner = lazy(() => import('./components/OpenInDesigner'));
 const SharedReportPage = lazy(() => import('./components/SharedReportPage'));
 /* The Mockup and the REPX pane (2026-11-06), each drawn only with a report open. */
 const ReportMockup = lazy(() => import('./components/ReportMockup'));
@@ -5534,89 +5535,14 @@ export default function App() {
   };
 
   /**
-   * Whether the RepxDesigner companion is running on this machine. Pinged once
-   * on mount; false for everyone who has not installed it, which is the normal
-   * case. It gates whether **Open in designer** can be clicked, not whether it
-   * is drawn — the button is always in the bar and explains itself when the
-   * companion is not answering. Same detection contract as `canUseVault` in SettingsDialog; the
-   * difference is that an undiscoverable capability is its own failure.
+   * The Open in designer dialog (2026-11-09, components/OpenInDesigner.tsx).
+   * Until then App kept whether the companion was running, probed when a
+   * report arrived and whenever the tab regained focus, and a failed open was
+   * one line of error text. The dialog asks the companion when it is clicked
+   * and at no other time, from any page, and says what is missing: Forma
+   * Designer, DevExpress, the browser's permission, or Windows.
    */
-  const [designerReady, setDesignerReady] = useState(false);
-  /**
-   * Is there anything for the designer to open yet?
-   *
-   * A boolean rather than `result?.repxContent` itself, so the probe runs when
-   * the first report arrives and not again on every edit to its XML.
-   */
-  const hasRepxToOpen = Boolean(result?.repxContent);
-  /** True while a `forma-repx://` launch is being waited on — a cold start is slow. */
-  const [designerStarting, setDesignerStarting] = useState(false);
-  /*
-   * Only on a page this machine serves (2026-11-08, site audit item 95). The
-   * effect probed 127.0.0.1 as soon as a report existed, on any origin: on the
-   * deployed site that is the request that makes Chromium ask a visitor for
-   * access to their local network, unasked, and the companion refuses that
-   * origin anyway (`designerReachableFrom`). There, nothing is sent at all,
-   * and Open in designer says why when it is clicked. Since 2026-11-09 the
-   * companion answers the website too, but this still runs only on a page
-   * served from the PC (`designerProbesOnLoad`): from the website the first
-   * request is sent by a click on Open in designer, so the browser's question
-   * comes when the person asked for something.
-   */
-  useEffect(() => {
-    if (!designerProbesOnLoad(window.location.origin)) return;
-    // Only while the workspace is open. This used to run on mount with no
-    // condition, so every visitor to the landing page, the docs and the privacy
-    // policy fired a request at http://127.0.0.1:7317 — and for the very large
-    // majority, who do not have the companion installed, it failed and logged
-    // `net::ERR_CONNECTION_REFUSED` to the console. A predictable error on every
-    // page load is noise that hides the unpredictable ones. Found by loading
-    // the built app and reading the network log, not by reading the code.
-    //
-    // The button this feeds lives in the workspace, so nothing is lost: the
-    // ping now happens when there is something for it to enable.
-    //
-    // Narrowed again on 2026-09-08, by the same argument one step further. The
-    // workspace opens empty, and the button is disabled until a report has XML
-    // to open — so probing before then answers a question nothing is asking,
-    // and spends the one console line a visitor without the companion gets.
-    // Nothing degrades while unprobed: `designerReady` picks the tooltip and
-    // decides whether a click sends to a running designer or launches one, and
-    // `false` takes the launch path, which is the correct fallback regardless.
-    if (!showWorkspace || !hasRepxToOpen) return;
-
-    let cancelled = false;
-    let lastCheckedAt: number | null = null;
-    const check = () => {
-      lastCheckedAt = Date.now();
-      pingDesigner().then((ready) => {
-        if (!cancelled) setDesignerReady(ready);
-      });
-    };
-
-    check();
-
-    // Re-check when the tab regains focus. Starting the companion is something
-    // the user does *outside* the browser, so a mount-only ping means the button
-    // is still missing when they switch back — which reads as the feature having
-    // been removed rather than as "nothing is listening yet". Coming back to the
-    // tab is exactly the moment to look again.
-    //
-    // Throttled, because a refused connection is logged by the browser itself
-    // and cannot be caught: without this, someone alt-tabbing while they work
-    // fills the console with `ERR_CONNECTION_REFUSED`, which is precisely the
-    // noise the comment above this effect exists to prevent. The gap is short
-    // enough that it never delays noticing a designer the user has just
-    // started — see `shouldRecheckDesigner`.
-    const checkOnFocus = () => {
-      if (shouldRecheckDesigner(lastCheckedAt, Date.now())) check();
-    };
-    window.addEventListener('focus', checkOnFocus);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('focus', checkOnFocus);
-    };
-  }, [showWorkspace, hasRepxToOpen]);
+  const [designerOpen, setDesignerOpen] = useState(false);
 
   /**
    * Warm the lazy marketing chunks once the page is idle.
@@ -5659,67 +5585,15 @@ export default function App() {
   }, [showWorkspace]);
 
   /**
-   * Hand the generated XML straight to the local designer — no download, no file
-   * dialog. Only reachable when `designerReady`, and only meaningful when the
-   * model actually returned XML: there is nothing for a report designer to open
-   * in a plain-text fallback.
+   * Open in designer, from the Export panel, Ctrl+K and the chat's action:
+   * every one opens the same dialog. Only meaningful when the model actually
+   * returned XML, and not for a REPX the audit says is cut short.
    */
-  const openInDesigner = async () => {
+  const openInDesigner = () => {
     if (!result?.repxContent) return;
-    // Once at a time (2026-11-06): the Export panel's row and Ctrl+K could
-    // start a second launch while the first waited, and whichever finished
-    // first cleared "starting" for both.
-    if (designerStarting) return;
     if (blockedByInvalidRepx()) return;
-    // A page the companion does not answer (a preview channel, a copy hosted
-    // elsewhere): say so, and send nothing. Forma's website and a page served
-    // from this PC are answered (2026-11-09).
-    if (!designerReachableFrom(window.location.origin)) {
-      setError(
-        'Open in designer works on openforma.web.app and in a Forma running on this computer. From here, ' +
-        'choose Export, then DevExpress report (.repx), and open the file in the designer.'
-      );
-      return;
-    }
-
-    try {
-      // Not known to be running: ask it first (from the website this is the
-      // first request, so the browser asks now, on the click), and only when it
-      // does not answer ask Windows to start it and wait for the port. The
-      // button no longer requires the companion to be running already —
-      // requiring someone to remember a tray app before a one-click action
-      // works is most of the reason this button was never used.
-      if (!designerReady && (await pingDesigner())) setDesignerReady(true);
-      else if (!designerReady) {
-        setError(null);
-        setDesignerStarting(true);
-        // Said as it starts, the bar's own button and its "Starting designer…" having gone.
-        setSaveNotice('Starting the DevExpress designer…');
-        launchDesigner();
-        const started = await waitForDesigner();
-        setDesignerStarting(false);
-        setDesignerReady(started);
-
-        if (!started) {
-          setError(
-            `Could not start the report designer on this machine. If your browser asked for permission, ` +
-            `allow it and click again. If it did not ask at all, the handler is not registered yet — run ` +
-            `RepxDesigner.exe --register once (no admin needed), or start RepxDesigner.exe --serve yourself. ` +
-            `Export, then DevExpress report (.repx), works regardless.`
-          );
-          return;
-        }
-      }
-
-      await sendToDesigner(result.repxContent, designerFileName(result.title));
-    } catch (err) {
-      setDesignerStarting(false);
-      setError(
-        `Could not reach the report designer on this machine. ` +
-        `Start it with \`RepxDesigner.exe --serve\` and try again. ` +
-        `(${err instanceof Error ? err.message : String(err)})`
-      );
-    }
+    setError(null);
+    setDesignerOpen(true);
   };
 
   /**
@@ -6738,7 +6612,7 @@ export default function App() {
                 <Suspense fallback={null}>
                   <ExportPanel
                     onRepx={downloadDesign}
-                    onDesigner={result.repxContent && !designerStarting ? () => void openInDesigner() : undefined}
+                    onDesigner={result.repxContent && !designerOpen ? () => openInDesigner() : undefined}
                     onPrint={(format) => {
                       showPlate('print');
                       setExportRequest({ format, nonce: Date.now() });
@@ -7369,6 +7243,20 @@ export default function App() {
       {isShortcutsOpen && (
         <Suspense fallback={null}>
           <ShortcutsDialog mac={mac} onClose={() => setIsShortcutsOpen(false)} />
+        </Suspense>
+      )}
+      {designerOpen && result?.repxContent && (
+        <Suspense fallback={null}>
+          <OpenInDesigner
+            repxContent={result.repxContent}
+            fileName={designerFileName(result.title)}
+            onExport={downloadDesign}
+            onOpened={(file) => {
+              setDesignerOpen(false);
+              setSaveNotice(`Opened ${file} in the designer`);
+            }}
+            onClose={() => setDesignerOpen(false)}
+          />
         </Suspense>
       )}
       {isShareOpen && result && (

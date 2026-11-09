@@ -25,6 +25,8 @@
  * capability, let the UI read it, never assume it.
  */
 
+import { DESIGNER_RELEASE, designerIsOlder } from './designerRelease';
+
 /** Loopback only. `--port` on the companion moves both sides; keep them equal. */
 export const DESIGNER_ORIGIN = 'http://127.0.0.1:7317';
 
@@ -68,31 +70,15 @@ export function designerFileName(title?: string): string {
   return `${base}.repx`;
 }
 
-/**
- * Is the companion running? Resolves false rather than throwing — a refused
- * connection is the normal case for anyone who has not installed it.
- *
- * The timeout matters: an unanswered loopback port fails fast, but a firewall
- * that drops rather than refuses would otherwise leave this pending and the
- * button missing for as long as the tab is open.
+/*
+ * There was a DESIGNER_RECHECK_GAP_MS and a shouldRecheckDesigner here, which
+ * throttled the probe App sent when a report arrived and whenever the tab
+ * regained focus (four bug reports had their consoles filled with
+ * ERR_CONNECTION_REFUSED from it). Removed on 2026-11-09 with that probe: the
+ * Open in designer dialog (components/OpenInDesigner.tsx) asks the companion
+ * when it is clicked and at no other time, so nothing probes on load or focus,
+ * from any page.
  */
-/**
- * Smallest gap between two probes triggered by the tab regaining focus.
- *
- * Re-checking on focus is deliberate — starting the companion is something the
- * user does outside the browser, so a mount-only ping leaves the button missing
- * when they switch back. But a refused connection is logged by the browser
- * itself and cannot be caught, so someone alt-tabbing while they work produces
- * one `ERR_CONNECTION_REFUSED` per switch. Four consecutive bug reports arrived
- * with those lines outnumbering everything else in the console, which is
- * exactly the failure the comment above `pingDesigner`'s call site warns about:
- * a predictable error hiding the unpredictable ones.
- *
- * Thirty seconds keeps the behaviour that matters — nobody launches a Windows
- * desktop app and returns to the tab in under half a minute — while collapsing
- * a flurry of tab switches into a single probe.
- */
-export const DESIGNER_RECHECK_GAP_MS = 30_000;
 
 /**
  * Forma's own website, which the companion also answers, for `/health` and
@@ -122,18 +108,6 @@ const isLocalOrigin = designerLocalOrigin;
  */
 export function designerReachableFrom(origin: string): boolean {
   return isLocalOrigin(origin) || (DESIGNER_SITE_ORIGINS as readonly string[]).includes(origin);
-}
-
-/**
- * Whether the page may look for the companion on its own, when a report arrives
- * or the tab regains focus. Only a page served from this PC: from the website,
- * the first request to 127.0.0.1 is what makes the browser ask the visitor
- * whether the site may reach programs on their PC (Chrome 142+, Edge 143+,
- * Firefox 151+, "Apps on device"), so it is sent only when they click Open in
- * designer, and a visitor who never does is never asked.
- */
-export function designerProbesOnLoad(origin: string): boolean {
-  return isLocalOrigin(origin);
 }
 
 export type LoopbackPermission = 'granted' | 'denied' | 'prompt' | 'unknown';
@@ -168,16 +142,14 @@ export async function loopbackPermission(): Promise<LoopbackPermission> {
  */
 export const LOOPBACK_FETCH = { targetAddressSpace: 'loopback' } as unknown as RequestInit;
 
-/** Has enough time passed since the last probe to be worth another? */
-export function shouldRecheckDesigner(
-  lastCheckedAt: number | null,
-  now: number,
-  gapMs: number = DESIGNER_RECHECK_GAP_MS
-): boolean {
-  if (lastCheckedAt === null) return true;
-  return now - lastCheckedAt >= gapMs;
-}
-
+/**
+ * Is the companion running? Resolves false rather than throwing — a refused
+ * connection is the normal case for anyone who has not installed it.
+ *
+ * The timeout matters: an unanswered loopback port fails fast, but a firewall
+ * that drops rather than refuses would otherwise leave this pending for as long
+ * as the tab is open.
+ */
 export async function pingDesigner(timeoutMs = 1200): Promise<boolean> {
   if (typeof fetch === 'undefined') return false;
 
@@ -315,6 +287,143 @@ export async function sendToDesigner(repxContent: string, fileName: string): Pro
   }
 
   if (!response.ok) {
-    throw new Error(`The designer companion refused the report (HTTP ${response.status}).`);
+    throw new DesignerRefused(response.status, `The designer companion refused the report (HTTP ${response.status}).`);
   }
+}
+
+/** A refusal by the companion, with its status: 424 says there is no DevExpress to open it in. */
+export class DesignerRefused extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'DesignerRefused';
+    this.status = status;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * The Open in designer dialog (2026-11-09, the owner's download
+ * programme, batch WF): what is missing, said plainly, with the way to
+ * get it. The steps are decided here, as a pure function of what was
+ * found, and components/OpenInDesigner.tsx only draws them.
+ * ------------------------------------------------------------------ */
+
+/** What the companion says on /health, read from either shape it has had. */
+export interface DesignerHealth {
+  /** Forma Designer's own version, or null from a companion older than 2026-11-09. */
+  version: string | null;
+  /** The DevExpress it runs on, or null when none it can use is installed. */
+  devexpress: { version: string; build: string | null } | null;
+  /** Every DevExpress version it found, newest first. */
+  found: string[];
+  /** The oldest DevExpress it runs on. */
+  oldest: string;
+}
+
+/**
+ * Reads /health. A companion from before 2026-11-09 answers only
+ * `{"app":"RepxDesigner","designerVersion":"20.1.3.0"}`: it was compiled
+ * against 20.1 and could not have started without it, so that is the
+ * DevExpress it has.
+ */
+export function readDesignerHealth(body: unknown): DesignerHealth | null {
+  if (!body || typeof body !== 'object') return null;
+  const b = body as Record<string, unknown>;
+  if (b.app !== 'RepxDesigner') return null;
+  const dx = b.devexpress && typeof b.devexpress === 'object' ? (b.devexpress as Record<string, unknown>) : null;
+  const legacy = !('devexpress' in b) && typeof b.designerVersion === 'string';
+  const devexpress =
+    dx && typeof dx.version === 'string'
+      ? { version: dx.version, build: typeof dx.build === 'string' ? dx.build : null }
+      : legacy
+        ? { version: (b.designerVersion as string).split('.').slice(0, 2).join('.'), build: null }
+        : null;
+  return {
+    version: typeof b.version === 'string' ? b.version : null,
+    devexpress,
+    found: Array.isArray(b.found) ? b.found.filter((v): v is string => typeof v === 'string') : devexpress ? [devexpress.version] : [],
+    oldest: typeof b.oldest === 'string' ? b.oldest : '20.1',
+  };
+}
+
+/** Asks the companion who it is; null when nothing answers, as pingDesigner. */
+export async function askDesigner(timeoutMs = 1500): Promise<DesignerHealth | null> {
+  if (typeof fetch === 'undefined') return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${DESIGNER_ORIGIN}/health`, { ...LOOPBACK_FETCH, method: 'GET', signal: controller.signal });
+    return response.ok ? readDesignerHealth(await response.json()) : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Whether this browser runs on Windows: true, false, or null when it does not
+ * say. The designer is Windows only; a Mac is told so instead of being sent
+ * after a Windows download. null is treated as Windows, and the dialog offers
+ * "try anyway" when it says no, for a browser that hides its platform.
+ */
+export function onWindows(nav: { userAgent?: string; userAgentData?: { platform?: string } } | undefined = typeof navigator === 'undefined' ? undefined : (navigator as never)): boolean | null {
+  const platform = nav?.userAgentData?.platform;
+  if (platform) return /windows/i.test(platform);
+  const agent = nav?.userAgent ?? '';
+  if (/Windows/i.test(agent)) return true;
+  if (/Macintosh|Mac OS X|Linux|Android|iPhone|iPad|CrOS/i.test(agent)) return false;
+  return null;
+}
+
+export type DesignerStep =
+  | { kind: 'checking' }
+  | { kind: 'starting' }
+  | { kind: 'sending' }
+  /** A page the companion does not answer: a preview channel, a copy hosted elsewhere. */
+  | { kind: 'unreachable' }
+  | { kind: 'not-windows' }
+  /** The browser was told not to let this site reach apps on the PC. */
+  | { kind: 'blocked' }
+  /** Nothing answered, even after asking Windows to start it. */
+  | { kind: 'no-companion' }
+  /** It answered, and has no DevExpress it can run on; `found` names any too old. */
+  | { kind: 'no-devexpress'; found: string[]; oldest: string }
+  /** Handed over; `newer` is the download's version when it is newer than this one's. */
+  | { kind: 'opened'; version: string | null; newer: string | null }
+  | { kind: 'error'; message: string };
+
+/** What the dialog has found so far. */
+export interface DesignerFacts {
+  origin: string;
+  /** onWindows(), or true once the person chose "try anyway". */
+  windows: boolean | null;
+  permission: LoopbackPermission;
+  /** undefined: not asked yet; null: nothing answered. */
+  health: DesignerHealth | null | undefined;
+  /** Whether a forma-repx:// launch was tried and waited out. */
+  started: boolean;
+  /** undefined: not sent yet. */
+  sent?: { ok: true } | { ok: false; status?: number; message: string };
+  /** The download's version, for "a newer Forma Designer". */
+  latest?: string;
+}
+
+/** The step to show for what has been found: one place, tested case by case. */
+export function designerStep(f: DesignerFacts): DesignerStep {
+  if (!designerReachableFrom(f.origin)) return { kind: 'unreachable' };
+  if (f.windows === false) return { kind: 'not-windows' };
+  if (f.permission === 'denied') return { kind: 'blocked' };
+  if (f.health === undefined) return { kind: 'checking' };
+  if (f.health === null) return f.started ? { kind: 'no-companion' } : { kind: 'starting' };
+  if (!f.health.devexpress) return { kind: 'no-devexpress', found: f.health.found, oldest: f.health.oldest };
+  if (!f.sent) return { kind: 'sending' };
+  if (f.sent.ok) {
+    const latest = f.latest ?? DESIGNER_RELEASE.version;
+    // A companion from before 2026-11-09 reports no version, and is older than any download.
+    const older = f.health.version === null || designerIsOlder(f.health.version, latest);
+    return { kind: 'opened', version: f.health.version, newer: older ? latest : null };
+  }
+  if (f.sent.status === 424) return { kind: 'no-devexpress', found: f.health.found, oldest: f.health.oldest };
+  return { kind: 'error', message: f.sent.message };
 }
