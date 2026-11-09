@@ -9,7 +9,8 @@
  * https://forma-201ba.web.app. For each it asks, over the network, only what
  * a visitor's browser asks, and fails (exit 1) when:
  *
- * - a route does not answer 200 with a page, or the page carries no CSP,
+ * - a route does not answer 200 with a page (a route main added after the live
+ *   build only warns), or the page carries no CSP,
  *   or the document is cacheable (it must revalidate, or a deploy never
  *   reaches a returning visitor);
  * - the entry chunk the page names does not load, or is not immutable;
@@ -33,8 +34,28 @@ const expectAt = args.indexOf('--expect');
 const expected = expectAt >= 0 ? args.splice(expectAt, 2)[1] : '';
 const bases = (args.length ? args : ['https://openforma.web.app', 'https://forma-201ba.web.app']).map((b) => b.replace(/\/+$/, ''));
 
+/** The routes a router.ts declares. */
+const routesIn = (source) => JSON.parse(source.match(/export const ROUTES = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+
 /** The router's routes, read from the source so a new page is checked without editing this. */
-const routes = JSON.parse(readFileSync(new URL('../src/lib/router.ts', import.meta.url), 'utf8').match(/export const ROUTES = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+const routes = routesIn(readFileSync(new URL('../src/lib/router.ts', import.meta.url), 'utf8'));
+
+/**
+ * The routes the live build was made with, read from its own commit in the
+ * public repository, or null when that cannot be read (2026-11-10). A page main
+ * added after the live build answers 404 there until the owner deploys, which
+ * is news like the build itself, not a broken site: the daily check failed on
+ * /download for exactly that while 1.3.0 waited to be deployed.
+ */
+async function routesOf(commit) {
+  if (!/^[0-9a-f]{40}$/.test(commit)) return null;
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/waqarsyd/forma/${commit}/src/lib/router.ts`);
+    return res.ok ? routesIn(await res.text()) : null;
+  } catch {
+    return null;
+  }
+}
 
 const failures = [];
 const warnings = [];
@@ -56,9 +77,13 @@ async function check(base) {
   if (!/content-security-policy/i.test([...home.headers.keys()].join(' '))) fail(base, '/ carries no Content-Security-Policy');
   if (!/no-cache/.test(home.headers.get('cache-control') ?? '')) fail(base, `/ is cacheable (${home.headers.get('cache-control')}); it must revalidate`);
 
+  const live = expected && version !== expected ? await routesOf(version) : null;
   for (const route of routes) {
     const page = await get(`${base}${route}`);
-    if (page.status !== 200 || !/<div id="root">/.test(page.body)) fail(base, `${route} answered ${page.status}${page.status === 200 ? ' without the app' : ''}`);
+    if (page.status === 200 && /<div id="root">/.test(page.body)) continue;
+    const what = `${route} answered ${page.status}${page.status === 200 ? ' without the app' : ''}`;
+    if (live && !live.includes(route)) warn(base, `${what}: main added it after the live build`);
+    else fail(base, what);
   }
 
   const entry = /<script type="module" crossorigin src="(\/assets\/[^"]+\.js)"/.exec(home.body)?.[1];
