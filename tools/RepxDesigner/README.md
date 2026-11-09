@@ -4,6 +4,10 @@ Opens a `.repx` in the DevExpress end-user report designer.
 
 This is the **edit** half of Forma. Forma generates a report and the model's job ends at export: the `layout` JSON and `repxContent` are terminal outputs of one request, never edited afterwards, so they cannot drift apart. Adjustments — nudging a field, resizing a box, fixing a caption — happen here in the real designer, where they cost no tokens and change nothing you did not touch.
 
+## Get it (2026-11-09)
+
+**Most people should download it**, not build it: <https://openforma.web.app/download> has *Forma Designer for Windows*, this program packed with its readme, notice and licence (no DevExpress file), with its version, size and SHA-256. Double-clicking the downloaded exe offers to install it for the current user (*Install, update and remove, per user*, below), and Forma's Open in designer then works from the website as well as from a Forma running on the PC. It needs DevExpress Reporting 20.1 or later installed on the same PC (*Which DevExpress it runs on*, below). Building it, under *Build*, is for working on it, and for packing a new download (*The download, and how it is published*).
+
 ## Three ways in
 
 ```powershell
@@ -13,6 +17,8 @@ RepxDesigner.exe --serve          # listen on 127.0.0.1:7317 for Forma
 ```
 
 Saving inside the designer writes back to the file it opened.
+
+**Since 2026-11-09 the install adds *Open with Forma Designer* for `.repx`** (an Open-with entry, never the default; *Install, update and remove, per user*, below). What follows is the older, manual way, which makes this build the default for `.repx` and is kept for a working tree that is not installed.
 
 **Double-clicking a downloaded `.repx` can also work, but only after you set it up — and nothing in this program does it for you.** `--register` writes the `forma-repx://` scheme and *only* that scheme; the file association is a separate, manual, per-user step. This section stated the association as a fact and gave only the commands to remove it, which was true of the machine it was written on and of no other. To create it:
 

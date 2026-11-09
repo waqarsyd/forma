@@ -77,12 +77,15 @@ export const RELEASES: Release[] = [
   {
     id: '2026-11-09-designer-download',
     date: '2026-11-09',
+    version: '1.3.0',
     title: 'Forma Designer for Windows',
     summary:
       'Open in designer now tells you what is missing and how to get it, and works from openforma.web.app too: Forma Designer, the free Windows app that hands your report to the DevExpress designer, or DevExpress itself, whose free trial is on devexpress.com.',
     changes: [
       { kind: 'new', area: 'site', text: 'A download page for Forma Designer for Windows: one button, no form, with the version, date, size and SHA-256 beside it, what it needs, how to install it (and what Windows says about a program that is not code-signed), how to check the file, what it does on your PC, and how to remove it.' },
       { kind: 'fixed', area: 'site', text: 'The self-hosting page numbers its steps again, instead of showing them as bullets.' },
+      { kind: 'new', area: 'site', text: 'The Docs page has an article on opening a report in the DevExpress designer, and the FAQ a question on it; the terms and privacy policy say when Forma asks your PC and what goes there.' },
+      { kind: 'improved', area: 'export', text: 'Forma Designer works with the DevExpress you have installed, not only 20.1, installs and uninstalls like any Windows app (for you alone, with no administrator), says plainly when DevExpress is missing, and opens a report a web page hands it with report scripts turned off.' },
       { kind: 'improved', area: 'export', text: 'Open in designer opens a window that says what stands in the way and how to fix it: Forma Designer not installed (download it), DevExpress not installed or too old (its free 30-day trial, on devexpress.com), your browser blocking the site from apps on your device (how to allow it), or not being on Windows. Export .repx is always one click away.' },
     ],
   },

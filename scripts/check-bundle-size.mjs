@@ -626,10 +626,19 @@ const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-s
  * seven pages (security, pricing, examples, compare and migrate, about,
  * self-hosting and the FAQ), each about 20 kB drawn in full with its header
  * and footer, and a Pricing link and a Help column on every page. 94.1%.
+ *
+ * Raised to 836,000 on 2026-11-09, at 785,425 B (103.9%, over): the owner's
+ * download programme added a page, /download (23.6 kB drawn in full), a
+ * "Download for Windows" link in every page's footer, a Docs article on
+ * opening a report in the designer and an FAQ answer drawn into both the Docs
+ * and the FAQ pages, and longer terms and privacy paragraphs on 127.0.0.1.
+ * Copy a visitor reads, not drift. The cap was first breached by the page's own
+ * batch (WG, f3b5d77), whose check run was read with its last lines cut off;
+ * this is the raise that batch should have carried. 93.9%.
  */
 const isPage = (f) => f.name.endsWith('.html') && dirname(f.path) === DIST;
 const pagesTotal = files.filter(isPage).reduce((a, f) => a + f.size, 0);
-const PAGES_TOTAL_MAX = 756_000;
+const PAGES_TOTAL_MAX = 836_000;
 const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
 const handwritingTotal = files.filter(isHandwriting).reduce((a, f) => a + f.size, 0);
 // 90,597,142 B with the model (2026-11-04), so 94.0%.

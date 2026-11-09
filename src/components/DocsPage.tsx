@@ -7,6 +7,7 @@ import { Eyebrow } from './landing/sections';
 import { articleMatches, docsIssueUrl } from '../lib/docsSearch';
 import { shortcutGroups } from '../lib/shortcuts';
 import { FAQS } from './faqs';
+import { DESIGNER_REQUIREMENTS, DEVEXPRESS_TRIAL_URL } from '../lib/designerRelease';
 import {
   IconSearch, IconChevronDown, IconThumbUp, IconThumbDown, IconCheck, IconArrowRight,
 } from './landing/icons';
@@ -65,21 +66,22 @@ const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = 
   // the work that added them.
   { id: 'controls', n: '10', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrpageinfo pageinfo page numbers xrchart xrgauge chart gauge xrcheckbox checkbox xrpanel panel xrshape shape crossband cross-band xrcrosstab cross-tab pivot xrsubreport subreport table of contents elements supported' },
   { id: 'repx', n: '11', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download audit warnings errors checks accessibility' },
-  { id: 'config', n: '12', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
-  { id: 'saving', n: '13', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
-  { id: 'share', n: '14', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
-  { id: 'memory', n: '15', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting' },
+  { id: 'designer', n: '12', title: 'Open in the DevExpress designer', keys: 'designer devexpress open in designer forma designer download windows install companion repxdesigner trial apps on device blocked local network smartscreen uninstall' },
+  { id: 'config', n: '13', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
+  { id: 'saving', n: '14', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
+  { id: 'share', n: '15', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
+  { id: 'memory', n: '16', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting' },
   /* Batch and Revisions are two of the five rail panels and both shipped on
      2026-09-05, and neither appeared anywhere on this page or on Features
      until 2026-09-08 — on a page whose sibling is titled "Everything it does".
      Batch in particular is the migration story: it is the thing a
      prompt-driven competitor structurally cannot offer, and it was the one
      feature a visitor could not discover without opening the app. */
-  { id: 'batch', n: '16', title: 'Batch generation', keys: 'batch bulk many folder drop queue multiple files parallel two three zip archive migration legacy convert retry stop download all at once' },
-  { id: 'revisions', n: '17', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
-  { id: 'shortcuts', n: '18', title: 'Keyboard shortcuts', keys: 'keyboard shortcuts keys hotkeys ctrl cmd command' },
-  { id: 'trouble', n: '19', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem draft local not answering context sign in login pop-up popup password' },
-  { id: 'faq', n: '20', title: 'FAQ', keys: 'faq questions common help cost price free billing visual studio photo' },
+  { id: 'batch', n: '17', title: 'Batch generation', keys: 'batch bulk many folder drop queue multiple files parallel two three zip archive migration legacy convert retry stop download all at once' },
+  { id: 'revisions', n: '18', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
+  { id: 'shortcuts', n: '19', title: 'Keyboard shortcuts', keys: 'keyboard shortcuts keys hotkeys ctrl cmd command' },
+  { id: 'trouble', n: '20', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem draft local not answering context sign in login pop-up popup password' },
+  { id: 'faq', n: '21', title: 'FAQ', keys: 'faq questions common help cost price free billing visual studio photo' },
 ];
 
 /** The furniture the newer articles share (2026-11-08). */
@@ -1136,7 +1138,59 @@ report.ExportToPdf("report.pdf");`}
               </dl>
             </Article>
 
-            <Article id="config" kicker="Reference" title="Settings and what is worked out" hidden={!matches('config')}>
+            <Article id="designer" kicker="Output" title="Open in the DevExpress designer" hidden={!matches('designer')}>
+              <p className={PROSE}>
+                Open in designer hands the report to the DevExpress report designer on your PC, the real one, where you
+                can move, resize and bind anything and save the file. It goes through{' '}
+                <strong className="font-semibold text-on-surface">Forma Designer</strong>, a free Windows app:{' '}
+                <a href="/download" className={LINK}>download it</a>, install it (for you alone, with no administrator),
+                and it starts with Windows.
+              </p>
+              <p className={`mt-4 ${PROSE}`}>
+                Forma Designer needs{' '}
+                <strong className="font-semibold text-on-surface">
+                  DevExpress Reporting for WinForms, {DESIGNER_REQUIREMENTS.devexpressOldest} or later
+                </strong>
+                , on the same PC, and uses the version you installed. DevExpress is a separate commercial product of
+                Developer Express Inc. If you do not have it, their free 30-day trial needs no registration:{' '}
+                <a href={DEVEXPRESS_TRIAL_URL} className={LINK} target="_blank" rel="noopener noreferrer">get the DevExpress trial</a>.
+              </p>
+
+              <h3 className={H3}>What happens when you choose it</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                Forma asks Forma Designer on your PC whether it is there, and only then. On openforma.web.app your
+                browser asks the first time whether the site may reach apps on your device: allow it. If Forma Designer
+                is installed but not running, Forma asks Windows to start it, and your browser asks to open
+                RepxDesigner. Then the report opens in the designer.
+              </p>
+
+              <h3 className={H3}>If something is missing</h3>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="Get Forma Designer">
+                  Nothing answered: it is not installed, or not running. Download it, or start it from the Start menu,
+                  and choose Try again.
+                </Def>
+                <Def t="DevExpress is not installed">
+                  Forma Designer is running, but the designer is part of DevExpress Reporting, which this PC does not
+                  have, or has in a version older than {DESIGNER_REQUIREMENTS.devexpressOldest}. Install it (the trial
+                  is fine), then choose Try again.
+                </Def>
+                <Def t="Your browser blocked it">
+                  The browser was told not to let the site reach apps on your device. Click the icon at the left of the
+                  address bar, open Site settings, and set Apps on device (or Local network access) to Allow.
+                </Def>
+                <Def t="The designer runs on Windows">
+                  On a Mac or Linux, export the .repx and open it on a Windows PC.
+                </Def>
+              </dl>
+              <p className={`mt-4 ${PROSE}`}>
+                Every one of these offers Export .repx, which saves the file and needs nothing installed. A report a web
+                page hands Forma Designer opens with report scripts turned off, since it may be one somebody shared with
+                you.
+              </p>
+            </Article>
+
+            <Article id="config"kicker="Reference" title="Settings and what is worked out" hidden={!matches('config')}>
               <p className={PROSE}>
                 Nothing has to be set before a run. What used to be a configuration dialog is worked out from what
                 you bring, and anything else is a sentence in the chat. Settings shows what was worked out for the

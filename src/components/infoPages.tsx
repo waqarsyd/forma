@@ -420,7 +420,7 @@ npm ci
 npm run dev`}</pre>
           <p className={P}>
             Open <code className="doc-code">http://localhost:3000</code> and add your Gemini key in Settings. Signed
-            out, projects are kept in your browser, and everything works; Open in designer works too, from here.
+            out, projects are kept in your browser, and everything works. Open in designer works here as it does on the website, with Forma Designer installed, and from here Forma Designer can also read your SQL Server.
           </p>
         </>
       ),

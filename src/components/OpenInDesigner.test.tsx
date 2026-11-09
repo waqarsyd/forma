@@ -6,7 +6,7 @@
  * without DevExpress, /open 202. The forma-repx:// launch is stubbed too, since
  * jsdom cannot hand a scheme to Windows.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 
 vi.mock('../lib/designerBridge', async (importOriginal) => ({
@@ -17,10 +17,25 @@ vi.mock('../lib/designerBridge', async (importOriginal) => ({
 import OpenInDesigner from './OpenInDesigner';
 import { launchDesigner } from '../lib/designerBridge';
 
+/*
+ * jsdom's user agent carries the platform the tests run on: "(win32)" here,
+ * which onWindows reads as nothing said, and "(linux)" on CI's runners, which
+ * it reads as not Windows. Every test until the one about another platform
+ * states Windows, so the steps are the same wherever the suite runs. Found on
+ * 2026-11-09, when all five passed here and failed on CI.
+ */
+const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0 Safari/537.36';
+function platform(userAgent: string) {
+  Object.defineProperty(window.navigator, 'userAgent', { value: userAgent, configurable: true });
+}
+const original = window.navigator.userAgent;
+beforeEach(() => platform(WINDOWS));
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.mocked(launchDesigner).mockClear();
+  platform(original);
 });
 
 function companion(health: unknown | null, open = 202) {
@@ -76,6 +91,16 @@ describe('Open in designer', () => {
     await waitFor(() => expect(onOpened).toHaveBeenCalledWith('Invoice.repx'));
     const sent = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/open'));
     expect((sent![1] as RequestInit).body).toBe('<XtraReportsLayoutSerializer />');
+  });
+
+  it('tells a browser on another platform that the designer runs on Windows, and asks nothing', async () => {
+    platform('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0 Safari/537.36');
+    companion(null);
+    render(<OpenInDesigner {...props()} />);
+    expect(await screen.findByRole('heading', { name: 'The designer runs on Windows' })).toBeTruthy();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(launchDesigner).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'This is Windows: try anyway' })).toBeTruthy();
   });
 
   it('offers Export .repx at every step, which closes it', async () => {

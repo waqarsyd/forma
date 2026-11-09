@@ -322,8 +322,12 @@ describe('the legal copy and its date change together', () => {
      signing out now deletes them (lib/signOut.ts, forgetDevice).
      Substantive, so the date moved. Phase 2 the same day added what the
      companion reads from a SQL Server on the user's own computer to the
-     paragraph on 127.0.0.1: substantive, and already that day's date. */
-  const EXPECTED_COPY_HASH = 'f04cde856951';
+     paragraph on 127.0.0.1: substantive, and already that day's date. The
+     Forma Designer download the same day (batch WH): the workspace asks
+     127.0.0.1 only when Open in designer is chosen, the website too after the
+     browser asks, the download from GitHub, and DevExpress named as Developer
+     Express Inc.'s product, not Forma's. Substantive, and that day's date. */
+  const EXPECTED_COPY_HASH = 'd56c464fc2b8';
   const EXPECTED_UPDATED = '9 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

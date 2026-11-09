@@ -114,7 +114,7 @@ Each of these is a shipped code path, not a plan.
 - **Account deletion that actually deletes**, removing saved reports, their version history and the encrypted key — proven by a test running against the emulator with production rules enforced. The middle one is the part that is easy to miss: Firestore does not delete a subcollection with its parent document, so a report deleted the obvious way leaves its history behind and looks like it worked ([`tests/accountDeletion.test.ts`](tests/accountDeletion.test.ts)).
 - **A shared style sheet, derived rather than asked for.** An appearance used by three or more controls is hoisted onto a `<StyleSheet>` after generation, so restyling a migrated report is one edit instead of forty that have to agree. Grouping is on exact equality, which is what makes it provably equivalent. DevExpress prints a style's value over a control's own for every property the style sets, so the lift deletes the hoisted attributes from every member and leaves nothing for the style to override ([`src/lib/repxStyles.ts`](src/lib/repxStyles.ts)).
 - **A single place for unit conversion.** Four coordinate systems meet in this pipeline and every conversion between them lives in one module, because a mismatch renders a plausible layout in the wrong place and never throws ([`src/lib/reportGeometry.ts`](src/lib/reportGeometry.ts)).
-- **Optional Windows companion** that opens a generated `.repx` in the real DevExpress designer over a loopback listener. The button is always in the bar: a probe of `127.0.0.1` decides whether a click hands the report to a companion already running or asks Windows to start one, not whether the button is drawn. Export `.repx` needs none of it ([`tools/RepxDesigner/`](tools/RepxDesigner/), [`src/lib/designerBridge.ts`](src/lib/designerBridge.ts)).
+- **Forma Designer, an optional Windows companion** that opens a generated `.repx` in the real DevExpress designer over a loopback listener, downloadable from [/download](https://openforma.web.app/download) and installed per user. Open in designer opens a dialog that asks the companion only when clicked and says what is missing: Forma Designer, DevExpress Reporting (whose free trial it links), the browser's permission, or Windows. Export `.repx` needs none of it ([`tools/RepxDesigner/`](tools/RepxDesigner/), [`src/lib/designerBridge.ts`](src/lib/designerBridge.ts), [`src/components/OpenInDesigner.tsx`](src/components/OpenInDesigner.tsx)).
 - **Mock mode** — `VITE_FORMA_MOCK=true` returns a canned invoice after a 3s delay, for exercising loaders and progress bars without spending a request.
 
 ---
@@ -215,7 +215,7 @@ npm start          # node dist/server.cjs — must run from the repo root
 npm run dev:log    # same server; output tee'd to dev-server.log (gitignored)
 ```
 
-**Open a generated `.repx` in the real DevExpress designer** (Windows, optional): build and start the companion in [`tools/RepxDesigner/`](tools/RepxDesigner/), and an **Open in designer** button appears in the app once its loopback listener answers. Start it from your own desktop — a process launched elsewhere paints on a desktop nobody can see. See its [README](tools/RepxDesigner/README.md).
+**Open a generated `.repx` in the real DevExpress designer** (Windows, optional): download Forma Designer from [the download page](https://openforma.web.app/download), or build it from [`tools/RepxDesigner/`](tools/RepxDesigner/), and double-click it to install it for your user. **Open in designer** then hands the report over, from the website or a Forma running on your PC, and says what is missing when something is. It needs DevExpress Reporting 20.1 or later on the same PC. Start it from your own desktop — a process launched elsewhere paints on a desktop nobody can see. See its [README](tools/RepxDesigner/README.md).
 
 ---
 
@@ -688,6 +688,8 @@ src/
                        through a redesign and checked against a newer layout),
                        sqlCompanion (the companion on your PC reading your SQL
                        Server for the Data tab and the Preview, by connection name),
+                       designerRelease (the Forma Designer download's version,
+                       size, SHA-256 and release, written by its packing script),
                        layers (the stack of open menus and dialogs, so one
                        Escape closes only the topmost and keys meant for
                        one stay there), clipboard (every Copy, with a
@@ -736,7 +738,8 @@ src/
 tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
                        in the real DevExpress designer — C# and MSBuild, with
-                       its own README; nothing in the web app depends on it
+                       its own README; nothing in the web app depends on it;
+                       downloaded as Forma Designer (scripts/package-designer.ts)
 tools/RepxProbe/       console tool that asks DevExpress what a .repx really
                        contains — `emit` prints what the serializer writes,
                        `inspect` reports what the loader sees and fails when a
@@ -904,7 +907,7 @@ Skip either and the site renders perfectly with an empty console, because Fireba
 
 One difference from `npm start` worth knowing: Firebase terminates TLS itself, so HSTS is set unconditionally in `firebase.json` rather than gated on `HTTPS`. **Both now answer a path that is not the app with a 404** (2026-11-07): `firebase.json` rewrites only the router's routes and a shared report's `/s/*` (derived from `src/server/appRoutes.ts`, and asserted), so an unknown address and a chunk from an earlier deploy fall through to Firebase's own 404, which serves the built `dist/404.html` (`noindex`; the app draws Not found). Until then every path was the home page with a 200, a stale chunk included, which broke a tab left open across a deploy; such a tab now reloads once for the new build (`src/lib/staleChunks.ts`). OCR's engine, the PDF/A fonts and the models are served from folders named for their contents (`/ocr/<hash>/…`) and cached for good, like the hashed bundle.
 
-**"Open in designer" works only where Forma runs on the same machine.** The companion on `http://127.0.0.1:7317` answers only a page served from `http://localhost` or `http://127.0.0.1` (`IsAllowedOrigin` in `tools/RepxDesigner`), so from the deployed site it is refused. It was never mixed content, as this said until 2026-11-08: browsers treat `127.0.0.1` as a secure origin. Since that date the deployed workspace sends nothing to `127.0.0.1` at all, since a public page reaching the local network is what makes Chromium ask the visitor for permission; the button says why it cannot open the designer there. Export `.repx` is the path that always works.
+**"Open in designer" from the website asks first.** Since 2026-11-09 the companion on `http://127.0.0.1:7317` answers `https://openforma.web.app` and `https://forma-201ba.web.app` on `/health` and `/open` alone, and the workspace sends its first request only when Open in designer is clicked, which is when Chrome 142+, Edge 143+ and Firefox 151+ ask once whether the site may reach apps on the device. The companion's SQL Server routes still answer only a page served from `http://localhost` or `http://127.0.0.1`, a preview channel or any other host is refused, and a report a page hands over opens with report scripts denied. Until 2026-11-08 nothing from the deployed site reached `127.0.0.1`. Export `.repx` is the path that always works.
 
 ### Settings only the owner can apply
 

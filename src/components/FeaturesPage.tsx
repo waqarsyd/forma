@@ -899,7 +899,7 @@ export default function FeaturesPage({
                     {
                       Icon: IconDoc,
                       t: 'The Preview, and every export',
-                      d: 'The Preview pages the report as DevExpress prints it, over test data Forma can make, and exports it as PDF (with an outline, a password, or as PDF/A), Excel, CSV, Word, RTF, HTML or a picture, all in your browser. Open in designer hands the file to the DevExpress designer on Windows.',
+                      d: 'The Preview pages the report as DevExpress prints it, over test data Forma can make, and exports it as PDF (with an outline, a password, or as PDF/A), Excel, CSV, Word, RTF, HTML or a picture, all in your browser. Open in designer hands the file to the DevExpress designer on Windows, through Forma Designer, a free download.',
                     },
                     {
                       Icon: IconDownload,
