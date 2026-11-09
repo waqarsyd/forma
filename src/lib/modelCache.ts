@@ -41,6 +41,33 @@ const MODEL_SET_CACHE_KEY = 'geminiModels:session';
 let resolvedModel: string | null = null;
 let resolvedModelSet: string[] | null = null;
 
+/*
+ * Who is told when the cache moves (2026-11-09). The chat box's model menu is
+ * read from this cache, and the key check fills it after the key was typed, so
+ * until then the menu said nothing about the key's models until a reload. A
+ * listener runs after the change, never during a render: every writer here is
+ * a request, a check or an effect.
+ */
+const listeners = new Set<() => void>();
+
+/** Calls `listener` whenever the cached model or model list changes; returns the unsubscribe. */
+export function onModelCacheChange(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function announce(): void {
+  for (const listener of [...listeners]) {
+    try {
+      listener();
+    } catch {
+      /* one listener failing does not stop the others */
+    }
+  }
+}
+
 /** Exported so the debug console can report the detected model without re-probing. */
 export function readCachedModel(): string | null {
   if (resolvedModel) return resolvedModel;
@@ -66,6 +93,7 @@ export function cacheModel(model: string, usable?: string[]): void {
       /* in-memory copy still applies for this page */
     }
   }
+  announce();
 }
 
 /**
@@ -96,6 +124,7 @@ export function clearCachedModel(): void {
   } catch {
     /* nothing to clear */
   }
+  announce();
 }
 
 /* ------------------------------------------------------------------ *

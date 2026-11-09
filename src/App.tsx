@@ -84,7 +84,7 @@ import { answeringModel, effectiveProvider, isVisionOnly, PROVIDER_NAMES, readPr
 import type { SettingsSection } from './components/SettingsDialog';
 import type { DraftSource, TeamMember } from './lib/formaTeam';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
-import { clearCachedModel, readCachedModel, readCachedModelSet } from './lib/modelCache';
+import { clearCachedModel, onModelCacheChange, readCachedModel, readCachedModelSet, readDailyModel } from './lib/modelCache';
 import { requestsToday } from './lib/requestCount';
 import { cacheKeyForSession, readSessionKey, clearSessionKey, purgeLegacyPlaintextKey } from './services/keyVault';
 import { startKeyHandoff } from './lib/keyHandoff';
@@ -2151,6 +2151,9 @@ export default function App() {
    * every request (gemini.md, *The model is auto-detected*). Read again after
    * each request, when both lists may have moved. Gemini only.
    */
+  // The cache moves outside React (Check key fills it after the key was typed), so it says when (2026-11-09).
+  const [modelCacheTick, setModelCacheTick] = useState(0);
+  useEffect(() => onModelCacheChange(() => setModelCacheTick((n) => n + 1)), []);
   const modelPicker = useMemo(() => {
     if (effectiveProvider(config) !== 'gemini') return null;
     const used = requestsToday();
@@ -2161,8 +2164,8 @@ export default function App() {
       choices: (readCachedModelSet() ?? []).map((id) => ({ id, used: used[id] ?? 0 })),
       onChoose: (id: string) => setConfig((prev) => ({ ...prev, modelName: id || undefined })),
     };
-    // isChatting and isAnalyzing: a request has just ended, so the lists may have moved.
-  }, [config, isChatting, isAnalyzing]);
+    // isChatting and isAnalyzing: a request has just ended, so the lists may have moved; modelCacheTick: the cache did.
+  }, [config, isChatting, isAnalyzing, modelCacheTick]);
   /**
    * The turn in flight before any generation (2026-11-05): a chat reply, the
    * questions asked before a design, or a sent page being read. The
@@ -2214,18 +2217,24 @@ export default function App() {
     if (last) announceReady(turnEnding(last, chatChanges));
   }, [isAnalyzing, isChatting, turnBusy, requests, chatChanges, announceReady]);
 
+  const lastKeyRef = useRef(config.customApiKey);
   useEffect(() => {
     // sessionStorage, not localStorage: the key is a live credential, and a
     // tab-scoped store is erased by the browser itself. A beforeunload handler
     // would not be — crashes, force-quit and mobile tab eviction all skip it.
     if (config.customApiKey) {
       cacheKeyForSession(config.customApiKey);
+      // Another key replacing this one: the models found for the old key do not carry over (2026-11-09).
+      if (lastKeyRef.current && lastKeyRef.current !== config.customApiKey) clearCachedModel();
+      // A key that found its models earlier today shows them at once; readDailyModel reads localStorage, no request.
+      if (!readCachedModel()) readDailyModel(config.customApiKey);
     } else {
       clearSessionKey();
       // A different key can have different model access, so a choice resolved
       // for the old key must not carry over.
       clearCachedModel();
     }
+    lastKeyRef.current = config.customApiKey;
   }, [config.customApiKey]);
 
   /*

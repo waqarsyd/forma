@@ -12,12 +12,14 @@
  * Time is injected throughout rather than faked globally: these are pure
  * functions over a clock, and passing `now` states each case in one line.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   OVERLOAD_COOLDOWN_MS,
+  cacheModel,
   clearCachedModel,
   isModelInCooldown,
   noteModelOverloaded,
+  onModelCacheChange,
   startingModel,
 } from './modelCache';
 
@@ -134,5 +136,36 @@ describe('startingModel', () => {
   it('never suggests the preferred model twice over', () => {
     noteModelOverloaded('first', T0);
     expect(startingModel('first', ['first'], T0 + 1_000)).toBe('first');
+  });
+});
+
+/*
+ * The chat box's model menu reads this cache, and Check key fills it after the
+ * key was typed: until 2026-11-09 nothing told the menu, so it named no model
+ * until a reload. The cache now says when it moves.
+ */
+describe('onModelCacheChange', () => {
+  it('tells a listener when the models are found or cleared, until it unsubscribes', () => {
+    const listener = vi.fn();
+    const stop = onModelCacheChange(listener);
+    cacheModel('gemini-flash', ['gemini-flash', 'gemini-flash-lite']);
+    expect(listener).toHaveBeenCalledTimes(1);
+    clearCachedModel();
+    expect(listener).toHaveBeenCalledTimes(2);
+    stop();
+    cacheModel('gemini-flash');
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('tells every listener even when one throws', () => {
+    const broken = onModelCacheChange(() => {
+      throw new Error('a listener failing');
+    });
+    const listener = vi.fn();
+    const stop = onModelCacheChange(listener);
+    cacheModel('gemini-flash');
+    expect(listener).toHaveBeenCalledTimes(1);
+    broken();
+    stop();
   });
 });

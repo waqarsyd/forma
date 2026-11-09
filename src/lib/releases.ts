@@ -107,6 +107,7 @@ export const RELEASES: Release[] = [
       { kind: 'new', area: 'data', text: 'Read from my SQL Server: with Forma running on your own PC and its companion (RepxDesigner.exe --serve), the Data tab reads your database’s layout and sample rows straight from it, with no script to copy. Connections are added in the companion, and a login’s password stays there, encrypted for your Windows user.' },
       { kind: 'new', area: 'preview', text: 'Live rows: on your own PC the Preview prints the report from your database with the parameter values you type. A stored procedure runs only when you press the button that names it.' },
       { kind: 'improved', area: 'data', text: 'Open in designer gives the designer the report’s connection from your PC, so its preview works at once, and saving still writes only the connection’s name.' },
+      { kind: 'fixed', area: 'chat', text: 'After you add your key and press Check key, the model menu in the chat box lists the models your key can use straight away, instead of only after the page is reloaded.' },
       { kind: 'fixed', area: 'generation', text: 'A report with a detail band no longer warns that its Mockup and its file disagree on the number of sections.' },
     ],
   },

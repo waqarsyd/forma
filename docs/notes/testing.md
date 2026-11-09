@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **3,047 tests in 183 files** — under the `node` environment
+`npm test` runs Vitest over **3,049 tests in 183 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -169,7 +169,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/licenceNotice` | 4 | /licenses.txt (2026-11-08, site audit item 97): a shared licence text printed once under every package, a package listed once, a missing licence file pointed at the licence's text, every shape of a licence field, and the package a bundled module came from |
 | `lib/memory` | 8 | since 2026-11-07 only "remember" and "from now on" kept, and a name said as not wanted, or after the first wanted, not a hint; jsdom (storage); Forma's memory: a message asking to remember known from a request, its words kept with the paper, orientation, face and sizes it names; a kept report's style kept with none of its words; the newest 30 kept, a style learned from two; the user's words winning over their reports and a switched-off memory skipped; what an AI is told; read back from this browser |
 | `lib/mockupRows` | 12 |  |
-| `lib/modelCache` | 17 |  |
+| `lib/modelCache` | 19 | the overload cooldown, and since 2026-11-09 the cache telling a listener when it moves (the chat box's model menu, filled after Check key without a reload), every listener told even when one throws |
 | `lib/modelCatalog` | 24 |  |
 | `lib/netDecimal` | 8 | .NET's decimal: scale, exact sums, 28-place division, both roundings |
 | `lib/netFormat` | 15 | .NET composite, date and number formatting in en-US; every cell of parity case s15's format table is a string DevExpress drew |
@@ -260,7 +260,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 3,047 in 183 files** — and that total is the arithmetic sum of the column above
+**Total: 3,049 in 183 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -274,7 +274,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2835** against a real 3,047 (2026-11-09, after the thread panel, the box's menus, the main menu, Mark an area, Auto's model named, the repeated options taken out and the SQL Server programme's batches DB to DG, which added no loop; its batch DP, which added no loop; its batch DH, whose one row in `publicClaims`'s table of refused claims (a connection to your database) widened the gap from 211 to 212; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2837** against a real 3,049 (2026-11-09, after the thread panel, the box's menus, the main menu, Mark an area, Auto's model named, the repeated options taken out and the SQL Server programme's batches DB to DG, which added no loop; its batch DP, which added no loop, nor did the model menu filling after Check key; its batch DH, whose one row in `publicClaims`'s table of refused claims (a connection to your database) widened the gap from 211 to 212; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Fourteen** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved
