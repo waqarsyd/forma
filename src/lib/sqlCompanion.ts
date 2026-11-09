@@ -12,10 +12,12 @@
  * script, kept in the companion; samples are built there from checked names;
  * a fill runs the report's own data source.
  *
- * A page the companion would refuse never calls it (`designerReachableFrom`):
- * the deployed site explains how instead, as it does for the designer.
+ * A page the companion would refuse never calls it: the `/sql/` routes answer
+ * a page served from this PC alone (`designerLocalOrigin`), and since
+ * 2026-11-09, when Forma's website may hand a report to the designer, that is
+ * narrower than `designerReachableFrom`. The website explains how instead.
  */
-import { DESIGNER_CLIENT_HEADER, DESIGNER_ORIGIN, designerReachableFrom } from './designerBridge';
+import { DESIGNER_CLIENT_HEADER, DESIGNER_ORIGIN, designerLocalOrigin } from './designerBridge';
 
 export interface CompanionConnection {
   name: string;
@@ -38,9 +40,9 @@ export type FillResult =
   | { kind: 'procedures'; names: string[] }
   | { kind: 'error'; message: string };
 
-/** Whether this page may ask the companion at all. */
+/** Whether this page may ask the companion's SQL Server routes: a page served from this PC only. */
 export function companionReachableFrom(origin: string): boolean {
-  return designerReachableFrom(origin);
+  return designerLocalOrigin(origin);
 }
 
 async function call(path: string, init: RequestInit = {}, timeoutMs = 60_000): Promise<Response> {

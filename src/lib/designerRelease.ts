@@ -38,8 +38,8 @@ export interface DesignerRelease {
 export const DESIGNER_RELEASE: DesignerRelease = {
   version: '1.0.0',
   file: 'FormaDesigner-1.0.0-windows.zip',
-  bytes: 99261,
-  sha256: 'c46a43f46f4e47596a7d12b3efef7be967c107d0003ef67456095efdd8388c75',
+  bytes: 100285,
+  sha256: '08c8b935e76e4c55d6446756dea468321f88d21bb0ac28476ead4b93aa88c1aa',
   date: '2026-11-09',
   tag: 'v1.3.0',
 };

@@ -75,7 +75,11 @@ export const THEME_SCRIPT_HASH = "'sha256-RswoUqjMy7el2m555ElIwd42BKWUQv8ssqXpJL
  *   127.0.0.1:7317      the RepxDesigner companion. Loopback, plain http, and a
  *                       cross-origin fetch from a page served elsewhere, so it
  *                       needs naming explicitly or "Open in designer" silently
- *                       stops working. This is the one everybody forgets.
+ *                       stops working. This is the one everybody forgets. Since
+ *                       2026-11-09 the website sends to it too, but only after
+ *                       a click on Open in designer (lib/designerBridge.ts),
+ *                       and the companion answers the website on /health and
+ *                       /open alone, never its SQL Server routes.
  *   localhost:11434,    the AI providers the owner chose on 2026-11-02 (lib/
  *   localhost:1234,     aiProvider.ts): Ollama's and LM Studio's OpenAI-
  *   127.0.0.1 of each   compatible endpoints on the user's own computer, both

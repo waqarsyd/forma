@@ -238,7 +238,7 @@ import {
   type ReportDescriptionRequest,
 } from './lib/promptToReport';
 import { addUsage, summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
-import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner, designerReachableFrom } from './lib/designerBridge';
+import { pingDesigner, sendToDesigner, designerFileName, launchDesigner, waitForDesigner, shouldRecheckDesigner, designerReachableFrom, designerProbesOnLoad } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import { makeRightToLeft } from './lib/repxRtl';
 import {
@@ -5557,10 +5557,14 @@ export default function App() {
    * deployed site that is the request that makes Chromium ask a visitor for
    * access to their local network, unasked, and the companion refuses that
    * origin anyway (`designerReachableFrom`). There, nothing is sent at all,
-   * and Open in designer says why when it is clicked.
+   * and Open in designer says why when it is clicked. Since 2026-11-09 the
+   * companion answers the website too, but this still runs only on a page
+   * served from the PC (`designerProbesOnLoad`): from the website the first
+   * request is sent by a click on Open in designer, so the browser's question
+   * comes when the person asked for something.
    */
   useEffect(() => {
-    if (!designerReachableFrom(window.location.origin)) return;
+    if (!designerProbesOnLoad(window.location.origin)) return;
     // Only while the workspace is open. This used to run on mount with no
     // condition, so every visitor to the landing page, the docs and the privacy
     // policy fired a request at http://127.0.0.1:7317 — and for the very large
@@ -5667,23 +5671,26 @@ export default function App() {
     // first cleared "starting" for both.
     if (designerStarting) return;
     if (blockedByInvalidRepx()) return;
-    // From the website the companion cannot be reached (site audit item 95):
-    // it answers only a page served from this machine. Say so, and send nothing.
+    // A page the companion does not answer (a preview channel, a copy hosted
+    // elsewhere): say so, and send nothing. Forma's website and a page served
+    // from this PC are answered (2026-11-09).
     if (!designerReachableFrom(window.location.origin)) {
       setError(
-        'Open in designer works when Forma runs on this computer (npm run dev or npm start), because the ' +
-        'designer companion only answers a page served from this machine. From the website, choose Export, ' +
-        'then DevExpress report (.repx), and open the file in the designer.'
+        'Open in designer works on openforma.web.app and in a Forma running on this computer. From here, ' +
+        'choose Export, then DevExpress report (.repx), and open the file in the designer.'
       );
       return;
     }
 
     try {
-      // Nothing listening: ask Windows to start it, then wait for the port.
-      // The button no longer requires the companion to be running already —
+      // Not known to be running: ask it first (from the website this is the
+      // first request, so the browser asks now, on the click), and only when it
+      // does not answer ask Windows to start it and wait for the port. The
+      // button no longer requires the companion to be running already —
       // requiring someone to remember a tray app before a one-click action
       // works is most of the reason this button was never used.
-      if (!designerReady) {
+      if (!designerReady && (await pingDesigner())) setDesignerReady(true);
+      else if (!designerReady) {
         setError(null);
         setDesignerStarting(true);
         // Said as it starts, the bar's own button and its "Starting designer…" having gone.

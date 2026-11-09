@@ -28,6 +28,7 @@ RepxProbe emit-sql-params <out.repx> # the same, for the result schema's TYPE na
 RepxProbe sql-run <script.sql> <out.txt> # run a script over that made-up database and keep what it returns
 RepxProbe sql-fill <in.repx> [P=v] [--before <script.sql>]  # what DevExpress FILLS and PRINTS from a report Forma wrote, over that made-up database, with the printed text, in en-US; --before changes the made-up database first, as a newer one would be; --name-only sets the connection and keeps it a name, as the companion does (--event, through ConfigureDataConnection, fails for a name)
 RepxProbe sql-keep | sql-drop     # FormaSample created and left up for the companion to be tested against, then dropped
+RepxProbe scripts                 # one report with a C# script printed under ExecutionMode Deny, then Unrestricted: Deny refuses it, and the first mode set holds for the process (2026-11-09)
 RepxProbe render-cols            # what does DevExpress DRAW? bricks from CreateDocument()
 RepxProbe render <case-dir> [out-dir] # what does it PRINT over real data, and what do the exports hold?
 RepxProbe emit-chart-titles <out.repx> # a chart's TITLE, axis titles and legend, read back after loading

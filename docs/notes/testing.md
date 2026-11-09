@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **3,055 tests in 184 files** — under the `node` environment
+`npm test` runs Vitest over **3,059 tests in 184 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -150,7 +150,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `lib/serviceWorker` | 4 | the offline worker (2026-11-08, site audit item 55): pages from the network first, hashed files from the cache, the handwriting model, the worker itself and Firebase's paths left to the network, and the source it writes parsing with the same routing rule |
 | `lib/signOut` | 5 | since 2026-11-09 the database layouts kept on the device deleted, by the store's own name, and IndexedDB that throws survived; what a sign-out removes from the tab (2026-11-08, the site audit's batch SG), shared by the public site and App: every session key and nothing else, storage that throws, and each key spelled as the module that writes it |
 | `lib/docsSearch` | 4 | the Docs page's search and feedback (2026-11-08, the site audit's batch SD): an article found by the words it says and not only its title and keywords, every word of the query needed, and the feedback as a GitHub issue prefilled with what was typed and the article |
-| `lib/designerBridge` | 38 | 8 from one loop |
+| `lib/designerBridge` | 42 | 8 from one loop; since 2026-11-09 (batch WE) the website reaching it from Forma's own sites and no preview channel, looking for it on load only from a page served from the PC, the companion's own list of sites and routes read from Program.cs, and the browser's loopback permission read without asking |
 | `lib/designerRelease` | 6 | the Forma Designer download's record (2026-11-09, batch WD), written by `scripts/package-designer.ts`: its version the companion's own `AssemblyInfo.cs`, a real SHA-256, size, date and tag, the GitHub release address, a package of the program and its three texts and nothing of DevExpress, the download's texts in ASCII saying DevExpress is not included, and an older running copy told by number |
 | `lib/draftText` | 11 | jsdom (`checkRepx`); Forma's draft as the AI corrects it (2026-11-05): written line by line with its words, fields, groups and colours and read back exactly; words with spaces, quotes and a bar; a line and a table written with no role, font or alignment, quoted from the first measured answers; the borders and length a model drops before its words, an alignment written as a word, a length left out, a total written as `sumSum([Amount])` and a fence forgiven; words only for text and a field only for a value or a total; what cannot be read skipped and named; the report built from it carrying them, in the version asked for, a file the designer opens; the rules naming every band and role |
 | `lib/embedStore` | 20 |  |
@@ -261,7 +261,7 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 3,055 in 184 files** — and that total is the arithmetic sum of the column above
+**Total: 3,059 in 184 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -275,7 +275,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2843** against a real 3,055 (2026-11-09, after the thread panel, the box's menus, the main menu, Mark an area, Auto's model named, the repeated options taken out and the SQL Server programme's batches DB to DG, which added no loop; its batch DP, which added no loop, nor did the model menu filling after Check key, nor the Forma Designer download's record; its batch DH, whose one row in `publicClaims`'s table of refused claims (a connection to your database) widened the gap from 211 to 212; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2847** against a real 3,059 (2026-11-09, after the thread panel, the box's menus, the main menu, Mark an area, Auto's model named, the repeated options taken out and the SQL Server programme's batches DB to DG, which added no loop; its batch DP, which added no loop, nor did the model menu filling after Check key, nor the Forma Designer download's record, nor the website reaching the companion; its batch DH, whose one row in `publicClaims`'s table of refused claims (a connection to your database) widened the gap from 211 to 212; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Fourteen** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

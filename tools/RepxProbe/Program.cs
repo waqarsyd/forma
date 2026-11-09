@@ -27,7 +27,7 @@ static class Program {
         // with a single argument. It used to need a dummy second one, because this
         // guard ran before the switch for every command alike.
         // sql-keep and sql-drop (2026-11-09) take none either.
-        bool takesNoFile = args.Length == 1 && (args[0] == "render-cols" || args[0] == "sql-keep" || args[0] == "sql-drop");
+        bool takesNoFile = args.Length == 1 && (args[0] == "render-cols" || args[0] == "sql-keep" || args[0] == "sql-drop" || args[0] == "scripts");
         if (args.Length < 2 && !takesNoFile) {
             // Every case in the switch below, because a command missing from here
             // is a command nobody finds. This listed four of twenty-one until
@@ -101,6 +101,7 @@ static class Program {
             case "sql-run":    return SqlProbe.Run(args);
                 case "sql-keep":   return SqlProbe.Keep();
                 case "sql-drop":   return SqlProbe.Drop();
+            case "scripts":    return ScriptsProbe.Run();
             case "emit-sql-params": return SqlProbe.EmitParams(args[1]);
             case "sql-fill":   return SqlProbe.Fill(args);
                 case "inspect":    return Inspect(args[1]);

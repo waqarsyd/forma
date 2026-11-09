@@ -95,17 +95,78 @@ export function designerFileName(title?: string): string {
 export const DESIGNER_RECHECK_GAP_MS = 30_000;
 
 /**
- * Whether the page can reach the companion at all (2026-11-08, site audit
- * item 95). The companion answers only an `http://localhost` or
- * `http://127.0.0.1` origin (`IsAllowedOrigin` in tools/RepxDesigner), so a
- * page served from anywhere else, the deployed site above all, is refused
- * whatever runs on the machine. Such a page never asks: a request to
- * 127.0.0.1 from a public site is what makes Chromium ask the visitor for
- * access to their local network, for a feature that cannot answer.
+ * Forma's own website, which the companion also answers, for `/health` and
+ * `/open` alone (2026-11-09, the owner's decision in the download programme).
+ * Kept equal to `SiteOrigins` in tools/RepxDesigner/Program.cs by a test. A
+ * preview channel is not on the list: its address changes with each preview.
  */
-export function designerReachableFrom(origin: string): boolean {
+export const DESIGNER_SITE_ORIGINS = ['https://openforma.web.app', 'https://forma-201ba.web.app'] as const;
+
+/**
+ * A page served from this PC: npm run dev, npm start. The only one the
+ * companion's `/sql/` routes answer (Phase 2 of the SQL Server programme),
+ * so `companionReachableFrom` in sqlCompanion.ts is this, not the wider
+ * `designerReachableFrom`.
+ */
+export function designerLocalOrigin(origin: string): boolean {
   return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 }
+const isLocalOrigin = designerLocalOrigin;
+
+/**
+ * Whether the page can reach the companion at all. Until 2026-11-09 only a
+ * page served from this PC could (site audit item 95, `IsAllowedOrigin` in the
+ * companion); since then Forma's website can too, for opening a report. Any
+ * other origin, a preview channel included, is refused by the companion, so
+ * such a page never asks.
+ */
+export function designerReachableFrom(origin: string): boolean {
+  return isLocalOrigin(origin) || (DESIGNER_SITE_ORIGINS as readonly string[]).includes(origin);
+}
+
+/**
+ * Whether the page may look for the companion on its own, when a report arrives
+ * or the tab regains focus. Only a page served from this PC: from the website,
+ * the first request to 127.0.0.1 is what makes the browser ask the visitor
+ * whether the site may reach programs on their PC (Chrome 142+, Edge 143+,
+ * Firefox 151+, "Apps on device"), so it is sent only when they click Open in
+ * designer, and a visitor who never does is never asked.
+ */
+export function designerProbesOnLoad(origin: string): boolean {
+  return isLocalOrigin(origin);
+}
+
+export type LoopbackPermission = 'granted' | 'denied' | 'prompt' | 'unknown';
+
+/**
+ * What the browser will do with a request to 127.0.0.1 from this page, without
+ * sending one: granted, denied (the visitor blocked it, and only the site's
+ * settings undo that), prompt (it will ask), or unknown (a browser with no such
+ * permission, which simply sends it). Chrome named the permission
+ * `local-network-access` until 145 split it, loopback becoming
+ * `loopback-network`; both are asked, the newer first.
+ */
+export async function loopbackPermission(): Promise<LoopbackPermission> {
+  const permissions = typeof navigator === 'undefined' ? undefined : navigator.permissions;
+  if (!permissions?.query) return 'unknown';
+  for (const name of ['loopback-network', 'local-network-access']) {
+    try {
+      const status = await permissions.query({ name } as unknown as PermissionDescriptor);
+      if (status.state === 'granted' || status.state === 'denied' || status.state === 'prompt') return status.state;
+    } catch {
+      // A name this browser does not know: try the next.
+    }
+  }
+  return 'unknown';
+}
+
+/**
+ * The fetch options every request to the companion carries: Chrome's hint that
+ * the target is on this machine, which lets it ask the right question up front
+ * instead of failing the request (developer.chrome.com, Local Network Access).
+ * A browser that does not know the field ignores it.
+ */
+export const LOOPBACK_FETCH = { targetAddressSpace: 'loopback' } as unknown as RequestInit;
 
 /** Has enough time passed since the last probe to be worth another? */
 export function shouldRecheckDesigner(
@@ -125,6 +186,7 @@ export async function pingDesigner(timeoutMs = 1200): Promise<boolean> {
 
   try {
     const response = await fetch(`${DESIGNER_ORIGIN}/health`, {
+      ...LOOPBACK_FETCH,
       method: 'GET',
       signal: controller.signal,
     });
@@ -227,6 +289,7 @@ export async function sendToDesigner(repxContent: string, fileName: string): Pro
   let response: Response;
   try {
     response = await fetch(`${DESIGNER_ORIGIN}/open`, {
+      ...LOOPBACK_FETCH,
       method: 'POST',
       headers: {
         'Content-Type': 'application/xml',

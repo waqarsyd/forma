@@ -10,14 +10,69 @@ import {
   DESIGNER_RECHECK_GAP_MS,
   shouldRecheckDesigner,
   designerReachableFrom,
+  designerProbesOnLoad,
+  designerLocalOrigin,
+  loopbackPermission,
+  DESIGNER_SITE_ORIGINS,
 } from './designerBridge';
+import { readFileSync } from 'node:fs';
+
+/*
+ * The website may hand a report to the designer since 2026-11-09 (the owner's
+ * download programme, batch WE), and only after a click: the page never looks
+ * for the companion on its own, and the SQL routes stay a local page's.
+ */
+describe('the website and the companion (2026-11-09)', () => {
+  it('reaches it from Forma\'s own sites, not a preview channel or anything else', () => {
+    expect(designerReachableFrom('https://openforma.web.app')).toBe(true);
+    expect(designerReachableFrom('https://forma-201ba.web.app')).toBe(true);
+    expect(designerReachableFrom('https://forma-201ba--preview-abc123.web.app')).toBe(false);
+    expect(designerReachableFrom('http://openforma.web.app')).toBe(false);
+    expect(designerReachableFrom('https://openforma.web.app.evil.example')).toBe(false);
+  });
+
+  it('looks for it on its own only on a page served from this PC', () => {
+    expect(designerProbesOnLoad('http://localhost:3000')).toBe(true);
+    expect(designerProbesOnLoad('https://openforma.web.app')).toBe(false);
+    expect(designerLocalOrigin('https://openforma.web.app')).toBe(false);
+  });
+
+  it('names the same sites as the companion, which answers them on /health and /open alone', () => {
+    const program = readFileSync('tools/RepxDesigner/Program.cs', 'utf8');
+    const list = /SiteOrigins = \{([^}]*)\}/.exec(program)![1];
+    expect([...list.matchAll(/"([^"]+)"/g)].map((m) => m[1])).toEqual([...DESIGNER_SITE_ORIGINS]);
+    expect(program).toContain('route == "/health" || route == "/open"');
+    expect(program).toContain('HandleSql(stream, method, target, headers, body, IsLocalOrigin(origin) ? origin : null)');
+  });
+
+  it('reads the browser\'s answer without asking, the newer permission name first', async () => {
+    const asked: string[] = [];
+    vi.stubGlobal('navigator', {
+      permissions: {
+        query: async ({ name }: { name: string }) => {
+          asked.push(name);
+          if (name === 'loopback-network') throw new TypeError('unknown permission');
+          return { state: 'denied' };
+        },
+      },
+    });
+    expect(await loopbackPermission()).toBe('denied');
+    expect(asked).toEqual(['loopback-network', 'local-network-access']);
+    vi.stubGlobal('navigator', {});
+    expect(await loopbackPermission()).toBe('unknown');
+    vi.unstubAllGlobals();
+  });
+});
 
 describe('designerReachableFrom (site audit item 95)', () => {
-  it('is true only for a page served from this machine over http, as the companion allows', () => {
+  // Since 2026-11-09 Forma's website is reachable too (above); a page served from
+  // this machine over http is still the only one the SQL routes answer.
+  it('counts a page served from this machine over http as local, as the companion does', () => {
     expect(designerReachableFrom('http://localhost:3000')).toBe(true);
-    expect(designerReachableFrom('http://127.0.0.1:3001')).toBe(true);
-    expect(designerReachableFrom('http://localhost')).toBe(true);
-    expect(designerReachableFrom('https://openforma.web.app')).toBe(false);
+    expect(designerLocalOrigin('http://localhost:3000')).toBe(true);
+    expect(designerLocalOrigin('http://127.0.0.1:3001')).toBe(true);
+    expect(designerLocalOrigin('http://localhost')).toBe(true);
+    expect(designerLocalOrigin('https://openforma.web.app')).toBe(false);
     expect(designerReachableFrom('https://localhost:3000')).toBe(false);
     expect(designerReachableFrom('http://localhost.evil.example')).toBe(false);
   });

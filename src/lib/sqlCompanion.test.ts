@@ -37,6 +37,8 @@ describe('who may call it', () => {
     expect(companionReachableFrom('http://localhost:3001')).toBe(true);
     expect(companionReachableFrom('http://127.0.0.1:3000')).toBe(true);
     expect(companionReachableFrom('https://forma-201ba.web.app')).toBe(false);
+    // The website may open a report in the designer since 2026-11-09; the SQL routes stay local.
+    expect(companionReachableFrom('https://openforma.web.app')).toBe(false);
   });
 
   it('sends the header that forces the preflight, and reads no companion as null', async () => {

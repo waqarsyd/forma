@@ -507,6 +507,16 @@ namespace RepxDesigner
                 return;
             }
 
+            // A report handed over by a page may be one somebody else shared, and a
+            // .repx can carry C# that runs when it is previewed. So this process,
+            // which only opens what pages send, denies report scripts (2026-11-09).
+            // Measured with RepxProbe scripts: under Deny, DevExpress 20.1 refuses to
+            // print a report with a script ("Report scripts were found in the
+            // application while script execution is disabled"), and the mode holds
+            // for the whole process whatever is set later, so it is set once, here.
+            // A file the person opens themselves runs in a process of its own.
+            if (Installed != null) DenyReportScripts();
+
             // The designer must open on the UI thread; the accept loop cannot run
             // there because ShowDesignerDialog is modal. This hidden form is the
             // marshalling point between the two.
@@ -541,8 +551,14 @@ namespace RepxDesigner
                 }
                 menu.MenuItems.Add("Open a .repx...", (s, e) =>
                 {
+                    // In a process of its own: this one denies report scripts (below),
+                    // and a file the person picks is theirs, as an Open with is.
                     string picked = PickFile();
-                    if (!string.IsNullOrEmpty(picked)) OpenDesigner(picked);
+                    if (!string.IsNullOrEmpty(picked))
+                    {
+                        try { Process.Start(new ProcessStartInfo(Application.ExecutablePath, "\"" + picked + "\"") { UseShellExecute = false }); }
+                        catch (Exception ex) { Debug.WriteLine("Could not open: " + ex.Message); }
+                    }
                 });
                 menu.MenuItems.Add("SQL Server connections...", (s, e) =>
                 {
@@ -602,14 +618,19 @@ namespace RepxDesigner
 
             string origin;
             headers.TryGetValue("origin", out origin);
-            string allowed = IsAllowedOrigin(origin) ? origin : null;
+            string route = target.Split('?')[0];
+            string allowed = AllowedFor(origin, route);
 
             if (method == "OPTIONS")
             {
-                // Preflight. An origin we do not recognise gets no
-                // Access-Control-Allow-Origin, so the browser blocks the real
-                // request before it is ever sent.
-                Respond(stream, allowed == null ? 403 : 204, "text/plain", "", allowed);
+                // Preflight. An origin we do not recognise, or the website asking for
+                // a route it may not use, gets no Access-Control-Allow-Origin, so the
+                // browser blocks the real request before it is ever sent. A browser
+                // still sending the private-network preflight header is answered.
+                string privateNetwork;
+                headers.TryGetValue("access-control-request-private-network", out privateNetwork);
+                Respond(stream, allowed == null ? 403 : 204, "text/plain", "", allowed,
+                    allowed != null && string.Equals(privateNetwork, "true", StringComparison.OrdinalIgnoreCase));
                 return;
             }
 
@@ -668,7 +689,8 @@ namespace RepxDesigner
 
             if (target.StartsWith("/sql/"))
             {
-                HandleSql(stream, method, target, headers, body, allowed);
+                // A page served from this PC only, whatever AllowedFor said (2026-11-09).
+                HandleSql(stream, method, target, headers, body, IsLocalOrigin(origin) ? origin : null);
                 return;
             }
 
@@ -740,13 +762,35 @@ namespace RepxDesigner
         }
 
         /// <summary>
-        /// Loopback only, and only a localhost origin. This is a local tool, so
-        /// there is no legitimate caller on the public internet.
+        /// A Forma page served from this PC (npm run dev, npm start): every route,
+        /// the SQL Server ones included.
         /// </summary>
-        private static bool IsAllowedOrigin(string origin)
+        private static bool IsLocalOrigin(string origin)
         {
             if (string.IsNullOrEmpty(origin)) return false;
             return Regex.IsMatch(origin, @"^http://(localhost|127\.0\.0\.1)(:\d+)?$");
+        }
+
+        /// <summary>
+        /// Forma's own website (2026-11-09, the owner's decision in the download
+        /// programme): /health and /open only, never /sql/. Its page sends the first
+        /// request only when the person clicks Open in designer, which is when the
+        /// browser asks them, once, whether the site may reach programs on this PC.
+        /// Kept equal to DESIGNER_SITE_ORIGINS in src/lib/designerBridge.ts by a test.
+        /// </summary>
+        private static readonly string[] SiteOrigins = { "https://openforma.web.app", "https://forma-201ba.web.app" };
+
+        private static bool IsSiteOrigin(string origin)
+        {
+            return !string.IsNullOrEmpty(origin) && Array.IndexOf(SiteOrigins, origin) >= 0;
+        }
+
+        /// <summary>The origin to grant for this route, or null: the website reaches /health and /open alone.</summary>
+        private static string AllowedFor(string origin, string route)
+        {
+            if (IsLocalOrigin(origin)) return origin;
+            if (IsSiteOrigin(origin) && (route == "/health" || route == "/open")) return origin;
+            return null;
         }
 
         /// <summary>
@@ -860,7 +904,7 @@ namespace RepxDesigner
             return true;
         }
 
-        private static void Respond(NetworkStream stream, int status, string contentType, string content, string allowedOrigin)
+        private static void Respond(NetworkStream stream, int status, string contentType, string content, string allowedOrigin, bool privateNetwork = false)
         {
             byte[] payload = Encoding.UTF8.GetBytes(content ?? "");
 
@@ -875,6 +919,9 @@ namespace RepxDesigner
                 head.Append("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n");
                 head.Append("Access-Control-Allow-Headers: content-type, ").Append(ClientHeader).Append(", x-forma-filename\r\n");
                 head.Append("Access-Control-Max-Age: 600\r\n");
+                // Chromium's private network access preflight, superseded by its permission
+                // prompt but still sent by some versions: harmless to answer.
+                if (privateNetwork) head.Append("Access-Control-Allow-Private-Network: true\r\n");
             }
             head.Append("\r\n");
 
@@ -917,6 +964,14 @@ namespace RepxDesigner
             b.Append(",\"oldest\":").Append(SqlCompanion.Json(DevExpressLocator.Oldest.ToString(2)));
             b.Append(",\"compiled\":").Append(SqlCompanion.Json(DevExpressLocator.Compiled));
             return b.Append("}").ToString();
+        }
+
+        /// <summary>Report scripts off for this process; names a DevExpress type, so never inlined.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void DenyReportScripts()
+        {
+            DevExpress.XtraReports.Security.ScriptPermissionManager.GlobalInstance =
+                new DevExpress.XtraReports.Security.ScriptPermissionManager(DevExpress.XtraReports.Security.ExecutionMode.Deny);
         }
 
         /// <summary>The version of the DevExpress assembly actually loaded; names a DevExpress type, so never inlined.</summary>
