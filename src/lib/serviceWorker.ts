@@ -7,8 +7,9 @@
  * - A page is fetched from the network first and kept, so a deploy reaches a
  *   returning visitor at once (Firebase serves every page `no-cache`), and a
  *   lost connection gets the copy last seen, or the home page's.
- * - A hashed file (`/assets/`, and the versioned `/ocr/`, `/pdf-fonts/` and
- *   `/model/` folders, lib/assetPaths.ts) is answered from the cache first:
+ * - A hashed file (`/assets/`, and the versioned `/ocr/`, `/paddle/`,
+ *   `/pdf-fonts/` and `/model/` folders, lib/assetPaths.ts) is answered from
+ *   the cache first, so a picture can still be read offline:
  *   its name changes whenever its bytes do, so a kept copy is never stale.
  * - Everything else goes to the network untouched: other origins (Google,
  *   Firebase, an AI), any request but GET, the worker itself, and the
@@ -30,7 +31,7 @@ export function swStrategy(pathname: string, isNavigation: boolean): SwStrategy 
   if (pathname === '/sw.js' || pathname.indexOf('/__/') === 0 || pathname.indexOf('/handwriting/') === 0) return 'network';
   if (isNavigation) return 'page';
   if (pathname.indexOf('/assets/') === 0) return 'asset';
-  if (/^\/(ocr|pdf-fonts|model)\/[0-9a-f]{10}\//.test(pathname)) return 'asset';
+  if (/^\/(ocr|paddle|pdf-fonts|model)\/[0-9a-f]{10}\//.test(pathname)) return 'asset';
   return 'network';
 }
 

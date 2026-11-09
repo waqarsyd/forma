@@ -12,6 +12,8 @@ describe('swStrategy', () => {
     expect(swStrategy('/ocr/0123456789/worker.min.js', false)).toBe('asset');
     expect(swStrategy('/pdf-fonts/abcdef0123/LiberationSans-Regular.ttf', false)).toBe('asset');
     expect(swStrategy('/model/abcdef0123/formaModel.json', false)).toBe('asset');
+    // PaddleOCR's models (2026-11-10), so a picture can be read offline.
+    expect(swStrategy('/paddle/0123456789/det.onnx', false)).toBe('asset');
   });
 
   it('leaves the handwriting model, the worker, Firebase\'s paths and unversioned files to the network', () => {

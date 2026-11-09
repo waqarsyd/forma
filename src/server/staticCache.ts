@@ -56,7 +56,7 @@ export const IMAGE_EXTENSIONS = ['png', 'webp', 'ico', 'svg', 'jpg', 'jpeg'] as 
  * folder, so a file at a given path never changes and is IMMUTABLE, as a
  * hashed bundle is. They were at fixed paths and revalidated on every use.
  */
-export const VERSIONED_DIRS = ['ocr', 'pdf-fonts', 'model', 'handwriting'] as const;
+export const VERSIONED_DIRS = ['ocr', 'pdf-fonts', 'model', 'handwriting', 'paddle'] as const;
 
 /** Whether a path is a file in a versioned folder: `<dir>/<ten hex digits>/<file>`. */
 export function isVersioned(filePath: string): boolean {

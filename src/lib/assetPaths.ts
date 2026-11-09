@@ -12,7 +12,7 @@
  * define, and the unversioned paths are the answer: `typeof` an undeclared
  * name is safe where reading it would throw.
  */
-declare const __FORMA_ASSETS__: { ocr: string; pdfFonts: string; model: string; handwriting: string } | undefined;
+declare const __FORMA_ASSETS__: { ocr: string; pdfFonts: string; model: string; handwriting: string; paddle?: string } | undefined;
 
 const built = typeof __FORMA_ASSETS__ === 'object' && __FORMA_ASSETS__ ? __FORMA_ASSETS__ : null;
 
@@ -26,3 +26,5 @@ export const PDF_FONT_BASE = built?.pdfFonts ?? '/pdf-fonts/';
 export const MODEL_BASE = built?.model ?? '/model/';
 /** The handwriting model, when the build carries it. */
 export const HANDWRITING_ASSET_BASE = built?.handwriting ?? '/handwriting/';
+/** PaddleOCR's models (2026-11-10, lib/paddle.ts). */
+export const PADDLE_ASSET_BASE = built?.paddle ?? '/paddle/';

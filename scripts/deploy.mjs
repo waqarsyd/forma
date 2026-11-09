@@ -16,7 +16,8 @@
  * needs them. So this refuses unless it is deploying main exactly as pushed
  * (a clean tree, on main, equal to origin/main), runs every check CI runs,
  * builds without the handwriting model unless asked (--with-handwriting, item
- * 2), deploys hosting and firestore.rules together, then runs
+ * 2) and with PaddleOCR's models (npm run fetch:paddle, 2026-11-10), deploys
+ * hosting and firestore.rules together, then runs
  * scripts/smoke.mjs against the live sites expecting this commit, which the
  * page now carries in <meta name="forma-version">.
  *
@@ -168,6 +169,11 @@ run('npm run lint:encoding');
 run('npm run lint:links');
 run('npm test');
 run('npm run test:rules');
+// PaddleOCR's models (2026-11-10, the AI accuracy programme, batch AC): the
+// English reader every picture goes to first, too large to commit, so fetched
+// here, pinned by SHA-256, before the build copies them. A deploy without them
+// would read every picture with Tesseract alone and say nothing.
+run('npm run fetch:paddle');
 run('npm run build', { env: withHandwriting ? { FORMA_HANDWRITING: '1' } : {} });
 run('npm run check:size');
 

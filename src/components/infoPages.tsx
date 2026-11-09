@@ -337,7 +337,7 @@ export const ABOUT: InfoDoc = {
         <>
           <ul className={UL}>
             <li>React, Vite, Tailwind CSS and Motion for the app; Firebase for sign-in and saved projects.</li>
-            <li>Tesseract.js for OCR in your browser, pdf.js for PDFs, and Transformers.js with ONNX Runtime for handwriting.</li>
+            <li>PaddleOCR's PP-OCRv5 models and Tesseract.js for OCR in your browser, on ONNX Runtime, pdf.js for PDFs, and Transformers.js for handwriting.</li>
             <li>Inter, Hanken Grotesk and JetBrains Mono for type, and the Liberation fonts inside PDF/A files, all under the SIL Open Font License.</li>
           </ul>
           <p className={P}>

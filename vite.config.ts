@@ -93,6 +93,22 @@ const HANDWRITING_ASSETS: Record<string, string> = WITH_HANDWRITING
   : {};
 
 /**
+ * PaddleOCR (2026-11-10, the AI accuracy programme, batch AC; lib/paddle.ts):
+ * PP-OCRv5's text detector and English recogniser, PaddlePaddle's own ONNX
+ * exports, read on the same ONNX Runtime WebAssembly as handwriting, in a
+ * worker. Served at `/paddle/` from `vendor/paddle/`, which
+ * `npm run fetch:paddle` fills (pinned by SHA-256) and git ignores, and which
+ * scripts/deploy.mjs fetches before it builds. A build without them reads
+ * pictures with Tesseract alone (`paddleServed`); `FORMA_PADDLE=0` leaves them
+ * out on purpose. About 12.7 MB, fetched by a browser only when it reads a
+ * picture, and cached for good after.
+ */
+const PADDLE_ASSETS: Record<string, string> =
+  process.env.FORMA_PADDLE === '0'
+    ? {}
+    : Object.fromEntries(['det.onnx', 'rec-en.onnx', 'rec-en.yml'].map((f) => [f, `vendor/paddle/${f}`]).filter(([, source]) => existsSync(resolve(source))));
+
+/**
  * A folder name for a set of files, from their contents (2026-11-07, site
  * audit item 91): ten hex digits of a SHA-256 over every name and every byte,
  * so a new engine, font or model gets a new URL and the old one can be cached
@@ -143,6 +159,7 @@ const VERSIONS = {
   pdfFonts: versionOf(PDF_FONT_ASSETS),
   model: versionOf(MODEL_ASSETS),
   handwriting: versionOf(HANDWRITING_ASSETS),
+  paddle: versionOf(PADDLE_ASSETS),
 };
 
 /** The commit the build is made from, or "unknown" outside a git checkout. */
@@ -317,6 +334,9 @@ function servedWorks(): LicensedWork[] {
     ofl('Hanken Grotesk (typeface)', 'src/fonts/OFL-hankengrotesk.txt'),
     ofl('JetBrains Mono (typeface)', 'src/fonts/OFL-jetbrainsmono.txt'),
     ofl('Liberation Sans, Serif and Mono 2.1.5 (fonts embedded in PDF/A files)', 'assets/pdf-fonts/LICENSE'),
+    ...(Object.keys(PADDLE_ASSETS).length
+      ? [{ name: 'PP-OCRv5 mobile text detector and English recogniser (PaddlePaddle), ONNX exports PaddlePaddle/PP-OCRv5_mobile_det_onnx and PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx', license: 'Apache-2.0', text: '', homepage: 'https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx' }]
+      : []),
     ...(Object.keys(HANDWRITING_ASSETS).length
       ? [{ name: 'TrOCR small handwritten (Microsoft), ONNX conversion Xenova/trocr-small-handwritten', license: 'MIT', text: '', homepage: 'https://huggingface.co/Xenova/trocr-small-handwritten' }]
       : []),
@@ -386,6 +406,7 @@ export default defineConfig(() => {
       servedAssets('pdf-fonts', PDF_FONT_ASSETS, VERSIONS.pdfFonts),
       servedAssets('model', MODEL_ASSETS, VERSIONS.model),
       servedAssets('handwriting', HANDWRITING_ASSETS, VERSIONS.handwriting),
+    servedAssets('paddle', PADDLE_ASSETS, VERSIONS.paddle),
       changelogFeed(),
       thirdPartyLicences(),
       offlineWorker(),
@@ -403,6 +424,7 @@ export default defineConfig(() => {
         pdfFonts: `/pdf-fonts/${VERSIONS.pdfFonts}/`,
         model: `/model/${VERSIONS.model}/`,
         handwriting: `/handwriting/${VERSIONS.handwriting}/`,
+        paddle: `/paddle/${VERSIONS.paddle}/`,
       }),
     },
     // Only VITE_* reaches the client. GEMINI_* was previously allowlisted here,
@@ -414,6 +436,10 @@ export default defineConfig(() => {
     // application-owned key to expose, so nothing Gemini-related belongs in
     // import.meta.env. Do not re-add a 'GEMINI_' prefix here.
     envPrefix: ['VITE_'],
+    // PaddleOCR's worker (2026-11-10, lib/paddleWorker.ts) imports ONNX
+    // Runtime, which finds its own files through `import.meta.url`: an ES
+    // module worker keeps that, where Vite's default IIFE worker cannot.
+    worker: { format: 'es' },
     build: {
       rollupOptions: {
         output: {

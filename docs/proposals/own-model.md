@@ -1329,6 +1329,41 @@ source, measured* in `docs/notes/gemini.md`).
 committed: the 6 distinct PDFs (19 pages; 18 with a text layer, one a scan)
 beside the 600 printed real pages `realScore.ts` made on 2026-11-04.
 
+## A better page reader under the box reader (2026-11-10)
+
+The owner's decision of 2026-11-10 put a better page reader before any GPU
+training (batch AC). PaddleOCR's PP-OCRv5 replaced Tesseract as the reader of
+an English picture (docs/notes/app-shell.md, *OCR reads the text of an image
+or a scan*), and the box reader was scored again on the same 200 printed
+company reports, the model unchanged and trained on Tesseract's readings,
+with `realScore.ts --cases-only` and `--ocr-cache` (new, so two readings of
+the same pages compare exactly), PaddleOCR as the app runs it (the page drawn
+twice its size, the detector reading it whole, the recogniser's narrowest
+input 96):
+
+| From the reading of | Printed texts found | Band right | Role right | Both | Group footers | Group headers | Footer totals | Pages built banded |
+|---|---|---|---|---|---|---|---|---|
+| Tesseract (the app until then) | 7,587 | 75.2% | 70.3% | 59.2% | 15.6% | 30.2% | 6.3% | 126 |
+| PaddleOCR, as the app reads | 16,838 | 79.8% | 73.6% | 65.1% | 41.8% | 16.2% | 18.0% | 144 |
+
+So the reader starts from more than twice the text and places more of it,
+and group headers are the one band that got worse, most likely because the
+reader learned them from Tesseract's lines, which run across a page (15 lines
+on the screenshot PaddleOCR found 117 regions in) where PaddleOCR's regions
+stop at each cell. Retraining it on PaddleOCR's readings is batch AE.
+
+**A layout detector, measured and not adopted.** PP-DocLayout-S (PicoDet, 23
+classes, Apache-2.0, 4.9 MB in a third-party ONNX export) was run over the
+same 200 pages by `scripts/model/layoutCompare.ts`, each printed text taking
+the class of the smallest region holding it. It reads a report page as
+`chart`, `image` and `table` almost everywhere; its `header` class held 0.5%
+of the report headers' texts and none of the page headers', and no class
+picked out group headers (30% right by the reader) or group footers (16%).
+Its `footer` held 44% of the page footers' texts, where the reader is already
+at 94.5%. Its larger siblings are 130 MB and more, too large for a browser.
+Report bands are a layout no document dataset labels, which is the reader's
+case for being Forma's own.
+
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded

@@ -415,9 +415,20 @@ const BUDGETS = [
    * since a build made without fetching it (CI's) has none.
    */
   { prefix: 'transformers.web', ext: '.js', max: 947_000, note: 'Transformers.js, handwriting only' },
-  { prefix: 'ort-wasm-simd-threaded', ext: '.wasm', max: 22_970_000, note: "ONNX Runtime's WebAssembly, handwriting only" },
+  { prefix: 'ort-wasm-simd-threaded', ext: '.wasm', max: 22_970_000, note: "ONNX Runtime's WebAssembly, handwriting and PaddleOCR" },
   { prefix: 'encoder_model_quantized', ext: '.onnx', max: 24_550_000, note: 'TrOCR encoder, handwriting only', optional: true },
   { prefix: 'decoder_model_merged_quantized', ext: '.onnx', max: 43_110_000, note: 'TrOCR decoder, handwriting only', optional: true },
+  /*
+   * PaddleOCR (2026-11-10, the AI accuracy programme, batch AC; lib/paddle.ts):
+   * its worker, which carries ONNX Runtime's JavaScript (403,548 B), and
+   * PaddlePaddle's two models, pinned by SHA-256 in scripts/fetch-paddle.mjs and
+   * optional here, since a build made without fetching them (CI's) has none:
+   * 4,826,518 B and 7,848,423 B. All at 94%, as the vendored caps sit. The
+   * WebAssembly it runs on is handwriting's, budgeted above, one file for both.
+   */
+  { prefix: 'paddleWorker', ext: '.js', max: 429_000, note: 'PaddleOCR worker with ONNX Runtime, when a picture is read' },
+  { prefix: 'det', ext: '.onnx', max: 5_135_000, note: 'PaddleOCR text detector', optional: true },
+  { prefix: 'rec-en', ext: '.onnx', max: 8_350_000, note: 'PaddleOCR English recogniser', optional: true },
   /*
    * The twelve Liberation faces a PDF/A file embeds (2026-11-02, parity row
    * 72; see PDF_FONT_ASSETS in vite.config.ts and assets/pdf-fonts/README.md),
@@ -594,6 +605,13 @@ const isModel = (f) => f.path.startsWith(MODEL_DIR);
 const HANDWRITING_DIR = join(DIST, 'handwriting');
 const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-simd-threaded|transformers\.web)/.test(f.name);
 /*
+ * PaddleOCR (2026-11-10) likewise: the models under dist/paddle/ (when
+ * npm run fetch:paddle ran) and its worker, fetched only when a picture is read.
+ * 13,082,453 B together; the WebAssembly it shares is counted with handwriting.
+ */
+const PADDLE_DIR = join(DIST, 'paddle');
+const isPaddle = (f) => f.path.startsWith(PADDLE_DIR) || f.name.startsWith('paddleWorker');
+/*
  * The built pages (2026-11-08, the site audit's batch SB): one HTML file per
  * route at dist/'s root, the seven marketing pages drawn in full at build so
  * a crawler reads them (src/prerender.tsx). 424,564 B that day, of which a
@@ -639,7 +657,10 @@ const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-s
 const isPage = (f) => f.name.endsWith('.html') && dirname(f.path) === DIST;
 const pagesTotal = files.filter(isPage).reduce((a, f) => a + f.size, 0);
 const PAGES_TOTAL_MAX = 836_000;
-const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
+const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPaddle(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
+const paddleTotal = files.filter(isPaddle).reduce((a, f) => a + f.size, 0);
+// 13,082,453 B with the models (2026-11-10), so 94.0%.
+const PADDLE_TOTAL_MAX = 13_920_000;
 const handwritingTotal = files.filter(isHandwriting).reduce((a, f) => a + f.size, 0);
 // 90,597,142 B with the model (2026-11-04), so 94.0%.
 const HANDWRITING_TOTAL_MAX = 96_400_000;
@@ -684,7 +705,7 @@ for (const budget of BUDGETS) {
   }
 }
 
-rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr, dist/pdf-fonts, dist/model and the pages' });
+rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr, dist/pdf-fonts, dist/model, handwriting, PaddleOCR and the pages' });
 rows.push({ name: 'pages total', size: pagesTotal, max: PAGES_TOTAL_MAX, pct: ((pagesTotal / PAGES_TOTAL_MAX) * 100).toFixed(1), note: 'one HTML page per route, the marketing pages drawn in full' });
 if (pagesTotal > PAGES_TOTAL_MAX) {
   breaches.push(`OVER     pages total — ${pagesTotal.toLocaleString()} B exceeds the ${PAGES_TOTAL_MAX.toLocaleString()} B budget`);
@@ -692,6 +713,10 @@ if (pagesTotal > PAGES_TOTAL_MAX) {
 rows.push({ name: 'dist/ocr/ total', size: ocrTotal, max: OCR_TOTAL_MAX, pct: ((ocrTotal / OCR_TOTAL_MAX) * 100).toFixed(1), note: 'the OCR engine, lazy' });
 rows.push({ name: 'dist/pdf-fonts/ total', size: fontTotal, max: FONT_TOTAL_MAX, pct: ((fontTotal / FONT_TOTAL_MAX) * 100).toFixed(1), note: 'PDF/A fonts, lazy' });
 rows.push({ name: 'handwriting total', size: handwritingTotal, max: HANDWRITING_TOTAL_MAX, pct: ((handwritingTotal / HANDWRITING_TOTAL_MAX) * 100).toFixed(1), note: 'TrOCR and its runtime, opt-in' });
+rows.push({ name: 'PaddleOCR total', size: paddleTotal, max: PADDLE_TOTAL_MAX, pct: ((paddleTotal / PADDLE_TOTAL_MAX) * 100).toFixed(1), note: 'its worker and models, when a picture is read' });
+if (paddleTotal > PADDLE_TOTAL_MAX) {
+  breaches.push(`OVER     PaddleOCR total — ${paddleTotal.toLocaleString()} B exceeds the ${PADDLE_TOTAL_MAX.toLocaleString()} B budget`);
+}
 if (handwritingTotal > HANDWRITING_TOTAL_MAX) {
   breaches.push(`OVER     handwriting total — ${handwritingTotal.toLocaleString()} B exceeds the ${HANDWRITING_TOTAL_MAX.toLocaleString()} B budget`);
 }

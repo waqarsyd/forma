@@ -17,7 +17,7 @@
  */
 import type { PixelBox } from './reportGeometry';
 import { OCR_BASE, OCR_WORKER } from './assetPaths';
-import { OTHER_SCRIPTS, bestScript, latinLanguageOf, looksHandwritten, meanConfidence, probeLines, readsAsLatin } from './ocrScript';
+import { CONFIDENT, OTHER_SCRIPTS, bestScript, latinLanguageOf, looksHandwritten, meanConfidence, probeLines, readsAsLatin } from './ocrScript';
 
 /** One recognized word: its text, its box in the image's pixels, and Tesseract's confidence, 0 to 100. */
 export interface OcrWord {
@@ -168,8 +168,42 @@ async function probeWith(languages: string, page: Blob, boxes: readonly PixelBox
   return out;
 }
 
+/** PaddleOCR's module (lib/paddle.ts), once a reading has asked for it. */
+let paddle: typeof import('./paddle') | null = null;
+
+/**
+ * PaddleOCR's reading of the page (2026-11-10, the AI accuracy programme,
+ * batch AC), or null for Tesseract to read it: when this site does not serve
+ * the models, when the page is in a script the English recogniser does not
+ * know (`inItsScript`), or when it fails. Measured on the company's private
+ * pages, PaddleOCR found 97% of the characters printed where Tesseract found
+ * 61% (docs/notes/app-shell.md, *OCR reads the text of an image or a scan*).
+ */
+async function readByPaddle(
+  input: HTMLCanvasElement,
+  image: { width: number; height: number; dpi: number | null },
+  scale: number,
+  signal: AbortSignal | undefined,
+): Promise<OcrPage | null> {
+  try {
+    paddle ??= await import('./paddle');
+    if (!(await paddle.paddleServed())) return null;
+    const page = await paddle.readWithPaddle(input, image, scale, { onProgress: (status, progress) => listener?.(status, progress), signal });
+    if (!paddle.inItsScript(page)) {
+      console.debug('PaddleOCR read too little of this page for its script; Tesseract reads it.');
+      return null;
+    }
+    return page;
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    console.warn('PaddleOCR did not read the page; Tesseract reads it.', err);
+    return null;
+  }
+}
+
 /** Stop the engine, for a cancelled run; the next run loads it again. */
 export async function stopOcr(): Promise<void> {
+  paddle?.stopPaddle();
   const running = engine;
   engine = null;
   if (running) await (await running.catch(() => null))?.terminate();
@@ -206,10 +240,12 @@ export async function recognizePage(
     const started = performance.now();
     const took: string[] = [];
     const lap = (what: string, from: number) => took.push(`${what} ${((performance.now() - from) / 1000).toFixed(1)}s`);
-    // English first, as every page always was; then the page's own language,
-    // worked out from that reading (lib/ocrScript.ts).
-    let page = await readWith('eng', input, image, scale);
-    lap('English', started);
+    // English first, as every page always was, by PaddleOCR where this site
+    // serves it (since 2026-11-10) and Tesseract otherwise; then the page's own
+    // language, worked out from that reading (lib/ocrScript.ts).
+    const byPaddle = await readByPaddle(input, image, scale, options.signal);
+    let page = byPaddle ?? (await readWith('eng', input, image, scale));
+    lap(byPaddle ? 'PaddleOCR' : 'English', started);
     stopped();
     let language = 'eng';
     if (readsAsLatin(page)) {
@@ -218,7 +254,10 @@ export async function recognizePage(
         const from = performance.now();
         const again = await readWith(`${latin}+eng`, input, image, scale);
         lap(latin, from);
-        if (meanConfidence(again.lines) >= meanConfidence(page.lines) - 2) [page, language] = [again, latin];
+        // Over PaddleOCR's reading, only when Tesseract is sure of its own: the
+        // two engines' confidences are not on one scale.
+        const better = byPaddle ? meanConfidence(again.lines) >= CONFIDENT : meanConfidence(again.lines) >= meanConfidence(page.lines) - 2;
+        if (better) [page, language] = [again, latin];
       }
     } else {
       const boxes = probeLines(page);
@@ -245,7 +284,7 @@ export async function recognizePage(
       }
     }
     stopped();
-    console.debug(`OCR read the page as ${language === 'eng' ? 'English' : language} (${took.join(', ')}).`);
+    console.debug(`OCR read the page as ${language === 'eng' ? 'English' : language}${byPaddle && page === byPaddle ? ' with PaddleOCR' : ''} (${took.join(', ')}).`);
     // The lines still unsure, read again as handwriting (2026-11-04,
     // lib/handwriting.ts): only on a Latin page where enough of them are
     // unsure, and only where this site serves the model. One that will not

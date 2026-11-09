@@ -3,7 +3,7 @@
  * "scores only"; docs/proposals/own-model.md, *The box reader on real
  * reports*).
  *
- *   npx tsx scripts/model/realScore.ts --reports <dir> [--reports <dir>] --work <dir> [--limit 60] [--workers 8] [--model <file>]
+ *   npx tsx scripts/model/realScore.ts --reports <dir> [--reports <dir>] --work <dir> [--limit 60] [--workers 8] [--model <file>] [--ocr-cache <file>] [--cases-only]
  *
  * Every other score of the reader is on pages render.py drew from skeletons.
  * This prints the company's own reports with DevExpress itself and reads the
@@ -38,6 +38,7 @@ import { pageForImage } from '../../src/lib/reportGeometry';
 import { parseReportStructure } from '../../src/lib/reportPreview';
 import { skeletonOf } from '../../src/lib/reportSkeleton';
 import { skeletonToText } from '../../src/lib/skeletonText';
+import type { OcrPage } from '../../src/lib/ocr';
 import { readWithOcr } from './ocrPages';
 import { absolute, truthOf, type Brick, type Truth } from './printedTruth';
 
@@ -51,17 +52,34 @@ const WORKERS = Number(valueOf('--workers') ?? 8);
 const modelFile = valueOf('--model') ?? 'assets/model/boxReader.json';
 /** `--dump <file>`: each line's masked structure, for studying the misreadings; outside the repository. */
 const dumpFile = valueOf('--dump');
+/**
+ * `--ocr-cache <file>` (2026-11-10, batch AC): the pages as another engine read
+ * them, a JSON object of page name to `OcrPage` (or to `{ page }`, as
+ * ocrCompare.ts caches PaddleOCR's), in place of Tesseract's; outside the
+ * repository, as --work is.
+ */
+const ocrCacheFile = valueOf('--ocr-cache');
+/**
+ * `--cases-only` (2026-11-10, batch AC): score the cases already printed in
+ * --work, and print none, so two readings of the same pages compare exactly
+ * and no --reports folder is needed.
+ */
+const casesOnly = argv.includes('--cases-only');
 /** `--rules`, as boxes.ts takes it: the rules after the networks, `app` by default. */
 const RULES = rulesOf(valueOf('--rules') ?? 'app');
 const dumpRows: string[] = [];
 const PROBE = resolve('tools/RepxProbe/bin/Release/RepxProbe.exe');
 
-if (!reportDirs.length || !workDir) {
+if ((!reportDirs.length && !casesOnly) || !workDir) {
   console.error('Usage: npx tsx scripts/model/realScore.ts --reports <dir> --work <dir> [--limit 60]');
   process.exit(2);
 }
 if (resolve(workDir).startsWith(resolve('.') + sep)) {
   console.error('--work must be outside the repository: the printed pages hold client material.');
+  process.exit(2);
+}
+if (ocrCacheFile && resolve(ocrCacheFile).startsWith(resolve('.') + sep)) {
+  console.error('--ocr-cache must be outside the repository, as --work is.');
   process.exit(2);
 }
 if (dumpFile && resolve(dumpFile).startsWith(resolve('.') + sep)) {
@@ -78,7 +96,7 @@ if (!readsTheseFeatures(model)) {
 // ------------------------------------------------------------ the layouts
 const walk = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(join(dir, d.name)) : d.name.toLowerCase().endsWith('.repx') ? [join(dir, d.name)] : []));
-const files = reportDirs.flatMap((d) => walk(resolve(d))).sort();
+const files = casesOnly ? [] : reportDirs.flatMap((d) => walk(resolve(d))).sort();
 const distinct = new Map<string, string>();
 for (const f of files) {
   if (statSync(f).size > 4_000_000) continue;
@@ -90,7 +108,7 @@ for (const f of files) {
 const layouts = [...distinct.values()];
 const step = Math.max(1, layouts.length / LIMIT);
 const chosen = Array.from({ length: Math.min(LIMIT, layouts.length) }, (_, i) => layouts[Math.floor(i * step)]);
-console.log(`real reports: ${files.length} files, ${layouts.length} distinct layouts, ${chosen.length} chosen`);
+if (!casesOnly) console.log(`real reports: ${files.length} files, ${layouts.length} distinct layouts, ${chosen.length} chosen`);
 
 // -------------------------------------------------------------- the cases
 /** A made-up value for a field, from its name alone. */
@@ -132,6 +150,14 @@ chosen.forEach((file) => {
   if (existsSync(join(dir, 'report.png'))) cases.push({ dir, names: truth.names });
   else failed++;
 });
+if (casesOnly) {
+  for (const name of readdirSync(work).sort()) {
+    const dir = join(work, name);
+    if (existsSync(join(dir, 'report.png')) && existsSync(join(dir, 'render.json')) && existsSync(join(dir, 'report.repx'))) {
+      cases.push({ dir, names: truthOf(readFileSync(join(dir, 'report.repx'), 'utf8')).names });
+    }
+  }
+}
 console.log(`printed: ${cases.length} reports, ${failed} that DevExpress could not print here`);
 
 // ----------------------------------------------------------------- reading
@@ -143,7 +169,11 @@ const pageNames = cases.map((c) => {
   if (!existsSync(join(pagesDir, name))) copyFileSync(join(c.dir, 'report.png'), join(pagesDir, name));
   return name;
 });
-const readings = await readWithOcr(pagesDir, pageNames, join(work, 'ocr-cache.json'), WORKERS);
+const readings: Record<string, OcrPage> = ocrCacheFile
+  ? Object.fromEntries(
+      Object.entries(JSON.parse(readFileSync(resolve(ocrCacheFile), 'utf8')) as Record<string, OcrPage | { page: OcrPage }>).map(([k, v]) => [k, 'page' in v ? v.page : v]),
+    )
+  : await readWithOcr(pagesDir, pageNames, join(work, 'ocr-cache.json'), WORKERS);
 const tally = { texts: 0, matched: 0, band: 0, role: 0, both: 0, first: 0, firstBoth: 0, footerTotals: 0, footerTotalsRight: 0 };
 const byBand: Record<string, { n: number; right: number }> = {};
 const byRole: Record<string, { n: number; right: number }> = {};

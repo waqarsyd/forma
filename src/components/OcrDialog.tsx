@@ -80,10 +80,10 @@ type PageRun =
   | { status: 'done'; ocr: OcrPage }
   | { status: 'failed'; error: string };
 
-/** What Tesseract's progress stages mean to someone waiting for them. */
+/** What the OCR engines' progress stages mean to someone waiting for them: Tesseract's, and PaddleOCR's two (lib/paddle.ts). */
 function stageLabel(stage: string): string {
   if (/core|initializ|traineddata|language|api/i.test(stage)) return 'Loading the OCR engine';
-  if (/recogniz/i.test(stage)) return 'Reading';
+  if (/recogniz|finding/i.test(stage)) return 'Reading';
   return 'Preparing';
 }
 
