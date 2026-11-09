@@ -19,7 +19,7 @@ you add a test, this is the file to update, and it should stay the only one.
 
 ## There are two test suites, and between them they still cover little
 
-`npm test` runs Vitest over **3,071 tests in 185 files** — under the `node` environment
+`npm test` runs Vitest over **3,073 tests in 185 files** — under the `node` environment
 by default, with the files that genuinely need a DOM, marked in the inventory below,
 opting into jsdom on their own first line; see `vitest.config.ts` for why that split is
 load-bearing rather than tidiness, and `CLAUDE.md` for the cold-cache cliff that makes those fail in a way
@@ -257,12 +257,12 @@ Paths are relative to `src/`. Verified against `npx vitest run --reporter=json` 
 | `services/geminiService` | 44 | since 2026-11-07 (batch E) the fallback's choice and a JSON answer read tolerantly; since 2026-11-07 (batch D) every new edit, the table rule and the undo tool in the instructions; since 2026-11-07 the papers offered being the edit's own, and the model allowed to say what the outline does not show; since 2026-11-07 the new report, the brief and the memory in the chat's instructions; since 2026-11-05 the report turn's instructions; 7 of these come from one loop; since 2026-11-02 also the chat turn's instructions taking a written description as enough, and `generateSmall` turning thinking off for the small calls, asking a refusing model again with room, and not mistaking a rejected key for a refusal |
 | `services/keyVault` | 21 | jsdom |
 | `services/library` | 15 | storage and embedding injected |
-| `services/modelResolution` | 35 | jsdom; since 2026-11-02 also the curated list probed without the catalogue when one of it answers, the choice remembered a day for the same key only, and the small calls sent to a Flash-Lite |
+| `services/modelResolution` | 37 | jsdom; since 2026-11-02 also the curated list probed without the catalogue when one of it answers, the choice remembered a day for the same key only, and the small calls sent to a Flash-Lite; since 2026-11-10 that list names no retired Gemini (1.x, 2.0, 2.5) and a page picture asks for high resolution |
 | `services/promptToExpression` | 4 | a sentence to an expression, checked against the fields, against a stubbed reply |
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 3,071 in 185 files** — and that total is the arithmetic sum of the column above
+**Total: 3,073 in 185 files** — and that total is the arithmetic sum of the column above
 it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
@@ -276,7 +276,7 @@ whole thing for you.
 
 ## Recount by running the suite, never by grepping
 
-A grep for `\bit(` answers **2854** against a real 3,071 (2026-11-09, after the thread panel, the box's menus, the main menu, Mark an area, Auto's model named, the repeated options taken out and the SQL Server programme's batches DB to DG, which added no loop; its batch DP, which added no loop, nor did the model menu filling after Check key, nor the Forma Designer download's record, nor the website reaching the companion, nor the Open in designer dialog; the download page, whose row in `infoPages`'s table of pages and four `prerender` cases widened the gap from 212 to 217; its batch DH, whose one row in `publicClaims`'s table of refused claims (a connection to your database) widened the gap from 211 to 212; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
+A grep for `\bit(` answers **2856** against a real 3,073 (2026-11-10, after the AI accuracy programme's batch AB, which added no loop; before it 2854 against 3,071 on 2026-11-09, after the thread panel, the box's menus, the main menu, Mark an area, Auto's model named, the repeated options taken out and the SQL Server programme's batches DB to DG, which added no loop; its batch DP, which added no loop, nor did the model menu filling after Check key, nor the Forma Designer download's record, nor the website reaching the companion, nor the Open in designer dialog; the download page, whose row in `infoPages`'s table of pages and four `prerender` cases widened the gap from 212 to 217; its batch DH, whose one row in `publicClaims`'s table of refused claims (a connection to your database) widened the gap from 211 to 212; the site audit's batch SL, whose `prerender` runs four `it(` under a `describe.each` over the fifteen pages and so widened the gap from 155 to 211; batch SK added no loop; batch SJ, whose `it.each` over its seven pages widened the gap from 148 to 155; batch SI added no loop; nor did batch SH and its projects index; batch SG added none either; batch SF's contrast table's eleven `it.each` rows widened the gap from 137 to 148; batch SC's `it.each` table of twelve refused claims widened the gap from 118 to 130, SD's four more rows in it to 134, and SE's one row there and two disclosure rows in `legalDisclosure`'s loop to 137) and will talk you into
 "correcting" numbers that were already right. **Fourteen** files generate cases from a loop,
 and they are marked in the table above: `geminiService` produces seven of its 33 from
 one `it(` over split points, `designerBridge` eight of its 38 over Windows reserved

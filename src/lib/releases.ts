@@ -75,6 +75,18 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-10-ai-accuracy',
+    date: '2026-11-10',
+    title: 'Sharper reading, on Gemini 3',
+    summary:
+      'Forma now writes reports with Google’s Gemini 3.x Flash models, since Gemini 2.5 Flash is retired on 1 December, and reads a picture of a page at high resolution.',
+    changes: [
+      { kind: 'improved', area: 'generation', text: 'Forma uses Gemini 3.x Flash (and Flash-Lite for quick answers) when it picks a model for your key, as Google retires Gemini 2.5 Flash on 1 December. It reads as well as Gemini 3 Pro on documents, on the free tier.' },
+      { kind: 'improved', area: 'generation', text: 'A picture of a page is read at high resolution, so small print and thin lines come through. A PDF is not, since its text is exact already.' },
+      { kind: 'fixed', area: 'generation', text: 'Forma no longer spends a request trying Gemini 2.0 Flash, which Google has shut down, when it first picks a model for your key.' },
+    ],
+  },
+  {
     id: '2026-11-09-designer-download',
     date: '2026-11-09',
     version: '1.3.0',

@@ -32,6 +32,7 @@ import {
   chatReply,
   MissingApiKeyError,
   MODEL_PREFERENCE,
+  pageResolutionFor,
 } from './geminiService';
 import { cacheModel, DAILY_TTL_MS, keyTag, lightModel, readDailyModel } from '../lib/modelCache';
 
@@ -439,5 +440,30 @@ describe('fewer requests out of a free key (2026-11-02)', () => {
     expect(keyTag(KEY)).toMatch(/^[0-9a-f]{8}$/);
     expect(keyTag(KEY)).toBe(keyTag(KEY));
     expect(keyTag(`${KEY}x`)).not.toBe(keyTag(KEY));
+  });
+});
+
+/*
+ * The model order of 2026-11-10 (the AI accuracy programme, batch AB), read
+ * from Google's models page that day: gemini-2.0-flash shut down,
+ * gemini-2.5-flash deprecated and routed to 3.5 Flash-Lite from 1 December.
+ */
+describe('the models Forma tries', () => {
+  it('names no model Google has shut down or is retiring, leads with an alias, and keeps a Flash-Lite for small calls', () => {
+    expect(MODEL_PREFERENCE.filter((m) => /gemini-2\.0|gemini-2\.5|gemini-1\./.test(m))).toEqual([]);
+    expect(MODEL_PREFERENCE[0]).toMatch(/-latest$/);
+    expect(MODEL_PREFERENCE.some((m) => /flash-lite/.test(m))).toBe(true);
+    // Each entry is a 1-token probe on a new key: five is what it cost before.
+    expect(MODEL_PREFERENCE.length).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('reading a page picture', () => {
+  const image = { inlineData: { mimeType: 'image/png', data: 'x' } };
+  const pdf = { inlineData: { mimeType: 'application/pdf', data: 'x' } };
+  it('asks for high resolution for a picture, and not with a PDF or with words alone', () => {
+    expect(pageResolutionFor([{ text: 'a' }, image])).toEqual({ mediaResolution: 'MEDIA_RESOLUTION_HIGH' });
+    expect(pageResolutionFor([image, pdf])).toEqual({});
+    expect(pageResolutionFor([{ text: 'a' }])).toEqual({});
   });
 });

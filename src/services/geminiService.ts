@@ -91,6 +91,7 @@ export type {
 } from "../lib/reportTypes";
 import type { AnalysisResponse, ReportLayout, AttachmentPart } from "../lib/reportTypes";
 import type { CompatEndpoint } from "./compatClient";
+import type { MediaResolution } from "@google/genai";
 
 export interface ReportConfig {
   /**
@@ -479,16 +480,46 @@ export async function validateApiKey(
 /**
  * Tried in order, first success wins. `-latest` aliases lead because Google
  * repoints them as models are superseded, so they cannot go stale the way a
- * pinned id does. Flash tiers precede pro because the user pays for their own
- * usage — pro is a fallback, not a default.
+ * pinned id does.
+ *
+ * Gemini 3.x since 2026-11-10 (the owner's AI accuracy programme, batch AB),
+ * read from Google's models page that day: `gemini-2.5-flash` is deprecated
+ * and routed to `gemini-3.5-flash-lite` from 1 December 2026, and
+ * `gemini-2.0-flash` is already shut down, so probing it spent a request of
+ * every new session on a model that cannot answer. The pinned ids behind each
+ * alias are the newest Flash (`gemini-3.8-flash`, labelled New), the stable
+ * one (`gemini-3.6-flash`) and the stable Flash-Lite that the small calls use
+ * (`lightModel`). Pro left the list: on documents Gemini 3 Flash scores with
+ * 3 Pro (OmniDocBench v1.6, 92.6 against 92.9) at a fraction of the free
+ * allowance, and the catalogue (`rankDiscovered`) still offers one after every
+ * Flash. Still five entries, so the probe costs what it did.
  */
 export const MODEL_PREFERENCE = [
   "gemini-flash-latest",
-  "gemini-2.5-flash",
+  "gemini-3.8-flash",
+  "gemini-3.6-flash",
   "gemini-flash-lite-latest",
-  "gemini-2.0-flash",
-  "gemini-pro-latest",
+  "gemini-3.5-flash-lite",
 ];
+
+/**
+ * A page picture read at high resolution (2026-11-10, batch AB): Google's own
+ * advice for reading documents, where small print and thin rules decide a
+ * report's layout. Only when the request carries a picture and no PDF: a PDF
+ * page's text layer is exact already, and several PDF pages at high
+ * resolution would spend the free tier's per-minute tokens. Boxes
+ * (`box_2d`) are deliberately not asked for: the REPX the model writes holds
+ * every control's position already, and a second copy of the layout is the
+ * duplication the 2026-11-05 answer format removed.
+ */
+const PAGE_RESOLUTION = { mediaResolution: "MEDIA_RESOLUTION_HIGH" as MediaResolution };
+export function pageResolutionFor(parts: ReadonlyArray<unknown>): typeof PAGE_RESOLUTION | Record<string, never> {
+  const mimes = parts.flatMap((part) => {
+    const data = (part as { inlineData?: { mimeType?: string } })?.inlineData;
+    return data?.mimeType ? [data.mimeType] : [];
+  });
+  return mimes.some((m) => m.startsWith("image/")) && !mimes.includes("application/pdf") ? PAGE_RESOLUTION : {};
+}
 
 /*
  * The session model cache moved to `lib/modelCache.ts` on 2026-09-04, when this
@@ -2604,6 +2635,7 @@ ${draft!.text}`,
       temperature,
       maxOutputTokens: 65536,
       thinkingConfig: { thinkingBudget: typeof config?.thinkingBudget === 'number' ? config.thinkingBudget : DRAFT_THINKING_BUDGET },
+      ...pageResolutionFor(imageParts),
     },
   });
 
@@ -2725,6 +2757,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       ...(typeof config?.thinkingBudget === "number"
         ? { thinkingConfig: { thinkingBudget: config.thinkingBudget } }
         : {}),
+      ...pageResolutionFor(imageParts),
       // No responseSchema since 2026-11-05: the answer is the REPX as raw XML,
       // which inside a JSON string would escape every attribute quote. Forma
       // reads the Mockup, the Spec and the title out of it (lib/repxViews.ts).
