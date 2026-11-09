@@ -43,8 +43,8 @@ Click it and Forma POSTs the XML to `/open`. The tool writes it to `%TEMP%\Forma
 
 | | |
 |---|---|
-| `GET /health` | `{"app":"RepxDesigner","designerVersion":"20.1.3.0"}` |
-| `POST /open` | body is the `.repx` XML; `x-forma-filename` names it |
+| `GET /health` | `{"app":"RepxDesigner","version":"1.0.0","designerVersion":"20.1.3.0","devexpress":{"version":"20.1","build":"20.1.3"},"found":["20.1"],"oldest":"20.1","compiled":"20.1"}`; with no usable DevExpress, `designerVersion` and `devexpress` are `null` and `found` lists what is there (2026-11-09) |
+| `POST /open` | body is the `.repx` XML; `x-forma-filename` names it; **424** `{"devexpress":null,"found":[...],"oldest":"20.1","trial":"https://www.devexpress.com/products/try/"}` when there is no DevExpress to open it in |
 | `--port N` | move both sides — `DESIGNER_ORIGIN` in `src/lib/designerBridge.ts` must match |
 
 Two guards, because a port open on your machine is reachable by any page you visit:
@@ -90,6 +90,8 @@ Measured 2026-11-09 with the exe copied **alone** into an empty folder, no DevEx
 | `--check --no-registry --no-folders --no-gac` | found nothing, `using: null`, exit 3, no crash |
 | `--check --alias 99.9` | asked for `DevExpress.XtraReports.v99.9`, got `v20.1` through the resolver, and the report loaded its layout with 2 bands: a binding failure for one version's name is answered by another version's file |
 | `--store <tmp> --sql-add` / `--sql-remove` | still work through `Entry.Main` |
+
+**When there is none (batch WB).** Nothing that loads a DevExpress assembly runs without one: `OpenDesigner` checks `Program.Installed` and hands over to `OpenDesignerCore`, `/health` builds its answer without naming a DevExpress type, and `/open` and `/sql/fill` answer **424 Failed Dependency** with what was found and the trial's address (`MissingDevExpress.Json`); the layout, samples and connections still work, because they are SQL Server alone. A person who starts the program to open a report gets a window instead of a file picker (`MissingDevExpress.ShowWindow`): DevExpress Reporting is not installed (or "this PC has DevExpress 19.2, and Forma Designer needs 20.1 or later"), what it is, that it is a separate commercial product with a free 30-day trial, a button to devexpress.com, and that Forma's Export needs nothing installed. `--serve` keeps listening so the page can ask, and says the same once in a tray balloon and the tray's menu, never a window, because a launch from the browser is already being told by the page. Checked 2026-11-09 with the exe alone, headless (`--serve` with sources left out, and a fake `DevExpress 19.2` folder through `--devexpress-root`): `/health` `devexpress: null` with `found: []` and then `["19.2"]`, `/open` and `/sql/fill` 424, `/sql/connections` 200, `--check` exit 3. With 20.1 found, `/health` named it and `/sql/fill` filled FormaSample's orders report as in batch DP: 3 orders, 5 lines, 2 regions.
 
 **What cannot be measured here, and is the owner's to check on another PC** (the trial must never be installed on this server): a real 25.2 or 26.1 install, whether every assembly the designer touches kept its name and the members used (a type DevExpress moved without a type forward would fail), and DevExpress's licence check from 25.1, which may show a trial watermark for a program built without a licence stamp (`docs.devexpress.com/GeneralInformation/405494`).
 

@@ -66,6 +66,16 @@ namespace RepxDesigner
         private static Form _pump;
 
         /// <summary>
+        /// The DevExpress this run uses, or null when none it can run on is installed
+        /// (2026-11-09). Set by Entry.Main before Run; every path that would load a
+        /// DevExpress assembly checks it first and says what is missing instead.
+        /// </summary>
+        internal static DevExpressInstall Installed;
+
+        /// <summary>Every installation found, newest first, for saying what is there.</summary>
+        internal static List<DevExpressInstall> Found = new List<DevExpressInstall>();
+
+        /// <summary>
         /// What Main was until 2026-11-09: Entry.Main now runs first, finds DevExpress
         /// and says where it is, and calls this. Never inlined into Entry.Main, whose
         /// body must name no DevExpress type (Entry.cs says why).
@@ -131,6 +141,14 @@ namespace RepxDesigner
                 return;
             }
 
+            // A person started it to open a report, and there is nothing to open it in:
+            // say so before asking them to pick a file (2026-11-09).
+            if (Installed == null)
+            {
+                MissingDevExpress.ShowWindow(Found);
+                return;
+            }
+
             string path = args.Length > 0 ? args[0] : PickFile();
             if (string.IsNullOrEmpty(path))
             {
@@ -144,7 +162,23 @@ namespace RepxDesigner
         // Opening
         // ----------------------------------------------------------------- //
 
+        /// <summary>
+        /// Opens a report, or says DevExpress is missing. A separate method from
+        /// OpenDesignerCore, whose body names DevExpress types and so cannot even be
+        /// compiled on a PC without it.
+        /// </summary>
         private static void OpenDesigner(string path)
+        {
+            if (Installed == null)
+            {
+                MissingDevExpress.ShowWindow(Found);
+                return;
+            }
+            OpenDesignerCore(path);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void OpenDesignerCore(string path)
         {
             if (!File.Exists(path))
             {
@@ -393,10 +427,23 @@ namespace RepxDesigner
             using (NotifyIcon tray = new NotifyIcon())
             {
                 tray.Icon = System.Drawing.SystemIcons.Application;
-                tray.Text = "RepxDesigner - listening on 127.0.0.1:" + port;
+                // NotifyIcon.Text takes at most 63 characters.
+                tray.Text = Installed == null
+                    ? "Forma Designer - DevExpress not found"
+                    : "Forma Designer - DevExpress " + Installed.Version + " - 127.0.0.1:" + port;
                 tray.Visible = true;
 
                 ContextMenu menu = new ContextMenu();
+                if (Installed == null)
+                {
+                    // Said once, without a window: a launch from the browser is already being
+                    // told the same by the page, and a person sees it in the tray (2026-11-09).
+                    menu.MenuItems.Add("Get DevExpress (devexpress.com)...", (s, e) => MissingDevExpress.OpenTrial());
+                    tray.BalloonTipClicked += (s, e) => MissingDevExpress.OpenTrial();
+                    tray.ShowBalloonTip(15000, MissingDevExpress.Headline(Found),
+                        "Forma Designer needs DevExpress Reporting to open reports. Click for the free trial on devexpress.com.",
+                        ToolTipIcon.Warning);
+                }
                 menu.MenuItems.Add("Open a .repx...", (s, e) =>
                 {
                     string picked = PickFile();
@@ -473,12 +520,12 @@ namespace RepxDesigner
 
             if (method == "GET" && target.StartsWith("/health"))
             {
-                // Forma pings this on load and only shows its "Open in designer"
-                // button if something answers, the same way isVaultAvailable()
-                // gates the key-sync UI. No answer, no button.
-                string version = typeof(XtraReport).Assembly.GetName().Version.ToString();
-                Respond(stream, 200, "application/json",
-                    "{\"app\":\"RepxDesigner\",\"designerVersion\":\"" + version + "\"}", allowed);
+                // Forma asks this before handing a report over. Since 2026-11-09 it also
+                // says which DevExpress this run uses, or null with what was found, so
+                // the page can ask for DevExpress rather than for this program. This
+                // method names no DevExpress type (Entry.cs says why); the version comes
+                // from RuntimeDesignerVersion, called only when there is one.
+                Respond(stream, 200, "application/json", HealthJson(), allowed);
                 return;
             }
 
@@ -487,6 +534,13 @@ namespace RepxDesigner
                 if (!headers.ContainsKey(ClientHeader))
                 {
                     Respond(stream, 400, "text/plain", "Missing " + ClientHeader, allowed);
+                    return;
+                }
+
+                // Nothing to open it in: 424, with what was found and where the trial is.
+                if (Installed == null)
+                {
+                    Respond(stream, 424, "application/json", MissingDevExpress.Json(Found), allowed);
                     return;
                 }
 
@@ -571,6 +625,8 @@ namespace RepxDesigner
                 if (method == "POST" && path == "/sql/fill")
                 {
                     if (string.IsNullOrEmpty(body)) { Respond(stream, 400, "text/plain", "Empty body", allowed); return; }
+                    // A fill is DevExpress filling the report's own data source; the layout and samples are not.
+                    if (Installed == null) { Respond(stream, 424, "application/json", MissingDevExpress.Json(Found), allowed); return; }
                     var values = query.Where(kv => kv.Key.StartsWith("p.")).ToDictionary(kv => kv.Key.Substring(2), kv => kv.Value);
                     string run;
                     query.TryGetValue("procedures", out run);
@@ -743,9 +799,36 @@ namespace RepxDesigner
                 case 400: return "Bad Request";
                 case 403: return "Forbidden";
                 case 409: return "Conflict";
+                case 424: return "Failed Dependency";
                 case 502: return "Bad Gateway";
                 default: return "Not Found";
             }
+        }
+
+        /// <summary>
+        /// GET /health. app and designerVersion as before 2026-11-09, so an older
+        /// Forma still reads it; then this program's own version, the DevExpress this
+        /// run uses (or null), every version found, and the oldest it runs on.
+        /// </summary>
+        private static string HealthJson()
+        {
+            string own = typeof(Program).Assembly.GetName().Version.ToString(3);
+            var b = new StringBuilder("{\"app\":\"RepxDesigner\",\"version\":").Append(SqlCompanion.Json(own));
+            b.Append(",\"designerVersion\":").Append(Installed == null ? "null" : SqlCompanion.Json(RuntimeDesignerVersion()));
+            b.Append(",\"devexpress\":");
+            if (Installed == null) b.Append("null");
+            else b.Append("{\"version\":").Append(SqlCompanion.Json(Installed.Version)).Append(",\"build\":").Append(SqlCompanion.Json(Installed.Build)).Append("}");
+            b.Append(",\"found\":[").Append(string.Join(",", Found.Select(i => SqlCompanion.Json(i.Version)))).Append("]");
+            b.Append(",\"oldest\":").Append(SqlCompanion.Json(DevExpressLocator.Oldest.ToString(2)));
+            b.Append(",\"compiled\":").Append(SqlCompanion.Json(DevExpressLocator.Compiled));
+            return b.Append("}").ToString();
+        }
+
+        /// <summary>The version of the DevExpress assembly actually loaded; names a DevExpress type, so never inlined.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static string RuntimeDesignerVersion()
+        {
+            return typeof(XtraReport).Assembly.GetName().Version.ToString();
         }
     }
 }

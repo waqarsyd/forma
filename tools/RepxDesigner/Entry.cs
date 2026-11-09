@@ -21,8 +21,13 @@ namespace RepxDesigner
             DevExpressLocator.Configure(args);
             if (Array.IndexOf(args, "--check") >= 0) return Check.Run(args);
 
-            var usable = DevExpressLocator.Usable(DevExpressLocator.Find());
+            var found = DevExpressLocator.Find();
+            var usable = DevExpressLocator.Usable(found);
             if (usable != null) DevExpressLocator.Use(usable);
+            // Run says what is missing itself when usable is null (MissingDevExpress):
+            // the connection commands and --serve's /health work without DevExpress.
+            Program.Found = found;
+            Program.Installed = usable;
             Program.Run(args);
             return 0;
         }

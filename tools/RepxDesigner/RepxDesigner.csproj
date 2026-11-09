@@ -71,8 +71,10 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AssemblyInfo.cs" />
     <Compile Include="Entry.cs" />
     <Compile Include="DevExpressLocator.cs" />
+    <Compile Include="MissingDevExpress.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Sql.cs" />
     <Compile Include="SqlScripts.cs" />
