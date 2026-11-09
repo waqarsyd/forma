@@ -69,15 +69,9 @@ describe('auditRefs', () => {
     expect(auditRefs(colliding).max).toBe(22);
   });
 
-  it('marks elements with a ControlType as definitions', () => {
-    expect(auditRefs(unique).occurrences.every((o) => o.defines)).toBe(true);
-  });
-
-  it('does not mark a bare back-reference as a definition', () => {
-    const withRef = report('<Item1 Ref="2" ControlType="DetailBand" Name="Detail" /><Item2 Ref="2" />');
-    const bare = auditRefs(withRef).occurrences.filter((o) => !o.defines);
-    expect(bare).toHaveLength(1);
-    expect(bare[0].ref).toBe('2');
+  it('counts an element with no ControlType, as StylePriority and a style are', () => {
+    const styled = report('<Item1 Ref="2" ControlType="DetailBand" Name="Detail"><StylePriority Ref="3" UseFont="false" /></Item1>');
+    expect(auditRefs(styled).occurrences.map((o) => o.ref)).toEqual(['0', '2', '3']);
   });
 
   it('is not confused by a Ref inside a comment', () => {
@@ -130,13 +124,35 @@ describe('ensureUniqueRefs', () => {
     expect(normalise(xml)).toBe(normalise(colliding));
   });
 
-  it('leaves a bare back-reference alone rather than splitting the object', () => {
-    const withRef = report('<Item1 Ref="2" ControlType="DetailBand" Name="Detail" /><Item2 Ref="2" />');
-    const result = ensureUniqueRefs(withRef);
-    expect(result.applied).toBe(false);
-    expect(result.renumbered).toBe(0);
-    expect(result.xml).toBe(withRef);
-    expect(result.reason).toContain('look like back-references');
+  /*
+   * DevExpress never repeats a Ref (0 of 906 reports it wrote, 2026-11-09), so a
+   * repeat is a collision whatever the element. The case below is the one the
+   * report library's house style produced that day: two StylePriority elements
+   * and a style sheet's two styles sharing 67 and 68, which the old rule (only
+   * ControlType elements are definitions) left standing as back-references.
+   */
+  it('renumbers a repeat with no ControlType, as a copied StylePriority and a style sheet collide', () => {
+    const collided = report(
+      '<Item1 Ref="2" ControlType="DetailBand" Name="Detail"><Controls>' +
+        '<Item1 Ref="3" ControlType="XRLabel" Name="title" Font="DINPro-Bold, 16pt"><StylePriority Ref="67" UseFont="false" /></Item1>' +
+        '<Item2 Ref="4" ControlType="XRLabel" Name="subtitle" Font="DINPro-Bold, 10pt"><StylePriority Ref="68" UseFont="false" /></Item2>' +
+        '</Controls></Item1></Bands><StyleSheet>' +
+        '<Item1 Ref="67" Name="BodyStyle" Font="DINPro-Bold, 9pt" />' +
+        '<Item2 Ref="68" Name="BodyStyle2" Font="DINPro-Bold, 7pt" />' +
+        '</StyleSheet><Bands>',
+    );
+    const result = ensureUniqueRefs(collided);
+    expect(result.renumbered).toBe(2);
+    expect(auditRefs(result.xml).duplicates).toEqual([]);
+    expect(result.xml).toContain('<StylePriority Ref="67" UseFont="false" />');
+    expect(result.xml).toContain('<Item1 Ref="69" Name="BodyStyle"');
+    expect(result.reason).toBe('renumbered 2 element(s) that reused a Ref (67x2, 68x2)');
+  });
+
+  it('renumbers a repeated element whose only attribute is its Ref, an object at its defaults', () => {
+    const result = ensureUniqueRefs(report('<Item1 Ref="2" ControlType="DetailBand" Name="Detail" /><Item2 Ref="2" />'));
+    expect(result.applied).toBe(true);
+    expect(auditRefs(result.xml).duplicates).toEqual([]);
   });
 
   it('names the collisions it found in the reason', () => {

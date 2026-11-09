@@ -46,12 +46,21 @@
  * unique comes back byte-identical, and one with a single collision has one
  * attribute changed rather than every `Ref` rewritten.
  *
- * **Only elements carrying a `ControlType` are renumbered.** In this format an
- * element that defines something always has one; the bindings this codebase
- * emits, and anything that might legitimately be a bare back-reference to an
- * object defined earlier, do not. Renumbering a genuine back-reference would
- * split one object into two, which is the same class of damage in the opposite
- * direction, so those are left exactly as found and reported instead.
+ * **Every repeat is renumbered, whatever the element.** Until 2026-11-09 only
+ * elements carrying a `ControlType` were, on the belief that a definition always
+ * has one and anything else might be a bare back-reference to an object defined
+ * earlier. Both halves were wrong, measured that day over 906 reports DevExpress
+ * itself wrote (the SBS and SUNFACET reports, structure only): **not one repeats
+ * a `Ref`**, because this format points at an object only through a `#Ref-N`
+ * attribute value (below), and some 189,000 elements define an object with a
+ * `Ref` and no `ControlType` -- 75,736 `StylePriority`, 15,001 `Summary`, the
+ * items of a `<StyleSheet>`, `<Parameters>` and `<ObjectStorage>`. The 38 whose
+ * only attribute is `Ref` are objects left at their defaults (an empty
+ * `<Scripts Ref="5" />`), not pointers. The old rule let a real collision
+ * through: refined with the report library's house style on 2026-11-09, the model
+ * copied two `StylePriority` elements numbered 67 and 68 and then wrote a style
+ * sheet whose two styles took 67 and 68 again, and the repair called them
+ * back-references and left the audit's `duplicate-ref` error standing.
  */
 
 /** One complete `<Tag …>`, `</Tag>` or `<Tag … />`, as the other repx helpers read them. */
@@ -61,7 +70,6 @@ const TAG = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/
 const NON_ELEMENT = /<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g;
 
 const REF = /\sRef\s*=\s*"([^"]*)"/;
-const CONTROL_TYPE = /\sControlType\s*=\s*"/;
 
 /**
  * A pointer to a `Ref`, written as the attribute value `#Ref-N`.
@@ -100,8 +108,6 @@ export interface RefOccurrence {
   start: number;
   /** Index just past the element's opening tag `>`. */
   tagEnd: number;
-  /** True when the element carries a `ControlType`, i.e. it defines something. */
-  defines: boolean;
 }
 
 export interface RefAudit {
@@ -133,7 +139,6 @@ export function auditRefs(xml: string | undefined | null): RefAudit {
       ref: ref[1],
       start: m.index,
       tagEnd: TAG.lastIndex,
-      defines: CONTROL_TYPE.test(attrs),
     });
     counts.set(ref[1], (counts.get(ref[1]) ?? 0) + 1);
 
@@ -182,29 +187,14 @@ export function ensureUniqueRefs(xml: string | undefined | null): RefRepair {
   const seen = new Set<string>();
   const rewrites: { start: number; tagEnd: number; from: string; to: string }[] = [];
   let next = max + 1;
-  let skipped = 0;
 
   for (const occ of occurrences) {
     if (!seen.has(occ.ref)) {
       seen.add(occ.ref);
       continue;
     }
-    // A repeat. Only definitions may be renumbered; a bare reference is left
-    // alone rather than split into a second object.
-    if (!occ.defines) {
-      skipped++;
-      continue;
-    }
+    // A repeat: DevExpress never writes one, so it is always a collision (the doc comment above).
     rewrites.push({ start: occ.start, tagEnd: occ.tagEnd, from: occ.ref, to: String(next++) });
-  }
-
-  if (!rewrites.length) {
-    return {
-      xml: text,
-      applied: false,
-      reason: `${skipped} repeated Ref value(s) look like back-references, so nothing was renumbered`,
-      renumbered: 0,
-    };
   }
 
   // Back to front, so each edit leaves the offsets before it valid.
@@ -245,7 +235,6 @@ export function ensureUniqueRefs(xml: string | undefined | null): RefRepair {
     applied: true,
     reason:
       `renumbered ${rewrites.length} element(s) that reused a Ref (${which})` +
-      (skipped ? `; left ${skipped} back-reference(s) alone` : '') +
       (ambiguous.size
         ? `; WARNING: ${ambiguous.size} renumbered Ref(s) had a #Ref- pointer to them ` +
           `(${[...ambiguous].join(', ')}) — a parameter type, a cross-band band reference, ` +

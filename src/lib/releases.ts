@@ -108,6 +108,7 @@ export const RELEASES: Release[] = [
       { kind: 'new', area: 'preview', text: 'Live rows: on your own PC the Preview prints the report from your database with the parameter values you type. A stored procedure runs only when you press the button that names it.' },
       { kind: 'improved', area: 'data', text: 'Open in designer gives the designer the report’s connection from your PC, so its preview works at once, and saving still writes only the connection’s name.' },
       { kind: 'fixed', area: 'chat', text: 'After you add your key and press Check key, the model menu in the chat box lists the models your key can use straight away, instead of only after the page is reloaded.' },
+      { kind: 'fixed', area: 'generation', text: 'A report restyled in your house style no longer loses its styles when DevExpress opens it. Two of its parts could share an internal number, and DevExpress then dropped the whole style sheet without a word.' },
       { kind: 'fixed', area: 'generation', text: 'A report with a detail band no longer warns that its Mockup and its file disagree on the number of sections.' },
     ],
   },

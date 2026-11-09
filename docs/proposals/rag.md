@@ -459,6 +459,32 @@ daily allowance on the owner's new key ran out, so the 100% is Flash-Lite's; and
 are made-up reports, chosen by the owner so that no company report reaches Google. A
 held-out real report is still the stronger test, and still needs their say-so.
 
+*Measured on a real report, 2026-11-09, with the owner's yes.* Of the company's 360
+reports, 103 are set in DINPro-Bold, a face no model picks unasked, so any of it in a
+refine came from the library. Five of them were the library (194 fragments embedded,
+every value replaced as above; body text DINPro-Bold 8pt), and a sixth, a sales return,
+was held back and drawn by DevExpress with no data as the case's page, its field
+bindings removed and the client's contact block replaced by placeholders. Its first
+pass was `--draft` on 2.5 Flash. Everything stays outside the repository, in
+`forma-model-data/rag-real-2026-11-09`.
+
+| instruction | refined as today | refined with the house style |
+|---|---|---|
+| Tidy up the formatting, keeping its content | 0% DINPro-Bold, median 9pt | 0% DINPro-Bold, median 9pt |
+| Restyle this report in our house style | 0% DINPro-Bold, median 9pt | **100% DINPro-Bold, median 9pt** |
+
+So on a real report and a real house the block does what the made-up ones showed:
+it moves a report into the house's face when the request names the house, and does
+nothing otherwise. It took the family and not the size (9pt against the house's 8pt).
+**It also found a defect.** The restyle with the block copied two `StylePriority`
+elements numbered 67 and 68 and wrote a style sheet that took 67 and 68 again, and
+`ensureUniqueRefs` left them, because it renumbered only elements with a
+`ControlType`. DevExpress loaded that file and dropped the whole style sheet, 15
+controls losing their style with no error. The repair now renumbers every repeat
+(measured: none of 906 reports DevExpress wrote repeats a `Ref`), and the same file
+keeps both styles. With that, the evaluation this section asked for has been run on
+a real report; moving the reasoning into `docs/notes/` is the step left.
+
 ## Open questions
 
 1. How large is the real library? Everything above assumes hundreds. Thousands changes
