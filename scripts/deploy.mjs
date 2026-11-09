@@ -40,10 +40,17 @@
  * needs the GitHub CLI signed in, and without it the command to make it later
  * is printed instead.
  *
+ * The Forma Designer download (2026-11-09) rides on the release too: when
+ * src/lib/designerRelease.ts names this release's tag, the zip it describes
+ * (packed by scripts/package-designer.ts, on a PC with DevExpress) must be in
+ * tools/RepxDesigner/bin/package with that SHA-256, or this stops before
+ * building; after the release is made, `gh release upload` attaches it.
+ *
  * Pure ASCII, as every script here.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -120,6 +127,34 @@ if (!preview) {
   }
 }
 
+// 1c. The Forma Designer download (2026-11-09). When src/lib/designerRelease.ts
+// names the release this deploy makes, the zip it describes is attached to it,
+// so it must be here, byte for byte: the download page shows its SHA-256 for a
+// person to check. Packed by scripts/package-designer.ts, which only a PC with
+// DevExpress can run, so a missing zip stops here, before anything is built.
+let designerZip = null;
+if (notes) {
+  const manifest = readFileSync('src/lib/designerRelease.ts', 'utf8');
+  const field = (name) => (new RegExp(`\\n  ${name}: '([^']*)'`).exec(manifest) || [])[1];
+  if (field('tag') === tag) {
+    const zip = join('tools', 'RepxDesigner', 'bin', 'package', field('file') || '');
+    const repack = `npx tsx scripts/package-designer.ts --tag ${tag}`;
+    if (!existsSync(zip)) {
+      console.error(`Stopped: ${tag} carries the Forma Designer download, and ${zip} is not here. Pack it (${repack}) and run this again.`);
+      process.exit(1);
+    }
+    const sha = createHash('sha256').update(readFileSync(zip)).digest('hex');
+    if (sha !== field('sha256')) {
+      console.error(
+        `Stopped: ${zip} is not the zip src/lib/designerRelease.ts describes (SHA-256 ${sha}, expected ${field('sha256')}). ` +
+          `Pack it again from this commit (${repack}); if the SHA-256 changes, commit the manifest it writes.`,
+      );
+      process.exit(1);
+    }
+    designerZip = zip;
+  }
+}
+
 console.log(
   `Deploying ${commit} (${branch})${preview ? ' to a preview channel' : ''}${dryRun ? ', dry run' : ''}` +
     `${preview ? '' : notes ? `, as release ${tag}` : `, already released as ${tag}`}.`,
@@ -137,6 +172,7 @@ run('npm run build', { env: withHandwriting ? { FORMA_HANDWRITING: '1' } : {} })
 run('npm run check:size');
 
 if (dryRun) {
+  if (designerZip) console.log(`\nThe release would carry the Forma Designer download: ${designerZip}`);
   console.log('\nDry run: every check passed and dist/ is built. Nothing was deployed.');
   process.exit(0);
 }
@@ -177,10 +213,13 @@ if (notes) {
   const file = join(tmpdir(), `forma-${tag}-notes.md`);
   writeFileSync(file, notes);
   const create = `gh release create ${tag} --repo waqarsyd/forma --title "Forma ${version}" --notes-file "${file}" --verify-tag`;
+  const upload = designerZip ? `gh release upload ${tag} "${designerZip}" --repo waqarsyd/forma` : null;
   if (ghReady) {
     run(create, { released: true });
+    if (upload) run(upload, { released: true });
     console.log(`\nReleased ${tag}: https://github.com/waqarsyd/forma/releases/tag/${tag}`);
   } else {
     console.log(`\nTagged ${tag}. Sign in to the GitHub CLI (gh auth login) and make its release with:\n  ${create}`);
+    if (upload) console.log(`then attach the Forma Designer download with:\n  ${upload}`);
   }
 }

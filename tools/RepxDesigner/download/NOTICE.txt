@@ -1,0 +1,11 @@
+Forma Designer
+Copyright 2026 Waqar Sayyed
+
+Licensed under the Apache License, Version 2.0 (LICENSE.txt in this folder).
+Source: https://github.com/waqarsyd/forma/tree/main/tools/RepxDesigner
+
+This download contains no DevExpress software. DevExpress, DevExpress
+Reporting and XtraReports are products and trademarks of Developer Express
+Inc., licensed separately by Developer Express Inc. Forma Designer uses the
+DevExpress Reporting installed on your PC, under that installation's own
+licence, and is not made, endorsed or supported by Developer Express Inc.

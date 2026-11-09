@@ -119,6 +119,18 @@ Commands for a script: `--install [--no-startup] [--no-open-with] [--no-start] [
 
 The windows themselves (the offer, the confirmation, the done message) cannot be seen from an agent shell, so they are the owner's to look at on first install.
 
+## The download, and how it is published (2026-11-09)
+
+Batch WD of the download programme. The download is **one zip of four files**: `RepxDesigner.exe`, and `README.txt` and `NOTICE.txt` from `download/` beside this README, and the repository's `LICENSE` as `LICENSE.txt`. **It holds no DevExpress file**: the `bin/Release` folder beside a build carries ~146 MB of them, copied local so a build runs standalone, and only a licensed developer may redistribute those. Forma Designer uses whatever DevExpress the user installed (*Which DevExpress it runs on*, above), and `NOTICE.txt` says so.
+
+```powershell
+npx tsx scripts/package-designer.ts --tag v1.3.0
+```
+
+That is the owner's to run, on a PC with DevExpress 20.1, because only such a PC can compile this project. It rebuilds in Release, stages the four files and **refuses anything else** (`packageProblems` in `src/lib/designerRelease.ts`, which names a DevExpress file as such), runs the staged exe with `--check` to prove it starts with nothing beside it, and zips it to `bin/package/FormaDesigner-<version>-windows.zip`. Then it writes the version, name, size, SHA-256, date and `--tag` into the marked block of `src/lib/designerRelease.ts`, which the download page reads. `<version>` is this program's own (`AssemblyInfo.cs`), and `designerRelease.test.ts` holds the record to it. **The same commit packs to the same bytes**: the project is `<Deterministic>` and every zip entry is dated 2026-01-01 local time. Measured 2026-11-09: two packs gave 99,261 bytes with the same SHA-256. That is the check a person can make on a download that is not code-signed.
+
+**Publishing is the deploy.** When the record's `tag` is the release `scripts/deploy.mjs` is making, the deploy stops before building unless the zip is in `bin/package` with exactly the committed SHA-256, and after `gh release create` it runs `gh release upload <tag> <zip>`. GitHub serves a release's files free, with no bandwidth limit. Without the GitHub CLI signed in it prints both commands. A release whose tag the record does not name carries no zip. The download page links the one that does (`designerDownloadUrl`), so a release of the web app alone does not break the download.
+
 ## Version compatibility
 
 The tool targets **DevExpress 20.1**, the version installed on this machine.
