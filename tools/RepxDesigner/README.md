@@ -95,6 +95,30 @@ Measured 2026-11-09 with the exe copied **alone** into an empty folder, no DevEx
 
 **What cannot be measured here, and is the owner's to check on another PC** (the trial must never be installed on this server): a real 25.2 or 26.1 install, whether every assembly the designer touches kept its name and the members used (a type DevExpress moved without a type forward would fail), and DevExpress's licence check from 25.1, which may show a trial watermark for a program built without a licence stamp (`docs.devexpress.com/GeneralInformation/405494`).
 
+## Install, update and remove, per user (2026-11-09)
+
+Batch WC of the download programme (`Installer.cs`). The download is this exe; **double-clicked from wherever it was saved, it offers to install itself** for the current user, with no administrator, as VS Code's user setup does: Install (or Update, naming both versions), Run once, or Cancel, with two boxes ticked by default, *start it when I sign in* and *Open with Forma Designer for .repx*. The installed copy, double-clicked, opens the file picker as before.
+
+| What install writes | Where (all per user) |
+|---|---|
+| the program, with the readme, licence and notice beside it | `%LOCALAPPDATA%\Programs\Forma Designer\RepxDesigner.exe` |
+| the `forma-repx://` handler Forma's button starts it through | `HKCU\Software\Classes\forma-repx` (the same as `--register`, now `Installer.WriteProtocol`) |
+| a Start menu entry, *Forma Designer*, which starts it in the tray | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Forma Designer.lnk` |
+| starting with Windows, which Settings, Apps, Startup can switch off | `HKCU\...\CurrentVersion\Run`, value *Forma Designer* = `"...\RepxDesigner.exe" --serve` |
+| *Open with Forma Designer* for `.repx`, **never the default** | `HKCU\Software\Classes\.repx\OpenWithProgids\FormaDesigner.repx`, the ProgId, and `Applications\RepxDesigner.exe` |
+| an entry in Settings, Apps, Installed apps (version, publisher, size, Uninstall) | `HKCU\...\CurrentVersion\Uninstall\FormaDesigner` |
+
+**Uninstall** (Settings, Apps, or `--uninstall`) asks first, with *Also remove my SQL Server connections* unticked, then removes all of the above. It removes the handler only when it starts this install, since one registered by a copy built from source is that copy's, and says so. It keeps the connections unless asked, and says where they are. Run from the installed copy itself, it leaves a hidden `cmd` to delete the folder once it has exited, because a running program cannot delete its own file. Either way it first stops this user's own copy running from that folder; another user's process cannot be read and is left alone.
+
+Commands for a script: `--install [--no-startup] [--no-open-with] [--no-start] [--quiet]`, `--uninstall [--remove-connections] [--quiet]`, `--installed` (what is installed, as JSON). With `--quiet` they print JSON and open no window. **`--sandbox <dir>` moves all of it** (files under that folder, keys under `HKCU\Software\FormaDesigner-Sandbox`), which is how it was tested from an agent shell on 2026-11-09 without touching the account's settings:
+
+- an install from a copy of the exe alone wrote the program with its `README.txt` and `LICENSE.txt`, the handler, the Start menu link, the Run value, *Open with*, and the Apps entry (*Forma Designer 1.0.0 by Forma, 83 KB*); the installed copy's `--check` found DevExpress from its own folder;
+- an update with `--no-startup --no-open-with` removed exactly those two;
+- an uninstall from the download removed everything and the folder at once and kept the connections, naming them; one from the installed copy removed the connections too (asked) and its folder was gone once it exited; no value was left under the sandbox key;
+- afterwards the account's real Run key, Apps entry, `.repx` Open-with and `%LOCALAPPDATA%\Programs\Forma Designer` were all absent, and its `forma-repx` handler still named the repository's build.
+
+The windows themselves (the offer, the confirmation, the done message) cannot be seen from an agent shell, so they are the owner's to look at on first install.
+
 ## Version compatibility
 
 The tool targets **DevExpress 20.1**, the version installed on this machine.

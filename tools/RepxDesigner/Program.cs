@@ -30,6 +30,9 @@ namespace RepxDesigner
     ///   RepxDesigner.exe --serve         listen on 127.0.0.1:7317 for Forma
     ///   RepxDesigner.exe --register      register the forma-repx:// protocol
     ///   RepxDesigner.exe --unregister    remove it again
+    ///   RepxDesigner.exe --install       install for this user (also offered on a double-click, Installer.cs)
+    ///   RepxDesigner.exe --uninstall     remove that install
+    ///   RepxDesigner.exe --check         what DevExpress it finds, as JSON (DevExpressLocator.cs)
     ///
     /// --serve is what puts an "Open in designer" button in Forma's workspace:
     /// the page POSTs the XML here and the designer opens on it directly, with no
@@ -91,6 +94,25 @@ namespace RepxDesigner
             int store = Array.IndexOf(args, "--store");
             if (store >= 0 && store + 1 < args.Length) SqlCompanion.StorePath = Path.GetFullPath(args[store + 1]);
 
+            // Installing for this user (2026-11-09, Installer.cs). --sandbox <dir> keeps a
+            // test out of the account's real Start menu, startup and registry.
+            if (Array.IndexOf(args, "--installed") >= 0)
+            {
+                Console.Out.WriteLine(Installer.Report(InstallTarget.For(args)));
+                return;
+            }
+            if (Array.IndexOf(args, "--install") >= 0)
+            {
+                RunInstall(InstallTarget.For(args), Array.IndexOf(args, "--no-startup") < 0, Array.IndexOf(args, "--no-open-with") < 0,
+                    Array.IndexOf(args, "--no-start") < 0, Array.IndexOf(args, "--quiet") >= 0);
+                return;
+            }
+            if (Array.IndexOf(args, "--uninstall") >= 0)
+            {
+                RunUninstall(InstallTarget.For(args), Array.IndexOf(args, "--quiet") >= 0, Array.IndexOf(args, "--remove-connections") >= 0);
+                return;
+            }
+
             int add = Array.IndexOf(args, "--sql-add");
             if (add >= 0 && add + 1 < args.Length)
             {
@@ -139,6 +161,25 @@ namespace RepxDesigner
                     args, a => a != null && a.StartsWith(Scheme + ":", StringComparison.OrdinalIgnoreCase));
                 RunServer(PortFrom(args), fromProtocol);
                 return;
+            }
+
+            // The downloaded exe, double-clicked from wherever it was saved: offer to
+            // install it, as an installer would (2026-11-09). The installed copy, and
+            // "Run once", go on as before.
+            if (args.Length == 0)
+            {
+                InstallTarget target = InstallTarget.For(args);
+                if (!Installer.IsRunningInstalled(target))
+                {
+                    bool startup, openWith;
+                    Installer.Choice choice = Installer.Offer(target, out startup, out openWith);
+                    if (choice == Installer.Choice.Cancel) return;
+                    if (choice == Installer.Choice.Install)
+                    {
+                        RunInstall(target, startup, openWith, true, false);
+                        return;
+                    }
+                }
             }
 
             // A person started it to open a report, and there is nothing to open it in:
@@ -298,29 +339,83 @@ namespace RepxDesigner
         /// declare where it goes gets it appended anyway in some shells. Declaring
         /// it explicitly is what keeps `--serve` in a known position.
         /// </summary>
+        /// <summary>
+        /// --install, from the offer or a command line. Quiet prints what it did as
+        /// JSON and opens no window; otherwise it starts the installed copy in the
+        /// tray and says so, and then, when there is no DevExpress, says that too.
+        /// </summary>
+        private static void RunInstall(InstallTarget target, bool startup, bool openWith, bool start, bool quiet)
+        {
+            List<string> done;
+            try
+            {
+                done = Installer.Install(target, startup, openWith);
+            }
+            catch (Exception ex)
+            {
+                Environment.ExitCode = 1;
+                if (quiet) Console.Out.WriteLine("{\"installed\":false,\"error\":" + SqlCompanion.Json(ex.GetType().Name + ": " + ex.Message) + "}");
+                else MessageBox.Show("Forma Designer could not be installed." + Environment.NewLine + Environment.NewLine + ex.Message,
+                    "Forma Designer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (start)
+            {
+                try { Process.Start(new ProcessStartInfo(target.Exe, "--serve") { UseShellExecute = false, WorkingDirectory = target.ProgramDir }); }
+                catch (Exception ex) { done.Add("not started: " + ex.Message); }
+            }
+
+            if (quiet)
+            {
+                Console.Out.WriteLine("{\"installed\":true,\"version\":" + SqlCompanion.Json(Installer.Version) + ",\"done\":" + Installer.JsonList(done) + "}");
+                return;
+            }
+
+            MessageBox.Show(
+                "Forma Designer " + Installer.Version + " is installed." + Environment.NewLine + Environment.NewLine +
+                Installer.Lines(done) + Environment.NewLine +
+                (start ? "It is running now; its icon is in the notification area, by the clock. " : "") +
+                "In Forma, choose Open in designer.",
+                "Forma Designer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (Installed == null) MissingDevExpress.ShowWindow(Found);
+        }
+
+        /// <summary>--uninstall, from Settings, Apps or a command line.</summary>
+        private static void RunUninstall(InstallTarget target, bool quiet, bool removeConnections)
+        {
+            if (!quiet && !Installer.ConfirmUninstall(out removeConnections)) return;
+            List<string> done, kept;
+            try
+            {
+                done = Installer.Uninstall(target, removeConnections, out kept);
+            }
+            catch (Exception ex)
+            {
+                Environment.ExitCode = 1;
+                if (quiet) Console.Out.WriteLine("{\"removed\":false,\"error\":" + SqlCompanion.Json(ex.GetType().Name + ": " + ex.Message) + "}");
+                else MessageBox.Show("Forma Designer could not be removed." + Environment.NewLine + Environment.NewLine + ex.Message,
+                    "Forma Designer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (quiet)
+            {
+                Console.Out.WriteLine("{\"removed\":" + Installer.JsonList(done) + ",\"kept\":" + Installer.JsonList(kept) + "}");
+                return;
+            }
+            MessageBox.Show(
+                "Forma Designer is removed." + Environment.NewLine + Environment.NewLine + Installer.Lines(done) +
+                (kept.Count > 0 ? Environment.NewLine + "Kept:" + Environment.NewLine + Installer.Lines(kept) : ""),
+                "Forma Designer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
         private static void RegisterProtocol()
         {
             string exe = Application.ExecutablePath;
 
             try
             {
-                using (var root = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + Scheme))
-                {
-                    root.SetValue(string.Empty, "URL:Forma report designer");
-                    // Presence of this value -- not its content -- is what marks the
-                    // key as a URL protocol. Omitting it makes the whole thing inert
-                    // with no error anywhere.
-                    root.SetValue("URL Protocol", string.Empty);
-
-                    using (var icon = root.CreateSubKey("DefaultIcon"))
-                    {
-                        icon.SetValue(string.Empty, exe + ",0");
-                    }
-                    using (var command = root.CreateSubKey(@"shell\open\command"))
-                    {
-                        command.SetValue(string.Empty, "\"" + exe + "\" --serve \"%1\"");
-                    }
-                }
+                Installer.WriteProtocol(exe, @"Software\Classes");
 
                 MessageBox.Show(
                     "Forma can now start this program on its own." + Environment.NewLine + Environment.NewLine +
@@ -403,10 +498,10 @@ namespace RepxDesigner
                 }
 
                 MessageBox.Show(
-                    "Could not listen on 127.0.0.1:" + port + "." + Environment.NewLine +
-                    "Another copy of RepxDesigner --serve is probably already running." +
-                    Environment.NewLine + Environment.NewLine + ex.Message,
-                    "RepxDesigner",
+                    "Forma Designer is already running: its icon is in the notification area, by the clock." +
+                    Environment.NewLine + Environment.NewLine +
+                    "(Or another program is using 127.0.0.1:" + port + ": " + ex.Message + ")",
+                    "Forma Designer",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
                 return;
