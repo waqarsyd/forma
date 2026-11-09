@@ -30,7 +30,7 @@ export const REPOSITORY = 'https://github.com/waqarsyd/forma';
 export const CONTACT_EMAIL = 'waqarsayyed.official@gmail.com';
 
 /** The pages a search engine may index: the public ones. */
-export const INDEXED_ROUTES = ['/', '/features', '/pricing', '/docs', '/faq', '/examples', '/compare', '/security', '/self-host', '/about', '/contact', '/changelog', '/terms', '/privacy', '/accessibility'] as const;
+export const INDEXED_ROUTES = ['/', '/features', '/pricing', '/docs', '/faq', '/examples', '/compare', '/security', '/self-host', '/download', '/about', '/contact', '/changelog', '/terms', '/privacy', '/accessibility'] as const;
 
 /** One sentence per route, for search results and link previews. The home page's is index.html's own. */
 export const ROUTE_DESCRIPTIONS: Record<string, string> = {
@@ -48,6 +48,7 @@ export const ROUTE_DESCRIPTIONS: Record<string, string> = {
   '/compare': 'Forma beside DevExpress’s own AI features, and how to move Crystal Reports and SSRS reports to DevExpress for free.',
   '/about': 'Forma, an open-source AI report designer for DevExpress: who makes it, what it is built with, and a press kit.',
   '/self-host': 'Run Forma yourself: on your own computer, or with your own Firebase project for a team.',
+  '/download': 'Download Forma Designer for Windows, free: open your Forma reports in the DevExpress report designer with one click. Version, size, SHA-256 and install steps.',
   '/faq': 'Answers to the questions people ask about Forma: cost, files, privacy, languages and moving your projects.',
   '/login': 'Sign in to Forma to keep your reports in your account.',
   '/signup': 'Create a free Forma account to keep your reports in your account.',

@@ -25,13 +25,10 @@ import {
   waitForDesigner,
   type DesignerFacts,
 } from '../lib/designerBridge';
-import { DESIGNER_RELEASE } from '../lib/designerRelease';
+import { DESIGNER_RELEASE, DEVEXPRESS_TRIAL_URL } from '../lib/designerRelease';
 import { IconClose } from './landing/icons';
 import './overlays.css';
 import { useFocusTrap } from './useFocusTrap';
-
-/** DevExpress's own trial page: 30 days, no registration, the current version. */
-export const DEVEXPRESS_TRIAL_URL = 'https://www.devexpress.com/products/try/';
 
 interface Props {
   repxContent: string;

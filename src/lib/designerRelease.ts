@@ -47,6 +47,35 @@ export const DESIGNER_RELEASE: DesignerRelease = {
 
 export const DESIGNER_REPO = 'waqarsyd/forma';
 
+/**
+ * DevExpress's own trial page: 30 days, no registration, the current version
+ * only (devexpress.com, read 2026-11-09). The one link for DevExpress anywhere
+ * in Forma, the dialog's and the download page's; the companion's `TrialUrl`
+ * is held equal to it by a test.
+ */
+export const DEVEXPRESS_TRIAL_URL = 'https://www.devexpress.com/products/try/';
+
+/**
+ * What Forma Designer needs, as the download page states it. Each is held to
+ * where it is decided by publicClaims.test.ts: the .NET version to the
+ * project's TargetFrameworkVersion, the oldest DevExpress to
+ * DevExpressLocator.Oldest, the port to DESIGNER_ORIGIN.
+ */
+export const DESIGNER_REQUIREMENTS = { windows: 'Windows 10 or 11', dotnet: '4.7.2', devexpressOldest: '20.1', port: 7317 } as const;
+
+/** The zip's size as a person reads it: "98 KB". */
+export function designerSize(bytes: number = DESIGNER_RELEASE.bytes): string {
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** A yyyy-mm-dd date as the site writes dates: "9 November 2026", the same on the server and in the browser. */
+export function designerDate(iso: string = DESIGNER_RELEASE.date): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
 /** The zip's address on its GitHub release. */
 export function designerDownloadUrl(release: DesignerRelease = DESIGNER_RELEASE): string {
   return `https://github.com/${DESIGNER_REPO}/releases/download/${release.tag}/${release.file}`;

@@ -80,7 +80,7 @@ export default function ExportPanel({ onRepx, onDesigner, onPrint, onClose }: Pr
         <IconExternal size={15} />
         <span>
           <b>Open in the DevExpress designer</b>
-          <small>{onDesigner ? 'The real designer, on this computer' : 'This report has no DevExpress XML to open'}</small>
+          <small>{onDesigner ? 'The real designer, on your PC, through Forma Designer' : 'This report has no DevExpress XML to open'}</small>
         </span>
       </button>
       <h3>As it prints</h3>

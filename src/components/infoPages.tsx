@@ -1,5 +1,16 @@
+import { useEffect, useState } from 'react';
 import { STARTING_POINTS } from '../lib/startingPoints';
 import { MAX_SHARES } from '../lib/shares';
+import { onWindows } from '../lib/designerBridge';
+import {
+  DESIGNER_RELEASE,
+  DESIGNER_REQUIREMENTS,
+  DEVEXPRESS_TRIAL_URL,
+  designerDate,
+  designerDownloadUrl,
+  designerReleasePage,
+  designerSize,
+} from '../lib/designerRelease';
 import { A, P, STRONG, UL, type InfoDoc } from './InfoPage';
 import { FAQS } from './faqs';
 
@@ -11,6 +22,7 @@ export const INFO_DOCS = {
   '/compare': () => COMPARE,
   '/about': () => ABOUT,
   '/self-host': () => SELF_HOST,
+  '/download': () => DOWNLOAD,
   '/faq': () => FAQ_PAGE,
 } as const;
 export type InfoRoute = keyof typeof INFO_DOCS;
@@ -24,6 +36,8 @@ export type InfoRoute = keyof typeof INFO_DOCS;
  */
 
 const REPO = 'https://github.com/waqarsyd/forma';
+/** A numbered list: UL's look with numbers. Appending list-decimal to UL left list-disc winning in the stylesheet's order, so the steps showed bullets (2026-11-09). */
+const OL = UL.replace('list-disc', 'list-decimal');
 const ext = { target: '_blank', rel: 'noopener' } as const;
 
 /** Live shared reports to show on /examples, once the owner has shared some (item 111). Empty until then. */
@@ -416,7 +430,7 @@ npm run dev`}</pre>
       body: (
         <>
           <p className={P}>For sign-in, saved projects and sharing, on Firebase’s free plan:</p>
-          <ol className={`${UL} list-decimal`}>
+          <ol className={OL}>
             <li>Create a project in the Firebase console and register a web app.</li>
             <li>Authentication: Get started, then enable Google (and email, if you want it).</li>
             <li>Create a Firestore database in production mode.</li>
@@ -443,6 +457,163 @@ npx firebase deploy --only hosting`}</pre>
           <li>The headers: <code className="doc-code">firebase.json</code> carries the security headers, generated from the code; keep them when you change anything.</li>
           <li>Updates: pull from the repository and deploy again. The changelog says what changed.</li>
         </ul>
+      ),
+    },
+  ],
+};
+
+/* ------------------------------------------------------------- download */
+
+/**
+ * Said only once the page is in a browser that says it is not on Windows, so
+ * the prerendered page and the hydrated one agree (2026-11-09).
+ */
+function NotWindowsNote() {
+  const [notWindows, setNotWindows] = useState(false);
+  useEffect(() => setNotWindows(onWindows() === false), []);
+  if (!notWindows) return null;
+  return (
+    <p className={`${P} rounded-lg bg-[color:var(--surface-container)] px-4 py-3`} role="note">
+      This computer is not running Windows, and the DevExpress designer runs only there. You can still use Forma here:
+      export the .repx and open it on a Windows PC.
+    </p>
+  );
+}
+
+const BUTTON =
+  'u-transition u-press u-focus-ring inline-flex items-center justify-center gap-2 rounded-full bg-secondary-container px-6 py-[13px] font-body-lg text-[14.5px] font-semibold text-white no-underline hover:bg-[color:var(--accent-deep)]';
+
+/**
+ * Forma Designer's download page (2026-11-09, the owner's download
+ * programme, batch WG), modelled on what the leading desktop downloads share
+ * (VS Code, GitHub Desktop, Docker, DBeaver, Obsidian): one button naming the
+ * system and the package, the version, date, size and SHA-256 beside it
+ * (DBeaver shows its checksums; a tool that does not update itself should),
+ * the requirements in a line, release notes, older versions and the source.
+ * What none of them says and this does: what Windows shows for a program
+ * that is not code-signed, how to check the file, and how to remove it. No
+ * form and nothing between the button and the file. Every number on it comes
+ * from lib/designerRelease.ts.
+ */
+export const DOWNLOAD: InfoDoc = {
+  eyebrow: 'Download',
+  title: 'Forma Designer for Windows.',
+  lede: (
+    <>
+      <p>
+        Open the reports you make in Forma in the DevExpress report designer on your PC, with one click on Open in
+        designer. Free and open source, {designerSize()}, and it installs for you alone, with no administrator.
+      </p>
+      <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
+        <a className={BUTTON} href={designerDownloadUrl()}>
+          Download for Windows
+        </a>
+        <span className="font-body-lg text-[13.5px] text-on-surface-variant">
+          Version {DESIGNER_RELEASE.version} · {designerDate()} · {designerSize()} · zip
+        </span>
+      </div>
+      <p className="mt-3 font-body-lg text-[13px] leading-[1.6] text-on-surface-variant">
+        SHA-256 <code className="doc-code break-all">{DESIGNER_RELEASE.sha256}</code>
+      </p>
+      <p className="mt-2 font-body-lg text-[13.5px] text-on-surface-variant">
+        <a href={designerReleasePage()} className={A} {...ext}>Release notes</a>
+        {' · '}
+        <a href={`${REPO}/releases`} className={A} {...ext}>Older versions</a>
+        {' · '}
+        <a href={`${REPO}/tree/main/tools/RepxDesigner`} className={A} {...ext}>Source</a>
+        {' · '}
+        <a href={`${REPO}/blob/main/LICENSE`} className={A} {...ext}>Licence (Apache-2.0)</a>
+      </p>
+      <NotWindowsNote />
+    </>
+  ),
+  sections: [
+    {
+      id: 'requirements',
+      heading: 'What you need',
+      body: (
+        <>
+          <ul className={UL}>
+            <li>{DESIGNER_REQUIREMENTS.windows}.</li>
+            <li>.NET Framework {DESIGNER_REQUIREMENTS.dotnet} or later, which Windows 10 (version 1803 or later) and Windows 11 already have.</li>
+            <li>
+              <strong className={STRONG}>DevExpress Reporting for WinForms, version {DESIGNER_REQUIREMENTS.devexpressOldest} or later</strong>,
+              installed on the same PC. Forma Designer opens reports in DevExpress’s own designer and uses the version you
+              installed.
+            </li>
+          </ul>
+          <p className={`${P} rounded-lg border border-[color:var(--rule)] px-4 py-3`}>
+            <strong className={STRONG}>No DevExpress yet?</strong> It is not part of this download, and not ours:
+            DevExpress is a commercial product of Developer Express Inc. They offer a free 30-day trial of the current
+            version, with no registration:{' '}
+            <a href={DEVEXPRESS_TRIAL_URL} className={A} target="_blank" rel="noopener noreferrer">Get the DevExpress trial</a>.
+            Forma Designer is checked here on 20.1, and loads a newer version the same way; if yours does not open, tell us.
+          </p>
+        </>
+      ),
+    },
+    {
+      id: 'install',
+      heading: 'Install',
+      body: (
+        <ol className={OL}>
+          <li>Download the zip and unzip it.</li>
+          <li>
+            Double-click <code className="doc-code">RepxDesigner.exe</code>. Windows may say{' '}
+            <em>Windows protected your PC</em>, because the program is not code-signed: signing costs money every year,
+            and Forma is free. Choose <strong className={STRONG}>More info</strong>, then{' '}
+            <strong className={STRONG}>Run anyway</strong>. To be sure of the file first, check it (below).
+          </li>
+          <li>
+            Choose <strong className={STRONG}>Install</strong>. It goes in{' '}
+            <code className="doc-code">%LOCALAPPDATA%\Programs\Forma Designer</code>, for you only, adds itself to the
+            Start menu, and starts when you sign in to Windows, which you can turn off.
+          </li>
+          <li>
+            In Forma, choose <strong className={STRONG}>Open in designer</strong>. The first time, your browser asks
+            whether openforma.web.app may reach apps on your device: allow it, and the report opens in the designer.
+          </li>
+        </ol>
+      ),
+    },
+    {
+      id: 'verify',
+      heading: 'Check the download',
+      body: (
+        <>
+          <p className={P}>The zip’s SHA-256 is:</p>
+          <pre className={CODE}>{DESIGNER_RELEASE.sha256}</pre>
+          <p className={P}>In PowerShell, in the folder you saved it to:</p>
+          <pre className={CODE}>{`Get-FileHash .\\${DESIGNER_RELEASE.file}`}</pre>
+          <p className={P}>
+            The two should match. The zip is built from the source of release {DESIGNER_RELEASE.tag}, and packing the same
+            commit again gives the same bytes, so anyone can rebuild it and compare.
+          </p>
+        </>
+      ),
+    },
+    {
+      id: 'on-your-pc',
+      heading: 'What it does on your PC',
+      body: (
+        <ul className={UL}>
+          <li>
+            It listens on <code className="doc-code">127.0.0.1:{DESIGNER_REQUIREMENTS.port}</code>, which only programs
+            on your PC can reach, and answers Forma’s own pages. It sends nothing anywhere.
+          </li>
+          <li>A report a web page hands it opens with report scripts turned off, since it may be one somebody shared with you.</li>
+          <li>It reads a SQL Server database only when you ask, from a Forma running on your PC, through a connection you add, and keeps a login’s password encrypted for your Windows user.</li>
+        </ul>
+      ),
+    },
+    {
+      id: 'remove',
+      heading: 'Remove it',
+      body: (
+        <p className={P}>
+          Settings, Apps, Installed apps, <strong className={STRONG}>Forma Designer</strong>, Uninstall. It asks first, and
+          keeps your SQL Server connections unless you choose to remove them too. DevExpress is not touched.
+        </p>
       ),
     },
   ],

@@ -57,6 +57,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/compare': 'Compare and migrate — Forma',
   '/about': 'About — Forma',
   '/self-host': 'Self-hosting — Forma',
+  '/download': 'Download Forma Designer — Forma',
   '/faq': 'FAQ — Forma',
 };
 
@@ -160,6 +161,7 @@ export function viewForRoute(path: string): RouteView {
     case '/compare':
     case '/about':
     case '/self-host':
+    case '/download':
     case '/faq':
       return { showWorkspace: false, showLogin: false, loginMode: null, lastViewPath: path, notFound: false };
     default:

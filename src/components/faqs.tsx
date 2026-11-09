@@ -59,6 +59,18 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
     ),
   },
   {
+    q: 'How do I open a report in the DevExpress designer?',
+    a: (
+      <p>
+        With Forma Designer, a free Windows app:{' '}
+        <a href="/download" className="font-semibold text-secondary hover:underline">download it</a>, install it, and
+        choose Open in designer. It needs DevExpress Reporting on the same PC, a separate commercial product of
+        Developer Express Inc. with a free 30-day trial on devexpress.com. Without it, Export saves the .repx to open
+        however you like.
+      </p>
+    ),
+  },
+  {
     q: 'Can Forma read a photo of a printed form?',
     a: (
       <p>

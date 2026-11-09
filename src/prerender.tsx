@@ -25,7 +25,7 @@ const noop = () => {};
 const common = { onEnterWorkspace: noop, onSignIn: noop, onSignUp: noop, user: null, logOut: noop, isDarkMode: false, setIsDarkMode: noop };
 
 /** The routes drawn here; the app's own routes (the workspace, sign-in) are not pages to read. */
-export const PRERENDERED = ['/', '/features', '/docs', '/contact', '/changelog', '/terms', '/privacy', '/accessibility', '/security', '/pricing', '/examples', '/compare', '/about', '/self-host', '/faq'] as const;
+export const PRERENDERED = ['/', '/features', '/docs', '/contact', '/changelog', '/terms', '/privacy', '/accessibility', '/security', '/pricing', '/examples', '/compare', '/about', '/self-host', '/download', '/faq'] as const;
 
 /** One page's markup, for the build to put inside `<div id="root">`. */
 export function renderRoute(route: (typeof PRERENDERED)[number]): string {

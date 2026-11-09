@@ -85,6 +85,10 @@
           "destination": "/self-host.html"
         },
         {
+          "source": "/download",
+          "destination": "/download.html"
+        },
+        {
           "source": "/faq",
           "destination": "/faq.html"
         },
@@ -287,6 +291,10 @@
         {
           "source": "/self-host",
           "destination": "/self-host.html"
+        },
+        {
+          "source": "/download",
+          "destination": "/download.html"
         },
         {
           "source": "/faq",

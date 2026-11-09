@@ -24,7 +24,7 @@
  * missing may not be so lucky. A new route belongs here *and* in `App.tsx`'s
  * route effect and `ROUTE_TITLES`.
  */
-export const ROUTES = ['/', '/features', '/docs', '/contact', '/changelog', '/login', '/signup', '/workspace', '/terms', '/privacy', '/accessibility', '/security', '/pricing', '/examples', '/compare', '/about', '/self-host', '/faq'] as const;
+export const ROUTES = ['/', '/features', '/docs', '/contact', '/changelog', '/login', '/signup', '/workspace', '/terms', '/privacy', '/accessibility', '/security', '/pricing', '/examples', '/compare', '/about', '/self-host', '/download', '/faq'] as const;
 export type Route = (typeof ROUTES)[number];
 
 /**

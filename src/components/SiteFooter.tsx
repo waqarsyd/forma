@@ -27,6 +27,8 @@ const PRODUCT: Link[] = [
   ['Features', '/features'],
   ['Pricing', '/pricing'],
   ['Examples', '/examples'],
+  // The Windows app that opens a report in the DevExpress designer (2026-11-09).
+  ['Download for Windows', '/download'],
   // The release notes (2026-11-07), where Cursor, GitHub and Vercel keep theirs.
   ['Changelog', '/changelog'],
   ['Open the workspace', '/workspace'],

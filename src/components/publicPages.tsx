@@ -18,7 +18,7 @@ const ChangelogPage = lazy(() => import('./ChangelogPage'));
 const InfoRoutePage = lazy(() => import('./InfoRoutePage'));
 
 /** The pages SJ added, drawn by InfoRoutePage from infoPages.tsx; the same list as INFO_DOCS's keys, which a test holds. */
-export const INFO_ROUTES: readonly InfoRoute[] = ['/security', '/pricing', '/examples', '/compare', '/about', '/self-host', '/faq'];
+export const INFO_ROUTES: readonly InfoRoute[] = ['/security', '/pricing', '/examples', '/compare', '/about', '/self-host', '/download', '/faq'];
 
 export function publicPageFor(route: string, page: PageProps): ReactElement | null {
   switch (route) {

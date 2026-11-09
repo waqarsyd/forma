@@ -23,6 +23,8 @@ import { AI_SAMPLE_VALUES, MAX_SAMPLE_ROWS, MAX_SAMPLE_VALUE } from '../lib/sqlS
 import { SAMPLE_SCRIPT_ROWS } from '../lib/sqlSchemaScript';
 import { MAX_DATABASES } from '../lib/sqlSchemaStore';
 import { MAX_AI_OBJECTS } from '../lib/databaseAi';
+import { DESIGNER_REQUIREMENTS, DEVEXPRESS_TRIAL_URL, designerDownloadUrl } from '../lib/designerRelease';
+import { DESIGNER_ORIGIN } from '../lib/designerBridge';
 
 const page = (name: string) => readFileSync(`src/components/${name}.tsx`, 'utf8');
 const landing = page('LandingPage');
@@ -131,6 +133,31 @@ describe('what the pages state, the code answers', () => {
     expect(numbers(docs, /the (\d+) likeliest/gi)).toEqual([MAX_AI_OBJECTS]);
     expect(numbers(docs, /up to (\d+) sample values/gi)).toEqual([AI_SAMPLE_VALUES]);
     expect(docs).toContain('<Article id="sql"');
+  });
+
+  /*
+   * The download page (2026-11-09, the owner's download programme, batch WG):
+   * every requirement it states read from where the companion decides it, the
+   * one DevExpress link the companion's own, the file only GitHub's release,
+   * and nothing between the button and the file.
+   */
+  it('states what Forma Designer needs as the companion decides it, and gates nothing', () => {
+    const project = readFileSync('tools/RepxDesigner/RepxDesigner.csproj', 'utf8');
+    const locator = readFileSync('tools/RepxDesigner/DevExpressLocator.cs', 'utf8');
+    expect(/<TargetFrameworkVersion>v([\d.]+)<\/TargetFrameworkVersion>/.exec(project)![1]).toBe(DESIGNER_REQUIREMENTS.dotnet);
+    const oldest = /Oldest = new Version\((\d+), (\d+)\)/.exec(locator)!;
+    expect(`${oldest[1]}.${oldest[2]}`).toBe(DESIGNER_REQUIREMENTS.devexpressOldest);
+    expect(/TrialUrl = "([^"]+)"/.exec(locator)![1]).toBe(DEVEXPRESS_TRIAL_URL);
+    expect(DESIGNER_ORIGIN).toBe(`http://127.0.0.1:${DESIGNER_REQUIREMENTS.port}`);
+    expect(designerDownloadUrl()).toMatch(/^https:\/\/github\.com\/waqarsyd\/forma\/releases\/download\/v[\d.]+\/FormaDesigner-[\d.]+-windows\.zip$/);
+    const start = info.indexOf('export const DOWNLOAD');
+    const end = info.indexOf('/* ---', start);
+    expect(start).toBeGreaterThan(0);
+    const download = visible(info.slice(start, end < 0 ? undefined : end));
+    expect(download).toContain('not part of this download');
+    expect(download).toContain('commercial product of Developer Express Inc');
+    expect(download).not.toMatch(/<form|<input|mailto:|utm_/i);
+    expect([...download.matchAll(/devexpress\.com[^'"`\s]*/gi)].map((m) => m[0])).toEqual([]);
   });
 
   it('counts the examples it offers', () => {
