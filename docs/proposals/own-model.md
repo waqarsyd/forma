@@ -1284,6 +1284,51 @@ OCR alone (see *The boxes run lists the boxes and reads little*). Since
 *One request, every part of Forma in its role* in
 `docs/notes/app-shell.md`.
 
+## All of the company's reports, counted (2026-11-10)
+
+The owner asked on 2026-11-10 for everything in the SUNFACET share to train
+Forma's AI, "don't leave anything" (`forma-audit/ai-accuracy-2026-11-10.md`,
+batch AA). The owner's decision that day: **the company's material stays on
+this machine.** Structure trains what ships, as it has since 2026-11-02, and
+real content is used only for local training and scoring; nothing real goes
+to Gemini, OpenRouter or Kaggle.
+
+Two scripts count it, both writing only to `forma-model-data` and printing
+counts: `scripts/model/inventory.ts` (every file by type, size and distinct
+content by MD5; a remote-desktop `.rdp` is counted and never opened) and
+`scripts/model/sqlStats.ts` (the SQL scripts as statement, join, parameter
+and type counts, with no name, literal or comment kept).
+
+**The share is much smaller than its file count.** Copies dominate:
+
+| | Files on the share | Distinct | With the 23 archives unpacked | Distinct |
+|---|---|---|---|---|
+| Crystal `.rpt` | 21,776 | 4,365 | 50,072 | 4,366 |
+| DevExpress `.repx` | 547 | 203 | 1,146 | 203 |
+| `.sql` | 210 | 10 | 469 | 11 |
+| `.pdf` | 12 | 6 | 36 | 6 |
+
+The archives (1.3 GB, 4.36 GB unpacked) are backups of the share: the 23
+archives nested inside them are byte-identical to the outer ones, and they
+add one Crystal report and one SQL script. Re-running `crystal.ps1` over the
+whole share, and then over the unpacked archives, wrote no new layout: every
+distinct `.rpt` had been read on 2026-11-03, 4,155 of them, and the other 211
+(the archives' one new report among them) crash the Crystal engine on every
+attempt and stay recorded as failed. So *all of it*, for Forma's own model, is
+the 4,155 Crystal layouts and the 203 DevExpress layouts it already learns
+from. More variety has to come from elsewhere: synthetic reports and openly
+licensed report sets (batch AE).
+
+**The SQL scripts** (10 distinct): 28 tables created, 3 procedures created and
+7 altered, three of them with ten or more parameters; 230 SELECTs, most with
+no join and nine with six or more; 173 temporary-table uses and 8 dynamic SQL
+calls, the shapes that give a procedure no readable schema (*The SQL data
+source, measured* in `docs/notes/gemini.md`).
+
+**A private evaluation set**, in `forma-model-data\eval-real`, never
+committed: the 6 distinct PDFs (19 pages; 18 with a text layer, one a scan)
+beside the 600 printed real pages `realScore.ts` made on 2026-11-04.
+
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded
