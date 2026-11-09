@@ -65,8 +65,13 @@ namespace RepxDesigner
 
         private static Form _pump;
 
-        [STAThread]
-        private static void Main(string[] args)
+        /// <summary>
+        /// What Main was until 2026-11-09: Entry.Main now runs first, finds DevExpress
+        /// and says where it is, and calls this. Never inlined into Entry.Main, whose
+        /// body must name no DevExpress type (Entry.cs says why).
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        internal static void Run(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);

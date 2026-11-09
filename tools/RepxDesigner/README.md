@@ -73,6 +73,26 @@ The SQL Server programme's Phase 2 (`Sql.cs`, `ConnectionsForm.cs`, `SqlScripts.
 - **The designer reads the connection too (item 38).** `OpenDesigner` sets each data source's connection from the store and marks it `StoreConnectionNameOnly`, so the designer's own preview works at once and saving writes only the name. Measured with `RepxProbe sql-fill --name-only`: filled, and the saved layout read `<Connection Name="FormaSample" FromAppConfig="true" />`. Supplying it through `ConfigureDataConnection` instead does not work for a connection stored by name: DevExpress looks the name up in the config file first and throws ("Cannot find the following connection in the config file"), measured with `--event`.
 - **Only from a page served on this PC**, as for `/open`: the deployed site never calls 127.0.0.1 and the Data tab says how instead. Tested against LocalDB's made-up FormaSample only (`RepxProbe sql-keep` and `sql-drop`).
 
+## Which DevExpress it runs on (2026-11-09)
+
+The owner's download programme (`DevFiles/forma-audit/designer-download-2026-11-09.md`): the companion is to be downloaded by people who never built it, and the DevExpress they install is whatever the free trial offers, which is **only the current version** (25.2 / 26.1 as of 2026-11-09; older versions need a licence). So the program no longer assumes 20.1 beside it.
+
+- **`Entry.Main` runs first and names no DevExpress type** (`Entry.cs`): .NET compiles a method, and loads every assembly its body names, before its first line, so the old `Main` would have failed on a PC without DevExpress before it could say why. It finds DevExpress, then calls `Program.Run`, which was `Main`.
+- **`DevExpressLocator` reads three traces, both registry views, merged by version** (`DevExpressLocator.cs`). Measured here on 20.1.3: `HKLM\SOFTWARE\WOW6432Node\DevExpress\Components\v20.1` (`RootDirectory`, `Build`), `C:\Program Files (x86)\DevExpress 20.1\Components\Bin\Framework`, and the GAC's `DevExpress.XtraReports.v20.1\v4.0_20.1.3.0__b88d1754d700e49a`; the uninstall entry ("DevExpress Components 20.1", 20.1.3) carries no install location, so it is not read. Newer installers use `Program Files` and may skip the GAC, which is why all three are read.
+- **Any version through `AssemblyResolve`.** Every DevExpress assembly has its version in its name, so on a PC with only 25.2 the runtime fails to find `DevExpress.XtraReports.v20.1` and asks `AssemblyResolve`, which answers with `DevExpress.XtraReports.v25.2.dll` from that install's `Bin\Framework` (or its GAC entry); types are then found by their full name in the assembly that came back.
+- **`--check`** prints what it found as JSON with no window (exit 0 when it can run, 3 when no usable DevExpress is installed): `Start-Process RepxDesigner.exe --check -Wait -NoNewWindow -RedirectStandardOutput out.txt`. `--devexpress-root <dir>`, `--no-registry`, `--no-folders` and `--no-gac` leave sources out, to simulate another PC; `--alias <version>` asks for a version the program was not built against.
+
+Measured 2026-11-09 with the exe copied **alone** into an empty folder, no DevExpress DLL beside it:
+
+| | result |
+|---|---|
+| `--check` | found 20.1 (build 20.1.3) in the registry, the folder and the GAC; loaded `XtraReports.v20.1` from the GAC, made a report, loaded a two-band layout, counted 2 bands; exit 0 |
+| `--check --no-registry --no-folders --no-gac` | found nothing, `using: null`, exit 3, no crash |
+| `--check --alias 99.9` | asked for `DevExpress.XtraReports.v99.9`, got `v20.1` through the resolver, and the report loaded its layout with 2 bands: a binding failure for one version's name is answered by another version's file |
+| `--store <tmp> --sql-add` / `--sql-remove` | still work through `Entry.Main` |
+
+**What cannot be measured here, and is the owner's to check on another PC** (the trial must never be installed on this server): a real 25.2 or 26.1 install, whether every assembly the designer touches kept its name and the members used (a type DevExpress moved without a type forward would fail), and DevExpress's licence check from 25.1, which may show a trial watermark for a program built without a licence stamp (`docs.devexpress.com/GeneralInformation/405494`).
+
 ## Version compatibility
 
 The tool targets **DevExpress 20.1**, the version installed on this machine.
