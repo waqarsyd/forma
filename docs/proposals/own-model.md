@@ -1531,3 +1531,13 @@ here as it is built:
    used as a helper.
 2. **The box reader's weak spots**, from *Still to build* item 6, measured on
    the company's real reports as well as the drawn pages.
+3. **Forma's own draft as a report of its own**, now that it is what a person
+   gets when every AI has given out (the free chain, 2026-11-10). Scored with
+   no AI on the seven picture cases of the fidelity benchmark
+   (`scripts/fidelity/run.ts --forma`, batch AH): 72 of 96 checks. Three
+   things fail every time and are the draft's, not an AI's: it draws no
+   `XRTable`, a records region being labels in columns; the captions of a
+   totals line ("Subtotal", "Grand Total", "Net Pay") are lost, the line read
+   as a record; and the font median comes out at 13 to 18pt on three pages.
+   Each can be measured on the same seven cases before and after, at no
+   quota.

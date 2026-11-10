@@ -577,8 +577,21 @@ const BUDGETS = [
  * site audit's batch SE writes at build (fetched only from the footer's
  * link), and the rest the agent audit's later batches and the site audit's
  * first four, not attributed here. 6,255,000 is 94.0%.
+ *
+ * Raised to 6,630,000 on 2026-11-10, at 6,232,026 B (99.6%) without
+ * tripping, a RAISE naming the growth and a retune both, since it had crept
+ * under the cap for three programmes: +301,969 B came with the SQL Server
+ * programme (1.2.0) and the Forma Designer download (1.3.0), not attributed
+ * here, and +51,239 B with the AI accuracy programme (1.4.0), measured file
+ * by file against a build of 91236c0, the commit before it: reportFacts
+ * +6,341 (its own chunk), App +5,268, the changelog feed and releases
+ * +9,673, geminiService +3,584, docsSearch +4,433 as its own chunk against
+ * DocsPage -4,340, PaddleOCR's main-thread side +3,060, docsKnowledge
+ * +2,803, batchCheckpoint +2,680, the Settings dialog +2,469, jobPlan
+ * +2,328, the thread +1,939, fallbackChain +1,714, BatchPanel +1,551,
+ * localModels +1,402, the rest under 1,100 each. 6,630,000 is 94.0%.
  */
-const TOTAL_MAX = 6_255_000;
+const TOTAL_MAX = 6_630_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);
