@@ -127,3 +127,71 @@ describe('when the draft is not used', () => {
     }
   });
 });
+
+/*
+ * The output checked against what Forma read (2026-11-10, the AI accuracy
+ * programme, batch AD; lib/readCoverage.ts): a report that left out enough of
+ * the draft's captions is asked for once more, naming them, and the better of
+ * the two is kept.
+ */
+describe('a report that left out what Forma read', () => {
+  const READ: DraftRequest = {
+    ...draft,
+    text: [
+      'page Letter portrait 850 1100 75 75 75 75',
+      'band ReportHeader 60 0',
+      'label title 0 0 300 30 Arial:18b l 0 7 "INVOICE"',
+      'band PageHeader 20 0',
+      'table caption 0 0 700 20 Arial:9b l 4 0',
+      'row caption 2 Arial:9b l 11 "Description" | caption 1 Arial:9b r 3 "Qty" | caption 1 Arial:9b r 10 "Unit Price" | caption 1 Arial:9b r 6 "Amount"',
+      'band Detail 20 0',
+      'table value 0 0 700 20 Arial:9 l 0 0',
+      'row value 2 Arial:9 l 0 [Description] | value 1 Arial:9 r 0 [Qty] | value 1 Arial:9 r 0 [UnitPrice] | value 1 Arial:9 r 0 [Amount]',
+    ].join('\n'),
+  };
+  const SHORT = [
+    'page Letter portrait 850 1100 75 75 75 75',
+    'band ReportHeader 60 0',
+    'label title 0 0 300 30 Arial:18b l 0 7 "INVOICE"',
+    'band PageHeader 20 0',
+    'table caption 0 0 700 20 Arial:9b l 4 0',
+    'row caption 3 Arial:9b l 11 "Description" | caption 1 Arial:9b r 6 "Total"',
+    'band Detail 20 0',
+    'table value 0 0 700 20 Arial:9 l 0 0',
+    'row value 3 Arial:9 l 0 [Description] | value 1 Arial:9 r 0 [Amount]',
+  ].join('\n');
+  const WHOLE = READ.text;
+
+  function stubInTurn(...answers: string[]) {
+    let call = 0;
+    const mock = vi.fn(async (_url: unknown, _init?: unknown) => streamOf(answers[Math.min(call++, answers.length - 1)]));
+    vi.stubGlobal('fetch', mock);
+    return mock;
+  }
+  const textOf = (mock: ReturnType<typeof stubInTurn>, n: number) => JSON.parse(String((mock.mock.calls[n][1] as RequestInit).body)).contents[0].parts[0].text as string;
+
+  it('asks once more, naming what was missing, and keeps the answer that kept more', async () => {
+    const mock = stubInTurn(SHORT, WHOLE);
+    const result = await analyzeReportDesign('', [picture], config, undefined, undefined, undefined, { draft: READ });
+    expect(mock).toHaveBeenCalledTimes(2);
+    expect(textOf(mock, 0)).not.toContain('A FIRST ANSWER LEFT OUT');
+    expect(textOf(mock, 1)).toContain('A FIRST ANSWER LEFT OUT TEXT THE PAGE SHOWS');
+    expect(textOf(mock, 1)).toContain('"Qty", "Unit Price", "Amount"');
+    expect(result.coverage).toMatchObject({ captions: 5, kept: 5, missing: [] });
+    expect(result.repxContent).toContain('Text="Unit Price"');
+  });
+
+  it('keeps the first answer when the second kept no more, and never asks a third time', async () => {
+    const mock = stubInTurn(SHORT, SHORT, WHOLE);
+    const result = await analyzeReportDesign('', [picture], config, undefined, undefined, undefined, { draft: READ });
+    expect(mock).toHaveBeenCalledTimes(2);
+    expect(result.coverage).toMatchObject({ kept: 2 });
+  });
+
+  it('asks once only when it is worth it', async () => {
+    const mock = stubInTurn(WHOLE);
+    const result = await analyzeReportDesign('', [picture], config, undefined, undefined, undefined, { draft: READ });
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(result.coverage).toMatchObject({ captions: 5, kept: 5 });
+  });
+});

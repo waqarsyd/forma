@@ -84,6 +84,8 @@ export const RELEASES: Release[] = [
       { kind: 'improved', area: 'generation', text: 'Forma uses Gemini 3.x Flash (and Flash-Lite for quick answers) when it picks a model for your key, as Google retires Gemini 2.5 Flash on 1 December. It reads as well as Gemini 3 Pro on documents, on the free tier.' },
       { kind: 'improved', area: 'ocr', text: 'An English picture or scan is read by PaddleOCR in your browser: on real report pages it found 97% of the printed characters where the reader before found 61%, so Forma’s draft and the AI start from far more of the page. Other languages are read as before, and nothing you upload leaves your browser.' },
       { kind: 'improved', area: 'generation', text: 'A picture of a page is read at high resolution, so small print and thin lines come through. A PDF is not, since its text is exact already.' },
+      { kind: 'improved', area: 'generation', text: 'After a report from a picture, Forma checks it kept the captions and titles it read on the page, asks the AI once more, naming them, when several are missing, and the REPX pane lists any still left out.' },
+      { kind: 'improved', area: 'ocr', text: 'The words the new reader is unsure of are flagged for review at its own threshold, so the review lists the ones most likely to be wrong.' },
       { kind: 'fixed', area: 'generation', text: 'Forma no longer spends a request trying Gemini 2.0 Flash, which Google has shut down, when it first picks a model for your key.' },
     ],
   },

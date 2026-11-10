@@ -83,6 +83,8 @@ import { buildWithReader, sourceLayoutOf } from '../../src/lib/ocrAttach';
 import { draftBrief } from '../../src/lib/formaTeam';
 import { draftToText } from '../../src/lib/draftText';
 import { readWithOcr } from '../model/ocrPages';
+import { readPictureAsTheApp } from '../model/paddleOcr';
+import { captionsOfDraft, readCoverage, worthAnotherTry, type ReadCoverage } from '../../src/lib/readCoverage';
 import { readDatabaseText } from '../../src/lib/sqlSchema';
 import { designSection, writeFromAnswer } from '../../src/lib/databaseAi';
 import {
@@ -132,6 +134,13 @@ interface RunRecord {
   error: string | null;
   measurements: FidelityMeasurements | null;
   checks: FidelityCheck[];
+  /**
+   * How much of what Forma read on the page the report kept (2026-11-10,
+   * lib/readCoverage.ts): the captions and titles of the box reader's draft
+   * found in the REPX, and in which band. Null when the case is not a picture or
+   * the reader declined it. Computed again on a replay, from today's reading.
+   */
+  coverage?: ReadCoverage | null;
   /**
    * Everything the service wrote to the console during this run. The pipeline
    * explains itself there and nowhere else -- which model it chose, why a
@@ -349,7 +358,9 @@ async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir
   mkdirSync(work, { recursive: true });
   const name = `${c.name}.png`;
   writeFileSync(join(work, name), readFileSync(source));
-  const ocr = (await readWithOcr(work, [name], join(work, 'ocr.json'), 1, false))[name];
+  // As the app reads a picture since 2026-11-10: PaddleOCR when the models are
+  // fetched and the page is in its script, Tesseract otherwise.
+  const ocr = (await readPictureAsTheApp(join(work, name), join(work, 'paddle.json'))) ?? (await readWithOcr(work, [name], join(work, 'ocr.json'), 1, false))[name];
   const model = JSON.parse(readFileSync('assets/model/boxReader.json', 'utf8')) as BoxReaderModel;
   if (!readsTheseFeatures(model)) throw new Error('assets/model/boxReader.json is not one this version reads.');
   const pages = [{ meta: { uploadId: c.name, file: name }, read: { ocr, flagged: 0, lines: ocr.lines.length } }];
@@ -435,7 +446,15 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
   const answered = [...record.log].reverse().map((line) => /Generation timing .*\(model: ([^,)]+)/.exec(line)?.[1]).find(Boolean);
   record.model = answered ?? readCachedModel();
   score(record, c.file.expect);
+  record.coverage = await coverageFor(c, record, outDir);
   return record;
+}
+
+/** What the report kept of the captions and titles Forma read on the case's page (`readCoverage`). */
+async function coverageFor(c: LoadedCase, record: RunRecord, outDir: string): Promise<ReadCoverage | null> {
+  if (!record.response?.repxContent) return null;
+  const team = await readerBriefFor(c, record.config.unit ?? 'HundredthsOfAnInch', record.config.pageSize ?? 'Letter', outDir);
+  return team.draft ? readCoverage(captionsOfDraft(team.draft.text), record.response.repxContent) : null;
 }
 
 /*
@@ -624,6 +643,10 @@ function summaryMarkdown(records: RunRecord[], opts: ReturnType<typeof parseArgs
       lines.push(`- fonts: median ${m.fontMedianPt ?? '-'}pt over ${m.fontSizesPt.length}`);
       lines.push(`- margins: ${m.margins ? `${m.margins.left}, ${m.margins.right}, ${m.margins.top}, ${m.margins.bottom}` : 'absent'}`);
       lines.push(`- audit: ${m.audit.errors} error(s), ${m.audit.warnings} warning(s)${m.audit.codes.length ? `: ${m.audit.codes.join(', ')}` : ''}`);
+      if (r.coverage) {
+        const k = r.coverage;
+        lines.push(`- kept: ${k.kept} of ${k.captions} captions Forma read${k.captions ? ` (${Math.round((100 * k.kept) / k.captions)}%)` : ''}, ${k.sameBand} in the same band${worthAnotherTry(k) ? ', would ask once more' : ''}${k.missing.length ? `; missing ${k.missing.slice(0, 8).map((s) => JSON.stringify(s)).join(', ')}` : ''}`);
+      }
       lines.push(`- usage: ${r.response?.usage ? JSON.stringify(r.response.usage) : 'not reported'}`);
     }
     lines.push('');
@@ -658,6 +681,7 @@ async function main(): Promise<number> {
       const c = byName.get(record.case);
       if (!c) continue;
       score(record, c.file.expect);
+      record.coverage = await coverageFor(c, record, outDir);
       records.push(record);
     }
     if (records.length === 0) {
@@ -716,6 +740,7 @@ async function main(): Promise<number> {
     score: scoreChecks(r.checks),
     failed: r.checks.filter((c) => !c.pass).map((c) => c.id),
     error: r.error,
+    coverage: r.coverage ? { captions: r.coverage.captions, kept: r.coverage.kept, sameBand: r.coverage.sameBand, retry: worthAnotherTry(r.coverage) } : null,
   })), null, 2));
 
   console.log('\n' + scorecard(records));

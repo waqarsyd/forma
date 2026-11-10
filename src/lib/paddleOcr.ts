@@ -205,6 +205,27 @@ export function readingOrder(boxes: readonly PixelBox[]): PixelBox[] {
   return sorted;
 }
 
+/**
+ * The detector reads the page no longer than this on its longer side; the
+ * recogniser reads each region from the page at full size (`detectorInput`).
+ * 2,400 leaves every page measured whole: a 96 dpi page drawn twice its size
+ * is 2,112 long. Smaller is faster and less accurate, measured on the private
+ * pages on 2026-11-10 (word F1 on the printed reports, PDFs at 96 and 200 dpi):
+ * whole 79.3, 93.6, 95.2; 1,600 78.5, 91.5, 94.7; 1,280 77.1, 89.6, 92.8; 960
+ * 74.2, 89.6, 89.4. On a drawn invoice of 372 regions in the owner's Chrome,
+ * 1,600 saved 2.2 of 11.7 seconds; accuracy was the owner's priority.
+ */
+export const DETECT_LONG_SIDE = 2400;
+
+/**
+ * The recogniser's narrowest input. PaddleOCR pads every region to 320 pixels
+ * wide; most of a report's regions are short cells, so that was most of the
+ * work. 96 read a 373-region page 2.2 times faster with every word as right,
+ * and on the private pages cost under a point: 78.7, 92.7 and 95.1 against
+ * 79.3, 93.6 and 95.2 at 320.
+ */
+export const RECOGNIZE_MIN_WIDTH = 96;
+
 const MEAN = [0.485, 0.456, 0.406];
 const STD = [0.229, 0.224, 0.225];
 
@@ -341,9 +362,18 @@ export async function recognizeRegions(
   return lines;
 }
 
+/**
+ * Below this PaddleOCR's word is unsure, and flagged for review (`OcrPage.unsureBelow`).
+ * Its confidence runs far higher than Tesseract's: measured on 200 company reports
+ * printed by DevExpress on 2026-11-10, a word it read at 90 to 94 was not on the page
+ * 46% of the time and at 98 or more 14%, and only 1% of its words fell below the 60
+ * Tesseract is flagged at. Below 95 flags 11% of its words, about half of them wrong.
+ */
+export const UNSURE_BELOW = 95;
+
 /** A page from its regions in reading order and what each read as. */
 export function pageFromRegions(img: { width: number; height: number }, dpi: number | null, boxes: readonly PixelBox[], lines: readonly (OcrLine | null)[]): PaddlePage {
-  return { width: img.width, height: img.height, dpi, lines: lines.filter((l): l is OcrLine => !!l), detected: boxes.length };
+  return { width: img.width, height: img.height, dpi, lines: lines.filter((l): l is OcrLine => !!l), detected: boxes.length, unsureBelow: UNSURE_BELOW };
 }
 
 export interface PaddleReader {

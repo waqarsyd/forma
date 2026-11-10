@@ -84,7 +84,11 @@ export interface DetectedLayout {
 
 export interface LayoutOptions {
   unit?: string;
-  /** Below this a word is flagged; 60 by default, where Tesseract's misreads begin to dominate. */
+  /**
+   * Below this a word is flagged. By default each page's own engine's
+   * (`OcrPage.unsureBelow`), and 60 when it names none, where Tesseract's
+   * misreads begin to dominate.
+   */
   minConfidence?: number;
 }
 
@@ -294,7 +298,6 @@ export function placementFor(ocr: OcrPage, page: { width: number; height?: numbe
  */
 export function detectLayout(sources: readonly LayoutSource[], options: LayoutOptions = {}): DetectedLayout {
   const unit = options.unit ?? 'HundredthsOfAnInch';
-  const minConfidence = options.minConfidence ?? 60;
   const perInch = unitsPerInch(unit);
   let total = 0;
   let flagged = 0;
@@ -303,6 +306,7 @@ export function detectLayout(sources: readonly LayoutSource[], options: LayoutOp
     const half = perInch / 2;
     const fitted = { left: half, right: half, top: half, bottom: half };
     const at = placementFor(ocr, page, unit);
+    const minConfidence = options.minConfidence ?? ocr.unsureBelow ?? 60;
     const read = ocr.lines.flatMap(segmentsOf).map((s) => detected(s, at, unit, minConfidence));
     // A chart's bars and a logo come back as "words" read at almost no
     // confidence, often far taller than any text: in s23-gen's PNG the bars

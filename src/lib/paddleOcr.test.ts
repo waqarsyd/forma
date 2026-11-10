@@ -178,6 +178,7 @@ describe('the reader', () => {
     expect(page.lines[0].box.x1).toBeGreaterThan(60);
     expect(progress.at(-1)).toBe(1);
     expect(page.detected).toBe(1);
+    expect(page.unsureBelow).toBe(95);
   });
 
   it('tells a page in another script by the share of its regions read, not by confidence', () => {

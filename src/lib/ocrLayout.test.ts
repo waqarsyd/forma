@@ -76,6 +76,16 @@ describe('detectLayout', () => {
     expect(layoutOf([line(100, ['Total', 60, 90], ['due', 94, 112, 41])], 40).flagged).toBe(0);
   });
 
+  it('flags by the threshold of the engine that read the page: 95 for PaddleOCR, 60 for Tesseract', () => {
+    // 2026-11-10: a word PaddleOCR read at 90 was not on the page about half the time.
+    const words = [line(100, ['Total', 60, 90, 99], ['due', 94, 112, 90])];
+    const read = (unsureBelow?: number) => detectLayout([{ ocr: { ...page(words), ...(unsureBelow ? { unsureBelow } : {}) }, page: { width: 850, height: 1100 } }]);
+    expect(read(95).flagged).toBe(1);
+    expect(read().flagged).toBe(0);
+    // An explicit threshold still wins.
+    expect(detectLayout([{ ocr: { ...page(words), unsureBelow: 95 }, page: { width: 850, height: 1100 } }], { minConfidence: 80 }).flagged).toBe(0);
+  });
+
   it('sets aside what reads as a picture: almost no confidence, or far taller than the text', () => {
     const tall: OcrLine = { ...line(200, ['||', 300, 340, 30]), box: { x0: 300, y0: 200, x1: 340, y1: 360 } };
     tall.words[0].box = { x0: 300, y0: 200, x1: 340, y1: 360 };

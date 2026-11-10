@@ -159,9 +159,16 @@ export interface AnalysisResponse {
    * and write as the data source. Absent when no database was shared.
    */
   dataQuery?: unknown;
+  /**
+   * How much of what Forma read on the page the report kept (2026-11-10,
+   * lib/readCoverage.ts): the captions and titles of Forma's draft found in the
+   * REPX. Absent when the request carried no draft.
+   */
+  coverage?: ReadCoverage;
 }
 
 import type { TokenUsage } from './tokenUsage';
+import type { ReadCoverage } from './readCoverage';
 
 /** One part of a request: an inline image, or text lifted out of an upload. */
 export type AttachmentPart =

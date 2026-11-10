@@ -23,29 +23,9 @@ import * as ort from 'onnxruntime-web';
 import ortMjs from '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs?url';
 import ortWasm from '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm?url';
 import type { OcrLine } from './ocr';
-import { characterDict, detectRegions, recognizeRegions, rgbFromRgba, type OrtSessionLike } from './paddleOcr';
+import { characterDict, DETECT_LONG_SIDE, detectRegions, RECOGNIZE_MIN_WIDTH, recognizeRegions, rgbFromRgba, type OrtSessionLike } from './paddleOcr';
 import type { PixelBox } from './reportGeometry';
 
-/**
- * The detector reads the page no longer than this on its longer side; the
- * recogniser reads each region from the page at full size (`detectorInput`).
- * 2,400 leaves every page measured whole: a 96 dpi page drawn twice its size
- * is 2,112 long. Smaller is faster and less accurate, measured on the private
- * pages on 2026-11-10 (word F1 on the printed reports, PDFs at 96 and 200 dpi):
- * whole 79.3, 93.6, 95.2; 1,600 78.5, 91.5, 94.7; 1,280 77.1, 89.6, 92.8; 960
- * 74.2, 89.6, 89.4. On a drawn invoice of 372 regions in the owner's Chrome,
- * 1,600 saved 2.2 of 11.7 seconds; accuracy was the owner's priority.
- */
-export const DETECT_LONG_SIDE = 2400;
-
-/**
- * The recogniser's narrowest input. PaddleOCR pads every region to 320 pixels
- * wide; most of a report's regions are short cells, so that was most of the
- * work. 96 read a 373-region page 2.2 times faster with every word as right,
- * and on the private pages cost under a point: 78.7, 92.7 and 95.1 against
- * 79.3, 93.6 and 95.2 at 320.
- */
-export const RECOGNIZE_MIN_WIDTH = 96;
 
 /** A page to find the regions of, or regions of it to read; the picture as a canvas's RGBA bytes. */
 export type PaddleRequest = {

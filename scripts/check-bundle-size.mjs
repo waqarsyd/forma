@@ -307,7 +307,18 @@ const BUDGETS = [
   // fitted in silence: the REPX-only answer and the draft-and-correct path of
   // the same week. Measured by building HEAD in a throwaway worktree, not
   // inferred. 128_000 puts it at 93.6%.
-  { prefix: 'geminiService-', ext: '.js', max: 128_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
+  //
+  // Raised to 138_000 on 2026-11-10, a RAISE carrying both halves again. This
+  // commit grew it 127,110 -> 129,876 B, +2,766 B, for the AI accuracy
+  // programme's batch AD: `lib/readCoverage.ts`, an output pass that finds the
+  // captions Forma read in the finished REPX, and the one capped retry that names
+  // what was missing. The 119,839 -> 127,110 B before it, +7,271 B, had fitted in
+  // silence, taking the cap to 99.3%: 19 commits to the service and its prompt
+  // module after the raise (36da972), counted with `git log 36da972..d32e682` on
+  // geminiService.ts and reportBands.ts, the agent audit's batches of 2026-11-07,
+  // the SQL Server programme's of 2026-11-09 and batch AB among them. Measured by building HEAD
+  // (d32e682) in a throwaway worktree, not inferred. 138_000 puts it at 94.1%.
+  { prefix: 'geminiService-', ext: '.js', max: 138_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it

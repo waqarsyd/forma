@@ -14,6 +14,7 @@
 import { useMemo, useState } from 'react';
 import { formatXml, tokenizeXml, checkRepx } from '../lib/repx';
 import type { RepxAudit } from '../lib/repxAudit';
+import type { ReadCoverage } from '../lib/readCoverage';
 import { unitsPerInch } from '../lib/reportGeometry';
 // With a fallback for a page that is not a secure context (plain HTTP on a LAN address).
 import { copyText } from '../lib/clipboard';
@@ -48,12 +49,18 @@ const RepxViewer = ({
   unit,
   audit,
   usage,
+  coverage,
 }: {
   xml: string;
   unit?: string;
   audit?: RepxAudit | null;
   /** What the generation cost, when the model said (lib/tokenUsage.ts): a short line and its parts. */
   usage?: { short: string; long: string | null } | null;
+  /**
+   * What the report kept of the captions and titles Forma read on the page
+   * (2026-11-10, lib/readCoverage.ts), when the request carried Forma's draft.
+   */
+  coverage?: ReadCoverage | null;
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -114,6 +121,15 @@ const RepxViewer = ({
               {usage.short}
             </span>
           )}
+          {coverage && coverage.captions > 0 && (
+            <span
+              className="text-[11px] text-on-surface-variant font-mono"
+              data-readout="kept"
+              title={`The report kept ${coverage.kept} of the ${coverage.captions} captions and titles Forma read on the page, ${coverage.sameBand} in the band the page shows them in.`}
+            >
+              kept {coverage.kept}/{coverage.captions} read
+            </span>
+          )}
           <button
             onClick={handleCopy}
             className="u-tap u-transition-fast u-press u-focus-ring flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest text-[11px] font-semibold text-on-surface-variant rounded-full cursor-pointer"
@@ -154,6 +170,27 @@ const RepxViewer = ({
                   <IconAlert size={12} />
                 </span>
                 <span>{f.message}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {/* What Forma read on the page and the report left out (2026-11-10):
+          named, so it can be added or checked against the page. Silent when
+          the report kept it all. */}
+      {coverage && coverage.missing.length > 0 && (
+        <details className="wb-audit rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3" data-missing>
+          <summary className="text-[11.5px] font-semibold cursor-pointer text-on-surface-variant">
+            {coverage.missing.length} {coverage.missing.length > 1 ? 'texts' : 'text'} Forma read on the page {coverage.missing.length > 1 ? 'are' : 'is'} not in the report
+          </summary>
+          <ul className="flex flex-col gap-1.5 mt-2">
+            {coverage.missing.map((text, i) => (
+              <li key={i} className="flex gap-2 text-[11.5px] leading-[1.5] text-on-surface-variant">
+                <span className="mt-[3px] shrink-0 text-[color:var(--ink-faint)]">
+                  <IconAlert size={12} />
+                </span>
+                <span>{text}</span>
               </li>
             ))}
           </ul>

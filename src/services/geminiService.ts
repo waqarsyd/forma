@@ -54,6 +54,7 @@ import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
 import { addUsage, readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
 import { checkRepxComplete } from "../lib/repxTruncation";
+import { captionsOfDraft, missedNote, readCoverage, worthAnotherTry } from "../lib/readCoverage";
 import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runawayOutput";
 import { buildDescriptionBrief, type ReportDescriptionRequest, type ClarificationQuestion } from "../lib/promptToReport";
 import { resolveOverlaps } from "../lib/repxOverlaps";
@@ -2247,6 +2248,12 @@ export interface GenerationOptions {
   /** Set on the one repeat of a request cut off by its thinking, so it is not repeated again. */
   thinkingCapped?: boolean;
   /**
+   * Set on the one repeat of a report that left out what Forma read on the page
+   * (2026-11-10, lib/readCoverage.ts): the note naming what was missing, placed
+   * before the user's words, and the sign not to repeat again.
+   */
+  missedRetry?: string;
+  /**
    * A shared database's section (2026-11-09, the SQL Server programme, item
    * 22): `designSection` in lib/databaseAi.ts, built by App only when the user
    * shared the layout with the AI. It takes the place of the Settings' stored
@@ -2324,7 +2331,10 @@ export async function analyzeReportDesign(
     const mockTable = options?.database ? /^- (\S+) \((?:table|view)\)/m.exec(options.database)?.[1] : undefined;
     // A redesign keeps the report's data source here too, so it can be seen offline (2026-11-09).
     const carried = previousState?.repxContent ? carryDataSource(previousState.repxContent, MOCK_INVOICE_RESPONSE.repxContent) : null;
-    const mock = carried?.applied ? { ...MOCK_INVOICE_RESPONSE, repxContent: carried.xml } : MOCK_INVOICE_RESPONSE;
+    const carriedMock = carried?.applied ? { ...MOCK_INVOICE_RESPONSE, repxContent: carried.xml } : MOCK_INVOICE_RESPONSE;
+    // And what the mock invoice kept of what Forma read on the page, so the REPX
+    // pane's account of it can be seen offline (2026-11-10). It never asks again.
+    const mock = options?.draft?.text.trim() ? { ...carriedMock, coverage: readCoverage(captionsOfDraft(options.draft.text), carriedMock.repxContent) } : carriedMock;
     return mockTable ? { ...mock, dataQuery: { table: mockTable } } : mock;
   }
 
@@ -2621,7 +2631,7 @@ ${houseStyleContext}
           {
             text: `${CORRECTION_RULES}
 
-${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: false, fromDescription: false })}
+${options?.missedRetry ? `${options.missedRetry}\n\n` : ''}${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: false, fromDescription: false })}
 
 ${options?.database ? `${options.database}\n\n` : ''}FORMA'S DRAFT:
 ${draft!.text}`,
@@ -2738,7 +2748,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
           - DEVEXPRESS TABLES: every region identified under "AN ALIGNED, REPEATING REGION IS A TABLE" above MUST be a proper DevExpress \`<XRTable>\` / \`<XRTableRow>\` / \`<XRTableCell>\` in the XML, never a grid of labels. Position and size the \`<XRTable>\` itself with LocationFloat and SizeF so it covers the same box as the source; the rows and cells inside it take neither, only \`Weight\`. Use \`Borders="All"\` on the table when the source rules every cell, and the individual border sides when it does not.
           - LOCATIONS AND SIZES: Make **absolute sure** that components do not overlap incorrectly. Calculate the X and Y bounds correctly. LocationFloat expects X,Y and SizeF expects Width,Height. Do NOT add spaces after the comma.
 
-          ${options?.formaBrief?.trim() ? `${options.formaBrief.trim()}\n\n` : ''}${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent), fromDescription: Boolean(description) })}` },
+          ${options?.formaBrief?.trim() ? `${options.formaBrief.trim()}\n\n` : ''}${options?.missedRetry ? `${options.missedRetry}\n\n` : ''}${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: Boolean(previousState?.repxContent), fromDescription: Boolean(description) })}` },
           ...imageParts,
         ],
       },
@@ -3314,8 +3324,18 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
     // The Mockup, the Spec and the title, read off the finished REPX rather
     // than written by the AI (2026-11-05, lib/repxViews.ts), so all three
     // describe the file that is downloaded.
+    /*
+     * What the report kept of what Forma read on the page (2026-11-10, the AI
+     * accuracy programme, batch AD; lib/readCoverage.ts): the captions and
+     * titles of Forma's draft found in the REPX. Forma's reading is independent
+     * of the AI, which is what makes the comparison worth anything.
+     */
+    const coverage = options?.draft?.text.trim() ? readCoverage(captionsOfDraft(options.draft.text), parsed.repxContent) : null;
+    if (coverage) {
+      console.log(`Read coverage: kept ${coverage.kept} of ${coverage.captions} captions and titles Forma read, ${coverage.sameBand} in the same band.`);
+    }
     const title = reportTitleOf(parsed.repxContent);
-    return {
+    const result: AnalysisResponse = {
       markdown: specFromRepx(parsed.repxContent, title),
       layout: layoutFromRepx(parsed.repxContent, title),
       repxContent: parsed.repxContent,
@@ -3324,7 +3344,30 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       usage: addUsage(spentBefore, response.usage),
       ...(draft ? { fromDraft: true } : {}),
       ...(named.query !== undefined ? { dataQuery: named.query } : {}),
+      ...(coverage ? { coverage } : {}),
     };
+    /*
+     * Asked once more, and only once, when the report left out enough of the
+     * page (`worthAnotherTry`), the request naming what was missing. The better
+     * of the two answers is kept, by what it kept; both are counted in the
+     * usage, since both were spent. On the 32 saved benchmark runs replayed on
+     * 2026-11-10 it would have asked twice, both on early drafts that kept 10
+     * of the invoice's 16 captions, and never otherwise.
+     */
+    if (coverage && worthAnotherTry(coverage) && !options?.missedRetry && !signal?.aborted) {
+      console.warn(`The report left out ${coverage.missing.length} of ${coverage.captions} captions and titles Forma read; asking once more, naming them.`);
+      try {
+        const again = await analyzeReportDesign(prompt, imageParts, config, previousState, signal, onProgress, { ...options, missedRetry: missedNote(coverage) });
+        const usage = addUsage(result.usage ?? null, again.usage);
+        const better = (again.coverage?.kept ?? 0) > coverage.kept;
+        console[better ? 'log' : 'warn'](`The second answer kept ${again.coverage?.kept ?? 0} of ${coverage.captions}; keeping the ${better ? 'second' : 'first'}.`);
+        return { ...(better ? again : result), usage };
+      } catch (err) {
+        if (signal?.aborted) throw err;
+        console.warn('The second answer failed; keeping the first.', err);
+      }
+    }
+    return result;
   } catch (e) {
     if (rawText) {
       console.error("Failed to parse Gemini response", e);

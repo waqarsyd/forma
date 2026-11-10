@@ -43,6 +43,12 @@ export interface OcrPage {
   height: number;
   dpi: number | null;
   lines: OcrLine[];
+  /**
+   * Below this a word is unsure, for the engine that read the page: absent for
+   * Tesseract, whose 60 is ocrLayout.ts's default, and 95 for PaddleOCR
+   * (`UNSURE_BELOW` in lib/paddleOcr.ts), whose confidence runs higher.
+   */
+  unsureBelow?: number;
 }
 
 interface TesseractBlocks {

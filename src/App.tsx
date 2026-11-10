@@ -238,6 +238,7 @@ import {
   type ReportDescriptionRequest,
 } from './lib/promptToReport';
 import { addUsage, summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
+import type { ReadCoverage } from './lib/readCoverage';
 import { designerFileName } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
 import { makeRightToLeft } from './lib/repxRtl';
@@ -334,6 +335,12 @@ interface DesignResult {
    * none. The readout hides itself rather than showing a zero.
    */
   usage?: TokenUsage | null;
+  /**
+   * What the report kept of the captions and titles Forma read on the page
+   * (2026-11-10, lib/readCoverage.ts), for the REPX pane. Absent when the
+   * request carried no draft, and on a restored report.
+   */
+  coverage?: ReadCoverage | null;
 }
 
 /**
@@ -4183,6 +4190,7 @@ export default function App() {
         // The prompt asks for right to left; this makes sure of it.
         repxContent: asConfigured(response.repxContent),
         usage: spent,
+        coverage: response.coverage ?? null,
       };
 
       setResult(newResult);
@@ -6861,6 +6869,7 @@ export default function App() {
                       unit={openUnit}
                       audit={repxAudit}
                       usage={summariseUsage(result.usage) ? { short: summariseUsage(result.usage)!, long: describeUsage(result.usage) } : null}
+                      coverage={result.coverage ?? null}
                     />
                   </Suspense>
                   </ErrorBoundary>
