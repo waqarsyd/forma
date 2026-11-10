@@ -2,7 +2,7 @@
  * Packs the Forma Designer download (2026-11-09, the owner's download
  * programme, batch WD).
  *
- *   npx tsx scripts/package-designer.ts --tag v1.3.0 [--msbuild <path>]
+ *   npx tsx scripts/package-designer.ts --tag v1.4.0 [--msbuild <path>]
  *
  * For the owner, on a Windows PC with DevExpress 20.1 installed, because the
  * companion is compiled against it (and nothing else can build it: CI has no

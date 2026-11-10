@@ -14,7 +14,9 @@
  *   or the document is cacheable (it must revalidate, or a deploy never
  *   reaches a returning visitor);
  * - the entry chunk the page names does not load, or is not immutable;
- * - the changelog's feed is missing.
+ * - the changelog's feed is missing;
+ * - the Forma Designer download the live build links is not on its GitHub
+ *   release (2026-11-10).
  *
  * And, once the live site is the build `--expect` names (the page carries its
  * commit in <meta name="forma-version">, written by vite.config.ts), the
@@ -52,6 +54,28 @@ async function routesOf(commit) {
   try {
     const res = await fetch(`https://raw.githubusercontent.com/waqarsyd/forma/${commit}/src/lib/router.ts`);
     return res.ok ? routesIn(await res.text()) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The Forma Designer download a build links, read from its manifest
+ * (src/lib/designerRelease.ts) at that commit, or null when that cannot be
+ * read. The download page links the zip on the GitHub release the manifest
+ * names, whatever build is live, so the live build's manifest is the one to
+ * ask. Added 2026-11-10, the day 1.4.0 was deployed: the manifest named
+ * v1.3.0, a release never made because 1.3.0 shipped inside 1.4.0, and
+ * /download linked a 404 while every other check here passed.
+ */
+async function designerDownloadOf(commit) {
+  if (!/^[0-9a-f]{40}$/.test(commit)) return null;
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/waqarsyd/forma/${commit}/src/lib/designerRelease.ts`);
+    if (!res.ok) return null;
+    const source = await res.text();
+    const field = (name) => (new RegExp(`\\n  ${name}: '([^']*)'`).exec(source) || [])[1];
+    return field('tag') && field('file') ? `https://github.com/waqarsyd/forma/releases/download/${field('tag')}/${field('file')}` : null;
   } catch {
     return null;
   }
@@ -96,6 +120,13 @@ async function check(base) {
 
   const feed = await get(`${base}/changelog.xml`);
   if (feed.status !== 200 || !/<feed/.test(feed.body)) warn(base, `/changelog.xml answered ${feed.status}`);
+
+  // GitHub answers a HEAD for a release's file with 302 to its store, and 404 when it is not there.
+  const download = await designerDownloadOf(version);
+  if (download) {
+    const zip = await fetch(download, { method: 'HEAD', redirect: 'manual', headers: { 'User-Agent': 'forma-smoke/1 (+https://github.com/waqarsyd/forma)' } });
+    if (zip.status !== 302 && zip.status !== 200) fail(base, `the Forma Designer download the live build links answered ${zip.status}: ${download}`);
+  }
 
   // What main has promised since the version was first written into the page.
   const current = expected && version === expected;

@@ -45,7 +45,9 @@
  * src/lib/designerRelease.ts names this release's tag, the zip it describes
  * (packed by scripts/package-designer.ts, on a PC with DevExpress) must be in
  * tools/RepxDesigner/bin/package with that SHA-256, or this stops before
- * building; after the release is made, `gh release upload` attaches it.
+ * building; after the release is made, `gh release upload` attaches it. When
+ * it names an earlier release, that release must carry the zip (2026-11-10),
+ * or this stops too: the download page links it whatever release this is.
  *
  * Pure ASCII, as every script here.
  */
@@ -153,6 +155,28 @@ if (notes) {
       process.exit(1);
     }
     designerZip = zip;
+  } else if (field('tag')) {
+    // The zip is on an earlier release, and must be there: the download page
+    // links it whatever release this is. Found 2026-11-10, the day 1.4.0 was
+    // deployed: the manifest named v1.3.0, a release never made because 1.3.0
+    // shipped inside 1.4.0, and this step, seeing another tag, said nothing
+    // while /download went live linking a 404.
+    const where = field('tag');
+    if (!ghReady) {
+      console.log(`The Forma Designer download is on release ${where}, which this cannot check without the GitHub CLI signed in.`);
+    } else {
+      const view = spawnSync(`gh release view ${where} --repo waqarsyd/forma --json assets`, { shell: true, encoding: 'utf8' });
+      const assets = view.status === 0 ? (JSON.parse(view.stdout || '{}').assets || []).map((a) => a.name) : null;
+      if (!assets || !assets.includes(field('file'))) {
+        console.error(
+          `Stopped: src/lib/designerRelease.ts says the Forma Designer download is on release ${where}, ` +
+            (assets ? `which carries no ${field('file')}. ` : 'which does not exist. ') +
+            `Attach it (gh release upload ${where} "tools/RepxDesigner/bin/package/${field('file')}" --repo waqarsyd/forma), ` +
+            'or point the manifest at a release that has it, so /download does not link a 404.',
+        );
+        process.exit(1);
+      }
+    }
   }
 }
 

@@ -41,7 +41,7 @@ export const DESIGNER_RELEASE: DesignerRelease = {
   bytes: 100285,
   sha256: '08c8b935e76e4c55d6446756dea468321f88d21bb0ac28476ead4b93aa88c1aa',
   date: '2026-11-09',
-  tag: 'v1.3.0',
+  tag: 'v1.4.0',
 };
 // END designer release
 

@@ -75,6 +75,17 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-10-designer-download-link',
+    date: '2026-11-10',
+    version: '1.4.1',
+    title: 'The Forma Designer download links its file',
+    summary:
+      'The download page’s link to Forma Designer pointed at a release that was never made, so it answered Not found. It links the release that carries the file now, and the daily check of the live site asks for the file.',
+    changes: [
+      { kind: 'fixed', area: 'site', text: 'The Forma Designer download on the download page linked a GitHub release that was never made (1.3.0 shipped inside 1.4.0), so it answered Not found. It links the release that carries the file now; a deploy stops when the file is not where the page says, and the daily check of the live site asks for it.' },
+    ],
+  },
+  {
     id: '2026-11-10-ai-accuracy',
     date: '2026-11-10',
     version: '1.4.0',
