@@ -129,6 +129,16 @@ describe('skeletonToDesign', () => {
     expect(design.read).toBe(3);
   });
 
+  // The draft's second weak spot (2026-11-10, run.ts --forma): a footer is not stacked, so its caption had no box to be read in.
+  it("finds a footer caption's words where the footer was read on the page (pageTop)", () => {
+    const placed = { ...skeleton, bands: skeleton.bands.map((b) => (b.kind === 'ReportFooter' ? { ...b, pageTop: 300 } : b)) };
+    const read = [...texts, { text: 'Grand Total', x: 60, y: 304, w: 90, h: 14 }];
+    expect(skeletonToDesign(skeleton, { texts: read }).repx).not.toContain('Text="Grand Total"');
+    const design = skeletonToDesign(placed, { texts: read });
+    expect(design.repx).toContain('Text="Grand Total"');
+    expect(design.placeholders).toBe(0);
+  });
+
   it('keeps a placeholder where nothing was read, and "Total" in a footer', () => {
     const design = skeletonToDesign(skeleton, { texts, title: 'Given title' });
     expect(design.placeholders).toBe(1);

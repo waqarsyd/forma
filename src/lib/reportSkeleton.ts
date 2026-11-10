@@ -79,6 +79,14 @@ export interface SkeletonBand {
   /** How many fields a group header groups by. */
   groupFields: number;
   controls: SkeletonControl[];
+  /**
+   * Where the band was read on the page, from its top, when it was read off
+   * a picture (2026-11-10, the box reader): a group or report footer prints
+   * where the records end, which stacking the bands cannot place, and a
+   * caption read in one was lost for want of its box. Absent for a report
+   * read from a file.
+   */
+  pageTop?: number;
 }
 
 export interface ReportSkeleton {

@@ -171,7 +171,19 @@ export function fontFromWidth(text: string, inkWidth: number, unit: string): num
 
 function detected(seg: Segment, at: ImagePlacement, unit: string, minConfidence: number): DetectedText {
   const ink = pixelBoxToUnits(seg.box, at);
-  const font = fontFromInk(seg.text, ink.h, unit);
+  /*
+   * The smaller of the height's estimate and the width's, as a table's cells
+   * have had since s23-gen (2026-11-10, the draft's third weak spot found by
+   * `run.ts --forma`): PaddleOCR's boxes are grown by `unclip` well past the
+   * ink, so by height alone a 7pt body read 13 to 18pt on three of seven
+   * made-up pages, while its width stayed the width of its letters. The box
+   * keeps the height's shape, scaled to the size chosen. Only when the width
+   * says a fifth smaller or more: the width's estimate is rough, and on a box
+   * that holds the ink alone (Tesseract's) it runs half a point under.
+   */
+  const byHeight = fontFromInk(seg.text, ink.h, unit);
+  const byWidth = fontFromWidth(seg.text, ink.w, unit);
+  const font = byWidth < byHeight.size * 0.8 ? { size: byWidth, em: (byHeight.em * byWidth) / byHeight.size, above: (byHeight.above * byWidth) / byHeight.size } : byHeight;
   const words = seg.words.map((w) => ({ text: w.text, confidence: Math.round(w.confidence), flagged: w.confidence < minConfidence }));
   return {
     text: seg.text,

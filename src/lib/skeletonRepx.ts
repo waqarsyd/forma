@@ -195,7 +195,8 @@ function bandTops(k: ReportSkeleton): (number | null)[] {
       fy += b.height;
       return top;
     }
-    if (recorded || !(HEADERS.includes(b.kind) || b.kind === 'Detail')) return null;
+    // A footer read off a picture knows where it was (`pageTop`); one from a file is not placed.
+    if (recorded || !(HEADERS.includes(b.kind) || b.kind === 'Detail')) return b.pageTop ?? null;
     const top = y;
     y += b.height;
     if (b.kind === 'Detail') recorded = true;

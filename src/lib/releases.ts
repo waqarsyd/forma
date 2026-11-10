@@ -98,6 +98,7 @@ export const RELEASES: Release[] = [
       { kind: 'new', area: 'chat', text: 'Three files or more, or nine pages, get a plan first: tick the files, choose one report or one for each, see what it will cost, then start. Nothing is read or sent before.' },
       { kind: 'improved', area: 'workspace', text: 'A batch is kept in your browser as it runs, so after a limit, a reload or the next day it carries on from where it stopped; a limit pauses it rather than failing file after file, and Clear removes it.' },
       { kind: 'fixed', area: 'generation', text: 'A repair request that hits a limit keeps the report the AI already wrote, instead of falling back to Forma’s draft.' },
+      { kind: 'improved', area: 'generation', text: 'Forma’s own draft of a picture, the report you get when every AI has reached its limit, now draws a records region as a table, keeps the captions of totals lines such as Subtotal and Grand Total, and sizes its text as the page printed it rather than up to twice as large.' },
       { kind: 'fixed', area: 'generation', text: 'Forma no longer spends a request trying Gemini 2.0 Flash, which Google has shut down, when it first picks a model for your key.' },
     ],
   },

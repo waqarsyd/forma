@@ -1541,3 +1541,31 @@ here as it is built:
    as a record; and the font median comes out at 13 to 18pt on three pages.
    Each can be measured on the same seven cases before and after, at no
    quota.
+   **Done the same day, all three, 72 to 88 of 96** (the real pages unmoved
+   at 66.2% both, 47.0% first appearance, 55.8% footer totals, 152 banded,
+   since none of it touches the reading):
+   - **The table.** The texts OCR's layout read as one table's cells become
+     one `XRTable` in the band, a row per table row the band holds, the
+     table's columns as the cells and a column with no text an empty cell
+     (`readerSkeleton`'s `cells`, `TableCellOrigin`); the rest stay labels.
+     72 to 81: five of the six table cases passed; `sales-grouped` had no
+     table detected on it until the font fix below changed its rows.
+   - **The footer captions.** They were read right, as captions in the
+     report footer; the design lost them because a footer is not stacked
+     (`bandTops` places headers and the first record only), so the caption
+     had no box to be found in and took the placeholder "Total". A band read
+     off a picture now carries `pageTop`, where it was read, and `bandTops`
+     uses it. 81 to 84; `purchase-order` passes every check.
+   - **The fonts.** A label's size is the smaller of the height's estimate and
+     the width's, as a table's cells have had since s23-gen, and only when the
+     width says a fifth or more smaller: PaddleOCR's boxes are grown by
+     `unclip` well past the ink, so a 7pt body read 13 to 18pt by height; the
+     width's estimate is rough and runs half a point under on Tesseract's
+     tight boxes, which the fifth keeps out. 84 to 88. Two cases now fail the
+     size check the other way, at 6.5 and 7pt against the 7 and 8pt floors
+     written for the AI's reports, and those floors stand: the pages' body is
+     14px at 150dpi, 6.7pt, so the draft measures the page and the AI rounds
+     up.
+   What is left on the seven cases is the reader's, not the draft's: the
+   form page (`payslip`) and a statement's opening and closing lines read as
+   records, and a `.repx` case the draft does not take.

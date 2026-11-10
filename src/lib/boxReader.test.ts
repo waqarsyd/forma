@@ -145,6 +145,26 @@ describe('the skeleton', () => {
     expect(detailOf(pairs).controls.map((c) => c.role)).toEqual(['caption', 'value', 'caption', 'value']);
   });
 
+  // The draft's first weak spot (2026-11-10, run.ts --forma): a records region read as a table is a table.
+  it('draws the texts OCR read as one table as an XRTable, a row per band, the columns kept', () => {
+    const table = { x: 100, columns: [300, 240, 50], rows: [{ y: 120, h: 8, cells: [] }, { y: 140, h: 8, cells: [] }] };
+    // The headings (boxes 1 to 3) are the table's first row, the first record (4 to 6) its second; the Date column of the record is empty.
+    const origin = (row: number, col: number) => ({ tableIndex: 0, table, row, col });
+    const cells = boxes.map((_, k) => (k >= 1 && k <= 3 ? origin(0, k - 1) : k === 4 ? origin(1, 0) : k === 6 ? origin(1, 2) : null));
+    const k = readerSkeleton({ ...page, margins: { top: 50, bottom: 50, left: 50, right: 50 } }, boxes, reading, boxes, cells);
+    const header = k.bands.find((b) => b.kind === 'PageHeader')!;
+    expect(header.controls.map((c) => c.kind)).toEqual(['table']);
+    expect(header.controls[0].rows!.map((r) => r.map((c) => c.role))).toEqual([['caption', 'caption', 'caption']]);
+    expect(header.controls[0].w).toBe(590);
+    const detail = k.bands.find((b) => b.kind === 'Detail')!;
+    // The record's Date was read outside the table, so it stays a label beside the table.
+    expect(detail.controls.map((c) => c.kind)).toEqual(['table', 'label']);
+    expect(detail.controls[0].rows![0].map((c) => [c.role, c.align, c.weight])).toEqual([['value', 'left', 300], ['decoration', 'left', 240], ['value', 'right', 50]]);
+    const design = skeletonToDesign(k, { texts: boxes });
+    expect(design.repx.match(/ControlType="XRTable"/g)).toHaveLength(2);
+    expect(design.repx).toContain('Expression="[Amount]"');
+  });
+
   it('becomes a report whose values are bound to fields named after their captions', () => {
     const k = readerSkeleton({ ...page, margins: { top: 50, bottom: 50, left: 50, right: 50 } }, boxes, reading);
     const design = skeletonToDesign(k, { texts: boxes });

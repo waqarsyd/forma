@@ -31,7 +31,7 @@
  * cannot read a page differently. Lengths are hundredths of an inch, from the
  * page's top left corner. Pure, so it runs under Node for training and tests.
  */
-import type { DetectedPage, DetectedText } from './ocrLayout';
+import type { DetectedPage, DetectedTable, DetectedText } from './ocrLayout';
 import { pointsToUnits } from './reportGeometry';
 import type { BandKind } from './reportPreview';
 import { paperName, type ReportSkeleton, type SkeletonBand, type SkeletonControl, type SkeletonRole } from './reportSkeleton';
@@ -856,6 +856,14 @@ export function readerCoverage(boxes: readonly ReadBox[], reading: BoxReading): 
 /** The share of a page's texts a design may lose before OCR's copy is the better build. */
 export const READER_MAX_LOST = 0.15;
 
+/** Which detected table a box is a cell of, and where in it. */
+export interface TableCellOrigin {
+  tableIndex: number;
+  table: Pick<DetectedTable, 'x' | 'columns' | 'rows'>;
+  row: number;
+  col: number;
+}
+
 /** A box's place on the page and the font it was read at, for the control it becomes. */
 export interface ControlPlace {
   x: number;
@@ -881,6 +889,7 @@ export function readerSkeleton(
   boxes: readonly ReadBox[],
   reading: BoxReading,
   places: readonly ControlPlace[] = boxes,
+  cells: readonly (TableCellOrigin | null)[] = [],
 ): ReportSkeleton {
   const { paper, landscape } = paperName(page.width, page.height);
   const given = page.margins ?? { top: 50, bottom: 50, left: 50, right: 50 };
@@ -933,11 +942,69 @@ export function readerSkeleton(
       chars: role === 'caption' || role === 'title' ? Math.min(200, t.length) : 0,
     };
   };
+  /*
+   * The texts OCR read as one table's cells become one XRTable in the band,
+   * a row per table row the band holds (2026-11-10, the draft's first weak
+   * spot found by `run.ts --forma`: every records region came out as labels
+   * in columns, and no case wanting a table passed). The row's cells are the
+   * table's columns, a column with no text in it an empty cell, so the
+   * record's figures print in their columns as DevExpress's Data Source
+   * Wizard would print them.
+   */
+  const tableControls = (lineIds: readonly number[], bandTop: number): SkeletonControl[] => {
+    const byTable = new Map<number, { table: TableCellOrigin['table']; rows: Map<number, number[]> }>();
+    for (const li of lineIds) {
+      for (const k of lines[li].boxes) {
+        const origin = cells[k];
+        if (!origin) continue;
+        const got = byTable.get(origin.tableIndex) ?? { table: origin.table, rows: new Map() };
+        got.rows.set(origin.row, [...(got.rows.get(origin.row) ?? []), k]);
+        byTable.set(origin.tableIndex, got);
+      }
+    }
+    const out: SkeletonControl[] = [];
+    for (const { table, rows } of byTable.values()) {
+      const rowIds = [...rows.keys()].sort((a, b) => a - b);
+      const top = Math.min(...rowIds.map((r) => table.rows[r].y));
+      const bottom = Math.max(...rowIds.map((r) => table.rows[r].y + table.rows[r].h));
+      const width = table.columns.reduce((s, w) => s + w, 0);
+      const sizes = rowIds.flatMap((r) => rows.get(r)!.map((k) => all[k].fontSize ?? 0)).filter(Boolean);
+      const size = sizes.length ? sizes.sort((a, b) => a - b)[Math.floor(sizes.length / 2)] : 0;
+      out.push({
+        kind: 'table',
+        role: 'value',
+        x: Math.round((table.x - left) * 100) / 100,
+        y: Math.round((top - bandTop) * 100) / 100,
+        w: Math.round(width * 100) / 100,
+        h: Math.round((bottom - top) * 100) / 100,
+        font: size ? { family: 'Arial', size, bold: false, italic: false } : null,
+        align: 'left',
+        borders: 0,
+        chars: 0,
+        rows: rowIds.map((r) =>
+          table.columns.map((weight, col) => {
+            const k = rows.get(r)!.find((id) => cells[id]!.col === col);
+            if (k === undefined) return { weight, role: 'decoration' as const, align: 'left' as const, chars: 0, font: null };
+            const role = roles[k] as SkeletonRole;
+            const t = boxes[k].text.trim();
+            return {
+              weight,
+              role,
+              align: (role === 'value' || role === 'total') && isFigure(t) ? ('right' as const) : ('left' as const),
+              chars: role === 'caption' || role === 'title' ? Math.min(200, t.length) : 0,
+              font: all[k].fontSize ? { family: 'Arial', size: all[k].fontSize!, bold: role === 'title' || role === 'caption', italic: false } : null,
+            };
+          }),
+        ),
+      });
+    }
+    return out;
+  };
   const band = (kind: ReaderBand, lineIds: readonly number[], bandTop: number, height: number): SkeletonBand => ({
     kind: kind as BandKind,
     height: Math.max(0, Math.round(height * 100) / 100),
     groupFields: kind === 'GroupHeader' ? 1 : 0,
-    controls: lineIds.flatMap((li) => lines[li].boxes.map((k) => control(k, bandTop))),
+    controls: [...tableControls(lineIds, bandTop), ...lineIds.flatMap((li) => lines[li].boxes.filter((k) => !cells[k]).map((k) => control(k, bandTop)))],
   });
 
   const out: SkeletonBand[] = [];
@@ -961,7 +1028,8 @@ export function readerSkeleton(
     const ids = kept.get(kind);
     if (!ids) continue;
     const t = lineTop(ids[0]) - 2;
-    out.push(band(kind, ids, t, Math.max(...ids.map(lineBottom)) + 2 - t));
+    // Where it was read, so the design finds its captions' words (skeletonRepx's bandTops).
+    out.push({ ...band(kind, ids, t, Math.max(...ids.map(lineBottom)) + 2 - t), pageTop: Math.round(t * 100) / 100 });
   }
   if (footerLines.length && footerTop !== null) out.push(band('PageFooter', footerLines, footerTop, bottomStart - footerTop));
   out.push(band('BottomMargin', bottomLines, page.height - bottom, bottom));
@@ -986,11 +1054,15 @@ export function readDetectedPage(
   page: DetectedPage,
   rules?: FooterRules,
 ): { skeleton: ReportSkeleton; reading: BoxReading; coverage: ReturnType<typeof readerCoverage> } {
-  const cells = page.tables.flatMap((t) => t.rows.flatMap((r) => r.cells.filter((c): c is NonNullable<typeof c> => !!c)));
-  const found = [...page.labels, ...cells];
+  // Each table cell with the table, row and column it came from, so the skeleton draws the table.
+  const cells = page.tables.flatMap((table, tableIndex) =>
+    table.rows.flatMap((r, row) => r.cells.flatMap((c, col) => (c ? [{ text: c, origin: { tableIndex, table, row, col } }] : []))),
+  );
+  const found = [...page.labels, ...cells.map((c) => c.text)];
+  const origins: (TableCellOrigin | null)[] = [...page.labels.map(() => null), ...cells.map((c) => c.origin)];
   const boxes = found.map((t) => ({ ...t.ink, text: t.text }));
   const reading = readBoxes(model, page, boxes, true, rules);
-  const skeleton = readerSkeleton(page, boxes, reading, found.map(controlPlaceOf));
+  const skeleton = readerSkeleton(page, boxes, reading, found.map(controlPlaceOf), origins);
   return { skeleton, reading, coverage: readerCoverage(boxes, reading) };
 }
 
