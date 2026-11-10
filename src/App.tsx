@@ -83,6 +83,7 @@ import { loadGemini, isMissingApiKey } from './lib/geminiClient';
 import { answeringModel, effectiveProvider, isVisionOnly, pageReaderOf, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
 import type { SettingsSection } from './components/SettingsDialog';
 import type { DraftSource, TeamMember } from './lib/formaTeam';
+import type { JobPlan } from './lib/jobPlan';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
 import { clearCachedModel, onModelCacheChange, readCachedModel, readCachedModelSet, readDailyModel } from './lib/modelCache';
 import { requestsToday } from './lib/requestCount';
@@ -2381,6 +2382,17 @@ export default function App() {
    * sequentially so previews land in the order they were given, and reports
    * anything it could not use instead of failing silently.
    */
+  /**
+   * The files the box holds, by upload id (2026-11-10, batch AG item 22): a
+   * plan that makes a report for each hands Batch the files themselves, since
+   * the box keeps a PDF as its pages. Emptied with the box.
+   */
+  const stagedFiles = useRef(new Map<string, File>());
+  /** The pages, texts and files of each plan not yet answered, by the plan's message id. */
+  const plannedJobs = useRef(new Map<string, { images: string[]; imageMeta: PreviewMeta[]; texts: TextAttachment[]; base: DesignResult | null; files: Map<string, File> }>());
+  /** Files a plan sent to Batch, which the panel takes and starts. */
+  const [batchIncoming, setBatchIncoming] = useState<{ files: File[]; id: number } | null>(null);
+
   const ingestFiles = useCallback(async (incoming: File[]) => {
     if (incoming.length === 0) return;
     setUploadNotices([]);
@@ -2404,7 +2416,9 @@ export default function App() {
         // can share a name, so the name cannot be the key — see attachments.ts.
         // The extracted coordinates go into the prompt as LocationFloat values,
         // so they have to be in the unit the REPX will declare.
-        const result = await ingestFile(file, `${Date.now()}-${i}-${file.name}`, config.unit);
+        const uploadId = `${Date.now()}-${i}-${file.name}`;
+        stagedFiles.current.set(uploadId, file);
+        const result = await ingestFile(file, uploadId, config.unit);
         if (result.images.length) {
           setPreviews(prev => [...prev, ...result.images]);
           setPreviewMeta(prev => [...prev, ...result.imageMeta]);
@@ -2765,7 +2779,10 @@ export default function App() {
     // Worked out per file and not kept, since up to three files run at once,
     // and from the file alone: the report open on the bench is not its source.
     const fileConfig = applyDetected(config, detectSettings(detectionInput({ texts: ingested.texts, metas: ingested.imageMeta }, false)));
-    const response = await analyzeReportDesign('', parts, fileConfig, undefined, signal);
+    // On a limit the next AI set up designs it (2026-11-10, batch AG item 23, lib/fallbackChain.ts);
+    // when every one gives out, the batch pauses on that error and is kept.
+    const { askWithChain } = await import('./lib/fallbackChain');
+    const response = (await askWithChain(fileConfig, (asked) => analyzeReportDesign('', parts, asked, undefined, signal), signal)).value;
     const { auditRepx } = await import('./lib/repxAudit');
     const audit = auditRepx(response.repxContent, response.layout);
     batchResults.current.set(id, {
@@ -4172,15 +4189,28 @@ export default function App() {
         while (shouldRetryForErrors(audit, attempt)) {
           attempt += 1;
           console.warn(`Report has ${audit.errors} structural error(s) after repairs; asking for a fix (attempt ${attempt}).`);
-          const fixed = await analyzeReportDesign(
-            fixInstruction(audit),
-            [],
-            answering,
-            { repxContent: response.repxContent },
-            signal,
-            handleStreamProgress,
-            { description: describeRequest, database },
-          );
+          /*
+           * The report so far is a checkpoint (2026-11-10, the AI accuracy
+           * programme, batch AG item 23): a fix that fails, on a limit above
+           * all, keeps it. Until then a 429 here threw away a whole report the
+           * AI had already written, and Forma's draft stood in for it.
+           */
+          let fixed: Awaited<ReturnType<typeof askAi>>;
+          try {
+            fixed = await analyzeReportDesign(
+              fixInstruction(audit),
+              [],
+              answering,
+              { repxContent: response.repxContent },
+              signal,
+              handleStreamProgress,
+              { description: describeRequest, database },
+            );
+          } catch (fixError) {
+            if (signal.aborted) throw fixError;
+            console.warn(`The fix (attempt ${attempt}) did not answer; keeping the report as it was, with ${audit.errors} error(s).`, fixError);
+            break;
+          }
           if (signal.aborted) {
             console.debug('Generation aborted/paused by user during repair.');
             return;
@@ -4526,6 +4556,40 @@ export default function App() {
     await startRedesign(asked.confirm.prompt);
   };
 
+  /**
+   * A plan answered (2026-11-10, the AI accuracy programme, batch AG item 22,
+   * lib/jobPlan.ts). Started, one report goes on as the message would have,
+   * with the files kept; a report for each goes to Batch with the original
+   * files, one at a time. Left, nothing was read or sent.
+   */
+  const settlePlan = (id: string, started: boolean, plan?: JobPlan) => {
+    setMessages((prev) => prev.map((m) => (m.id === id && m.plan ? { ...m, plan: { ...m.plan, ...(plan ?? {}), answered: started ? 'yes' : 'no' } } : m)));
+    if (!started) plannedJobs.current.delete(id);
+  };
+  const startPlan = async (id: string, plan: JobPlan & { prompt: string; askId: string }) => {
+    const job = plannedJobs.current.get(id);
+    settlePlan(id, true, plan);
+    plannedJobs.current.delete(id);
+    if (!job) return;
+    const jobs = await import('./lib/jobPlan');
+    if (plan.mode === 'each' && jobs.keptFiles(plan).length > 1) {
+      setBatchIncoming({ files: await jobs.filesForBatch(plan, job), id: Date.now() });
+      showRailPanel('batch');
+      return;
+    }
+    await handleGenerate(plan.prompt, { ...jobs.keptAttachments(plan, job), base: job.base, planned: plan.askId });
+  };
+  const handlePlan = async (id: string, plan: JobPlan, start: boolean) => {
+    if (isChatting || isAnalyzing) return;
+    const asked = messages.find((m) => m.id === id)?.plan;
+    if (!asked || asked.answered) return;
+    if (!start) {
+      settlePlan(id, false, plan);
+      return;
+    }
+    await startPlan(id, { ...asked, ...plan });
+  };
+
   /** A redesign of the open report from words, as a refinement has always run. */
   const startRedesign = async (words: string) => {
     setIsAnalyzing(true);
@@ -4795,6 +4859,8 @@ export default function App() {
       queued?: boolean;
       /** The words of the request this one steers (agent audit item 86), carried into what the model is told. */
       steerFrom?: string;
+      /** The message a started plan carried (batch AG item 22): it is in the thread already, and is not planned again. */
+      planned?: string;
     },
   ) => {
     /*
@@ -4842,6 +4908,7 @@ export default function App() {
     /** Clears the composer, unless this is a message sent again, which leaves it as it is. */
     const clearComposer = () => {
       if (again) return;
+      stagedFiles.current.clear();
       setPrompt('');
       setPreviews([]);
       setPreviewMeta([]);
@@ -4916,6 +4983,50 @@ export default function App() {
       }
     }
 
+    /*
+     * A started plan answered by a typed yes, or left by anything else
+     * (2026-11-10, batch AG item 22), as a redesign Forma asked about is.
+     */
+    if ((!again || resend?.queued) && lastMessage?.role === 'assistant' && lastMessage.plan && !lastMessage.plan.answered) {
+      const yes = AFFIRMATIVE.test(promptText) && stagedImages.length === 0 && stagedTexts.length === 0;
+      if (yes) {
+        setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: promptText }]);
+        clearComposer();
+        await startPlan(lastMessage.id, lastMessage.plan);
+        return;
+      }
+      settlePlan(lastMessage.id, false);
+    }
+
+    /*
+     * A heavy job is planned before anything is read or sent (2026-11-10,
+     * the AI accuracy programme, batch AG item 22, lib/jobPlan.ts): many
+     * files or many pages are answered with a plan the person changes and
+     * starts. Its message goes in the thread now; Start sends it on.
+     */
+    if (!resend?.planned && (!again || resend?.queued)) {
+      const jobs = await import('./lib/jobPlan');
+      const plan = jobs.planFor(jobs.planFiles(stagedImageMeta, stagedTexts));
+      if (plan) {
+        const askId = nextMessageId();
+        const planId = nextMessageId();
+        plannedJobs.current.set(planId, {
+          images: [...stagedImages],
+          imageMeta: [...stagedImageMeta],
+          texts: [...stagedTexts],
+          base,
+          files: new Map(stagedFiles.current),
+        });
+        setMessages(prev => [
+          ...prev,
+          { id: askId, role: 'user', text: promptText, images: stagedImages.length ? [...stagedImages] : undefined, imageMeta: stagedImages.length ? [...stagedImageMeta] : undefined, ...(base ? {} : { fresh: true as const }) },
+          { id: planId, role: 'assistant', text: jobs.planReply(plan), plan: { ...plan, prompt: promptText, askId } },
+        ]);
+        clearComposer();
+        return;
+      }
+    }
+
     // A picture for Forma's own vision model alone (2026-11-03): the Local AI
     // model is itself "forma-vision", which is asked the one question it was
     // trained on and not the mega-prompt. As a helper beside another AI it
@@ -4941,7 +5052,8 @@ export default function App() {
 
     // Add user message
     const newUserMsg: ChatMessage = {
-      id: nextMessageId(),
+      // A planned job's message is in the thread already, above its plan (batch AG item 22).
+      id: resend?.planned ?? nextMessageId(),
       role: 'user',
       text: currentPrompt, // Only use the prompt the user actually typed
       images: currentPreviews.length > 0 ? currentPreviews : undefined,
@@ -4953,7 +5065,7 @@ export default function App() {
     };
     turnBases.current.set(newUserMsg.id, base);
 
-    setMessages(prev => [...prev, newUserMsg]);
+    if (!resend?.planned) setMessages(prev => [...prev, newUserMsg]);
     clearComposer();
 
     // Stop abandons everything up to a generation (2026-11-05): see turnAbortRef.
@@ -5061,21 +5173,49 @@ export default function App() {
          * change went to a second request that wrote the whole REPX again.
          */
         const open = base?.repxContent ? base : null;
-        const agent = open ? await import('./lib/agentEdit') : null;
+        const [agent, factsLib] = open ? await Promise.all([import('./lib/agentEdit'), import('./lib/reportFacts')]) : [null, null];
+        /*
+         * The report's facts, counted in code (2026-11-10, the AI accuracy
+         * programme, batch AG items 21 and 24, lib/reportFacts.ts). A plain
+         * question about its fields, totals, groups or bands is answered from
+         * them with no AI and no request: the cheapest route, and the exact
+         * one. Otherwise they go to the AI beside the outline.
+         */
+        const facts = open && factsLib ? factsLib.reportFacts(open.repxContent!) : null;
+        const known = facts && !withPictures && !steered ? factsLib!.answerFromFacts(currentPrompt, facts) : null;
+        if (known) {
+          reportTurnRef.current = false;
+          setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: known }]);
+          return;
+        }
         const outline = open && agent
-          ? agent.reportOutline(open.repxContent!, { findings: repxAudit?.findings.map((f) => f.message), selected: previewSelection })
+          ? `${agent.reportOutline(open.repxContent!, { findings: repxAudit?.findings.map((f) => f.message), selected: previewSelection })}${facts ? `\n${factsLib!.factsBlock(facts)}` : ''}`
           : undefined;
         reportTurnRef.current = Boolean(outline);
         // A shared database: its layout and what the report reads, and the `data` edit's writer (batch DE).
         const dbAi = open && databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
         const database = dbAi ? dbAi.chatSection(activeDatabase!, { query: activeQuery, words: currentPrompt, repx: open!.repxContent }) : undefined;
-        const hooks = dbAi ? { data: dbAi.dataEditHook(activeDatabase!, config.version, setActiveQuery) } : {};
+        // Never a field the report's data lacks, read off the report as each edit leaves it (batch AG item 24).
+        const hooks = {
+          ...(dbAi ? { data: dbAi.dataEditHook(activeDatabase!, config.version, setActiveQuery) } : {}),
+          ...(factsLib ? { fields: (xml: string) => factsLib.dataFieldsOf(xml) } : {}),
+        };
+        // A question about Forma carries the Docs articles it is about (batch AG item 25, lib/docsKnowledge.ts).
+        const docs = await import('./lib/docsKnowledge').then(async ({ docsFor }) => {
+          const found = await docsFor(currentPrompt, () => import('./components/docsCorpus').then((m) => m.loadDocsSections()));
+          if (found.ids.length) console.debug(`Giving the chat ${found.ids.length} Docs article(s): ${found.ids.join(', ')}.`);
+          return found.block;
+        }).catch((err) => {
+          console.warn('The Docs articles could not be read; the chat answers without them.', err);
+          return '';
+        });
+        if (turn.signal.aborted) return;
         // On a limit the next AI set up answers, and the reply says so (2026-11-10, lib/fallbackChain.ts).
         const { askWithChain } = await import('./lib/fallbackChain');
         const chained = await askWithChain(config, (asked) => chatReply(history, asked, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
-        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined), turn.signal);
+        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined, docs), turn.signal);
         if (turn.signal.aborted) return;
         const answered = chained.value;
         /*
@@ -5092,6 +5232,9 @@ export default function App() {
         // A report turn's answer is checked before anything is acted on.
         // With the message, so an alignment sent with no side takes the one asked for.
         const outcome = agent ? agent.readReportOutcome(answered, currentPrompt) : answered;
+        // A reply that names a field the report's data lacks says so (batch AG item 24).
+        const invented = facts && factsLib ? factsLib.inventedNote(factsLib.inventedFields(outcome.reply ?? '', facts)) : '';
+        if (invented) outcome.reply = `${outcome.reply}\n\n${invented}`;
         // The whole request for a design (agent audit item 19): the brief the
         // turn wrote from the conversation, and on a redesign what is selected.
         designWords = withSelection(outcome.brief || designWords, open ? previewSelection : []);
@@ -6472,11 +6615,13 @@ export default function App() {
           <div style={{ padding: '0 16px 16px', flex: 1, minHeight: 0, display: 'flex' }}>
             <Suspense fallback={null}>
               <BatchPanel
+                incoming={batchIncoming}
                 ready={hasApiKey}
                 onNeedKey={() => setIsConfigOpen(true)}
                 runOne={runOneBatchFile}
-                onOpen={(item) => {
-                  const full = batchResults.current.get(item.id);
+                onOpen={async (item) => {
+                  // A batch kept from an earlier visit has its REPX alone, and the rest is read off it (batch AG item 23).
+                  const full: DesignResult | null = batchResults.current.get(item.id) ?? (await import('./lib/batchCheckpoint')).resultFromKept(item);
                   if (!full) return;
                   // A new, unsaved session, never the project that was open
                   // (2026-11-06): it used to keep that project's id, so the
@@ -7008,6 +7153,8 @@ export default function App() {
                   if (action) runToolsRef.current?.([action as AgentTool]);
                 }}
                 onConfirm={(id, yes) => void handleConfirm(id, yes)}
+                onPlan={(id, plan, start) => void handlePlan(id, plan, start)}
+                aiName={PROVIDER_NAMES[effectiveProvider(config)]}
                 onShowVersion={handleShowVersion}
                 // The search, marked in the asks and the replies (the log's until 2026-11-08).
                 query={logQuery}

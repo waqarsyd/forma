@@ -526,7 +526,14 @@ src/
                        answers and the reply says so; never away from a local
                        AI), localModels (the Ollama pair suggested for the
                        computer's memory, and the page reader's text and the
-                       question it is asked),
+                       question it is asked), reportFacts (the open report's
+                       fields, totals, groups and bands counted from the file:
+                       a plain question answered with no AI, the facts told to
+                       the AI, a field the data lacks refused), docsKnowledge
+                       (the Docs articles a question about Forma is given),
+                       jobPlan (the plan a heavy message gets first),
+                       batchCheckpoint (a batch kept in the browser to carry
+                       on after a limit or a reload),
                        formaTeam (one request with every part in its role:
                        the vision model's draft and the house style told to
                        the AI as hints, who took part named in the reply, and

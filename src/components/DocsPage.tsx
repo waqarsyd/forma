@@ -4,7 +4,7 @@ import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
 import SheetRuler from './landing/SheetRuler';
 import { Eyebrow } from './landing/sections';
-import { articleMatches, docsIssueUrl } from '../lib/docsSearch';
+import { articleMatches, docsIssueUrl, DOCS_SECTIONS as SECTIONS } from '../lib/docsSearch';
 import { shortcutGroups } from '../lib/shortcuts';
 import { FAQS } from './faqs';
 import { DESIGNER_REQUIREMENTS, DEVEXPRESS_TRIAL_URL } from '../lib/designerRelease';
@@ -43,46 +43,7 @@ interface DocsPageProps {
   setIsDarkMode: (val: boolean) => void;
 }
 
-/**
- * `keys` are words an article should be found by without saying them, as
- * "billing" for the FAQ. Since 2026-11-08 (site audit item 87) search also
- * reads each article's own text, collected in an effect once the page has
- * drawn (`lib/docsSearch.ts`); reading the DOM during render was impure and
- * found nothing on the first pass, which is why it was keywords alone.
- */
-const SECTIONS: Array<{ id: string; n: string; title: string; keys: string }> = [
-  { id: 'start', n: '01', title: 'Getting started', keys: 'start begin first steps tutorial upload workflow guide describe prompt words' },
-  { id: 'key', n: '02', title: 'Your API key', keys: 'key api gemini google studio session vault passphrase encrypt security storage' },
-  { id: 'ai', n: '03', title: 'Choosing your AI', keys: 'ai provider model automatic gemini local ollama lm studio openrouter free offline private vision' },
-  { id: 'account', n: '04', title: 'Your account', keys: 'account sign in signup register google email password forgot reset sync devices optional verify delete' },
-  { id: 'upload', n: '05', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan ocr photo' },
-  { id: 'run', n: '06', title: 'Running and refining', keys: 'run generate working dots stop escape queue steer resume cancel read result specification mockup preview export refine change edit undo redo changed iterate conversation' },
-  { id: 'workspace', n: '07', title: 'The workspace', keys: 'workspace tour sidebar rail home starting points views panes conversation panel thread search tools house style main menu reply project menu rename duplicate archive delete pin command menu clean screen zoom' },
-  { id: 'data', n: '08', title: 'Data and binding', keys: 'data tab bind binding fields schema json csv create table map columns expression prompt-to-expression test data rows sample' },
-  { id: 'sql', n: '09', title: 'Your SQL Server data', keys: 'sql server database ssms script layout schema sample rows connection name connectionstrings app.config stored procedure query join filter parameter lookup drift renamed column share ai never connects' },
-  // xrchart and xrgauge are searchable because both are now written into the
-  // file — a real XRChart with its series, and a real XRGauge with its value
-  // and range. This comment used to say the opposite, and was left behind by
-  // the work that added them.
-  { id: 'controls', n: '10', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrpageinfo pageinfo page numbers xrchart xrgauge chart gauge xrcheckbox checkbox xrpanel panel xrshape shape crossband cross-band xrcrosstab cross-tab pivot xrsubreport subreport table of contents elements supported' },
-  { id: 'repx', n: '11', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download audit warnings errors checks accessibility' },
-  { id: 'designer', n: '12', title: 'Open in the DevExpress designer', keys: 'designer devexpress open in designer forma designer download windows install companion repxdesigner trial apps on device blocked local network smartscreen uninstall' },
-  { id: 'config', n: '13', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
-  { id: 'saving', n: '14', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
-  { id: 'share', n: '15', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
-  { id: 'memory', n: '16', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting' },
-  /* Batch and Revisions are two of the five rail panels and both shipped on
-     2026-09-05, and neither appeared anywhere on this page or on Features
-     until 2026-09-08 — on a page whose sibling is titled "Everything it does".
-     Batch in particular is the migration story: it is the thing a
-     prompt-driven competitor structurally cannot offer, and it was the one
-     feature a visitor could not discover without opening the app. */
-  { id: 'batch', n: '17', title: 'Batch generation', keys: 'batch bulk many folder drop queue multiple files parallel two three zip archive migration legacy convert retry stop download all at once' },
-  { id: 'revisions', n: '18', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
-  { id: 'shortcuts', n: '19', title: 'Keyboard shortcuts', keys: 'keyboard shortcuts keys hotkeys ctrl cmd command' },
-  { id: 'trouble', n: '20', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem draft local not answering context sign in login pop-up popup password' },
-  { id: 'faq', n: '21', title: 'FAQ', keys: 'faq questions common help cost price free billing visual studio photo' },
-];
+// The sections and their keywords live in lib/docsSearch.ts (2026-11-10), where the chat reads them too.
 
 /** The furniture the newer articles share (2026-11-08). */
 const H3 = 'mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface';

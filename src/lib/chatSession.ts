@@ -125,6 +125,13 @@ export interface ChatMessage<R = unknown, M = unknown> {
    */
   confirm?: { prompt: string; answered?: 'yes' | 'no' };
   /**
+   * A plan before a heavy job (2026-11-10, the AI accuracy programme, batch
+   * AG item 22, lib/jobPlan.ts): the files and what to make of them, changed
+   * in the thread and started there. `prompt` is the words sent with them;
+   * `askId` the message that carried them; `answered` once started or not.
+   */
+  plan?: { files: { uploadId: string; file: string; pages: number }[]; mode: 'one' | 'each'; skip: string[]; prompt: string; askId: string; answered?: 'yes' | 'no' };
+  /**
    * The versions of one of the person's messages (2026-11-05), as ChatGPT
    * keeps them: an edit, or Try again on the reply, sends the message again
    * and keeps the one it replaced, with everything that followed it, so
@@ -239,6 +246,7 @@ export function conversationMarkdown(
     images?: string[];
     clarify?: { questions: readonly { question: string; suggestion?: string }[]; answered?: boolean };
     confirm?: { answered?: 'yes' | 'no' };
+    plan?: { answered?: 'yes' | 'no' };
   }>,
   title: string,
   when: (ms: number) => string = (ms) => new Date(ms).toLocaleString(),
@@ -255,6 +263,7 @@ export function conversationMarkdown(
       if (!m.clarify.answered) parts.push('', '_Not answered._');
     }
     if (m.confirm) parts.push('', m.confirm.answered === 'yes' ? '_Redesigned._' : m.confirm.answered === 'no' ? '_Not redesigned._' : '_Waiting for an answer._');
+    if (m.plan) parts.push('', m.plan.answered === 'yes' ? '_Plan started._' : m.plan.answered === 'no' ? '_Plan not started._' : '_Plan waiting to start._');
     if (m.images?.length) parts.push(`_(${m.images.length} ${m.images.length === 1 ? 'picture' : 'pictures'} attached)_`);
     parts.push('');
   }
@@ -478,7 +487,7 @@ export function requestTitle(request: ChatRequest): string {
 export function requestState(request: ChatRequest): 'failed' | 'waiting' | 'done' {
   const all = [request.ask, ...request.replies].filter(Boolean) as ChatMessage[];
   if (all.some((m) => m.error)) return 'failed';
-  if (request.replies.some((m) => (m.clarify && !m.clarify.answered) || (m.confirm && !m.confirm.answered))) return 'waiting';
+  if (request.replies.some((m) => (m.clarify && !m.clarify.answered) || (m.confirm && !m.confirm.answered) || (m.plan && !m.plan.answered))) return 'waiting';
   return 'done';
 }
 
@@ -543,6 +552,7 @@ export function requestAnnouncement(request: ChatRequest): string {
     return n === 1 ? 'Forma has a question for you.' : `Forma has ${n} questions for you.`;
   }
   if (reply.confirm && !reply.confirm.answered) return 'Forma asks whether to redesign the report.';
+  if (reply.plan && !reply.plan.answered) return 'Forma has a plan for you to start.';
   const words = reply.text
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/[*`#>|[\]]/g, '')

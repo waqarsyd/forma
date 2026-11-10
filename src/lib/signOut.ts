@@ -20,10 +20,13 @@ export const SIGNED_OUT_SESSION_KEYS = [
  * IndexedDB databases a sign-out deletes (2026-11-09, the SQL Server
  * programme, item 32): the SQL Server layouts and sample rows kept on this
  * device (lib/sqlSchemaStore.ts), which carry a company's table names and
- * real values. Named here, not imported, so the public site's bundle does not
- * take the store; `signOut.test.ts` holds the name to the store's.
+ * real values. Since 2026-11-10 (the AI accuracy programme, batch AG item
+ * 23) also the batch kept so it carries on after a limit or a reload
+ * (lib/batchCheckpoint.ts), which holds its source files and their reports.
+ * Named here, not imported, so the public site's bundle does not take the
+ * stores; `signOut.test.ts` holds each name to its store's.
  */
-export const SIGNED_OUT_DATABASES = ['forma-databases'] as const;
+export const SIGNED_OUT_DATABASES = ['forma-databases', 'forma-batch'] as const;
 
 /** Deletes them; a browser without IndexedDB, or one that refuses, keeps nothing to delete. */
 export function forgetDevice(idb: Pick<IDBFactory, 'deleteDatabase'> | null = typeof indexedDB === 'undefined' ? null : indexedDB): void {

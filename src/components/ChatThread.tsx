@@ -20,6 +20,8 @@
  */
 
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import PlanCard from './PlanCard';
+import type { JobPlan } from '../lib/jobPlan';
 import type { PreviewMeta } from '../lib/attachments';
 import { messageMatches, messageTime, searchParts, type ChatMessage } from '../lib/chatSession';
 import { formatSessionStamp } from '../lib/datetime';
@@ -99,6 +101,10 @@ export interface ChatThreadProps<R> {
   onAction?: (id: string, index: number) => void;
   /** The answer to a redesign a reply asks before making (2026-11-05): see `ChatMessage.confirm`. */
   onConfirm?: (id: string, yes: boolean) => void;
+  /** A plan before a heavy job started or not, as changed (2026-11-10): see `ChatMessage.plan`. */
+  onPlan?: (id: string, plan: JobPlan, start: boolean) => void;
+  /** The AI that designs, by name, for a plan's steps. */
+  aiName?: string;
   /** What a reply cost, as words ("23.4k tokens"), or null; shown beside its time (2026-11-05). */
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   /**
@@ -453,6 +459,8 @@ const ChatNote = memo(function ChatNote<R>({
   onRedo,
   onAction,
   onConfirm,
+  onPlan,
+  aiName = 'the AI',
   usageOf,
   query = '',
 }: {
@@ -463,6 +471,8 @@ const ChatNote = memo(function ChatNote<R>({
   /** The latest of Forma's replies, whose actions show without pointing at it. */
   latest?: boolean;
   onConfirm?: (id: string, yes: boolean) => void;
+  onPlan?: (id: string, plan: JobPlan, start: boolean) => void;
+  aiName?: string;
   /** Present only while this reply's change can still be taken back. */
   onUndo?: (id: string) => void;
   /** Present only while this reply's change, taken back, can be made again. */
@@ -500,6 +510,7 @@ const ChatNote = memo(function ChatNote<R>({
           </div>
         )}
         {message.confirm?.answered === 'no' && <span className="wb-note-done">Not redesigned</span>}
+        {message.plan && onPlan && <PlanCard id={message.id} plan={message.plan} ai={aiName} disabled={retryDisabled} onPlan={onPlan} />}
         {/* What the reply offers rather than does: an export or the designer, run when pressed. */}
         {message.actions?.length && onAction ? (
           <div className="wb-note-actions" role="group" aria-label="Offered by this reply">
@@ -538,6 +549,8 @@ const ChatNote = memo(function ChatNote<R>({
   onRedo?: (id: string) => void;
   onAction?: (id: string, index: number) => void;
   onConfirm?: (id: string, yes: boolean) => void;
+  onPlan?: (id: string, plan: JobPlan, start: boolean) => void;
+  aiName?: string;
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
   onRegenerate?: (id: string) => void;
@@ -559,6 +572,8 @@ export default function ChatThread<R>({
   onRedo,
   onAction,
   onConfirm,
+  onPlan,
+  aiName,
   usageOf,
   query = '',
   showWorking = true,
@@ -577,8 +592,9 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, usageOf });
-  latest.current = { onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, usageOf };
+  const latest = useRef({ onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, onPlan, usageOf });
+  latest.current = { onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, onPlan, usageOf };
+  const plan = useCallback((id: string, p: JobPlan, start: boolean) => latest.current.onPlan?.(id, p, start), []);
   const act = useCallback((id: string, index: number) => latest.current.onAction?.(id, index), []);
   const usage = useCallback((m: ChatMessage<R, PreviewMeta>) => latest.current.usageOf?.(m) ?? null, []);
   const undo = useCallback((id: string) => latest.current.onUndo?.(id), []);
@@ -663,6 +679,8 @@ export default function ChatThread<R>({
       onRedo={onRedo && redoable?.has(msg.id) ? redo : undefined}
       onAction={onAction ? act : undefined}
       onConfirm={onConfirm ? confirm : undefined}
+      onPlan={onPlan ? plan : undefined}
+      aiName={aiName}
       usageOf={usageOf ? usage : undefined}
       onAnswer={onAnswer ? answer : undefined}
       // Not on a reply Forma wrote of its own accord: it answers no message (agent audit item 75).

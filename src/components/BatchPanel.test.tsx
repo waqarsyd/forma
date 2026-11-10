@@ -152,7 +152,7 @@ describe('running the queue', () => {
     choose(['a.png', 'b.png', 'c.png', 'd.png']);
     fireEvent.change(screen.getByLabelText('At a time'), { target: { value: '2' } });
     fireEvent.click(screen.getByText('Generate 4'));
-    await waitFor(() => expect(screen.getByText(/Stopped after "a.png"/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Paused at a limit after "a.png"/)).toBeTruthy());
     await waitFor(() => expect(screen.getByText('Retry 3')).toBeTruthy());
     // b was already running beside a; c and d were never started.
     expect(runOne).toHaveBeenCalledTimes(2);
@@ -184,8 +184,36 @@ describe('running the queue', () => {
     render(<BatchPanel ready runOne={runOne} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
     choose(['a.png', 'b.png', 'c.png']);
     fireEvent.click(screen.getByText('Generate 3'));
-    await waitFor(() => expect(screen.getByText(/Stopped after "a.png"/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Paused at a limit after "a.png".*Retry carries on from here/)).toBeTruthy());
     expect(runOne).toHaveBeenCalledTimes(1);
+  });
+
+  // Batch AG, item 23 (2026-11-10): the day's allowance names no quota, and the run went on file after file.
+  it('pauses on the day’s allowance, said in its own words, and stops on a rejected key', async () => {
+    const daily = Object.assign(new Error("This key's free daily allowance is used up. It resets at midnight Pacific time."), { cause: { status: 429 } });
+    const runOne = vi.fn(async () => { throw daily; });
+    render(<BatchPanel ready runOne={runOne} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    choose(['a.png', 'b.png', 'c.png']);
+    fireEvent.click(screen.getByText('Generate 3'));
+    await waitFor(() => expect(screen.getByText(/Paused at a limit after "a.png"/)).toBeTruthy());
+    expect(runOne).toHaveBeenCalledTimes(1);
+    cleanup();
+    const rejected = vi.fn(async () => { throw new Error('Your Gemini API key was rejected.'); });
+    render(<BatchPanel ready runOne={rejected} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    choose(['a.png', 'b.png']);
+    fireEvent.click(screen.getByText('Generate 2'));
+    await waitFor(() => expect(screen.getByText(/Stopped after "a.png": Your Gemini API key was rejected/)).toBeTruthy());
+    expect(rejected).toHaveBeenCalledTimes(1);
+  });
+
+  // Batch AG, item 22: files a plan in the chat sent here are queued and started.
+  it('queues and starts the files a plan sent here', async () => {
+    const runOne = vi.fn(async (f: File) => outcome(f.name));
+    render(<BatchPanel ready runOne={runOne} onOpen={vi.fn()} onNeedKey={vi.fn()} incoming={{ files: [file('a.png'), file('b.png')], id: 1 }} />);
+    await waitFor(() => expect(screen.getByText('2/2 done')).toBeTruthy());
+    expect(runOne).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByText('Clear'));
+    expect(screen.queryByText('2/2 done')).toBeNull();
   });
 
   it('offers to retry what did not finish', async () => {

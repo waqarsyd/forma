@@ -127,6 +127,23 @@ export interface AgentEdit {
  */
 export interface EditHooks {
   data?: (xml: string, edit: AgentEdit) => EditResult;
+  /**
+   * The fields the report's data has, read off the report as it stands at
+   * this edit, so a field a `data` edit just brought counts; null when the
+   * data is not known (2026-11-10, batch AG item 24, `dataFieldsOf` in
+   * lib/reportFacts.ts). A `bind` or `group` to any other field is declined.
+   */
+  fields?: (xml: string) => readonly string[] | null;
+}
+
+/** The field as the data spells it, or a decline naming what the data has; null when nothing is known. */
+function inTheData(xml: string, field: string, hooks: EditHooks): { name: string } | { reason: string } | null {
+  const known = hooks.fields?.(xml);
+  if (!known) return null;
+  const hit = known.find((k) => k === field) ?? known.find((k) => k.toLowerCase() === field.toLowerCase());
+  if (hit) return { name: hit };
+  const shown = known.slice(0, 12).map((k) => `[${k}]`).join(', ');
+  return { reason: `the report's data has no field [${field}]; it has ${shown}${known.length > 12 ? ` and ${known.length - 12} more` : ''}` };
 }
 
 export interface EditsOutcome {
@@ -547,7 +564,11 @@ function applyOne(xml: string, edit: AgentEdit, hooks: EditHooks = {}): EditResu
     const total = (e.total ?? '').trim().replace(/^\[|\]$/g, '');
     if (!field || /[[\]"<>]/.test(field)) return decline(xml, e.field ? `"${e.field}" is not a field name` : 'no field was named to group by');
     if (/[[\]"<>]/.test(total)) return decline(xml, `"${e.total}" is not a field name`);
-    return addGroupBand(xml, field, total ? { total } : {});
+    const grouped = inTheData(xml, field, hooks);
+    if (grouped && 'reason' in grouped) return decline(xml, grouped.reason);
+    const summed = total ? inTheData(xml, total, hooks) : null;
+    if (summed && 'reason' in summed) return decline(xml, summed.reason);
+    return addGroupBand(xml, grouped?.name ?? field, total ? { total: summed?.name ?? total } : {});
   }
   if (e.op === 'paper') {
     const paper = SUPPORTED_PAGE_SIZES.find((p) => p.toLowerCase() === (e.paper ?? '').trim().toLowerCase());
@@ -657,7 +678,10 @@ function applyOne(xml: string, edit: AgentEdit, hooks: EditHooks = {}): EditResu
       const field = (e.field ?? '').trim().replace(/^\[|\]$/g, '');
       if (!field || /[[\]"<>]/.test(field)) return decline(xml, e.field ? `"${e.field}" is not a field name` : 'no field was named');
       if (control.type === 'XRTable' && !cellAt) return decline(xml, `${control.name} is a table: name the row and the cell to bind`);
-      return bindText(xml, ref, `[${field}]`, cellAt?.row, cellAt?.cell);
+      // Never a field the data lacks (2026-11-10, batch AG item 24): it would print nothing.
+      const known = inTheData(xml, field, hooks);
+      if (known && 'reason' in known) return decline(xml, known.reason);
+      return bindText(xml, ref, `[${known?.name ?? field}]`, cellAt?.row, cellAt?.cell);
     }
     case 'text':
       if (e.text === undefined) return decline(xml, 'no text was given');

@@ -182,6 +182,19 @@ describe('the request a chat turn sends', () => {
     expect(parts[0].text).not.toContain('You are the assistant inside Forma');
     expect(parts[1]).toEqual({ inlineData: { mimeType: 'image/png', data: 'AAAA' } });
   });
+
+  // Batch AG, item 25 (2026-11-10): a question about Forma carries the Docs articles it is about, as data.
+  it('fences the Docs articles with the conversation, and tells the AI to answer from them', async () => {
+    const fetchMock = stubSequence(() => reply('Use Share, at the top right.'));
+    const turn = chatReply([{ role: 'user', text: 'How do I share a report?' }], config, undefined, undefined, undefined, '', undefined, '## Sharing a report (forma docs, #share)\nShare sends a copy.');
+    turn.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await turn;
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as { body?: unknown }).body));
+    expect(JSON.stringify(body.systemInstruction)).toContain('<forma_docs> holds the articles of Forma');
+    expect(body.contents[0].parts[0].text).toMatch(/^<forma_docs>\n## Sharing a report \(forma docs, #share\)\nShare sends a copy\.\n<\/forma_docs>\n\n<conversation>\nUser: How do I share a report\?/);
+    expect(body.generationConfig.maxOutputTokens).toBe(1024);
+  });
 });
 
 /*

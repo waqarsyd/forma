@@ -160,7 +160,17 @@ const BUDGETS = [
   // batches SH and SI put the projects index and its reconciliation, the
   // export of every project, the key's hand-off to a new tab and an error
   // boundary around each area into the workspace. 159_000 is 93.9%.
-  { prefix: 'App-', ext: '.js', max: 159_000, note: 'the workspace, loaded on /workspace' },
+  // Raised to 168_500 on 2026-11-10, a RAISE naming the growth, tripped at
+  // 159,464 B: the AI accuracy programme put +9,324 B into the workspace
+  // since 149,354 B, under the cap until batch AG. Measured per batch: AF's
+  // free chain across providers and the page reader +1,698 B (153,462 ->
+  // 155,160), AG's facts route, docs, plan and batch hand-over +4,304 B to
+  // 159,464, cut to 158,678 by moving the plan's files, the kept batch's
+  // result and the docs lookup into their lazy modules (jobPlan.ts,
+  // batchCheckpoint.ts, docsKnowledge.ts); AB to AE's model choice, page
+  // resolution, OCR stages and coverage readout the rest, not attributed.
+  // 168_500 is 94.2%.
+  { prefix: 'App-', ext: '.js', max: 168_500, note: 'the workspace, loaded on /workspace' },
   /*
    * The generation service, lazy as of 2026-09-04.
    *

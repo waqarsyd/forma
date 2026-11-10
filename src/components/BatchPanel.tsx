@@ -30,6 +30,8 @@ import {
 } from '../lib/batchQueue';
 import { filesFromDrop, filesFromPicker, forBatch, MAX_BATCH_FILES, type GivenFile } from '../lib/folderDrop';
 import { buildZip } from '../lib/zip';
+import { clearKept, keepFiles, keepItems, keptNote, readKept, restoredQueue, stopsTheBatch } from '../lib/batchCheckpoint';
+import { isLimit } from '../lib/fallbackChain';
 
 interface Props {
   /**
@@ -46,6 +48,8 @@ interface Props {
   /** False when there is no API key; the panel explains rather than failing. */
   ready: boolean;
   onNeedKey: () => void;
+  /** Files a plan in the chat sent here, each its own report, started at once (2026-11-10, batch AG item 22). */
+  incoming?: { files: File[]; id: number } | null;
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -56,7 +60,7 @@ const STATUS_DOT: Record<string, string> = {
   cancelled: 'var(--ink-faint, #7a8592)',
 };
 
-export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) {
+export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming }: Props) {
   const [queue, setQueue] = useState<BatchItem[]>([]);
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState('');
@@ -72,9 +76,33 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
      was when the run started and overwrite every result but the last. */
   const queueRef = useRef<BatchItem[]>([]);
 
+  // Each change kept in this browser, so the batch carries on after a limit or a reload (batch AG item 23).
   const setBoth = (next: BatchItem[]) => {
     queueRef.current = next;
     setQueue(next);
+    if (next.length) void keepItems(next);
+  };
+
+  // The batch this browser kept, opened again when the panel has none of its own.
+  useEffect(() => {
+    let gone = false;
+    void readKept().then((kept) => {
+      if (gone || !kept || queueRef.current.length) return;
+      filesRef.current = kept.files;
+      setBoth(restoredQueue(kept.items));
+      setNotice(keptNote(kept.items, kept.savedAt));
+    });
+    return () => {
+      gone = true;
+    };
+  }, []);
+
+  const clear = () => {
+    filesRef.current = new Map();
+    queueRef.current = [];
+    setQueue([]);
+    setNotice('');
+    void clearKept();
   };
 
   const summary = summarise(queue);
@@ -93,6 +121,7 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
     }
     const next = createQueue(files.map((f) => f.path));
     filesRef.current = new Map(next.map((item, i) => [item.id, files[i].file]));
+    void keepFiles(filesRef.current);
     setBoth(next);
     const left = [
       skipped > 0 ? `${skipped} other file${skipped === 1 ? '' : 's'} left out` : '',
@@ -133,12 +162,19 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
             ? 'stopped while this file was generating'
             : (error as Error)?.message || 'generation failed';
           setBoth(markFailed(queueRef.current, item.id, message));
-          // A quota or key failure will hit every remaining file the same way, so
-          // stopping is kinder than forty identical errors.
-          if (/quota|api key|permission|denied/i.test(message) && !halted) {
+          // A limit or a key failure will hit every remaining file the same way, so
+          // stopping is kinder than forty identical errors. A limit is a pause:
+          // the batch is kept, and Retry carries on from here (batch AG item 23).
+          // The daily allowance's words name no quota, and it went on until 2026-11-10.
+          const stops = controller.signal.aborted ? null : stopsTheBatch(message, isLimit(error));
+          if (stops && !halted) {
             halted = true;
             setBoth(cancelPending(queueRef.current));
-            setNotice(`Stopped after "${item.sourceName}": ${message}`);
+            setNotice(
+              stops === 'limit'
+                ? `Paused at a limit after "${item.sourceName}": ${message} The batch is kept in this browser; Retry carries on from here, with another AI you set up or once the limit resets.`
+                : `Stopped after "${item.sourceName}": ${message}`,
+            );
             return;
           }
         }
@@ -149,6 +185,20 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
     abortRef.current = null;
     setRunning(false);
   }, [ready, onNeedKey, runOne, parallel]);
+
+  // Files a plan in the chat sent here (batch AG item 22): queued as any are, and started.
+  const startNow = useRef(false);
+  useEffect(() => {
+    if (!incoming?.files.length || running) return;
+    addFiles(incoming.files.map((file) => ({ file, path: file.name })));
+    startNow.current = true;
+    // Once for each hand-over, by its id.
+  }, [incoming?.id]);
+  useEffect(() => {
+    if (!startNow.current || running || !queue.length) return;
+    startNow.current = false;
+    void run();
+  }, [queue, running, run]);
 
   // Leaving the workspace stops a batch (2026-11-06, the workspace audit).
   // The panel stays mounted while its column is hidden, so this is only the
@@ -290,6 +340,11 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey }: Props) 
         {summary.downloadable > 0 && (
           <button className="wb-pill wb-pill--outline" onClick={downloadAll}>
             Download {summary.downloadable} as .zip
+          </button>
+        )}
+        {!running && queue.length > 0 && (
+          <button className="wb-pill wb-pill--outline" onClick={clear} title="Removes this batch, and the copy this browser keeps of it">
+            Clear
           </button>
         )}
         {queue.length > 1 && (

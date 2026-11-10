@@ -227,6 +227,20 @@ describe('the new edits, and edits that do what they say', () => {
     expect(applyEdits(doc(grid), [{ op: 'bind', control: 'grid', field: 'Amount' }]).declined[0]).toMatch(/name the row and the cell/);
   });
 
+  // Batch AG, item 24 (2026-11-10): never a field the data lacks, when the data is known.
+  it('binds and groups only to a field the report’s data has, as the data spells it', () => {
+    const fields = () => ['CustomerName', 'Amount'];
+    const bound = applyEdits(doc(lbl(1, 'a')), [{ op: 'bind', control: 'a', field: 'customername' }], { fields });
+    expect(control(bound.xml, 'a').field).toBe('CustomerName');
+    const invented = applyEdits(doc(lbl(1, 'a')), [{ op: 'bind', control: 'a', field: 'Discount' }], { fields });
+    expect(invented.changed).toBe(false);
+    expect(invented.declined[0]).toBe("bind a: the report's data has no field [Discount]; it has [CustomerName], [Amount]");
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'group', field: 'Region' }], { fields }).declined[0]).toMatch(/no field \[Region\]/);
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'group', field: 'CustomerName', total: 'Freight' }], { fields }).declined[0]).toMatch(/no field \[Freight\]/);
+    // With nothing known about the data, any field may be one the person means to add.
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'bind', control: 'a', field: 'Discount' }], { fields: () => null }).changed).toBe(true);
+  });
+
   // Items 22 and 40: a header row, a column, and the whole table.
   it('styles a table row by its row, a column by its cell, and every cell with neither', () => {
     const row = cellsOf(applyEdits(doc(grid), [{ op: 'font', control: 'grid', row: 1, bold: true }]).xml);
