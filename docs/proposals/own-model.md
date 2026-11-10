@@ -1364,6 +1364,76 @@ at 94.5%. Its larger siblings are 130 MB and more, too large for a browser.
 Report bands are a layout no document dataset labels, which is the reader's
 case for being Forma's own.
 
+## The box reader retrained for PaddleOCR, on every layout (2026-11-10)
+
+Batch AE of the owner's AI accuracy programme: the reader learned again now
+that the app reads an English picture with PaddleOCR, on every company layout
+rather than a cap of 2,640, and on report layouts from outside the company.
+Every model was scored on the 200 company reports printed by DevExpress, read
+by PaddleOCR as the app reads them (`realScore.ts --cases-only --ocr-cache`),
+the real pages deciding as before, and on the drawn pages held out.
+
+**The data, all of it outside the repository** (`forma-model-data`):
+- The 5,280 drawn pages of version 4's 2,640 layouts, read again by PaddleOCR
+  (`scripts/model/paddlePages.ts`, four folders side by side, about an hour).
+- **Every distinct company layout**: `npm run model:dataset` over the four
+  sets with no cap packs 4,342 layouts, 1,524 of them new to the reader, drawn
+  twice each (3,048 pages, `boxreader-v5b`). Their ids were prefixed `v5-`,
+  since 606 of them had been given ids another layout carried in version 4.
+- **FastReport's demo reports**, MIT (github.com/FastReports/FastReport at
+  8909466f7fe9, `Demos/Reports`, the licence and commit kept beside the files):
+  `scripts/model/fastreport.ts` writes each page as a minimal REPX that
+  DevExpress loads ("nothing lost", `RepxProbe inspect`) and reads it with
+  Forma's own `skeletonOf`, so a FastReport text takes its role as a company
+  report's does. 112 pages became skeletons; 15 with a data band inside
+  another (master and detail) and 12 with none were left out and counted. 100
+  of the 1,524 new layouts are theirs.
+- **Microsoft's paginated report samples**, MIT (github.com/microsoft/
+  Reporting-Services at acc2ee0d1884): downloaded with their licence and not
+  converted. They are seven, built of nested tables and charts, and would add
+  0.2% to the layouts for a converter of their own.
+- **The 2,860 pages DevExpress printed** from the Crystal skeletons
+  (`printed.ts`, 2026-11-04), read by PaddleOCR.
+
+**Each page as both engines read it.** The app reads English with PaddleOCR
+and other scripts with Tesseract, so the reader meets both. `boxes.ts --cache
+paddle-cache.json,ocr-cache.json` learns each page as each read it, and that
+was what made the difference: trained on PaddleOCR's readings alone the reader
+read the drawn pages far better and the real ones worse (v5a below).
+
+**A page-number rule** (`settlePageNumbers`, `pages` in `DEFAULT_RULES`). On
+the real pages page information is a bare number beside a caption of its own
+on the last line in 58 of its 68 prints ("Page No." and "7"), and the
+retrained readers took it for a value. On the last line, at or below nine
+tenths of the page and of at most three texts, a text shaped like a page
+number is page information when the line's other texts hold no digit. It took
+the retrained reader's page information on the real pages from 52.5% to
+94.9%, and changed nothing on the drawn pages.
+
+**A records rule** (`records`, also in `DEFAULT_RULES`): in a Detail line a
+total is a value. The retrained readers took a column of figures alike from
+record to record for totals, which a design prints as a running sum in every
+record; `boxReader.test.ts`'s plain listing caught it. It leaves page
+information alone: a record's own number (`RecordNumber`) is page information
+printed in Detail, as the company's Crystal layouts do, and a first version
+that took it too cost the drawn pages 90 points of it.
+
+| On the 200 real pages, read by PaddleOCR | Both right | First appearance | Footer totals | Group headers | Group footers | Detail | Page info | Pages banded |
+|---|---|---|---|---|---|---|---|---|
+| v1, the reader shipped until now, the app's rules then | 65.1% | 37.1% | 18.0% | 16.2% | 41.8% | 96.3% | 79.7% | 144 |
+| v1 with the two new rules | 66.0% | 37.9% | 18.0% | 16.2% | 41.8% | 96.3% | 100% | 144 |
+| v5a: v1's pages, PaddleOCR's readings only | 56.7% | 31.0% | 17.9% | 19.9% | 35.3% | 89.7% | 15.3% | 139 |
+| v5a with the second look (`--context`) | 59.6% | 35.1% | 34.9% | 25.6% | 36.3% | 89.3% | 15.3% | 134 |
+| v5c: v1's pages, both engines' readings | 65.2% | 39.4% | 21.7% | 32.5% | 41.1% | 94.4% | 18.6% | 148 |
+| v5d: v5c and every layout, FastReport's among them | 64.8% | 39.0% | 33.7% | 35.4% | 37.7% | 94.8% | 39.0% | 156 |
+| v5e: v5c and the 2,860 pages DevExpress printed | 63.7% | 46.1% | 55.8% | 39.7% | 58.3% | 87.5% | 52.5% | 152 |
+| v5f: all of it | 62.2% | 44.6% | 61.5% | 40.5% | 61.5% | 84.1% | 98.3% | 146 |
+| **v5e with the two new rules, shipped** | **66.2%** | **47.0%** | **55.8%** | **39.7%** | **58.3%** | **87.5%** | **94.9%** | **152** |
+
+v5f was scored with the page rule only; every other row but the first and the last two with the app's rules of the morning.
+
+**v5e ships** (`assets/model/boxReader.json`, 94,700 bytes, inside its budget), with both rules on. The scores that matter most here have long been each band's first appearance, what a design keeps, and on those it is 47.0% against 37.9% for v1 with the same rules, with footer totals at 55.8% against 18.0%, group footers 58.3% against 41.8%, group headers 39.7% against 16.2% and the page header 74.7% against 55.7%, and 152 pages built banded against 144. Overall it is level, 66.2% against 66.0%. What it gives up is Detail, 87.5% against 96.3%, records read as group bands, and the report header, 50.9% against 61.4%; the printed pages are richer in groups than the real reports, as version 3 found. The DevExpress-printed pages carried it where more drawn layouts did not: v5d read more pages banded, and v5f, with everything, lost Detail and the report header further. On the drawn pages, each model with the rules it runs: the 40 held-out pages as PaddleOCR reads them 88.5% both right against 82.1%, first appearances 78.0% against 72.1% and footer totals 86.3% against 73.5%, but three more of the 40 built as OCR's copy (9 against 6); the 560 held-out layouts 86.3% against 87.5%, their first appearances 81.8% against 81.2%. The models and every score are in `forma-model-data\boxreader-v5a` to `v5f`, the reader shipped until now beside them as `boxreader-v1\shipped-before-v5e.json`.
+
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded

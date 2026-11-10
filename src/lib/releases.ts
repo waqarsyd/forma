@@ -86,6 +86,7 @@ export const RELEASES: Release[] = [
       { kind: 'improved', area: 'generation', text: 'A picture of a page is read at high resolution, so small print and thin lines come through. A PDF is not, since its text is exact already.' },
       { kind: 'improved', area: 'generation', text: 'After a report from a picture, Forma checks it kept the captions and titles it read on the page, asks the AI once more, naming them, when several are missing, and the REPX pane lists any still left out.' },
       { kind: 'improved', area: 'ocr', text: 'The words the new reader is unsure of are flagged for review at its own threshold, so the review lists the ones most likely to be wrong.' },
+      { kind: 'improved', area: 'generation', text: 'Forma’s own draft of a picture is read by a box reader trained again, on every layout of the company’s and on pages DevExpress printed: on real reports it finds footer totals three times as often, group headers and footers far more often, and builds a banded draft for more pages. Page numbers at the foot of a page are kept as page numbers.' },
       { kind: 'fixed', area: 'generation', text: 'Forma no longer spends a request trying Gemini 2.0 Flash, which Google has shut down, when it first picks a model for your key.' },
     ],
   },

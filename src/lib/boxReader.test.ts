@@ -16,6 +16,7 @@ import {
   readBoxes,
   readerSkeleton,
   readsTheseFeatures,
+  rulesOf,
   settleRecords,
   type BoxReaderModel,
   type BoxReading,
@@ -283,5 +284,47 @@ describe('loading it', () => {
     await expect(loadBoxReader()).rejects.toThrow(/not one this version can read/);
     await expect(loadBoxReader()).resolves.toMatchObject({ version: 1 });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+/*
+ * Page numbers at the foot of a page (2026-11-10, batch AE): on the company's
+ * real pages, a bare number beside a caption of its own on the last line.
+ */
+describe('page numbers at the foot of a page', () => {
+  const foot = (texts: ReadBox[]) => {
+    const all = [t(100, 140, 80, 'Name 0'), t(650, 140, 40, '1,250.00'), ...texts];
+    const lines = linesOf(all);
+    const raw: BoxReading = { lines, bands: lines.map(() => 'Detail'), roles: all.map(() => 'value') };
+    return { all, settled: settleRecords(all, raw, rulesOf('app+pages'), page) };
+  };
+
+  it('reads a bare number beside its caption, or "Page 3 of 9", on the last line as page information', () => {
+    const one = foot([t(600, 1100, 60, 'Page No.'), t(680, 1100, 12, '3')]);
+    expect(one.settled.roles[3]).toBe('pageInfo');
+    expect(one.settled.roles[2]).toBe('value');
+    const two = foot([t(360, 1100, 90, 'Page: 3 of 9')]);
+    expect(two.settled.roles[2]).toBe('pageInfo');
+  });
+
+  it('leaves a count beside a figure, a number high on the page, and the rule when it is off', () => {
+    expect(foot([t(560, 1100, 50, 'Total'), t(640, 1100, 20, '25'), t(700, 1100, 50, '5,000.00')]).settled.roles[3]).toBe('value');
+    expect(foot([t(600, 700, 12, '3')]).settled.roles[2]).toBe('value');
+    const all = [t(100, 140, 80, 'Name 0'), t(680, 1100, 12, '3')];
+    const lines = linesOf(all);
+    expect(settleRecords(all, { lines, bands: lines.map(() => 'Detail'), roles: all.map(() => 'value') }, rulesOf('both+columns'), page).roles[1]).toBe('value');
+  });
+});
+
+describe('a record holds no total', () => {
+  it('reads a total in a Detail line as a value, and leaves page information and the total of a footer', () => {
+    const all = [t(100, 140, 80, 'Name 0'), t(650, 140, 40, '1,250.00'), t(100, 158, 80, 'Name 1'), t(650, 158, 40, '1,250.00'), t(560, 220, 50, 'Total'), t(650, 220, 40, '2,500.00')];
+    const lines = linesOf(all);
+    const raw: BoxReading = { lines, bands: ['Detail', 'Detail', 'ReportFooter'], roles: ['value', 'total', 'pageInfo', 'total', 'caption', 'total'] };
+    const settled = settleRecords(all, raw, rulesOf('app+records'), page);
+    // The record's own number (RecordNumber) is page information printed in Detail, and stays.
+    expect(settled.roles).toEqual(['value', 'value', 'pageInfo', 'value', 'caption', 'total']);
+    // Without the rule, the network's total stands.
+    expect(settleRecords(all, raw, rulesOf('both+columns'), page).roles[1]).toBe('total');
   });
 });

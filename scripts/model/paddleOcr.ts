@@ -22,8 +22,8 @@ import { characterDict, DETECT_LONG_SIDE, paddleReader as readerOver, RECOGNIZE_
 export { resizeRgb, type PaddleReader, type Rgb } from '../../src/lib/paddleOcr';
 
 /** The detector and recogniser in `dir`, read with onnxruntime-node. */
-export async function paddleReader(dir: string, recName = 'rec-en', detectLongSide?: number, recognizeMinWidth?: number): Promise<PaddleReader> {
-  const options: ort.InferenceSession.SessionOptions = { logSeverityLevel: 3 };
+export async function paddleReader(dir: string, recName = 'rec-en', detectLongSide?: number, recognizeMinWidth?: number, threads?: number): Promise<PaddleReader> {
+  const options: ort.InferenceSession.SessionOptions = { logSeverityLevel: 3, ...(threads ? { intraOpNumThreads: threads, interOpNumThreads: 1 } : {}) };
   const det = await ort.InferenceSession.create(join(dir, 'det.onnx'), options);
   const rec = await ort.InferenceSession.create(join(dir, `${recName}.onnx`), options);
   const dict = characterDict(readFileSync(join(dir, `${recName}.yml`), 'utf8'));

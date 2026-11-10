@@ -558,7 +558,7 @@ export function readBoxes(
     const p = mlpProbs(model.boxes, x);
     return model.roles[p.indexOf(Math.max(...p))] as ReaderRole;
   });
-  return settle ? settleRecords(boxes, { lines, bands, roles }, rules) : { lines, bands, roles };
+  return settle ? settleRecords(boxes, { lines, bands, roles }, rules, page) : { lines, bands, roles };
 }
 
 const HEADER_BANDS: readonly ReaderBand[] = ['ReportHeader', 'PageHeader', 'GroupHeader'];
@@ -574,7 +574,7 @@ const HEADER_BANDS: readonly ReaderBand[] = ['ReportHeader', 'PageHeader', 'Grou
  * are captions. Text, not the networks' roles, decides, because the role
  * network reads a text in a record as a value.
  */
-export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading, rules: FooterRules = DEFAULT_RULES): BoxReading {
+export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading, rules: FooterRules = DEFAULT_RULES, page?: { width: number; height: number }): BoxReading {
   const { lines } = reading;
   const bands = [...reading.bands];
   const roles = [...reading.roles];
@@ -595,7 +595,30 @@ export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading, ru
   // records set their captions among the records' values.
   settleFooters(boxes, lines, bands, roles, rules);
   if (rules.columns) settleColumns(boxes, lines, bands, roles);
+  if (rules.pages && page) settlePageNumbers(boxes, lines, roles, page);
+  if (rules.records) for (const [i, line] of lines.entries()) if (bands[i] === 'Detail') for (const k of line.boxes) if (roles[k] === 'total') roles[k] = 'value';
   return { lines, bands, roles };
+}
+
+/** A page number as DevExpress prints one: "7", "Page 7", "7 of 12", "Page: 7 of 12", "7/12". */
+export const PAGE_NUMBER = /^(page\s*:?\s*)?\d{1,4}(\s*(of|\/)\s*\d{1,4})?$/i;
+
+/**
+ * Page numbers at the foot of a page (2026-11-10, the AI accuracy programme,
+ * batch AE). On the 200 company reports printed by DevExpress, page
+ * information was a bare number in 58 of its 68 prints, and "Page 7 of 12"
+ * in most of the rest, in the bottom margin or the page footer, the bare
+ * number most often beside a caption of its own. On the page's last line, at or
+ * below nine tenths of it and of at most three texts, a text that reads as a
+ * page number is page information whatever the role network said, provided
+ * the line's other texts hold no digit, so a total and its count stay values.
+ */
+function settlePageNumbers(boxes: readonly ReadBox[], lines: readonly BoxLine[], roles: ReaderRole[], page: { width: number; height: number }) {
+  const line = lines[lines.length - 1];
+  if (!line || line.top < 0.9 * page.height || line.boxes.length > 3) return;
+  const numbers = line.boxes.filter((k) => PAGE_NUMBER.test(boxes[k].text.trim()));
+  if (numbers.length !== 1 || line.boxes.some((k) => !numbers.includes(k) && /\d/.test(boxes[k].text))) return;
+  roles[numbers[0]] = 'pageInfo';
 }
 
 /** Which rules run after the networks; all by default. For measuring each one apart. */
@@ -604,10 +627,27 @@ export interface FooterRules {
   footers: boolean;
   /** In a run of records, a column that reads differently from record to record holds values (`settleColumns`, 2026-11-05). */
   columns?: boolean;
+  /** A page number on the page's last lines is page information (`settlePageNumbers`, 2026-11-10). */
+  pages?: boolean;
+  /**
+   * A record holds no total: in a Detail line one is a value (2026-11-10, batch
+   * AE). The readers retrained that day took a column of figures alike from
+   * record to record for totals, which a design would print as a running sum
+   * in every record. Page information is left alone: a record's own number
+   * (`RecordNumber`) is page information printed in Detail, as the company's
+   * Crystal layouts do, and taking it away cost the drawn pages 90 points of it.
+   */
+  records?: boolean;
 }
 
-/** The rules the app runs. */
-export const DEFAULT_RULES: FooterRules = { totals: true, footers: true, columns: true };
+/**
+ * The rules the app runs. `pages` and `records` since 2026-11-10 (batch AE),
+ * measured with the reader retrained that day on the 200 company reports read
+ * by PaddleOCR: band and role both right 63.7% to 66.2%, page information
+ * 52.5% to 94.9%, and on the drawn pages' held-out layouts no change from the
+ * page rule.
+ */
+export const DEFAULT_RULES: FooterRules = { totals: true, footers: true, columns: true, pages: true, records: true };
 
 /**
  * Rules from a list such as `totals+footers` (the training and scoring
@@ -618,8 +658,10 @@ export const DEFAULT_RULES: FooterRules = { totals: true, footers: true, columns
 export function rulesOf(list: string): FooterRules {
   if (list === 'app') return { ...DEFAULT_RULES };
   const words = new Set(list.split('+'));
+  const extra = { ...(words.has('pages') ? { pages: true } : {}), ...(words.has('records') ? { records: true } : {}) };
+  if (words.has('app')) return { ...DEFAULT_RULES, ...extra };
   const both = words.has('both');
-  return { totals: both || words.has('totals'), footers: both || words.has('footers'), columns: words.has('columns') };
+  return { totals: both || words.has('totals'), footers: both || words.has('footers'), columns: words.has('columns'), ...extra };
 }
 
 /**

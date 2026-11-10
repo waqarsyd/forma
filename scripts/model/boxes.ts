@@ -2,10 +2,10 @@
  * Train Forma's box reader on the CPU (2026-11-04, src/lib/boxReader.ts and
  * docs/proposals/own-model.md), and score it.
  *
- *   npx tsx scripts/model/boxes.ts --data <dir> [--read] [--workers 6] [--read-limit N] [--pages <dir>] [--out <file>] [--epochs 12] [--hidden 64]
+ *   npx tsx scripts/model/boxes.ts --data <dir> [--read] [--cache <name>] [--workers 6] [--read-limit N] [--pages <dir>] [--out <file>] [--epochs 12] [--hidden 64]
  *
  * --data   folders holding labels.jsonl, as `python scripts/model/render.py
- *   <dir> --labels` writes it: every text drawn on every page, with its box,
+ *   <dir> --labels` writes it, given once or more (2026-11-10): every text drawn on every page, with its box,
  *   band and role. Searched one level down, so shards drawn in parallel are
  *   read together. Pages marked "eval" are held out.
  * --read   also read every training page drawn there with OCR, as the app
@@ -67,6 +67,8 @@ import { readWithOcr } from './ocrPages';
 const argv = process.argv.slice(2);
 const valueOf = (flag: string) => (argv.indexOf(flag) >= 0 ? argv[argv.indexOf(flag) + 1] : undefined);
 const dataDir = valueOf('--data');
+/** Every `--data` given (2026-11-10): the shards of more than one drawing, read together. */
+const dataDirs = argv.flatMap((a, i) => (a === '--data' && argv[i + 1] ? [argv[i + 1]] : []));
 const pagesDir = valueOf('--pages');
 const outFile = valueOf('--out');
 const EPOCHS = Number(valueOf('--epochs') ?? 12);
@@ -75,6 +77,22 @@ const READ = argv.includes('--read');
 const WORKERS = Number(valueOf('--workers') ?? 6);
 /** The most training pages read by OCR in each folder: OCR runs at about a page a second. */
 const READ_LIMIT = Number(valueOf('--read-limit') ?? Infinity);
+/**
+ * `--cache <name>` (2026-11-10, batch AE): the readings to train and score on,
+ * by the file each folder keeps them in. `ocr-cache.json`, the default, is
+ * Tesseract's, read here when missing; any other name is read as it is, a page
+ * absent or null in it left out, as `paddlePages.ts` writes `paddle-cache.json`.
+ * Several, comma-separated, train on each reading of a page; the first is the
+ * one the held-out pages are scored on.
+ */
+const CACHES = (valueOf('--cache') ?? 'ocr-cache.json').split(',').map((s) => s.trim()).filter(Boolean);
+const CACHE = CACHES[0];
+/** A folder's readings from `name`, or from Tesseract when that is the cache. */
+async function readingsOf(dir: string, images: string[], name = CACHE): Promise<Record<string, OcrPage>> {
+  if (name === 'ocr-cache.json') return readWithOcr(dir, images, join(dir, name), WORKERS);
+  const kept = existsSync(join(dir, name)) ? (JSON.parse(readFileSync(join(dir, name), 'utf8')) as Record<string, OcrPage | null>) : {};
+  return Object.fromEntries(Object.entries(kept).filter((e): e is [string, OcrPage] => e[1] !== null));
+}
 /** Score this model instead of training one. */
 const MODEL_FILE = valueOf('--model');
 /** Score the networks' reading alone, before `settleRecords`. */
@@ -424,7 +442,7 @@ function train(xs: number[][], ys: number[], outputs: number, hidden: number, ep
 const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(1)}%` : 'n/a');
 
 // ---------------------------------------------------------------- the data
-const files = labelFiles(resolve(dataDir));
+const files = dataDirs.flatMap((d) => labelFiles(resolve(d)));
 if (!files.length) {
   console.error(`No labels.jsonl in ${dataDir} or the folders in it. Draw them with render.py --labels.`);
   process.exit(2);
@@ -443,16 +461,15 @@ if (READ) {
     const here = readJsonl<LabelPage>(f)
       .filter((p) => p.split === 'train' && p.texts.length && existsSync(join(dir, p.image)))
       .slice(0, READ_LIMIT);
-    const cache = await readWithOcr(
-      dir,
-      here.map((p) => p.image),
-      join(dir, 'ocr-cache.json'),
-      WORKERS,
-    );
-    for (const p of here) {
-      if (!cache[p.image]) continue;
-      allTraining.push(exampleFromOcr(p, cache[p.image]));
-      readPages++;
+    // Each cache named, so a page can be learned as more than one reader read it
+    // (2026-11-10: the app reads English with PaddleOCR and other scripts with Tesseract).
+    for (const name of CACHES) {
+      const cache = await readingsOf(dir, here.map((p) => p.image), name);
+      for (const p of here) {
+        if (!cache[p.image]) continue;
+        allTraining.push(exampleFromOcr(p, cache[p.image]));
+        readPages++;
+      }
     }
   }
 }
@@ -787,7 +804,7 @@ report('held-out pages, the boxes as drawn', exact, [`(always ${majorityBand}: $
 
 if (pagesDir) {
   const dir = resolve(pagesDir);
-  const cache: Record<string, OcrPage> = JSON.parse(readFileSync(join(dir, 'ocr-cache.json'), 'utf8'));
+  const cache: Record<string, OcrPage> = await readingsOf(dir, []);
   const evalRows = readJsonl<{ image: string; target: string }>(join(dir, 'eval.jsonl'));
   const ocr = tally();
   whyTally = ocr;
