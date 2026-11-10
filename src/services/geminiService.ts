@@ -138,6 +138,8 @@ export interface ReportConfig {
   openRouterKey?: string;
   /** Forma's vision model on the Local AI server, as a helper (lib/formaTeam.ts). Empty, none. */
   visionModel?: string;
+  /** A page reader on the Local AI server (lib/localModels.ts); empty for none. */
+  pageReader?: string;
 }
 
 /** The OpenAI-compatible endpoint a config names, or null for Gemini. */

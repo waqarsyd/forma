@@ -101,6 +101,14 @@ select.wb-set-input { cursor: pointer; }
 .wb-set-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 10px 12px; border-radius: 12px; background: var(--track); font-size: 12.5px; line-height: 1.45; color: var(--ink); }
 .wb-set-confirm > span { flex: 1 1 240px; }
 
+/* Local AI's suggested pairs (2026-11-10): the pair and its commands, its button beside. */
+.wb-set-presets { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.wb-set-presets li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--track); font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.wb-set-presets li > span { min-width: 0; display: grid; gap: 4px; }
+.wb-set-presets b { color: var(--ink); font-weight: 600; }
+.wb-set-presets code { white-space: pre; overflow-x: auto; font-family: var(--mono); font-size: 11.5px; color: var(--ink); }
+.wb-set-presets button { flex: none; }
+
 .wb-set-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
 .wb-set-mems { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .wb-set-mems li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }

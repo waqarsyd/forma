@@ -124,6 +124,17 @@ function classifyCompatError(error: any, context: FailureContext): Error {
   if (status === 401 || status === 403) {
     return explained(local ? `The local AI refused the request (${status}): ${readableMessage(message)}` : 'OpenRouter rejected the key. Check it in Settings, under AI.', error);
   }
+  // A free model whose every provider the account's privacy settings rule out
+  // (2026-11-10, batch AF item 19): OpenRouter answers 404, "No endpoints found
+  // matching your data policy", which is not a missing model.
+  if (!local && /data policy|settings\/privacy/i.test(message)) {
+    return explained(
+      `OpenRouter has no provider for${model || ' this model'} that your account's privacy settings allow. ` +
+        'Free models are served by providers that may keep or train on what they are sent, and the account decides which it may reach: ' +
+        'change it at openrouter.ai/settings/privacy, or choose another model in Settings, under AI.',
+      error,
+    );
+  }
   if (status === 404) return explained(`${name} has no model${model}. Choose one it offers in Settings, under AI.`, error);
   if (isOverloadedError(error)) return explained(`${name}${model} is busy and could not take the request, even after retrying. Wait a minute and send it again.`, error);
   return explained(`${name}${model}: ${readableMessage(message) || 'the request failed'}`, error);

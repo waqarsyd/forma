@@ -1434,6 +1434,88 @@ v5f was scored with the page rule only; every other row but the first and the la
 
 **v5e ships** (`assets/model/boxReader.json`, 94,700 bytes, inside its budget), with both rules on. The scores that matter most here have long been each band's first appearance, what a design keeps, and on those it is 47.0% against 37.9% for v1 with the same rules, with footer totals at 55.8% against 18.0%, group footers 58.3% against 41.8%, group headers 39.7% against 16.2% and the page header 74.7% against 55.7%, and 152 pages built banded against 144. Overall it is level, 66.2% against 66.0%. What it gives up is Detail, 87.5% against 96.3%, records read as group bands, and the report header, 50.9% against 61.4%; the printed pages are richer in groups than the real reports, as version 3 found. The DevExpress-printed pages carried it where more drawn layouts did not: v5d read more pages banded, and v5f, with everything, lost Detail and the report header further. On the drawn pages, each model with the rules it runs: the 40 held-out pages as PaddleOCR reads them 88.5% both right against 82.1%, first appearances 78.0% against 72.1% and footer totals 86.3% against 73.5%, but three more of the 40 built as OCR's copy (9 against 6); the 560 held-out layouts 86.3% against 87.5%, their first appearances 81.8% against 81.2%. The models and every score are in `forma-model-data\boxreader-v5a` to `v5f`, the reader shipped until now beside them as `boxreader-v1\shipped-before-v5e.json`.
 
+## Local and free models, and the free chain (2026-11-10)
+
+Batch AF of the owner's AI accuracy programme: an Ollama pair suggested in
+Settings, OpenRouter's free models and their data terms brought up to date,
+and one chain across providers when an AI reaches its limit.
+
+**The pair** (`src/lib/localModels.ts`, Settings under AI, Local AI). A
+writer that designs and reads pictures, and a page reader that reads a
+picture's text, filled in with one click for the computer's memory, with the
+`ollama pull` commands beside them:
+
+| Computer | Writer | Page reader |
+|---|---|---|
+| 8 GB of memory | `qwen3.5:4b` (3.3 GB) | `glm-ocr:q8_0` (1.8 GB) |
+| 16 GB or more | `qwen3.5:9b` (6.6 GB) | `glm-ocr` (2.7 GB) |
+
+All four are from Ollama's own library as of 2026-11-10: both Qwen 3.5 sizes
+read images and take a 256K context, so a report request fits once the server
+runs with a context of 32,768, as Settings already says; glm-ocr is a document
+OCR model trained on the prompt `Text Recognition:`. PaddleOCR-VL scores
+higher on OmniDocBench (above, M1) but is on Ollama only as community uploads,
+so it is not suggested; it can still be typed in, and is asked `OCR:`.
+
+**The page reader is a second reading, never a replacement.** It returns text
+in reading order, with no positions, so it cannot feed the box reader or the
+audit's evidence. Each picture is read by it on the local server while OCR
+reads it in the browser, and its text goes to the AI as an attachment beside
+OCR's, under a header that says what it is: positions come from the text READ
+BY OCR, and a string the two readings disagree on is read from the image. A
+disagreement is where a misread hides; where they agree, the string is right.
+The mega-prompt is unchanged, so nobody without a page reader sends a
+different request. A reader that is off or fails costs nothing but its own
+text. It sits under *Helpers on this computer* beside Forma's vision model,
+whichever AI designs.
+
+**Not measured here.** Nothing runs Ollama on this machine, and the owner
+declined installing it on 2026-11-04. The measurement is prepared for the
+owner's own computer, on the made-up fidelity cases and nothing of the
+company's: `scripts/fidelity/run.ts --local-model qwen3.5:9b --draft`, then
+the same with `--page-reader glm-ocr`, and both with the 4b pair on 8 GB. It
+needs no Gemini key and sends nothing anywhere. The runner's local path was
+checked against no server at all: it fails as `fetch failed` and asks for no
+key.
+
+**OpenRouter's free models, 2026-11-10.** Its public model list held 464
+models, 16 of them free and 7 free with image input: Thinking Machines'
+`inkling-2-small`, NVIDIA's `nemotron-3.5-super-vl` and
+`nemotron-3-nano-omni-30b-a3b-reasoning`, `dots-3-note-preview`, Google's
+`gemma-4-31b-it` and `gemma-4-26b-a4b-it` (both served by Google AI Studio),
+and the `openrouter/free` router. The list moves weekly, so Settings names
+none of them but the placeholder (`google/gemma-4-31b-it:free`): *Find free
+models* reads the live list, those that read images first. What Settings
+says instead is what changes less, the terms: a free model is served by a
+provider of its own, some keep what they are sent or train on it (Google AI
+Studio's free service may use it to improve Google's products, and people may
+read it, the same terms as a free Gemini key), and OpenRouter sends a request
+only to providers the account allows, with a setting of its own for free
+models at openrouter.ai/settings/privacy. OpenRouter's API states no data
+policy per endpoint and its provider table could not be read, so no other
+provider's terms are claimed. When those settings rule out every provider of
+the chosen model, OpenRouter answers 404 "No endpoints found matching your
+data policy", which Forma said as "OpenRouter has no model"; it now says
+which setting to change (`classifyCompatError`).
+
+**The free chain** (`src/lib/fallbackChain.ts`). The owner's decision: on a
+limit, a free chain, each switch said in the chat, and Forma's draft at the
+end. Gemini already moves to its next model inside the service when one
+model's allowance is spent; `askWithChain` is the step after it, across
+providers, for a generation and a chat turn alike. After Gemini, OpenRouter
+with the person's own key and model, then Local AI; after OpenRouter, Gemini
+(whose key opens the workspace) then Local AI. Only an AI the person set up
+is asked, and only on a limit (429, RESOURCE_EXHAUSTED, a rate limit, read
+on the classified error or its cause): a wrong key or a bad answer is the
+person's to see. The reply's first line names both AIs, as "Gemini had
+reached its limit, so OpenRouter (gemma-4-31b-it) answered instead", and the
+team line credits the one that answered. When every one gives out, Forma's
+own draft stands in, as before (`fallbackReply`). **Never away from Local
+AI**: whoever chose an AI on their own computer chose that nothing leaves it,
+so a request to it is never sent on, and a local server has no allowance to
+spend in any case. The repair loop and the chat's second pass ask the AI that
+answered, not the one chosen.
+
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded

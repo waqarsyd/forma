@@ -30,6 +30,29 @@
  *   --draft           ask the AI to correct Forma's draft of each picture and
  *                     build the report from it, as the app has since
  *                     2026-11-05 (lib/draftText.ts)
+ *   --local-model <name>
+ *                     design with a model on Ollama or LM Studio instead of
+ *                     Gemini (Local AI, lib/aiProvider.ts), as qwen3.5:9b; no
+ *                     Gemini key is needed and nothing leaves the computer
+ *   --local-url <url> where that server answers (default
+ *                     http://localhost:11434/v1, Ollama's; LM Studio's is
+ *                     http://localhost:1234/v1)
+ *   --page-reader <name>
+ *                     read each picture with a page reader on that server, as
+ *                     glm-ocr, and send its text beside the picture as the app
+ *                     does (lib/localModels.ts, 2026-11-10); with Gemini or a
+ *                     local writer alike
+ *
+ * The local options are how the suggested Ollama pair is measured on the
+ * owner's own computer (batch AF of the 2026-11-10 AI accuracy programme),
+ * on these made-up cases and nothing of the company's:
+ *
+ *   ollama pull qwen3.5:9b; ollama pull glm-ocr
+ *   (start Ollama with OLLAMA_CONTEXT_LENGTH=32768)
+ *   npx tsx scripts/fidelity/run.ts --local-model qwen3.5:9b --draft
+ *   npx tsx scripts/fidelity/run.ts --local-model qwen3.5:9b --draft --page-reader glm-ocr
+ *
+ * and the same with qwen3.5:4b and glm-ocr:q8_0 on a computer of 8 GB.
  *
  * What it measures and why is the doc comment of src/lib/fidelity.ts. This file
  * is the part that cannot live in the suite: it spends the owner's quota, takes
@@ -87,6 +110,8 @@ import { readPictureAsTheApp } from '../model/paddleOcr';
 import { captionsOfDraft, readCoverage, worthAnotherTry, type ReadCoverage } from '../../src/lib/readCoverage';
 import { readDatabaseText } from '../../src/lib/sqlSchema';
 import { designSection, writeFromAnswer } from '../../src/lib/databaseAi';
+import { pageReaderText } from '../../src/lib/localModels';
+import { readPageText } from '../../src/services/pageReader';
 import {
   checkFidelity,
   measureReport,
@@ -183,6 +208,9 @@ function parseArgs(argv: string[]) {
     house: '',
     brief: false,
     draft: false,
+    localModel: '',
+    localUrl: 'http://localhost:11434/v1',
+    pageReader: '',
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -205,6 +233,9 @@ function parseArgs(argv: string[]) {
       case '--house': opts.house = next(); break;
       case '--brief': opts.brief = true; break;
       case '--draft': opts.draft = true; break;
+      case '--local-model': opts.localModel = next(); break;
+      case '--local-url': opts.localUrl = next(); break;
+      case '--page-reader': opts.pageReader = next(); break;
       default: throw new Error(`Unknown option ${a}`);
     }
   }
@@ -381,6 +412,7 @@ function configFor(c: LoadedCase, key: string, opts: ReturnType<typeof parseArgs
     customApiKey: key,
   };
   if (opts.model) config.modelName = opts.model;
+  if (opts.localModel) Object.assign(config, { provider: 'local', localUrl: opts.localUrl, localModel: opts.localModel });
   if (opts.thinking !== undefined && Number.isFinite(opts.thinking)) config.thinkingBudget = opts.thinking;
   return config;
 }
@@ -410,6 +442,14 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
   };
   try {
     const parts = attachmentFor(c, opts.rerender && run === 1);
+    // The page reader's text beside the picture, as the app sends it (2026-11-10).
+    if (opts.pageReader) {
+      const picture = parts.flatMap((p) => ('inlineData' in p ? [p.inlineData] : []))[0];
+      const read = picture ? await readPageText({ baseUrl: opts.localUrl, model: opts.pageReader }, `data:${picture.mimeType};base64,${picture.data}`) : '';
+      const text = pageReaderText(basename(c.file.source), 1, opts.pageReader, read);
+      record.log.push(`[runner] page reader ${opts.pageReader}: ${text ? `read ${read.length} characters` : 'nothing'}`);
+      if (text) parts.push({ text });
+    }
     const team = opts.brief || opts.draft ? await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir) : { brief: '', evidence: null, draft: null };
     const { brief: formaBrief, evidence } = team;
     const draft = opts.draft ? team.draft : null;
@@ -699,8 +739,9 @@ async function main(): Promise<number> {
       await houseEvaluation(records, cases, key, opts, outDir);
     }
   } else {
-    const key = readKey(opts.keyFromClipboard);
-    if (!key) {
+    // A local writer needs no Gemini key, and is sent none (2026-11-10).
+    const key = opts.localModel ? '' : readKey(opts.keyFromClipboard);
+    if (!key && !opts.localModel) {
       console.error(
         opts.keyFromClipboard
           ? 'The clipboard is empty or could not be read. Copy your Gemini key and run again.'
@@ -708,7 +749,7 @@ async function main(): Promise<number> {
       );
       return 1;
     }
-    if (key.length < 20 || /\s/.test(key)) {
+    if (!opts.localModel && (key.length < 20 || /\s/.test(key))) {
       console.error('That does not look like an API key (too short, or it contains whitespace). Nothing was sent.');
       return 1;
     }

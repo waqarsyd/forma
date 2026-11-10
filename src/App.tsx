@@ -80,7 +80,7 @@ import type {
   DraftRequest,
 } from './services/geminiService';
 import { loadGemini, isMissingApiKey } from './lib/geminiClient';
-import { answeringModel, effectiveProvider, isVisionOnly, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
+import { answeringModel, effectiveProvider, isVisionOnly, pageReaderOf, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
 import type { SettingsSection } from './components/SettingsDialog';
 import type { DraftSource, TeamMember } from './lib/formaTeam';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
@@ -2064,7 +2064,7 @@ export default function App() {
 
   useEffect(() => {
     writeProviderSettings(config);
-  }, [config.provider, config.localUrl, config.localModel, config.openRouterModel, config.openRouterKey, config.visionModel]);
+  }, [config.provider, config.localUrl, config.localModel, config.openRouterModel, config.openRouterKey, config.visionModel, config.pageReader]);
 
 
   /**
@@ -2993,6 +2993,31 @@ export default function App() {
     const stamp = Date.now();
     const { unit, pageSize } = effectiveConfig();
     return ocrTexts(read, unit, pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}` }));
+  };
+
+  /**
+   * The text the page reader on the Local AI server read from the sent
+   * pictures, one attachment a page beside OCR's (2026-11-10, batch AF,
+   * lib/localModels.ts). Asked one page at a time, since a local server
+   * answers one at a time; a reader that is off or fails leaves its text out.
+   */
+  const pageReaderAttachments = async (pages: readonly { src: string; meta: PreviewMeta }[], signal: AbortSignal): Promise<TextAttachment[]> => {
+    const reader = pageReaderOf(effectiveConfig());
+    if (!reader || !pages.length) return [];
+    try {
+      const [{ readPageText }, { pageReaderText }] = await Promise.all([import('./services/pageReader'), import('./lib/localModels')]);
+      const stamp = Date.now();
+      const out: TextAttachment[] = [];
+      for (const [i, { src, meta }] of pages.entries()) {
+        if (signal.aborted) break;
+        const text = pageReaderText(meta.file, meta.page ?? 1, reader.model, await readPageText(reader, src, signal));
+        if (text) out.push({ id: `${stamp}-${i}-reader-${meta.file}-p${meta.page ?? 1}`, uploadId: meta.uploadId, file: meta.file, page: meta.page, text });
+      }
+      return out;
+    } catch (err) {
+      if (!signal.aborted) console.warn(`The page reader ${reader.model} could not read the page; the AI designs from OCR's reading alone.`, err);
+      return [];
+    }
   };
 
   // Over the bench a drop is allowed, and a file dropped on it is attached.
@@ -4083,28 +4108,42 @@ export default function App() {
       // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE).
       const db = databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
       const database = db ? db.designSection(activeDatabase!, { query: activeQuery, words: [currentPrompt, team.brief, ...currentTexts.map((t) => t.text)].join('\n') }) : undefined;
-      let response = await analyzeReportDesign(
-        // Passed through empty when the user typed nothing. It used to become
-        // "Generate a professional DevExpress report layout based on these
-        // visuals." here, which handed the model an instruction nobody gave and
-        // then told it to apply that as a modification. See lib/userInstructions.ts.
-        currentPrompt,
-        attachmentParts,
-        config,
-        open ? { repxContent: open.repxContent, houseStyle } : undefined,
-        signal,
-        handleStreamProgress,
-        {
-          ...(describeRequest ? { description: describeRequest } : {}),
-          remembered,
-          formaBrief: team.brief,
-          evidence: team.evidence,
-          // Forma drafts and the AI corrects, on a first generation from a
-          // picture (2026-11-05); the service designs as before otherwise.
-          draft: open ? null : team.correct ?? null,
-          database,
-        },
-      );
+      const askAi = (asked: ReportConfig) =>
+        analyzeReportDesign(
+          // Passed through empty when the user typed nothing. It used to become
+          // "Generate a professional DevExpress report layout based on these
+          // visuals." here, which handed the model an instruction nobody gave and
+          // then told it to apply that as a modification. See lib/userInstructions.ts.
+          currentPrompt,
+          attachmentParts,
+          asked,
+          open ? { repxContent: open.repxContent, houseStyle } : undefined,
+          signal,
+          handleStreamProgress,
+          {
+            ...(describeRequest ? { description: describeRequest } : {}),
+            remembered,
+            formaBrief: team.brief,
+            evidence: team.evidence,
+            // Forma drafts and the AI corrects, on a first generation from a
+            // picture (2026-11-05); the service designs as before otherwise.
+            draft: open ? null : team.correct ?? null,
+            database,
+          },
+        );
+      /*
+       * The free chain (2026-11-10, the AI accuracy programme, batch AF;
+       * lib/fallbackChain.ts): when the AI chosen has reached its limit, the
+       * next one the person set up answers, and the reply says so. Only on a
+       * limit; when every one gives out, the catch below hands over to Forma's
+       * own draft as before.
+       */
+      const { askWithChain } = await import('./lib/fallbackChain');
+      const chained = await askWithChain(config, askAi, signal);
+      let response = chained.value;
+      const answering = chained.config;
+      const switched = chained.note;
+      const answeredBy = PROVIDER_NAMES[chained.by];
 
       if (signal.aborted) {
         console.debug('Generation aborted/paused by user.');
@@ -4136,7 +4175,7 @@ export default function App() {
           const fixed = await analyzeReportDesign(
             fixInstruction(audit),
             [],
-            config,
+            answering,
             { repxContent: response.repxContent },
             signal,
             handleStreamProgress,
@@ -4203,7 +4242,7 @@ export default function App() {
       const credits = team.members.length
         ? await import('./lib/formaTeam')
             // Mock mode asked no AI, and says so rather than crediting one (agent audit item 96).
-            .then(m => m.teamLine([...team.members, ...(response.fromDraft ? (['corrector', 'builder'] as const) : (['ai', 'checks'] as const))], aiName, MOCK_MODE))
+            .then(m => m.teamLine([...team.members, ...(response.fromDraft ? (['corrector', 'builder'] as const) : (['ai', 'checks'] as const))], answeredBy, MOCK_MODE))
             .catch(() => '')
         : '';
       // A redesign says what it changed and can be undone, as an edit in
@@ -4220,7 +4259,7 @@ export default function App() {
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
         role: 'assistant',
-        text: [credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)), dataNote, changed, checked].filter(Boolean).join('\n\n'),
+        text: [switched, credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)), dataNote, changed, checked].filter(Boolean).join('\n\n'),
         result: newResult
       };
       // The two imports above are a wait: a session left meanwhile is not this one.
@@ -4924,14 +4963,19 @@ export default function App() {
     // What OCR reads from the attached images goes with them, as a PDF's text
     // layer does (2026-11-01). It is read now, behind the scenes, with the
     // message already in the thread (2026-11-03).
+    // The page reader, when one is set up, reads the same pages on the local
+    // server while OCR reads them in the browser (2026-11-10, batch AF).
+    const pageReading = pageReaderAttachments(stagedForOcr, turn.signal);
     const read = await readSentPages(stagedForOcr, turn.signal);
     if (turn.signal.aborted) return;
     const fromPages = readSources(read);
     detectFor({ texts: stagedTexts, metas: stagedMeta, pages: fromPages.pages, words: [currentPrompt, fromPages.words].join('\n') });
     const readByOcr = await ocrAttachments(read);
+    const readByReader = await pageReading;
     if (turn.signal.aborted) return;
-    const currentTexts = [...stagedTexts, ...readByOcr];
+    const currentTexts = [...stagedTexts, ...readByOcr, ...readByReader];
     if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
+    if (readByReader.length) console.debug(`Including the text of ${readByReader.length} page(s) read by the page reader.`);
     const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage, lastImage } : undefined;
 
     /*
@@ -5026,18 +5070,25 @@ export default function App() {
         const dbAi = open && databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
         const database = dbAi ? dbAi.chatSection(activeDatabase!, { query: activeQuery, words: currentPrompt, repx: open!.repxContent }) : undefined;
         const hooks = dbAi ? { data: dbAi.dataEditHook(activeDatabase!, config.version, setActiveQuery) } : {};
-        const answered = await chatReply(history, config, turn.signal, (text) => {
+        // On a limit the next AI set up answers, and the reply says so (2026-11-10, lib/fallbackChain.ts).
+        const { askWithChain } = await import('./lib/fallbackChain');
+        const chained = await askWithChain(config, (asked) => chatReply(history, asked, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
-        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined);
+        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined), turn.signal);
         if (turn.signal.aborted) return;
+        const answered = chained.value;
         /*
          * What the turn cost, kept on the reply it writes (2026-11-07, agent
          * audit item 79) and shown beside its time as a generation's is; the
-         * second pass below adds its own.
+         * second pass below adds its own. The switch to another AI, when there
+         * was one, is the reply's first line.
          */
         let turnUsage = answered.usage ?? null;
-        const withCost = <T extends ChatMessage>(m: T): T => (turnUsage ? { ...m, usage: turnUsage } : m);
+        const withCost = <T extends ChatMessage>(m: T): T => {
+          const costed = turnUsage ? { ...m, usage: turnUsage } : m;
+          return chained.note ? { ...costed, text: [chained.note, costed.text].filter(Boolean).join('\n\n') } : costed;
+        };
         // A report turn's answer is checked before anything is acted on.
         // With the message, so an alignment sent with no side takes the one asked for.
         const outcome = agent ? agent.readReportOutcome(answered, currentPrompt) : answered;
@@ -5113,7 +5164,7 @@ export default function App() {
             try {
               const again = await chatReply(
                 [...history, { role: 'assistant', text: outcome.reply || 'Made the edits.' }, { role: 'user', text: agent.followUpMessage(done.declined, errorsBrought) }],
-                config,
+                chained.config,
                 turn.signal,
                 undefined,
                 { outline: agent.reportOutline(done.xml, { selected: previewSelection }), ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database },

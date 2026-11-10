@@ -4,7 +4,7 @@
  * localStorage and sessionStorage; this must stay line 1.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { aiReady, answeringModel, DEFAULT_LOCAL_URL, effectiveProvider, isVisionOnly, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './aiProvider';
+import { aiReady, answeringModel, DEFAULT_LOCAL_URL, effectiveProvider, isVisionOnly, pageReaderOf, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './aiProvider';
 import type { ReportConfig } from '../services/geminiService';
 
 const base: ReportConfig = { version: '20.1', unit: 'HundredthsOfAnInch', pageSize: 'A4' };
@@ -55,18 +55,25 @@ describe('which provider answers', () => {
     expect(isVisionOnly({ provider: 'local', localModel: 'gemma3' })).toBe(false);
     expect(isVisionOnly({ provider: 'auto', localModel: 'forma-vision' })).toBe(false);
   });
+
+  // Batch AF, item 18 (2026-11-10): a page reader beside whichever AI designs.
+  it('finds the page reader on the Local AI server, whichever AI designs', () => {
+    expect(pageReaderOf({ pageReader: '  ' })).toBeNull();
+    expect(pageReaderOf({ pageReader: ' glm-ocr ' })).toEqual({ baseUrl: DEFAULT_LOCAL_URL, model: 'glm-ocr' });
+    expect(pageReaderOf({ localUrl: 'http://localhost:1234/v1', pageReader: 'glm-ocr:q8_0' })).toEqual({ baseUrl: 'http://localhost:1234/v1', model: 'glm-ocr:q8_0' });
+  });
 });
 
 describe('the kept settings', () => {
   it('defaults to Automatic and Ollama’s address', () => {
-    expect(readProviderSettings()).toEqual({ provider: 'auto', localUrl: DEFAULT_LOCAL_URL, localModel: '', openRouterModel: '', openRouterKey: '', visionModel: '' });
+    expect(readProviderSettings()).toEqual({ provider: 'auto', localUrl: DEFAULT_LOCAL_URL, localModel: '', openRouterModel: '', openRouterKey: '', visionModel: '', pageReader: '' });
   });
 
   it('keeps the choice in localStorage and the OpenRouter key only in this tab', () => {
-    writeProviderSettings({ provider: 'openrouter', localUrl: 'http://localhost:1234/v1', localModel: 'm', openRouterModel: 'x:free', openRouterKey: 'sk-or-secret', visionModel: 'forma-vision' });
+    writeProviderSettings({ provider: 'openrouter', localUrl: 'http://localhost:1234/v1', localModel: 'm', openRouterModel: 'x:free', openRouterKey: 'sk-or-secret', visionModel: 'forma-vision', pageReader: 'glm-ocr' });
     expect(localStorage.getItem('forma.aiProvider')).not.toContain('sk-or-secret');
     expect(sessionStorage.getItem('openRouterKey:session')).toBe('sk-or-secret');
-    expect(readProviderSettings()).toEqual({ provider: 'openrouter', localUrl: 'http://localhost:1234/v1', localModel: 'm', openRouterModel: 'x:free', openRouterKey: 'sk-or-secret', visionModel: 'forma-vision' });
+    expect(readProviderSettings()).toEqual({ provider: 'openrouter', localUrl: 'http://localhost:1234/v1', localModel: 'm', openRouterModel: 'x:free', openRouterKey: 'sk-or-secret', visionModel: 'forma-vision', pageReader: 'glm-ocr' });
     writeProviderSettings({ provider: 'auto' });
     expect(sessionStorage.getItem('openRouterKey:session')).toBeNull();
   });

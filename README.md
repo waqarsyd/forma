@@ -521,7 +521,12 @@ src/
                        a local AI or OpenRouter -- and when one is ready, which is
                        what opens the workspace; the
                        OpenRouter key kept like the Gemini key; Forma's vision
-                       model as a helper beside any of them),
+                       model and a page reader as helpers beside any of them),
+                       fallbackChain (on a limit, the next AI the user set up
+                       answers and the reply says so; never away from a local
+                       AI), localModels (the Ollama pair suggested for the
+                       computer's memory, and the page reader's text and the
+                       question it is asked),
                        formaTeam (one request with every part in its role:
                        the vision model's draft and the house style told to
                        the AI as hints, who took part named in the reply, and
@@ -728,7 +733,9 @@ src/
                        and library (import, remove and retrieve), each + tests;
                        compatClient (local AI and OpenRouter in the shape of
                        Gemini's SDK) and formaVision (Forma's vision model
-                       asked through the local endpoint), each + tests
+                       asked through the local endpoint), each + tests;
+                       pageReader (a page reader such as glm-ocr, asked for
+                       a picture's text through the same endpoint)
   server/              securityHeaders, bindHost, staticCache and appRoutes
                        (+ tests) — what server.ts sends, where it listens,
                        how long dist/ is cached for, and which paths are

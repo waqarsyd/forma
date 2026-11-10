@@ -48,6 +48,12 @@ export interface ProviderSettings {
    * AI designs (2026-11-03, lib/formaTeam.ts). Empty, no helper.
    */
   visionModel: string;
+  /**
+   * A page reader on the Local AI server, such as glm-ocr, whose reading of a
+   * picture's text goes to the AI beside OCR's (2026-11-10, lib/localModels.ts).
+   * Empty, none.
+   */
+  pageReader: string;
 }
 
 /** The kept settings, with the defaults for anything missing or unreadable. */
@@ -71,6 +77,7 @@ export function readProviderSettings(): ProviderSettings {
     openRouterModel: typeof stored.openRouterModel === 'string' ? stored.openRouterModel : '',
     openRouterKey: key,
     visionModel: typeof stored.visionModel === 'string' ? stored.visionModel : '',
+    pageReader: typeof stored.pageReader === 'string' ? stored.pageReader : '',
   };
 }
 
@@ -85,6 +92,7 @@ export function writeProviderSettings(s: Partial<ProviderSettings>): void {
         localModel: s.localModel ?? '',
         openRouterModel: s.openRouterModel ?? '',
         visionModel: s.visionModel ?? '',
+        pageReader: s.pageReader ?? '',
       }),
     );
     if (s.openRouterKey) sessionStorage.setItem(OPENROUTER_KEY_SESSION, s.openRouterKey);
@@ -144,6 +152,12 @@ export function visionModelOf(config: Pick<ReportConfig, 'provider' | 'localUrl'
   if (helper) return { baseUrl, model: helper };
   if (isVisionOnly(config)) return { baseUrl, model: config.localModel!.trim() };
   return null;
+}
+
+/** Where the page reader answers, when one is set up: on the Local AI server, whichever AI designs. */
+export function pageReaderOf(config: Pick<ReportConfig, 'localUrl' | 'pageReader'>): { baseUrl: string; model: string } | null {
+  const model = config.pageReader?.trim();
+  return model ? { baseUrl: config.localUrl?.trim() || DEFAULT_LOCAL_URL, model } : null;
 }
 
 /** A provider's name as the settings and the thread say it. */

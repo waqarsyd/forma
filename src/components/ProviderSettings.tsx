@@ -16,16 +16,23 @@
  *
  * The three are a segmented control since the redesign of 2026-11-07, as the
  * theme is in the corner's "?" menu; they were radio buttons in a column.
+ *
+ * Since 2026-11-10 (the AI accuracy programme, batch AF): Local AI suggests a
+ * writer and a page reader for the computer's memory, filled in with one click
+ * (lib/localModels.ts); the page reader is a helper beside Forma's vision
+ * model; and OpenRouter says what a free model's provider may do with what is
+ * sent, and where the account decides which providers it may reach.
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { IconAlert, IconCheck } from './landing/icons';
 import { aiReady, DEFAULT_LOCAL_URL, isVisionOnly, OPENROUTER_URL, PROVIDER_NAMES, PROVIDERS, type AiProvider } from '../lib/aiProvider';
+import { presetPair, pullCommands } from '../lib/localModels';
 import type { ReportConfig } from '../services/geminiService';
 
 const NOTES: Record<AiProvider, string> = {
   auto: 'Google Gemini with your own free key. Forma starts once a key is in.',
   local: 'Ollama or LM Studio on this computer: free, unlimited and private. Choose a model that reads images to design from pictures.',
-  openrouter: "OpenRouter's free models, with a key of your own. Free models have daily limits, and their providers may log requests.",
+  openrouter: "OpenRouter's free models, with a key of your own. Free models have a limit a minute and a day; when one is reached, another AI you set up answers.",
 };
 
 export interface ProviderSettingsProps {
@@ -111,7 +118,7 @@ export default function ProviderSettings({ config, onChange, onKey }: ProviderSe
             ))}
           </select>
         ) : (
-          <input className="wb-set-input" id={id} type="text" placeholder={provider === 'local' ? 'e.g. qwen2.5vl:7b' : 'e.g. a model ending :free'} value={value || ''} onChange={(e) => set(e.target.value)} autoComplete="off" spellCheck={false} />
+          <input className="wb-set-input" id={id} type="text" placeholder={provider === 'local' ? 'e.g. qwen3.5:9b' : 'e.g. google/gemma-4-31b-it:free'} value={value || ''} onChange={(e) => set(e.target.value)} autoComplete="off" spellCheck={false} />
         )}
         <button type="button" className="wb-pill wb-pill--outline" onClick={find} disabled={finding || (provider === 'openrouter' && !config.openRouterKey?.trim())}>
           {finding ? 'Finding…' : provider === 'openrouter' ? 'Find free models' : 'Find models'}
@@ -175,6 +182,31 @@ export default function ProviderSettings({ config, onChange, onKey }: ProviderSe
             <input className="wb-set-input" id="cfg-local-url" type="text" value={config.localUrl || DEFAULT_LOCAL_URL} onChange={(e) => onChange({ localUrl: e.target.value })} autoComplete="off" spellCheck={false} />
           </div>
           {modelField(config.localModel, (v) => onChange({ localModel: v }), 'cfg-local-model')}
+          <div className="wb-set-row is-stack">
+            <div className="wb-set-text">
+              <span className="wb-set-label" id="wb-set-presets">Suggested for this computer</span>
+              <p>A model that writes reports and reads pictures, and a page reader that reads a picture's text beside Forma's own. Fetch them with Ollama, then choose the pair for the memory this computer has.</p>
+            </div>
+            <ul className="wb-set-presets" aria-labelledby="wb-set-presets">
+              {(['8 GB', '16 GB or more'] as const).map((memory) => {
+                const pair = presetPair(memory);
+                const chosen = config.localModel === pair.writer.model && config.pageReader === pair.reader.model;
+                return (
+                  <li key={memory}>
+                    <span>
+                      <span>
+                        <b>{memory} of memory</b>: {pair.writer.model} ({pair.writer.download}) and {pair.reader.model} ({pair.reader.download})
+                      </span>
+                      <code>{pullCommands(pair)}</code>
+                    </span>
+                    <button type="button" className="wb-pill wb-pill--outline" onClick={() => onChange({ localModel: pair.writer.model, pageReader: pair.reader.model })} disabled={chosen}>
+                      {chosen ? 'In use' : 'Use these'}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </>
       )}
 
@@ -201,18 +233,50 @@ export default function ProviderSettings({ config, onChange, onKey }: ProviderSe
             />
           </div>
           {modelField(config.openRouterModel, (v) => onChange({ openRouterModel: v }), 'cfg-or-model')}
+          {/* The data terms (2026-11-10, batch AF item 19): who may keep what is sent. */}
+          <div className="wb-set-row is-stack">
+            <div className="wb-set-text">
+              <span className="wb-set-label">What a free model's provider may do</span>
+              <p>
+                Each free model is served by a provider of its own, and some keep what they are sent or train on it: Google AI Studio's free service, which serves the Gemma models,
+                may use it to improve Google's products, and people may read it. OpenRouter sends a request only to providers your account allows, and free models have a setting of their
+                own, at openrouter.ai/settings/privacy. Send nothing you would not share.
+              </p>
+            </div>
+          </div>
         </>
       )}
 
       {/* Forma's team (2026-11-03, lib/formaTeam.ts): the vision model as a
           helper beside whichever AI designs. Hidden when the AI chosen above
           is the vision model itself, which then works alone. */}
+      <h4 className="wb-set-sub">Helpers on this computer</h4>
+      {/* The page reader (2026-11-10, lib/localModels.ts): a second reading of a
+          picture's text, beside OCR's, whichever AI designs. */}
+      <div className="wb-set-row is-stack">
+        <div className="wb-set-text">
+          <label className="wb-set-label" htmlFor="cfg-page-reader">Page reader</label>
+          <p>
+            Optional. A model on Ollama or LM Studio that reads a picture&apos;s text, such as glm-ocr. Its reading goes to the AI beside the text Forma&apos;s OCR read, so a word
+            the two read differently is checked against the picture. Leave it empty for none.
+          </p>
+        </div>
+        <input
+          className="wb-set-input"
+          id="cfg-page-reader"
+          type="text"
+          placeholder="e.g. glm-ocr"
+          value={config.pageReader || ''}
+          onChange={(e) => onChange({ pageReader: e.target.value })}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
       {!isVisionOnly(config) && (
         <>
-          <h4 className="wb-set-sub">Forma&apos;s vision model</h4>
           <div className="wb-set-row is-stack">
             <div className="wb-set-text">
-              <label className="wb-set-label" htmlFor="cfg-vision-model">Vision model</label>
+              <label className="wb-set-label" htmlFor="cfg-vision-model">Forma&apos;s vision model</label>
               <p>
                 Optional. Forma&apos;s own vision model, on Ollama or LM Studio on this computer, reads a picture&apos;s layout and OCR places its
                 words in it. The AI above designs from that draft, and if it cannot answer, the draft is your report. Leave it empty for none.
@@ -233,7 +297,7 @@ export default function ProviderSettings({ config, onChange, onKey }: ProviderSe
             <div className="wb-set-row is-stack">
               <div className="wb-set-text">
                 <label className="wb-set-label" htmlFor="cfg-vision-url">Server address</label>
-                <p>Where the vision model runs.</p>
+                <p>Where the helpers run.</p>
               </div>
               <input className="wb-set-input" id="cfg-vision-url" type="text" value={config.localUrl || DEFAULT_LOCAL_URL} onChange={(e) => onChange({ localUrl: e.target.value })} autoComplete="off" spellCheck={false} />
             </div>

@@ -214,6 +214,15 @@ describe('classifyGeminiError', () => {
       for (const e of [unreachable, router]) expect(e.message).not.toMatch(/Gemini|Google/);
     });
 
+    // Batch AF, item 19 (2026-11-10): a free model the account's privacy settings rule out is not a missing model.
+    it('says where to change it when OpenRouter refuses a free model for the account’s data policy', () => {
+      const refused = sdkError(404, 'OpenRouter answered 404: No endpoints found matching your data policy (Free model training). Configure: https://openrouter.ai/settings/privacy');
+      const message = classifyGeminiError(refused, { provider: 'openrouter', model: 'google/gemma-4-31b-it:free' }).message;
+      expect(message).toMatch(/no provider for google\/gemma-4-31b-it:free that your account's privacy settings allow/);
+      expect(message).toMatch(/openrouter\.ai\/settings\/privacy/);
+      expect(message).not.toMatch(/has no model/);
+    });
+
     // Item 83: a pinned model's spent allowance does not claim the others were tried.
     it('says a chosen model was the only one tried when its daily allowance is spent', () => {
       const daily = sdkError(429, "Quota exceeded for metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' model: gemini-2.5-pro");
