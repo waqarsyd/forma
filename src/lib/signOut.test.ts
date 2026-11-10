@@ -34,13 +34,18 @@ describe('the device', () => {
   it('loses the SQL Server layouts and sample rows on sign-out, by the name the store uses', () => {
     const deleted: string[] = [];
     forgetDevice({ deleteDatabase: (name: string) => { deleted.push(name); return {} as IDBOpenDBRequest; } });
-    expect(deleted).toEqual(['forma-databases', 'forma-batch']);
+    expect(deleted).toEqual(['forma-databases', 'forma-batch', 'forma-learning']);
     expect(readFileSync('src/lib/sqlSchemaStore.ts', 'utf8')).toContain(`const DB_NAME = '${SIGNED_OUT_DATABASES[0]}'`);
   });
 
   // Batch AG, item 23 (2026-11-10): the batch kept to carry on after a limit holds files and reports too.
   it('loses the kept batch on sign-out, by the name its store uses', () => {
     expect(readFileSync('src/lib/batchCheckpoint.ts', 'utf8')).toContain(`export const BATCH_DB = '${SIGNED_OUT_DATABASES[1]}'`);
+  });
+
+  // The full audit (2026-11-10): the learning events kept on the device may hold whole reports on the opt-in tier.
+  it('loses the learning events on sign-out, by the name their store uses', () => {
+    expect(readFileSync('src/lib/learning.ts', 'utf8')).toContain(`export const LEARNING_DB_NAME = '${SIGNED_OUT_DATABASES[2]}'`);
   });
 
   it('survives IndexedDB that throws, or none', () => {

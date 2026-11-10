@@ -4295,6 +4295,21 @@ export default function App() {
       if (open && open.repxContent !== newResult.repxContent) rememberChange(newAssistantMsg.id, open, newResult);
       setMessages(prev => [...prev, newAssistantMsg]);
       console.log(copy.done);
+      // What Forma may learn from this report (2026-11-10, lib/learning.ts).
+      recordLearning({
+        kind: 'generation',
+        source: (await import('./lib/learning')).sourceOf({
+          images: currentPreviews.length,
+          pdfs: currentTexts.filter((t) => /\.pdf$/i.test(t.file ?? '')).length,
+          repx: currentTexts.filter((t) => /\.repx$/i.test(t.file ?? '')).length,
+          words: Boolean(describeRequest) || Boolean(currentPrompt.trim()),
+          database: Boolean(databaseShared && activeDatabase),
+        }),
+        request: describeRequest || !open ? 'new' : 'redesign',
+        ai: aiKindOf(chained.by),
+        repx: newResult.repxContent,
+        prompt: currentPrompt,
+      });
 
     } catch (err: any) {
       if (signal.aborted) {
@@ -4640,9 +4655,61 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  /** A reply rated, or its rating taken back (2026-11-05). It stays with the message and goes nowhere else. */
+  /**
+   * What Forma may learn from a turn (2026-11-10, the full audit, the
+   * owner's ask that Forma learn from every use; lib/learning.ts): the
+   * report's skeleton read off the REPX, never its text, with the request's
+   * kind, the AI's kind, the edits' names and the checks' counts; the whole
+   * report and the words only on the opt-in tier. Kept on the device, and in
+   * the account when signed in and the switch is on. Never in the way: it
+   * runs after the reply is posted, and a failure is a console line.
+   */
+  const recordLearning = (input: {
+    kind: 'generation' | 'edit' | 'translate' | 'rating';
+    source?: 'image' | 'pdf' | 'repx' | 'words' | 'database' | 'mixed' | 'none';
+    request?: 'new' | 'redesign' | 'edit' | 'batch' | 'none';
+    ai?: 'gemini' | 'local' | 'openrouter' | 'forma' | 'mock' | 'none';
+    repx?: string | null;
+    ops?: readonly string[];
+    rating?: 'good' | 'bad';
+    prompt?: string | null;
+  }) => {
+    const owner = user;
+    void (async () => {
+      try {
+        const learning = await import('./lib/learning');
+        const settings = learning.readLearningSettings();
+        let skeleton = null;
+        let findings: { severity: string }[] = [];
+        if (input.repx) {
+          const [{ parseReportStructure }, { skeletonOf }, { auditRepx }] = await Promise.all([import('./lib/reportPreview'), import('./lib/reportSkeleton'), import('./lib/repxAudit')]);
+          try {
+            skeleton = skeletonOf(parseReportStructure(input.repx));
+            findings = auditRepx(input.repx, null).findings;
+          } catch {
+            skeleton = null;
+          }
+        }
+        const event = learning.learningEvent({ ...input, skeleton, findings }, settings);
+        await learning.keepLearningEvent(event);
+        if (owner && learning.sendable(event, settings)) {
+          const { paths, db } = await loadFirebase();
+          await paths.writeLearning(db, owner.uid, event);
+        }
+      } catch (err) {
+        console.warn('A learning event could not be kept.', err);
+      }
+    })();
+  };
+  /** The AI's kind for a learning event, from who answered. */
+  const aiKindOf = (by: 'gemini' | 'local' | 'openrouter'): 'gemini' | 'local' | 'openrouter' | 'mock' => (MOCK_MODE ? 'mock' : by);
+
+  /** A reply rated, or its rating taken back (2026-11-05). It stays with the message, and with the learning events when it is given. */
   const handleRate = (id: string, rating: 'good' | 'bad' | undefined) => {
     setMessages((prev) => prev.map((m) => (m.id === id && m.role === 'assistant' ? { ...m, rating } : m)));
+    if (!rating) return;
+    const rated = messages.find((m) => m.id === id);
+    recordLearning({ kind: 'rating', rating, request: rated?.result ? 'new' : 'edit', repx: (rated?.result as DesignResult | undefined)?.repxContent ?? result?.repxContent ?? null });
   };
 
   /**
@@ -5392,6 +5459,8 @@ export default function App() {
             setResult(next);
             recordRevision('Changed in the chat', next);
             rememberChange(id, now, next);
+            // What Forma may learn from this edit (2026-11-10, lib/learning.ts): the operations by name.
+            recordLearning({ kind: 'edit', request: 'edit', ai: aiKindOf(chained.by), repx: done.xml, ops: (outcome.edits ?? []).map((e) => e.op), prompt: currentPrompt });
             // The tools run once the edits are made (agent audit item 38).
             if (tools.length) setPendingTools(tools);
             const changes = agent.describeChanges(now.repxContent!, done.xml);
@@ -5758,6 +5827,7 @@ export default function App() {
       recordRevision(`Translated into ${language}`, next);
       const id = nextMessageId();
       rememberChange(id, open, next);
+      recordLearning({ kind: 'translate', request: 'edit', ai: aiKindOf(answered.by), repx: next.repxContent, ops: ['translate'], prompt: language });
       const printed = texts.reduce((n, t) => n + t.count, 0);
       setMessages((prev) => [
         ...prev,

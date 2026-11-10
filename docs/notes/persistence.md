@@ -137,3 +137,16 @@ A fourth was subtler. **`OperationType` is an `enum`, so `OperationType.GET` is 
 Signed out, nothing changes: the device's projects are in local storage, in full.
 
 **The rules have to be deployed for sharing to work on the live site**, and only the owner deploys: until `npx firebase deploy --only firestore:rules` runs, the global deny refuses every read and write of `shares`, the dialog reports that it could not share, and a link opens the page saying it does not open a report.
+
+## Learning from use (2026-11-10, the full audit)
+
+The owner's ask: the more Forma is used, the more its own model learns. So every report generated, every edit made in the chat, every translation and every rating of a reply becomes a **learning event** (`src/lib/learning.ts`), on two tiers the person chooses under Settings > Learning (`LearningSettings.tsx`):
+
+- **Structure**, on by default and said in the privacy policy: the report's skeleton (`reportSkeleton.ts`, paper, bands, every control's kind, place, size, font, alignment, borders and the role of its text, never the text), the request's kind and source, which kind of AI answered, the edits' names and the checks' counts, and the thumbs. `scrubSkeleton` is the guard against a defect upstream: any string in a skeleton that is not one of its fixed words is stripped, the same promise `unexpectedStrings` makes for the shipped model.
+- **Full reports**, off until turned on: the whole REPX and the person's words with it.
+
+**Where it lives.** IndexedDB `forma-learning` on the device, the last 500 events, which Settings shows (counts by kind) and deletes, and which a sign-out deletes with the other device stores (`SIGNED_OUT_DATABASES`). Signed in, each event goes to Firestore `users/{uid}/learning/{id}` through `writeLearning` in `lib/accountData.ts`, created only in the shape `firestore.rules` pins (`isValidLearning`: every field present and no other, the id it is filed under, a known kind, sizes that keep a document far under 1 MiB) and never changed; the owner may list and delete the collection, `deleteLearning` is Settings' Delete, and `deleteAccountData` removes it with the rest (`tests/accountDeletion.test.ts`). The rules suite proves all of it.
+
+**How the owner uses it.** `npx tsx scripts/model/pull-learning.ts --key <service-account.json> --out <dir>` on the owner's own PC (never this shared server: the key is a credential) pulls every account's events over the Firestore REST API with no dependency (the service account's key signs a JWT in `node:crypto`), writes `events.jsonl`, `skeletons/*.json` in the shape `train.ts` takes through its new `--skeletons`, and for the opt-in tier `repx/*.repx` and `prompts/*.txt`, and prints counts only. From there: `npm run model:train -- --skeletons <out>/skeletons --data <set>` retrains Forma's own model; the opt-in reports feed the box reader's set, the library's examples and the chat judge's cases by hand, since each needs a person's look. The pull is the owner's cadence, a week at a time (`--since`).
+
+**What is not collected.** A user's description of a control (`AccessibleDescription`) is text and never reaches a skeleton; the companion's live rows, a database's layout and a Gemini key are never part of an event; mock mode's events say `mock` for the AI and are of no use to training.

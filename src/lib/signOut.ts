@@ -23,10 +23,12 @@ export const SIGNED_OUT_SESSION_KEYS = [
  * real values. Since 2026-11-10 (the AI accuracy programme, batch AG item
  * 23) also the batch kept so it carries on after a limit or a reload
  * (lib/batchCheckpoint.ts), which holds its source files and their reports.
+ * Since 2026-11-10 (the full audit) also the learning events kept on the
+ * device (lib/learning.ts), which on the full tier hold whole reports.
  * Named here, not imported, so the public site's bundle does not take the
  * stores; `signOut.test.ts` holds each name to its store's.
  */
-export const SIGNED_OUT_DATABASES = ['forma-databases', 'forma-batch'] as const;
+export const SIGNED_OUT_DATABASES = ['forma-databases', 'forma-batch', 'forma-learning'] as const;
 
 /** Deletes them; a browser without IndexedDB, or one that refuses, keeps nothing to delete. */
 export function forgetDevice(idb: Pick<IDBFactory, 'deleteDatabase'> | null = typeof indexedDB === 'undefined' ? null : indexedDB): void {

@@ -302,6 +302,45 @@ service cloud.firestore {
         && (resource == null || existing().shares == 0);
     }
 
+    // What a person lets Forma learn from (2026-11-10, the full audit;
+    // lib/learning.ts): one event per generated report, edit, translation or
+    // rating, in the shape the app writes and nothing else. The account owns
+    // its collection: it may list and delete it (Settings shows and clears
+    // it, deleting the account removes it), never change an event. The owner
+    // reads every account's events with a service account, on their own PC.
+    // Sizes keep a document well under Firestore's 1 MiB: a skeleton is JSON
+    // of structure only, a full report is there only on the opt-in tier.
+    function isValidLearning(data, id, uid) {
+      return data.keys().hasOnly(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'errors', 'warnings', 'rating', 'full', 'prompt'])
+        && data.keys().hasAll(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'errors', 'warnings', 'rating', 'full', 'prompt'])
+        && data.id == id
+        && data.userId == uid
+        && data.at is string && data.at.size() <= 40
+        && data.day is string && data.day.size() == 10
+        && data.kind in ['generation', 'edit', 'translate', 'rating']
+        && data.source is string && data.source.size() <= 16
+        && data.request is string && data.request.size() <= 16
+        && data.ai is string && data.ai.size() <= 16
+        && data.skeleton is string && data.skeleton.size() <= 80000
+        && data.ops is list && data.ops.size() <= 40
+        && data.errors is int && data.errors >= 0
+        && data.warnings is int && data.warnings >= 0
+        && data.rating in ['', 'good', 'bad']
+        && data.full is string && data.full.size() <= 400000
+        && data.prompt is string && data.prompt.size() <= 4000;
+    }
+    match /users/{userId}/learning/{eventId} {
+      allow get, list: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(userId)
+        && userId == request.auth.uid
+        && isValidId(eventId)
+        && isValidLearning(incoming(), eventId, userId);
+
+      allow delete: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
+    }
+
     // A report's revision history.
     //
     // Its own subcollection because a saved report is size-budgeted at 900 kB

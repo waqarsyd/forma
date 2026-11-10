@@ -1569,3 +1569,7 @@ here as it is built:
    What is left on the seven cases is the reader's, not the draft's: the
    form page (`payslip`) and a statement's opening and closing lines read as
    records, and a `.repx` case the draft does not take.
+
+## Learning from use (2026-11-10, the full audit)
+
+The owner's ask on 2026-11-10: the more Forma is used, the more its model learns. The pipeline is built and its record is *Learning from use* in `docs/notes/persistence.md`: a learning event per report, edit, translation and rating (`src/lib/learning.ts`), structure only by default and whole reports on an opt-in switch (Settings > Learning), kept on the device and under the account, pulled by the owner with `scripts/model/pull-learning.ts` into `forma-model-data`, and fed to `train.ts` through `--skeletons`. What it changes for this proposal: the training set stops being the owner's company share alone. Every user who leaves the structure switch on adds the shape of their reports, which the model learns as archetypes and a house style the same way, and every user who turns the full switch on adds reports the box reader, the library and the chat judge can be measured on, with a person's look first. Nothing here retrains anything by itself: the pull and the train are the owner's, a week at a time, and the leak check (`unexpectedStrings`) stands between what was pulled and what ships.

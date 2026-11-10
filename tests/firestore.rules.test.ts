@@ -581,3 +581,56 @@ describe('key vault', () => {
     await assertSucceeds(deleteDoc(doc(aliceDb(), 'users', ALICE, 'vault', 'geminiKey')));
   });
 });
+
+/** Exactly what lib/learning.ts's learningEvent builds and accountData's writeLearning adds userId to (2026-11-10). */
+const validLearning = (id: string, uid: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  userId: uid,
+  at: '2026-11-10T20:15:00.000Z',
+  day: '2026-11-10',
+  kind: 'generation',
+  source: 'image',
+  request: 'new',
+  ai: 'gemini',
+  skeleton: '{"paper":"A4","bands":[]}',
+  ops: ['font', 'move'],
+  errors: 0,
+  warnings: 2,
+  rating: '',
+  full: '',
+  prompt: '',
+  ...extra,
+});
+const EVENT = 'm3k9x1-abc123';
+
+describe('learning events (2026-11-10, the full audit)', () => {
+  it('lets a user keep an event under their own account, and nobody else under it', async () => {
+    await assertSucceeds(setDoc(doc(aliceDb(), 'users', ALICE, 'learning', EVENT), validLearning(EVENT, ALICE)));
+    await assertFails(setDoc(doc(bobDb(), 'users', ALICE, 'learning', 'other-1'), validLearning('other-1', ALICE)));
+    await assertFails(setDoc(doc(bobDb(), 'users', ALICE, 'learning', 'other-2'), validLearning('other-2', BOB)));
+    await assertFails(setDoc(doc(anonDb(), 'users', ALICE, 'learning', 'other-3'), validLearning('other-3', ALICE)));
+  });
+
+  it('pins the shape: every field, no extra one, the id it is filed under, a known kind, sizes', async () => {
+    const write = (data: unknown, id = EVENT) => setDoc(doc(aliceDb(), 'users', ALICE, 'learning', id), data as any);
+    await assertFails(write(validLearning(EVENT, ALICE, { extra: 1 })));
+    const { prompt: _dropped, ...missing } = validLearning(EVENT, ALICE);
+    await assertFails(write(missing));
+    await assertFails(write(validLearning('some-other-id', ALICE)));
+    await assertFails(write(validLearning(EVENT, ALICE, { kind: 'telemetry' })));
+    await assertFails(write(validLearning(EVENT, ALICE, { rating: 'great' })));
+    await assertFails(write(validLearning(EVENT, ALICE, { ops: 'font' })));
+    await assertFails(write(validLearning(EVENT, ALICE, { errors: -1 })));
+    await assertFails(write(validLearning(EVENT, ALICE, { prompt: 'p'.repeat(4001) })));
+    await assertSucceeds(write(validLearning(EVENT, ALICE, { kind: 'rating', rating: 'good', full: '<x/>', prompt: 'make it bold' })));
+  });
+
+  it('is listed and deleted by its owner only, and never changed', async () => {
+    await seed(['users', ALICE, 'learning', EVENT], validLearning(EVENT, ALICE));
+    await assertSucceeds(getDocs(collection(aliceDb(), 'users', ALICE, 'learning')));
+    await assertFails(getDocs(collection(bobDb(), 'users', ALICE, 'learning')));
+    await assertFails(updateDoc(doc(aliceDb(), 'users', ALICE, 'learning', EVENT), { rating: 'bad' }));
+    await assertFails(deleteDoc(doc(bobDb(), 'users', ALICE, 'learning', EVENT)));
+    await assertSucceeds(deleteDoc(doc(aliceDb(), 'users', ALICE, 'learning', EVENT)));
+  });
+});

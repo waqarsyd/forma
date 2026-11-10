@@ -537,7 +537,11 @@ src/
                        typed texts collected for translation and put back, the
                        layout untouched), previewRows (the rows the Preview
                        prints sent with a question about the data, after the
-                       consent asked in the thread), chatJudge (the twenty
+                       consent asked in the thread), learning (what Forma may
+                       learn from each use: structure by default, whole
+                       reports on an opt-in switch, kept on the device and
+                       under the account), inputModality (pointer or keyboard
+                       on the root, so a click shows no focus ring), chatJudge (the twenty
                        chat requests the benchmark scores, the checks code makes
                        and the judge's rubric),
                        formaTeam (one request with every part in its role:

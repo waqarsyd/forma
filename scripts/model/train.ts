@@ -38,7 +38,12 @@ function arg(name: string, fallback?: string): string {
   return v;
 }
 
-const reportsDir = resolve(arg('reports'));
+// --skeletons: a folder of {category, skeleton} JSON files, as
+// scripts/model/pull-learning.ts writes them from what people let Forma learn
+// from (2026-11-10); learned beside the reports, or alone when --reports is
+// absent.
+const skeletonsDir = process.argv.includes('--skeletons') ? resolve(arg('skeletons')) : null;
+const reportsDir = skeletonsDir && !process.argv.includes('--reports') ? null : resolve(arg('reports'));
 const dataDir = resolve(arg('data'));
 const out = resolve(arg('out', 'assets/model/formaModel.json'));
 const k = Number(arg('k', '10'));
@@ -59,7 +64,7 @@ const walk = (d: string) => {
     else if (/\.repx$/i.test(name)) files.push(p);
   }
 };
-walk(reportsDir);
+if (reportsDir) walk(reportsDir);
 
 mkdirSync(join(dataDir, 'skeletons'), { recursive: true });
 const set: TrainingReport[] = [];
@@ -67,7 +72,7 @@ const index: { id: number; file: string; category: string | null }[] = [];
 const folderWords = new Set<string>();
 let failed = 0;
 for (const file of files) {
-  const rel = relative(reportsDir, file);
+  const rel = relative(reportsDir ?? '', file);
   for (const w of rel.toLowerCase().split(/[^a-z0-9]+/)) if (w.length >= 3) folderWords.add(w);
   try {
     const skeleton = skeletonOf(parseReportStructure(readFileSync(file, 'utf8')));
@@ -80,8 +85,27 @@ for (const file of files) {
     failed++;
   }
 }
+// Skeletons people let Forma learn from, already reduced (pull-learning.ts):
+// each a {category, skeleton} file, read as it is.
+let pulled = 0;
+if (skeletonsDir) {
+  for (const name of readdirSync(skeletonsDir)) {
+    if (!/\.json$/i.test(name)) continue;
+    try {
+      const { category, skeleton } = JSON.parse(readFileSync(join(skeletonsDir, name), 'utf8')) as TrainingReport;
+      if (!skeleton?.bands) continue;
+      const id = set.length + 1;
+      set.push({ skeleton, category: category ?? null });
+      index.push({ id, file: `learning/${name}`, category: category ?? null });
+      writeFileSync(join(dataDir, 'skeletons', `${id}.json`), JSON.stringify({ category: category ?? null, skeleton }));
+      pulled++;
+    } catch {
+      failed++;
+    }
+  }
+}
 writeFileSync(join(dataDir, 'index.json'), JSON.stringify(index, null, 1));
-console.log(`reports found ${files.length}, learned from ${set.length}, could not parse ${failed}`);
+console.log(`reports found ${files.length}, learned from ${set.length}${pulled ? ` (${pulled} from learning events)` : ''}, could not parse ${failed}`);
 
 const model = learnModel(set, { k, minFontReports: 5 });
 const strays = unexpectedStrings(model);

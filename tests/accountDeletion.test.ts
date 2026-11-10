@@ -44,6 +44,9 @@ import {
   SHARES_COLLECTION,
   shareDocRef,
   writeShare,
+  learningCollectionRef,
+  writeLearning,
+  deleteLearning,
 } from '../src/lib/accountData';
 
 const ALICE = 'alice-uid';
@@ -410,5 +413,32 @@ describe('the account document layout', () => {
   it('nests versions under the report they belong to', () => {
     expect(versionsCollectionRef(asUser(ALICE), ALICE, 'r1').path)
       .toBe(`users/${ALICE}/reports/r1/versions`);
+  });
+
+  /** The learning events (2026-11-10, the full audit): under the account, removed with it, and by Settings alone. */
+  it("removes what the account let Forma learn from, and nobody else's (2026-11-10)", async () => {
+    const event = (id: string, uid: string) => ({
+      id, userId: uid, at: '2026-11-10T20:15:00.000Z', day: '2026-11-10', kind: 'edit', source: 'none', request: 'edit', ai: 'gemini',
+      skeleton: '', ops: ['font'], errors: 0, warnings: 0, rating: '', full: '', prompt: '',
+    });
+    expect(learningCollectionRef(asUser(ALICE), ALICE).path).toBe(`users/${ALICE}/learning`);
+    await writeLearning(asUser(ALICE), ALICE, event('ev-1', ALICE));
+    await writeLearning(asUser(ALICE), ALICE, event('ev-2', ALICE));
+    await writeLearning(asUser(BOB), BOB, event('ev-3', BOB));
+    const count = async (uid: string) => {
+      let size = -1;
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        size = (await getDocs(collection(ctx.firestore(), 'users', uid, 'learning'))).size;
+      });
+      return size;
+    };
+    expect(await count(ALICE)).toBe(2);
+    await deleteLearning(asUser(ALICE), ALICE);
+    expect(await count(ALICE)).toBe(0);
+    expect(await count(BOB)).toBe(1);
+    await writeLearning(asUser(ALICE), ALICE, event('ev-4', ALICE));
+    await deleteAccountData(asUser(ALICE), ALICE);
+    expect(await count(ALICE)).toBe(0);
+    expect(await count(BOB)).toBe(1);
   });
 });

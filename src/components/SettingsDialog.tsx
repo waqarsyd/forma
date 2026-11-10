@@ -30,22 +30,25 @@ import { loadGemini } from '../lib/geminiClient';
 import { loadFirebase } from '../lib/firebaseClient';
 import { clearSessionKey, decryptApiKey, encryptApiKey, isVaultAvailable, WrongPassphraseError, type EncryptedKeyRecord } from '../services/keyVault';
 import type { ReportConfig } from '../services/geminiService';
-import { IconAlert, IconArchive, IconChat, IconCheck, IconEye, IconEyeOff, IconKey, IconTune, IconWarn } from './landing/icons';
+import { IconAlert, IconArchive, IconChat, IconCheck, IconEye, IconEyeOff, IconKey, IconPulse, IconTune, IconWarn } from './landing/icons';
 import SectionedDialog, { type DialogSection } from './SectionedDialog';
 import UsageSettings from './UsageSettings';
 import ProviderSettings from './ProviderSettings';
 import MemorySettings from './MemorySettings';
+import LearningSettings from './LearningSettings';
 import { versionLabel, versionUrl } from '../lib/buildInfo';
 import { isStorageKept } from '../lib/storagePersist';
 import { keysAcrossTabs, setKeysAcrossTabs } from '../lib/keyHandoff';
 
-export type SettingsSection = 'general' | 'ai' | 'key' | 'memory';
+export type SettingsSection = 'general' | 'ai' | 'key' | 'memory' | 'learning';
 
 const SECTIONS: DialogSection<SettingsSection>[] = [
   { id: 'general', label: 'General', Icon: IconTune },
   { id: 'ai', label: 'AI', Icon: IconChat },
   { id: 'key', label: 'Gemini key', Icon: IconKey },
   { id: 'memory', label: 'Memory', Icon: IconArchive },
+  // What Forma may learn from (2026-11-10, the full audit; lib/learning.ts).
+  { id: 'learning', label: 'Learning', Icon: IconPulse },
 ];
 
 type Notice = { tone: 'ok' | 'error'; text: string };
@@ -302,6 +305,8 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
           )}
 
           {section === 'ai' && <ProviderSettings config={config} onChange={onChange} onKey={() => setSection('key')} />}
+
+          {section === 'learning' && <LearningSettings user={user} />}
 
           {section === 'key' && (
             <>

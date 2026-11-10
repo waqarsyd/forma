@@ -54,6 +54,34 @@ export const REPORTS_COLLECTION = 'reports';
 export const VAULT_COLLECTION = 'vault';
 
 /**
+ * What the account let Forma learn from (2026-11-10, the full audit;
+ * `lib/learning.ts`): one document per event, created in the shape the rules
+ * pin, listed and deleted by the owner, never changed. `deleteAccountData`
+ * removes it with the rest; `deleteLearning` is Settings' "Delete what was
+ * kept".
+ */
+export const LEARNING_COLLECTION = 'learning';
+
+export function learningCollectionRef(db: Firestore, uid: string): CollectionReference {
+  return collection(db, USERS_COLLECTION, uid, LEARNING_COLLECTION);
+}
+
+export function learningDocRef(db: Firestore, uid: string, eventId: string): DocumentReference {
+  return doc(db, USERS_COLLECTION, uid, LEARNING_COLLECTION, eventId);
+}
+
+/** One event into the account, with the `userId` the rules require beside the event's own fields. */
+export async function writeLearning(db: Firestore, uid: string, event: DocumentData & { id: string }): Promise<void> {
+  await setDoc(learningDocRef(db, uid, event.id), { ...event, userId: uid });
+}
+
+/** Every event the account holds, removed; tolerated when there are none. */
+export async function deleteLearning(db: Firestore, uid: string): Promise<void> {
+  const events = await getDocs(learningCollectionRef(db, uid));
+  await Promise.all(events.docs.map((entry) => deleteDoc(entry.ref)));
+}
+
+/**
  * Revision history, one document per version, beneath its report.
  *
  * A subcollection because a saved report is size-budgeted and a `result` runs
@@ -277,6 +305,11 @@ export async function deleteAccountData(db: Firestore, uid: string): Promise<voi
   // The count itself, at zero now (2026-11-08); tolerated like the vault.
   await deleteDoc(quotaDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the share count while deleting the account:', error);
+  });
+  // What the account let Forma learn from (2026-11-10); tolerated, as the
+  // owner pulls it to their own PC and nothing in the app reads it back.
+  await deleteLearning(db, uid).catch((error) => {
+    console.warn('Could not remove the learning events while deleting the account:', error);
   });
 
   await deleteDoc(vaultDocRef(db, uid)).catch((error) => {

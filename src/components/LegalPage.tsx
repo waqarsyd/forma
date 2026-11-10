@@ -41,7 +41,7 @@ import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
  * Corrected, along with the deletion note, which knew about deleting projects
  * one at a time and not about Clear all.
  */
-const UPDATED = '9 November 2026';
+const UPDATED = '10 November 2026';
 
 type Section = { heading: string; paragraphs: string[] };
 
@@ -146,6 +146,7 @@ const PRIVACY: Section[] = [
       'Your projects, saved automatically as you work: the report’s title, the conversation, the generated report with its specification and layout, any images you attached, your ratings of replies, and the newest ten revisions. They live in Google Firestore under your account, and the security rules let only your account read or change them through the app. They are not encrypted end to end: they sit in the operator’s Firebase project, which its owner can reach through Firebase’s own console, as with any service built this way.',
       'Reports you choose to share: a copy of the report’s title, layout and XML — not the conversation, and not your images — with the email addresses you add to it. It lives in Google Firestore, and the security rules let it be read by you, by the people you add once they sign in with that address verified, or, if you choose it, by anyone who has the link. It stays until you stop sharing it or delete the project or your account. Forma sends no email to the people you add.',
       'If you opt in to encrypted sync, an encrypted copy of your Gemini API key. It is encrypted in your browser with a passphrase that never leaves it, so the stored copy is unreadable to anyone who does not know the passphrase — including the operator. It is the one thing Forma stores that the operator cannot read.',
+      'What you let Forma learn from, under Settings → Learning. With “Help Forma learn from the shape of my reports” on, which it is unless you turn it off, each report you make or change in the chat, each translation and each rating of a reply is kept as an event: the report’s structure — its bands, where each control sits, its size, font, alignment and what kind of text it holds — never the text itself, a field name, a query or a picture; the kind of request and which kind of AI answered; the names of the edits; and your rating. With “Share whole reports and what I asked for” on, which it is not unless you turn it on, the complete report file and the words you typed go with each event. Signed in, the events are stored in Google Firestore under your account, where only you and the operator can read them; the operator downloads them to train Forma’s own model and improve how it reads and lays out reports. You can see what was kept and delete it under Settings → Learning, and deleting your account removes it. Signed out, the events stay on your device only.',
     ],
   },
   {
@@ -160,7 +161,7 @@ const PRIVACY: Section[] = [
       'Signed out, your projects are saved automatically in your browser’s local storage on that machine only — the conversation, the report, your attachments and your ratings — and Forma asks the browser to keep them rather than clear them to free space. Revisions last only while the tab is open. Settings, under General, downloads every project you saved, signed in or not.',
       'Local storage also keeps: the theme; the DevExpress version and unit last used; the AI you chose, with its server address and model, never a key; your memories and the style of reports you kept; which projects you pinned or archived; which library reports are your house style, and whether it is used; the workspace’s layout; today’s request counts and the daily limits Google reported; the models your key can reach, with a short fingerprint of the key rather than the key; and the last announcement you saw.',
       'Session storage, which the browser erases when the tab closes, keeps your keys, the unsent text in the box and any messages waiting in the queue, the open project, the changes a reply’s Undo can take back, and the model in use.',
-      'IndexedDB keeps the report library — the stripped reports you add and their index —, the SQL Server layouts you add with any sample rows, up to five databases, until you forget them on the Data view or sign out, and, once you sign in, Firebase’s record that you are signed in.',
+      'IndexedDB keeps the report library — the stripped reports you add and their index —, the SQL Server layouts you add with any sample rows, up to five databases, until you forget them on the Data view or sign out, the last five hundred events Forma may learn from (Settings → Learning, above), and, once you sign in, Firebase’s record that you are signed in.',
       'None of this is a cookie, nothing but Forma in this browser reads it, and all of it is there only to make Forma work, which is why there is no cookie banner. Clearing your browser storage removes it. Signing out clears the workspace — the uploads, the extracted text, the generated report and the database layouts kept on this device — so the next person at that browser does not see your work.',
     ],
   },

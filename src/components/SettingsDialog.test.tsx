@@ -62,7 +62,8 @@ describe('SettingsDialog', () => {
     expect(heading()).toBe('Gemini key');
     expect(document.activeElement).toBe(tab('Gemini key'));
     fireEvent.keyDown(screen.getByRole('tablist'), { key: 'End' });
-    expect(heading()).toBe('Memory');
+    // Learning is the last section since 2026-11-10 (the full audit).
+    expect(heading()).toBe('Learning');
     fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowDown' });
     expect(heading()).toBe('General');
   });

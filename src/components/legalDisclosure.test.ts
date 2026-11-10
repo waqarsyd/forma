@@ -326,9 +326,14 @@ describe('the legal copy and its date change together', () => {
      Forma Designer download the same day (batch WH): the workspace asks
      127.0.0.1 only when Open in designer is chosen, the website too after the
      browser asks, the download from GitHub, and DevExpress named as Developer
-     Express Inc.'s product, not Forma's. Substantive, and that day's date. */
-  const EXPECTED_COPY_HASH = 'd56c464fc2b8';
-  const EXPECTED_UPDATED = '9 November 2026';
+     Express Inc.'s product, not Forma's. Substantive, and that day's date.      Moved again on 2026-11-10 (the full audit, batch FD): what a person lets
+     Forma learn from (Settings > Learning, lib/learning.ts) is a new thing
+     stored under the account and on the device, with two switches and the
+     operator's use of it, so the policy says so in its own paragraph and
+     the IndexedDB list names the store. Substantive, so the date moved. 
+     */
+  const EXPECTED_COPY_HASH = 'dcfb3ec1419d';
+  const EXPECTED_UPDATED = '10 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);
