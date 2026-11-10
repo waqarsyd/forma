@@ -26,7 +26,7 @@ describe('UsageSettings', () => {
     expect(within(rows[0]).getByRole('img').getAttribute('aria-label')).toBe("35% of the day's limit");
     expect(within(rows[1]).queryByRole('img')).toBeNull();
     // 20:00 UTC is noon Pacific (standard time since 1 November): twelve hours to go.
-    expect(document.body.textContent).toMatch(/midnight Pacific time, in 12 h 0 min/);
+    expect(document.body.textContent).toMatch(/starts again in 12 h 0 min/);
   });
 
   it('says when nothing has been sent today', () => {

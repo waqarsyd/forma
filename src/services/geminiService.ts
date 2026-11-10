@@ -861,7 +861,9 @@ On a table, font, color, align, border and format name a cell by row and cell, a
 
 When the outline ends with SELECTED ON THE PREVIEW, the user has selected those controls, and "this", "it", "these" and "them" in the message mean them.
 
-"tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows, which costs a request), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer), undo (takes back the last change to the report, when the user asks to undo one), translate (language: the language the user named, as "German"; Forma translates every typed caption and title of the report and keeps the layout; list no edits for a translation). An export, the designer or a translation is offered to the user as a button to press, not run.
+"tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows, which costs a request), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer), undo (takes back the last change to the report, when the user asks to undo one), translate (language: the language the user named, as "German"; Forma translates every typed caption and title of the report and keeps the layout; list no edits for a translation). Every tool runs at once, and the reply says what is being done; never ask the user to press a button or to confirm what they asked for.
+
+How to write: as a colleague would, in the first person, plainly and warmly, specific to this report. Never describe how Forma works inside: no OCR, models, tokens, repairs or checks. Never ask the user to confirm a request they made: do it. Ask a question only when the answer would change the result, one short question; otherwise act on the most sensible reading and say what you chose.
 
 When the user attaches a picture or a file with a report open, read it: answer about it, edit the report to match what it shows, or "rebuild" when it is a design to redesign the report from.
 
@@ -972,11 +974,11 @@ function buildMockReportReply(userText: string, outline: string, database?: stri
   if (/\bline\b/i.test(text)) return edit('Drew a line under the header.', [{ op: 'line', band: 'ReportHeader', x: 0, y: 0 }]);
   const paper = /\b(A4|A3|Letter|Legal)\b/i.exec(text)?.[1];
   if (paper) return edit(`Set the paper to ${paper}.`, [{ op: 'paper', paper, landscape: /landscape/i.test(text) }]);
-  // A translation (2026-11-10), offered as a button as the real turn offers it.
+  // A translation (2026-11-10), run at once as the real turn runs it.
   const language = /\b[Tt]ranslat\w*\b.*?\b(?:into|to|in)\s+([A-Z][a-z]+)/.exec(text)?.[1];
-  if (language) return { ...answer(`It can be translated into ${language}: press the button below. Mock mode marks each text rather than translating it.`), tools: [{ name: 'translate', language }] };
+  if (language) return { ...answer(`Translating it into ${language}. Mock mode marks each text rather than translating it.`), tools: [{ name: 'translate', language }] };
   const format = /\bexport\b.*?\b(pdf|csv|xlsx|docx|rtf|html|png|repx)\b/i.exec(text)?.[1]?.toLowerCase();
-  if (format) return { ...answer(`It is ready to export as ${format.toUpperCase()}: press the button below.`), tools: [{ name: 'export', format: format as AgentTool['format'] }] };
+  if (format) return { ...answer(`Exporting it as ${format.toUpperCase()}.`), tools: [{ name: 'export', format: format as AgentTool['format'] }] };
   if (/\bsample (data|rows)\b/i.test(text)) return { ...answer('Filling the Preview with sample rows.'), tools: [{ name: 'testData' }] };
   const pane = /\bshow\b.*?\b(mockup|preview|data|spec|repx)\b/i.exec(text)?.[1]?.toLowerCase();
   if (pane) return { ...answer(`Here is the ${pane}.`), tools: [{ name: 'show', pane: pane as AgentTool['pane'] }] };
@@ -1927,7 +1929,7 @@ export async function clarifyReportRequest(
             {
               text: `A user has described a DevExpress report they want designed. Decide whether the description is enough to design a sensible report from, or whether up to ${MAX_CLARIFICATION_QUESTIONS} short questions would change what gets built.
 
-Ask ONLY about content the description leaves genuinely open and that would change the report: which columns, what to group or sort by, what a total is of, which fields a chart plots. Do NOT ask about things with a common-practice default for that kind of report (an invoice has line items and a total; a customer list has one row per customer), do NOT ask about page size, orientation, fonts or colours, and do NOT ask for a title when one can be read from the description. A detailed description gets no questions at all. Each question should offer a reasonable suggested answer.
+Ask ONLY about content the description leaves genuinely open and that would change the report: which columns, what to group or sort by, what a total is of, which fields a chart plots. Do NOT ask about things with a common-practice default for that kind of report (an invoice has line items and a total; a customer list has one row per customer), do NOT ask about page size, orientation, fonts or colours, and do NOT ask for a title when one can be read from the description. A detailed description gets no questions at all, and so does any description a designer could start from: when in doubt, ask nothing and let the designer take the common default. Each question should offer a reasonable suggested answer.
 ${remembered ? `\n${remembered}\nDo NOT ask about anything these preferences already answer.\n` : ''}
 ${buildDescriptionBrief(request)}`,
             },

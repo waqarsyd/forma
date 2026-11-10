@@ -3,7 +3,7 @@
  * item 22).
  */
 import { describe, expect, it } from 'vitest';
-import { filesForBatch, keptAttachments, keptFiles, planFiles, planFor, planOutcome, planReply, planSteps, toggleFile } from './jobPlan';
+import { filesForBatch, keptAttachments, keptFiles, modeFromWords, planFiles, planFor, planOutcome, planReply, planSteps, toggleFile } from './jobPlan';
 
 const pages = (uploadId: string, file: string, n: number) => Array.from({ length: n }, () => ({ uploadId, file }));
 
@@ -28,8 +28,15 @@ describe('which messages are planned first', () => {
 describe('the plan, as it is changed', () => {
   const plan = planFor(planFiles([...pages('1', 'invoice.pdf', 4), ...pages('2', 'statement.png', 1), ...pages('3', 'notes.png', 1)], []))!;
 
-  it('says what it would do, and that nothing is sent before Start', () => {
-    expect(planReply(plan)).toBe('That is 3 files and 6 pages. Here is the plan: change it if you like, then start. Nothing is read or sent until you do.');
+  // Started at once since the full audit (2026-11-10): the words decide what Start used to.
+  it('says what it is doing, and reads "one report each" from the words', () => {
+    expect(planReply(plan)).toBe('That is 3 files and 6 pages: I\'m making one report from all of them. Say "one report each" if they are different reports. Stop stops it.');
+    expect(modeFromWords('Rebuild these as they are')).toBe('one');
+    expect(modeFromWords('One report each, please')).toBe('each');
+    expect(modeFromWords('separate reports for these')).toBe('each');
+    const each = planFor(plan.files, 'a report per file')!;
+    expect(each.mode).toBe('each');
+    expect(planReply(each)).toBe("That is 3 files and 6 pages: I'm making a report from each, in Batch. Stop pauses it.");
     expect(planSteps(plan, 'Gemini')).toEqual([
       'Read 6 pages with OCR, in this browser; nothing leaves it for this.',
       'Design one report from 3 files with Gemini: 1 request, 2 if the report leaves out text it should keep.',

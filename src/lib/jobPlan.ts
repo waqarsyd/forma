@@ -51,11 +51,21 @@ export function planFiles(images: readonly { uploadId: string; file: string }[],
   return out;
 }
 
+/**
+ * What the words ask for: a report for each file ("one report each",
+ * "separate reports", "a report per file", "in batch"), else one report from
+ * all of them, as the box has always meant (2026-11-10, the full audit: the
+ * plan starts at once, so the words decide what Start used to).
+ */
+export function modeFromWords(words: string): PlanMode {
+  return /\b(each|every|separate(ly)?|per file|per page|one per|in batch|as a batch)\b/i.test(words) ? 'each' : 'one';
+}
+
 /** The plan a message needs before it is sent, or null when it is light enough to go straight on. */
-export function planFor(files: readonly PlanFile[]): JobPlan | null {
+export function planFor(files: readonly PlanFile[], words = ''): JobPlan | null {
   const pages = files.reduce((n, f) => n + f.pages, 0);
   if (files.length < PLAN_FILES && pages < PLAN_PAGES) return null;
-  return { files: [...files], mode: 'one', skip: [] };
+  return { files: [...files], mode: modeFromWords(words), skip: [] };
 }
 
 /** The files the plan keeps. */
@@ -81,7 +91,10 @@ export function planSteps(plan: JobPlan, ai: string): string[] {
 /** What Forma says with the plan. */
 export function planReply(plan: JobPlan): string {
   const pages = plan.files.reduce((n, f) => n + f.pages, 0);
-  return `That is ${count(plan.files.length, 'file')}${pages ? ` and ${count(pages, 'page')}` : ''}. Here is the plan: change it if you like, then start. Nothing is read or sent until you do.`;
+  const what = `${count(plan.files.length, 'file')}${pages ? ` and ${count(pages, 'page')}` : ''}`;
+  return plan.mode === 'each' && plan.files.length > 1
+    ? `That is ${what}: I'm making a report from each, in Batch. Stop pauses it.`
+    : `That is ${what}: I'm making one report from all of them. Say "one report each" if they are different reports. Stop stops it.`;
 }
 
 /** What the thread says once the plan was answered. */

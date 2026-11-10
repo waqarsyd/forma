@@ -625,8 +625,7 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
             // When it is sent, behind the scenes (2026-11-03); the chip that
             // showed how far it had got went then, and this note with it on
             // 2026-11-06 (the workspace audit).
-            `"${name}" has no text layer — it looks like a scan, so its text is read with OCR in your browser ` +
-            `when you send it, to place every string where it was printed.`
+            `"${name}" looks like a scan, with no text layer: its pages are read as pictures when you send it.`
           );
         }
       }
@@ -2961,7 +2960,7 @@ export default function App() {
     setMessages(prev => [...prev, {
       id: nextMessageId(),
       role: 'assistant',
-      text: `Built "${built.title}" from the text OCR read, with no model involved.${unsure}`,
+      text: `Built "${built.title}" from the page's text, every line where it was printed.${unsure}`,
       result: newResult,
       standalone: true,
     }]);
@@ -2985,9 +2984,8 @@ export default function App() {
       id: nextMessageId(),
       role: 'assistant',
       text:
-        `Built "${built.title}" from the text OCR read, with Forma's box reader putting each text in its band: ` +
-        `${bands} ${bands === 1 ? 'band' : 'bands'}, the records printing from bound fields.` +
-        (copy ? ' The page exactly as OCR read it is the revision before this one.' : ''),
+        `Built "${built.title}" from the page: ${bands} ${bands === 1 ? 'band' : 'bands'}, with the records printing from bound fields.` +
+        (copy ? ' The page exactly as it was read is the revision before this one.' : ''),
       result: newResult,
       standalone: true,
     }]);
@@ -4163,7 +4161,6 @@ export default function App() {
       let response = chained.value;
       const answering = chained.config;
       const switched = chained.note;
-      const answeredBy = PROVIDER_NAMES[chained.by];
 
       if (signal.aborted) {
         console.debug('Generation aborted/paused by user.');
@@ -4272,12 +4269,10 @@ export default function App() {
       setActiveTab('ui');
 
       // Add assistant message, with who took part when more than the AI did.
-      const credits = team.members.length
-        ? await import('./lib/formaTeam')
-            // Mock mode asked no AI, and says so rather than crediting one (agent audit item 96).
-            .then(m => m.teamLine([...team.members, ...(response.fromDraft ? (['corrector', 'builder'] as const) : (['ai', 'checks'] as const))], answeredBy, MOCK_MODE))
-            .catch(() => '')
-        : '';
+      // Who did what is not said (2026-11-10, the full audit, the owner's
+      // rule): the reply is the result. Mock mode alone says a canned report
+      // stood in, so nobody reads a mock as the AI's work (agent audit item 96).
+      const credits = team.members.length ? await import('./lib/formaTeam').then(m => m.teamLine(MOCK_MODE)).catch(() => '') : '';
       // A redesign says what it changed and can be undone, as an edit in
       // place can, and what the REPX checks found (2026-11-05,
       // lib/agentEdit.ts): an agent reports its own checking.
@@ -4345,7 +4340,7 @@ export default function App() {
               id: nextMessageId(),
               role: 'assistant',
               // The provider's own words when the error carries them (agent audit item 15).
-              text: fallbackReply(aiName, err?.cause?.message || err?.message || friendlyMessage, made.source),
+              text: fallbackReply(aiName, err?.cause?.message || err?.message || friendlyMessage),
               result: drafted,
             }]);
             return;
@@ -4817,7 +4812,7 @@ export default function App() {
         const banded = await readerBuild(read);
         if (turn.signal.aborted) return;
         if (banded || built) {
-          say(`Forma's vision model could not read the page (${why}), so the report was built from the text OCR read.`);
+          say(`The page could not be read the usual way (${why}), so this report was built from its text alone.`);
           if (banded) handleReaderBuild(banded, built);
           else if (built) handleOcrBuild(built);
           return;
@@ -5033,14 +5028,17 @@ export default function App() {
     }
 
     /*
-     * A heavy job is planned before anything is read or sent (2026-11-10,
-     * the AI accuracy programme, batch AG item 22, lib/jobPlan.ts): many
-     * files or many pages are answered with a plan the person changes and
-     * starts. Its message goes in the thread now; Start sends it on.
+     * A heavy job says its plan and starts (2026-11-10, the AI accuracy
+     * programme, batch AG item 22, lib/jobPlan.ts; started at once since the
+     * full audit the same day, the owner's rule that a request is carried
+     * out, not answered with a Start button): many files or many pages are
+     * answered with what is being made, one report from all of them or, when
+     * the words say "one report each", a report for each in Batch. The
+     * plan's message goes in the thread as the account of it; Stop stops it.
      */
     if (!resend?.planned && (!again || resend?.queued)) {
       const jobs = await import('./lib/jobPlan');
-      const plan = jobs.planFor(jobs.planFiles(stagedImageMeta, stagedTexts));
+      const plan = jobs.planFor(jobs.planFiles(stagedImageMeta, stagedTexts), promptText);
       if (plan) {
         const askId = nextMessageId();
         const planId = nextMessageId();
@@ -5057,6 +5055,8 @@ export default function App() {
           { id: planId, role: 'assistant', text: jobs.planReply(plan), plan: { ...plan, prompt: promptText, askId } },
         ]);
         clearComposer();
+        // After this turn has let go, so the job's own turn starts clean.
+        setTimeout(() => void startPlan(planId, { ...plan, prompt: promptText, askId }), 0);
         return;
       }
     }
@@ -5329,7 +5329,8 @@ export default function App() {
          */
         // A translation the model asked for without naming the language takes the one the message names (2026-11-10).
         const asked = agent && outcome.tools?.some((t) => t.name === 'translate' && !t.language) ? (await import('./lib/repxTranslate')).languageAsked(currentPrompt) : null;
-        const split = agent ? agent.splitTools((outcome.tools ?? []).map((t) => (t.name === 'translate' && !t.language && asked ? { ...t, language: asked } : t))) : { now: [], ask: [] };
+        // What the person's own words asked for runs at once (2026-11-10, the full audit); the rest of the guarded tools are offered.
+        const split = agent ? agent.splitTools((outcome.tools ?? []).map((t) => (t.name === 'translate' && !t.language && asked ? { ...t, language: asked } : t)), currentPrompt) : { now: [], ask: [] };
         const tools = split.now;
         const offered = split.ask.length ? { actions: split.ask } : {};
         const toolsDone = agent
@@ -5363,7 +5364,6 @@ export default function App() {
            * one: it costs a request only when something went wrong, and a
            * second answer that changes nothing leaves the first as it was.
            */
-          let secondPass = false;
           if (done.declined.length || errorsBrought.length) {
             try {
               const again = await chatReply(
@@ -5380,7 +5380,6 @@ export default function App() {
               const more = second.action === 'edit' && second.edits.length ? agent.applyEdits(done.xml, second.edits, hooks) : null;
               if (more?.changed) {
                 done = { xml: more.xml, applied: [...done.applied, ...more.applied], declined: more.declined, changed: true };
-                secondPass = true;
               }
             } catch (err) {
               if (turn.signal.aborted) return;
@@ -5406,7 +5405,6 @@ export default function App() {
               ...offered,
               text: [
                 outcome.reply,
-                secondPass ? 'Forma took a second pass for what the first could not make.' : '',
                 agent.changesMarkdown(changes, [...done.declined, ...toolsRefused], toolsDone),
                 brought,
               ].filter(Boolean).join('\n\n'),
@@ -5429,32 +5427,33 @@ export default function App() {
             return;
           }
           /*
-           * Nothing could be made in place: say why, and ask before
-           * redesigning. The tools asked for with the edits do not run on a
-           * report the edits never reached (agent audit item 38).
+           * Nothing could be made in place: say so, and redesign from the
+           * words at once (2026-11-10, the full audit, the owner's rule that a
+           * request is carried out and not answered with a question; it asked
+           * "Redesign?" with two buttons from 2026-11-05). Stop stops it and
+           * Undo takes it back. The tools asked for with the edits do not run
+           * on a report the edits never reached (agent audit item 38).
            */
           setMessages(prev => [...prev, withCost({
             id,
             role: 'assistant',
-            text: `That could not be changed in place. Redesign the report from your words? It rewrites the whole report and takes a minute or two.\n\n${agent.changesMarkdown([], [...done.declined, ...tools.map((t) => `${agent.toolLine(t)}: not started, as the edits were not made`)])}`,
-            confirm: { prompt: designWords },
+            text: `That cannot be changed in place, so I'm redesigning the report from your words; it takes a minute or two, and Undo brings this one back.\n\n${agent.changesMarkdown([], [...done.declined, ...tools.map((t) => `${agent.toolLine(t)}: not started, as the edits were not made`)])}`,
           })]);
+          setTimeout(() => void startRedesign(designWords), 0);
           return;
         } else if (open && outcome.wantsReport && !withPictures) {
           /*
-           * A change only a redesign can make, asked first (2026-11-05): with a
-           * report open it rewrites the whole report, minutes and the whole
-           * REPX in tokens, as an agent asks before a costly step. The buttons
-           * or a typed yes start it (`handleConfirm`). A picture sent to
-           * redesign from is the request already, and goes on, as it always
-           * has: the confirmation keeps words, not pictures.
+           * A change only a redesign can make starts at once (2026-11-10; it
+           * was asked first from 2026-11-05, as a costly step). The reply says
+           * so; the whole report is rewritten, Undo brings this one back, and
+           * `handleConfirm` still answers a question an older thread holds.
            */
           setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
             role: 'assistant',
-            text: [outcome.reply, 'Redesigning rewrites the whole report and takes a minute or two.'].filter(Boolean).join(' '),
-            confirm: { prompt: designWords },
+            text: [outcome.reply, 'Redesigning the whole report now; it takes a minute or two, and Undo brings this one back.'].filter(Boolean).join(' '),
           })]);
+          setTimeout(() => void startRedesign(designWords), 0);
           return;
         } else if (!outcome.wantsReport) {
           if (tools.length) setPendingTools(tools);
@@ -5721,8 +5720,9 @@ export default function App() {
    * first gap of docs/proposals/ai-designers.md, lib/repxTranslate.ts): one
    * request with every distinct text, the answers put back, the layout
    * untouched, kept as a revision and reported in the thread with its Undo.
-   * Offered as a button first (ASK_FIRST_TOOLS), since it rewrites every
-   * caption; the next free AI answers on a limit, as any request does.
+   * Run at once when asked for (it was offered as a button first for a few
+   * hours on 2026-11-10, until the owner saw it); the next free AI answers
+   * on a limit, as any request does.
    */
   const translateReport = async (language: string) => {
     const open = result;
@@ -7293,8 +7293,6 @@ export default function App() {
                 // The search, marked in the asks and the replies (the log's until 2026-11-08).
                 query={logQuery}
                 // The lazy component loses its generic; the result is App's own DesignResult.
-                // A generation's cost from its report; a chat reply's from itself (agent audit item 79).
-                usageOf={(m) => summariseUsage((m.result as DesignResult | undefined)?.usage ?? m.usage)}
                 // A request's change shown on the Preview, the log's pick until 2026-11-08.
                 changed={changedRequests}
                 onShowChange={(id) => void showRequest(id)}

@@ -126,27 +126,12 @@ describe('houseStyleBrief', () => {
 });
 
 describe('the replies', () => {
-  it('names who took part, in the order they acted', () => {
-    expect(teamLine(['ocr', 'vision', 'memory', 'ai', 'checks'], 'Gemini')).toBe(
-      "OCR read the words, Forma's vision model read the layout, your remembered preferences were applied, Gemini designed the report and Forma checked and repaired the result.",
-    );
-    expect(teamLine(['house', 'ai', 'checks'], 'Local AI')).toBe("Forma's own model gave the house style, Local AI designed the report and Forma checked and repaired the result.");
-    expect(teamLine(['ai'], 'Gemini')).toBe('');
-    expect(teamLine(['ocr', 'reader', 'ai', 'checks'], 'Gemini')).toBe(
-      "OCR read the words, Forma's box reader put each in its band, Gemini designed the report and Forma checked and repaired the result.",
-    );
-  });
-
-  it('says the AI corrected Forma\'s draft and Forma built the report, when it did (2026-11-05)', () => {
-    expect(teamLine(['ocr', 'reader', 'corrector', 'builder'], 'Gemini')).toBe(
-      "OCR read the words, Forma's box reader put each in its band, Gemini corrected Forma's draft and Forma built the report from it and checked it.",
-    );
-  });
-
-  // Agent audit item 96: mock mode asked no AI, and credited Gemini anyway.
-  it('says the canned report stood in for the AI in mock mode, and names no AI', () => {
-    const line = teamLine(['ocr', 'reader', 'ai', 'checks'], 'Gemini', true);
-    expect(line).toBe("OCR read the words, Forma's box reader put each in its band, the canned mock report stood in for an AI and Forma checked and repaired the result.");
+  // The full audit (2026-11-10), the owner's rule: who did what is not said; the reply is the result.
+  it('names nobody, and in mock mode alone says a canned report stood in (agent audit item 96)', () => {
+    expect(teamLine()).toBe('');
+    expect(teamLine(false)).toBe('');
+    const line = teamLine(true);
+    expect(line).toBe('Mock mode is on, so a canned report stood in for the AI.');
     expect(line).not.toContain('Gemini');
   });
 
@@ -160,11 +145,12 @@ describe('the replies', () => {
     expect(failureReason("Google's servers are busy and could not take this request")).toBe('it is overloaded right now');
     expect(failureReason('Forma could not reach the local AI at http://localhost:11434/v1.')).toBe('it could not be reached');
     expect(failureReason("The local AI read only 2,048 of about 10,000 tokens of the request: qwen3's context window is too small")).toBe('its context window is too small for the request');
-    expect(fallbackReply('Gemini', '429 quota', 'vision')).toBe(
-      "Gemini could not answer (its free quota is used up for now), so Forma built this draft without it, from Forma's vision model and the text OCR read. " +
-        'Send the request again when Gemini is available to have it designed in full.',
+    // The draft is handed over in the user's terms, with no OCR or model named (2026-11-10).
+    expect(fallbackReply('Gemini', '429 quota')).toBe(
+      "Gemini could not answer (its free quota is used up for now), so this is Forma's own draft of the page. " +
+        'Check its figures and fonts against the source, and send the request again when Gemini is available to have it designed in full.',
     );
-    expect(fallbackReply('OpenRouter', 'Failed to fetch', 'offline')).toContain("from Forma's own model.");
-    expect(fallbackReply('Gemini', '503', 'reader')).toContain("from the text OCR read, put in bands by Forma's box reader.");
+    expect(fallbackReply('OpenRouter', 'Failed to fetch')).toContain('OpenRouter could not answer (it could not be reached)');
+    expect(fallbackReply('Gemini', '503')).not.toMatch(/OCR|box reader|vision model/);
   });
 });

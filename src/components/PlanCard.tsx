@@ -1,9 +1,11 @@
 /**
  * A plan before a heavy job, in a reply (2026-11-10, the AI accuracy
- * programme, batch AG item 22, lib/jobPlan.ts): each file ticked or left out,
- * one report from all of them or a report for each, the steps that would
- * run, and Start. Nothing is read or sent until it is pressed, or a yes is
- * typed. Answered, it says what was started.
+ * programme, batch AG item 22, lib/jobPlan.ts): each file, one report from
+ * all of them or a report for each, and the steps. Since the full audit the
+ * same day the job starts at once (the owner's rule: a request is carried
+ * out, not answered with a Start button), so App posts it answered and the
+ * card says what started; the form below still answers a plan an older
+ * thread left waiting.
  */
 import { useState } from 'react';
 import { keptFiles, planOutcome, planSteps, toggleFile, type JobPlan, type PlanMode } from '../lib/jobPlan';

@@ -832,20 +832,43 @@ export function toolLine(tool: AgentTool): string {
 }
 
 /**
- * The tools that wait for the person's word (2026-11-07, agent audit item 47,
- * the owner's choice): an export downloads a file and the designer opens a
- * program, so a model asking for either, perhaps told to by a label in the
- * report, offers a button instead. Showing a pane, sample rows and undo,
- * which take nothing out of the page, still run at once.
+ * The tools that run at once only when the person's own words asked for
+ * them (2026-11-10, the full audit). The owner's rule is that a request is
+ * carried out as Claude, ChatGPT and Gemini carry one out, never answered
+ * with a button to press: "translate into German" was answered with a button
+ * and that was wrong. The reason these three waited from 2026-11-07 (agent
+ * audit item 47) still stands, though: a model can be told to export, open
+ * the designer or translate by a label inside the report or the picture it
+ * reads, and each takes something out of the page. So the person's message
+ * decides. Asked for in it, the tool runs now; asked for by the model alone,
+ * it is offered as a button, which words inside a report cannot press.
  */
 export const ASK_FIRST_TOOLS: readonly ToolName[] = ['export', 'designer', 'translate'];
 
-/** The tools to run at once, and those offered as a button. */
-export function splitTools(tools: readonly AgentTool[]): { now: AgentTool[]; ask: AgentTool[] } {
-  return {
-    now: tools.filter((t) => !ASK_FIRST_TOOLS.includes(t.name)),
-    ask: tools.filter((t) => ASK_FIRST_TOOLS.includes(t.name)),
-  };
+/** Whether the person's own words ask for a tool, so it may run at once. */
+export function askedFor(tool: AgentTool, words: string): boolean {
+  switch (tool.name) {
+    case 'export':
+      return /\b(export|download|save (it |this |the report )?as|as a (pdf|csv|spreadsheet|workbook|word (document|file)|picture|png|image)|\.?(pdf|xlsx|csv|docx|rtf|html|png|repx)\b)/i.test(words);
+    case 'designer':
+      return /\bdesigner\b/i.test(words);
+    case 'translate':
+      return /\b(translat\w*|locali[sz]\w*)\b/i.test(words) || (!!tool.language && new RegExp(`\\b${tool.language.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(words));
+    default:
+      return true;
+  }
+}
+
+/**
+ * The tools to run at once, and those offered as a button: everything the
+ * person asked for runs now (`words` is their message), and a guarded tool
+ * the model brought on its own is offered.
+ */
+export function splitTools(tools: readonly AgentTool[], words = ''): { now: AgentTool[]; ask: AgentTool[] } {
+  const now: AgentTool[] = [];
+  const ask: AgentTool[] = [];
+  for (const t of tools) (!ASK_FIRST_TOOLS.includes(t.name) || askedFor(t, words) ? now : ask).push(t);
+  return { now, ask };
 }
 
 /**
@@ -1190,17 +1213,19 @@ export function describeChanges(before: string, after: string, limit = 10): stri
 /**
  * What the REPX checks found, said in the reply (2026-11-05), as an agent
  * reports its own checking rather than leaving it to a pane nobody opened.
- * After a redesign, everything found, or that nothing was; after an edit
- * (`before` given), only what the edit brought, and nothing when it brought
- * nothing. Four lines, then a count of the rest.
+ * After a redesign, everything found; after an edit (`before` given), only
+ * what the edit brought. Nothing when nothing was found (2026-11-10, the
+ * full audit: "Checked: the REPX checks found nothing wrong" under every
+ * report was machinery, not news). Four lines, then a count of the rest.
  */
 export function checksMarkdown(after: readonly { severity: string; message: string }[], before?: readonly { message: string }[]): string {
   const seen = new Set(before?.map((f) => f.message));
   const found = before ? after.filter((f) => !seen.has(f.message)) : after;
-  if (!found.length) return before ? '' : '**Checked**: the REPX checks found nothing wrong.';
+  if (!found.length) return '';
   const lines = found.slice(0, 4).map((f) => `- ${f.severity === 'error' ? 'error: ' : ''}${f.message}`);
   if (found.length > 4) lines.push(`- and ${found.length - 4} more, listed in the REPX pane`);
-  return `**${before ? 'The change brought' : 'The checks found'} ${found.length} ${found.length === 1 ? 'problem' : 'problems'}**\n${lines.join('\n')}`;
+  const count = `${found.length} ${found.length === 1 ? 'thing' : 'things'}`;
+  return `**${before ? `This change left ${count} worth checking` : `${count.charAt(0).toUpperCase()}${count.slice(1)} worth checking`}**\n${lines.join('\n')}`;
 }
 
 /** The reply's account of a turn: what changed, what was asked and not done, and what Forma did. */

@@ -26,8 +26,7 @@ export default function UsageSettings({ now = new Date() }: { now?: Date }) {
       <div className="wb-set-text">
         <span className="wb-set-label">Requests today</span>
         <p>
-          Sent from this browser. Google's free limits are per model per day and start again at midnight Pacific time, in {hours} h {minutes} min. A
-          model's limit shows once Google has stated it.
+          Requests sent from this browser today. Google's free allowance is per model and per day, and starts again in {hours} h {minutes} min.
         </p>
       </div>
       {models.length === 0 ? (

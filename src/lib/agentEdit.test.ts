@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, parsesSoFar, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, askedFor, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, parsesSoFar, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -304,12 +304,19 @@ describe('the new edits, and edits that do what they say', () => {
     expect(applyEdits(doc(lbl(1, 'a', 'Font="Arial, 9pt, style=Bold"')), out.edits.slice(0, 1)).xml).toContain('Font="Arial, 12pt"');
   });
 
-  // Agent audit item 47, the owner's choice: what takes something out of the page waits for a press.
-  it('offers an export and the designer as buttons, and runs a pane, sample rows and undo at once', () => {
-    const { now, ask } = splitTools([{ name: 'show', pane: 'preview' }, { name: 'export', format: 'pdf' }, { name: 'testData' }, { name: 'designer' }, { name: 'undo' }, { name: 'translate', language: 'German' }]);
-    expect(now.map((t) => t.name)).toEqual(['show', 'testData', 'undo']);
-    // A translation rewrites every caption, so it waits too (2026-11-10).
-    expect(ask).toEqual([{ name: 'export', format: 'pdf' }, { name: 'designer' }, { name: 'translate', language: 'German' }]);
+  // The full audit (2026-11-10), the owner's rule: what the person asked for runs at once; what the
+  // model brought on its own (a label in the report can tell it to, agent audit item 47) is offered.
+  it('runs what the person asked for at once, and offers a guarded tool the model brought alone', () => {
+    const all = [{ name: 'show', pane: 'preview' }, { name: 'export', format: 'pdf' }, { name: 'testData' }, { name: 'designer' }, { name: 'undo' }, { name: 'translate', language: 'German' }] as const;
+    const alone = splitTools([...all]);
+    expect(alone.now.map((t) => t.name)).toEqual(['show', 'testData', 'undo']);
+    expect(alone.ask.map((t) => t.name)).toEqual(['export', 'designer', 'translate']);
+    const asked = splitTools([...all], 'Translate it into German, export it as a PDF and open it in the designer');
+    expect(asked.now.map((t) => t.name)).toEqual(['show', 'export', 'testData', 'designer', 'undo', 'translate']);
+    expect(asked.ask).toEqual([]);
+    expect(askedFor({ name: 'translate', language: 'French' }, 'Make it French')).toBe(true);
+    expect(askedFor({ name: 'export', format: 'xlsx' }, 'download the spreadsheet')).toBe(true);
+    expect(askedFor({ name: 'export', format: 'pdf' }, 'make the title bold')).toBe(false);
   });
 
   // Items 23 and 38.
@@ -524,10 +531,11 @@ describe('describeChanges: what the reply says changed', () => {
 
   // The checks said aloud (2026-11-05).
   it('says what the checks found after a redesign, or that they found nothing', () => {
-    expect(checksMarkdown([])).toBe('**Checked**: the REPX checks found nothing wrong.');
+    // Nothing found is nothing said (2026-11-10, the full audit).
+    expect(checksMarkdown([])).toBe('');
     const found = Array.from({ length: 6 }, (_, i) => ({ severity: i ? 'warning' : 'error', message: `problem ${i + 1}` }));
     expect(checksMarkdown(found)).toBe(
-      '**The checks found 6 problems**\n- error: problem 1\n- problem 2\n- problem 3\n- problem 4\n- and 2 more, listed in the REPX pane',
+      '**6 things worth checking**\n- error: problem 1\n- problem 2\n- problem 3\n- problem 4\n- and 2 more, listed in the REPX pane',
     );
   });
 
@@ -535,7 +543,7 @@ describe('describeChanges: what the reply says changed', () => {
     const before = [{ severity: 'warning', message: 'old one' }];
     expect(checksMarkdown(before, before)).toBe('');
     expect(checksMarkdown([...before, { severity: 'error', message: 'A control is outside the page.' }], before)).toBe(
-      '**The change brought 1 problem**\n- error: A control is outside the page.',
+      '**This change left 1 thing worth checking**\n- error: A control is outside the page.',
     );
   });
 

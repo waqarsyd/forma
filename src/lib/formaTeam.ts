@@ -160,47 +160,22 @@ export function houseStyleBrief(style: HouseStyle, reports: number, unit: string
   );
 }
 
-/** What each part did, as the reply says it. */
-const ROLES: Record<TeamMember, string> = {
-  ocr: 'OCR read the words',
-  vision: "Forma's vision model read the layout",
-  reader: "Forma's box reader put each in its band",
-  house: "Forma's own model gave the house style",
-  memory: 'your remembered preferences were applied',
-  ai: '',
-  corrector: '',
-  builder: 'Forma built the report from it and checked it',
-  checks: 'Forma checked and repaired the result',
-};
-
 /**
- * One sentence naming who did what, for the reply under a report. In mock
- * mode (`VITE_FORMA_MOCK`) no AI was asked, and the sentence says the canned
- * report stood in for it (2026-11-07, agent audit item 96): it credited
- * Gemini with a report Gemini never saw.
+ * What the reply under a report says about who made it: nothing (2026-11-10,
+ * the full audit, the owner's rule). Until then it named every part, "OCR
+ * read the words, Forma's box reader put each in its band, your remembered
+ * preferences were applied, Gemini designed the report and Forma checked and
+ * repaired the result": machinery nobody asked about. In mock mode
+ * (`VITE_FORMA_MOCK`) no AI was asked, and one sentence still says a canned
+ * report stood in (2026-11-07, agent audit item 96), so a mock is never read
+ * as the AI's work.
  */
-export function teamLine(members: readonly TeamMember[], aiName: string, mock = false): string {
-  const parts = members.map((m) =>
-    m === 'ai'
-      ? mock ? 'the canned mock report stood in for an AI' : `${aiName} designed the report`
-      : m === 'corrector'
-        ? mock ? "the mock stood in for the AI's corrections" : `${aiName} corrected Forma's draft`
-        : ROLES[m],
-  );
-  if (parts.length < 2) return '';
-  const text = `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}.`;
-  return text.charAt(0).toUpperCase() + text.slice(1);
+export function teamLine(mock = false): string {
+  return mock ? 'Mock mode is on, so a canned report stood in for the AI.' : '';
 }
 
-/** How Forma's own draft was made, for the reply that hands it over. */
+/** How Forma's own draft was made; kept on the draft for the record, not said in the reply. */
 export type DraftSource = 'vision' | 'reader' | 'ocr' | 'offline';
-
-const DRAFT_SOURCES: Record<DraftSource, string> = {
-  vision: "Forma's vision model and the text OCR read",
-  reader: "the text OCR read, put in bands by Forma's box reader",
-  ocr: 'the text OCR read',
-  offline: "Forma's own model",
-};
 
 /**
  * Why the AI did not answer, in a few words, from its error message. App
@@ -220,11 +195,15 @@ export function failureReason(message: string): string {
   return first.length > 160 ? `${first.slice(0, 159)}…` : first;
 }
 
-/** The reply when the AI could not answer and Forma's own draft stands in. */
-export function fallbackReply(aiName: string, errorMessage: string, source: DraftSource): string {
+/**
+ * The reply when the AI could not answer and Forma's own draft stands in:
+ * why, and what the draft is, in the user's terms (2026-11-10; it named the
+ * vision model and OCR until the full audit).
+ */
+export function fallbackReply(aiName: string, errorMessage: string): string {
   const reason = failureReason(errorMessage).replace(/\.$/, '');
   return (
-    `${aiName} could not answer (${reason}), so Forma built this draft without it, from ${DRAFT_SOURCES[source]}. ` +
-    `Send the request again when ${aiName} is available to have it designed in full.`
+    `${aiName} could not answer (${reason}), so this is Forma's own draft of the page. ` +
+    `Check its figures and fonts against the source, and send the request again when ${aiName} is available to have it designed in full.`
   );
 }
