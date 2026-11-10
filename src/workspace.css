@@ -454,7 +454,12 @@
   cursor: pointer;
   margin-top: 4px;
 }
-.wb-root :focus-visible { outline: 2px solid color-mix(in srgb, var(--ink) 45%, transparent); outline-offset: 2px; }
+/* Only when the keyboard is driving (2026-11-10, the full audit, lib/inputModality.ts):
+   a text field matches :focus-visible on a click too, so this ring drew on every
+   field clicked into, the grey boundary the owner named. */
+html:where(:not([data-modality='pointer'])) .wb-root :focus-visible { outline: 2px solid color-mix(in srgb, var(--ink) 45%, transparent); outline-offset: 2px; }
+/* :where() keeps this at the specificity it had, so a container that shows the focus itself
+   (the composer, the search pill, the command menu) still turns the inner ring off. */
 /* The marketing pages' focus ring is an orange shadow; in the workspace the
    grey outline above is the ring (2026-11-06): Copy XML and the account
    dialog's links drew both, the orange ring outside the grey. */
@@ -739,7 +744,9 @@
   background: var(--panel);
   color: var(--ink-faint);
 }
-.wb-chat-search:focus-within { border-color: var(--rule-strong); }
+/* No darker edge on focus (2026-11-10): the caret and the typed text show it, as ChatGPT's search. */
+.wb-chat-search:focus-within { background: var(--panel-2); }
+html:not([data-modality='pointer']) .wb-chat-search:focus-within { border-color: var(--rule-strong); }
 .wb-chat-search input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--ink); outline: none; }
 /* The pill shows the focus, and its own button closes the search: the
    browser's ring and clear button inside it would be a second of each. */
@@ -800,7 +807,7 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 /* Focus darkens the edge and lifts the shadow, with no orange (2026-11-05, at
    the owner's request), as ChatGPT's box does; it was the accent. Focus stays
    plainly visible, which is what the comment below depends on. */
-.wb-box:focus-within { border-color: var(--rule-strong); box-shadow: var(--shadow-md); }
+.wb-box:focus-within { box-shadow: var(--shadow-md); }
 .wb-box .wb-line { flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* `.wb-line` was a static placeholder span in the artifact, so it was coloured
    like one. As a real input that rule painted everything the user *typed* in
@@ -889,7 +896,7 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 
 /* Locked: dashed edge, flat, so the box itself says "not yet". */
 .wb-box.wb-is-locked { border-style: dashed; box-shadow: none; background: var(--panel-2); }
-.wb-box.wb-is-locked:focus-within { border-color: var(--rule-strong); box-shadow: none; }
+.wb-box.wb-is-locked:focus-within { box-shadow: none; }
 
 .wb-pill {
   display: inline-flex;
@@ -1173,7 +1180,8 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   font-family: var(--body);
   font-size: 13px;
 }
-.wb-ctl:focus { outline: none; border-color: var(--ink-2); }
+.wb-ctl:focus { outline: none; }
+html:not([data-modality='pointer']) .wb-ctl:focus-visible { border-color: var(--ink-2); }
 .wb-ctl::placeholder { color: var(--ink-faint); }
 /* The settings dialog's select with its drawn chevron, the key row with its
    eye, the two-column passphrase grid, the required mark and the green note

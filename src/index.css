@@ -565,6 +565,7 @@ body {
     box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--primary);
   }
 
+
   /* Minimum comfortable touch target (WCAG 2.5.5). Applied on coarse
      pointers only so dense desktop toolbars keep their compact sizing. */
   @media (pointer: coarse) {
@@ -1173,3 +1174,13 @@ body {
    buttons; Google allows hiding it where its notice is shown instead, which
    LoginPage and SharedReportPage do. */
 .grecaptcha-badge { visibility: hidden; }
+
+/* A field clicked into shows the caret, not a ring or a darker edge (2026-11-10, the full
+   audit, lib/inputModality.ts): a text field matches :focus-visible on a click too, so the
+   public forms' focus ring and orange border drew on every click. Under the keyboard they
+   still do. Unlayered on purpose: Tailwind's utilities layer is declared last, so a rule
+   inside any @layer loses to focus:ring-4 whatever its specificity. */
+html[data-modality='pointer'] .landing :is(input, textarea, select):focus {
+  --tw-ring-shadow: 0 0 #0000;
+  border-color: var(--color-outline-variant);
+}

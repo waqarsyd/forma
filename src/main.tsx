@@ -5,6 +5,7 @@ import PublicSite from './PublicSite';
 import OfflineBanner from './components/OfflineBanner';
 import './index.css';
 import {watchForStaleChunks} from './lib/staleChunks';
+import {watchInputModality} from './lib/inputModality';
 import ErrorBoundary from './components/ErrorBoundary';
 import {currentPath, onRouteChange} from './lib/router';
 
@@ -62,6 +63,10 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 // A tab open across a deploy reloads once for the new build rather than break
 // on its next lazy load (2026-11-07, site audit item 1; lib/staleChunks.ts).
 watchForStaleChunks();
+
+// Pointer or keyboard, on the root (2026-11-10, the full audit): a field
+// clicked into shows no ring or darker border; a Tab still does.
+watchInputModality();
 
 // reducedMotion="user" makes every Framer animation in the app honour the OS
 // preference: transform and layout animations are dropped, opacity is kept, so

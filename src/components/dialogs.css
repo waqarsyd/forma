@@ -67,7 +67,9 @@ h4.wb-set-label { margin: 0; }
 .wb-set-input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--rule-strong); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; }
 select.wb-set-input { cursor: pointer; }
 .wb-set-input::placeholder { color: var(--ink-faint); }
-.wb-root .wb-set-input:focus-visible { outline: none; border-color: var(--ink-2); }
+/* The edge darkens for the keyboard only (2026-11-10, lib/inputModality.ts); a click shows the caret. */
+.wb-root .wb-set-input:focus-visible { outline: none; }
+html:not([data-modality='pointer']) .wb-root .wb-set-input:focus-visible { border-color: var(--ink-2); }
 .wb-set-secret { position: relative; display: flex; min-width: 0; }
 .wb-set-secret .wb-set-input { padding-right: 38px; }
 .wb-set-peek { position: absolute; top: 3px; right: 3px; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--ink-2); cursor: pointer; }
