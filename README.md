@@ -533,7 +533,9 @@ src/
                        (the Docs articles a question about Forma is given),
                        jobPlan (the plan a heavy message gets first),
                        batchCheckpoint (a batch kept in the browser to carry
-                       on after a limit or a reload), chatJudge (the twenty
+                       on after a limit or a reload), repxTranslate (a report's
+                       typed texts collected for translation and put back, the
+                       layout untouched), chatJudge (the twenty
                        chat requests the benchmark scores, the checks code makes
                        and the judge's rubric),
                        formaTeam (one request with every part in its role:

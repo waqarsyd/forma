@@ -750,7 +750,9 @@ y_top = pageHeight − (baseline + height)`}
                 move, a font, a colour, a border, a number format, a binding, a page number, a table's row or
                 column, a duplicate, a band's height); or, for what an edit cannot reach, asks before redesigning
                 it. Each reply lists what changed, with Undo and Redo, and "undo that" in the chat takes the last
-                change back.
+                change back. Ask for the report in another language ("translate it into German") and Forma offers
+                a button that translates every typed caption and title in one request, the layout as it was, as a
+                revision beside the original.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="Name the region">

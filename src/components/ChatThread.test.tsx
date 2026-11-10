@@ -424,10 +424,10 @@ describe("actions on Forma's replies", () => {
   // Agent audit item 47, the owner's choice: an export or the designer is a button, run only when pressed.
   it('draws what a reply offers as buttons, and runs one only when it is pressed', () => {
     const onAction = vi.fn();
-    const offering = [thread[0], msg({ id: 'a2', role: 'assistant', text: 'It is ready.', actions: [{ name: 'export', format: 'pdf' }, { name: 'designer' }] })];
+    const offering = [thread[0], msg({ id: 'a2', role: 'assistant', text: 'It is ready.', actions: [{ name: 'export', format: 'pdf' }, { name: 'designer' }, { name: 'translate', language: 'German' }] })];
     const { unmount } = draw({ messages: offering, onAction });
     const group = screen.getByRole('group', { name: 'Offered by this reply' });
-    expect([...group.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Export as PDF', 'Open in designer']);
+    expect([...group.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Export as PDF', 'Open in designer', 'Translate into German']);
     expect(onAction).not.toHaveBeenCalled();
     fireEvent.click(within(group).getByText('Open in designer'));
     expect(onAction).toHaveBeenCalledWith('a2', 1);

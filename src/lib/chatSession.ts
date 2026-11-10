@@ -115,7 +115,7 @@ export interface ChatMessage<R = unknown, M = unknown> {
    * item 47, the owner's choice): an export or the designer the model asked
    * for, drawn as buttons under the reply and run only when one is pressed.
    */
-  actions?: { name: string; pane?: string; format?: string }[];
+  actions?: { name: string; pane?: string; format?: string; language?: string }[];
   /**
    * A redesign this reply asks before making (2026-11-05): with a report
    * open, a change only a full redesign can make costs a minute or two and

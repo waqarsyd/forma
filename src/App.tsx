@@ -5268,7 +5268,9 @@ export default function App() {
          * owner's choice): a model can be told to ask for one by a label in
          * the report it reads. The rest still run at once.
          */
-        const split = agent ? agent.splitTools(outcome.tools ?? []) : { now: [], ask: [] };
+        // A translation the model asked for without naming the language takes the one the message names (2026-11-10).
+        const asked = agent && outcome.tools?.some((t) => t.name === 'translate' && !t.language) ? (await import('./lib/repxTranslate')).languageAsked(currentPrompt) : null;
+        const split = agent ? agent.splitTools((outcome.tools ?? []).map((t) => (t.name === 'translate' && !t.language && asked ? { ...t, language: asked } : t))) : { now: [], ask: [] };
         const tools = split.now;
         const offered = split.ask.length ? { actions: split.ask } : {};
         const toolsDone = agent
@@ -5652,6 +5654,72 @@ export default function App() {
       }
     } finally {
       setTestDataBusy(false);
+    }
+  };
+
+  /**
+   * The report's typed texts translated into a language (2026-11-10, the
+   * first gap of docs/proposals/ai-designers.md, lib/repxTranslate.ts): one
+   * request with every distinct text, the answers put back, the layout
+   * untouched, kept as a revision and reported in the thread with its Undo.
+   * Offered as a button first (ASK_FIRST_TOOLS), since it rewrites every
+   * caption; the next free AI answers on a limit, as any request does.
+   */
+  const translateReport = async (language: string) => {
+    const open = result;
+    if (!open?.repxContent) return;
+    if (!hasApiKey) {
+      setIsConfigOpen(true);
+      return;
+    }
+    const say = (text: string) => setMessages((prev) => [...prev, { id: nextMessageId(), role: 'assistant', text }]);
+    if (!language.trim()) {
+      say('Which language should the report be translated into?');
+      return;
+    }
+    const session = sessionId.current;
+    setIsChatting(true);
+    setStreamingReply('');
+    try {
+      const [{ collectTexts, applyTranslations }, { translateTexts }, { askWithChain }] = await Promise.all([import('./lib/repxTranslate'), loadGemini(), import('./lib/fallbackChain')]);
+      const texts = collectTexts(open.repxContent);
+      if (!texts.length) {
+        say('This report has no typed text to translate: every text in it prints a field.');
+        return;
+      }
+      const answered = await askWithChain(effectiveConfig(), (asked) => translateTexts(texts.map((t) => t.text), language, asked));
+      if (sessionId.current !== session) return;
+      const { xml, changed } = applyTranslations(open.repxContent, answered.value);
+      if (!changed) {
+        say(`Nothing changed: the ${PROVIDER_NAMES[answered.by]} answered with the texts as they were.`);
+        return;
+      }
+      const next: DesignResult = { ...open, repxContent: asConfigured(xml), timestamp: new Date() };
+      setResult(next);
+      recordRevision(`Translated into ${language}`, next);
+      const id = nextMessageId();
+      rememberChange(id, open, next);
+      const printed = texts.reduce((n, t) => n + t.count, 0);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id,
+          role: 'assistant',
+          text: [
+            answered.note,
+            `Translated ${changed} of ${printed} texts into ${language}. The layout is untouched, so check the Preview for a translation that no longer fits its box; Undo puts the original back, and Revisions keeps both.`,
+          ].filter(Boolean).join('\n\n'),
+        },
+      ]);
+    } catch (err: any) {
+      if (sessionId.current !== session) return;
+      if (isMissingApiKey(err)) setIsConfigOpen(true);
+      else say(`The translation could not be made: ${err?.message || 'the AI did not answer'}.`);
+    } finally {
+      if (sessionId.current === session) {
+        setIsChatting(false);
+        setStreamingReply('');
+      }
     }
   };
 
@@ -6146,7 +6214,7 @@ export default function App() {
         const last = [...undoableIds].pop();
         if (last) handleUndo(last);
         else undoReport();
-      }
+      } else if (tool.name === 'translate') void translateReport(tool.language ?? '');
     });
   };
   const railBtn = (panel: RailPanel, label: string, icon: React.ReactNode) => (

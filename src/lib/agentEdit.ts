@@ -764,7 +764,7 @@ function applyOne(xml: string, edit: AgentEdit, hooks: EditHooks = {}): EditResu
  * designer. They run after any edits, against the report those edits left.
  */
 /** `undo` (2026-11-07, agent audit item 85): "undo that" takes back the last change, as the corner's Undo does. */
-export const TOOL_NAMES = ['show', 'testData', 'export', 'designer', 'undo'] as const;
+export const TOOL_NAMES = ['show', 'testData', 'export', 'designer', 'undo', 'translate'] as const;
 export const PANES = ['mockup', 'preview', 'data', 'spec', 'repx'] as const;
 export const EXPORT_FORMATS = ['repx', 'pdf', 'csv', 'xlsx', 'docx', 'rtf', 'html', 'png'] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -777,6 +777,8 @@ export interface AgentTool {
   pane?: Pane;
   /** For `export`. */
   format?: ExportFormat;
+  /** For `translate` (2026-11-10): the language, as the user named it. */
+  language?: string;
 }
 
 /** The lists the model's schema is built from, handed to `chatReply` with the outline. */
@@ -801,6 +803,8 @@ export function toolLine(tool: AgentTool): string {
       return 'asking the DevExpress designer on this computer to open it';
     case 'undo':
       return 'taking back the last change';
+    case 'translate':
+      return `translating its texts into ${tool.language ?? 'the language asked'}`;
   }
 }
 
@@ -811,7 +815,7 @@ export function toolLine(tool: AgentTool): string {
  * report, offers a button instead. Showing a pane, sample rows and undo,
  * which take nothing out of the page, still run at once.
  */
-export const ASK_FIRST_TOOLS: readonly ToolName[] = ['export', 'designer'];
+export const ASK_FIRST_TOOLS: readonly ToolName[] = ['export', 'designer', 'translate'];
 
 /** The tools to run at once, and those offered as a button. */
 export function splitTools(tools: readonly AgentTool[]): { now: AgentTool[]; ask: AgentTool[] } {

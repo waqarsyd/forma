@@ -516,7 +516,7 @@ const ChatNote = memo(function ChatNote<R>({
           <div className="wb-note-actions" role="group" aria-label="Offered by this reply">
             {message.actions.map((action, i) => (
               <button key={`${action.name}-${action.format ?? ''}-${i}`} type="button" className="wb-pill wb-pill--outline" disabled={retryDisabled} onClick={() => onAction(message.id, i)}>
-                {action.name === 'export' ? `Export as ${(action.format ?? 'repx').toUpperCase()}` : action.name === 'designer' ? 'Open in designer' : action.name}
+                {action.name === 'export' ? `Export as ${(action.format ?? 'repx').toUpperCase()}` : action.name === 'designer' ? 'Open in designer' : action.name === 'translate' ? `Translate into ${action.language ?? 'the language asked'}` : action.name}
               </button>
             ))}
           </div>

@@ -50,10 +50,11 @@ and Forma's own documentation.
 
 **Gaps, as candidates for the owner** (not built here; each would be its own
 item with its own measurement):
-1. **Translating a report** into another language, as DevExpress's "Localize
-   with AI": every caption sent once to the AI, the REPX's texts replaced, the
-   layout untouched. DevExpress's localization stores a language per report;
-   whether Forma writes that or a copy is the owner's call.
+1. ~~**Translating a report** into another language~~ **Built the same day**,
+   as the chat's `translate` tool (`src/lib/repxTranslate.ts`): every typed
+   caption sent once, the texts put back, the layout untouched, as a revision
+   beside the original rather than DevExpress's per-language
+   `LocalizationItems`, which Forma has not measured.
 2. **Questions about the report's data in the Preview**, as Telerik's AI
    Insights: the rows the Preview prints (sample rows or test data) sent with a
    question, the answer beside the page, and consent asked first, as Telerik

@@ -296,9 +296,10 @@ describe('the new edits, and edits that do what they say', () => {
 
   // Agent audit item 47, the owner's choice: what takes something out of the page waits for a press.
   it('offers an export and the designer as buttons, and runs a pane, sample rows and undo at once', () => {
-    const { now, ask } = splitTools([{ name: 'show', pane: 'preview' }, { name: 'export', format: 'pdf' }, { name: 'testData' }, { name: 'designer' }, { name: 'undo' }]);
+    const { now, ask } = splitTools([{ name: 'show', pane: 'preview' }, { name: 'export', format: 'pdf' }, { name: 'testData' }, { name: 'designer' }, { name: 'undo' }, { name: 'translate', language: 'German' }]);
     expect(now.map((t) => t.name)).toEqual(['show', 'testData', 'undo']);
-    expect(ask).toEqual([{ name: 'export', format: 'pdf' }, { name: 'designer' }]);
+    // A translation rewrites every caption, so it waits too (2026-11-10).
+    expect(ask).toEqual([{ name: 'export', format: 'pdf' }, { name: 'designer' }, { name: 'translate', language: 'German' }]);
   });
 
   // Items 23 and 38.
@@ -450,12 +451,13 @@ describe('readReportOutcome: the answer as Forma acts on it', () => {
 
   // In the present since 2026-11-07 (agent audit item 38): the reply is written before a tool runs.
   it('says what each tool is starting, under Started', () => {
-    expect([{ name: 'show', pane: 'repx' }, { name: 'testData' }, { name: 'export', format: 'xlsx' }, { name: 'designer' }, { name: 'undo' }].map((t) => toolLine(t as AgentTool))).toEqual([
+    expect([{ name: 'show', pane: 'repx' }, { name: 'testData' }, { name: 'export', format: 'xlsx' }, { name: 'designer' }, { name: 'undo' }, { name: 'translate', language: 'French' }].map((t) => toolLine(t as AgentTool))).toEqual([
       'opening the REPX',
       'filling the Preview with sample rows',
       'exporting it as XLSX',
       'asking the DevExpress designer on this computer to open it',
       'taking back the last change',
+      'translating its texts into French',
     ]);
     expect(changesMarkdown([], [], ['opening the Preview'])).toBe('**Started**\n- opening the Preview');
   });
