@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {MotionConfig} from 'motion/react';
 import PublicSite from './PublicSite';
 import OfflineBanner from './components/OfflineBanner';
+import UpdateBanner from './components/UpdateBanner';
 import './index.css';
 import {watchForStaleChunks} from './lib/staleChunks';
 import {watchInputModality} from './lib/inputModality';
@@ -81,6 +82,7 @@ createRoot(document.getElementById('root')!).render(
         <Root />
       </ErrorBoundary>
       <OfflineBanner />
+      <UpdateBanner />
     </MotionConfig>
   </StrictMode>,
 );

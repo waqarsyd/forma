@@ -245,9 +245,9 @@ const LandingPage = ({
                 <Reveal delay={0.14}>
                   <p className="mt-6 font-body-lg text-[clamp(17px,1.45vw,19.5px)] leading-[1.55] tracking-[-0.008em] text-on-surface-variant max-w-[62ch]">
                     Upload a report design — a photo, a PDF, or an existing{' '}
-                    <span className="font-code-sm">.repx</span>. Forma reads its geometry and returns a written
-                    specification, a live in-browser mockup, and valid DevExpress XML you can open in the designer.
-                    Three artifacts, one request.
+                    <span className="font-code-sm">.repx</span> — or describe the report you want. Forma reads what
+                    you give it and returns valid DevExpress XML you can open in the designer, with a live in-browser
+                    mockup and a written specification read off it. Three artifacts, one request.
                   </p>
                 </Reveal>
                 <Reveal delay={0.2}>

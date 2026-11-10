@@ -220,7 +220,11 @@ const TOKEN_CLASS: Record<string, string> = {
   meta: 'text-[#6b87a6] italic',
 };
 
-const CHIPS = ['spec.md', 'layout.json', 'report.repx'];
+// The .repx first: since 2026-11-05 the AI writes it alone and the spec and the
+// mockup are read off it (CLAUDE.md, "One artifact, three views"). It read
+// spec.md / layout.json / report.repx until the full audit of 2026-11-10, a
+// layout file nobody downloads.
+const CHIPS = ['report.repx', 'mockup', 'spec.md'];
 
 export default function HeroScanner() {
   const ref = useRef<HTMLDivElement>(null);
