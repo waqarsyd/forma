@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Purchase Order PO-58213</title>
+<style>
+  /* US Letter at 150 dpi: 1275 x 1650. Margins 0.6in = 90px. Made up for the fidelity benchmark (2026-11-10). */
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { width: 1275px; height: 1650px; font-family: Verdana, Geneva, sans-serif; color: #1a1a1a; font-size: 13px; }
+  .page { position: relative; box-sizing: border-box; width: 1275px; height: 1650px; padding: 90px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #1f3b63; padding-bottom: 14px; }
+  .brand { font-size: 24px; font-weight: bold; color: #1f3b63; }
+  .brand small { display: block; font-size: 12px; font-weight: normal; color: #444; margin-top: 4px; }
+  .title { font-size: 30px; font-weight: bold; color: #1f3b63; }
+  .meta { display: grid; grid-template-columns: 150px 170px; gap: 4px 10px; margin-top: 18px; margin-left: auto; width: 330px; }
+  .meta b { font-weight: bold; }
+  .parties { display: flex; gap: 40px; margin-top: 30px; }
+  .party { flex: 1; border: 1px solid #999; padding: 12px 14px; line-height: 1.55; }
+  .party h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: 1px; color: #1f3b63; }
+  table.lines { width: 100%; border-collapse: collapse; margin-top: 34px; }
+  table.lines th, table.lines td { border: 1px solid #777; padding: 7px 8px; }
+  table.lines th { background: #e6ecf4; text-align: left; font-size: 12px; }
+  table.lines .num { text-align: right; }
+  .sum { margin-top: 18px; margin-left: auto; width: 380px; border-collapse: collapse; }
+  .sum td { padding: 6px 8px; border: 1px solid #777; }
+  .sum td:last-child { text-align: right; }
+  .sum tr.total td { font-weight: bold; background: #e6ecf4; }
+  .terms { margin-top: 40px; line-height: 1.5; font-size: 12px; }
+  .sign { display: flex; gap: 60px; margin-top: 60px; }
+  .sign div { flex: 1; border-top: 1px solid #333; padding-top: 6px; font-size: 12px; }
+  .foot { position: absolute; left: 90px; right: 90px; bottom: 60px; font-size: 11px; color: #555; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    <div class="brand">Bluebell Hardware Co.<small>18 Mill Lane, Dunmore, PA 18512 &middot; purchasing@bluebell.example</small></div>
+    <div class="title">PURCHASE ORDER</div>
+  </div>
+  <div class="meta">
+    <b>PO Number</b><span>PO-58213</span>
+    <b>Order Date</b><span>03 Nov 2026</span>
+    <b>Delivery By</b><span>17 Nov 2026</span>
+    <b>Buyer</b><span>R. Okafor</span>
+  </div>
+  <div class="parties">
+    <div class="party"><h3>VENDOR</h3>Granite Fasteners Ltd.<br>440 Quarry Road<br>Barre, VT 05641<br>Account 77-1902</div>
+    <div class="party"><h3>SHIP TO</h3>Bluebell Hardware Warehouse<br>Dock 3, 92 Canal Street<br>Scranton, PA 18503<br>Receiving: Mon to Fri, 8 to 4</div>
+  </div>
+  <table class="lines">
+    <thead><tr><th>Item</th><th>Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit Cost</th><th class="num">Line Total</th></tr></thead>
+    <tbody>
+      <tr><td>GF-1001</td><td>Hex bolt M8 x 40, zinc</td><td class="num">500</td><td>ea</td><td class="num">0.18</td><td class="num">90.00</td></tr>
+      <tr><td>GF-1014</td><td>Flat washer M8</td><td class="num">1,000</td><td>ea</td><td class="num">0.03</td><td class="num">30.00</td></tr>
+      <tr><td>GF-2207</td><td>Wood screw 4 x 50, box of 200</td><td class="num">24</td><td>box</td><td class="num">6.40</td><td class="num">153.60</td></tr>
+      <tr><td>GF-3310</td><td>Anchor plug 8mm, pack of 100</td><td class="num">40</td><td>pk</td><td class="num">3.75</td><td class="num">150.00</td></tr>
+      <tr><td>GF-4402</td><td>Threaded rod M10 x 1m</td><td class="num">60</td><td>ea</td><td class="num">2.10</td><td class="num">126.00</td></tr>
+      <tr><td>GF-5120</td><td>Nylon lock nut M10</td><td class="num">800</td><td>ea</td><td class="num">0.09</td><td class="num">72.00</td></tr>
+    </tbody>
+  </table>
+  <table class="sum">
+    <tr><td>Subtotal</td><td>621.60</td></tr>
+    <tr><td>Freight</td><td>45.00</td></tr>
+    <tr><td>Sales Tax (6%)</td><td>37.30</td></tr>
+    <tr class="total"><td>Order Total</td><td>USD 703.90</td></tr>
+  </table>
+  <div class="terms"><b>Terms.</b> Payment net 45 days from receipt of goods and invoice. Quote the PO number on every invoice and delivery note. Partial deliveries are accepted only by arrangement with the buyer.</div>
+  <div class="sign"><div>Authorised by</div><div>Date</div></div>
+  <div class="foot"><span>Bluebell Hardware Co. purchase order</span><span>Page 1 of 1</span></div>
+</div>
+</body>
+</html>

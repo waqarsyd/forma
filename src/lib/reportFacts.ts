@@ -193,7 +193,14 @@ export function answerFromFacts(message: string, f: ReportFacts): string | null 
   const text = message.trim();
   if (!text || text.length > 160 || !QUESTION.test(text) || CHANGE.test(text)) return null;
   const parts: string[] = [];
-  if (/\b(fields?|columns?)\b/i.test(text)) {
+  /*
+   * A question about the set, never about one of it (2026-11-10, found by the
+   * chat judge's dry run, batch AH): "What does the Margin column show?" was
+   * answered with the report's fields, since "column" alone was the test. The
+   * set is a plural, or a count or list of one.
+   */
+  const about = (plural: RegExp, one: RegExp) => plural.test(text) || new RegExp(`\\b(how many|which|what|list|any|a)\\s+${one.source}\\b`, 'i').test(text);
+  if (about(/\b(fields|columns)\b/i, /(fields?|columns?)/)) {
     if (!f.printed.length) parts.push('It prints no fields: every text in it is typed.');
     else parts.push(`It prints ${plural(f.printed.length, 'field')}: ${list(f.printed)}.`);
     if (f.dataFields) {
@@ -201,12 +208,12 @@ export function answerFromFacts(message: string, f: ReportFacts): string | null 
       parts.push(`Its data has ${plural(f.dataFields.length, 'field')}${left.length ? `; not printed: ${list(left)}` : ', all of them printed'}.`);
     }
   }
-  if (/\b(totals?|sums?|subtotals?|summar(y|ies)|counts?|averages?)\b/i.test(text)) {
+  if (about(/\b(totals|sums|subtotals|summaries|averages)\b/i, /(totals?|sums?|subtotals?)/)) {
     parts.push(f.totals.length ? `${f.totals.length === 1 ? 'One total' : `${f.totals.length} totals`}: ${f.totals.map(totalWords).join('; ')}.` : 'It has no totals.');
   }
-  if (/\bgroup(s|ed|ing)?\b/i.test(text)) parts.push(f.groups.length ? `It is grouped by ${list(f.groups)}${f.groups.length > 1 ? ', outermost first' : ''}.` : 'It is not grouped.');
-  if (/\b(bands?|sections?)\b/i.test(text)) parts.push(`It has ${plural(f.bands.length, 'band')}: ${bandList(f.bands)}.`);
-  if (/\bparameters?\b/i.test(text)) parts.push(f.parameters.length ? `${plural(f.parameters.length, 'parameter')}: ${f.parameters.join(', ')}.` : 'It has no parameters.');
+  if (/\b(grouped|groups|grouping)\b/i.test(text)) parts.push(f.groups.length ? `It is grouped by ${list(f.groups)}${f.groups.length > 1 ? ', outermost first' : ''}.` : 'It is not grouped.');
+  if (about(/\b(bands|sections)\b/i, /(bands?|sections?)/)) parts.push(`It has ${plural(f.bands.length, 'band')}: ${bandList(f.bands)}.`);
+  if (about(/\bparameters\b/i, /parameters?/)) parts.push(f.parameters.length ? `${plural(f.parameters.length, 'parameter')}: ${f.parameters.join(', ')}.` : 'It has no parameters.');
   if (/\b(controls?|labels?|tables?|elements?|pictures?|images?)\b/i.test(text) && /\bhow many\b/i.test(text)) {
     const kinds = Object.entries(f.byType).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${n} ${t.replace(/^XR/, '')}`);
     parts.push(`It has ${plural(f.controls, 'control')}: ${kinds.join(', ')}.`);

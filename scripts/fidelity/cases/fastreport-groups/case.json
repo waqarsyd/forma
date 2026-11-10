@@ -1,0 +1,14 @@
+{
+  "source": "source.repx",
+  "prompt": "This report came from FastReport. Make it a working DevExpress report: group the products by the first letter of their name and print that letter in the group header with a DevExpress expression, print Total products: with the number of products in each group, and keep the rest as it is.",
+  "config": { "version": "20.1", "unit": "HundredthsOfAnInch", "pageSize": "A4" },
+  "notes": "Openly licensed (FastReport's MIT demo Groups.frx; NOTICE.md), added 2026-11-10 (the AI accuracy programme, batch AH item 26). A migration in words: the report converted by scripts/model/fastreport.ts still prints FastReport's own syntax in its group header ([[Products.ProductName].Substring(0,1)]) and totals a FastReport Total object that DevExpress has no field for (sumSum([TotalProducts])). The case asks the AI to make both DevExpress, from the file, and to keep the title, the records and the page footer: the existing .repx is the base structure, as the prompt's SOURCE PRECEDENCE says.",
+  "expect": {
+    "bands": ["ReportHeader", "GroupHeader", "Detail", "GroupFooter", "PageFooter"],
+    "controls": { "XRPageInfo": { "min": 1 } },
+    "texts": { "all": ["ALPHABETICAL PRODUCT LIST"], "minRatio": 1 },
+    "bindings": { "fields": ["ProductName", "UnitPrice"], "minRatio": 1 },
+    "audit": { "errors": 0, "maxWarnings": 5 },
+    "serializerVersion": "20.1.3.0"
+  }
+}

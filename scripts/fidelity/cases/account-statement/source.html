@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Statement of Account</title>
+<style>
+  /* US Letter at 150 dpi: 1275 x 1650. Margins 0.7in = 105px. Made up for the fidelity benchmark (2026-11-10). */
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { width: 1275px; height: 1650px; font-family: Georgia, "Times New Roman", serif; color: #111; font-size: 14px; }
+  .page { position: relative; box-sizing: border-box; width: 1275px; height: 1650px; padding: 105px; }
+  .top { display: flex; justify-content: space-between; }
+  .firm { font-size: 22px; font-weight: bold; }
+  .firm div { font-size: 13px; font-weight: normal; margin-top: 3px; }
+  .title { font-size: 26px; font-weight: bold; text-align: right; }
+  .period { text-align: right; margin-top: 6px; }
+  .cust { margin-top: 34px; display: flex; justify-content: space-between; }
+  .cust .addr { line-height: 1.5; }
+  .cust .acct { text-align: right; line-height: 1.7; }
+  table.tx { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 13px; }
+  table.tx th { text-align: left; border-top: 2px solid #111; border-bottom: 1px solid #111; padding: 7px 5px; font-family: Arial, sans-serif; font-size: 12px; }
+  table.tx td { padding: 6px 5px; border-bottom: 1px solid #e2e2e2; }
+  table.tx .num { text-align: right; }
+  table.tx tr.open td, table.tx tr.close td { font-weight: bold; border-bottom: none; }
+  table.tx tr.close td { border-top: 2px solid #111; }
+  .aging { margin-top: 40px; }
+  .aging h3 { margin: 0 0 6px; font-size: 14px; font-family: Arial, sans-serif; }
+  .aging table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .aging th, .aging td { border: 1px solid #555; padding: 6px; text-align: right; }
+  .aging th { font-family: Arial, sans-serif; font-size: 12px; background: #f2f2f2; }
+  .remit { margin-top: 36px; font-size: 13px; line-height: 1.5; }
+  .foot { position: absolute; left: 105px; right: 105px; bottom: 70px; display: flex; justify-content: space-between; font-size: 11px; color: #555; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <div class="firm">Oakridge Supply Partners<div>55 Foundry Street, Hamilton, ON L8L 2C4</div><div>accounts@oakridge.example</div></div>
+    <div><div class="title">STATEMENT OF ACCOUNT</div><div class="period">1 Oct 2026 to 31 Oct 2026</div></div>
+  </div>
+  <div class="cust">
+    <div class="addr"><b>Maple Leaf Joinery</b><br>12 Birch Crescent<br>Guelph, ON N1H 3K7</div>
+    <div class="acct">Account No: <b>C-30418</b><br>Statement Date: 31 Oct 2026<br>Credit Limit: 15,000.00</div>
+  </div>
+  <table class="tx">
+    <thead><tr><th>Date</th><th>Reference</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead>
+    <tbody>
+      <tr class="open"><td>01 Oct</td><td></td><td>Opening Balance</td><td></td><td></td><td class="num">4,210.00</td></tr>
+      <tr><td>03 Oct</td><td>INV-7731</td><td>Oak boards, 120 lengths</td><td class="num">2,640.00</td><td></td><td class="num">6,850.00</td></tr>
+      <tr><td>07 Oct</td><td>PAY-2210</td><td>Payment received, thank you</td><td></td><td class="num">4,210.00</td><td class="num">2,640.00</td></tr>
+      <tr><td>12 Oct</td><td>INV-7790</td><td>Hinges and fittings</td><td class="num">385.50</td><td></td><td class="num">3,025.50</td></tr>
+      <tr><td>18 Oct</td><td>CN-0412</td><td>Credit note, returned fittings</td><td></td><td class="num">62.00</td><td class="num">2,963.50</td></tr>
+      <tr><td>24 Oct</td><td>INV-7856</td><td>Maple veneer sheets</td><td class="num">1,198.00</td><td></td><td class="num">4,161.50</td></tr>
+      <tr><td>29 Oct</td><td>INV-7881</td><td>Delivery charge</td><td class="num">75.00</td><td></td><td class="num">4,236.50</td></tr>
+      <tr class="close"><td>31 Oct</td><td></td><td>Closing Balance</td><td class="num">4,298.50</td><td class="num">4,272.00</td><td class="num">4,236.50</td></tr>
+    </tbody>
+  </table>
+  <div class="aging">
+    <h3>Amount Due by Age</h3>
+    <table>
+      <tr><th>Current</th><th>1 to 30 Days</th><th>31 to 60 Days</th><th>Over 60 Days</th><th>Total Due</th></tr>
+      <tr><td>1,273.00</td><td>2,963.50</td><td>0.00</td><td>0.00</td><td>4,236.50</td></tr>
+    </table>
+  </div>
+  <div class="remit">Please remit the total due within 30 days, quoting account C-30418. Balances over 60 days may be placed on hold.</div>
+  <div class="foot"><span>Oakridge Supply Partners</span><span>Page 1 of 1</span></div>
+</div>
+</body>
+</html>

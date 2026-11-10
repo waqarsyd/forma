@@ -79,13 +79,27 @@ export function scoreSection(words: readonly string[], section: DocsSection): nu
   return score;
 }
 
+/**
+ * Whether a word of the question is in the article's title or keywords, not
+ * only its text (2026-11-10, found by the chat judge's dry run, batch AH):
+ * "What does the Margin column show?", a question about the open report,
+ * was given the SQL Server and Data articles, some 7,000 characters, for the
+ * words their text holds. A raised score threshold lost three of the 21
+ * questions; this lost none.
+ */
+function namesIt(words: readonly string[], section: DocsSection): boolean {
+  const keys = DOCS_SECTIONS.find((s) => s.id === section.id)?.keys ?? '';
+  const named = new Set([...questionWords(section.title), ...questionWords(keys)]);
+  return words.some((w) => named.has(w));
+}
+
 /** The articles a question is about, best first, within `DOCS_MAX_CHARS`; none when nothing scores. */
 export function pickSections(question: string, sections: readonly DocsSection[], k = 2): DocsSection[] {
   const words = questionWords(question);
   if (!words.length) return [];
   const ranked = sections
-    .map((s) => ({ s, score: scoreSection(words, s) }))
-    .filter((r) => r.score >= 4)
+    .map((s) => ({ s, score: scoreSection(words, s), named: namesIt(words, s) }))
+    .filter((r) => r.score >= 4 && r.named)
     .sort((a, b) => b.score - a.score);
   const out: DocsSection[] = [];
   let room = DOCS_MAX_CHARS;

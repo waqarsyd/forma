@@ -533,7 +533,9 @@ src/
                        (the Docs articles a question about Forma is given),
                        jobPlan (the plan a heavy message gets first),
                        batchCheckpoint (a batch kept in the browser to carry
-                       on after a limit or a reload),
+                       on after a limit or a reload), chatJudge (the twenty
+                       chat requests the benchmark scores, the checks code makes
+                       and the judge's rubric),
                        formaTeam (one request with every part in its role:
                        the vision model's draft and the house style told to
                        the AI as hints, who took part named in the reply, and

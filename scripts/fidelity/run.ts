@@ -37,6 +37,11 @@
  *   --local-url <url> where that server answers (default
  *                     http://localhost:11434/v1, Ollama's; LM Studio's is
  *                     http://localhost:1234/v1)
+ *   --forma           score Forma's own draft of each picture with no AI at all:
+ *                     the box reader's report, or OCR's copy where it declines,
+ *                     as the app stands in when every AI has given out
+ *                     (lib/fallbackChain.ts, batch AF). No key, no request, no
+ *                     quota; a case whose source is not a picture is skipped
  *   --page-reader <name>
  *                     read each picture with a page reader on that server, as
  *                     glm-ocr, and send its text beside the picture as the app
@@ -102,7 +107,7 @@ import { importReports, retrieveHouseStyle } from '../../src/services/library';
 import { embedEntries, embedTexts } from '../../src/services/embeddings';
 import type { LibraryEntry } from '../../src/lib/embedStore';
 import { readsTheseFeatures, type BoxReaderModel } from '../../src/lib/boxReader';
-import { buildWithReader, sourceLayoutOf } from '../../src/lib/ocrAttach';
+import { buildFromRead, buildWithReader, sourceLayoutOf } from '../../src/lib/ocrAttach';
 import { draftBrief } from '../../src/lib/formaTeam';
 import { draftToText } from '../../src/lib/draftText';
 import { readWithOcr } from '../model/ocrPages';
@@ -208,6 +213,7 @@ function parseArgs(argv: string[]) {
     house: '',
     brief: false,
     draft: false,
+    forma: false,
     localModel: '',
     localUrl: 'http://localhost:11434/v1',
     pageReader: '',
@@ -233,6 +239,7 @@ function parseArgs(argv: string[]) {
       case '--house': opts.house = next(); break;
       case '--brief': opts.brief = true; break;
       case '--draft': opts.draft = true; break;
+      case '--forma': opts.forma = true; break;
       case '--local-model': opts.localModel = next(); break;
       case '--local-url': opts.localUrl = next(); break;
       case '--page-reader': opts.pageReader = next(); break;
@@ -381,7 +388,7 @@ function attachmentFor(c: LoadedCase, rerender: boolean): AttachmentPart[] {
  * the reader declines the page, which the product would answer the same way.
  * The OCR works in the results folder, so no case directory gains files.
  */
-async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir: string): Promise<{ brief: string; evidence: ReportLayout | null; draft: DraftRequest | null }> {
+async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir: string): Promise<{ brief: string; evidence: ReportLayout | null; draft: DraftRequest | null; own?: AnalysisResponse | null }> {
   let source = join(c.dir, c.file.source);
   if (extname(source).toLowerCase() === '.html') source = source.replace(/\.html$/i, '.png');
   if (extname(source).toLowerCase() !== '.png' || !existsSync(source)) return { brief: '', evidence: null, draft: null };
@@ -400,7 +407,10 @@ async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir
   const evidence = sourceLayoutOf(pages, unit, paper);
   // Forma's draft for the AI to correct, as prepareTeam writes it (--draft, 2026-11-05).
   const draft = built ? { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title, readBy: "Forma's box reader, corrected by the AI" } : null;
-  return { brief: built ? draftBrief(built.skeleton, built.layout, unit, 'reader') : '', evidence, draft };
+  // Forma's own report, as the app stands one in when no AI answers (--forma): the box reader's, or OCR's copy.
+  const copy = built ? null : buildFromRead(pages, unit, paper);
+  const own = built ? { markdown: built.markdown, layout: built.layout, repxContent: built.repxContent } : copy ? { markdown: copy.markdown, layout: copy.layout, repxContent: copy.repxContent } : null;
+  return { brief: built ? draftBrief(built.skeleton, built.layout, unit, 'reader') : '', evidence, draft, own };
 }
 
 function configFor(c: LoadedCase, key: string, opts: ReturnType<typeof parseArgs>): ReportConfig {
@@ -442,6 +452,17 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
   };
   try {
     const parts = attachmentFor(c, opts.rerender && run === 1);
+    // Forma's own draft, no AI (--forma, 2026-11-10).
+    if (opts.forma) {
+      const team = await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir);
+      record.response = team.own ?? null;
+      record.log.push(`[runner] Forma's own draft: ${team.own ? (team.draft ? 'the box reader' : 'OCR\'s copy') : 'none (not a picture)'}`);
+      if (!team.own) record.error = 'Forma makes no draft without a picture';
+      record.elapsedMs = Date.now() - startedAt.getTime();
+      record.model = 'forma-draft';
+      score(record, c.file.expect);
+      return record;
+    }
     // The page reader's text beside the picture, as the app sends it (2026-11-10).
     if (opts.pageReader) {
       const picture = parts.flatMap((p) => ('inlineData' in p ? [p.inlineData] : []))[0];
@@ -739,9 +760,10 @@ async function main(): Promise<number> {
       await houseEvaluation(records, cases, key, opts, outDir);
     }
   } else {
-    // A local writer needs no Gemini key, and is sent none (2026-11-10).
-    const key = opts.localModel ? '' : readKey(opts.keyFromClipboard);
-    if (!key && !opts.localModel) {
+    // A local writer needs no Gemini key, and is sent none (2026-11-10); nor does Forma's own draft.
+    const keyless = Boolean(opts.localModel || opts.forma);
+    const key = keyless ? '' : readKey(opts.keyFromClipboard);
+    if (!key && !keyless) {
       console.error(
         opts.keyFromClipboard
           ? 'The clipboard is empty or could not be read. Copy your Gemini key and run again.'
@@ -749,7 +771,7 @@ async function main(): Promise<number> {
       );
       return 1;
     }
-    if (!opts.localModel && (key.length < 20 || /\s/.test(key))) {
+    if (!keyless && (key.length < 20 || /\s/.test(key))) {
       console.error('That does not look like an API key (too short, or it contains whitespace). Nothing was sent.');
       return 1;
     }

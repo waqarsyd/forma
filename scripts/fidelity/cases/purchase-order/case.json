@@ -1,0 +1,21 @@
+{
+  "source": "source.html",
+  "prompt": "",
+  "config": { "version": "20.1", "unit": "HundredthsOfAnInch", "pageSize": "Letter" },
+  "render": { "width": 1275, "height": 1650 },
+  "notes": "Made up on 2026-11-10 (the AI accuracy programme, batch AH item 26). A purchase order whose lines are a fully bordered grid with a shaded heading row, and whose totals are a small bordered table of their own: the other common table style beside invoice-ruled's single rule. Two bordered address boxes side by side and a signature line test what the model does with boxes that are not tables. The expected phrases are captions only, no line values.",
+  "expect": {
+    "bands": ["ReportHeader", "Detail", "ReportFooter", "PageFooter"],
+    "tables": { "min": 1 },
+    "controls": { "XRTable": { "min": 1 }, "XRLabel": { "min": 6, "max": 90 } },
+    "texts": {
+      "all": ["PURCHASE ORDER", "Bluebell Hardware", "PO Number", "Order Date", "VENDOR", "SHIP TO", "Item", "Description", "Qty", "Unit Cost", "Line Total", "Subtotal", "Freight", "Order Total", "Authorised by"],
+      "minRatio": 0.85
+    },
+    "fontSize": { "median": { "min": 7, "max": 11 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 5 },
+    "sectionsMatchBands": true,
+    "serializerVersion": "20.1.3.0"
+  }
+}

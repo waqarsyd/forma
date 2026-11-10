@@ -1,0 +1,21 @@
+{
+  "source": "source.html",
+  "prompt": "",
+  "config": { "version": "20.1", "unit": "HundredthsOfAnInch", "pageSize": "Letter" },
+  "render": { "width": 1650, "height": 1275 },
+  "notes": "Made up on 2026-11-10 (the AI accuracy programme, batch AH item 26). A landscape listing grouped by region: a group heading row, the records, a subtotal per region and a grand total. It is the banded shape the group and summary repairs exist for (repxGroups.ts, repxSummaries.ts): a group header on Region, its subtotals in a group footer with a group running scope, and the grand total in the report footer. It is also the first landscape picture case, so the paper is read from the page's shape (autoConfig.ts). Captions only in the expected phrases; the region names are records, and a banded report prints them from a field.",
+  "expect": {
+    "bands": ["GroupHeader", "Detail", "GroupFooter", "ReportFooter", "PageFooter"],
+    "tables": { "min": 1 },
+    "controls": { "XRTable": { "min": 1 }, "XRPageInfo": { "min": 1 } },
+    "texts": {
+      "all": ["Quarterly Sales by Region", "Region", "Product Line", "Sales Rep", "Units", "Revenue", "Margin", "Subtotal", "Grand Total"],
+      "minRatio": 0.85
+    },
+    "fontSize": { "median": { "min": 8, "max": 12 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 5 },
+    "sectionsMatchBands": true,
+    "serializerVersion": "20.1.3.0"
+  }
+}

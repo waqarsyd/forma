@@ -1,0 +1,21 @@
+{
+  "source": "source.html",
+  "prompt": "",
+  "config": { "version": "20.1", "unit": "HundredthsOfAnInch", "pageSize": "Letter" },
+  "render": { "width": 1275, "height": 1650 },
+  "notes": "Made up on 2026-11-10 (the AI accuracy programme, batch AH item 26). A statement of account: a transaction listing with a running Balance column between an opening and a closing line, then a five-column ageing table and a remittance note. The running balance is the shape Forma's footer-totals and records rules were written for (boxReader.ts, batch AE): a column whose figures change from record to record is a value in Detail, and the closing line's figures are totals. Serif body with sans headings, so the font median is measured across two families. Captions only in the expected phrases.",
+  "expect": {
+    "bands": ["ReportHeader", "Detail", "ReportFooter", "PageFooter"],
+    "tables": { "min": 1 },
+    "controls": { "XRTable": { "min": 1 }, "XRPageInfo": { "min": 1 } },
+    "texts": {
+      "all": ["STATEMENT OF ACCOUNT", "Oakridge Supply Partners", "Account No", "Statement Date", "Date", "Reference", "Description", "Debit", "Credit", "Balance", "Opening Balance", "Closing Balance", "Amount Due by Age", "Total Due"],
+      "minRatio": 0.85
+    },
+    "fontSize": { "median": { "min": 7, "max": 11 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 5 },
+    "sectionsMatchBands": true,
+    "serializerVersion": "20.1.3.0"
+  }
+}

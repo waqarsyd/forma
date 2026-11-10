@@ -96,6 +96,16 @@ describe('a question answered with no AI', () => {
     expect(answerFromFacts('What does this report show the reader?', f)).toBeNull();
     expect(answerFromFacts('fields', f)).toBeNull();
   });
+
+  // Found by the chat judge's dry run (batch AH, 2026-11-10): one of a set is not the set.
+  it('leaves a question about one column, band, total or parameter to the AI', () => {
+    expect(answerFromFacts('What does the Margin column show?', f)).toBeNull();
+    expect(answerFromFacts('What is in the detail band?', f)).toBeNull();
+    expect(answerFromFacts('What does the Region parameter do?', f)).toBeNull();
+    expect(answerFromFacts('Why is the total blank?', f)).toBeNull();
+    expect(answerFromFacts('Does it have a total?', f)).toMatch(/^2 totals/);
+    expect(answerFromFacts('How many columns does it print?', f)).toMatch(/^It prints 5 fields/);
+  });
 });
 
 describe('a field the data does not have', () => {

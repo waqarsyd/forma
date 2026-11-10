@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quarterly Sales by Region</title>
+<style>
+  /* US Letter landscape at 150 dpi: 1650 x 1275. Margins 0.5in = 75px. Made up for the fidelity benchmark (2026-11-10). */
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { width: 1650px; height: 1275px; font-family: Calibri, Carlito, Arial, sans-serif; color: #1b1b1b; font-size: 15px; }
+  .page { position: relative; box-sizing: border-box; width: 1650px; height: 1275px; padding: 75px; }
+  h1 { margin: 0; font-size: 30px; }
+  .sub { color: #555; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 26px; }
+  th { text-align: left; background: #2e5d4b; color: #fff; padding: 7px 8px; font-size: 14px; }
+  td { padding: 5px 8px; }
+  .num { text-align: right; }
+  tr.group td { font-weight: bold; font-size: 16px; padding-top: 14px; border-bottom: 1px solid #2e5d4b; color: #2e5d4b; }
+  tr.subtotal td { font-weight: bold; border-top: 1px solid #999; background: #eef4f1; }
+  tr.grand td { font-weight: bold; font-size: 16px; border-top: 3px double #1b1b1b; padding-top: 10px; }
+  .foot { position: absolute; left: 75px; right: 75px; bottom: 45px; display: flex; justify-content: space-between; font-size: 12px; color: #555; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Quarterly Sales by Region</h1>
+  <div class="sub">Third quarter 2026 &middot; all figures in thousands &middot; run 2 Oct 2026</div>
+  <table>
+    <thead><tr><th>Region</th><th>Product Line</th><th>Sales Rep</th><th class="num">Units</th><th class="num">Revenue</th><th class="num">Margin %</th></tr></thead>
+    <tbody>
+      <tr class="group"><td colspan="6">Region: North</td></tr>
+      <tr><td></td><td>Garden Tools</td><td>A. Moreau</td><td class="num">1,240</td><td class="num">86.8</td><td class="num">31.2</td></tr>
+      <tr><td></td><td>Outdoor Lighting</td><td>A. Moreau</td><td class="num">610</td><td class="num">54.9</td><td class="num">27.5</td></tr>
+      <tr><td></td><td>Irrigation</td><td>K. Lindqvist</td><td class="num">380</td><td class="num">41.8</td><td class="num">24.0</td></tr>
+      <tr class="subtotal"><td></td><td>Subtotal North</td><td></td><td class="num">2,230</td><td class="num">183.5</td><td class="num">28.7</td></tr>
+      <tr class="group"><td colspan="6">Region: South</td></tr>
+      <tr><td></td><td>Garden Tools</td><td>M. Adeyemi</td><td class="num">1,905</td><td class="num">133.4</td><td class="num">33.0</td></tr>
+      <tr><td></td><td>Outdoor Lighting</td><td>M. Adeyemi</td><td class="num">720</td><td class="num">64.8</td><td class="num">26.1</td></tr>
+      <tr><td></td><td>Irrigation</td><td>J. Castillo</td><td class="num">1,060</td><td class="num">116.6</td><td class="num">29.4</td></tr>
+      <tr><td></td><td>Patio Furniture</td><td>J. Castillo</td><td class="num">215</td><td class="num">96.8</td><td class="num">22.8</td></tr>
+      <tr class="subtotal"><td></td><td>Subtotal South</td><td></td><td class="num">3,900</td><td class="num">411.6</td><td class="num">28.9</td></tr>
+      <tr class="group"><td colspan="6">Region: West</td></tr>
+      <tr><td></td><td>Garden Tools</td><td>S. Park</td><td class="num">980</td><td class="num">68.6</td><td class="num">30.4</td></tr>
+      <tr><td></td><td>Patio Furniture</td><td>S. Park</td><td class="num">340</td><td class="num">153.0</td><td class="num">23.9</td></tr>
+      <tr class="subtotal"><td></td><td>Subtotal West</td><td></td><td class="num">1,320</td><td class="num">221.6</td><td class="num">25.9</td></tr>
+      <tr class="grand"><td></td><td>Grand Total</td><td></td><td class="num">7,450</td><td class="num">816.7</td><td class="num">28.1</td></tr>
+    </tbody>
+  </table>
+  <div class="foot"><span>Sales Operations &middot; confidential</span><span>Page 1 of 1</span></div>
+</div>
+</body>
+</html>

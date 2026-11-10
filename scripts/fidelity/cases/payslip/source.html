@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Payslip October 2026</title>
+<style>
+  /* A4 at 150 dpi: 1240 x 1754. Margins 15mm = 89px. Made up for the fidelity benchmark (2026-11-10). */
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { width: 1240px; height: 1754px; font-family: "Segoe UI", Tahoma, sans-serif; color: #222; font-size: 14px; }
+  .page { position: relative; box-sizing: border-box; width: 1240px; height: 1754px; padding: 89px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; }
+  .org { font-size: 22px; font-weight: 600; }
+  .org div { font-size: 13px; font-weight: normal; color: #555; margin-top: 4px; }
+  .doc { text-align: right; }
+  .doc .t { font-size: 28px; font-weight: 600; letter-spacing: 1px; }
+  .doc .p { font-size: 14px; color: #555; margin-top: 4px; }
+  .who { display: grid; grid-template-columns: 180px 1fr 180px 1fr; gap: 8px 14px; margin-top: 40px; padding: 16px 0; border-top: 1px solid #bbb; border-bottom: 1px solid #bbb; }
+  .who b { color: #555; font-weight: 600; }
+  .cols { display: flex; gap: 36px; margin-top: 36px; }
+  .col { flex: 1; }
+  .col h3 { margin: 0 0 8px; font-size: 15px; border-bottom: 2px solid #222; padding-bottom: 5px; }
+  .col table { width: 100%; border-collapse: collapse; }
+  .col td { padding: 6px 2px; border-bottom: 1px dotted #bbb; }
+  .col td.num { text-align: right; }
+  .col tr.sub td { font-weight: 600; border-bottom: none; padding-top: 9px; }
+  .net { margin-top: 40px; margin-left: auto; width: 420px; border: 2px solid #222; padding: 14px 18px; display: flex; justify-content: space-between; font-size: 20px; font-weight: 600; }
+  .ytd { margin-top: 40px; }
+  .ytd h3 { margin: 0 0 8px; font-size: 15px; }
+  .ytd table { width: 100%; border-collapse: collapse; }
+  .ytd th, .ytd td { padding: 6px 8px; text-align: right; border-bottom: 1px solid #ddd; }
+  .ytd th:first-child, .ytd td:first-child { text-align: left; }
+  .note { position: absolute; left: 89px; right: 89px; bottom: 70px; font-size: 12px; color: #666; text-align: center; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    <div class="org">Larkspur Studio Ltd<div>Unit 4, Wharf Yard, Bristol BS1 6XN</div></div>
+    <div class="doc"><div class="t">PAYSLIP</div><div class="p">Pay period: October 2026</div></div>
+  </div>
+  <div class="who">
+    <b>Employee</b><span>Priya Nair</span>
+    <b>Employee No</b><span>E-0147</span>
+    <b>Department</b><span>Design</span>
+    <b>Pay Date</b><span>31 Oct 2026</span>
+    <b>Tax Code</b><span>1257L</span>
+    <b>NI Number</b><span>QQ 12 34 56 C</span>
+  </div>
+  <div class="cols">
+    <div class="col">
+      <h3>Earnings</h3>
+      <table>
+        <tr><td>Basic Salary</td><td class="num">3,250.00</td></tr>
+        <tr><td>Overtime (6 h)</td><td class="num">168.75</td></tr>
+        <tr><td>Project Bonus</td><td class="num">400.00</td></tr>
+        <tr class="sub"><td>Gross Pay</td><td class="num">3,818.75</td></tr>
+      </table>
+    </div>
+    <div class="col">
+      <h3>Deductions</h3>
+      <table>
+        <tr><td>Income Tax</td><td class="num">554.20</td></tr>
+        <tr><td>National Insurance</td><td class="num">198.48</td></tr>
+        <tr><td>Pension (5%)</td><td class="num">162.50</td></tr>
+        <tr class="sub"><td>Total Deductions</td><td class="num">915.18</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="net"><span>Net Pay</span><span>&pound;2,903.57</span></div>
+  <div class="ytd">
+    <h3>Year to Date</h3>
+    <table>
+      <tr><th></th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th></tr>
+      <tr><td>To 31 Oct 2026</td><td>24,912.50</td><td>3,486.40</td><td>1,290.12</td><td>1,056.25</td><td>19,079.73</td></tr>
+    </table>
+  </div>
+  <div class="note">This payslip is confidential. Questions about your pay go to payroll@larkspur.example.</div>
+</div>
+</body>
+</html>
