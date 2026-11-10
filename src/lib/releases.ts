@@ -75,6 +75,23 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-10-full-audit',
+    date: '2026-11-10',
+    version: '1.5.0',
+    title: 'A chat that just does it, and a Forma that learns from every use',
+    summary:
+      'Ask the chat for something and it happens: a translation, an export, a redesign, a heavy job, with Undo after and no button to press first. Replies say what was made, not what ran behind the scenes. Forma now learns from the shape of the reports you make, with a switch to turn it off and another to share whole reports. Fields clicked into show no ring or dark edge, and a new version says so.',
+    announce: true,
+    changes: [
+      { kind: 'changed', area: 'chat', text: 'A request is carried out at once, as Claude, ChatGPT and Gemini carry one out: “translate it into German”, “export it as a PDF”, “open it in the designer”, a change only a redesign can make, or three files dropped together all go ahead with Undo after, and nothing asks you to press a button first. A tool the AI brings on its own, which words inside a report could have told it to, is still offered rather than run.' },
+      { kind: 'changed', area: 'chat', text: 'Replies say what was made and what to look at. They no longer recite what ran behind the scenes, show a reply’s token count, or end every report with “the checks found nothing wrong”; the request count stays under Settings.' },
+      { kind: 'new', area: 'workspace', text: 'Forma learns from every use. By default it keeps the shape of each report you make or change, never the text, a field name or a picture, and sends it to your account when you are signed in; a second switch, off until you turn it on, shares whole reports and what you asked for. Settings → Learning shows what was kept and deletes it; the privacy policy says it all.' },
+      { kind: 'fixed', area: 'workspace', text: 'A field clicked into shows the caret, not a grey ring or a darker edge: the project search, every Settings field, the share and rename boxes. Keyboard users still get the ring on Tab. The same on the public forms, where the contact form and the Docs search no longer flash an orange ring on a click.' },
+      { kind: 'new', area: 'site', text: 'When a newer Forma is ready while you have a tab open, a small note offers Reload, as Gmail and Linear do, instead of the page reloading itself later.' },
+      { kind: 'fixed', area: 'site', text: 'The home page describes Forma as it is: a report from a picture, a PDF, a .repx or a description, the .repx first and the mockup and spec read off it.' },
+    ],
+  },
+  {
     id: '2026-11-10-designer-download-link',
     date: '2026-11-10',
     version: '1.4.1',
