@@ -227,6 +227,16 @@ describe('the new edits, and edits that do what they say', () => {
     expect(applyEdits(doc(grid), [{ op: 'bind', control: 'grid', field: 'Amount' }]).declined[0]).toMatch(/name the row and the cell/);
   });
 
+  // The third gap of docs/proposals/ai-designers.md (2026-11-10): a sentence about what a control is for.
+  it('describes a control for the AI, and the outline shows it', () => {
+    const done = applyEdits(doc(lbl(1, 'a')), [{ op: 'describe', control: 'a', text: '  The tax line,   under the subtotal.  ' }]);
+    expect(done.applied).toEqual(['described XRLabel "a"']);
+    expect(done.xml).toContain('AccessibleDescription="The tax line, under the subtotal."');
+    expect(reportOutline(done.xml)).toMatch(/a: XRLabel .* described as "The tax line, under the subtotal\."/);
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'describe', control: 'a' }]).declined[0]).toMatch(/no description was given/);
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'describe', control: 'a', text: 'x'.repeat(200) }]).xml).toContain(`AccessibleDescription="${'x'.repeat(125)}"`);
+  });
+
   // Batch AG, item 24 (2026-11-10): never a field the data lacks, when the data is known.
   it('binds and groups only to a field the report’s data has, as the data spells it', () => {
     const fields = () => ['CustomerName', 'Amount'];

@@ -851,7 +851,7 @@ The edits, by "op", and the fields each reads:
 - delete: control. visible: control, visible.
 - add: a new label: band (its name or kind), text, x, y, and optionally width, height, family, size, bold, italic. Match the report's own font unless asked otherwise.
 - paper: paper (${SUPPORTED_PAGE_SIZES.join(', ')}), landscape; landscape alone turns the paper the report has. margins: any of left, right, top, bottom.
-- duplicate: control, and optionally x, y for the copy. bandHeight: band, height.
+- duplicate: control, and optionally x, y for the copy. bandHeight: band, height. describe: control, text, a sentence saying what the control is for (125 characters at most), when the user describes a control; the outline shows it as described as.
 - border: control (row, cell), any of borders (All, None, or sides such as "Top, Bottom"), borderColor, borderWidth.
 - line: a horizontal line: band, x, y, and optionally width (the printable width when absent), borderWidth (its weight), name.
 - format: control (row, cell), format: a .NET format with {0}, such as {0:N2}, {0:C2}, {0:P0} or {0:dd/MM/yyyy}.
@@ -955,6 +955,9 @@ function buildMockReportReply(userText: string, outline: string, database?: stri
     return answer(`**Mock mode**: ${lines[0]} The first row is \`${lines[2] ?? ''}\`. A real key answers the question from them.`);
   }
   if (/\?$/.test(text)) return answer(`**Mock mode**: the open report's first control is \`${first ?? 'none'}\`. A real key answers from the whole outline.`);
+  // A description for the AI (2026-11-10): "Describe X for the AI as ...".
+  const described = /\b[Dd]escribe\s+(\S+?)\s+(?:for the AI\s+)?as\s+(.+)$/.exec(text);
+  if (described) return edit(`Described \`${described[1]}\`.`, [{ op: 'describe', control: described[1], text: described[2] }]);
   if (first && /\bbold\b/i.test(text)) return edit(`Made \`${first}\` bold.`, [{ op: 'font', control: first, bold: true }]);
   if (first && /\b(bigger|larger)\b/i.test(text)) return edit(`Made \`${first}\` bigger.`, [{ op: 'font', control: first, size: 18 }]);
   const side = /\b(left|right|center|centre)\b/i.exec(text)?.[1]?.toLowerCase();

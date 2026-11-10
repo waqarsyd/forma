@@ -59,10 +59,10 @@ item with its own measurement):
    day** (`src/lib/previewRows.ts`): a question about the data is held while
    Forma asks in the thread whether the Preview's rows may go, with how many
    and which fields; sent, the reply says so. Live rows never go.
-3. **An AI description on a control**, as Telerik's: a sentence the person
-   writes about what a control is for, given to the AI with the outline, so an
-   edit understands "the tax line" without guessing. Forma already writes
-   `AccessibleDescription` for the accessibility checks, which could carry it.
+3. ~~**An AI description on a control**~~ **Built the same day**: *Describe
+   for the AI* in the control's menu on the Preview, the chat's `describe`
+   edit writing `AccessibleDescription`, and the outline showing it, so
+   "the tax line" finds the control described as the tax line.
 
 ## Sources
 

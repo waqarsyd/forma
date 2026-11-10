@@ -139,6 +139,8 @@ interface Props {
    * "Change the text of …" in the box so Forma writes the words.
    */
   onEditText?: (name: string) => void;
+  /** Describe a control for the AI (2026-11-10): App starts "Describe … for the AI as" in the box. */
+  onDescribe?: (name: string) => void;
   zoom?: number;
   onScaleChange?: (scale: number) => void;
   resetSelection?: number;
@@ -1099,7 +1101,7 @@ function ParameterInput({ type, multi, choices, value, onChange, label }: { type
   );
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records: given, database,onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
+export default function ReportPreview({ repxContent, layout, title, onEdit, records: given, database,onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -2697,6 +2699,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
             if (chosen.length === 1 && selectedControl.type === 'XRLabel') {
               items.push({ label: 'Retype', keys: 'Double-click', run: () => { setEditingAt(menu.at); setEditingText(selectedControl.text); } });
             }
+            if (onDescribe && chosen.length === 1 && selectedControl.name) items.push({ label: 'Describe for the AI', run: () => onDescribe(selectedControl.name!) });
             if (onFormat) {
               items.push({
                 label: 'Format',

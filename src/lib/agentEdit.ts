@@ -62,6 +62,10 @@ import { readRepxDataSources } from './repxSqlDataSource';
 export const EDIT_OPS = [
   'text', 'move', 'resize', 'font', 'color', 'align', 'delete', 'add', 'paper', 'margins', 'visible',
   'duplicate', 'bandHeight', 'border', 'line', 'format', 'bind', 'pageNumber',
+  // A sentence about what a control is for (2026-11-10, the third gap of
+  // docs/proposals/ai-designers.md): written to AccessibleDescription, which
+  // the accessibility checks want on a picture too, and shown in the outline.
+  'describe',
   // The database's two (2026-11-09, the SQL Server programme, item 24): what
   // the report reads, written by Forma from the shared layout through the
   // `data` hook of `applyEdits`, and a group band on a field.
@@ -273,6 +277,17 @@ function lookWords(look: Partial<Record<string, string>>): string[] {
   return out;
 }
 
+/** Each control's `AccessibleDescription`, by name, as the file writes it. */
+function descriptionsOf(xml: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const m of xml.matchAll(/<Item\d+\b([^>]*\bControlType="XR[^"]*"[^>]*)>/g)) {
+    const name = attrOf(m[1], 'Name');
+    const said = attrOf(m[1], 'AccessibleDescription');
+    if (name && said) out.set(name, said);
+  }
+  return out;
+}
+
 /**
  * The report as the model is shown it. `findings` are the checks' messages,
  * worth fixing when asked; `selected` the controls selected on the Preview
@@ -300,6 +315,7 @@ export function reportOutline(xml: string, options: { findings?: readonly string
   let unlisted = 0;
   let shared = false;
   const keyed = keyedControls(structure.bands);
+  const describedAs = descriptionsOf(xml);
   let at = 0;
   structure.bands.forEach((band, b) => {
     const height = round(band.height / (band.dpiScale ?? 1));
@@ -329,6 +345,8 @@ export function reportOutline(xml: string, options: { findings?: readonly string
         c.data?.format ? `format "${c.data.format}"` : '',
         c.data?.running ? (c.data.running === 'None' ? 'a summary with no running scope' : `a total over ${c.data.running === 'Report' ? 'the report' : `each ${c.data.running.toLowerCase()}`}`) : '',
         c.visible ? '' : 'hidden',
+        // What the person said the control is for (2026-11-10): "the tax line" finds it.
+        describedAs.get(c.name) ? `described as "${clip(describedAs.get(c.name)!)}"` : '',
       ].filter(Boolean);
       lines.push(`  ${parts.join(', ')}`);
       c.rows.slice(0, MAX_ROWS).forEach((row, r) => {
@@ -702,6 +720,11 @@ function applyOne(xml: string, edit: AgentEdit, hooks: EditHooks = {}): EditResu
       return deleteControl(xml, ref);
     case 'visible':
       return updateControl(xml, ref, () => ({ Visible: e.visible === false ? 'false' : 'true' }), e.visible === false ? 'hid' : 'showed');
+    case 'describe': {
+      const said = (e.text ?? '').trim().replace(/\s+/g, ' ').slice(0, 125);
+      if (!said) return decline(xml, 'no description was given');
+      return updateControl(xml, ref, () => ({ AccessibleDescription: said }), 'described');
+    }
     case 'font':
     case 'color':
     case 'align':

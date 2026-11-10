@@ -6092,6 +6092,11 @@ export default function App() {
     addToBox(`Change the text of ${name} to `);
     focusBox();
   };
+  /** A sentence about what a control is for (2026-11-10): the chat's `describe` edit writes it to AccessibleDescription. */
+  const askToDescribe = (name: string) => {
+    addToBox(`Describe ${name} for the AI as `);
+    focusBox();
+  };
 
   /*
    * The chat's tools, run (2026-11-05), by the effect beside `pendingTools`.
@@ -7016,6 +7021,7 @@ export default function App() {
                       highlight={changedHighlight}
                       historyElsewhere
                       onEditText={askForText}
+                      onDescribe={askToDescribe}
                       zoom={previewZoom}
                       onScaleChange={setPreviewScale}
                       resetSelection={selectionReset}

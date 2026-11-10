@@ -754,7 +754,9 @@ y_top = pageHeight − (baseline + height)`}
                 a button that translates every typed caption and title in one request, the layout as it was, as a
                 revision beside the original. A question about the data (which row is highest, what the amounts
                 add up to) is held the first time while Forma asks whether the rows the Preview prints may go to the
-                AI; nothing of them goes until you say so, and the reply says when they went.
+                AI; nothing of them goes until you say so, and the reply says when they went. Right-click a control on
+                the Preview and choose Describe for the AI to say in a sentence what it is for; the AI reads it with
+                the report, so "make the tax line bold" finds the control you described as the tax line.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="Name the region">
