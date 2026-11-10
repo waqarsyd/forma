@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { readSchemaScript } from './sqlSchema';
 import { writeSqlDataSource } from './repxSqlWriter';
-import { answerFromFacts, dataFieldsOf, factsBlock, fieldsInExpression, inventedFields, inventedNote, reportFacts } from './reportFacts';
+import { answerFromFacts, dataFieldsOf, declinedForFields, factsBlock, fieldsInExpression, inventedFields, inventedNote, reportFacts } from './reportFacts';
 
 const HEAD = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a" Name="Customers" DisplayName="Customers by region" PaperKind="A4" Landscape="true" PageWidth="1169" PageHeight="827" Version="20.1" Dpi="100">`;
@@ -114,5 +114,12 @@ describe('a field the data does not have', () => {
     expect(inventedFields('I bound it to [Discount].', reportFacts(REPORT))).toEqual([]);
     expect(inventedNote(['Discount'])).toBe("Note: this report's data has no field [Discount], so it would print nothing.");
     expect(inventedNote([])).toBe('');
+  });
+  // The full audit (2026-11-10): a redesign around a field the data lacks is declined with what the data has.
+  it('declines a redesign around it, naming what the data has', () => {
+    const said = declinedForFields(['Email'], reportFacts(WITH_DATA));
+    expect(said).toMatch(/^This report's data has no field \[Email\], so I have not redesigned it: that column would print nothing\. It has /);
+    expect(said).toMatch(/Say which of those to use instead, or share a database that has it under Data\.$/);
+    expect(declinedForFields(['Email', 'Fax'], reportFacts(REPORT))).toMatch(/^This report's data has no fields \[Email\], \[Fax\], so I have not redesigned it: that column would print nothing\. Say which/);
   });
 });

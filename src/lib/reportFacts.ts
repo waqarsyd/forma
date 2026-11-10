@@ -240,3 +240,18 @@ export function inventedNote(names: readonly string[]): string {
     ? `Note: this report's data has no ${names.length === 1 ? 'field' : 'fields'} ${list(names)}, so ${names.length === 1 ? 'it' : 'they'} would print nothing.`
     : '';
 }
+
+/**
+ * The reply when a redesign or a new report would hinge on a field the data
+ * does not have (2026-11-10, the full audit; the chat judge's one serious
+ * finding: "add a column for the customer's email address" went to a whole
+ * rebuild around a field the facts said was not there). An answer instead:
+ * what the data has, and what to do.
+ */
+export function declinedForFields(names: readonly string[], f: ReportFacts): string {
+  const has = f.dataFields?.length ? ` It has ${list(f.dataFields)}.` : '';
+  return (
+    `This report's data has no ${names.length === 1 ? 'field' : 'fields'} ${list(names)}, so I have not redesigned it: that column would print nothing.${has}` +
+    ' Say which of those to use instead, or share a database that has it under Data.'
+  );
+}

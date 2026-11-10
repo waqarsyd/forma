@@ -58,7 +58,7 @@ export function buildFromRead(
   if (!pages.length) return null;
   const layout = detectLayout(pages.map(({ read }) => ({ ocr: read.ocr, page: pageForImage(read.ocr, unit, paper) })), { unit });
   const file = pages[0].meta.file;
-  const title = file.replace(/\.[^.]+$/, '') || 'Report read by OCR';
+  const title = file.replace(/\.[^.]+$/, '') || 'Report read from the page';
   const repxContent = layoutToRepx(layout, { name: reportNameFor(file) });
   return {
     title,
@@ -129,7 +129,7 @@ export function buildWithReader(
   const texts = pageTextsOf(first);
   const design = skeletonToDesign(skeleton, {
     texts,
-    title: pages[0].meta.file.replace(/\.[^.]+$/, '') || 'Report read by OCR',
+    title: pages[0].meta.file.replace(/\.[^.]+$/, '') || 'Report read from the page',
     readBy: "Forma's box reader, from the text OCR read",
   });
   return {

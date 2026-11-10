@@ -2951,7 +2951,7 @@ export default function App() {
       usage: null,
     };
     setResult(newResult);
-    recordRevision('Read by OCR', newResult);
+    recordRevision('Read from the page', newResult);
     setActiveTab('ui');
     const unsure = built.flagged
       ? ` ${built.flagged} ${built.flagged === 1 ? 'text holds a word' : 'texts hold words'} read at low confidence, ` +
@@ -2974,7 +2974,7 @@ export default function App() {
    * before it, so either is one click away in Revisions.
    */
   const handleReaderBuild = (built: ReaderBuiltReport, copy: OcrBuiltReport | null) => {
-    if (copy) recordRevision('Read by OCR', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: asConfigured(copy.repxContent), usage: null });
+    if (copy) recordRevision('Read from the page', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: asConfigured(copy.repxContent), usage: null });
     const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: asConfigured(built.repxContent), usage: null };
     setResult(newResult);
     recordRevision("Forma's box reader", newResult);
@@ -5358,9 +5358,19 @@ export default function App() {
         // A report turn's answer is checked before anything is acted on.
         // With the message, so an alignment sent with no side takes the one asked for.
         const outcome = agent ? agent.readReportOutcome(answered, currentPrompt) : answered;
-        // A reply that names a field the report's data lacks says so (batch AG item 24).
-        const invented = facts && factsLib ? factsLib.inventedNote(factsLib.inventedFields(outcome.reply ?? '', facts)) : '';
-        if (invented) outcome.reply = `${outcome.reply}\n\n${invented}`;
+        // A reply that names a field the report's data lacks says so (batch AG item 24); a
+        // redesign or a new report that hinges on one is declined instead (2026-11-10, the
+        // full audit: the chat judge saw "add a column for the customer's email address" go
+        // to a whole rebuild around a field the facts said was not there).
+        const inventedNames = facts && factsLib ? factsLib.inventedFields(`${outcome.reply ?? ''} ${outcome.brief ?? ''}`, facts) : [];
+        if (inventedNames.length && (outcome.action === 'rebuild' || outcome.action === 'new') && !withPictures) {
+          outcome.action = 'answer';
+          outcome.wantsReport = false;
+          outcome.edits = [];
+          outcome.reply = factsLib!.declinedForFields(inventedNames, facts!);
+        } else if (inventedNames.length) {
+          outcome.reply = `${outcome.reply}\n\n${factsLib!.inventedNote(inventedNames)}`;
+        }
         // The whole request for a design (agent audit item 19): the brief the
         // turn wrote from the conversation, and on a redesign what is selected.
         designWords = withSelection(outcome.brief || designWords, open ? previewSelection : []);
@@ -5815,8 +5825,11 @@ export default function App() {
         say('This report has no typed text to translate: every text in it prints a field.');
         return;
       }
-      const answered = await askWithChain(effectiveConfig(), (asked) => translateTexts(texts.map((t) => t.text), language, asked));
-      if (sessionId.current !== session) return;
+      // Stop stops it (2026-11-10, the full audit's FE2): the turn's controller, which handleStop aborts.
+      const turn = new AbortController();
+      turnAbortRef.current = turn;
+      const answered = await askWithChain(effectiveConfig(), (asked) => translateTexts(texts.map((t) => t.text), language, asked, turn.signal), turn.signal);
+      if (sessionId.current !== session || turn.signal.aborted) return;
       const { xml, changed } = applyTranslations(open.repxContent, answered.value);
       if (!changed) {
         say(`Nothing changed: the ${PROVIDER_NAMES[answered.by]} answered with the texts as they were.`);
@@ -5841,7 +5854,7 @@ export default function App() {
         },
       ]);
     } catch (err: any) {
-      if (sessionId.current !== session) return;
+      if (sessionId.current !== session || turnAbortRef.current?.signal.aborted) return;
       if (isMissingApiKey(err)) setIsConfigOpen(true);
       else say(`The translation could not be made: ${err?.message || 'the AI did not answer'}.`);
     } finally {

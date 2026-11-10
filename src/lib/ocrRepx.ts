@@ -201,7 +201,7 @@ export function layoutToReport(layout: DetectedLayout, options: Pick<OcrRepxOpti
   const pages = ocrControls(layout, options);
   const size = (pt: number) => round2(pointsToUnits(pt, layout.unit));
   return {
-    title: options.title || 'Report read by OCR',
+    title: options.title || 'Report read from the page',
     pageWidth: layout.pages[0]?.width ?? 850,
     sections: layout.pages.map((p, i) => ({
       id: `ocr-page-${i + 1}`,
@@ -238,7 +238,7 @@ export function ocrSummary(layout: DetectedLayout, options: Pick<OcrRepxOptions,
   const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
   const plural = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
   const out = [
-    `# ${options.title || 'Report read by OCR'}`,
+    `# ${options.title || 'Report read from the page'}`,
     '',
     `Built from the text of ${plural(layout.pages.length, 'page')} read by OCR in the browser, with no model involved: ` +
       `${plural(labels, 'label')} and ${plural(tables, 'table')}, on the report header${layout.pages.length > 1 ? ', a page break before each page after the first' : ''}.`,

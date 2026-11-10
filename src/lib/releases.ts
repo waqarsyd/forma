@@ -75,6 +75,19 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-10-full-audit-leftovers',
+    date: '2026-11-10',
+    version: '1.5.1',
+    title: 'Three small things the audit left',
+    summary:
+      'A request for a column the data does not have is answered with what the data has instead of a redesign around nothing, Stop stops a translation, and the page reader speaks plainly.',
+    changes: [
+      { kind: 'fixed', area: 'chat', text: 'Ask for a column the report’s data does not have and Forma says so, lists the fields it does have and asks which to use, rather than redesigning the whole report around a field that would print nothing.' },
+      { kind: 'fixed', area: 'chat', text: 'Stop now stops a translation while it is being made.' },
+      { kind: 'changed', area: 'ocr', text: 'The page reader’s dialog says what it does in plain words: “The text read from the page”, “Getting ready to read”, and a revision named “Read from the page”.' },
+    ],
+  },
+  {
     id: '2026-11-10-full-audit',
     date: '2026-11-10',
     version: '1.5.0',

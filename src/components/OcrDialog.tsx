@@ -82,7 +82,7 @@ type PageRun =
 
 /** What the OCR engines' progress stages mean to someone waiting for them: Tesseract's, and PaddleOCR's two (lib/paddle.ts). */
 function stageLabel(stage: string): string {
-  if (/core|initializ|traineddata|language|api/i.test(stage)) return 'Loading the OCR engine';
+  if (/core|initializ|traineddata|language|api/i.test(stage)) return 'Getting ready to read';
   if (/recogniz|finding/i.test(stage)) return 'Reading';
   return 'Preparing';
 }
@@ -175,7 +175,7 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
     setAttempt((a) => a + 1);
   };
 
-  const title = pages[0] ? pages[0].meta.file.replace(/\.[^.]+$/, '') : 'Report read by OCR';
+  const title = pages[0] ? pages[0].meta.file.replace(/\.[^.]+$/, '') : 'Report read from the page';
 
   const build = (force = false) => {
     if (!layout) return;
@@ -209,7 +209,7 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
     <div className="wb-cmd-backdrop wb-cmd-backdrop--centre" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <section className="wb-ocrd" role="dialog" aria-modal="true" aria-labelledby="ocr-title" ref={dialogRef} tabIndex={-1}>
         <div className="wb-set-head">
-          <h2 id="ocr-title">Read text with OCR</h2>
+          <h2 id="ocr-title">The text read from the page</h2>
           <button type="button" className="wb-set-close" onClick={onClose} aria-label="Close">
             <IconClose size={15} />
           </button>
@@ -269,7 +269,7 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
                 );
               })}
             </ol>
-            {!finished && <p className="wb-set-note">The first run loads the OCR engine from this site, about 7 MB, once. Nothing leaves your browser.</p>}
+            {!finished && <p className="wb-set-note">The first read fetches about 7 MB from this site, once. Nothing you attach leaves your browser.</p>}
             {finished && failed > 0 && (
               <p className="wb-set-note is-bad" role="alert">
                 {runs.some((r) => r.status === 'failed' && r.error === STOPPED)
