@@ -103,6 +103,8 @@ export interface ChatThreadProps<R> {
   onConfirm?: (id: string, yes: boolean) => void;
   /** A plan before a heavy job started or not, as changed (2026-11-10): see `ChatMessage.plan`. */
   onPlan?: (id: string, plan: JobPlan, start: boolean) => void;
+  /** Whether the Preview's rows may go with a question (2026-11-10): see `ChatMessage.consent`. */
+  onConsent?: (id: string, yes: boolean) => void;
   /** The AI that designs, by name, for a plan's steps. */
   aiName?: string;
   /** What a reply cost, as words ("23.4k tokens"), or null; shown beside its time (2026-11-05). */
@@ -460,6 +462,7 @@ const ChatNote = memo(function ChatNote<R>({
   onAction,
   onConfirm,
   onPlan,
+  onConsent,
   aiName = 'the AI',
   usageOf,
   query = '',
@@ -472,6 +475,7 @@ const ChatNote = memo(function ChatNote<R>({
   latest?: boolean;
   onConfirm?: (id: string, yes: boolean) => void;
   onPlan?: (id: string, plan: JobPlan, start: boolean) => void;
+  onConsent?: (id: string, yes: boolean) => void;
   aiName?: string;
   /** Present only while this reply's change can still be taken back. */
   onUndo?: (id: string) => void;
@@ -511,6 +515,17 @@ const ChatNote = memo(function ChatNote<R>({
         )}
         {message.confirm?.answered === 'no' && <span className="wb-note-done">Not redesigned</span>}
         {message.plan && onPlan && <PlanCard id={message.id} plan={message.plan} ai={aiName} disabled={retryDisabled} onPlan={onPlan} />}
+        {message.consent && !message.consent.answered && onConsent && (
+          <div className="wb-note-actions" role="group" aria-label="Send the rows?">
+            <button type="button" className="wb-pill wb-pill--accent" disabled={retryDisabled} onClick={() => onConsent(message.id, true)}>
+              Send the rows
+            </button>
+            <button type="button" className="wb-pill wb-pill--outline" disabled={retryDisabled} onClick={() => onConsent(message.id, false)}>
+              Answer without them
+            </button>
+          </div>
+        )}
+        {message.consent?.answered === 'no' && <span className="wb-note-done">Answered without the rows</span>}
         {/* What the reply offers rather than does: an export or the designer, run when pressed. */}
         {message.actions?.length && onAction ? (
           <div className="wb-note-actions" role="group" aria-label="Offered by this reply">
@@ -550,6 +565,7 @@ const ChatNote = memo(function ChatNote<R>({
   onAction?: (id: string, index: number) => void;
   onConfirm?: (id: string, yes: boolean) => void;
   onPlan?: (id: string, plan: JobPlan, start: boolean) => void;
+  onConsent?: (id: string, yes: boolean) => void;
   aiName?: string;
   usageOf?: (message: ChatMessage<R, PreviewMeta>) => string | null;
   onAnswer?: (id: string, answers: ClarifyAnswer[]) => void;
@@ -573,6 +589,7 @@ export default function ChatThread<R>({
   onAction,
   onConfirm,
   onPlan,
+  onConsent,
   aiName,
   usageOf,
   query = '',
@@ -592,8 +609,9 @@ export default function ChatThread<R>({
    * act on stale messages. Reading through a ref keeps the callbacks stable in
    * identity while always calling the current one.
    */
-  const latest = useRef({ onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, onPlan, usageOf });
-  latest.current = { onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, onPlan, usageOf };
+  const latest = useRef({ onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, onPlan, onConsent, usageOf });
+  latest.current = { onAnswer, onRegenerate, onRate, onUndo, onRedo, onAction, onConfirm, onPlan, onConsent, usageOf };
+  const consent = useCallback((id: string, yes: boolean) => latest.current.onConsent?.(id, yes), []);
   const plan = useCallback((id: string, p: JobPlan, start: boolean) => latest.current.onPlan?.(id, p, start), []);
   const act = useCallback((id: string, index: number) => latest.current.onAction?.(id, index), []);
   const usage = useCallback((m: ChatMessage<R, PreviewMeta>) => latest.current.usageOf?.(m) ?? null, []);
@@ -680,6 +698,7 @@ export default function ChatThread<R>({
       onAction={onAction ? act : undefined}
       onConfirm={onConfirm ? confirm : undefined}
       onPlan={onPlan ? plan : undefined}
+      onConsent={onConsent ? consent : undefined}
       aiName={aiName}
       usageOf={usageOf ? usage : undefined}
       onAnswer={onAnswer ? answer : undefined}

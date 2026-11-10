@@ -183,6 +183,19 @@ describe('the request a chat turn sends', () => {
     expect(parts[1]).toEqual({ inlineData: { mimeType: 'image/png', data: 'AAAA' } });
   });
 
+  // The Preview's rows, once the user let them go (2026-11-10, lib/previewRows.ts): fenced as data, with their rule.
+  it('fences the Preview’s rows after the outline, and tells the AI to answer over them only', async () => {
+    const fetchMock = stubSequence(() => reply('Firm 2.'));
+    const report = { outline: 'REPORT "List"', ops: ['text'], tools: { names: [], panes: [], formats: [] } };
+    const turn = chatReply([{ role: 'user', text: 'Which has the highest balance?' }], config, undefined, undefined, report, '', undefined, '', '2 of 2 rows the Preview prints, one a line, fields separated by |:\nName | Balance\nFirm 1 | 10\nFirm 2 | 20');
+    turn.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await turn;
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as { body?: unknown }).body));
+    expect(JSON.stringify(body.systemInstruction)).toContain('<preview_rows> holds the rows the Preview prints');
+    expect(body.contents[0].parts[0].text).toMatch(/<\/report_outline>\n\n<preview_rows>\n2 of 2 rows[\s\S]*Firm 2 \| 20\n<\/preview_rows>\n\n<conversation>/);
+  });
+
   // Batch AG, item 25 (2026-11-10): a question about Forma carries the Docs articles it is about, as data.
   it('fences the Docs articles with the conversation, and tells the AI to answer from them', async () => {
     const fetchMock = stubSequence(() => reply('Use Share, at the top right.'));

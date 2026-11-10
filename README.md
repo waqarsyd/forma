@@ -535,7 +535,9 @@ src/
                        batchCheckpoint (a batch kept in the browser to carry
                        on after a limit or a reload), repxTranslate (a report's
                        typed texts collected for translation and put back, the
-                       layout untouched), chatJudge (the twenty
+                       layout untouched), previewRows (the rows the Preview
+                       prints sent with a question about the data, after the
+                       consent asked in the thread), chatJudge (the twenty
                        chat requests the benchmark scores, the checks code makes
                        and the judge's rubric),
                        formaTeam (one request with every part in its role:

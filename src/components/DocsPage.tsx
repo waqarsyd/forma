@@ -752,7 +752,9 @@ y_top = pageHeight − (baseline + height)`}
                 it. Each reply lists what changed, with Undo and Redo, and "undo that" in the chat takes the last
                 change back. Ask for the report in another language ("translate it into German") and Forma offers
                 a button that translates every typed caption and title in one request, the layout as it was, as a
-                revision beside the original.
+                revision beside the original. A question about the data (which row is highest, what the amounts
+                add up to) is held the first time while Forma asks whether the rows the Preview prints may go to the
+                AI; nothing of them goes until you say so, and the reply says when they went.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="Name the region">

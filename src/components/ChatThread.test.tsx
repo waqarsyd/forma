@@ -461,6 +461,22 @@ describe("actions on Forma's replies", () => {
     expect(metas[0]).toMatch(/^Today, .+ · 23\.4k tokens$/);
   });
 
+  // The Preview's rows asked for before they go (2026-11-10, lib/previewRows.ts).
+  it('asks before the rows go, and says Answered without the rows after a no', () => {
+    const onConsent = vi.fn();
+    const consent = { rows: 20, fields: ['Amount'], source: 'test rows', prompt: 'which is highest?', askId: 'u' };
+    const asking = [msg({ id: 'c', role: 'assistant', text: 'Send them?', consent })];
+    const { rerender } = draw({ messages: asking, onConsent });
+    const group = screen.getByRole('group', { name: 'Send the rows?' });
+    fireEvent.click(within(group).getByText('Send the rows'));
+    expect(onConsent).toHaveBeenCalledWith('c', true);
+    fireEvent.click(within(group).getByText('Answer without them'));
+    expect(onConsent).toHaveBeenLastCalledWith('c', false);
+    rerender(<ChatThread messages={[{ ...asking[0], consent: { ...consent, answered: 'no' as const } }]} isChatting={false} isAnalyzing={false} streamingReply="" onConsent={onConsent} />);
+    expect(screen.queryByRole('group', { name: 'Send the rows?' })).toBeNull();
+    expect(screen.getByText('Answered without the rows')).toBeTruthy();
+  });
+
   // A redesign asked before it is made (2026-11-05).
   it('asks before a redesign with Redesign and Not now, and says Not redesigned after a no', () => {
     const onConfirm = vi.fn();

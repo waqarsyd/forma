@@ -55,10 +55,10 @@ item with its own measurement):
    caption sent once, the texts put back, the layout untouched, as a revision
    beside the original rather than DevExpress's per-language
    `LocalizationItems`, which Forma has not measured.
-2. **Questions about the report's data in the Preview**, as Telerik's AI
-   Insights: the rows the Preview prints (sample rows or test data) sent with a
-   question, the answer beside the page, and consent asked first, as Telerik
-   does, since data is what Forma keeps from the AI by default.
+2. ~~**Questions about the report's data in the Preview**~~ **Built the same
+   day** (`src/lib/previewRows.ts`): a question about the data is held while
+   Forma asks in the thread whether the Preview's rows may go, with how many
+   and which fields; sent, the reply says so. Live rows never go.
 3. **An AI description on a control**, as Telerik's: a sentence the person
    writes about what a control is for, given to the AI with the outline, so an
    edit understands "the tax line" without guessing. Forma already writes

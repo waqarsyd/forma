@@ -1148,6 +1148,8 @@ export default function App() {
   const [activeQuery, setActiveQuery] = useState<ReportQuery | null>(null);
   /** Whether its names and sample values go to the AI (batch DE): on when attached, until unticked on the Data tab. */
   const [databaseShared, setDatabaseShared] = useState(false);
+  /** Whether the rows the Preview prints may go with a question about the data (2026-11-10, lib/previewRows.ts); per project. */
+  const [rowsShared, setRowsShared] = useState(false);
   /** What the Preview reads it as (batch DF), one object while neither changes. */
   const previewDatabase = useMemo(() => (activeDatabase ? { schema: activeDatabase, query: activeQuery } : null), [activeDatabase, activeQuery]);
   /** The databases kept on this device, by name, newest first. */
@@ -3092,6 +3094,7 @@ export default function App() {
     setChatChanges({});
     // A new conversation owes no answers to the last one's questions.
     pendingClarifyRef.current = null;
+    setRowsShared(false);
     setShownRequestId(null);
     setChangedHighlight([]);
     setQueue([]);
@@ -4590,6 +4593,35 @@ export default function App() {
     await startPlan(id, { ...asked, ...plan });
   };
 
+  /**
+   * The rows the Preview prints, for a question about the data (2026-11-10,
+   * lib/previewRows.ts): the test rows the AI made up, else a shared
+   * database's sample rows for the query chosen, with the fields the report
+   * prints; null with none. The companion's live rows are not here: they are
+   * the database's own values and are never sent.
+   */
+  const previewRowsFor = async (open: DesignResult | null): Promise<{ rows: Record<string, unknown>[]; fields: string[]; source: string } | null> => {
+    if (!open?.repxContent) return null;
+    const fields = boundFields.length ? boundFields : [];
+    if (testRows?.length) return { rows: testRows, fields: fields.length ? fields : Object.keys(testRows[0]), source: 'made-up test rows' };
+    if (previewDatabase?.query) {
+      const { sqlPreview } = await import('./lib/sqlPreview');
+      const sql = sqlPreview(open.repxContent, previewDatabase.schema, previewDatabase.query);
+      if (sql?.rows?.length) return { rows: sql.rows as Record<string, unknown>[], fields: fields.length ? fields : Object.keys(sql.rows[0]), source: 'database sample rows' };
+    }
+    return null;
+  };
+
+  /** The answer to Forma's question whether the Preview's rows may go (2026-11-10): yes sends the question again with them, for this project. */
+  const handleConsent = async (id: string, yes: boolean) => {
+    if (isChatting || isAnalyzing) return;
+    const asked = messages.find((m) => m.id === id)?.consent;
+    if (!asked || asked.answered) return;
+    setMessages((prev) => prev.map((m) => (m.id === id && m.consent ? { ...m, consent: { ...m.consent, answered: yes ? 'yes' : 'no' } } : m)));
+    if (yes) setRowsShared(true);
+    await handleGenerate(asked.prompt, { planned: asked.askId, base: turnBases.current.get(asked.askId), consented: yes, transcript: messages.filter((m) => m.id !== id) });
+  };
+
   /** A redesign of the open report from words, as a refinement has always run. */
   const startRedesign = async (words: string) => {
     setIsAnalyzing(true);
@@ -4861,6 +4893,8 @@ export default function App() {
       steerFrom?: string;
       /** The message a started plan carried (batch AG item 22): it is in the thread already, and is not planned again. */
       planned?: string;
+      /** Sent again after the person let the Preview's rows go with it (2026-11-10). */
+      consented?: boolean;
     },
   ) => {
     /*
@@ -5200,6 +5234,30 @@ export default function App() {
           ...(dbAi ? { data: dbAi.dataEditHook(activeDatabase!, config.version, setActiveQuery) } : {}),
           ...(factsLib ? { fields: (xml: string) => factsLib.dataFieldsOf(xml) } : {}),
         };
+        /*
+         * A question about the data (2026-11-10, lib/previewRows.ts): the rows
+         * the Preview prints go with it once the person has said so, asked in
+         * the thread the first time; before that the question waits on the
+         * answer, and nothing is sent.
+         */
+        const previewRows = await previewRowsFor(open);
+        const aboutData = Boolean(open && previewRows && facts && (await import('./lib/previewRows')).asksAboutData(currentPrompt, facts.printed));
+        if (aboutData && previewRows && !rowsShared && !resend?.consented) {
+          const { consentReply } = await import('./lib/previewRows');
+          reportTurnRef.current = false;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextMessageId(),
+              role: 'assistant',
+              text: consentReply(previewRows.rows.length, previewRows.fields, previewRows.source),
+              consent: { rows: previewRows.rows.length, fields: previewRows.fields, source: previewRows.source, prompt: currentPrompt, askId: newUserMsg.id },
+            },
+          ]);
+          return;
+        }
+        const rowsSent = aboutData && previewRows ? (await import('./lib/previewRows')).rowsBlock(previewRows.rows, previewRows.fields) : '';
+        const rowsLine = rowsSent ? (await import('./lib/previewRows')).rowsNote(Math.min(previewRows!.rows.length, (await import('./lib/previewRows')).MAX_ROWS), previewRows!.source) : '';
         // A question about Forma carries the Docs articles it is about (batch AG item 25, lib/docsKnowledge.ts).
         const docs = await import('./lib/docsKnowledge').then(async ({ docsFor }) => {
           const found = await docsFor(currentPrompt, () => import('./components/docsCorpus').then((m) => m.loadDocsSections()));
@@ -5215,7 +5273,7 @@ export default function App() {
         const chained = await askWithChain(config, (asked) => chatReply(history, asked, turn.signal, (text) => {
           partialReplyRef.current = text;
           setStreamingReply(text);
-        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined, docs), turn.signal);
+        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined, docs, rowsSent), turn.signal);
         if (turn.signal.aborted) return;
         const answered = chained.value;
         /*
@@ -5227,7 +5285,8 @@ export default function App() {
         let turnUsage = answered.usage ?? null;
         const withCost = <T extends ChatMessage>(m: T): T => {
           const costed = turnUsage ? { ...m, usage: turnUsage } : m;
-          return chained.note ? { ...costed, text: [chained.note, costed.text].filter(Boolean).join('\n\n') } : costed;
+          const notes = [chained.note, rowsLine].filter(Boolean);
+          return notes.length ? { ...costed, text: [...notes, costed.text].filter(Boolean).join('\n\n') } : costed;
         };
         // A report turn's answer is checked before anything is acted on.
         // With the message, so an alignment sent with no side takes the one asked for.
@@ -7222,6 +7281,7 @@ export default function App() {
                 }}
                 onConfirm={(id, yes) => void handleConfirm(id, yes)}
                 onPlan={(id, plan, start) => void handlePlan(id, plan, start)}
+                onConsent={(id, yes) => void handleConsent(id, yes)}
                 aiName={PROVIDER_NAMES[effectiveProvider(config)]}
                 onShowVersion={handleShowVersion}
                 // The search, marked in the asks and the replies (the log's until 2026-11-08).
