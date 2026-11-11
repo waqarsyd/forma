@@ -1,10 +1,13 @@
 /*
- * Drives the running Forma workspace in a headless browser over the Chrome
- * DevTools Protocol, and reports what the app actually shows.
+ * Drives the running Forma workspace in a browser over the Chrome DevTools
+ * Protocol, and reports what the app actually shows. Only for a run the owner
+ * asks for: browser work otherwise goes through the owner's own Chrome (see
+ * SKILL.md, 2026-11-11).
  *
- * Deliberately dependency-free. Node 20+ has a global WebSocket and fetch, so
- * this needs no puppeteer and no playwright -- neither is installed here, and
- * adding one to run the app would be a dependency the product does not have.
+ * Deliberately dependency-free. Node 22+ (the project's floor) has a global
+ * WebSocket and fetch, so this needs no puppeteer and no playwright -- neither
+ * is installed here, and adding one to run the app would be a dependency the
+ * product does not have.
  *
  * Pure ASCII on purpose. Windows PowerShell 5.1 decodes a BOM-less script as
  * ANSI, so any non-ASCII character in here is one bad round-trip from mojibake;
@@ -14,7 +17,8 @@
  *   node .claude/skills/run-forma/drive.mjs --out <dir> [options]
  *
  *   --out <dir>        where screenshots and console.txt go        (default .)
- *   --url <url>        page to open       (default localhost:3000/workspace)
+ *   --url <url>        page to open       (default localhost:3001/workspace,
+ *                      the mock server; the owner's own server is on 3000)
  *   --port <n>         CDP port                                    (default 9222)
  *   --attach <file>    attach a file before generating; repeatable
  *   --prompt <text>    text to send with the generation
@@ -32,7 +36,7 @@ import path from 'node:path';
 // ---------------------------------------------------------------- arguments
 
 function parseArgs(argv) {
-  const opts = { out: '.', url: 'http://localhost:3000/workspace', port: 9222, attach: [], say: [], prompt: '', pane: '', key: true, wait: 60 };
+  const opts = { out: '.', url: 'http://localhost:3001/workspace', port: 9222, attach: [], say: [], prompt: '', pane: '', key: true, wait: 60 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];

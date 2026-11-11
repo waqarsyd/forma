@@ -1,6 +1,6 @@
 ---
 name: run-forma
-description: Launch Forma and drive it end to end — dev server, the owner's Chrome through the extension or headless Edge over CDP, attach a file, generate a report, send a chat turn, screenshot, and read back what the REPX audit actually says. Use for running the app, confirming a change works in the real UI, or capturing screenshots. Covers the Windows-specific launch and teardown that make this work here.
+description: Launch Forma and drive it end to end — a mock dev server on 3001, the owner's Chrome through the extension (a CDP driver only when the owner asks for one), attach a file, generate a report, send a chat turn, screenshot, and read back what the REPX audit actually says. Use for running the app, confirming a change works in the real UI, or capturing screenshots. Covers the Windows-specific launch and teardown that make this work here.
 ---
 
 # Running Forma
@@ -23,27 +23,60 @@ Two things make that possible without a Gemini key or any change to the repo:
 
 Four steps. Run them in order; the teardown is not optional.
 
-### 1. Start the dev server
+### 1. Start the dev server, in mock mode on 3001
 
 ```powershell
-$env:VITE_FORMA_MOCK='true'; npm run dev
+$env:VITE_FORMA_MOCK='true'; $env:PORT='3001'; npm run dev
 ```
 
-Background it. It comes up on <http://localhost:3000> in about 5 seconds; confirm
-with `Invoke-WebRequest http://localhost:3000/ -UseBasicParsing` before driving
+Background it. It comes up on <http://localhost:3001> in about 5 seconds; confirm
+with `Invoke-WebRequest http://localhost:3001/ -UseBasicParsing` before driving
 anything, because a driver pointed at a dead port fails in a way that looks like
-a broken selector.
+a broken selector. Port 3000 is the owner's own server, which may be running;
+3001 leaves it alone (the two share Vite's dependency cache, so start them one at
+a time, as CLAUDE.md's Commands section says).
 
 **This is the one sanctioned exception to "the dev server belongs in the user's
-terminal".** CLAUDE.md allows taking port 3000 for a short, self-contained check
+terminal".** CLAUDE.md allows taking a port for a short, self-contained check
 provided you free it afterwards. A server left running in an agent shell outlives
-the task and takes the port from the user.
+the task.
+
+**Signing in from it writes to a real account** unless the emulators are used:
+start them (`npx firebase emulators:start --only auth,firestore`) and add
+`$env:VITE_FIREBASE_EMULATORS='true'` before `npm run dev` (.env.example has the
+details; it works only in development). A check that never signs in needs neither.
+
+**One exception keeps 3000: the App Check test.** 3001 is not in the browser
+key's referrers, so App Check's exchange can only be watched on the owner's
+server at `localhost:3000`.
 
 Drop `VITE_FORMA_MOCK` only if the user supplies a real key and asks for real
 output. Never put a key on a command line or in `.env`; type it into the Settings
 dialog, where it goes to `sessionStorage` and never to disk.
 
-### 2. Launch headless Edge
+### 2. Open it in the owner's Chrome
+
+Browser work happens in the owner's own Chrome, through the Claude-in-Chrome
+extension, or in the owner's own Edge. That is the owner's standing rule since
+2026-11-01, so the headless Edge below is not a fallback: it runs only when the
+owner asks for it. Open `localhost:3001/workspace` in a tab of it and drive
+it there: `find` for a control, `file_upload` to attach (paths in the session's
+scratchpad, 10 MB a call), `javascript_tool` to read state. Its screenshots can
+stall on a heavy pane, such as the REPX source, or in the unpainted RDP window;
+reading the DOM answers anyway. Until 2026-10-31 the extension could not reach
+this machine's localhost (*"Frame with ID 0 is showing error page"*); since the
+owner logged it in on this server it does.
+
+If the extension is not connected, say so and ask the owner rather than starting
+a browser of your own.
+
+### 3. The CDP driver, only when the owner asks for it
+
+Everything from here to the end of step 3 is for a run the owner has asked to be
+made with the driver (an unattended check, say). It launches a headless Edge
+from the shell, which is exactly what the rule in step 2 otherwise rules out.
+
+#### Launch headless Edge
 
 ```powershell
 $sp   = "<scratchpad>"                     # never inside the repo
@@ -56,19 +89,6 @@ Start-Sleep -Seconds 8
 Invoke-WebRequest http://127.0.0.1:9222/json/version -UseBasicParsing   # must answer
 ```
 
-**Prefer the owner's own browser when the Claude-in-Chrome extension is
-connected.** Until 2026-10-31 the extension could not reach this machine's
-localhost: every navigation to `localhost:3000` returned *"Frame with ID 0 is
-showing error page"*. Since the owner logged the extension in on this server it
-does, and the owner asked for browser work to happen in their own Chrome or Edge
-rather than in a headless one started from the shell. So with the extension
-connected, open `localhost:3000/workspace` in a tab of it and drive it there:
-`find` for a control, `file_upload` to attach (paths in the session's scratchpad,
-10 MB a call), `javascript_tool` to read state. Its screenshots can stall on a
-heavy pane, such as the REPX source; reading the DOM answers anyway. Headless Edge
-and the driver below are for a machine without the extension, or a run nobody is
-watching.
-
 **`Start-Process`, never the `&` call operator.** `msedge.exe` is a GUI-subsystem
 binary, so PowerShell does not block on it and sets no `$LASTEXITCODE`. With `&`
 the next statement runs while Edge is still starting and everything downstream
@@ -78,10 +98,10 @@ Three `ERROR:` lines on stderr are normal on this box (Edge LLM "Not supported o
 non Desktop SKU", a task_manager fallback complaint, a geolocation class-not-
 registered). Judge success by the CDP endpoint answering.
 
-### 3. Drive it
+#### Drive it
 
 [`drive.mjs`](drive.mjs) beside this file is the driver. It is dependency-free —
-Node 20+ has a global `WebSocket` and `fetch`, so no puppeteer and no playwright,
+Node 22+ has a global `WebSocket` and `fetch`, so no puppeteer and no playwright,
 neither of which this project has any other reason to install.
 
 ```powershell
@@ -94,7 +114,7 @@ node .claude/skills/run-forma/drive.mjs --out $sp `
 | Flag | |
 |---|---|
 | `--out <dir>` | screenshots and `console.txt` land here |
-| `--url <url>` | any route — default `http://localhost:3000/workspace` |
+| `--url <url>` | any route — default `http://localhost:3001/workspace`, the mock server |
 | `--attach <file>` | attach before generating; repeatable — workspace only |
 | `--prompt <text>` | text sent with the generation — workspace only |
 | `--say <text>` | a chat turn after the report; repeatable — workspace only |
@@ -112,7 +132,7 @@ one call per route:
 
 ```powershell
 foreach ($r in '/','/features','/docs','/contact','/terms','/privacy','/nope') {
-  node .claude/skills/run-forma/drive.mjs --out "$sp$($r -replace '/','-')" --url "http://localhost:3000$r"
+  node .claude/skills/run-forma/drive.mjs --out "$sp$($r -replace '/','-')" --url "http://localhost:3001$r"
 }
 ```
 
@@ -148,8 +168,10 @@ is a real image, and it is large enough to exercise the upload optimiser.
 
 ### 4. Tear down
 
+Stop the dev server (TaskStop on the background shell). The rest of this step
+applies only when step 3 started an Edge.
+
 ```powershell
-# stop the dev server (TaskStop on the background shell), then:
 Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
   Where-Object { $_.CommandLine -like '*<your session id>*' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -211,7 +233,8 @@ written that way rather than inline.
 The rule that survives both: **give `Remove-Item` a call of its own, and keep
 every regex, switch and flag out of it.**
 
-Finish by confirming port 3000 has no listener and `git status` is clean.
+Finish by confirming port 3001 has no listener and `git status` shows nothing new
+of yours. (Port 3000 is the owner's; leave whatever is on it.)
 
 ## Reading the result
 
