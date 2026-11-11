@@ -26,8 +26,9 @@ disagree.
       pages quote real figures — attachment and page caps, the DevExpress version
       list, page sizes, units. They are read out of the code and go stale
       silently.
-- [ ] **The test count.** `CLAUDE.md` is the only place it is written down, and
-      the per-file numbers must still sum to the total.
+- [ ] **The test count.** `docs/notes/testing.md` is the only place it is written
+      down: add a row for a new test file, and recount by running `npm test`, never
+      by grepping, so the per-file numbers still sum to the total.
 - [ ] **A file under `src/lib` or `src/services`.** `README.md`'s project-structure
       block lists them and is the only copy of that layout.
 - [ ] **A unit conversion.** `src/lib/reportGeometry.ts` is the only place one may

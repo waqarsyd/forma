@@ -53,10 +53,17 @@ describe('ANNOUNCEMENTS', () => {
 
   /* Since 2026-11-07 the notes are the releases marked to announce
      (releases.ts). A changed id would light the dot again for every reader who
-     had already seen the note, so the two shown before are kept word for word. */
+     had already seen the note, so the ids shown before are kept word for word.
+     Since 2026-11-11 (PS-16) 1.0.0, 2026-11-05-chat-edits-reports and
+     2026-11-07-settings-account-ocr are no longer announced. A reader who saw
+     a newer note keeps its id and notices nothing; one whose last seen id is
+     one of those three now finds it gone, so unseenCount shows every announced
+     note as unseen, the smaller failure it chooses over showing nothing. Such a
+     reader had newer notes waiting already (1.2.0 onwards), so the cost is the
+     older notes counted again, once. */
   it('keeps the ids readers have already seen', () => {
     const ids = ANNOUNCEMENTS.map((a) => a.id);
-    expect(ids).toContain('2026-10-28-version-1-0-0');
     expect(ids).toContain('2026-09-09-open-source-live');
+    expect(ids).toContain('2026-11-10-full-audit');
   });
 });

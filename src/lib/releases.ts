@@ -75,10 +75,40 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-11-full-audit',
+    date: '2026-11-11',
+    version: '1.6.0',
+    title: 'Your page beside the report, two languages, and a report that prints like the page',
+    summary:
+      'Lay the page you brought under the report to compare them, keep a report in two languages, and open SSRS and FastReport files. Before answering, Forma prints the report with the rows on your page and fixes what would print wrong. The reports you keep teach your next one, Batch makes each report as carefully as a single one, and a deleted project can be brought back.',
+    announce: true,
+    changes: [
+      { kind: 'new', area: 'preview', text: 'Compare with the original: a tool on the Preview’s rail, or the O key, lays the page you brought under the report, lined up with it, with sliders to fade it or swipe across.' },
+      { kind: 'new', area: 'preview', text: 'A report can carry a second language, with a Language switch on the Preview, and opens that way in DevExpress. Retype a label while the other language shows and only that language changes. “Translate it into German” still makes a translated copy.' },
+      { kind: 'new', area: 'generation', text: 'An SQL Server Reporting Services report (.rdl, .rdlc) or a FastReport report (.frx) dropped into the box opens as a DevExpress report, with its page, bands, fields and totals, and Forma says what it could not carry across.' },
+      { kind: 'new', area: 'generation', text: 'Attach a Word or Excel template and ask for a report from it, and Forma follows its page, margins, table, column widths and fonts. A spreadsheet of data stays data.' },
+      { kind: 'improved', area: 'ocr', text: 'Phone photos and crooked scans are straightened before they are read, and a page lying on its side is turned upright.' },
+      { kind: 'improved', area: 'generation', text: 'Before answering, Forma prints the report with the rows on your page and fixes what would print wrong: extra pages, text cut off at the margin, fields that print blank, totals that do not match the page, and numbers and dates not written as the page writes them.' },
+      { kind: 'improved', area: 'generation', text: 'Margins and the page size are written as whole numbers, which DevExpress 20.1 needs to keep them, and an expression DevExpress could not read, or a field your data does not have, is named rather than left to fail in the designer.' },
+      { kind: 'improved', area: 'generation', text: 'A report from a picture is placed where the page printed it, so the report and the page line up, and its text sizes are measured from the page.' },
+      { kind: 'new', area: 'workspace', text: 'The reports you keep teach your next one: their fonts, sizes, margins and row height. What you change the same way in two of Forma’s reports becomes a memory, listed in Settings → Memory under Learned from your changes, where you can switch it off or forget it. What it learns this way is kept in this browser, and it is on until you turn it off.' },
+      { kind: 'improved', area: 'generation', text: 'Batch makes each file as a single report is made, reading its pages and following your words, and files handed to it while it runs are added rather than lost.' },
+      { kind: 'improved', area: 'export', text: 'Ask for several formats at once and they are saved together as one .zip; each export waits its turn instead of replacing the one before, and every download saves whole.' },
+      { kind: 'new', area: 'workspace', text: 'Deleting a project can be undone for a few seconds, and an account keeps up to 1,000 projects.' },
+      { kind: 'changed', area: 'workspace', text: 'Projects saved without an account are kept in the browser’s own database, so two tabs open at once no longer overwrite each other’s projects.' },
+      { kind: 'changed', area: 'chat', text: 'The chat carries out what you ask at once and says what it made in plain words; the one thing it still asks is whether the rows the Preview prints may go to the AI.' },
+      { kind: 'fixed', area: 'workspace', text: 'A click draws no ring, edge or border anywhere in the workspace; the keyboard still shows where it is.' },
+      { kind: 'improved', area: 'workspace', text: 'The workspace stays smooth while you type, drag a control or watch a reply arrive, and on a phone it no longer zooms into the box when you type.' },
+      { kind: 'improved', area: 'site', text: 'The public pages show their content before their scripts load, and load less to do it.' },
+      { kind: 'security', area: 'sharing', text: 'The people a report is shared with can no longer see who else it was shared with, and a shared report that carries code says so on its page.' },
+      { kind: 'security', area: 'export', text: 'The next Forma Designer download works with any DevExpress 20.1 build, answers only the Windows user who started it, and runs no code in a report unless you say so.' },
+    ],
+  },
+  {
     id: '2026-11-10-full-audit-leftovers',
     date: '2026-11-10',
     version: '1.5.1',
-    title: 'Three small things the audit left',
+    title: 'Three small fixes',
     summary:
       'A request for a column the data does not have is answered with what the data has instead of a redesign around nothing, Stop stops a translation, and the page reader speaks plainly.',
     changes: [
@@ -91,14 +121,14 @@ export const RELEASES: Release[] = [
     id: '2026-11-10-full-audit',
     date: '2026-11-10',
     version: '1.5.0',
-    title: 'A chat that just does it, and a Forma that learns from every use',
+    title: 'A chat that just does it, and the shape of your reports kept to improve Forma',
     summary:
-      'Ask the chat for something and it happens: a translation, an export, a redesign, a heavy job, with Undo after and no button to press first. Replies say what was made, not what ran behind the scenes. Forma now learns from the shape of the reports you make, with a switch to turn it off and another to share whole reports. Fields clicked into show no ring or dark edge, and a new version says so.',
+      'Ask the chat for something and it happens: a translation, an export, a redesign, a heavy job, with Undo after and no button to press first. Replies say what was made, not what ran behind the scenes. Forma can now keep the shape of the reports you make, to improve future versions, with a switch to turn it off and another to share whole reports. Fields clicked into show no ring or dark edge, and a new version says so.',
     announce: true,
     changes: [
       { kind: 'changed', area: 'chat', text: 'A request is carried out at once, as Claude, ChatGPT and Gemini carry one out: “translate it into German”, “export it as a PDF”, “open it in the designer”, a change only a redesign can make, or three files dropped together all go ahead with Undo after, and nothing asks you to press a button first. A tool the AI brings on its own, which words inside a report could have told it to, is still offered rather than run.' },
       { kind: 'changed', area: 'chat', text: 'Replies say what was made and what to look at. They no longer recite what ran behind the scenes, show a reply’s token count, or end every report with “the checks found nothing wrong”; the request count stays under Settings.' },
-      { kind: 'new', area: 'workspace', text: 'Forma learns from every use. By default it keeps the shape of each report you make or change, never the text, a field name or a picture, and sends it to your account when you are signed in; a second switch, off until you turn it on, shares whole reports and what you asked for. Settings → Learning shows what was kept and deletes it; the privacy policy says it all.' },
+      { kind: 'new', area: 'workspace', text: 'Forma can now keep the shape of the reports you make, to improve future versions. It keeps the layout of each report you make or change, never the text, a field name or a picture, and sends it to your account when you are signed in; it is on until you turn it off, and a second switch, off until you turn it on, shares whole reports and what you asked for. Settings → Learning shows what was kept and deletes it; the privacy policy says it all.' },
       { kind: 'fixed', area: 'workspace', text: 'A field clicked into shows the caret, not a grey ring or a darker edge: the project search, every Settings field, the share and rename boxes. Keyboard users still get the ring on Tab. The same on the public forms, where the contact form and the Docs search no longer flash an orange ring on a click.' },
       { kind: 'new', area: 'site', text: 'When a newer Forma is ready while you have a tab open, a small note offers Reload, as Gmail and Linear do, instead of the page reloading itself later.' },
       { kind: 'fixed', area: 'site', text: 'The home page describes Forma as it is: a report from a picture, a PDF, a .repx or a description, the .repx first and the mockup and spec read off it.' },
@@ -121,14 +151,15 @@ export const RELEASES: Release[] = [
     version: '1.4.0',
     title: 'Sharper reading, a free fallback, and a chat that knows your report',
     summary:
-      'Forma reads a picture of a page with PaddleOCR, which finds far more of its text than before, writes reports with Google’s Gemini 3.x Flash models, moves to the next free AI you set up when one reaches its limit, and answers questions about your report and about Forma from the report and Forma’s own documentation.',
+      'Forma reads far more of a picture’s text than before, writes reports with a newer Gemini, moves to the next free AI you set up when one reaches its limit, and answers questions about your report and about Forma from the report and Forma’s own documentation.',
+    announce: true,
     changes: [
-      { kind: 'improved', area: 'generation', text: 'Forma uses Gemini 3.x Flash (and Flash-Lite for quick answers) when it picks a model for your key, as Google retires Gemini 2.5 Flash on 1 December. It reads as well as Gemini 3 Pro on documents, on the free tier.' },
-      { kind: 'improved', area: 'ocr', text: 'An English picture or scan is read by PaddleOCR in your browser: on real report pages it found 97% of the printed characters where the reader before found 61%, so Forma’s draft and the AI start from far more of the page. Other languages are read as before, and nothing you upload leaves your browser.' },
+      { kind: 'improved', area: 'generation', text: 'Forma picks a newer Gemini for your key, as Google retires the one it used before on 1 December, with a lighter one for quick answers. It reads documents as well as Google’s strongest model, on the free tier.' },
+      { kind: 'improved', area: 'ocr', text: 'An English picture or scan is read far more completely, in your browser: on real report pages Forma now finds 97% of the printed characters where it found 61%, so the report starts from far more of the page. Other languages are read as before, and nothing you upload leaves your browser.' },
       { kind: 'improved', area: 'generation', text: 'A picture of a page is read at high resolution, so small print and thin lines come through. A PDF is not, since its text is exact already.' },
       { kind: 'improved', area: 'generation', text: 'After a report from a picture, Forma checks it kept the captions and titles it read on the page, asks the AI once more, naming them, when several are missing, and the REPX pane lists any still left out.' },
-      { kind: 'improved', area: 'ocr', text: 'The words the new reader is unsure of are flagged for review at its own threshold, so the review lists the ones most likely to be wrong.' },
-      { kind: 'improved', area: 'generation', text: 'Forma’s own draft of a picture is read by a box reader trained again, on every layout of the company’s and on pages DevExpress printed: on real reports it finds footer totals three times as often, group headers and footers far more often, and builds a banded draft for more pages. Page numbers at the foot of a page are kept as page numbers.' },
+      { kind: 'improved', area: 'ocr', text: 'The words Forma is least sure it read are flagged for review, so the review lists the ones most likely to be wrong.' },
+      { kind: 'improved', area: 'generation', text: 'Forma’s own first draft of a picture finds footer totals three times as often on real reports, and group headers and footers far more often, and builds a banded draft for more pages. Page numbers at the foot of a page are kept as page numbers.' },
       { kind: 'new', area: 'generation', text: 'When the AI you chose reaches its limit, the next one you have set up answers on its own (OpenRouter, then a local AI, after Gemini), for a report and in the chat alike, and the reply says which answered. A request to a local AI is never sent anywhere else, and when every AI gives out, Forma’s own draft is your report as before.' },
       { kind: 'new', area: 'workspace', text: 'Settings suggests a pair for Ollama on your computer, a model that writes reports and reads pictures and a page reader, glm-ocr, sized for 8 GB or 16 GB of memory, with the commands that fetch them and one button that fills them in.' },
       { kind: 'new', area: 'ocr', text: 'A page reader on Ollama or LM Studio, such as glm-ocr, can read a picture’s text beside Forma’s own reading; the AI is told to check against the picture any word the two read differently.' },
@@ -143,21 +174,24 @@ export const RELEASES: Release[] = [
       { kind: 'improved', area: 'workspace', text: 'A batch is kept in your browser as it runs, so after a limit, a reload or the next day it carries on from where it stopped; a limit pauses it rather than failing file after file, and Clear removes it.' },
       { kind: 'fixed', area: 'generation', text: 'A repair request that hits a limit keeps the report the AI already wrote, instead of falling back to Forma’s draft.' },
       { kind: 'improved', area: 'generation', text: 'Forma’s own draft of a picture, the report you get when every AI has reached its limit, now draws a records region as a table, keeps the captions of totals lines such as Subtotal and Grand Total, and sizes its text as the page printed it rather than up to twice as large.' },
-      { kind: 'fixed', area: 'generation', text: 'Forma no longer spends a request trying Gemini 2.0 Flash, which Google has shut down, when it first picks a model for your key.' },
+      { kind: 'fixed', area: 'generation', text: 'Forma no longer spends a request trying a Gemini that Google has shut down, when it first picks a model for your key.' },
     ],
   },
   {
     id: '2026-11-09-designer-download',
     date: '2026-11-09',
-    version: '1.3.0',
+    // No version (2026-11-11, PS-03): it was numbered 1.3.0, but no 1.3.0 was
+    // ever tagged or released, so the chip linked a GitHub release that did not
+    // exist. This work was deployed inside 1.4.0.
     title: 'Forma Designer for Windows',
     summary:
-      'Open in designer now tells you what is missing and how to get it, and works from openforma.web.app too: Forma Designer, the free Windows app that hands your report to the DevExpress designer, or DevExpress itself, whose free trial is on devexpress.com.',
+      'Open in designer now tells you what is missing and how to get it, and works from openforma.web.app too: Forma Designer, the free Windows app that hands your report to the DevExpress designer, or DevExpress itself, whose free trial is on devexpress.com. It shipped in 1.4.0.',
+    announce: true,
     changes: [
       { kind: 'new', area: 'site', text: 'A download page for Forma Designer for Windows: one button, no form, with the version, date, size and SHA-256 beside it, what it needs, how to install it (and what Windows says about a program that is not code-signed), how to check the file, what it does on your PC, and how to remove it.' },
       { kind: 'fixed', area: 'site', text: 'The self-hosting page numbers its steps again, instead of showing them as bullets.' },
       { kind: 'new', area: 'site', text: 'The Docs page has an article on opening a report in the DevExpress designer, and the FAQ a question on it; the terms and privacy policy say when Forma asks your PC and what goes there.' },
-      { kind: 'improved', area: 'export', text: 'Forma Designer works with the DevExpress you have installed, not only 20.1, installs and uninstalls like any Windows app (for you alone, with no administrator), says plainly when DevExpress is missing, and opens a report a web page hands it with report scripts turned off.' },
+      { kind: 'improved', area: 'export', text: 'Forma Designer works with DevExpress 20.1.3 and newer versions, installs and uninstalls like any Windows app (for you alone, with no administrator), says plainly when DevExpress is missing, and opens a report a web page hands it with report scripts turned off.' },
       { kind: 'improved', area: 'export', text: 'Open in designer opens a window that says what stands in the way and how to fix it: Forma Designer not installed (download it), DevExpress not installed or too old (its free 30-day trial, on devexpress.com), your browser blocking the site from apps on your device (how to allow it), or not being on Windows. Export .repx is always one click away.' },
     ],
   },
@@ -165,16 +199,17 @@ export const RELEASES: Release[] = [
     id: '2026-11-08-sql-server',
     date: '2026-11-09',
     version: '1.2.0',
+    announce: true,
     title: 'Your SQL Server database, in your reports',
     summary:
-      'Run one read-only script in SSMS and drop its result in the box: Forma reads your database\u2019s tables, views, keys and stored procedures without connecting to it, and a report reads your database by connection name, as DevExpress writes it, never with a password. The AI binds to your real columns when you share the layout, the Preview prints your sample rows as DevExpress would, a report is checked against a newer export, and on your own PC the companion reads the database itself.',
+      'Run one read-only script in SSMS and drop its result in the box: Forma reads your database\u2019s tables, views, keys and stored procedures without connecting to it, and a report reads your database by connection name, as DevExpress writes it, never with a password. The AI binds to your real columns when you share the layout, the Preview prints your sample rows as DevExpress would, a report is checked against a newer export, and on your own PC, with Forma Designer running, Forma reads the database itself.',
     changes: [
       { kind: 'new', area: 'data', text: 'A database\u2019s layout, from Forma\u2019s read-only script or an SSMS \u201cGenerate Scripts\u201d file, attached in the box or pasted on the Data tab: tables, views, keys, and each stored procedure\u2019s parameters, defaults and result columns, read without running it, with the reason when a procedure cannot be described. Kept in this browser, never in the cloud.' },
       { kind: 'new', area: 'data', text: 'Sample rows from the tables you pick, by a second read-only script, so the AI can match a printed column to the right field by what it holds.' },
       { kind: 'new', area: 'data', text: 'The Data tab browses the database: find a table, view, procedure or column, see each one\u2019s types and keys, choose what the report reads (a table with the joins its foreign keys suggest, a stored procedure, or a checked SELECT of your own) with its filter, sort and limit, and bind a field to the control you last selected on the Preview.' },
       { kind: 'fixed', area: 'data', text: 'Binding one label no longer hides the Data tab\u2019s table mapping behind a message about a table nobody had bound.' },
       { kind: 'new', area: 'data', text: 'Write into the report: the query becomes DevExpress\u2019s own SQL data source, connected by name as your application\u2019s config knows it, never with a password, with its report parameters (defaults, several values, a lookup list and one that depends on another), master-detail bands and calculated fields. The report opens in the designer with its fields listed and no connection needed, and the Spec shows the config entry and the code that runs it.' },
-      { kind: 'security', area: 'data', text: 'A report that arrives carrying a database login or password leaves Forma with the connection by name only, and the REPX checks say so.' },
+      { kind: 'security', area: 'data', text: 'A report that arrives carrying a database login or password leaves Forma with the connection by name only, and Forma says so.' },
       { kind: 'new', area: 'generation', text: 'Share a database with the AI (Send names and sample values to the AI on the Data tab, on when you attach its layout) and a report designed from a picture or a description binds to its real columns: the AI says which table, view or procedure it read, Forma checks every name against the layout and writes the data source itself.' },
       { kind: 'new', area: 'chat', text: 'With a database shared, the chat changes what the report reads in place: \u201cbind it to dbo.usp_Sales\u201d, \u201cadd the customer\u2019s phone\u201d, \u201cfilter by a region parameter\u201d, and \u201cgroup by Region\u201d, which adds a group band with a total when asked. Each can be undone.' },
       { kind: 'new', area: 'data', text: 'Custom SQL from a sentence on the Data tab, and any custom SQL checked against your database\u2019s layout: a table or column it does not have is refused, not run.' },
@@ -191,7 +226,7 @@ export const RELEASES: Release[] = [
       { kind: 'new', area: 'site', text: 'A Docs article on your SQL Server data: the scripts, the steps, the connection name and running the report in your application. Features and Compare say what Forma does with a database, and that it never connects to one.' },
       { kind: 'security', area: 'data', text: 'Signing out removes the database layouts and sample rows kept on the device, as it does your uploads.' },
       { kind: 'changed', area: 'site', text: 'The privacy policy says what of your database goes to the AI and when (only what you share), and that no connection string, login or password is ever asked for, stored or sent.' },
-      { kind: 'new', area: 'data', text: 'Read from my SQL Server: with Forma running on your own PC and its companion (RepxDesigner.exe --serve), the Data tab reads your database’s layout and sample rows straight from it, with no script to copy. Connections are added in the companion, and a login’s password stays there, encrypted for your Windows user.' },
+      { kind: 'new', area: 'data', text: 'Read from my SQL Server: with Forma running on your own PC and Forma Designer running beside it, the Data tab reads your database’s layout and sample rows straight from it, with no script to copy. Connections are added in Forma Designer, and a login’s password stays there, encrypted for your Windows user.' },
       { kind: 'new', area: 'preview', text: 'Live rows: on your own PC the Preview prints the report from your database with the parameter values you type. A stored procedure runs only when you press the button that names it.' },
       { kind: 'improved', area: 'data', text: 'Open in designer gives the designer the report’s connection from your PC, so its preview works at once, and saving still writes only the connection’s name.' },
       { kind: 'fixed', area: 'chat', text: 'After you add your key and press Check key, the model menu in the chat box lists the models your key can use straight away, instead of only after the page is reloaded.' },
@@ -300,7 +335,6 @@ export const RELEASES: Release[] = [
     title: 'Settings, your account and the OCR review, redesigned',
     summary:
       'Settings is a list of sections, General, AI, Gemini key and Memory, and a change takes effect as you make it. Your account and the OCR review follow the same design, and this page lists every release.',
-    announce: true,
     changes: [
       { kind: 'improved', area: 'workspace', text: 'Settings has its sections on the left, as ChatGPT’s does, and no Save or Cancel: each change applies at once.' },
       { kind: 'improved', area: 'workspace', text: 'Forgetting your kept reports, everything in Memory, or the encrypted key stored in your account asks first.' },
@@ -335,7 +369,6 @@ export const RELEASES: Release[] = [
     title: 'A chat that edits your report',
     summary:
       'With a report open, the chat answers questions about it and changes it in place, listing what changed with an Undo. It asks before designing, queues what you send while it works, and floats over the report.',
-    announce: true,
     changes: [
       { kind: 'new', area: 'chat', text: 'The chat sees the open report and edits it in place: text, position, size, font, colour, alignment, paper and margins, with a list of what changed and an Undo.' },
       { kind: 'new', area: 'chat', text: 'Before designing a report from words, Forma asks its questions one at a time, with a summary.' },
@@ -431,7 +464,6 @@ export const RELEASES: Release[] = [
     title: 'Forma 1.0.0',
     summary:
       'The first numbered release. Nothing in the app changed that day: the number caught up with what had been live since September.',
-    announce: true,
     changes: [
       { kind: 'new', area: 'generation', text: 'Banded reports with data binding, grouping, parameters, charts and gauges.' },
       { kind: 'new', area: 'preview', text: 'A Preview drawn from the .repx file you actually download.' },

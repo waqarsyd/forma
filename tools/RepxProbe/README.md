@@ -23,6 +23,7 @@ RepxProbe emit-gauge <out.repx>  # the same, for XRGauge and XRSparkline
 RepxProbe emit-toc <out.repx>    # the same, for a TABLE OF CONTENTS
 RepxProbe emit-comb <out.repx>   # the same, for a CHARACTER COMB
 RepxProbe emit-pdf <out.repx>    # the same, for XRPdfContent
+RepxProbe emit-localize <out.repx> # the same, for a report in TWO LANGUAGES (LocalizationItems), read back per culture (2026-11-11)
 RepxProbe emit-sql <out.repx>    # the same, for a SQL Server DATA SOURCE, over a made-up LocalDB database it creates and drops
 RepxProbe emit-sql-params <out.repx> # the same, for the result schema's TYPE names, report PARAMETERS, lookups and multi-value
 RepxProbe sql-run <script.sql> <out.txt> # run a script over that made-up database and keep what it returns
@@ -230,6 +231,18 @@ short version:
   and discard the second's content, with no error. Measured on one document
   differing only in its `Ref` values: unique gave 6 cells and 3 bindings,
   duplicated gave 3 cells and 0 bindings.
+
+And from `emit-localize` on 2026-11-11, for a report in two languages (the
+full audit's CP-06; *A report in two languages* in `gemini.md`):
+
+- Each item is `<ItemN Ref Component="#Ref-<control>" Culture Path Data/>` in
+  a `<LocalizationItems>` collection of the report, written after the
+  report's own `</Bands>`.
+- **Once a file has any item, the loader drops every control's own `Text`
+  and `Font`**, named by an item or not, so the first language prints only
+  from `Culture="Default"` items, which Forma therefore writes for every
+  control that has a text or a font.
+- A neutral culture (`de`) serves `de-DE` and `de-AT`, and not the other way.
 
 And from `emit-group` on 2026-09-05, for the grouping work:
 

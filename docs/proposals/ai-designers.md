@@ -54,7 +54,10 @@ item with its own measurement):
    as the chat's `translate` tool (`src/lib/repxTranslate.ts`): every typed
    caption sent once, the texts put back, the layout untouched, as a revision
    beside the original rather than DevExpress's per-language
-   `LocalizationItems`, which Forma has not measured.
+   `LocalizationItems`. Those were measured with `RepxProbe emit-localize`
+   and built on 2026-11-11 (the full audit's CP-06): a report can carry a
+   second language, with a Language switch on the Preview; see *A report in
+   two languages* in [`docs/notes/gemini.md`](../notes/gemini.md).
 2. ~~**Questions about the report's data in the Preview**~~ **Built the same
    day** (`src/lib/previewRows.ts`): a question about the data is held while
    Forma asks in the thread whether the Preview's rows may go, with how many

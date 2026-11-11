@@ -68,6 +68,38 @@ describe('RELEASES', () => {
     expect(latestVersion()).toBe(pkg.version);
     expect(lock.version).toBe(pkg.version);
   });
+
+  /* PS-03 (2026-11-11): a version is a link to its GitHub release, so a
+     version nobody tagged is a dead link on /changelog and in What's new.
+     1.3.0 was written down and never tagged. These are the tags
+     scripts/deploy.mjs made (`git ls-remote --tags origin`); the newest
+     version may be one the next deploy has still to tag, and nothing else.
+     Add a version here when its deploy has tagged it. */
+  const TAGGED = ['1.0.0', '1.1.0', '1.1.1', '1.2.0', '1.4.0', '1.4.1', '1.5.0', '1.5.1'];
+
+  it('carries no version that was never tagged, apart from the one the next deploy tags', () => {
+    const versions = RELEASES.flatMap((r) => (r.version ? [r.version] : []));
+    const [newest, ...released] = versions;
+    expect(released.filter((v) => !TAGGED.includes(v))).toEqual([]);
+    expect(TAGGED.includes(newest) || laterVersion(newest, TAGGED[TAGGED.length - 1])).toBe(true);
+    expect(versions).not.toContain('1.3.0');
+  });
+
+  /* PS-16 (2026-11-11): the dock and What's new show what matters, not every
+     entry; R4-10: a release note names no engine or model. */
+  it('announces the releases a visitor would want told, and none of the minor ones', () => {
+    const announced = RELEASES.filter((r) => r.announce).map((r) => r.id);
+    expect(announced).toEqual(expect.arrayContaining(['2026-11-10-ai-accuracy', '2026-11-08-sql-server', '2026-11-09-designer-download']));
+    for (const id of ['2026-11-05-chat-edits-reports', '2026-11-07-settings-account-ocr', '2026-10-28-version-1-0-0']) expect(announced).not.toContain(id);
+  });
+
+  it('says what changed in plain words, naming no engine or model, in the releases since 1.4.0', () => {
+    const recent = RELEASES.slice(0, RELEASES.findIndex((r) => r.version === '1.4.0') + 1);
+    const words = recent.flatMap((r) => [r.title, r.summary, ...r.changes.map((c) => c.text)]).join('\n');
+    for (const word of [/PaddleOCR/, /Gemini \d/, /Flash-Lite/, /box reader/i, /\bREPX checks\b/, /the company’s/, /the audit left/]) {
+      expect(words).not.toMatch(word);
+    }
+  });
 });
 
 /* Item 108: scripts/github-setup.mjs labels issues by the areas the changelog

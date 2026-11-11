@@ -10,6 +10,20 @@ existing, was what this said would decide the move into `../notes/`; moving the 
 there is what remains. (This said "not yet evaluated" until 2026-11-11, two days after
 the evaluation it was waiting for had run.)
 
+**Since 2026-11-11 the library also fills itself, and one first pass reads it** (the full
+audit's batch LRN2, 0cec241). A report the person keeps (exported, saved or opened in the
+designer) joins a separate `kept` store in `forma-library` (version 2), stripped by
+`chunkRepx` exactly as an added file is and never embedded, the newest twenty, owned by the
+account that kept it. On a **first** report, the kept report nearest Forma's own draft, by
+shape features rather than an embedding, so the search sends nothing, is quoted to the AI
+as one formatting example behind the same fence, the source winning. That is a deliberate,
+narrow exception to *Retrieval belongs on the refine pass, not the first pass* below: the
+example is the person's own kept work, chosen by the draft's shape rather than by a query
+the model wrote, and it is one report, not a block of fragments. Refine-pass retrieval
+over the added library is unchanged. The record is *The reports a person keeps teach the
+next one* in [`../notes/persistence.md`](../notes/persistence.md); what the example does to
+the AI's answers is not measured yet, because that needs the owner's key.
+
 This file is in `docs/proposals/` rather than `docs/notes/` deliberately. The five
 notes are current and maintained against the code, so a session greps them for what
 is true now; a sixth note describing an unbuilt design would be a pointer that

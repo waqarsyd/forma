@@ -89,6 +89,12 @@ repair pass or `thinkingBudget` should quote its scorecard before and after in t
 commit message.** *The fidelity benchmark* in `docs/notes/gemini.md` says what it
 measures and why.
 
+For one `.repx` on its own, `npx tsx scripts/repx.ts audit|repair|pdf <file.repx>` runs
+Forma's audit, its repair chain or a draft PDF from the command line, with no browser and
+no key; `audit` exits 1 on an error. It is a tool for working on a report, not one of the
+checks, and [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md)
+says what each finding and repair means.
+
 This table deliberately does not say how many tests there are.
 [`docs/notes/testing.md`](docs/notes/testing.md) is the only place that number is
 written down, and it stays that way because copies of it drift: this file carried
