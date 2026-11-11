@@ -61,7 +61,10 @@ describe('Open in designer', () => {
   it('starts Forma Designer when nothing answers, then offers the download', async () => {
     companion(null);
     render(<OpenInDesigner {...props()} />);
-    expect(await screen.findByRole('heading', { name: 'Get Forma Designer' })).toBeTruthy();
+    // The first case pays the dialog's cold path (probe, launch, wait, probe):
+    // 807 ms alone under coverage and 1,212 ms in the full coverage run on
+    // 2026-11-11, past findBy's 1 s default, so it gets room of its own.
+    expect(await screen.findByRole('heading', { name: 'Get Forma Designer' }, { timeout: 5000 })).toBeTruthy();
     expect(launchDesigner).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('link', { name: 'Download Forma Designer' }).getAttribute('href')).toBe('/download');
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
