@@ -8,6 +8,8 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import ProjectsPanel, { type ProjectRow } from './ProjectsPanel';
 
 afterEach(cleanup);
@@ -58,6 +60,18 @@ describe('a row', () => {
     expect(props.onOpen).toHaveBeenCalledWith('a');
     fireEvent.click(nameButton('Packing slip'));
     expect(props.onOpen).toHaveBeenLastCalledWith('b');
+  });
+
+  // BW2 (2026-11-11): the name's look is the stylesheet's `.wb-card-open`, not an inline style.
+  it('draws its name from the stylesheet, which resets the button and adds no focus edge', () => {
+    panel();
+    const button = nameButton('Invoice');
+    expect(button.className.split(' ')).toContain('wb-card-open');
+    expect(button.getAttribute('style')).toBeNull();
+    const css = readFileSync(resolve(process.cwd(), 'src/workspace.css'), 'utf8');
+    const rule = css.match(/\n\.wb-card-open \{([^}]*)\}/)?.[1] ?? '';
+    for (const decl of ['width: 100%', 'border: 0', 'background: none', 'font: inherit', 'text-align: start']) expect(rule).toContain(decl);
+    expect(css).not.toMatch(/\.wb-card-open:focus/);
   });
 
   it('says it is opening while its content comes', () => {

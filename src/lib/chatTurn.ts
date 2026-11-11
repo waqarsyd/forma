@@ -117,7 +117,10 @@ export type ReplyKind = 'open' | 'picture' | 'pdf' | 'repx' | 'description';
 export function firstReply(kind: ReplyKind, hasWords: boolean, language?: string | null): string {
   if (kind === 'open') return "Done. I've changed the report as you asked.";
   if (kind === 'description') return `Here's the report you described${language ? `, in ${language}` : ''}.`;
-  const from = kind === 'pdf' ? 'your PDF' : kind === 'repx' ? 'your report' : 'your page';
+  // A .repx is already a report (2026-11-11, the full audit's UI11): "the
+  // report from your report" said the same word twice and meant nothing.
+  if (kind === 'repx') return `Here's your report again${language ? `, in ${language}` : hasWords ? ', with what you asked for' : ''}.`;
+  const from = kind === 'pdf' ? 'your PDF' : 'your page';
   if (language) return `Here's the report from ${from}, in ${language}.`;
   return hasWords ? `Here's the report from ${from}, with what you asked for.` : `Here's the report from ${from}.`;
 }

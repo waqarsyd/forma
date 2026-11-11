@@ -27,7 +27,10 @@ describe('firstReply', () => {
     expect(firstReply('picture', true)).toBe("Here's the report from your page, with what you asked for.");
     expect(firstReply('picture', false)).toBe("Here's the report from your page.");
     expect(firstReply('pdf', false)).toBe("Here's the report from your PDF.");
-    expect(firstReply('repx', true)).toBe("Here's the report from your report, with what you asked for.");
+    expect(firstReply('repx', true)).toBe("Here's your report again, with what you asked for.");
+    expect(firstReply('repx', false)).toBe("Here's your report again.");
+    expect(firstReply('repx', true, 'French')).toBe("Here's your report again, in French.");
+    for (const words of [true, false]) expect(firstReply('repx', words)).not.toMatch(/from your report/);
     expect(firstReply('description', true)).toBe("Here's the report you described.");
     expect(firstReply('picture', true, 'German')).toBe("Here's the report from your page, in German.");
     for (const kind of ['open', 'picture', 'pdf', 'repx', 'description'] as const) expect(firstReply(kind, true)).not.toMatch(/updated|instructions/);

@@ -674,8 +674,34 @@ describe('describeChanges: what the reply says changed', () => {
     const lines = describeChanges(before, after);
     expect(lines).toContain('retyped the title to "TAX INVOICE"');
     expect(lines).toContain('retyped the label "Bill to" to "Customer"');
-    expect(lines).toContain('retyped a heading cell of the table to "Product"');
+    expect(lines).toContain('retyped the Item heading to "Product"');
     expect(lines.join('\n')).not.toMatch(/labelTitle|xrLabel3|tableHead|\*\*/);
+  });
+
+  // BW2 (2026-11-11): two heading cells changed differently both read "a heading cell of the
+  // table", and a group header's table, named for its band, called its data row headings.
+  it('names a heading cell by its heading, each once, and a band-named table\'s row as cells', () => {
+    const table = (name: string, band: string) =>
+      `<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" PageWidth="850" PageHeight="1100" Version="20.1"><Bands><Item1 Ref="1" ControlType="${band}" Name="${band}1" HeightF="100"><Controls><Item1 Ref="2" ControlType="XRTable" Name="${name}" LocationFloat="0,0" SizeF="600,25"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="r1" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="c1" Text="Item" Weight="1" /><Item2 Ref="5" ControlType="XRTableCell" Name="c2" Text="Amount" Weight="1" /><Item3 Ref="6" ControlType="XRTableCell" Name="c3" Text="Note" Weight="1" /></Cells></Item1></Rows></Item1></Controls></Item1></Bands></XtraReportsLayoutSerializer>`;
+    const before = table('tableHead', 'DetailBand');
+    const after = applyEdits(before, [
+      { op: 'font', control: 'tableHead', row: 1, cell: 1, bold: true },
+      { op: 'font', control: 'tableHead', row: 1, cell: 2, italic: true },
+    ]).xml;
+    const lines = describeChanges(before, after);
+    expect(lines.some((l) => l.startsWith('restyled the Item heading'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('restyled the Amount heading'))).toBe(true);
+    expect(new Set(lines).size).toBe(lines.length);
+    expect(lines.join('\n')).not.toMatch(/a heading cell/);
+
+    const group = table('tableGroupHeader1', 'GroupHeaderBand');
+    const retyped = applyEdits(group, [
+      { op: 'text', control: 'tableGroupHeader1', row: 1, cell: 2, text: 'Total' },
+      { op: 'text', control: 'tableGroupHeader1', row: 1, cell: 3, text: 'Remark' },
+    ]).xml;
+    const said = describeChanges(group, retyped);
+    expect(said.join('\n')).not.toMatch(/heading/);
+    expect(said).toContain('retyped the cell in row 1, column 2 of the table to "Total"');
   });
 
   it('says nothing for no change, and counts what is past the limit', () => {

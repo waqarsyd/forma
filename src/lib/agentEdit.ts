@@ -1375,8 +1375,11 @@ function cellChanges(name: string, was: PreviewControl, now: PreviewControl, hea
   }
   /*
    * A cell on its own by what it is (UI9): a cell of a heading table's first
-   * row is "a heading cell", any other "the cell in row 2, column 3", and
-   * the place by number again wherever two lines would read the same.
+   * row by the heading it was ("the Amount heading", BW2 2026-11-11, where
+   * every one read "a heading cell of the table" and two changed differently
+   * could not be told apart), "a heading cell" when it had no words, any
+   * other "the cell in row 2, column 3", and the place by number again
+   * wherever two lines would read the same.
    */
   const single: { said: string[]; r: number; k: number }[] = [];
   grid.forEach((row, r) =>
@@ -1385,7 +1388,12 @@ function cellChanges(name: string, was: PreviewControl, now: PreviewControl, hea
     }),
   );
   const at = (r: number, k: number) => `the cell in row ${r + 1}, column ${k + 1} of ${name}`;
-  const plain = single.map(({ said, r, k }) => say(said, heading && r === 0 ? `a heading cell of ${name}` : at(r, k)));
+  const headingOf = (k: number) => {
+    const old = was.rows[0]?.cells[k];
+    const caption = old && !old.field ? old.text.trim().split(/\r?\n/)[0] : '';
+    return caption ? `the ${clip(caption)} heading` : `a heading cell of ${name}`;
+  };
+  const plain = single.map(({ said, r, k }) => say(said, heading && r === 0 ? headingOf(k) : at(r, k)));
   const seen = plain.flat().reduce((m, l) => m.set(l, (m.get(l) ?? 0) + 1), new Map<string, number>());
   single.forEach(({ said, r, k }, i) => lines.push(...(plain[i].some((l) => (seen.get(l) ?? 0) > 1) ? say(said, at(r, k)) : plain[i])));
   // A whole table restyled in different ways is one line, not one per cell.
@@ -1425,8 +1433,10 @@ export function describeChanges(before: string, after: string, limit = 10): stri
     lines.push(...lookChanges(name, was, now));
     if (was.visible !== now.visible) lines.push(`${now.visible ? 'showed' : 'hid'} ${name}`);
     // A heading table: one on the page header, or named for its headings. Not
-    // any table on a group header (2026-11-11), whose first row is often data.
-    lines.push(...cellChanges(name, was, now, /pageheader/i.test(band) || /head/i.test(key)));
+    // any table on a group header (2026-11-11), whose first row is often data,
+    // and not one whose name says only the band it sits in ("tableGroupHeader1",
+    // BW2), which the designer's default names do.
+    lines.push(...cellChanges(name, was, now, /pageheader/i.test(band) || /head/i.test(key.replace(/(group|page|report)_?header/gi, ''))));
   }
   const [ra, rb] = [ROOT.exec(before)?.[1] ?? '', ROOT.exec(after)?.[1] ?? ''];
   const paper = (attrs: string) => `${attrOf(attrs, 'PaperKind') ?? 'Letter'}${(attrOf(attrs, 'Landscape') ?? '').toLowerCase() === 'true' ? ' landscape' : ''}`;

@@ -33,7 +33,12 @@ export const PRINT_FORMATS: [PrintFormat, string, string][] = [
 ];
 
 interface Props {
-  onRepx: () => void;
+  /**
+   * Absent when the report has no XML (2026-11-11, the full audit's PR-17 and
+   * BW2): the row is greyed and says why, as the designer's is. It used to
+   * run and leave `downloadDesign`'s notice to say there was nothing to save.
+   */
+  onRepx?: () => void;
   /** Absent when the report has no XML to open; it starts the companion when that is not running. */
   onDesigner?: () => void;
   onPrint: (format: PrintFormat) => void;
@@ -52,7 +57,8 @@ export default function ExportPanel({ onRepx, onDesigner, onPrint, onClose }: Pr
   // workspace (a toast, the tip, the autosave) took the focus back to the
   // first row: Tab to Excel, then Enter, downloaded the .repx.
   useEffect(() => {
-    box.current?.querySelector<HTMLButtonElement>('.wb-export-row')?.focus({ preventScroll: true });
+    // The first row that can run: the .repx's is greyed when there is no file (BW2).
+    box.current?.querySelector<HTMLButtonElement>('.wb-export-row:not(:disabled)')?.focus({ preventScroll: true });
     const away = (e: PointerEvent) => {
       if (!box.current?.contains(e.target as Node) && !(e.target as Element | null)?.closest?.('[data-export-toggle]')) closeRef.current();
     };
@@ -79,11 +85,11 @@ export default function ExportPanel({ onRepx, onDesigner, onPrint, onClose }: Pr
         </button>
       </div>
       <h3>The report</h3>
-      <button type="button" className="wb-export-row" onClick={run(onRepx)}>
+      <button type="button" className="wb-export-row" disabled={!onRepx} onClick={onRepx ? run(onRepx) : undefined}>
         <IconDownload size={15} />
         <span>
           <b>DevExpress report (.repx)</b>
-          <small>The file the designer opens</small>
+          <small>{onRepx ? 'The file the designer opens' : 'There is no report file yet. Send the request again to make one'}</small>
         </span>
       </button>
       <button type="button" className="wb-export-row" disabled={!onDesigner} onClick={onDesigner ? run(onDesigner) : undefined}>

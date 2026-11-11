@@ -292,7 +292,13 @@ export function toFirestoreDocument<M, R>(
   };
 }
 
-/** Where the signed-out copy lives. */
+/**
+ * Where the signed-out copy lived until 2026-11-11 (the full audit's PR-15),
+ * and where it still lives in a browser with no IndexedDB. Since then the
+ * projects are kept in IndexedDB (lib/projectStore.ts), which moves this
+ * key's list there once and removes it: local storage's five megabytes held
+ * about four projects with pictures, and every save rewrote all of them.
+ */
 export const LOCAL_REPORTS_KEY = 'savedReports';
 
 /**
@@ -349,15 +355,15 @@ export function saveReportsLocally<M, R>(reports: Array<SavedReportLike<M, R>>):
       /* nothing more to be done */
     }
 
-    return {
-      ok: false,
-      message:
-        'There is not enough space left in this browser to save the project on this device. ' +
-        'Uploaded images take up most of it — deleting an older project frees space, ' +
-        'and signing in stores projects in your account instead.',
-    };
+    return { ok: false, message: DEVICE_FULL };
   }
 }
+
+/** What a save that the browser has no room for says, from either store (lib/projectStore.ts). */
+export const DEVICE_FULL =
+  'There is not enough space left in this browser to save the project on this device. ' +
+  'Uploaded images take up most of it — deleting an older project frees space, ' +
+  'and signing in stores projects in your account instead.';
 
 /**
  * Read the signed-out projects list.
@@ -406,7 +412,7 @@ export function loadReportsLocally<M = unknown, R = unknown>(): Array<SavedRepor
  * is required is what the list itself needs — an id to delete by, a name to
  * show, and a timestamp to sort on.
  */
-function isUsableReport(value: unknown): boolean {
+export function isUsableReport(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const r = value as Record<string, unknown>;
   return (

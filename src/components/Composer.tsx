@@ -27,6 +27,7 @@ import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 import { groupLabel } from '../lib/attachments';
 import { autoNote, modelTiers } from '../lib/modelTiers';
 import { hasOpenLayer } from '../lib/layers';
+import { createPromptBox, usePromptText, type PromptBox } from '../lib/promptBox';
 import { useLayer } from './useLayer';
 import { useMenuKeys } from './useMenuKeys';
 import { ToolsMenu } from './BoxMenus';
@@ -102,8 +103,16 @@ export interface ComposerProps {
   /** Puts the error line away (2026-11-06). */
   onDismissError?: () => void;
 
-  prompt: string;
-  onPromptChange: (value: string) => void;
+  /**
+   * The box's words, held in `box` (lib/promptBox.ts) since 2026-11-11 (the
+   * full audit's PR-05): App hands over the handle and typing draws the
+   * composer alone, where App's own state drew the whole workspace per key.
+   * Without one, `prompt` and `onPromptChange` hold them, as a controlled
+   * field (the tests, and any caller that keeps the words itself).
+   */
+  box?: PromptBox;
+  prompt?: string;
+  onPromptChange?: (value: string) => void;
   onSend: () => void;
   /**
    * Stops what is in flight (2026-11-04): a generation, and since 2026-11-05
@@ -188,6 +197,9 @@ export interface ComposerProps {
   database?: { name: string; onStop: () => void } | null;
 }
 
+/** Read when no handle is given: never changes, so the hook's order holds either way. */
+const NO_BOX = createPromptBox();
+
 /** A model's name as the picker shows it: "2.5-flash" for "gemini-2.5-flash". */
 export function modelLabel(id: string): string {
   return id ? id.replace(/^models\//, '').replace(/^gemini-/, '') : 'Auto';
@@ -204,8 +216,9 @@ export default function Composer({
   uploadNotices,
   error,
   onDismissError,
-  prompt,
-  onPromptChange,
+  box,
+  prompt: given = '',
+  onPromptChange: givenChange,
   onSend,
   onStop,
   fileInputRef,
@@ -232,6 +245,10 @@ export default function Composer({
   houseStyle = null,
   database = null,
 }: ComposerProps) {
+  // The box's words: the handle's, read here so a key pressed draws only this (PR-05).
+  const held = usePromptText(box ?? NO_BOX);
+  const prompt = box ? held : given;
+  const onPromptChange = box ? box.set : givenChange ?? (() => undefined);
   /* The "/" Tools menu (2026-11-08). */
   const [boxMenu, setBoxMenu] = useState<'tools' | null>(null);
   /** A tool's words into the box, after what is typed, the caret where the person fills in. */

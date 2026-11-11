@@ -45,8 +45,13 @@ import type { Revision } from './revisions';
 /** The words that describe the machinery rather than the result. */
 const MACHINERY = /\b(OCR|box reader|vision model|own draft|tokens?|REPX checks?|repair|the model|companion)\b/i;
 
-/** The calls whose words reach the person. */
-const SPEAKERS = /\b(say|recordRevision|setTeamStage|setError|setSaveNotice|setNotice|setToast|showToast|toast|notices\.push)\(/g;
+/**
+ * The calls whose words reach the person. The Data tab's and the Preview's
+ * own lines (`setLine`, `setPasteLine`, `setAsked`, `setLiveLine`) joined on
+ * 2026-11-11 (the full audit's BW2): DatabasePanel and ReportPreview speak
+ * through them, and until then nothing here read a word either said.
+ */
+const SPEAKERS = /\b(say|recordRevision|setTeamStage|setError|setSaveNotice|setNotice|setToast|showToast|toast|notices\.push|setLine|setLiveLine|setPasteLine|setAsked)\(/g;
 
 /** The property a posted reply carries its words in. */
 const REPLY_TEXT = /\btext:\s*/g;
@@ -292,6 +297,13 @@ describe('the workspace says results, never machinery', () => {
     const found = [...sample.matchAll(SPEAKERS)].flatMap((m) => literalsIn(argumentsAt(sample, m.index! + m[0].length)));
     expect(found).toEqual(["Read \"…\" with Forma's vision model", 'From your page', 'the OCR failed']);
     expect(found.filter((t) => MACHINERY.test(t))).toHaveLength(2);
+    // The Data tab's and the Preview's lines are speakers too, and are read where they are.
+    const lines = "setLine({ text: 'Read by the companion' }); setLiveLine(`Reading ${n}…`); setPasteLine('a'); setAsked('b');";
+    expect([...lines.matchAll(SPEAKERS)].map((m) => m[1])).toEqual(['setLine', 'setLiveLine', 'setPasteLine', 'setAsked']);
+    const panels = ['src/components/DatabasePanel.tsx', 'src/components/ReportPreview.tsx'];
+    for (const f of panels) expect(files.map((x) => x.replace(/\\/g, '/'))).toContain(f);
+    const read = panels.map((f) => [...readFileSync(f, 'utf8').matchAll(SPEAKERS)].filter((m) => /^set(Live|Paste)?Line$|^setAsked$/.test(m[1])).length);
+    expect(read.every((n) => n > 0)).toBe(true);
   });
 
   it('reads a posted reply, and is not thrown by a regular expression or a comment', () => {

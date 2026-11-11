@@ -114,8 +114,6 @@ import {
   fromIndexDocument,
   mergeIndexed,
   projectName,
-  saveReportsLocally,
-  loadReportsLocally,
   sessionSignature,
   readIdList,
   writeIdList,
@@ -123,6 +121,8 @@ import {
   plainFirestoreRefusal,
 } from './lib/savedReport';
 import { deferDeletes, signOutKeeping } from './lib/deferredDelete';
+/* The projects kept in this browser, in IndexedDB since 2026-11-11 (PR-15): loaded when first used. */
+const deviceProjects = () => import('./lib/projectStore');
 import { reloadIfStaleWaiting, setStaleBusyCheck } from './lib/staleChunks';
 import { toAttachmentParts } from './lib/attachmentParts';
 import {
@@ -270,6 +270,8 @@ import { copyText } from './lib/clipboard';
 import { safeFileName, saveBlob, saveText } from './lib/download';
 import type { BatchOutcome } from './lib/batchQueue';
 import { DRAFTS_KEY, keepQueue, keptQueueFor, LEGACY_DRAFT_KEY, movedDraft, NEW_DRAFT, parseDrafts, QUEUE_KEY, queuedFiles, withDraft, withoutFiles, type Drafts } from './lib/composerStore';
+import { howToUndo, requestsThatUndo, undoReplyOf } from './lib/withdraw';
+import { createPromptBox } from './lib/promptBox';
 import { firstReply, isPlainBuild, isRememberMessage, isVagueReportAsk, needsRowsConsent, pendingQuestions, pendingReplyKind, queueStep, resumed, steered, turnBase, turnEnding, vagueReportReply, vagueReportWord, withSelection, type ReplyKind } from './lib/chatTurn';
 import { formatSessionStamp } from './lib/datetime';
 // LogoPulse, the progress ring of the generation card, went with the card on
@@ -705,22 +707,33 @@ export default function App() {
     }
   };
   const keepDraft = (key: string, text: string) => writeDrafts(withDraft(readDrafts(), key, text));
-  const [prompt, setPrompt] = useState(() => readDrafts()[NEW_DRAFT] ?? '');
+  /*
+   * The box's words, held by the composer's handle rather than App's state
+   * (2026-11-11, the full audit's PR-05, lib/promptBox.ts), so a key pressed
+   * draws the composer and not the whole workspace. Read with `get()` where a
+   * send or a save needs them.
+   */
+  const [promptBox] = useState(() => createPromptBox(readDrafts()[NEW_DRAFT] ?? ''));
+  const setPrompt = promptBox.set;
   useEffect(() => {
-    // The key now, before a project opened in the next render takes it over.
-    const key = draftKeyRef.current;
-    const t = window.setTimeout(() => keepDraft(key, prompt), 300);
-    return () => window.clearTimeout(t);
-  }, [prompt]);
-  /** The words in the box as the latest render has them, kept at once when the page goes. */
-  const draftNow = useRef(prompt);
-  draftNow.current = prompt;
+    let t = 0;
+    const stop = promptBox.subscribe(() => {
+      // The key and the words now, before a project opened next takes the key over.
+      const [key, text] = [draftKeyRef.current, promptBox.get()];
+      window.clearTimeout(t);
+      t = window.setTimeout(() => keepDraft(key, text), 300);
+    });
+    return () => {
+      stop();
+      window.clearTimeout(t);
+    };
+  }, []);
   /**
    * Words put in the box for the person to finish (2026-11-07, agent audit
    * item 57): after what is already typed, on a line of their own, where
    * "Edit text" and a starting point replaced an unsent draft.
    */
-  const addToBox = (text: string) => setPrompt((typed) => (typed.trim() ? `${typed.replace(/\s+$/, '')}\n${text}` : text));
+  const addToBox = promptBox.insert;
   /**
    * The keyboard's focus to the end of the box, after the next paint: where
    * it goes when what held it goes away, an edit sent or a message
@@ -759,14 +772,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on the way in
   }, []);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  // Through the validating reader. A bare JSON.parse here threw during the very
-  // first render on a corrupted entry, taking the whole application to the error
-  // boundary rather than costing one panel — with a message that says nothing
-  // about storage, so the only way out was clearing site data. See
-  // src/lib/savedReport.ts.
-  const [savedReports, setSavedReports] = useState<SavedReport[]>(
-    () => loadReportsLocally<ChatMessage, DesignResult>()
-  );
+  // Empty until the device's projects are read (`showDeviceProjects`), from
+  // IndexedDB since 2026-11-11 (PR-15, lib/projectStore.ts), through a reader
+  // that never throws: a bare JSON.parse here once took the whole app down.
+  const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   /**
    * The list as it is now, for a save scheduled earlier (2026-11-06, the
    * workspace audit): the autosave's closure held the list from when it was
@@ -1025,6 +1034,7 @@ export default function App() {
   const behindDrawer = isStackedLayout && isRailDrawerOpen ? true : undefined;
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const railToggleRef = useRef<HTMLButtonElement>(null);
+  const panelOpener = useRef<Element | null>(null);
   useEffect(() => {
     if (!isStackedLayout) setIsRailDrawerOpen(false);
   }, [isStackedLayout]);
@@ -1076,6 +1086,8 @@ export default function App() {
      section while the panel is hidden shows it rather than switching a section
      nobody can see. The rail's toggle is the only control that hides it. */
   const showRailPanel = useCallback((panel: RailPanel) => {
+    // What opened it, for Escape to give the focus back to (UI7, lib/panelReturn.ts).
+    if (panel !== 'review') panelOpener.current = document.activeElement;
     setRailPanel(panel);
     setIsReviewCollapsed(false);
     rememberReviewCollapsed(false);
@@ -1162,10 +1174,17 @@ export default function App() {
          * the panel stays in use. From the panel, the rail or nowhere only, so
          * Escape on the Preview's selection stays the Preview's, and a field
          * in the panel that uses Escape itself says so with preventDefault.
+         * The focus goes back to what opened the panel, or the menu button
+         * where the rail is in the closed drawer (BW2, lib/panelReturn.ts).
          */
         e.preventDefault();
+        const opener = panelOpener.current;
         showRailPanel('review');
-        requestAnimationFrame(() => document.querySelector<HTMLElement>(`#wb-rail [data-panel="${sidePanel}"]`)?.focus());
+        void import('./lib/panelReturn').then(({ panelReturnTarget }) =>
+          requestAnimationFrame(() =>
+            panelReturnTarget({ stacked: isStacked(window.innerWidth), menuButton: menuButtonRef.current, opener, panelButton: document.querySelector<HTMLElement>(`#wb-rail [data-panel="${sidePanel}"]`) })?.focus(),
+          ),
+        );
       }
     };
     window.addEventListener('keydown', onKey);
@@ -1309,6 +1328,14 @@ export default function App() {
    * would throw away a signed-out user's work every time the page mounted.
    */
   const previousUidRef = useRef<string | null>(null);
+  /** The device's projects listed, if nobody is signed in by the time they are read (PR-15). */
+  const showDeviceProjects = () =>
+    void deviceProjects()
+      .then((store) => store.loadProjects<ChatMessage, DesignResult>())
+      .then((list) => !previousUidRef.current && setSavedReports(list))
+      .catch(() => undefined);
+  // On opening, for a visitor whose sign-in never loads (local-only).
+  useEffect(showDeviceProjects, []);
   /**
    * The auth subscription is set up once, so it cannot close over
    * `forgetSignedOut` directly — it would capture the first render's copy and
@@ -1370,7 +1397,7 @@ export default function App() {
         // vanished from the list on the next reload while still sitting in
         // localStorage, and only came back after a sign-in/sign-out cycle.
         // Matches what handleLogOut does on the explicit path.
-        setSavedReports(loadReportsLocally<ChatMessage, DesignResult>());
+        showDeviceProjects();
         // A sign-out that happened elsewhere still has to leave this tab clean:
         // the uploads, extracted document text, transcript and generated report
         // all belong to the account that just left.
@@ -1540,41 +1567,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reportFirestoreFailure only sets state and logs
   }, [user, firebase]);
 
-  /**
-   * Every saved project in one .zip (2026-11-08, site audit items 59 and
-   * 66, lib/projectExport.ts): from the account in full when signed in, from
-   * this browser otherwise. Resolves to how many went in.
-   */
-  const exportAllProjects = async (): Promise<number> => {
-    let projects: SavedReport[];
-    // Everything the account holds, not the projects alone (2026-11-11, the
-    // full audit's SA-10; lib/projectExport.ts): each project's versions, the
-    // learning events, the shares with their invitees, and the memory.
-    const [{ buildZip }, { projectExportEntries, exportFileName, readAccountExtras }, memory] = await Promise.all([
-      import('./lib/zip'),
-      import('./lib/projectExport'),
-      import('./lib/memory'),
-    ]);
-    let extras: import('./lib/projectExport').AccountExtras = {};
-    if (user) {
-      const client = await loadFirebase();
-      const snapshot = await client.sdk.getDocs(client.paths.reportsCollectionRef(client.db, user.uid));
-      projects = snapshot.docs.map((d) => fromFirestoreDocument<ChatMessage, DesignResult>(d.data()));
-      extras = await readAccountExtras(client, user.uid, projects.map((p) => p.id));
-    } else {
-      projects = loadReportsLocally<ChatMessage, DesignResult>();
-    }
-    const remembered = memory.readMemory(user?.uid ?? null);
-    if (remembered.memories.length || remembered.kept.length) extras.memory = remembered;
-    if (!projects.length) return 0;
-    const now = new Date();
-    // `keepPaths`: projectExport makes each part of a name safe and distinct
-    // itself, and the versions sit in folders a second pass would flatten.
-    const { bytes, reason } = buildZip(projectExportEntries(projects, now, extras), now, { keepPaths: true });
-    if (!bytes) throw new Error(`The projects could not be packed: ${reason}.`);
-    saveBlob(exportFileName(now), new Blob([bytes.slice()], { type: 'application/zip' }));
-    return projects.length;
-  };
+  /** Settings' "Download everything (.zip)", loaded when pressed (lib/downloadEverything.ts). */
+  const exportAllProjects = async () => (await import('./lib/downloadEverything')).downloadEverything(user?.uid ?? null);
 
   /*
    * The projects made in this browser before signing in (2026-11-11, the full
@@ -1585,29 +1579,24 @@ export default function App() {
   const [deviceProjectCount, setDeviceProjectCount] = useState(0);
   const [addingDeviceProjects, setAddingDeviceProjects] = useState(false);
   useEffect(() => {
-    setDeviceProjectCount(user ? loadReportsLocally().length : 0);
+    if (!user) return setDeviceProjectCount(0);
+    void deviceProjects().then((store) => store.loadProjects()).then((list) => setDeviceProjectCount(list.length), () => undefined);
   }, [user?.uid]);
   const addDeviceProjects = async () => {
     if (!user || addingDeviceProjects) return;
     const uid = user.uid;
     setAddingDeviceProjects(true);
     try {
-      const local = loadReportsLocally<ChatMessage, DesignResult>();
-      const [{ sdk, paths, db }, { copyProjectsToAccount, deviceCopyLine }] = await Promise.all([loadFirebase(), import('./lib/projectExport')]);
-      const inAccount = new Map(savedReportsRef.current.map((r) => [r.id, r.timestamp] as const));
-      const { copied, left } = await copyProjectsToAccount(local, inAccount, async (report) => {
-        const fitted = cloudPayload(report, uid);
-        if (!fitted) return false;
-        await paths.writeReport(db, uid, report.id, fitted.payload, !inAccount.has(report.id));
-        // Its entry in the index, as a save writes it; tolerated as there, since the weekly check writes a missing one.
-        await sdk.setDoc(paths.reportIndexDocRef(db, uid, report.id), toIndexDocument(report, uid)).catch(() => undefined);
-        return true;
+      // Loaded when pressed (lib/deviceToAccount.ts). A sign-out while it runs leaves this browser's list as it was.
+      const done = await (await import('./lib/deviceToAccount')).addDeviceProjectsToAccount<ChatMessage, DesignResult>({
+        uid,
+        inAccount: new Map(savedReportsRef.current.map((r) => [r.id, r.timestamp] as const)),
+        fit: cloudPayload,
+        stillSignedIn: () => previousUidRef.current === uid,
       });
-      // A sign-out while this ran leaves the browser's list as it was.
-      if (previousUidRef.current !== uid) return;
-      saveReportsLocally(left);
-      setDeviceProjectCount(left.length);
-      setSaveNotice(deviceCopyLine(copied.length, left.length));
+      if (!done) return;
+      setDeviceProjectCount(done.left);
+      setSaveNotice(done.line);
     } catch (err) {
       reportFirestoreFailure(err, OperationType.WRITE, `users/${uid}/reports`, 'Those projects could not be added to your account just now. They are still in this browser.', { panel: true });
     } finally {
@@ -2407,6 +2396,13 @@ export default function App() {
    */
   const openReportId = useRef<string | null>(null);
   /**
+   * Each Batch row opened, by the project its first save makes (2026-11-11,
+   * the full audit's WS-17 and BW2): opening a row again reopens that
+   * project, where each opening autosaved one more copy. `firstId` is the id
+   * that save takes, given when the row opens.
+   */
+  const batchProjects = useRef({ byRow: new Map<string, string>(), firstId: null as string | null });
+  /**
    * The same id again, as state, because the ref cannot drive a render.
    *
    * The ref exists to be read inside an async closure after an await -- state
@@ -3129,7 +3125,8 @@ export default function App() {
     // project whose save had failed, which the account did not hold.
     const { messages: kept, result: report } = session;
     if (!report && kept.length === 0) return false;
-    const reportId = openReportId.current ?? Date.now().toString();
+    const reportId = openReportId.current ?? batchProjects.current.firstId ?? Date.now().toString();
+    if (!openReportId.current) batchProjects.current.firstId = null;
     if (!quiet) rememberKept(report?.repxContent, reportId);
     // Only once the save has succeeded (2026-11-11): a refused save, at the
     // projects limit or offline, kept nothing and is no sign the report was right.
@@ -3165,7 +3162,7 @@ export default function App() {
     // on whether it was saved signed in. See src/lib/savedReport.ts.
     const draft: SavedReport = {
       id: reportId,
-      name: projectName(savedReportsRef.current.find((r) => r.id === reportId)?.name, report?.title, kept.find((m) => m.role === 'user' && m.text)?.text || prompt),
+      name: projectName(savedReportsRef.current.find((r) => r.id === reportId)?.name, report?.title, kept.find((m) => m.role === 'user' && m.text)?.text || promptBox.get()),
       timestamp: new Date(ts).toISOString(),
       messages: kept,
       result: report,
@@ -3228,20 +3225,17 @@ export default function App() {
         return false;
       }
     } else {
-      // The write happens before the state update, not inside it: a failing
-      // setItem used to throw from inside a setSavedReports updater, which put
-      // the exception into React rather than in front of the user. Deciding
-      // first also means the list never shows a project that was not stored.
-      // The project replaces its own earlier save and goes to the top.
-      const updated = [draft, ...savedReportsRef.current.filter((r) => r.id !== reportId)];
-      const outcome = saveReportsLocally(updated);
+      // Stored before the list shows it, so the list never shows a project that
+      // was not kept. It replaces its own earlier save and goes to the top,
+      // the one record written (PR-15, lib/projectStore.ts).
+      const outcome = await (await deviceProjects()).putProjects([draft]);
 
       if (!outcome.ok) {
         fail(outcome.message);
         return false;
       }
 
-      setSavedReports(updated);
+      setSavedReports((now) => [draft, ...now.filter((r) => r.id !== reportId)]);
       saved();
       keptBySave();
       // Ask the browser to keep it (site audit item 60, lib/storagePersist.ts),
@@ -3321,7 +3315,7 @@ export default function App() {
         pendingAutosave.current = null;
         pending.run();
       }
-      keepDraft(draftKeyRef.current, draftNow.current);
+      keepDraft(draftKeyRef.current, promptBox.get());
     };
     const onHidden = () => {
       if (document.visibilityState === 'hidden') keepNow();
@@ -3394,7 +3388,7 @@ export default function App() {
     }
     // The words in the box stay with the project they were typed in (agent
     // audit item 69), or go with it when it is deleted or the person signs out.
-    keepDraft(draftKeyRef.current, keep === 'save' ? draftNow.current : '');
+    keepDraft(draftKeyRef.current, keep === 'save' ? promptBox.get() : '');
     sessionId.current += 1;
     abortControllerRef.current?.abort();
     turnAbortRef.current?.abort();
@@ -3627,13 +3621,13 @@ export default function App() {
       }
       return;
     }
-    const updated = savedReports.map((r) => (r.id === id ? renamed : r));
-    const outcome = saveReportsLocally(updated);
+    // Where it was in the list (`false`): a rename does not move it.
+    const outcome = await (await deviceProjects()).putProjects([renamed], false);
     if (!outcome.ok) {
       sayProjectsFailure(outcome.message);
       return;
     }
-    setSavedReports(updated);
+    setSavedReports((now) => now.map((r) => (r.id === id ? { ...r, name } : r)));
   };
 
   /**
@@ -3675,13 +3669,12 @@ export default function App() {
       }
       return;
     }
-    const updated = [copy, ...savedReports];
-    const outcome = saveReportsLocally(updated);
+    const outcome = await (await deviceProjects()).putProjects([copy]);
     if (!outcome.ok) {
       sayProjectsFailure(outcome.message);
       return;
     }
-    setSavedReports(updated);
+    setSavedReports((now) => [copy, ...now]);
     setSaveNotice(`Duplicated as ${copy.name}`);
   };
   /** The open project deleted from the title's menu, and a new report started in its place. */
@@ -3729,10 +3722,9 @@ export default function App() {
     // not looked for in the account: the list on screen is the account's now,
     // so the device's copy is read and written apart from it.
     if (!owner && user) {
-      const local = loadReportsLocally<ChatMessage, DesignResult>();
-      const updated = local.filter((r) => r.id !== id);
-      if (updated.length !== local.length) saveReportsLocally(updated);
-      setDeviceProjectCount(updated.length);
+      const store = await deviceProjects();
+      await store.deleteProjects([id]);
+      setDeviceProjectCount((await store.loadProjects()).length);
       return;
     }
     // One deleted in an account that is no longer the one signed in is left
@@ -3755,15 +3747,10 @@ export default function App() {
           'That project could not be deleted from your account. It is still listed — try again in a moment.', { panel: true });
       }
     } else {
-      // Through the same writer as the save path, for the same reason: it is
-      // the same key, and an unguarded setItem here would throw out of a state
-      // updater. A delete shrinks the payload so the quota is not a realistic
-      // failure, but storage being blocked outright is.
-      setSavedReports(prev => {
-        const updated = prev.filter(r => r.id !== id);
-        saveReportsLocally(updated);
-        return updated;
-      });
+      // The one record deleted, outside the state updater (lib/projectStore.ts);
+      // the row has already left the list, through the delete's Undo.
+      await (await deviceProjects()).deleteProjects([id]);
+      setSavedReports((prev) => prev.filter((r) => r.id !== id));
     }
   };
 
@@ -3858,7 +3845,8 @@ export default function App() {
     forget: () => {
       setUser(null);
       forgetSignedOut();
-      setSavedReports(loadReportsLocally<ChatMessage, DesignResult>());
+      setSavedReports([]);
+      showDeviceProjects();
     },
   });
 
@@ -4887,16 +4875,11 @@ export default function App() {
       const kept = withdrawTurn(messages, id);
       if (!kept.some((m) => m.id === pending.messageId)) pendingClarifyRef.current = null;
     }
-    /*
-     * What its answer changed goes with it (2026-11-11, the full audit's
-     * WS-41), as that reply's Undo would take it back: the answer left the
-     * thread and its change stayed in the report. Only while that change is
-     * still the report's last; after a later one, Revisions holds it.
-     */
-    const undoing = withdrawUndoReply(id);
+    // What its answer changed goes with it (WS-41); the rules are lib/withdraw.ts's.
+    const undoing = undoReplyOf(requests, id, undoableIds);
     if (undoing) {
       const change = chatChanges[undoing];
-      if (reportPast.current[reportPast.current.length - 1]?.repxContent === change.before.repxContent) undoReport();
+      if (howToUndo(change.before.repxContent, reportPast.current.at(-1)?.repxContent) === 'undo') undoReport();
       else setResult(change.before);
       recordRevision('Withdrawn in the chat', change.before);
       const undone = messages.find((m) => m.id === undoing)?.learning;
@@ -4904,13 +4887,7 @@ export default function App() {
     }
     setMessages((prev) => withdrawTurn(prev, id));
   };
-  /** The reply of request `id` whose change a withdrawal undoes, if any (WS-41). */
-  const withdrawUndoReply = (id: string): string | undefined =>
-    [...(requests.find((r) => r.id === id)?.replies ?? [])].reverse().find((m) => undoableIds.has(m.id))?.id;
-  const withdrawUndoes = useMemo(
-    () => new Set(requests.filter((r) => r.replies.some((m) => undoableIds.has(m.id))).map((r) => r.id)),
-    [requests, undoableIds],
-  );
+  const withdrawUndoes = useMemo(() => requestsThatUndo(requests, undoableIds), [requests, undoableIds]);
 
   /* `designOffline`, the chat box with no key, went on 2026-11-05: the owner
      made the key the entry point to any work again, and the composer locks
@@ -5142,7 +5119,7 @@ export default function App() {
      */
     if (isChatting || isAnalyzing) return;
 
-    const promptText = overridePrompt ?? prompt;
+    const promptText = overridePrompt ?? promptBox.get();
     // What goes with the words: the composer's staging, or a message's own
     // pictures when it is sent again (see `resend` above).
     const again = overridePrompt !== undefined;
@@ -7115,10 +7092,15 @@ export default function App() {
                   // App's second, full copy of each went (2026-11-11, PL-13).
                   const full: DesignResult | null = (await import('./lib/batchCheckpoint')).resultFromKept(item);
                   if (!full) return;
+                  // A row opened before reopens its project (WS-17, `batchProjects`).
+                  const before = savedReportsRef.current.find((r) => r.id === batchProjects.current.byRow.get(item.id));
+                  if (before) return void handleLoadReport(before);
                   // A new, unsaved session, never the project that was open
                   // (2026-11-06): it used to keep that project's id, so the
                   // next save wrote the batch report over it.
                   handleClearChat();
+                  const firstId = Date.now().toString();
+                  batchProjects.current.byRow.set(item.id, (batchProjects.current.firstId = firstId));
                   setResult(full);
                   /*
                    * Said in the thread, which is also what saves it
@@ -7361,7 +7343,7 @@ export default function App() {
               {isExportOpen && result && (
                 <Suspense fallback={null}>
                   <ExportPanel
-                    onRepx={downloadDesign}
+                    onRepx={result.repxContent ? downloadDesign : undefined}
                     onDesigner={result.repxContent && !designerOpen ? () => openInDesigner() : undefined}
                     onPrint={(format) => exportThroughPreview(format)}
                     onClose={() => setIsExportOpen(false)}
@@ -7608,10 +7590,10 @@ export default function App() {
             /* Nothing said and nothing built: the home (2026-11-06), as
                Stitch's, with the recent projects and the starting points. */
             <Suspense fallback={null}>
-              {/* A project opened from the home says so while its content comes (WS-16). */}
-              {loadingProjectId && <div className="wb-empty" role="status">Opening…</div>}
               <Steady
                 of={HomeStart}
+                // A project opened from the home says so on its own row (WS-16).
+                openingId={loadingProjectId}
                 // The projects whole: lib/startingPoints, which picks the recent
                 // ones, holds the six descriptions too, and importing it here
                 // put them all in the entry chunk (+3 kB, measured).
@@ -7768,8 +7750,7 @@ export default function App() {
                       uploadNotices={uploadNotices}
                       error={error}
                       onDismissError={() => setError(null)}
-                      prompt={prompt}
-                      onPromptChange={setPrompt}
+                      box={promptBox}
                       onSend={handleGenerate}
                       onStop={handleStop}
                       fileInputRef={fileInputRef}

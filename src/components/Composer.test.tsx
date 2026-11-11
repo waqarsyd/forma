@@ -15,6 +15,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { createRef, useState } from 'react';
 import Composer from './Composer';
+import { createPromptBox, type PromptBox } from '../lib/promptBox';
 import type { AttachmentGroup, PreviewMeta } from '../lib/attachments';
 
 afterEach(cleanup);
@@ -731,5 +732,67 @@ describe('the file picker', () => {
     draw();
     const accept = (document.querySelector('input[type=file]') as HTMLInputElement).accept.split(',');
     for (const type of ['.repx', '.rdl', '.rdlc', '.rpt']) expect(accept).toContain(type);
+  });
+});
+
+/*
+ * The box's words in a handle, not the workspace's state (2026-11-11, the full
+ * audit's PR-05, batch BW2): typing draws the composer alone. The parent here
+ * stands for App, counting its own draws; with the words in its state, each
+ * key drew it again, and with them every pane it holds.
+ */
+describe('the words held by the handle', () => {
+  function Workspace({ box, draws, onSend = vi.fn() }: { box: PromptBox; draws: { n: number }; onSend?: () => void }) {
+    draws.n += 1;
+    return (
+      <Composer
+        previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]}
+        onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null}
+        box={box} onSend={onSend} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()}
+        hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false}
+      />
+    );
+  }
+
+  it('draws the composer and not its parent on each key, and the parent reads the words', () => {
+    const box = createPromptBox();
+    const draws = { n: 0 };
+    let sent = '';
+    render(<Workspace box={box} draws={draws} onSend={() => (sent = box.get())} />);
+    expect(draws.n).toBe(1);
+    for (const typed of ['A', 'A s', 'A sales report']) fireEvent.change(field(), { target: { value: typed } });
+    expect(field().value).toBe('A sales report');
+    expect(box.get()).toBe('A sales report');
+    expect(draws.n).toBe(1);
+    fireEvent.click(send());
+    expect(sent).toBe('A sales report');
+    expect(draws.n).toBe(1);
+  });
+
+  it('shows what the parent puts in or clears, still without drawing the parent', () => {
+    const box = createPromptBox('Draft kept');
+    const draws = { n: 0 };
+    render(<Workspace box={box} draws={draws} />);
+    expect(field().value).toBe('Draft kept');
+    act(() => box.insert('Make the title bold'));
+    expect(field().value).toBe('Draft kept\nMake the title bold');
+    act(() => box.clear());
+    expect(field().value).toBe('');
+    act(() => box.insert('A starting point'));
+    expect(field().value).toBe('A starting point');
+    expect(draws.n).toBe(1);
+  });
+
+  it('tells a listener once per change, and not for words that did not change', () => {
+    const box = createPromptBox('x');
+    const heard = vi.fn();
+    const stop = box.subscribe(heard);
+    box.set('x');
+    box.set((typed) => `${typed}y`);
+    expect(heard).toHaveBeenCalledTimes(1);
+    stop();
+    box.clear();
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(box.get()).toBe('');
   });
 });

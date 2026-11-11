@@ -17,7 +17,7 @@ const paths = {
 };
 vi.mock('../lib/firebaseClient', () => ({ loadFirebase: () => Promise.resolve({ paths, db: {} }) }));
 
-import LearningSettings from './LearningSettings';
+import LearningSettings, { COUNT_LEFT } from './LearningSettings';
 import { readDeviceLearning, writeLearningSettings } from '../lib/learning';
 
 beforeEach(() => {
@@ -40,6 +40,18 @@ describe('LearningSettings', () => {
     await waitFor(() => expect(screen.getByText(/7 events shared from your account\./)).toBeTruthy());
     expect(screen.getByText('Applies to your account on every device.')).toBeTruthy();
     expect(paths.countLearning).toHaveBeenCalledWith({}, 'alice');
+  });
+
+  // BW2 (2026-11-11): what deleting the account leaves of learning, said signed in only.
+  it('says what account deletion leaves, signed in and not signed out', async () => {
+    render(<LearningSettings user={{ uid: 'alice' }} />);
+    await waitFor(() => expect(screen.getByText(/7 events shared/)).toBeTruthy());
+    expect(document.body.textContent).toContain(COUNT_LEFT);
+    expect(COUNT_LEFT).toMatch(/no projects, how many events were sent that day and when the last one was, and no ids/);
+    cleanup();
+    render(<LearningSettings user={null} />);
+    await waitFor(() => expect(screen.getByText(/Nothing kept on this device\./)).toBeTruthy());
+    expect(document.body.textContent).not.toContain(COUNT_LEFT);
   });
 
   it('counts nothing signed out, and says nothing of an account', async () => {

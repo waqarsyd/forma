@@ -544,6 +544,13 @@ html:where(:not([data-modality='pointer'])) .wb-root :focus-visible { outline: 2
    does. A pinned project's name carries the pin. */
 .wb-card .wb-nm { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; padding-right: 8px; }
 .wb-card .wb-nm svg { flex: none; color: var(--ink-faint); }
+/* A project's name is the row's keyboard way in (WS-14) and reads as its
+   text, not as a control drawn on it (2026-11-11, the full audit's BW2): a
+   button with nothing of a button's look, replacing ProjectsPanel's inline
+   style. One class, so `.wb-card .wb-nm` keeps its size and weight; the
+   keyboard's ring is the workspace's own (`.wb-root :focus-visible` above),
+   and a click draws none, as everywhere else. */
+.wb-card-open { width: 100%; margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 .wb-card .wb-rename { width: 100%; font-size: 13px; padding: 3px 8px; }
 .wb-card .wb-sub {
   margin-top: 3px;
@@ -1921,6 +1928,8 @@ html[data-modality='keyboard'] .wb-panel-search:focus-within { border-color: var
 }
 
 .wb-spin { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink-faint); border-top-color: transparent; animation: wb-spin .8s linear infinite; }
+/* In the home's recent row (WS-16, BW2), inside a line of text rather than a flex row. */
+.wb-home-recent small .wb-spin { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; }
 .wb-queue-files { color: var(--ink-faint); }
 @keyframes wb-spin { to { transform: rotate(360deg); } }
 

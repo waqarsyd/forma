@@ -24,6 +24,15 @@ import {
 } from '../lib/learning';
 import { loadFirebase } from '../lib/firebaseClient';
 
+/**
+ * What deleting the account leaves of learning, and nothing more (2026-11-11,
+ * the full audit's BW2): `users/{uid}/meta/usage` cannot be deleted on a day
+ * an event was sent, or deleting it would restart that day's count, so its
+ * counts stay and its two ids are taken out (lib/accountData.ts). The privacy
+ * policy says the same, and legalDisclosure.test.ts holds the two together.
+ */
+export const COUNT_LEFT = 'If you delete your account on a day you sent something to learn from, a count stays under the deleted account: no projects, how many events were sent that day and when the last one was, and no ids.';
+
 export interface LearningSettingsProps {
   /** Who is signed in, whose account holds the shared events; null when signed out. */
   user: { uid: string } | null;
@@ -186,6 +195,10 @@ export default function LearningSettings({ user }: LearningSettingsProps) {
             {user
               ? ' What was shared is in your account, where only you and Forma’s maintainer can read it. Deleting it here, or deleting your account, removes it from Forma’s database; copies already downloaded for training are deleted at the next download.'
               : ' Sign in to share it; signed out, it stays on this device.'}
+            {/* What account deletion leaves (2026-11-11, the full audit's BW2, from LRN's write counts):
+                the rules keep a day's count so deleting it cannot restart the day, and accountData.ts
+                takes the two ids out first. Said here and in the privacy policy, in the same words. */}
+            {user ? ` ${COUNT_LEFT}` : ''}
           </p>
         </div>
         {confirming ? (

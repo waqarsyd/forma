@@ -250,7 +250,9 @@ const policy = legal.replace(/\s+/g, ' ');
  */
 const STORED: Record<string, RegExp> = {
   // Local storage.
-  savedReports: /saved automatically in your browser’s local storage/,
+  // Moved to IndexedDB on 2026-11-11 (PR-15, lib/projectStore.ts); the old key is
+  // read once to move it, and is still where they go in a browser without IndexedDB.
+  savedReports: /in local storage, in a browser without it/,
   darkMode: /keeps: the theme;/,
   reportConfig: /the DevExpress version and unit last used/,
   'forma.aiProvider': /the AI you chose, with its server address and model, never a key/,
@@ -288,6 +290,7 @@ const STORED: Record<string, RegExp> = {
   // The channel a new tab takes the keys through (lib/keyHandoff.ts): not storage, but where they go.
   'forma-keys': /a Forma tab you open while another is open gets them from it, inside this browser/,
   // IndexedDB.
+  'forma-projects': /your projects are saved automatically in this browser only, in its IndexedDB/,
   'forma-databases': /the SQL Server layouts you add with any sample rows/,
   'forma-batch': /the last batch you ran — its files and the reports made from them —/,
   'forma-learning': /the last five hundred events Forma may learn from/,
@@ -376,6 +379,26 @@ describe('the privacy policy names everything this browser stores', () => {
     if (read('src/lib/serviceWorker.ts').includes('caches.open(')) {
       expect(policy).toMatch(/a copy of Forma’s own pages and files, so it opens without a connection; it holds nothing of yours/);
     }
+  });
+});
+
+/*
+ * What deleting an account leaves (2026-11-11, the full audit's BW2): on a day
+ * a learning event was sent, `users/{uid}/meta/usage` keeps its counts and
+ * loses its ids (lib/accountData.ts, firestore.rules). Settings → Learning and
+ * the policy say it in the same sentence, so one cannot drift from the other.
+ */
+describe('the policy and Settings → Learning say what account deletion leaves', () => {
+  it('says the same sentence in both, and the code still leaves exactly that', () => {
+    const sentence = read('src/components/LearningSettings.tsx').match(/export const COUNT_LEFT = '([^']+)'/)?.[1];
+    expect(sentence).toBeTruthy();
+    const at = policy.indexOf('Account settings in the workspace has a Delete account action');
+    expect(at).toBeGreaterThan(0);
+    expect(policy.slice(at)).toContain(sentence!);
+    // Still true: the ids go first, then the counts are deleted only where the rules allow.
+    const account = read('src/lib/accountData.ts');
+    expect(account).toMatch(/updateDoc\(usageDocRef\(db, uid\), \{ report: deleteField\(\), event: deleteField\(\) \}\)/);
+    expect(read('firestore.rules')).toMatch(/resource\.data\.get\('eventDay', ''\) != serverDay\(\)/);
   });
 });
 
@@ -559,8 +582,13 @@ describe('the legal copy and its date change together', () => {
      Substantive, so the date moved. Its review the same day made that
      browser's question one it "may" ask, since only some browsers ask: the
      hash moved, and the date is already that day's.
+
+     Moved again the same day (batch BW2): projects saved signed out are kept
+     in IndexedDB, local storage only where a browser has none, and a
+     sign-out leaves them; and what deleting an account leaves of learning,
+     a day's count with no ids. Substantive, and already that day's date.
      */
-  const EXPECTED_COPY_HASH = '78c6eba0dab0';
+  const EXPECTED_COPY_HASH = 'd4864a4a0d7b';
   const EXPECTED_UPDATED = '11 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

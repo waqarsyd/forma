@@ -73,9 +73,6 @@ export interface ProjectsPanelProps {
   onDelete: (ids: string[]) => void;
 }
 
-/** The name as a button that reads as the row's text, not as a control drawn on it. */
-const NAME_BUTTON = { width: '100%', textAlign: 'start', cursor: 'pointer' } as const;
-
 export default function ProjectsPanel({
   projects,
   openId,
@@ -232,8 +229,8 @@ export default function ProjectsPanel({
                 ) : (
                   <button
                     type="button"
+                    // The name as a button that reads as the row's text (`.wb-card-open` in workspace.css).
                     className="wb-nm wb-card-open"
-                    style={NAME_BUTTON}
                     aria-current={open ? 'true' : undefined}
                     aria-busy={opening || undefined}
                   >

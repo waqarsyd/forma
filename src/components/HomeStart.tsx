@@ -38,6 +38,13 @@ interface Props<P extends Project> {
    */
   needsKey?: boolean;
   onAddKey?: () => void;
+  /**
+   * A project whose content is on its way (2026-11-11, the full audit's WS-16
+   * and BW2): its own row says so, with the spinner the Projects panel's row
+   * shows, where App drew one "Opening…" line above the whole home that named
+   * no project. One the list does not show is said once, above the heading.
+   */
+  openingId?: string | null;
 }
 
 // Drawn again only when its props change (2026-11-11, PR-05; App's `Steady`
@@ -45,27 +52,39 @@ interface Props<P extends Project> {
 // the generic, which `memo` drops.
 export default memo(HomeStart) as typeof HomeStart;
 
-function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick, showRecent = true, needsKey = false, onAddKey }: Props<P>) {
+function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick, showRecent = true, needsKey = false, onAddKey, openingId = null }: Props<P>) {
   const recent = showRecent ? recentProjects(projects, archived) : [];
+  // Shown in the Projects panel's row instead while that panel is open (`showRecent` false).
+  const openingElsewhere = showRecent && openingId !== null && !recent.some((p) => p.id === openingId);
   return (
     <section className={`wb-home${recent.length ? ' has-recent' : ''}`} aria-label="Start a report">
       {recent.length > 0 && (
         <nav className="wb-home-recent" aria-label="Recent projects">
           <h3>Recent projects</h3>
           <ul>
-            {recent.map((p) => (
-              <li key={p.id}>
-                <button type="button" onClick={() => onOpen(p)}>
-                  <span>{p.name}</span>
-                  <small>{formatSessionStamp(p.timestamp)}</small>
-                </button>
-              </li>
-            ))}
+            {recent.map((p) => {
+              const opening = p.id === openingId;
+              return (
+                <li key={p.id}>
+                  <button type="button" onClick={() => onOpen(p)} aria-busy={opening || undefined}>
+                    <span>{p.name}</span>
+                    {opening ? (
+                      <small role="status">
+                        <span className="wb-spin" aria-hidden="true" /> Opening…
+                      </small>
+                    ) : (
+                      <small>{formatSessionStamp(p.timestamp)}</small>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
           <button type="button" className="wb-home-all" onClick={onAllProjects}>All projects</button>
         </nav>
       )}
       <div className="wb-home-main">
+        {openingElsewhere && <p className="wb-empty" role="status">Opening…</p>}
         {needsKey ? (
           <>
             <h2>Add a free Gemini key to start</h2>

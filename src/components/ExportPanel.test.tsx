@@ -43,4 +43,18 @@ describe('ExportPanel', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
+
+  // PR-17 (BW2, 2026-11-11): no file is a greyed row that says why, not a click answered by a notice.
+  it('greys the .repx row when there is no file, says why, and starts the keyboard on the first row that runs', () => {
+    const onPrint = vi.fn();
+    render(<ExportPanel onPrint={onPrint} onClose={vi.fn()} />);
+    const repx = screen.getByRole('button', { name: /DevExpress report \(\.repx\)/ }) as HTMLButtonElement;
+    expect(repx.disabled).toBe(true);
+    expect(repx.textContent).toContain('There is no report file yet');
+    expect(document.activeElement?.textContent).toMatch(/^PDF/);
+    cleanup();
+    render(<ExportPanel onRepx={vi.fn()} onPrint={onPrint} onClose={vi.fn()} />);
+    expect((screen.getByRole('button', { name: /DevExpress report \(\.repx\)/ }) as HTMLButtonElement).disabled).toBe(false);
+    expect(document.activeElement?.textContent).toMatch(/DevExpress report/);
+  });
 });

@@ -27,6 +27,25 @@ describe('HomeStart', () => {
     expect(onAllProjects).toHaveBeenCalled();
   });
 
+  // WS-16 (BW2, 2026-11-11): the project being opened says so on its own row, not above the whole home.
+  it('says "Opening…" on the row of the project being opened, and once when the list does not show it', () => {
+    render(<HomeStart projects={recent} archived={[]} onOpen={vi.fn()} onAllProjects={vi.fn()} onPick={vi.fn()} openingId="a" />);
+    const nav = screen.getByRole('navigation', { name: 'Recent projects' });
+    const row = within(nav).getByRole('button', { name: /Invoice 42/ });
+    expect(row.getAttribute('aria-busy')).toBe('true');
+    expect(row.textContent).toMatch(/Opening…/);
+    expect(row.querySelector('.wb-spin')).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: /Quarterly sales/ }).getAttribute('aria-busy')).toBeNull();
+    expect(screen.getAllByText(/Opening…/)).toHaveLength(1);
+    cleanup();
+    render(<HomeStart projects={recent} archived={[]} onOpen={vi.fn()} onAllProjects={vi.fn()} onPick={vi.fn()} openingId="elsewhere" />);
+    expect(screen.getByRole('status').textContent).toBe('Opening…');
+    cleanup();
+    // The Projects panel, open beside it, shows it on its own row.
+    render(<HomeStart projects={recent} archived={[]} onOpen={vi.fn()} onAllProjects={vi.fn()} onPick={vi.fn()} openingId="a" showRecent={false} />);
+    expect(screen.queryByText(/Opening…/)).toBeNull();
+  });
+
   it('hands back the starting point picked, and shows no project list when there is none', () => {
     const onPick = vi.fn();
     render(<HomeStart projects={[]} archived={[]} onOpen={vi.fn()} onAllProjects={vi.fn()} onPick={onPick} />);
