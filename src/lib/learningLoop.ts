@@ -178,21 +178,41 @@ export async function keptExample(
 }
 
 /**
+ * The kept report's looks in words, for a request that corrects Forma's
+ * draft (2026-11-11, the re-audit's R2-02). That request answers in the
+ * draft's own format, which writes a font on each line and forbids XML, so
+ * the example's band XML (up to 12,000 characters) was both against its
+ * rules and paid for in every such request. Its face and its title's size
+ * are what the draft's lines can carry, and what `laidOutLike` looks for.
+ * Not its name, which the block leaves out too: a report's name can be a
+ * client's.
+ */
+export function keptHint(kept: Pick<KeptChoice, 'face' | 'titleSize'>): string {
+  const title = kept.titleSize !== null ? `, its title at ${kept.titleSize}pt` : '';
+  return `A report this person kept is set in ${kept.face}${title}. Write the draft's fonts in ${kept.face}${title ? ', and the title at that size' : ''}, unless the picture plainly shows another.`;
+}
+
+/**
  * What a generation is told besides its request: the memories (as
  * `instructionsOf`), and on a first report, with `first` set, the nearest
- * kept report's block after them. `kept` is the choice, for the reply.
+ * kept report after them: its block of XML for a request that designs the
+ * report, its face and title size in words when `drafting` (the request
+ * corrects Forma's draft, `keptHint`). `kept` is the choice, for the reply.
  */
 export async function beforeGeneration(input: {
   owner: string | null;
   projectId?: string | null;
   first: boolean;
+  /** The request corrects Forma's draft, whose answer is the draft's format and never XML. */
+  drafting?: boolean;
   shape?: ReportSkeleton | null;
   words?: string;
   description?: string;
 }, d: LibraryDeps = libraryDeps()): Promise<{ remembered: string; kept: KeptChoice | null }> {
   const remembered = memory.instructionsOf(memory.readMemory(input.owner), input.projectId);
   const kept = input.first ? await keptExample(input, d).catch(() => null) : null;
-  return { remembered: [remembered, kept?.block].filter(Boolean).join('\n\n'), kept };
+  const example = kept && (input.drafting ? keptHint(kept) : kept.block);
+  return { remembered: [remembered, example].filter(Boolean).join('\n\n'), kept };
 }
 
 /**

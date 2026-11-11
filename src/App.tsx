@@ -84,6 +84,7 @@ import type { JobPlan } from './lib/jobPlan';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
 import { clearCachedModel, onModelCacheChange, readCachedModel, readCachedModelSet, readDailyModel } from './lib/modelCache';
 import { requestsToday } from './lib/requestCount';
+import { isReportFile } from './lib/reportFile';
 import { cacheKeyForSession, readSessionKey, clearSessionKey, purgeLegacyPlaintextKey } from './services/keyVault';
 import { startKeyHandoff } from './lib/keyHandoff';
 import { askToKeepStorage } from './lib/storagePersist';
@@ -2566,8 +2567,7 @@ export default function App() {
    * laid over it; every path that makes a report reads that, not `config`.
    */
   const detectedRef = useRef<DetectedSettings | null>(null);
-  // An SSRS or FastReport file arrives converted to a .repx (CP-08).
-  const isReportFile = (t: { file?: string }) => /\.(repx|rdlc?|frx)$/i.test(t.file ?? '');
+  // An SSRS or FastReport file arrives converted to a .repx (CP-08): one test with Batch's (lib/reportFile.ts, R3-08).
   const detectionInput = (sources: DetectionSources, withOpenReport: boolean): DetectInput => ({
     // An uploaded report first, then the one open, which a request refines.
     repx: [...(sources.texts ?? []).filter(isReportFile).map((t) => t.text), ...(withOpenReport ? [result?.repxContent] : [])],
@@ -2629,6 +2629,7 @@ export default function App() {
       recordLearning,
       aiKindOf,
       uid: previousUidRef.current,
+      fields: dataFields(),
     });
   const runOneBatchFile = useCallback(
     (file: File, signal: AbortSignal, id: string, words: string) => runOneBatchRef.current(file, signal, id, words),
@@ -2887,29 +2888,10 @@ export default function App() {
     return ocrTexts(read, unit, pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}`, readByOcr: true as const }));
   };
 
-  /**
-   * The text the page reader on the Local AI server read from the sent
-   * pictures, one attachment a page beside OCR's (2026-11-10, batch AF,
-   * lib/localModels.ts). Asked one page at a time, since a local server
-   * answers one at a time; a reader that is off or fails leaves its text out.
-   */
+  /** The page reader's reading of the sent pictures, when one is set up (lib/pageReading.ts). */
   const pageReaderAttachments = async (pages: readonly { src: string; meta: PreviewMeta }[], signal: AbortSignal): Promise<TextAttachment[]> => {
     const reader = pageReaderOf(effectiveConfig());
-    if (!reader || !pages.length) return [];
-    try {
-      const [{ readPageText }, { pageReaderText }] = await Promise.all([import('./services/pageReader'), import('./lib/localModels')]);
-      const stamp = Date.now();
-      const out: TextAttachment[] = [];
-      for (const [i, { src, meta }] of pages.entries()) {
-        if (signal.aborted) break;
-        const text = pageReaderText(meta.file, meta.page ?? 1, reader.model, await readPageText(reader, src, signal));
-        if (text) out.push({ id: `${stamp}-${i}-reader-${meta.file}-p${meta.page ?? 1}`, uploadId: meta.uploadId, file: meta.file, page: meta.page, text });
-      }
-      return out;
-    } catch (err) {
-      if (!signal.aborted) console.warn(`The page reader ${reader.model} could not read the page; the AI designs from OCR's reading alone.`, err);
-      return [];
-    }
+    return reader && pages.length ? import('./lib/pageReading').then((m) => m.readerAttachments(reader, pages, signal)).catch(() => []) : [];
   };
 
   // Over the bench a drop is allowed, and a file dropped on it is attached.
@@ -4049,6 +4031,8 @@ export default function App() {
     /** The AI chosen in the settings, by name, for the replies. */
     const aiName = PROVIDER_NAMES[effectiveProvider(config)];
     let team: TeamPlan = NO_TEAM;
+    // Before the try, so a failure knows it too (R2-03): the open report, or a .repx attached.
+    const startedFromReport = Boolean(open?.repxContent) || currentTexts.some(isReportFile);
 
     try {
       team = await prepareTeam(teamInput, signal);
@@ -4071,11 +4055,12 @@ export default function App() {
       /*
        * What else the user attached, for the AI that corrects Forma's draft
        * (2026-11-11, the full audit's PL-02b): a data file's columns, a
-       * document, a PDF's text, a page reader's reading. The correction was
-       * sent the draft and the pictures alone, so "this picture, bound to this
-       * CSV" lost the CSV. Not OCR's texts, which the draft is written from.
+       * document, a PDF's text. The correction was sent the draft and the
+       * pictures alone, so "this picture, bound to this CSV" lost the CSV.
+       * Not OCR's texts, which the draft is written from, and the page
+       * reader's apart, as a reading rather than a file (R2-11).
        */
-      const extras = toAttachmentParts([], currentTexts.filter((t) => !t.readByOcr));
+      const extras = toAttachmentParts([], currentTexts.filter((t) => !t.readByOcr && !t.readByReader));
       // The Data tab's fields, for the audit's misspelt-field check (CP-07).
       const fields = dataFields();
       /*
@@ -4123,7 +4108,7 @@ export default function App() {
       // first report, after the house style switch, the kept report nearest
       // it as an example (2026-11-11, D3; lib/learningLoop.ts).
       const { remembered, kept } = await loadLoop()
-        .then((l) => l.beforeGeneration({ owner: previousUidRef.current, projectId: openReportId.current, first: !open && houseStyleOn && !currentTexts.some((t) => isReportFile({ file: t.file ?? '' })), shape: team.shape, words: currentPrompt, description: describeRequest?.description }))
+        .then((l) => l.beforeGeneration({ owner: previousUidRef.current, projectId: openReportId.current, first: !open && houseStyleOn && !startedFromReport, drafting: Boolean(team.correct && !describeRequest), shape: team.shape, words: currentPrompt, description: describeRequest?.description }))
         .catch(() => ({ remembered: '', kept: null }));
       // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE).
       const db = databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
@@ -4151,6 +4136,7 @@ export default function App() {
             draft: open ? null : team.correct ?? null,
             database,
             extras,
+            readings: currentTexts.flatMap((t) => (t.readByReader ? [t.text] : [])),
             fields,
             budget,
           },
@@ -4188,7 +4174,6 @@ export default function App() {
        * click's allowance (PL-20); the better is kept, and a fix that fails
        * keeps the report so far (batch AG item 23).
        */
-      const startedFromReport = Boolean(open?.repxContent) || currentTexts.some((t) => isReportFile({ file: t.file ?? '' }));
       const fixed = await import('./lib/printCheck').then((m) => m.fixUntilPrints(response, {
         described: Boolean(describeRequest),
         fields,
@@ -4196,7 +4181,9 @@ export default function App() {
         spent: response.usage ?? null,
         left: () => budget.left,
         aborted: () => signal.aborted,
-        ask: (instruction, repxContent) => analyzeReportDesign(instruction, [], answering, { repxContent }, signal, handleStreamProgress, { description: describeRequest, database, fields, budget, evidence: team.evidence }),
+        // With the texts the person attached, not the report it is built on (R2-06): a field the data has is named in them.
+        ask: (instruction, repxContent) => analyzeReportDesign(instruction, toAttachmentParts([], currentTexts.filter((t) => !isReportFile(t))), answering, { repxContent }, signal, handleStreamProgress, { description: describeRequest, database, fields, budget, evidence: team.evidence }),
+        draftText: team.correct?.text,
       }));
       if (!fixed) return;
       response = fixed.answer;
@@ -4275,21 +4262,6 @@ export default function App() {
         ...(found.length ? { evidence: { findings: found, on: (await loadIntake()).pictureKey(repxContent) } } : {}),
       };
 
-      setResult(newResult);
-      // What the installed DevExpress makes of it, asked once it is on screen
-      // (2026-11-11, PERF): the reply waited up to 20 s for it. The REPX pane
-      // shows what it finds, for this file only (lib/designerBridge.ts).
-      if (repxContent === printed) void response.inspect?.();
-      // A refinement turn replaces the whole report, so this is the moment the
-      // previous one would otherwise be gone for good.
-      recordRevision(open ? 'Refined' : 'Generated', newResult);
-      // The pane the person had stays (2026-11-11, the full audit's WS-30):
-      // every report and redesign jumped to the Mockup, so someone working on
-      // the Preview who asked for a redesign landed on the derived view. A
-      // first report opens on the Preview, the report as it prints; the same
-      // rule at each place a report is built.
-      if (!open) setActiveTab('print');
-
       // The reply is the result (2026-11-10, the full audit, the owner's
       // rule): who did what is not said. Mock mode alone says a canned report
       // stood in, so nobody reads a mock as the AI's work (agent audit item 96).
@@ -4334,6 +4306,27 @@ export default function App() {
       };
       // The two imports above are a wait: a session left meanwhile is not this one.
       if (signal.aborted) return;
+      /*
+       * The report, its revision and its reply land together, with no wait
+       * between (2026-11-11, the re-audit's R2-09): the report was shown
+       * before those imports, and a Stop in that moment left it on the bench
+       * with "Stopped." and no reply or Undo. A Stop before here stops it all.
+       */
+      setResult(newResult);
+      // What the installed DevExpress makes of it, asked once it is on screen
+      // (2026-11-11, PERF): the reply waited up to 20 s for it. The REPX pane
+      // shows what it finds, for this file, as written into it after the
+      // answer, a data source, a translation or right to left too (R2-07).
+      void response.inspect?.(repxContent);
+      // A refinement turn replaces the whole report, so this is the moment the
+      // previous one would otherwise be gone for good.
+      recordRevision(open ? 'Refined' : 'Generated', newResult);
+      // The pane the person had stays (2026-11-11, the full audit's WS-30):
+      // every report and redesign jumped to the Mockup, so someone working on
+      // the Preview who asked for a redesign landed on the derived view. A
+      // first report opens on the Preview, the report as it prints; the same
+      // rule at each place a report is built.
+      if (!open) setActiveTab('print');
       if (open && open.repxContent !== newResult.repxContent) rememberChange(newAssistantMsg.id, open, newResult);
       setMessages(prev => [...prev, newAssistantMsg]);
       console.log(copy.done);
@@ -4388,8 +4381,10 @@ export default function App() {
       // answer (lib/formaTeam.ts), rather than the request ending in an error. Not
       // over an open report (2026-11-07, agent audit item 21): a refinement
       // that failed replaced the report the person had with an OCR draft of
-      // the picture they sent to change it.
-      if (team.draft && !open) {
+      // the picture they sent to change it. Nor over a .repx attached with a
+      // picture (the re-audit's R2-03): the draft is of the picture, and the
+      // report the person brought would be dropped for it.
+      if (team.draft && !startedFromReport && !open) {
         try {
           const made = await team.draft();
           if (made && !signal.aborted) {
@@ -4815,7 +4810,7 @@ export default function App() {
    * each, and `reply` is the chat's reply that asked (CV-17).
    */
   const exportThroughPreview = (formats: PrintFormat[], reply?: string | null) => {
-    for (const f of formats) recordKept(f.replace('-outline', ''), result?.repxContent);
+    // Kept by the Preview once the job has saved a file, once a job (`onKept`, R2-10).
     showPlate('print');
     setExportRequest({ formats, nonce: Date.now(), reply });
   };
@@ -5307,8 +5302,10 @@ export default function App() {
      */
     const draftFirst = !base && stagedForOcr.length > 2 && !stagedTexts.some(isReportFile);
     const restPages = draftFirst ? stagedForOcr.slice(1, -1) : [];
-    const pageReading = pageReaderAttachments(stagedForOcr, turn.signal);
-    const read = await readSentPages(stagedForOcr, turn.signal, draftFirst ? [stagedForOcr[0], stagedForOcr[stagedForOcr.length - 1]] : undefined);
+    // The page reader too reads only those first, the rest with OCR's (R2-11).
+    const ends = draftFirst ? [stagedForOcr[0], stagedForOcr[stagedForOcr.length - 1]] : undefined;
+    const pageReading = pageReaderAttachments(ends ?? stagedForOcr, turn.signal);
+    const read = await readSentPages(stagedForOcr, turn.signal, ends);
     if (turn.signal.aborted) return;
     const fromPages = readSources(read);
     detectFor({ texts: stagedTexts, metas: stagedMeta, pages: fromPages.pages, words: [currentPrompt, fromPages.words].join('\n') });
@@ -5322,7 +5319,7 @@ export default function App() {
     const currentTexts = [...inUnit(stagedTexts, effectiveConfig().unit), ...readByOcr, ...readByReader];
     if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
     if (readByReader.length) console.debug(`Including the text of ${readByReader.length} page(s) read by the page reader.`);
-    const readRest = restPages.length ? async (signal: AbortSignal) => ocrAttachments(await readPages(restPages, undefined, signal)) : undefined;
+    const readRest = restPages.length ? async (signal: AbortSignal) => (await Promise.all([readPages(restPages, undefined, signal).then((r) => ocrAttachments(r)), pageReaderAttachments(restPages, signal)])).flat() : undefined;
     const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage, lastImage, ...(readRest ? { readRest } : {}) } : undefined;
 
     /*
@@ -7369,6 +7366,7 @@ export default function App() {
                       onExportRequestDone={() => setExportRequest(null)}
                       // The reply that asked says what was saved (CV-17).
                       onExported={setMessages}
+                      onKept={recordKept}
                       onSelectionChange={(names) => {
                         setPreviewSelection(names);
                         // An empty list on leaving the Preview is not a choice to forget it.

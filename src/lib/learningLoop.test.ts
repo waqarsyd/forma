@@ -8,7 +8,7 @@
  * The library is an in-memory store, so nothing here touches IndexedDB.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { beforeGeneration, houseBrief, keptExample, laidOutLike, onKept, onRedone, onUndone } from './learningLoop';
+import { beforeGeneration, houseBrief, keptExample, keptHint, laidOutLike, onKept, onRedone, onUndone } from './learningLoop';
 import { forgetLearned } from './corrections';
 import { readMemory, writeMemory } from './memory';
 import { parseReportStructure } from './reportPreview';
@@ -150,6 +150,18 @@ describe('a first report', () => {
     expect(first.kept?.name).toBe('Statement');
     expect(first.remembered.indexOf('- Always use A4')).toBeLessThan(first.remembered.indexOf(KEPT_BLOCK_START));
     expect((await beforeGeneration({ owner: null, first: false, shape }, lib.deps)).remembered).not.toContain(KEPT_BLOCK_START);
+  });
+
+  // 2026-11-11, the re-audit's R2-02: the request that corrects Forma's draft answers in the draft's format, never XML.
+  it("gives a request correcting Forma's draft the kept report's face and title size in words, not its XML", async () => {
+    const lib = library();
+    await onKept({ repx: report(), projectId: 'p1', owner: null, name: 'Statement' }, lib.deps);
+    const drafting = await beforeGeneration({ owner: null, first: true, drafting: true, shape }, lib.deps);
+    expect(drafting.kept?.name).toBe('Statement');
+    expect(drafting.remembered).not.toContain(KEPT_BLOCK_START);
+    expect(drafting.remembered).not.toMatch(/<|Statement/);
+    expect(drafting.remembered).toContain('A report this person kept is set in Tahoma, its title at 15pt.');
+    expect(keptHint({ face: 'Arial', titleSize: null })).toBe("A report this person kept is set in Arial. Write the draft's fonts in Arial, unless the picture plainly shows another.");
   });
 
   it('says it was laid out like the kept report only when it visibly is', () => {

@@ -206,6 +206,21 @@ describe('fixUntilPrints', () => {
     expect(out).toBeNull();
   });
 
+  // 2026-11-11, the re-audit's R2-08: a fix is designed with no draft, and the account of the page was lost with it.
+  it('works out again what a fixed report kept of the page, from the draft the first answer corrected', async () => {
+    quiet();
+    const draftText = ['page Letter portrait 850 1100 75 75 75 75', 'band ReportHeader 60 0', 'label title 0 0 300 30 Arial:18b l 0 7 "QUARTERLY SALES"'].join('\n');
+    const firstCoverage = { captions: 9, kept: 9, missing: [], sameBand: 9 };
+    const first = answer({ printFindings: [finding('clipped-at-margin')], coverage: firstCoverage });
+    const base = { described: false, spent: null, left: () => 3, aborted: () => false, ask: async () => answer() };
+    const out = await fixUntilPrints(first, { ...base, draftText });
+    // Of the fixed file, never the first answer's copied over.
+    expect(out?.answer.coverage).toEqual({ captions: 1, kept: 0, missing: ['QUARTERLY SALES'], sameBand: 0 });
+    // None when the first answer had none, and the first's own when it is the one kept.
+    expect((await fixUntilPrints(answer({ printFindings: [finding('clipped-at-margin')] }), { ...base, draftText }))?.answer.coverage).toBeUndefined();
+    expect((await fixUntilPrints(answer({ coverage: firstCoverage }), { ...base, draftText }))?.answer.coverage).toBe(firstCoverage);
+  });
+
   it('writes an instruction that keeps the layout and lists each finding', () => {
     expect(fixInstructionFor([finding('bound-cell-blank')])).toMatch(/Keep the layout exactly as it is and fix ONLY these:\n- \[bound-cell-blank\] bound-cell-blank message\nReturn the complete report/);
   });

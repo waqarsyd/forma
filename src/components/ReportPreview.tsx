@@ -140,6 +140,14 @@ interface Props {
    */
   onExported?: (update: <T extends { id: string; text: string }>(messages: T[]) => T[]) => void;
   /**
+   * An export saved, once per job (2026-11-11, the re-audit's R2-10 and
+   * R3-06): App recorded a "kept" report once for each format asked, before
+   * anything was written, so a PDF and a workbook counted twice and a failed
+   * export counted at all. Called after the files are saved, with the first
+   * format that made one (a learning event holds one) and the report written.
+   */
+  onKept?: (how: string, repxContent: string) => void;
+  /**
    * The report is someone else's, shared by a link (2026-11-11, the full
    * audit's SE-14): each link says where it goes, as a title and beside its
    * text on hover and focus, since a label reading "Sign in" can lead anywhere.
@@ -1286,7 +1294,7 @@ const PrintedControl = React.memo(ControlBox);
 // box and a streamed reply no longer draw every page again.
 export default React.memo(ReportPreview);
 
-function ReportPreview({ repxContent, layout, title, onEdit, records: given, database, onTestData, onClearTestData, testDataBusy, onStopTestData, exportRequest, onExportRequestDone, onExported, shared = false, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked, compareWith }: Props) {
+function ReportPreview({ repxContent, layout, title, onEdit, records: given, database, onTestData, onClearTestData, testDataBusy, onStopTestData, exportRequest, onExportRequestDone, onExported, onKept, shared = false, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked, compareWith }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -2094,8 +2102,8 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     };
   }, []);
   /** What a job reads, as it is when it reads it: a job outlives the render that started it. */
-  const jobNow = useRef({ report, structure, continuous, title, repxContent, records, layout, paramValues, drillToggled, dataOptions, measure, onNotice, onExported });
-  jobNow.current = { report, structure, continuous, title, repxContent, records, layout, paramValues, drillToggled, dataOptions, measure, onNotice, onExported };
+  const jobNow = useRef({ report, structure, continuous, title, repxContent, records, layout, paramValues, drillToggled, dataOptions, measure, onNotice, onExported, onKept });
+  jobNow.current = { report, structure, continuous, title, repxContent, records, layout, paramValues, drillToggled, dataOptions, measure, onNotice, onExported, onKept };
 
   type JobFile = { name: string; type: string; content: string | Uint8Array | Blob };
   const WHAT: Record<PrintFormat, string> = { pdf: 'PDF', 'pdf-outline': 'PDF', csv: 'CSV file', xlsx: 'Excel workbook', docx: 'Word file', rtf: 'RTF file', html: 'HTML page', png: 'image' };
@@ -2120,7 +2128,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
    * for what failed, in a notice for what was saved, and in the chat's reply
    * when the chat asked (CV-17).
    */
-  const finish = (done: ExportJob, files: JobFile[], notes: string[], printInstead: string | null) => {
+  const finish = (done: ExportJob, files: JobFile[], notes: string[], printInstead: string | null, made: readonly PrintFormat[] = []) => {
     if (!alive.current) return;
     const names = files.map((f) => f.name);
     let saved = bundleName(jobNow.current.title, names);
@@ -2135,8 +2143,10 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     }
     if (printInstead) notes.unshift(printInstead);
     setExportNote(notes.join(' ') || null);
-    const { onNotice: notice, onExported: exported } = jobNow.current;
+    const { onNotice: notice, onExported: exported, onKept: kept, repxContent: written } = jobNow.current;
     if (saved) notice?.(`Saved ${saved}`);
+    // Kept once, now that something was saved (R2-10).
+    if (saved && made.length && written) kept?.(made[0].replace('-outline', ''), written);
     const sentence = saved ? [savedSentence(saved, names), ...(printInstead ? [printInstead] : [])].join(' ') : notes.join(' ');
     const reply = done.reply;
     if (reply && exported && sentence) exported((messages) => messages.map((m) => (m.id === reply ? { ...m, text: replyAfterExport(m.text, sentence) } : m)));
@@ -2146,14 +2156,16 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
   const runNow = (now: ExportJob) => {
     const files: JobFile[] = [];
     const notes: string[] = [];
+    const made: PrintFormat[] = [];
     for (const format of now.formats) {
       try {
         files.push(...tableFiles(format as 'csv' | 'xlsx'));
+        made.push(format);
       } catch (err) {
         notes.push(failedText(WHAT[format], err));
       }
     }
-    finish(now, files, notes, null);
+    finish(now, files, notes, null, made);
   };
 
   /** Any other job: the print decided first, then the pages drawn into the hosts and read. */
@@ -2182,6 +2194,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     await frame();
     const files: JobFile[] = [];
     const notes: string[] = [];
+    const made: PrintFormat[] = [];
     let printInstead: string | null = null;
     const pagesIn = (host: HTMLDivElement | null) => [...(host?.querySelectorAll<HTMLElement>('.rp-page') ?? [])];
     for (const format of later.formats) {
@@ -2218,6 +2231,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
             files.push({ name: `${baseName()}.docx`, type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', content: reportToDocx(laid, n.structure, pictures) as Uint8Array });
           }
         }
+        made.push(format);
       } catch (err) {
         const message = err instanceof Error ? err.message : '';
         if (format === 'pdf' && isScriptRefusal(message)) {
@@ -2235,7 +2249,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     if (files.length > 1) {
       for (const f of files) if (f.content instanceof Blob) f.content = new Uint8Array(await f.content.arrayBuffer());
     }
-    finish(later, files, notes, printInstead);
+    finish(later, files, notes, printInstead, made);
   };
 
   const started = useRef<ExportJob | null>(null);

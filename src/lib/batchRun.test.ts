@@ -3,25 +3,27 @@ import type { ReportConfig } from '../services/geminiService';
 import type { BatchRunDeps } from './batchRun';
 
 // Everything the run loads is stood in for: what is checked is what it asks of each part.
-const { readPage, analyzeReportDesign } = vi.hoisted(() => ({ readPage: vi.fn(), analyzeReportDesign: vi.fn() }));
+const { readPage, analyzeReportDesign, fileTexts } = vi.hoisted(() => ({ readPage: vi.fn(), analyzeReportDesign: vi.fn(), fileTexts: [] as { file: string; text: string }[] }));
 vi.mock('./repxIntake', () => ({
   ingestFile: async (file: File, uploadId: string) => ({
     images: ['data:image/png;base64,AAAA'],
     imageMeta: [{ uploadId, file: file.name, page: 0 }],
-    texts: [],
+    texts: fileTexts.map((t) => ({ ...t, id: t.file, uploadId })),
     notices: ['"scan.pdf" had a page that could not be drawn.'],
   }),
   inUnit: <T,>(texts: T[]) => texts,
 }));
 vi.mock('./ocrAttach', () => ({ readPage }));
-vi.mock('./geminiClient', () => ({ loadGemini: async () => ({ analyzeReportDesign }) }));
+vi.mock('./geminiClient', () => ({ loadGemini: async () => ({ analyzeReportDesign, REQUEST_BUDGET: 6 }) }));
 vi.mock('./fallbackChain', () => ({
-  askWithChain: async (config: ReportConfig, ask: (c: ReportConfig) => Promise<unknown>) => ({ value: await ask(config), by: 'gemini', note: '' }),
+  askWithChain: async (config: ReportConfig, ask: (c: ReportConfig) => Promise<unknown>) => ({ value: await ask(config), config, by: 'gemini', note: '' }),
 }));
 vi.mock('./autoConfig', () => ({ applyDetected: (config: ReportConfig) => config, detectSettings: () => ({}) }));
-vi.mock('./attachmentParts', () => ({ toAttachmentParts: () => [] }));
+vi.mock('./attachmentParts', () => ({ toAttachmentParts: (_: unknown, texts: { text: string }[]) => texts.map((t) => ({ text: t.text })) }));
 vi.mock('./memory', () => ({ readMemory: () => ({}), instructionsOf: () => '' }));
-vi.mock('./repxAudit', () => ({ auditRepx: () => ({ errors: 0, warnings: 1 }) }));
+vi.mock('./repxAudit', () => ({ auditRepx: () => ({ errors: 0, warnings: 1, findings: [] }) }));
+
+const BLANK = { severity: 'error', code: 'bound-cell-blank', message: 'cellAmount ([Amount]) prints nothing.' };
 
 const config = { unit: 'HundredthsOfAnInch', pageSize: 'A4' } as ReportConfig;
 
@@ -43,6 +45,7 @@ function deps(): BatchRunDeps {
 describe('runBatchFile: one Batch file, made as a single report is', () => {
   beforeEach(() => {
     readPage.mockReset();
+    fileTexts.length = 0;
     analyzeReportDesign.mockReset();
     analyzeReportDesign.mockResolvedValue({ repxContent: '<R/>', markdown: '', layout: { title: 'Invoice', sections: [{}, {}] } });
   });
@@ -92,5 +95,56 @@ describe('runBatchFile: one Batch file, made as a single report is', () => {
     });
     await expect(runBatchFile(new File(['a'], 'scan.png'), controller.signal, '3:scan.png', '', deps())).rejects.toThrow(/stopped/);
     expect(analyzeReportDesign).not.toHaveBeenCalled();
+  });
+
+  // 2026-11-11, the re-audit's R2-05: a Batch report skipped the print check, and one that printed wrong counted as clean.
+  it('sends a report that prints wrong back once, from the file\'s own allowance, with the fields and the files\' texts', async () => {
+    const { runBatchFile } = await import('./batchRun');
+    readPage.mockResolvedValue({ ocr: { width: 10, height: 10, lines: [] } });
+    fileTexts.push({ file: 'orders.csv', text: 'Id,Amount' });
+    analyzeReportDesign.mockResolvedValueOnce({ repxContent: '<R/>', markdown: '', layout: { title: 'Invoice', sections: [] }, printFindings: [BLANK] });
+    analyzeReportDesign.mockResolvedValueOnce({ repxContent: '<Fixed/>', markdown: '', layout: { title: 'Invoice', sections: [] } });
+    const d = { ...deps(), fields: ['Id', 'Amount'] };
+    const out = await runBatchFile(new File(['a'], 'scan.png'), new AbortController().signal, '4:scan.png', '', d);
+    expect(analyzeReportDesign).toHaveBeenCalledTimes(2);
+    const [instruction, parts, , previous, , , options] = analyzeReportDesign.mock.calls[1];
+    expect(instruction).toContain('[bound-cell-blank]');
+    expect(parts).toEqual([{ text: 'Id,Amount' }]);
+    expect(previous).toEqual({ repxContent: '<R/>' });
+    expect(options.fields).toEqual(['Id', 'Amount']);
+    // One allowance, the first answer's and the fix's.
+    expect(options.budget).toBe(analyzeReportDesign.mock.calls[0][6].budget);
+    expect(analyzeReportDesign.mock.calls[0][6].fields).toEqual(['Id', 'Amount']);
+    expect(out).toMatchObject({ repxContent: '<Fixed/>', errors: 0 });
+  });
+
+  it('counts what the print still shows on the row when the allowance is spent, and a grid drawn as loose texts', async () => {
+    const { runBatchFile } = await import('./batchRun');
+    readPage.mockResolvedValue({ ocr: { width: 10, height: 10, lines: [] } });
+    analyzeReportDesign.mockImplementationOnce(async (...args: unknown[]) => {
+      (args[6] as { budget: { left: number } }).budget.left = 0;
+      return {
+        repxContent: '<R/>',
+        markdown: '',
+        layout: { title: 'Invoice', sections: [] },
+        printFindings: [BLANK, { severity: 'warning', code: 'value-unformatted', message: '' }],
+        evidenceFindings: [{ severity: 'warning', code: 'grid-not-a-table', message: '' }],
+      };
+    });
+    const out = await runBatchFile(new File(['a'], 'scan.png'), new AbortController().signal, '5:scan.png', '', deps());
+    expect(analyzeReportDesign).toHaveBeenCalledTimes(1);
+    expect(out).toMatchObject({ errors: 1, warnings: 2 });
+  });
+
+  // R3-08: an SSRS or FastReport file arrives converted to a .repx, and is a report as on the single path.
+  it('treats a converted .rdl as the report it builds on, not as a picture\'s', async () => {
+    const { runBatchFile } = await import('./batchRun');
+    readPage.mockResolvedValue({ ocr: { width: 10, height: 10, lines: [] } });
+    fileTexts.push({ file: 'orders.rdl', text: 'Existing DevExpress report (orders.rdl).\n\n<XtraReportsLayoutSerializer Ref="0" />' });
+    const d = deps();
+    await runBatchFile(new File(['a'], 'orders.rdl'), new AbortController().signal, '6:orders.rdl', '', d);
+    // Kept as written (not turned as a page seen), and counted as a report brought.
+    expect(vi.mocked(d.asConfigured).mock.calls[0][1]).toBe(false);
+    expect(vi.mocked(d.recordLearning)).toHaveBeenCalledWith(expect.objectContaining({ sourceCounts: expect.objectContaining({ repx: 1 }) }));
   });
 });

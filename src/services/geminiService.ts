@@ -2503,6 +2503,13 @@ export interface GenerationOptions {
    * CSV. Not OCR's texts, which the draft already carries. App passes them.
    */
   extras?: AttachmentPart[];
+  /**
+   * The page reader's reading of the same pages (2026-11-11, the re-audit's
+   * R2-11): a reading, not a file, so the correction gives it a heading of
+   * its own. It went in `extras` until then, under "other files the user
+   * attached", whose field names the AI was told to bind to.
+   */
+  readings?: string[];
   /** The fields the report's data has (the Data tab's schema), for the audit's `expression-field-unknown`. */
   fields?: readonly string[];
   /**
@@ -2951,6 +2958,7 @@ ${houseStyleContext}
    * path, and the draft path was taken for almost every first picture.
    */
   const extraTexts = (options?.extras ?? []).flatMap((part) => ('text' in part && part.text.trim() ? [part.text.trim()] : []));
+  const readings = (options?.readings ?? []).map((t) => t.trim()).filter(Boolean);
   const correctionConfig = [
     config?.rtl ? `- ${RTL_INSTRUCTION}` : '',
     config?.spName && !options?.database ? `- The report's data comes from the stored procedure "${config.spName}"; bind its fields as [Field]s.` : '',
@@ -2966,7 +2974,7 @@ ${houseStyleContext}
 ${options?.missedRetry ? `${options.missedRetry}\n\n` : ''}${options?.remembered?.trim() ? `${options.remembered.trim()}\n\n` : ''}${instructionBlock(prompt, { hasPreviousState: false, fromDescription: false })}
 
 ${correctionConfig.length ? `THE REPORT:\n${correctionConfig.join('\n')}\n\n` : ''}${options?.database ? `${options.database}\n\n` : ''}FORMA'S DRAFT:
-${draft!.text}${extraTexts.length ? `\n\nOTHER FILES THE USER ATTACHED (use their field names for [Field]s):\n${extraTexts.join('\n\n')}` : ''}`,
+${draft!.text}${extraTexts.length ? `\n\nOTHER FILES THE USER ATTACHED (use their field names for [Field]s):\n${extraTexts.join('\n\n')}` : ''}${readings.length ? `\n\nTHE SAME PAGES, READ AGAIN BY A PAGE READER (not files the user attached; use them to check the draft's words, never its positions):\n${readings.join('\n\n')}` : ''}`,
           },
           ...sentParts.filter((part) => 'inlineData' in part),
           ...(options?.extras ?? []).filter((part) => 'inlineData' in part),
@@ -3619,17 +3627,24 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
      */
     const pageRows = page?.rows ?? null;
     const pagesShown = page?.pages;
-    const inspect = async (stop?: AbortSignal): Promise<RepxFinding[]> => {
+    /*
+     * Of the file App shows (2026-11-11, the re-audit's R2-07): App writes a
+     * data source into the answer, translates it or turns it right to left
+     * after this, and asked only when none of those had changed it, so no
+     * such report was ever inspected. The page's rows and page count are the
+     * page's, and hold for the changed file as well.
+     */
+    const inspect = async (xml: string = parsed.repxContent, stop?: AbortSignal): Promise<RepxFinding[]> => {
       try {
         const { designerAnswered, inspectInDesigner, inspectionFindings, keepInspection } = await import("../lib/designerBridge");
-        const seen = designerAnswered() ? await inspectInDesigner(parsed.repxContent, pageRows, { signal: stop }) : null;
+        const seen = designerAnswered() ? await inspectInDesigner(xml, pageRows, { signal: stop }) : null;
         if (!seen) return [];
         const found = inspectionFindings(seen, { pagesShown });
         // For the REPX pane, which shows them while this file is the one open.
-        if (found.length) keepInspection(parsed.repxContent, found);
+        if (found.length) keepInspection(xml, found);
         for (const finding of found) console[finding.severity === "error" ? "error" : "warn"](`  [DevExpress: ${finding.code}] ${finding.message}`);
         // What DevExpress dropped and no audit code foresaw: the next rule to measure.
-        const foreseen = new Set(auditRepx(parsed.repxContent, null, auditOptions).findings.map((f) => f.code));
+        const foreseen = new Set(auditRepx(xml, null, auditOptions).findings.map((f) => f.code));
         for (const d of seen.dropped) {
           if (!(d.attribute === "Margins" && foreseen.has("margins-not-whole")) && !(/^Page(Width|Height)$/.test(d.attribute) && foreseen.has("page-size-not-whole"))) {
             console.info(`DevExpress did not keep ${d.attribute}="${d.declared}" (loaded ${d.loaded ?? "nothing"}), which no audit rule predicts.`);
@@ -3744,8 +3759,9 @@ export interface GenerationResult extends AnalysisResponse {
    * screen (2026-11-11, the full audit's PERF batch): through Forma Designer
    * when it has answered in this page, nothing otherwise. Never rejects. What
    * it finds is kept for the REPX pane (`keepInspection`, lib/designerBridge.ts).
+   * `xml` is the file as App shows it, this answer's own when absent (R2-07).
    */
-  inspect?: (signal?: AbortSignal) => Promise<RepxFinding[]>;
+  inspect?: (xml?: string, signal?: AbortSignal) => Promise<RepxFinding[]>;
 }
 
 /**

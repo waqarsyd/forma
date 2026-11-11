@@ -10,7 +10,9 @@
  * sent with, Forma's team prepares, the AI corrects the draft or designs it,
  * the language the words name is carried out, the report is turned right to
  * left where it is, the reading's notices go on the row, and a learning event
- * says it was a batch file.
+ * says it was a batch file. Since the re-audit (2026-11-11, R2-05) what
+ * printing it with the page's records shows is sent back once, from the
+ * file's own allowance, and what is left counts on the row.
  *
  * ## Out of App, and why the parts it needs are handed in
  *
@@ -42,6 +44,7 @@ import type { BatchOutcome } from './batchQueue';
 import type { LearningRecord } from './learning';
 import type { ReadPage } from './ocrAttach';
 import type { TextAttachment } from './repxIntake';
+import { isReportFile } from './reportFile';
 import type { DraftRequest, ReportConfig, ReportLayout } from '../services/geminiService';
 
 type Read = { meta: PreviewMeta; read: ReadPage }[];
@@ -67,6 +70,8 @@ export interface BatchRunDeps {
   aiKindOf: (by: 'gemini' | 'local' | 'openrouter') => LearningRecord['ai'];
   /** Whose remembered preferences the request carries. */
   uid: string | null;
+  /** The Data tab's fields, for the audit's misspelt-field check and the fix (CP-07), as a single report has them. */
+  fields?: readonly string[];
 }
 
 /** Each page's text, read for this file alone; a page that cannot be read goes without its text. */
@@ -131,16 +136,50 @@ export async function runBatchFile(file: File, signal: AbortSignal, id: string, 
   stopped();
   const parts = toAttachmentParts(ingested.images, texts);
   const remembered = await import('./memory').then((m) => m.instructionsOf(m.readMemory(deps.uid))).catch(() => '');
-  const [{ analyzeReportDesign }, { askWithChain }] = await Promise.all([loadGemini(), import('./fallbackChain')]);
+  const [{ analyzeReportDesign, REQUEST_BUDGET }, { askWithChain }] = await Promise.all([loadGemini(), import('./fallbackChain')]);
+  const { fields } = deps;
+  /*
+   * One allowance a file, as one click has (PL-20): the service's own
+   * retries and repeats and the fix below spend from it, so a batch never
+   * asks more for a file than a single report would. A new one for each AI
+   * the chain asks, as App gives it.
+   */
+  let budget = { left: REQUEST_BUDGET };
   // On a limit the next AI set up designs it (2026-11-10, batch AG item 23, lib/fallbackChain.ts);
   // when every one gives out, the batch pauses on that error and is kept.
   const chained = await askWithChain(
     fileConfig,
-    (asked) => analyzeReportDesign(words, parts, asked, undefined, signal, undefined, { remembered, formaBrief: team.brief, evidence: team.evidence, draft: team.correct ?? null }),
+    (asked) => {
+      budget = { left: REQUEST_BUDGET };
+      return analyzeReportDesign(words, parts, asked, undefined, signal, undefined, { remembered, formaBrief: team.brief, evidence: team.evidence, draft: team.correct ?? null, fields, budget });
+    },
     signal,
   );
-  let response = chained.value;
   stopped();
+  const fromReport = texts.some(isReportFile);
+  /*
+   * What printing it with the page's records showed, sent back as a single
+   * report's is (2026-11-11, the re-audit's R2-05, lib/printCheck.ts): a
+   * Batch report skipped it, so one that printed on two pages, or blank
+   * where a field should be, came back counted as clean. With the files'
+   * texts, not their pictures, so a field the data has can be found.
+   */
+  const textParts = toAttachmentParts([], texts.filter((t) => !isReportFile(t)));
+  const fixed = await import('./printCheck').then((m) =>
+    m.fixUntilPrints(chained.value, {
+      described: false,
+      fields,
+      fromReport,
+      spent: chained.value.usage ?? null,
+      left: () => budget.left,
+      aborted: () => signal.aborted,
+      ask: (instruction, repxContent) =>
+        analyzeReportDesign(instruction, textParts, chained.config, { repxContent }, signal, undefined, { evidence: team.evidence, fields, budget }),
+    }),
+  );
+  stopped();
+  // Null only when stopped, which `stopped` has just thrown on.
+  let response = fixed!.answer;
   // The language the words name, as a single report carries it out (CV-14).
   const language = words ? await import('./repxTranslate').then((m) => m.languageAsked(words)).catch(() => null) : null;
   if (language && response.repxContent) {
@@ -156,10 +195,13 @@ export async function runBatchFile(file: File, signal: AbortSignal, id: string, 
       console.warn(`The batch report could not be translated into ${language}; it stays as built.`, translateError);
     }
   }
-  const fromReport = texts.some((t) => /\.repx$/i.test(t.file ?? ''));
   const repxContent = await deps.asConfigured(response.repxContent, !fromReport, false, fileConfig);
   const { auditRepx } = await import('./repxAudit');
-  const audit = auditRepx(repxContent, response.layout);
+  const audit = auditRepx(repxContent, response.layout, { fields });
+  // Counted on the row as the single path says them (R2-05): what the print
+  // still shows wrong, and a grid the page shows drawn as loose texts.
+  const found = [...(response.printFindings ?? []).filter((f) => f.severity === 'error'), ...(response.evidenceFindings ?? []).filter((f) => f.code === 'grid-not-a-table')];
+  const count = (severity: string) => found.filter((f) => f.severity === severity).length;
   deps.recordLearning({
     kind: 'generation',
     // Under no project (2026-11-11): the one open on the bench is not this file's.
@@ -167,7 +209,7 @@ export async function runBatchFile(file: File, signal: AbortSignal, id: string, 
     sourceCounts: {
       images: ingested.images.length,
       pdfs: /\.pdf$/i.test(file.name) ? 1 : 0,
-      repx: /\.repx$/i.test(file.name) ? 1 : 0,
+      repx: fromReport ? 1 : 0,
       words: Boolean(words.trim()),
       database: false,
     },
@@ -181,8 +223,8 @@ export async function runBatchFile(file: File, signal: AbortSignal, id: string, 
     title: response.layout?.title || '',
     repxContent: repxContent || '',
     bands: response.layout?.sections?.length ?? 0,
-    errors: audit.errors,
-    warnings: audit.warnings,
+    errors: audit.errors + count('error'),
+    warnings: audit.warnings + count('warning'),
     ...(ingested.notices.length ? { notes: ingested.notices.join(' ') } : {}),
   };
 }

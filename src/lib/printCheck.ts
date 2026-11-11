@@ -42,6 +42,7 @@ import { formatFor, isPlain } from './formatFromText';
 import { formatComposite } from './netFormat';
 import { addUsage, type TokenUsage } from './tokenUsage';
 import { MAX_FIX_ATTEMPTS } from './promptToReport';
+import { captionsOfDraft, readCoverage, type ReadCoverage } from './readCoverage';
 import type { MeasureText } from './textMeasure';
 import type { ReportLayout } from './reportTypes';
 
@@ -171,6 +172,8 @@ export interface FixableAnswer {
   dataQuery?: unknown;
   printFindings?: RepxFinding[];
   evidenceFindings?: RepxFinding[];
+  /** What the report kept of Forma's draft of the page, when it was made from one (lib/readCoverage.ts). */
+  coverage?: ReadCoverage | null;
 }
 
 /**
@@ -234,6 +237,14 @@ export async function fixUntilPrints<R extends FixableAnswer>(
     left: () => number;
     ask: (instruction: string, repx: string) => Promise<R>;
     aborted: () => boolean;
+    /**
+     * Forma's draft of the page the first answer corrected, when it had one
+     * (lib/draftText.ts). A fix is designed from the report, with no draft,
+     * so it comes back with no account of what it kept of the page; this
+     * one is worked out again for the fixed file (2026-11-11, the re-audit's
+     * R2-08), never copied from the first answer, which was of another file.
+     */
+    draftText?: string;
   },
 ): Promise<FixLoop<R> | null> {
   let answer = first;
@@ -264,6 +275,9 @@ export async function fixUntilPrints<R extends FixableAnswer>(
     // The query the first answer named stands unless the fix names another (batch DE).
     answer = { ...fixed, dataQuery: fixed.dataQuery ?? answer.dataQuery };
     findings = next;
+  }
+  if (answer !== first && first.coverage && !answer.coverage && options.draftText?.trim()) {
+    answer = { ...answer, coverage: readCoverage(captionsOfDraft(options.draftText), answer.repxContent) };
   }
   return { answer, spent, findings };
 }

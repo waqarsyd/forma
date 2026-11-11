@@ -885,11 +885,15 @@ describe('Export CSV', () => {
     });
     const onExported = vi.fn();
     const onNotice = vi.fn();
+    const onKept = vi.fn();
     render(
       <ReportPreview repxContent={geometry} layout={null} title="Geometry Case" exportButtons={false}
-        exportRequest={{ formats: ['csv', 'xlsx'], nonce: 9, reply: 'm1' }} onExported={onExported} onNotice={onNotice} />,
+        exportRequest={{ formats: ['csv', 'xlsx'], nonce: 9, reply: 'm1' }} onExported={onExported} onNotice={onNotice} onKept={onKept} />,
     );
     expect(clicked).toEqual(['Geometry_Case.zip']);
+    // Kept once for the one export, after it was saved, not once a format (R2-10, R3-06).
+    expect(onKept).toHaveBeenCalledTimes(1);
+    expect(onKept).toHaveBeenCalledWith('csv', geometry);
     const bytes = new Uint8Array(await (blob as unknown as Blob).arrayBuffer());
     // A .zip, holding both files by name.
     expect(String.fromCharCode(...bytes.slice(0, 2))).toBe('PK');

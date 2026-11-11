@@ -60,6 +60,13 @@ export interface TextAttachment {
    */
   readByOcr?: true;
   /**
+   * Read off a picture by the page reader on the Local AI server, not
+   * attached (2026-11-11, the re-audit's R2-11, lib/pageReading.ts): the
+   * correction request heads it as a reading of the pages, apart from the
+   * files the person attached.
+   */
+  readByReader?: true;
+  /**
    * A Word or Excel file's layout as Forma's draft (2026-11-11, the full
    * audit's CP-11, lib/docxLayout.ts and lib/xlsxLayout.ts): what the AI
    * corrects when the words ask for a report from the file

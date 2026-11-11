@@ -29,6 +29,13 @@ vi.mock('../lib/genai', () => ({
   }),
   resetGenAIForTests: () => {},
 }));
+// Forma Designer, answering or not, for the inspection after an answer (R2-07); the rest of the bridge is its own.
+const bridge = vi.hoisted(() => ({ answered: false, inspect: null as null | ((xml: string) => Promise<unknown>) }));
+vi.mock('../lib/designerBridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/designerBridge')>()),
+  designerAnswered: () => bridge.answered,
+  inspectInDesigner: (xml: string) => bridge.inspect?.(xml) ?? Promise.resolve(null),
+}));
 
 import {
   analyzeReportDesign,
@@ -579,6 +586,49 @@ describe('the generation service', () => {
     expect(prompt).toContain(RTL_INSTRUCTION);
     expect(partsOf(sdk.requests[0]).filter((p) => 'inlineData' in p)).toHaveLength(1);
     expect(result.fromDraft).toBe(true);
+  });
+
+  // 2026-11-11, the re-audit's R2-11: the page reader's reading is not a file the user attached.
+  it("gives the page reader's reading a heading of its own, apart from the files the user attached", async () => {
+    queue(streamed(DRAFT_TEXT));
+    const csv = { text: 'Data file orders.csv, columns: OrderId, Amount' };
+    const reading = 'scan.png, page 1: the page\'s text READ BY A PAGE READER, glm-ocr.\nINVOICE';
+    await analyzeReportDesign('', [PICTURE], CONFIG, undefined, undefined, undefined, { draft: DRAFT, extras: [csv], readings: [reading] });
+    const prompt = promptOf(sdk.requests[0]);
+    const files = prompt.indexOf('OTHER FILES THE USER ATTACHED');
+    const read = prompt.indexOf('THE SAME PAGES, READ AGAIN BY A PAGE READER');
+    expect(files).toBeGreaterThan(0);
+    expect(read).toBeGreaterThan(files);
+    // The CSV under the files, the reading under its own heading only.
+    expect(prompt.slice(files, read)).toContain('orders.csv');
+    expect(prompt.slice(files, read)).not.toContain('READ BY A PAGE READER');
+    expect(prompt.slice(read)).toContain(reading);
+  });
+
+  // 2026-11-11, the re-audit's R2-07: App changes the file after the answer (a data source, a translation, right to left).
+  it('asks Forma Designer about the file App shows, and keeps what it finds under that file', async () => {
+    queue(streamed(MOCK_INVOICE_RESPONSE.repxContent));
+    const result = await analyzeReportDesign('An invoice', [PICTURE], CONFIG);
+    const asked: string[] = [];
+    bridge.answered = true;
+    bridge.inspect = async (xml) => {
+      asked.push(xml);
+      return { lost: ['tableDetail'], dropped: [], margins: null, pages: null };
+    };
+    try {
+      const changed = `${result.repxContent}\n<!-- turned right to left -->`;
+      const found = await result.inspect!(changed);
+      expect(asked).toEqual([changed]);
+      expect(found.map((f) => f.code)).toEqual(['designer-lost-controls']);
+      const { inspectionOf } = await import('../lib/designerBridge');
+      expect(inspectionOf(changed).map((f) => f.code)).toEqual(['designer-lost-controls']);
+      // With no file named, the answer's own.
+      await result.inspect!();
+      expect(asked[1]).toBe(result.repxContent);
+    } finally {
+      bridge.answered = false;
+      bridge.inspect = null;
+    }
   });
 
   it('designs from an attached .repx rather than correcting a draft, since the .repx is the base', async () => {
