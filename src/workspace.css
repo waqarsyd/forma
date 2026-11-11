@@ -1552,15 +1552,17 @@ html[data-modality='keyboard'] .wb-ctl:focus-visible { border-color: var(--ink-2
    mid-animation it has to. */
 .wb-shell[data-rail='wide'] .wb-rail-label { min-width: 0; }
 
-/* The width animates, with ChatGPT's measured timing: 0.22s on a curve that
-   starts fast and settles. Not while the review column is being dragged,
-   where the track has to follow the pointer exactly; and not at all under
-   reduced motion, which the rule at the foot of this file already enforces
-   for everything in the workspace. */
+/* The track snaps; the labels fade in, with ChatGPT's measured timing: 0.22s
+   on a curve that starts fast and settles. Until 2026-11-11 the grid's
+   columns themselves were transitioned (the full audit's PR-14), so every
+   frame of Ctrl+B laid the whole workspace out again and the Preview fitted
+   its pages to a new width, which stuttered with a report on screen. An
+   opacity costs no layout. Not under reduced motion, which the rule at the
+   foot of this file enforces for everything in the workspace. */
 @media (min-width: 881px) {
-  .wb-shell { transition: grid-template-columns .22s cubic-bezier(.2, .8, .2, 1); }
-  .wb-shell[data-resizing='true'] { transition: none; }
+  .wb-shell[data-rail='wide'] .wb-rail-label { animation: wb-rail-label-in .22s cubic-bezier(.2, .8, .2, 1); }
 }
+@keyframes wb-rail-label-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* Stacked: a top bar with the menu button, and the sidebar as a drawer over a
    dimmed page, as Gemini's phone layout is. Above 880px neither exists. */

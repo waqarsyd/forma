@@ -14,6 +14,9 @@ import { hasReportScripts, readSharedReport, type SharedReport } from '../lib/sh
 import type { ReportLayout } from '../lib/reportTypes';
 import { IconDownload } from './landing/icons';
 import Logo from './Logo';
+// The workspace's sheet (2026-11-11, PR-08): this page draws `wb-` classes,
+// and index.css no longer carries them for the public pages that do not.
+import '../workspace.css';
 import './overlays.css';
 
 const ReportPreview = lazy(() => import('./ReportPreview'));

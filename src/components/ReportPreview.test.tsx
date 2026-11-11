@@ -17,9 +17,10 @@
  * pane still have drawn every border 1px black.
  */
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { useState } from 'react';
 import ReportPreview from './ReportPreview';
+import { pxToUnits } from '../lib/reportGeometry';
 
 afterEach(cleanup);
 
@@ -376,6 +377,54 @@ describe('editing in the pane', () => {
     expect(xml).not.toContain('Name="a"');
     expect(xml).not.toContain('Name="b"');
     expect(xml).toContain('Name="t"');
+  });
+
+  /*
+   * The full audit's PR-03 (2026-11-11): a drag wrote the report on every
+   * pointer move, each write parsed, paginated and audited again, 278 ms a
+   * move at 501 controls. It is drawn shifted while it lasts, once a frame,
+   * and written once on letting go: one write, so one Undo step in the
+   * workspace's history.
+   */
+  it('draws a drag shifted while it lasts, and writes it once, on letting go', () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    try {
+      const onEdit = vi.fn();
+      render(<Holder onEdit={onEdit} />);
+      const alpha = () => hits().filter((h) => h.dataset.control === '0');
+      fireEvent.pointerDown(alpha()[0], { button: 0, clientX: 10, clientY: 10 });
+      for (const x of [20, 30, 40, 50]) fireEvent.pointerMove(window, { clientX: x, clientY: 10 });
+      expect(onEdit).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(20);
+      });
+      // Every placement of it (the Detail band prints once per record), and nothing else.
+      expect(alpha().length).toBeGreaterThan(1);
+      for (const h of alpha()) expect(h.style.transform).toBe('translate(40px, 0px)');
+      expect(hits().filter((h) => h.dataset.control !== '0').every((h) => !h.style.transform)).toBe(true);
+      fireEvent.pointerUp(window);
+      expect(onEdit).toHaveBeenCalledTimes(1);
+      const [xml, reason] = onEdit.mock.calls[0];
+      expect(reason).toMatch(/^moved/);
+      const x = Number(/Name="a"[^>]*LocationFloat="([\d.]+),0"/.exec(xml)?.[1]);
+      // The 40px moved, in the file's whole units.
+      expect(Math.abs(x - pxToUnits(40, 'HundredthsOfAnInch'))).toBeLessThanOrEqual(0.5);
+      // Drawn where the file now puts it, no longer shifted.
+      expect(alpha().every((h) => !h.style.transform)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('writes nothing for a press that does not move, or a drag the browser cancels', () => {
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    fireEvent.pointerDown(hits()[0], { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(window);
+    fireEvent.pointerDown(hits()[0], { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 30 });
+    fireEvent.pointerCancel(window);
+    expect(onEdit).not.toHaveBeenCalled();
   });
 
   it('clears the whole selection when the paper is pressed', () => {

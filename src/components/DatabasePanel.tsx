@@ -12,13 +12,14 @@
  * query chosen here is `ReportQuery` (lib/sqlQuery.ts), which batch DD writes
  * into the .repx as DevExpress's SqlDataSource, connection by name only.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { DataField } from '../lib/dataSource';
 import type { CalcType, DataSourceSpec } from '../lib/repxSqlWriter';
 import type { SqlObject, SqlProcedure, SqlSchema } from '../lib/sqlSchema';
 import { readDatabaseText, resultFix, summarizeSchema, typeLabel } from '../lib/sqlSchema';
 import { SCHEMA_SCRIPT, sampleScript } from '../lib/sqlSchemaScript';
-import { checkSqlAgainstSchema } from '../lib/databaseAi';
+import { forgetDatabase, loadDatabases, storedName } from '../lib/sqlSchemaStore';
+import { checkSqlAgainstSchema, layoutFor } from '../lib/databaseAi';
 import { driftOf, mainQueryOf, mergeLayouts, queryFromRepx, refreshDataSource } from '../lib/sqlDrift';
 import { schemaFromRepx, type RepxQuery } from '../lib/repxSqlDataSource';
 import { parseParameters } from '../lib/repxParameters';
@@ -49,12 +50,22 @@ interface Props {
   database: SqlSchema | null;
   /** The databases kept on this device, newest first. */
   recent: string[];
-  onSwitch: (name: string) => void;
-  onForget: (name: string) => void;
+  /*
+   * `onSwitch` and `onForget` went on 2026-11-11 (the full audit's PERF
+   * batch): choosing a kept database and forgetting the active one are done
+   * here, in this panel's own store (lib/sqlSchemaStore.ts), and the
+   * workspace hears of either through `onAdopt`, as it hears of a layout
+   * chosen any other way. App's chunk is budgeted, and both were its code.
+   */
+  /** What happened, for the workspace's toast: a database forgotten. */
+  onNotice?: (text: string) => void;
   query: ReportQuery | null;
   onQuery: (query: ReportQuery | null) => void;
-  /** What is selected on the Preview, for "Bind": a name, or empty. */
-  selectionLabel: string;
+  /**
+   * What was last selected on the Preview, for "Bind", by name; said here as
+   * the name, or "N controls" (2026-11-11, PERF: worked out here, not in App).
+   */
+  selection: readonly string[];
   onBindField: (field: string) => void;
   onCopy: (text: string) => Promise<boolean>;
   /** The chosen query's fields, as the Data tab's mapping reads fields, whenever they change. */
@@ -73,14 +84,23 @@ interface Props {
    */
   shared?: boolean;
   onShare?: (on: boolean) => void;
-  /** Custom SQL from a sentence (item 26): the AI writes it over the layout, and this panel holds it to the layout. */
-  onAskSql?: (sentence: string) => Promise<{ sql: string; name: string; explanation: string }>;
+  /**
+   * Custom SQL from a sentence (item 26): the AI writes it over the layout,
+   * and this panel holds it to the layout. Handed the part of the layout the
+   * sentence is about (`layoutFor`, lib/databaseAi.ts), worked out here since
+   * 2026-11-11.
+   */
+  onAskSql?: (sentence: string, layout: string) => Promise<{ sql: string; name: string; explanation: string }>;
   /** The open report, whose own data source is shown and checked (batch DG). */
   repx?: string | null;
   /** A REPX changed here (a drift fixed), for App to apply with a revision. */
   onApplyRepx?: (xml: string, reason: string) => void;
-  /** A layout to make the active database: the report's own, or one with the report's tables kept. */
-  onAdopt?: (schema: SqlSchema) => void;
+  /**
+   * A layout to make the active database: the report's own, one with the
+   * report's tables kept, or one kept in this browser; null when the active
+   * one was forgotten.
+   */
+  onAdopt?: (schema: SqlSchema | null) => void;
   /** Layout or sample output read through the companion (Phase 2), for App to read as a pasted one; the line to show. */
   onLayoutText?: (text: string) => Promise<string | null>;
 }
@@ -330,7 +350,23 @@ function download(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function DatabasePanel({ database, recent, onSwitch, onForget, query, onQuery, selectionLabel, onBindField, onCopy, onFieldsChange, onWrite, shared = false, onShare, onAskSql, repx, onApplyRepx, onAdopt, onLayoutText }: Props) {
+// Drawn again only when its props change (2026-11-11, PR-05; App's `Steady`
+// keeps the functions it is handed the same between draws).
+export default memo(DatabasePanel);
+
+function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, onBindField, onCopy, onFieldsChange, onWrite, shared = false, onShare, onAskSql, repx, onApplyRepx, onAdopt, onLayoutText }: Props) {
+  const selectionLabel = selection.length === 1 ? selection[0] : selection.length > 1 ? `${selection.length} controls` : '';
+  /** A database kept in this browser made the active one. */
+  const switchTo = async (name: string) => {
+    const hit = (await loadDatabases()).find((d) => d.name === name);
+    if (hit) onAdopt?.(hit.schema);
+  };
+  /** The active database forgotten in this browser; the workspace then has none. */
+  const forget = async (schema: SqlSchema) => {
+    await forgetDatabase(storedName(schema));
+    onAdopt?.(null);
+    onNotice?.(`${schema.database || 'The database'} is forgotten in this browser.`);
+  };
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [copied, setCopied] = useState('');
@@ -445,7 +481,7 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
             <div className="dbx-row" style={{ marginTop: 10 }}>
               <span className="dbx-sub">Kept in this browser:</span>
               {recent.map((name) => (
-                <button key={name} type="button" className="dbx-btn" onClick={() => onSwitch(name)}>{name}</button>
+                <button key={name} type="button" className="dbx-btn" onClick={() => void switchTo(name)}>{name}</button>
               ))}
             </div>
           )}
@@ -549,11 +585,11 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
           <span className="dbx-sub">{summarizeSchema(database).replace(/^[^:]*:\s*/, '')}</span>
           <span style={{ flex: 1 }} />
           {recent.length > 1 && (
-            <select className="dbx-input" style={{ width: 'auto' }} aria-label="Database" value={database.database} onChange={(e) => onSwitch(e.target.value)}>
+            <select className="dbx-input" style={{ width: 'auto' }} aria-label="Database" value={database.database} onChange={(e) => void switchTo(e.target.value)}>
               {recent.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           )}
-          <button type="button" className="dbx-btn" onClick={() => onForget(database.database)}>Forget</button>
+          <button type="button" className="dbx-btn" onClick={() => void forget(database)}>Forget</button>
         </div>
         <p className="dbx-sub" style={{ margin: '6px 0 10px' }}>
           {database.source !== 'repx' && readByDesigner.has((database.database || '').toLowerCase())
@@ -609,7 +645,8 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
                     setAsking(true);
                     setAsked('');
                     try {
-                      const out = await onAskSql(sentence);
+                      // The part of the layout the sentence is about, read here (PERF: App's chunk is budgeted).
+                      const out = await onAskSql(sentence, layoutFor(database, sentence));
                       setCustomSql(out.sql);
                       setCustomName(out.name);
                       setAsked(out.explanation || 'Written. Check it below before using it.');

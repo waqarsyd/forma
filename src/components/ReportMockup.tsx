@@ -512,4 +512,6 @@ const ReportMockup = ({
   );
 };
 
-export default ReportMockup;
+// Drawn again only when its props change (2026-11-11, the full audit's
+// PR-05): typing in the box drew the whole mockup again with every key.
+export default React.memo(ReportMockup);

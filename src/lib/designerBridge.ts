@@ -563,7 +563,10 @@ export async function inspectInDesigner(
     const inspect = await post('/inspect', 'application/xml', repxContent);
     if (!inspect) return null;
     // With no records from the page there is no page count to hold the print
-    // to, and the second load is time the reply waits for; /inspect's margins stand.
+    // to, and the second load would be time spent for nothing; /inspect's
+    // margins stand. (The reply no longer waits for any of this: since
+    // 2026-11-11 App asks once the report is on screen, `inspect` in
+    // geminiService.ts.)
     const render = rows?.length
       ? await post('/render', 'application/json', JSON.stringify({ repx: repxContent, rows })).catch(() => null)
       : null;
@@ -576,6 +579,36 @@ export async function inspectInDesigner(
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', stop);
   }
+}
+
+/*
+ * What DevExpress found in the reports Forma made in this page, by the text
+ * of each (2026-11-11, the full audit's PERF batch). The generation asks once
+ * the report is on screen (`inspect` in geminiService.ts) instead of before
+ * the reply, and the REPX pane shows what comes back, for that file only:
+ * an edit makes another file, which was not asked about. The last few only.
+ */
+const INSPECTIONS_KEPT = 4;
+const inspections = new Map<string, RepxFinding[]>();
+const inspectionListeners = new Set<() => void>();
+
+/** Keep what DevExpress found in `repxContent`, and tell whoever is showing it. */
+export function keepInspection(repxContent: string, findings: RepxFinding[]): void {
+  inspections.delete(repxContent);
+  inspections.set(repxContent, findings);
+  for (const key of inspections.keys()) if (inspections.size > INSPECTIONS_KEPT) inspections.delete(key);
+  for (const listener of inspectionListeners) listener();
+}
+
+/** What DevExpress found in exactly this file, when it was asked. */
+export function inspectionOf(repxContent: string): readonly RepxFinding[] {
+  return inspections.get(repxContent) ?? [];
+}
+
+/** Called whenever an inspection is kept; the function returned stops it. */
+export function onInspection(listener: () => void): () => void {
+  inspectionListeners.add(listener);
+  return () => inspectionListeners.delete(listener);
 }
 
 /** The attributes' own names, as a person reads them. */

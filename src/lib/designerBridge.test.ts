@@ -624,3 +624,27 @@ describe('what DevExpress makes of a report (CC-10)', () => {
     expect(readFileSync('tools/RepxDesigner/RepxDesigner.csproj', 'utf8')).toContain('<Compile Include="Probe.cs" />');
   });
 });
+
+/*
+ * Asked once the report is on screen (2026-11-11, the full audit's PERF
+ * batch): what DevExpress found is kept by the file it was found in, for the
+ * REPX pane, which hears of it when it arrives. The last four files only.
+ */
+describe('what DevExpress found, kept for the REPX pane', () => {
+  it('is kept by file, heard by whoever listens, and only for the last few files', async () => {
+    const { keepInspection, inspectionOf, onInspection } = await import('./designerBridge');
+    const finding = (code: string) => ({ severity: 'warning' as const, code, message: code });
+    const heard = vi.fn();
+    const stop = onInspection(heard);
+    keepInspection('<a />', [finding('a')]);
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(inspectionOf('<a />')).toEqual([finding('a')]);
+    expect(inspectionOf('<b />')).toEqual([]);
+    for (const name of ['b', 'c', 'd', 'e']) keepInspection(`<${name} />`, [finding(name)]);
+    expect(inspectionOf('<a />')).toEqual([]);
+    expect(inspectionOf('<e />')).toEqual([finding('e')]);
+    stop();
+    keepInspection('<f />', []);
+    expect(heard).toHaveBeenCalledTimes(5);
+  });
+});

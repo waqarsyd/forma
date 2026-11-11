@@ -11,9 +11,10 @@
  * to open it. This shows the real thing, checks that it parses, and lets it be
  * copied straight into the designer.
  * ------------------------------------------------------------------ */
-import { useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { formatXml, tokenizeXml, checkRepx } from '../lib/repx';
 import type { RepxAudit } from '../lib/repxAudit';
+import { inspectionOf, onInspection } from '../lib/designerBridge';
 import type { ReadCoverage } from '../lib/readCoverage';
 import { unitsPerInch } from '../lib/reportGeometry';
 // With a fallback for a page that is not a secure context (plain HTTP on a LAN address).
@@ -33,6 +34,29 @@ const XML_TOKEN_CLASS: Record<string, string> = {
   value: 'text-emerald-400',
   punct: 'text-[color:var(--code-ink-faint)]',
   meta: 'text-[color:var(--code-ink-faint)] italic',
+};
+
+/*
+ * A line the browser lays out and paints only near the view (2026-11-11, the
+ * full audit's PR-06): a real report's file is thousands of lines and up to
+ * 44,000 coloured spans, all of them drawn whatever was on screen. 18px is a
+ * line's height at 11px with `leading-relaxed`; once drawn, the browser keeps
+ * the measured size. Inline rather than a utility, so the public stylesheet
+ * does not carry a rule only this pane uses.
+ *
+ * `content-visibility: auto` always turns on paint containment, so a line
+ * clips whatever overflows its own box. A drawn line is therefore as wide as
+ * its text (`max-content`), never narrower than the pane: the pre's width
+ * below is counted in `ch`, which only an ASCII monospaced glyph fills
+ * exactly, and a Japanese, Arabic or accented Text attribute set in a
+ * fallback face is wider than its count. Sized to its content, such a line
+ * clips nothing and its overflow still counts toward the sideways scroll.
+ */
+const LINE_STYLE: CSSProperties = {
+  contentVisibility: 'auto',
+  containIntrinsicSize: 'auto 18px',
+  width: 'max-content',
+  minWidth: '100%',
 };
 
 
@@ -67,6 +91,41 @@ const RepxViewer = ({
   const formatted = useMemo(() => formatXml(xml || ''), [xml]);
   const status = useMemo(() => checkRepx(xml || ''), [xml]);
   const lines = useMemo(() => formatted.split('\n'), [formatted]);
+  // Tokenised once per file, not on every draw of the pane (PR-06).
+  const tokenized = useMemo(() => lines.map(tokenizeXml), [lines]);
+  /*
+   * The widest line, in characters of the monospaced face: a line not drawn
+   * yet (LINE_STYLE) gives no width, so the pane's sideways scroll would grow
+   * as long lines came into view. Plus the gutter (2.5rem) and the padding.
+   * An estimate only: a drawn line sizes to its own text (LINE_STYLE), so a
+   * line wider than its count in `ch` still scrolls into view whole.
+   */
+  const longest = useMemo(() => lines.reduce((n, line) => Math.max(n, line.length), 0), [lines]);
+
+  /*
+   * What the installed DevExpress found in this very file (2026-11-11, the
+   * full audit's PERF batch, lib/designerBridge.ts): asked once the report is
+   * on screen rather than before the reply, so it can arrive while the pane
+   * is open. Listed with the audit's findings.
+   */
+  const [devexpress, setDevexpress] = useState(() => inspectionOf(xml));
+  useEffect(() => {
+    const read = () => setDevexpress(inspectionOf(xml));
+    read();
+    return onInspection(read);
+  }, [xml]);
+  const shown = useMemo(() => {
+    const extra = audit ? devexpress.filter((f) => !audit.findings.some((g) => g.code === f.code)) : [];
+    return audit && extra.length
+      ? {
+          ...audit,
+          findings: [...audit.findings, ...extra],
+          errors: audit.errors + extra.filter((f) => f.severity === 'error').length,
+          warnings: audit.warnings + extra.filter((f) => f.severity !== 'error').length,
+          ok: false,
+        }
+      : audit;
+  }, [audit, devexpress]);
 
   const handleCopy = async () => {
     const ok = await copyText(xml);
@@ -150,15 +209,15 @@ const RepxViewer = ({
 
       {/* What the REPX audit still finds after the repairs: silent when there
           is nothing, which is the common case. */}
-      {audit && !audit.ok && (
+      {shown && !shown.ok && (
         <details className="wb-audit rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3" data-audit>
-          <summary className={`text-[11.5px] font-semibold cursor-pointer ${audit.errors ? 'text-[color:var(--bad-ink)]' : 'text-on-surface-variant'}`}>
-            {audit.errors > 0 && `${audit.errors} REPX error${audit.errors > 1 ? 's' : ''}`}
-            {audit.errors > 0 && audit.warnings > 0 && ', '}
-            {audit.warnings > 0 && `${audit.warnings} REPX warning${audit.warnings > 1 ? 's' : ''}`}
+          <summary className={`text-[11.5px] font-semibold cursor-pointer ${shown.errors ? 'text-[color:var(--bad-ink)]' : 'text-on-surface-variant'}`}>
+            {shown.errors > 0 && `${shown.errors} REPX error${shown.errors > 1 ? 's' : ''}`}
+            {shown.errors > 0 && shown.warnings > 0 && ', '}
+            {shown.warnings > 0 && `${shown.warnings} REPX warning${shown.warnings > 1 ? 's' : ''}`}
           </summary>
           <ul className="flex flex-col gap-1.5 mt-2">
-            {audit.findings.map((f, i) => (
+            {shown.findings.map((f, i) => (
               <li key={i} className="flex gap-2 text-[11.5px] leading-[1.5] text-on-surface-variant">
                 <span className={`mt-[3px] shrink-0 ${f.severity === 'error' ? 'text-[color:var(--bad-ink)]' : 'text-[color:var(--ink-faint)]'}`}>
                   <IconAlert size={12} />
@@ -198,14 +257,14 @@ const RepxViewer = ({
           docs and features code blocks, which is why nothing inside it may use a
           token that flips: the gutter and the row hover are fixed values too. */}
       <div className="rounded-xl border border-[color:var(--code-rule)] bg-[color:var(--code-bg)] overflow-auto max-h-[65vh]">
-        <pre className="text-[11px] leading-relaxed font-mono p-4 min-w-max text-[color:var(--code-ink)]">
-          {lines.map((line, i) => (
-            <div key={i} className="flex hover:bg-white/5">
+        <pre className="text-[11px] leading-relaxed font-mono p-4 min-w-max text-[color:var(--code-ink)]" style={{ minWidth: `calc(${longest}ch + 4.5rem)` }}>
+          {tokenized.map((tokens, i) => (
+            <div key={i} className="flex hover:bg-white/5" style={LINE_STYLE}>
               <span className="select-none text-[color:var(--code-ink-faint)] pr-4 text-right tabular-nums shrink-0 w-10">
                 {i + 1}
               </span>
               <span className="whitespace-pre">
-                {tokenizeXml(line).map((tok, j) => (
+                {tokens.map((tok, j) => (
                   <span key={j} className={tok.kind ? XML_TOKEN_CLASS[tok.kind] : undefined}>
                     {tok.text}
                   </span>
@@ -219,4 +278,6 @@ const RepxViewer = ({
   );
 };
 
-export default RepxViewer;
+// Drawn again only when what it shows changes (PR-05): typing in the box and a
+// streamed reply drew the whole file again with every key and chunk.
+export default memo(RepxViewer);

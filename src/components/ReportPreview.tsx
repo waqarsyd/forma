@@ -71,6 +71,7 @@ import SelectionToolbar from './SelectionToolbar';
 import { observeFit } from './useFitScale';
 import { hasOpenLayer, isOutsideReport } from '../lib/layers';
 import { copyText } from '../lib/clipboard';
+import { scrollBehavior } from '../lib/motion';
 import type { ReportLayout } from '../lib/reportTypes';
 
 interface Props {
@@ -83,8 +84,11 @@ interface Props {
    * which is what the print portal wants and what a loaded report gets before
    * anything is selected.
    */
-  /** `continues` is true for a drag's frames after its first: the same step of the history. */
-  onEdit?: (xml: string, reason: string, continues?: boolean) => void;
+  /**
+   * An edit made here, one per gesture: a drag is written once, on letting go
+   * (2026-11-11, PR-03), so it no longer says which frames continue a step.
+   */
+  onEdit?: (xml: string, reason: string) => void;
   /**
    * AI-generated sample rows, keyed by bound field name. When present the
    * Detail band prints once per row with each bound cell showing that row's
@@ -216,9 +220,46 @@ type Gesture = {
   mirrored: boolean;
   /** The rest of a multiple selection, moved by the same amount (2026-11-04). */
   others: { ref: ControlRef; originX: number; originY: number; mirrored: boolean; dpiScale: number }[];
-  /** Whether a frame of it has been written yet: the frames after the first continue the same step. */
-  written: boolean;
+  /** Every control the gesture carries, as `band:control`, for the drawing to shift while it lasts. */
+  keys: ReadonlySet<string>;
+  /** Where the pointer was last seen, in client px; unset until it moves. */
+  lastX?: number;
+  lastY?: number;
 } | null;
+
+/**
+ * The edit a gesture makes, from how far the pointer went in report units:
+ * the whole of it, written once when the pointer is let go (2026-11-11, the
+ * full audit's PR-03). It was written on every pointer move until then, and
+ * each write parsed, paginated and audited the whole report again: 12.6 ms a
+ * move for a 16-control invoice, 278 ms for 501 controls, over a second for
+ * 1,021. While the drag lasts the controls are drawn shifted instead.
+ */
+function gestureEdit(g: NonNullable<Gesture>, dx: number, dy: number): { xml: string; applied: boolean; reason: string } {
+  // Back into the file's own numbers, which a control with no Dpi in a
+  // millimetre report holds at a 2.54th of what prints (parity row 35).
+  const s = g.dpiScale;
+  // Mirrored, the screen's right is the file's left: a move goes the other
+  // way, and a resize from the right-hand handle moves the file's x by
+  // what the width gains, so the box grows the way it is dragged.
+  const fileDx = g.mirrored ? -dx : dx;
+  let result =
+    g.mode === 'move'
+      ? moveControl(g.baseXml, g.ref, (g.originX + fileDx) / s, (g.originY + dy) / s)
+      : resizeControl(g.baseXml, g.ref, (g.originW + dx) / s, (g.originH + dy) / s);
+  if (g.mode === 'resize' && g.mirrored && result.applied) {
+    const moved = moveControl(result.xml, g.ref, (g.originX - dx) / s, g.originY / s);
+    if (moved.applied) result = { ...moved, reason: result.reason };
+  }
+  // The rest of a multiple selection moves by the same amount.
+  if (g.mode === 'move' && result.applied) {
+    for (const o of g.others) {
+      const next = moveControl(result.xml, o.ref, (o.originX + (o.mirrored ? -dx : dx)) / o.dpiScale, (o.originY + dy) / o.dpiScale);
+      if (next.applied) result = { ...next, reason: `moved ${g.others.length + 1} controls` };
+    }
+  }
+  return result;
+}
 
 /** Bands the reader should be able to tell apart on screen. */
 /** A report this short draws every page; a longer one only those near the viewport. */
@@ -1101,14 +1142,27 @@ function ParameterInput({ type, multi, choices, value, onChange, label }: { type
   );
 }
 
-export default function ReportPreview({ repxContent, layout, title, onEdit, records: given, database,onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
+/*
+ * A control drawn again only when what it prints changes (2026-11-11, PR-03):
+ * a drag draws the pane once a frame, and every control on every page was
+ * drawn with it. Its props come from the memoised pagination, so they keep
+ * their identity until the report or its rows change.
+ */
+const PrintedControl = React.memo(ControlBox);
+
+// Drawn again only when its props change (2026-11-11, PR-05): App hands it
+// functions that keep their identity (`Steady` in App.tsx), so typing in the
+// box and a streamed reply no longer draw every page again.
+export default React.memo(ReportPreview);
+
+function ReportPreview({ repxContent, layout, title, onEdit, records: given, database,onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
   // The first changed control into view, once per set of names.
   useEffect(() => {
     if (!highlightKey) return;
-    const t = setTimeout(() => viewportRef.current?.querySelector('.rp-hit.is-changed')?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 80);
+    const t = setTimeout(() => viewportRef.current?.querySelector('.rp-hit.is-changed')?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() }), 80);
     return () => clearTimeout(t);
   }, [highlightKey]);
   /* The width the pages fit, times the workspace's zoom (2026-11-05). */
@@ -1487,11 +1541,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
     setSelected(ref);
     setEditingText(null);
     setEditingCell(null);
-    // One undo entry per gesture, recorded before the first frame of it.
-    if (!historyElsewhere) {
-      undoStack.current.push({ xml: repxContent, reason: mode === 'move' ? 'move' : 'resize' });
-      setUndoDepth(undoStack.current.length);
-    }
+    // One undo entry per gesture: the one write it makes, on letting go (`commit`).
     gesture.current = {
       ref,
       mode,
@@ -1510,57 +1560,63 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         const c = structureBands[r.band]?.controls[r.control];
         return c ? [{ ref: r, originX: c.fileX ?? c.x, originY: c.y, mirrored: c.fileX !== undefined, dpiScale: c.dpiScale ?? 1 }] : [];
       }),
-      written: false,
+      keys: new Set([ref, ...group].map((r) => `${r.band}:${r.control}`)),
     };
   };
 
+  /*
+   * A drag (2026-11-11, the full audit's PR-03): the pointer is read once a
+   * frame and the controls it carries are drawn shifted by it, in this pane's
+   * own state; the report is written once, when the pointer is let go, so a
+   * drag is one write and one Undo whatever its length. The listeners are
+   * added once and read the scale, the unit and `commit` as they are now:
+   * they were added again on every render of the workspace, `onEdit` being a
+   * new function each time.
+   */
+  const [dragShift, setDragShift] = useState<{ keys: ReadonlySet<string>; mode: 'move' | 'resize'; dx: number; dy: number } | null>(null);
+  const dragNow = useRef({ scale, unit: report.unit, commit });
+  dragNow.current = { scale, unit: report.unit, commit };
   useEffect(() => {
     if (!editable) return;
+    let frame = 0;
+    // How far the pointer went in page px: the zoom divided out, as it is a
+    // presentation scale, not a unit.
+    const travel = (g: NonNullable<Gesture>) => ({ dx: ((g.lastX ?? g.fromX) - g.fromX) / dragNow.current.scale, dy: ((g.lastY ?? g.fromY) - g.fromY) / dragNow.current.scale });
     const onMove = (event: PointerEvent) => {
       const g = gesture.current;
-      if (!g || !onEdit) return;
-      // Divide out the zoom first: it is a presentation scale, not a unit.
-      const dx = pxToUnits((event.clientX - g.fromX) / scale, report.unit);
-      const dy = pxToUnits((event.clientY - g.fromY) / scale, report.unit);
-      // Back into the file's own numbers, which a control with no Dpi in a
-      // millimetre report holds at a 2.54th of what prints (parity row 35).
-      const s = g.dpiScale;
-      // Mirrored, the screen's right is the file's left: a move goes the other
-      // way, and a resize from the right-hand handle moves the file's x by
-      // what the width gains, so the box grows the way it is dragged.
-      const fileDx = g.mirrored ? -dx : dx;
-      let result =
-        g.mode === 'move'
-          ? moveControl(g.baseXml, g.ref, (g.originX + fileDx) / s, (g.originY + dy) / s)
-          : resizeControl(g.baseXml, g.ref, (g.originW + dx) / s, (g.originH + dy) / s);
-      if (g.mode === 'resize' && g.mirrored && result.applied) {
-        const moved = moveControl(result.xml, g.ref, (g.originX - dx) / s, g.originY / s);
-        if (moved.applied) result = { ...moved, reason: result.reason };
-      }
-      // The rest of a multiple selection moves by the same amount.
-      if (g.mode === 'move' && result.applied) {
-        for (const o of g.others) {
-          const next = moveControl(result.xml, o.ref, (o.originX + (o.mirrored ? -dx : dx)) / o.dpiScale, (o.originY + dy) / o.dpiScale);
-          if (next.applied) result = { ...next, reason: `moved ${g.others.length + 1} controls` };
-        }
-      }
-      if (!result.applied) return;
-      // Every frame after the first continues the same step, so one drag is
-      // one Undo in the workspace's history (2026-11-06): each frame was a
-      // step of its own, and fifty of them pushed every earlier change out.
-      onEdit(result.xml, result.reason, g.written);
-      g.written = true;
+      if (!g) return;
+      g.lastX = event.clientX;
+      g.lastY = event.clientY;
+      frame ||= requestAnimationFrame(() => {
+        frame = 0;
+        const now = gesture.current;
+        if (now) setDragShift({ keys: now.keys, mode: now.mode, ...travel(now) });
+      });
     };
-    const onUp = () => { gesture.current = null; };
+    const end = (write: boolean) => {
+      const g = gesture.current;
+      gesture.current = null;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      setDragShift(null);
+      if (!write || !g || g.lastX === undefined || (g.lastX === g.fromX && g.lastY === g.fromY)) return;
+      const { dx, dy } = travel(g);
+      const { unit } = dragNow.current;
+      dragNow.current.commit(gestureEdit(g, pxToUnits(dx, unit), pxToUnits(dy, unit)), g.baseXml);
+    };
+    const onUp = () => end(true);
+    // A cancelled pointer (a touch taken over by a scroll) leaves the report as it was.
+    const onCancel = () => end(false);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointercancel', onCancel);
     return () => {
+      cancelAnimationFrame(frame);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
     };
-  }, [editable, onEdit, scale, report.unit]);
+  }, [editable]);
 
   useEffect(() => {
     if (!editable) return;
@@ -2004,6 +2060,18 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                     const bandIndex = structureBands.indexOf(placed.band);
                     const isSelected =
                       editing && selected?.band === bandIndex && selected.control === c;
+                    // Carried by a drag under way: drawn where it is going, written on letting go.
+                    const shift = dragShift?.keys.has(`${bandIndex}:${c}`) ? dragShift : null;
+                    const box = (
+                      <PrintedControl
+                        control={control}
+                        placed={pc}
+                        unit={report.unit}
+                        pageNumber={page.number}
+                        pageCount={report.pages.length}
+                        record={placed.record !== null && records?.length ? records[(placed.record - 1) % records.length] : null}
+                      />
+                    );
                     return (
                       /* A Fragment, not a wrapper div. An `inset: 0` wrapper
                          stretches to the whole band, so in a band with several
@@ -2012,14 +2080,10 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                          The mock has one control per band, which is exactly the
                          shape that hides this. */
                       <React.Fragment key={c}>
-                        <ControlBox
-                          control={control}
-                          placed={pc}
-                          unit={report.unit}
-                          pageNumber={page.number}
-                          pageCount={report.pages.length}
-                          record={placed.record !== null && records?.length ? records[(placed.record - 1) % records.length] : null}
-                        />
+                        {shift?.mode === 'move' ? (
+                          // The band's own box, moved whole: the control keeps its place in it.
+                          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', transform: `translate(${shift.dx}px, ${shift.dy}px)` }}>{box}</div>
+                        ) : box}
                         {placed.drill && control.ref !== undefined && control.ref === drillRef && (
                           <button
                             type="button"
@@ -2057,8 +2121,11 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
                               // puts it; a drag still edits from the file's origin.
                               left: unitsToPx(control.x + control.offsetX, report.unit),
                               top: unitsToPx(pc.y, report.unit),
-                              width: unitsToPx(control.width, report.unit),
-                              height: unitsToPx(pc.height, report.unit),
+                              // A resize under way draws the outline at its new size;
+                              // the control itself is drawn again when it is written.
+                              width: Math.max(1, unitsToPx(control.width, report.unit) + (shift?.mode === 'resize' ? shift.dx : 0)),
+                              height: Math.max(1, unitsToPx(pc.height, report.unit) + (shift?.mode === 'resize' ? shift.dy : 0)),
+                              ...(shift?.mode === 'move' ? { transform: `translate(${shift.dx}px, ${shift.dy}px)` } : {}),
                             }}
                             onPointerDown={(e) => {
                               // A right-click opens the menu (onContextMenu); it does not start a drag.

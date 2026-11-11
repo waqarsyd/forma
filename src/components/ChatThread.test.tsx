@@ -14,7 +14,7 @@
  * RequestCard.test.tsx with them (ConversationPanel.test.tsx since 2026-11-08).
  */
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import ChatThread from './ChatThread';
 import type { PreviewMeta } from '../lib/attachments';
 import type { ChatMessage } from '../lib/chatSession';
@@ -107,6 +107,37 @@ describe('the reply being written', () => {
     draw({ isChatting: true, streamingReply: 'Forma supports PNG, JPG' });
     expect(screen.getByText('Forma supports PNG, JPG')).toBeTruthy();
     expect(document.querySelector('.wb-dots')).toBeNull();
+  });
+
+  /*
+   * The full audit's PR-18 (2026-11-11): each draw parses the whole reply as
+   * Markdown, so a draw per chunk cost the square of its length. At most one
+   * draw per 100 ms, and the last chunk is always drawn.
+   */
+  it('draws a streaming reply at most every 100 ms, ending on the last chunk', () => {
+    vi.useFakeTimers();
+    try {
+      const at = (text: string) => <ChatThread messages={[]} isChatting isAnalyzing={false} streamingReply={text} />;
+      const { rerender } = render(at('It reads'));
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      expect(screen.getByText('It reads')).toBeTruthy();
+      rerender(at('It reads PNG'));
+      rerender(at('It reads PNG and JPG'));
+      act(() => {
+        vi.advanceTimersByTime(99);
+      });
+      expect(screen.getByText('It reads')).toBeTruthy();
+      expect(screen.queryByText('It reads PNG and JPG')).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.getByText('It reads PNG and JPG')).toBeTruthy();
+      expect(screen.queryByText('It reads PNG')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Agent audit item 7: a region mounted with its content is not announced, and a
@@ -215,6 +246,23 @@ describe('following the newest note', () => {
     fireEvent.click(back);
     expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'smooth' });
     expect(screen.queryByLabelText('Go to the latest message')).toBeNull();
+  });
+
+  // The full audit's PR-19 (2026-11-11): the CSS reduced-motion rule does not
+  // reach a scroll that names its behaviour, so the code asks the setting.
+  it('goes back without gliding when the person asked their system for less motion', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {} }));
+    try {
+      render(<ChatThread {...base} messages={[msg({ id: '1', text: 'one' })]} />);
+      layout(thread(), 1000, 300, 120);
+      fireEvent.scroll(thread());
+      const scrollTo = vi.fn();
+      thread().scrollTo = scrollTo;
+      fireEvent.click(screen.getByLabelText('Go to the latest message'));
+      expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'auto' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   // The reply arrives a token at a time, so following it is what keeps the text

@@ -5,8 +5,22 @@
  * made-up layout read by the same parser the tab uses.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import DatabasePanel from './DatabasePanel';
+
+/* The databases kept in this browser, as the panel's own store holds them
+   (2026-11-11, PERF: switching and forgetting moved here from App). */
+const store = vi.hoisted(() => ({
+  kept: [] as { name: string; schema: unknown; savedAt: number }[],
+  forgotten: [] as string[],
+}));
+vi.mock('../lib/sqlSchemaStore', () => ({
+  loadDatabases: async () => store.kept,
+  forgetDatabase: async (name: string) => {
+    store.forgotten.push(name);
+  },
+  storedName: (s: { database: string }) => s.database.trim() || 'Database',
+}));
 import { readSchemaScript } from '../lib/sqlSchema';
 import { SCHEMA_SCRIPT } from '../lib/sqlSchemaScript';
 import type { ReportQuery } from '../lib/sqlQuery';
@@ -27,11 +41,11 @@ function panel(over: Partial<Parameters<typeof DatabasePanel>[0]> = {}) {
   const props = {
     database: schema,
     recent: ['ShopDemo'],
-    onSwitch: vi.fn(),
-    onForget: vi.fn(),
+    onAdopt: vi.fn(),
+    onNotice: vi.fn(),
     query: null as ReportQuery | null,
     onQuery: vi.fn(),
-    selectionLabel: '',
+    selection: [] as string[],
     onBindField: vi.fn(),
     onCopy: vi.fn(async () => true),
     onFieldsChange: vi.fn(),
@@ -43,12 +57,25 @@ function panel(over: Partial<Parameters<typeof DatabasePanel>[0]> = {}) {
 
 describe('with no database yet', () => {
   it('gives the layout script to copy and the databases kept here', async () => {
+    const northwind = { ...schema, database: 'Northwind' };
+    store.kept = [{ name: 'Northwind', schema: northwind, savedAt: 1 }];
     const props = panel({ database: null, recent: ['Northwind'] });
     fireEvent.click(screen.getByText('Copy the layout script'));
     await Promise.resolve();
     expect(props.onCopy).toHaveBeenCalledWith(SCHEMA_SCRIPT);
     fireEvent.click(screen.getByText('Northwind'));
-    expect(props.onSwitch).toHaveBeenCalledWith('Northwind');
+    await waitFor(() => expect(props.onAdopt).toHaveBeenCalledWith(northwind));
+  });
+});
+
+describe('forgetting the database', () => {
+  it('forgets it in this browser, leaves the workspace with none, and says so', async () => {
+    store.forgotten = [];
+    const props = panel();
+    fireEvent.click(screen.getByText('Forget'));
+    await waitFor(() => expect(props.onAdopt).toHaveBeenCalledWith(null));
+    expect(store.forgotten).toEqual(['ShopDemo']);
+    expect(props.onNotice).toHaveBeenCalledWith('ShopDemo is forgotten in this browser.');
   });
 });
 
@@ -100,7 +127,7 @@ describe('what the report reads', () => {
     expect((screen.getAllByText('Bind')[0] as HTMLButtonElement).disabled).toBe(true);
     expect(none.onBindField).not.toHaveBeenCalled();
     cleanup();
-    const props = panel({ query: orders, selectionLabel: 'labelFreight' });
+    const props = panel({ query: orders, selection: ['labelFreight'] });
     fireEvent.click(screen.getAllByText('Bind')[2]);
     expect(props.onBindField).toHaveBeenCalledWith('Freight');
   });
@@ -136,7 +163,7 @@ describe('writing into the report', () => {
       ...schema,
       objects: schema.objects.map((o) => (o.name === 'Orders' ? { ...o, columns: [...o.columns, { name: 'Region', type: 'nvarchar', length: 20 }] } : o.name === 'Customers' ? { ...o, columns: [...o.columns, { name: 'Region', type: 'nvarchar', length: 20 }] } : o)),
     };
-    render(<DatabasePanel database={regions} recent={[]} onSwitch={vi.fn()} onForget={vi.fn()} query={query} onQuery={vi.fn()} selectionLabel="" onBindField={vi.fn()} onCopy={vi.fn(async () => true)} onWrite={onWrite} />);
+    render(<DatabasePanel database={regions} recent={[]} query={query} onQuery={vi.fn()} selection={[]} onBindField={vi.fn()} onCopy={vi.fn(async () => true)} onWrite={onWrite} />);
     fireEvent.change(screen.getByLabelText('Connection name'), { target: { value: 'Shop;Password=x' } });
     // A connection string's ; and = cannot be typed: the box takes a name.
     expect((screen.getByLabelText('Connection name') as HTMLInputElement).value).toBe('ShopPasswordx');
@@ -177,7 +204,8 @@ describe('sharing the database with the AI', () => {
     fireEvent.change(screen.getByLabelText('Describe the query'), { target: { value: 'every order' } });
     fireEvent.click(screen.getByText('Write the SQL'));
     await screen.findByText('Every order.');
-    expect(onAskSql).toHaveBeenCalledWith('every order');
+    // With the part of the layout it is about, worked out by the panel.
+    expect(onAskSql).toHaveBeenCalledWith('every order', expect.stringContaining('Orders'));
     expect((screen.getByLabelText('Custom SQL') as HTMLTextAreaElement).value).toBe('SELECT o.OrderID, o.Discount FROM dbo.Orders o');
     // A column the layout does not have is refused, not run.
     expect(screen.getByText('dbo.Orders has no column "Discount"')).toBeTruthy();
@@ -275,7 +303,7 @@ describe('Forma Designer on this PC', () => {
       return new Response(layoutText, { status: 200 });
     }));
     const props = {
-      recent: ['ShopDemo'], onSwitch: vi.fn(), onForget: vi.fn(), query: null, onQuery: vi.fn(), selectionLabel: '', onBindField: vi.fn(), onCopy: vi.fn(async () => true),
+      recent: ['ShopDemo'], query: null, onQuery: vi.fn(), selection: [], onBindField: vi.fn(), onCopy: vi.fn(async () => true),
       onLayoutText: vi.fn(async () => 'Database layout read: ShopDemo.'),
     };
     const { rerender } = render(<DatabasePanel database={null} {...props} />);

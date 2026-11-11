@@ -27,7 +27,7 @@
  * problem worth knowing about whether or not anyone wanted bindings. So the
  * decline is rendered as the content of the pane rather than as an error state.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { parseDataSource, type DataField } from '../lib/dataSource';
 import { matchColumns, renameField, scoreMatch, type ColumnMatch } from '../lib/fieldMatch';
 import { planDetailBinding, bindDetailRow, bindFooterTotals, readBoundFields, isExpressionEntry, EXPRESSION_PREFIX } from '../lib/repxBindingPlan';
@@ -87,7 +87,11 @@ const KIND_LABEL: Record<string, string> = {
   none: '',
 };
 
-export default function DataBinding({ repxContent, onApply, onPromptToExpression, onDatabase, databaseFields, databaseLabel }: Props) {
+// Drawn again only when its props change (2026-11-11, PR-05; App's `Steady`
+// keeps the functions it is handed the same between draws).
+export default memo(DataBinding);
+
+function DataBinding({ repxContent, onApply, onPromptToExpression, onDatabase, databaseFields, databaseLabel }: Props) {
   const [pasted, setPasted] = useState('');
   const [databaseLine, setDatabaseLine] = useState<string | null>(null);
 

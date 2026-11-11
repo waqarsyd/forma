@@ -4,6 +4,9 @@
  */
 
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+// The workspace's stylesheet arrives with the workspace (2026-11-11, the full
+// audit's PR-08): in index.css it blocked every public page's first paint.
+import './workspace.css';
 // Only for the theme swap: a view transition snapshots the DOM around its
 // callback, so the state change has to land inside it rather than on React's
 // own schedule. See setTheme.
@@ -89,6 +92,8 @@ import { askToKeepStorage } from './lib/storagePersist';
    CSS keyframes and transitions, so the Framer Motion presets it used to import
    are unused — see the note in CLAUDE.md about this being a deliberate departure
    for this surface. */
+// A scroll the code asks for, smooth unless the person asked for less motion (PR-19).
+import { scrollBehavior } from './lib/motion';
 import { useTheme } from './components/useTheme';
 import { useLinkNavigation } from './components/useLinkNavigation';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -129,7 +134,10 @@ import {
   type GenerationProgress,
 } from './lib/generationProgress';
 // react-markdown lives behind this boundary; see src/components/Markdown.tsx.
-const Markdown = lazy(() => import('./components/Markdown'));
+// The panes' loaders are named (2026-11-11, PR-27): the workspace warms them
+// when idle, and one loader is one import in the chunk, not two.
+const loadMarkdown = () => import('./components/Markdown');
+const Markdown = lazy(loadMarkdown);
 import { User } from 'firebase/auth';
 /* Lazy for the same reason as the loader above, not for their own size: both
    import `services/firebase` directly, and a static import of either would pull
@@ -139,7 +147,8 @@ const LoginPage = lazy(() => import('./components/LoginPage'));
 const AccountDialog = lazy(() => import('./components/AccountDialog'));
 /* The paginated print preview. Lazy because it is reachable only from the
    workspace with a finished report, and it carries its own print stylesheet. */
-const ReportPreview = lazy(() => import('./components/ReportPreview'));
+const loadPreview = () => import('./components/ReportPreview');
+const ReportPreview = lazy(loadPreview);
 /* The binding screen. Lazy for the same reason as the preview: workspace-only,
    reachable only with a finished report, and it carries its own styles. */
 const DataBinding = lazy(() => import('./components/DataBinding'));
@@ -286,8 +295,10 @@ const ShareDialog = lazy(() => import('./components/ShareDialog'));
 const OpenInDesigner = lazy(() => import('./components/OpenInDesigner'));
 const SharedReportPage = lazy(() => import('./components/SharedReportPage'));
 /* The Mockup and the REPX pane (2026-11-06), each drawn only with a report open. */
-const ReportMockup = lazy(() => import('./components/ReportMockup'));
-const RepxViewer = lazy(() => import('./components/RepxViewer'));
+const loadMockup = () => import('./components/ReportMockup');
+const ReportMockup = lazy(loadMockup);
+const loadRepxViewer = () => import('./components/RepxViewer');
+const RepxViewer = lazy(loadRepxViewer);
 const ShortcutsDialog = lazy(() => import('./components/ShortcutsDialog'));
 const WorkingDots = lazy(() => import('./components/ChatThread').then((m) => ({ default: m.WorkingDots })));
 const Composer = lazy(() => import('./components/Composer'));
@@ -625,6 +636,27 @@ function visionPages(images: readonly string[], metas: readonly PreviewMeta[]): 
 
 // RESUMED_RUN, the copy for resuming a paused run, went with pause and resume
 // on 2026-11-04: the chat shows working dots and a Stop, as other chat apps do.
+
+/**
+ * A pane drawn again only when what it shows changes (2026-11-11, the full
+ * audit's PR-05): each key typed in the box and each chunk of a reply drew
+ * the Preview, the REPX, the Mockup and the Data tab again, every function
+ * App hands them being new each time. `of` is memoised in its own module;
+ * here every function prop is swapped for one that keeps its identity and
+ * calls the latest, ChatThread's dispatchers made general. Not a comparator
+ * that ignores functions: the pane would keep the first one and act on the
+ * report as it was then.
+ */
+function Steady<P extends object>({ of: Pane, ...props }: { of: React.ComponentType<P> } & P) {
+  const latest = useRef(props as Record<string, unknown>);
+  latest.current = props;
+  const made = useRef<Record<string, unknown>>({});
+  const steady: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(props)) {
+    steady[k] = typeof v === 'function' ? (made.current[k] ??= (...a: unknown[]) => (latest.current[k] as (...a: unknown[]) => unknown)(...a)) : v;
+  }
+  return <Pane {...(steady as P)} />;
+}
 
 export default function App() {
   const [showWorkspace, setShowWorkspace] = useState(false);
@@ -2100,6 +2132,8 @@ export default function App() {
       clearInterval(loadingIntervalRef.current);
       loadingIntervalRef.current = null;
     }
+    // Told only when the whole percent moves (2026-11-11, PR-05; the stream
+    // loop in geminiService.ts): it was every 120 ms, each a draw of the workspace.
     setProgress((prev) => applyStreamProgress(prev, { percent: chunk.percent, chars: chunk.chars }));
   }, []);
 
@@ -2396,8 +2430,9 @@ export default function App() {
   const reportFuture = useRef<DesignResult[]>([]);
   const lastReport = useRef<DesignResult | null>(null);
   const movingInHistory = useRef(false);
-  /** Set by an edit on Preview, which keeps its own step (`pushHistory`), a drag one step in all. */
-  const previewStep = useRef(false);
+  /* `previewStep`, which kept a drag's many writes one step, went on
+     2026-11-11 (PR-03): a drag is written once, on letting go, so an edit on
+     Preview is a step like any other change of the file, kept below. */
   const [historyDepth, setHistoryDepth] = useState({ back: 0, forward: 0 });
   const noteHistory = () => setHistoryDepth({ back: reportPast.current.length, forward: reportFuture.current.length });
   const pushHistory = (report: DesignResult | null) => {
@@ -2412,10 +2447,6 @@ export default function App() {
     if (movingInHistory.current) {
       movingInHistory.current = false;
       noteHistory();
-      return;
-    }
-    if (previewStep.current) {
-      previewStep.current = false;
       return;
     }
     if (!result) {
@@ -4275,6 +4306,10 @@ export default function App() {
       };
 
       setResult(newResult);
+      // What the installed DevExpress makes of it, asked once it is on screen
+      // (2026-11-11, PERF): the reply waited up to 20 s for it. The REPX pane
+      // shows what it finds, for this file only (lib/designerBridge.ts).
+      if (repxContent === printed) void response.inspect?.();
       // A refinement turn replaces the whole report, so this is the moment the
       // previous one would otherwise be gone for good.
       recordRevision(open ? 'Refined' : 'Generated', newResult);
@@ -5442,8 +5477,14 @@ export default function App() {
           setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: known }]);
           return;
         }
+        // The audit of this very file: the pane's when it is current, else found now (it waits 300 ms after an edit).
+        const findings = !open
+          ? undefined
+          : auditedXmlRef.current === open.repxContent
+            ? repxAudit?.findings
+            : (await import('./lib/repxAudit')).auditRepx(open.repxContent, open.layout, { fields: dataFields() }).findings;
         const outline = open && agent
-          ? `${agent.reportOutline(open.repxContent!, { findings: repxAudit?.findings.map((f) => f.message), selected: previewSelection })}${facts ? `\n${factsLib!.factsBlock(facts)}` : ''}`
+          ? `${agent.reportOutline(open.repxContent!, { findings: findings?.map((f) => f.message), selected: previewSelection })}${facts ? `\n${factsLib!.factsBlock(facts)}` : ''}`
           : undefined;
         reportTurnRef.current = Boolean(outline);
         // A shared database: its layout and what the report reads, and the `data` edit's writer (batch DE).
@@ -5500,10 +5541,16 @@ export default function App() {
         if (turn.signal.aborted) return;
         // On a limit the next AI set up answers, and the reply says so (2026-11-10, lib/fallbackChain.ts).
         const { askWithChain } = await import('./lib/fallbackChain');
+        // The streamed text once per frame (2026-11-11, the full audit's PR-05
+        // and PR-18): each chunk drew the whole workspace again.
+        let frame = 0;
         const chained = await askWithChain(config, (asked) => chatReply(history, asked, turn.signal, (text) => {
           partialReplyRef.current = text;
-          setStreamingReply(text);
-        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined, docs, rowsSent), turn.signal);
+          frame ||= requestAnimationFrame(() => {
+            frame = 0;
+            setStreamingReply(partialReplyRef.current);
+          });
+        }, outline && agent ? { outline, ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, database } : undefined, remembered, withPictures ? toAttachmentParts(currentPreviews, currentTexts) : undefined, docs, rowsSent), turn.signal).finally(() => cancelAnimationFrame(frame));
         if (turn.signal.aborted) return;
         const answered = chained.value;
         /*
@@ -6128,6 +6175,18 @@ export default function App() {
    */
   const [repxAudit, setRepxAudit] = useState<RepxAudit | null>(null);
   /*
+   * The file `repxAudit` was found in. The audit waits 300 ms after an edit
+   * (PR-03), so for that long it still describes the version before; the chat
+   * turn reads this to tell, and audits the open report itself when they
+   * differ (2026-11-11, the PERF batch's review).
+   */
+  const auditedXmlRef = useRef<string | null>(null);
+  // One object while the report's usage is the same, for the memoised REPX pane (PR-05).
+  const usageLine = useMemo(() => {
+    const short = summariseUsage(result?.usage);
+    return short ? { short, long: describeUsage(result?.usage) } : null;
+  }, [result?.usage]);
+  /*
    * With the Data tab's fields (CP-07), and with what Forma's own reading of
    * the page found while the report is the one it was found in (PL-11b).
    */
@@ -6135,15 +6194,20 @@ export default function App() {
   useEffect(() => {
     const xml = result?.repxContent;
     if (!xml) {
+      auditedXmlRef.current = null;
       setRepxAudit(null);
       return;
     }
     let current = true;
     const evidence = result?.evidence;
-    void Promise.all([import('./lib/repxAudit'), evidence ? loadIntake() : null]).then(([{ auditRepx }, intake]) => {
+    // 300 ms after the report stops changing (2026-11-11, full audit PR-03):
+    // a run of edits, a stream of chat changes or an Undo held down audited
+    // every version, a full parse each time, for a box that shows the last.
+    const wait = setTimeout(() => void Promise.all([import('./lib/repxAudit'), evidence ? loadIntake() : null]).then(([{ auditRepx }, intake]) => {
       if (!current) return;
       const audit = auditRepx(xml, result?.layout, { fields: fieldsKey ? fieldsKey.split('\n') : undefined });
       const extra = evidence && intake && intake.pictureKey(xml) === evidence.on ? evidence.findings.filter((f) => !audit.findings.some((g) => g.code === f.code)) : [];
+      auditedXmlRef.current = xml;
       setRepxAudit(extra.length
         ? {
             ...audit,
@@ -6155,9 +6219,10 @@ export default function App() {
             summary: intake ? intake.evidenceSummary(audit.summary, extra.length) : audit.summary,
           }
         : audit);
-    });
+    }), 300);
     return () => {
       current = false;
+      clearTimeout(wait);
     };
   }, [result?.repxContent, result?.layout, result?.evidence, fieldsKey]);
 
@@ -6231,26 +6296,34 @@ export default function App() {
    * within reach without putting them back on the critical path — first paint no
    * longer waits for code the visitor may never render, which was the point.
    *
-   * Only from a marketing page, and that condition is the whole reason this is
-   * not just a prefetch of everything. Someone working in `/workspace` has no
-   * link to any of these, so fetching them there would move the waste rather
-   * than remove it — the exact criticism that would otherwise apply to warming
-   * chunks at all.
+   * The marketing chunks only from a marketing page, and that condition is the
+   * whole reason this is not just a prefetch of everything. Someone working in
+   * `/workspace` has no link to any of them, so fetching them there would move
+   * the waste rather than remove it — the exact criticism that would otherwise
+   * apply to warming chunks at all. The workspace warms its own panes instead
+   * (the last paragraph).
    *
    * `lazy` reads through the module registry, so a chunk fetched here resolves
    * synchronously when the route changes; the two are not separate downloads.
    * Failures are swallowed on purpose: this is a nicety, and the real navigation
    * will surface a genuine network problem on its own.
+   *
+   * In the workspace, its own panes (2026-11-11, the full audit's PR-27): the
+   * Preview, the Mockup, the REPX pane and the Markdown a reply is drawn with
+   * were each fetched when first shown, so a pane flashed empty and the first
+   * reply arrived plain before it was formatted. Idle comes long before a
+   * first report, so whichever pane it opens on is already here.
    */
   useEffect(() => {
-    if (showWorkspace) return;
-    const warm = () => {
-      void import('./components/FeaturesPage').catch(() => {});
-      void import('./components/DocsPage').catch(() => {});
-      void import('./components/ContactPage').catch(() => {});
-      void import('./components/LegalPage').catch(() => {});
-      void import('./components/ChangelogPage').catch(() => {});
-    };
+    const warm = showWorkspace
+      ? () => [loadPreview, loadMarkdown, loadRepxViewer, loadMockup].forEach((load) => void load().catch(() => {}))
+      : () => {
+          void import('./components/FeaturesPage').catch(() => {});
+          void import('./components/DocsPage').catch(() => {});
+          void import('./components/ContactPage').catch(() => {});
+          void import('./components/LegalPage').catch(() => {});
+          void import('./components/ChangelogPage').catch(() => {});
+        };
     // requestIdleCallback is still unimplemented in Safari; the timeout is the
     // documented fallback rather than a second strategy.
     const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
@@ -6487,7 +6560,7 @@ export default function App() {
     else if (typeof to === 'number') toScale(to / 100);
     else {
       toScale(fit * 2);
-      setTimeout(() => document.querySelector('.rp-hit.is-selected')?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }), 120);
+      setTimeout(() => document.querySelector('.rp-hit.is-selected')?.scrollIntoView({ block: 'center', inline: 'center', behavior: scrollBehavior() }), 120);
     }
   };
   const mac = /mac|iphone|ipad/i.test(navigator.platform);
@@ -7243,7 +7316,8 @@ export default function App() {
                       pane leaves the conversation and the sidebar working. */}
                   <ErrorBoundary area="the Preview">
                   <Suspense fallback={null}>
-                    <ReportPreview
+                    <Steady
+                      of={ReportPreview}
                       repxContent={result.repxContent}
                       layout={result.layout}
                       title={result.title}
@@ -7278,14 +7352,10 @@ export default function App() {
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not
                          change what was uploaded. */
-                      onEdit={(xml, reason, continues) => {
+                      onEdit={(xml, reason) => {
                         previewEditedXml.current = xml;
-                        // One step of the history per edit, and per drag
-                        // (2026-11-06): its later frames continue the step its
-                        // first opened, which the effect below would have made
-                        // a step each.
-                        if (!continues) pushHistory(result);
-                        previewStep.current = true;
+                        // One step of the history per edit, and per drag, kept by
+                        // the history's effect: a drag is written once (2026-11-11, PR-03).
                         setResult({ ...result, repxContent: xml });
                         setSaveNotice(reason);
                       }}
@@ -7299,7 +7369,8 @@ export default function App() {
                 <div className="wb-sheet wb-reg-marks">
                   <ErrorBoundary area="the Data view">
                   <Suspense fallback={null}>
-                    <DatabasePanel
+                    <Steady
+                      of={DatabasePanel}
                       database={activeDatabase}
                       recent={keptDatabases}
                       shared={databaseShared}
@@ -7318,28 +7389,13 @@ export default function App() {
                       }}
                       // Read through the companion on this PC (Phase 2), as a pasted layout is.
                       onLayoutText={databaseFromText}
-                      onAskSql={async (sentence) => {
-                        const [{ layoutFor }, { promptToSql }] = await Promise.all([import('./lib/databaseAi'), loadGemini()]);
-                        return promptToSql(sentence, layoutFor(activeDatabase!, sentence), effectiveConfig());
-                      }}
-                      onSwitch={async (name) => {
-                        const kept = await (await import('./lib/sqlSchemaStore')).loadDatabases();
-                        const hit = kept.find((d) => d.name === name);
-                        if (hit) {
-                          setActiveDatabase(hit.schema);
-                          setDatabaseShared(false);
-                        }
-                      }}
-                      onForget={async (name) => {
-                        const store = await import('./lib/sqlSchemaStore');
-                        await store.forgetDatabase(name);
-                        if (activeDatabase && store.storedName(activeDatabase) === name) setActiveDatabase(null);
-                        setKeptDatabases((await store.loadDatabases()).map((d) => d.name));
-                        setSaveNotice(`${name || 'The database'} is forgotten in this browser.`);
-                      }}
+                      onAskSql={async (sentence, layout) => (await loadGemini()).promptToSql(sentence, layout, effectiveConfig())}
+                      // A kept database chosen, or the active one forgotten, comes
+                      // back through onAdopt (2026-11-11, PERF: the panel's own store).
+                      onNotice={setSaveNotice}
                       query={activeQuery}
                       onQuery={setActiveQuery}
-                      selectionLabel={bindTarget.length === 1 ? bindTarget[0] : bindTarget.length > 1 ? `${bindTarget.length} controls` : ''}
+                      selection={bindTarget}
                       // A field bound to what was last selected on the Preview: the chat's own bind edit.
                       onBindField={async (field) => {
                         const agent = await import('./lib/agentEdit');
@@ -7372,7 +7428,8 @@ export default function App() {
                         return `${done.reason}.`;
                       }}
                     />
-                    <DataBinding
+                    <Steady
+                      of={DataBinding}
                       repxContent={result.repxContent}
                       databaseFields={activeDatabase ? queryFieldList.fields : undefined}
                       databaseLabel={queryFieldList.label}
@@ -7441,7 +7498,7 @@ export default function App() {
                       xml={result.repxContent || ''}
                       unit={openUnit}
                       audit={repxAudit}
-                      usage={summariseUsage(result.usage) ? { short: summariseUsage(result.usage)!, long: describeUsage(result.usage) } : null}
+                      usage={usageLine}
                       coverage={result.coverage ?? null}
                     />
                   </Suspense>
@@ -7455,7 +7512,8 @@ export default function App() {
             <Suspense fallback={null}>
               {/* A project opened from the home says so while its content comes (WS-16). */}
               {loadingProjectId && <div className="wb-empty" role="status">Opening…</div>}
-              <HomeStart
+              <Steady
+                of={HomeStart}
                 // The projects whole: lib/startingPoints, which picks the recent
                 // ones, holds the six descriptions too, and importing it here
                 // put them all in the entry chunk (+3 kB, measured).

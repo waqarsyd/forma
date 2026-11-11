@@ -7,8 +7,10 @@
  * audit's CV-12): a readout of the reading, not of the report.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import RepxViewer from './RepxViewer';
+import { keepInspection } from '../lib/designerBridge';
+import type { RepxAudit } from '../lib/repxAudit';
 
 afterEach(cleanup);
 
@@ -38,5 +40,45 @@ describe('what the report kept of the page', () => {
   it('says one text in the singular', () => {
     render(<RepxViewer xml={XML} coverage={{ captions: 3, kept: 2, missing: ['Notes'], sameBand: 2 }} />);
     expect(screen.getByText('1 text on your page is not in the report')).toBeTruthy();
+  });
+});
+
+/*
+ * A line is drawn as wide as its own text (2026-11-11, the full audit's PERF
+ * batch, PR-06's review): `content-visibility: auto` clips a line to its box,
+ * and the pane's width is counted in `ch`, which a Japanese or Arabic label
+ * set in a fallback face outgrows. jsdom lays nothing out, so this holds the
+ * style that prevents the clip rather than measuring one.
+ */
+describe('a long line in another script', () => {
+  it('sizes its line to the text, never narrower than the pane', () => {
+    const label = '請求書の合計金額と支払期日 فاتورة المبلغ الإجمالي'.repeat(6);
+    const xml = XML.replace('HeightF="20" />', `HeightF="20"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="label1" Text="${label}" /></Controls></Item1>`);
+    const { container } = render(<RepxViewer xml={xml} />);
+    const line = Array.from(container.querySelectorAll<HTMLElement>('pre > div')).find((div) => div.textContent?.includes(label));
+    expect(line).toBeTruthy();
+    const style = line!.getAttribute('style') ?? '';
+    expect(style).toMatch(/width:\s*max-content/);
+    expect(style).toMatch(/min-width:\s*100%/);
+  });
+});
+
+/*
+ * What DevExpress found, asked once the report is on screen (2026-11-11, the
+ * full audit's PERF batch): it arrives while the pane is open, joins the
+ * audit's list, and belongs to the file it was asked about alone.
+ */
+describe('what DevExpress found', () => {
+  const clean = { ok: true, errors: 0, warnings: 0, findings: [], summary: '' } as unknown as RepxAudit;
+  const lost = { severity: 'error' as const, code: 'designer-lost-controls', message: 'DevExpress could not build one part of the report (tableHead), so it is missing when it opens.' };
+
+  it('joins the list when it arrives, for this file only', () => {
+    const { container } = render(<RepxViewer xml={XML} audit={clean} />);
+    expect(container.querySelector('[data-audit]')).toBeNull();
+    act(() => keepInspection(`${XML} `, [lost]));
+    expect(container.querySelector('[data-audit]')).toBeNull();
+    act(() => keepInspection(XML, [lost]));
+    expect(screen.getByText('1 REPX error')).toBeTruthy();
+    expect(screen.getByText(lost.message)).toBeTruthy();
   });
 });

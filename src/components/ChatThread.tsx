@@ -19,12 +19,13 @@
  * exactly what the tests want.
  */
 
-import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, memo, Suspense, useCallback, useDeferredValue, useEffect, useRef, useState, type ReactNode } from 'react';
 import PlanCard from './PlanCard';
 import type { PreviewMeta } from '../lib/attachments';
 import { messageMatches, messageTime, searchParts, type ChatMessage } from '../lib/chatSession';
 import { formatSessionStamp } from '../lib/datetime';
 import { copyText } from '../lib/clipboard';
+import { scrollBehavior } from '../lib/motion';
 
 /**
  * When a message was made (2026-11-05), quiet beside its icons: "Today,
@@ -171,6 +172,32 @@ function MessageText({ text, query, markdown }: { text: string; query: string; m
       </Suspense>
     </div>
   );
+}
+
+/** At most this often, a reply being written is drawn again (2026-11-11, PR-18). */
+const STREAM_DRAW_MS = 100;
+
+/**
+ * A reply as it streams (2026-11-11, the full audit's PR-18). Each draw parses
+ * the whole reply as Markdown, so a draw per chunk cost the square of its
+ * length and long answers arrived unevenly. The text is taken at most every
+ * STREAM_DRAW_MS, the last chunk always, and drawn at a lower priority than
+ * typing, so the box stays quick while the reply is written.
+ */
+function StreamingText({ text, onDrawn }: { text: string; onDrawn: () => void }) {
+  const [shown, setShown] = useState(text);
+  const drawnAt = useRef(0);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      drawnAt.current = Date.now();
+      setShown(text);
+    }, Math.max(0, STREAM_DRAW_MS - (Date.now() - drawnAt.current)));
+    return () => clearTimeout(t);
+  }, [text]);
+  const drawn = useDeferredValue(shown);
+  // The thread follows what is drawn, which now lags the text by a moment.
+  useEffect(onDrawn, [drawn, onDrawn]);
+  return <MessageText text={drawn} query="" markdown />;
 }
 
 /**
@@ -637,18 +664,20 @@ export default function ChatThread<R>({
     pinned.current = true;
     setAway(false);
     returningUntil.current = Date.now() + 1000;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    // Smooth unless the person asked their system for less motion (PR-19).
+    el.scrollTo({ top: el.scrollHeight, behavior: scrollBehavior() });
   }, []);
 
-  useEffect(() => {
+  const follow = useCallback(() => {
     const el = threadRef.current;
     if (!el || !pinned.current) return;
     // Assigned rather than `scrollTo({ behavior: 'smooth' })`: a streamed reply
     // updates many times a second, and successive smooth scrolls queue up and
     // lag behind the text they are meant to be following.
     el.scrollTop = el.scrollHeight;
-    // `turns` too (2026-11-08): a message sent adds a request before any reply.
-  }, [messages, turns, streamingReply, isChatting, isAnalyzing]);
+  }, []);
+  // `turns` too (2026-11-08): a message sent adds a request before any reply.
+  useEffect(follow, [follow, messages, turns, streamingReply, isChatting, isAnalyzing]);
 
   const note = (msg: ChatMessage<R, PreviewMeta>) => (
     <ChatNote
@@ -685,7 +714,7 @@ export default function ChatThread<R>({
             <div className="wb-who">Forma</div>
             {/* The answer as it streams; until the first word, the dots. */}
             {streamingReply ? (
-              <MessageText text={streamingReply} query="" markdown />
+              <StreamingText text={streamingReply} onDrawn={follow} />
             ) : (
               <p className="wb-working">
                 <WorkingDots />

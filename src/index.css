@@ -207,10 +207,12 @@
 @source "../index.html";
 @source "./";
 
-/* The workspace's appearance, lifted verbatim from the approved artifact. Imported
-   AFTER tailwindcss on purpose: its rules are plain CSS rather than utilities, and
-   loading it later keeps preflight from resetting anything it sets. */
-@import "./workspace.css";
+/* The workspace's appearance (workspace.css) is not imported here since
+   2026-11-11 (the full audit's PR-08): App.tsx and SharedReportPage.tsx import
+   it, so it arrives with the workspace's chunk instead of blocking every public
+   page's first paint, which drew none of it. It still loads after this file, so
+   preflight still resets nothing it sets. `.wb-fault` stays below: the error
+   boundary draws it on the public pages too. */
 
 /* Tailwind v4 defaults `dark:` to prefers-color-scheme. The theme toggle sets a
    `.dark` class on <html>, so bind the variant to that class instead — this is

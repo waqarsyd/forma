@@ -7,6 +7,7 @@
  * built; a conversation without a report keeps the bench's sheet. See *The
  * conversation floats over the report* in docs/notes/app-shell.md.
  */
+import { memo } from 'react';
 import { formatSessionStamp } from '../lib/datetime';
 import { STARTING_POINTS, recentProjects, type StartingPoint } from '../lib/startingPoints';
 import './overlays.css';
@@ -39,7 +40,12 @@ interface Props<P extends Project> {
   onAddKey?: () => void;
 }
 
-export default function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick, showRecent = true, needsKey = false, onAddKey }: Props<P>) {
+// Drawn again only when its props change (2026-11-11, PR-05; App's `Steady`
+// keeps the functions it is handed the same between draws). The cast keeps
+// the generic, which `memo` drops.
+export default memo(HomeStart) as typeof HomeStart;
+
+function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick, showRecent = true, needsKey = false, onAddKey }: Props<P>) {
   const recent = showRecent ? recentProjects(projects, archived) : [];
   return (
     <section className={`wb-home${recent.length ? ' has-recent' : ''}`} aria-label="Start a report">

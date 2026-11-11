@@ -2855,6 +2855,7 @@ ${houseStyleContext}
     let text = '';
     let finishReason: string | undefined;
     let lastEmit = 0;
+    let lastPercent = -1;
     const streamStarted = Date.now();
 
     // Time to the first chunk is the single most diagnostic number here. These
@@ -2896,12 +2897,18 @@ ${houseStyleContext}
       if (reason) finishReason = reason;
 
       // Throttled: chunks can arrive far faster than the UI needs to repaint.
+      // And told only when the whole percent moves (2026-11-11, the full
+      // audit's PR-05): each call drew the whole workspace again, every
+      // 120 ms of a minute-long answer, for a number only the bar's
+      // aria-valuenow reads.
       const now = Date.now();
-      if (onProgress && now - lastEmit >= 120) {
+      const percent = Math.min(95, Math.round(100 * (1 - Math.exp(-text.length / EXPECTED_RESPONSE_CHARS))));
+      if (onProgress && now - lastEmit >= 120 && percent !== lastPercent) {
         lastEmit = now;
+        lastPercent = percent;
         onProgress({
           chars: text.length,
-          percent: Math.min(95, Math.round(100 * (1 - Math.exp(-text.length / EXPECTED_RESPONSE_CHARS)))),
+          percent,
           elapsedMs: now - streamStarted,
         });
       }
@@ -3599,27 +3606,38 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
      * written, and how many pages it printed with the page's records. Beside
      * the print's own findings, and never asked unasked: a page where Forma
      * Designer has not answered sends nothing to 127.0.0.1.
+     *
+     * Asked after the answer, since 2026-11-11 (the full audit's PERF batch):
+     * loading and printing the report there takes up to 20 seconds the first
+     * time, all of which the reply waited for. App calls `inspect` once the
+     * report is on screen, and what it finds joins the REPX pane when it
+     * comes. It no longer reaches the reply's list or `fixUntilPrints`; the
+     * print's own findings above still do.
      */
-    if (!signal?.aborted) {
+    const pageRows = page?.rows ?? null;
+    const pagesShown = page?.pages;
+    const inspect = async (stop?: AbortSignal): Promise<RepxFinding[]> => {
       try {
-        const { designerAnswered, inspectInDesigner, inspectionFindings } = await import("../lib/designerBridge");
-        const seen = designerAnswered() ? await inspectInDesigner(parsed.repxContent, page?.rows ?? null, { signal }) : null;
-        if (seen) {
-          const found = inspectionFindings(seen, { pagesShown: page?.pages });
-          printFindings.push(...found);
-          for (const finding of found) console[finding.severity === "error" ? "error" : "warn"](`  [DevExpress: ${finding.code}] ${finding.message}`);
-          // What DevExpress dropped and no audit code foresaw: the next rule to measure.
-          const foreseen = new Set(auditRepx(parsed.repxContent, null, auditOptions).findings.map((f) => f.code));
-          for (const d of seen.dropped) {
-            if (!(d.attribute === "Margins" && foreseen.has("margins-not-whole")) && !(/^Page(Width|Height)$/.test(d.attribute) && foreseen.has("page-size-not-whole"))) {
-              console.info(`DevExpress did not keep ${d.attribute}="${d.declared}" (loaded ${d.loaded ?? "nothing"}), which no audit rule predicts.`);
-            }
+        const { designerAnswered, inspectInDesigner, inspectionFindings, keepInspection } = await import("../lib/designerBridge");
+        const seen = designerAnswered() ? await inspectInDesigner(parsed.repxContent, pageRows, { signal: stop }) : null;
+        if (!seen) return [];
+        const found = inspectionFindings(seen, { pagesShown });
+        // For the REPX pane, which shows them while this file is the one open.
+        if (found.length) keepInspection(parsed.repxContent, found);
+        for (const finding of found) console[finding.severity === "error" ? "error" : "warn"](`  [DevExpress: ${finding.code}] ${finding.message}`);
+        // What DevExpress dropped and no audit code foresaw: the next rule to measure.
+        const foreseen = new Set(auditRepx(parsed.repxContent, null, auditOptions).findings.map((f) => f.code));
+        for (const d of seen.dropped) {
+          if (!(d.attribute === "Margins" && foreseen.has("margins-not-whole")) && !(/^Page(Width|Height)$/.test(d.attribute) && foreseen.has("page-size-not-whole"))) {
+            console.info(`DevExpress did not keep ${d.attribute}="${d.declared}" (loaded ${d.loaded ?? "nothing"}), which no audit rule predicts.`);
           }
         }
+        return found;
       } catch (err) {
         console.warn("Forma Designer could not be asked about the report.", err);
+        return [];
       }
-    }
+    };
     const result: GenerationResult = {
       markdown: specFromRepx(parsed.repxContent, title),
       layout: layoutFromRepx(parsed.repxContent, title),
@@ -3632,6 +3650,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       ...(coverage ? { coverage } : {}),
       ...(evidenceFindings.length ? { evidenceFindings } : {}),
       ...(printFindings.length ? { printFindings } : {}),
+      inspect,
     };
     /*
      * Asked once more, and only once, when the report left out enough of the
@@ -3717,6 +3736,13 @@ export interface GenerationResult extends AnalysisResponse {
    * them back once (`fixUntilPrints`) and says what is left in plain words.
    */
   printFindings?: RepxFinding[];
+  /**
+   * What the installed DevExpress makes of the report, asked once it is on
+   * screen (2026-11-11, the full audit's PERF batch): through Forma Designer
+   * when it has answered in this page, nothing otherwise. Never rejects. What
+   * it finds is kept for the REPX pane (`keepInspection`, lib/designerBridge.ts).
+   */
+  inspect?: (signal?: AbortSignal) => Promise<RepxFinding[]>;
 }
 
 /**

@@ -385,7 +385,20 @@ const BUDGETS = [
   // file, out of the entry stylesheet into a lazily loaded one, and then resets
   // this cap to 94% of what is left. Until then each batch that grows the file
   // names its growth here.
-  { prefix: 'index-', ext: '.css', max: 133_000, note: 'the whole stylesheet' },
+  //
+  // Retuned to 91_000 on 2026-11-11, the cut the interim raise above waited
+  // for (PR-08): index.css no longer imports workspace.css, which App.tsx and
+  // SharedReportPage.tsx import instead, so the workspace's rules arrive with
+  // the workspace. 132,299 -> 85,665 B, -46,634 B, off the stylesheet every
+  // public page waits for before it paints. 91_000 is 94.1%, back in the band;
+  // the interim 133_000 is gone with the reason for it.
+  { prefix: 'index-', ext: '.css', max: 91_000, note: 'the public stylesheet: Tailwind, tokens, the public pages' },
+  // The workspace's own stylesheet (2026-11-11, PR-08), split from the one
+  // above. Vite names it after workspace.css rather than App, because the
+  // shared report page imports it too and it is emitted once for both.
+  // 45,588 B; 48_500 is 94.0%. The lazy panels' rules still go to
+  // components/overlays.css, which is emitted beside their own chunks.
+  { prefix: 'workspace-', ext: '.css', max: 48_500, note: 'the workspace stylesheet, loaded with the workspace and /s/{id}' },
   { prefix: 'pdf.worker-', ext: '.mjs', max: 2_250_000, note: 'pdfjs worker, lazy' },
   { prefix: 'pdf-', ext: '.js', max: 470_000, note: 'pdfjs entry, lazy' },
   { prefix: 'Markdown-', ext: '.js', max: 175_000, note: 'react-markdown + remark-gfm, lazy' },
@@ -663,8 +676,9 @@ const PADDLE_DIR = join(DIST, 'paddle');
 const isPaddle = (f) => f.path.startsWith(PADDLE_DIR) || f.name.startsWith('paddleWorker');
 /*
  * The built pages (2026-11-08, the site audit's batch SB): one HTML file per
- * route at dist/'s root, the seven marketing pages drawn in full at build so
- * a crawler reads them (src/prerender.tsx). 424,564 B that day, of which a
+ * route at dist/'s root, every prerendered public route drawn in full at build
+ * so a crawler reads them (src/prerender.tsx; seven pages when this was
+ * written, sixteen routes by 2026-11-11). 424,564 B that day, of which a
  * visitor downloads the one page they open, compressed. Counted apart, as the
  * OCR engine is, so they do not consume the total's headroom for code; the
  * changelog's page grows with every release, which is what this cap watches.
