@@ -450,11 +450,13 @@ export function generateOffline(model: FormaModel, request: OfflineRequest): Off
     if (r.applied) repx = r.xml;
   }
 
+  // What the report is, in the user's terms (2026-11-11, the full audit,
+  // PL-07): it said "Designed by Forma's own model, with no AI service" and
+  // what share of the reports it learned from the pattern came from.
   const markdown = [
     `# ${title}`,
     '',
-    `Designed by Forma's own model, with no AI service: the pattern of its **${archetype.label.toLowerCase()}** reports` +
-      ` (${Math.round(archetype.share * 100)}% of the reports it learned from) in their house style, on ${paper}${landscape ? ' landscape' : ''}.`,
+    `Laid out as a ${archetype.label.toLowerCase().replace(/,\s*landscape$/, '')} on ${paper}${landscape ? ' landscape' : ''}, in the house style. Check the figures and fonts in the Preview.`,
     '',
     '| Column | Field | Holds |',
     '| --- | --- | --- |',
@@ -463,7 +465,7 @@ export function generateOffline(model: FormaModel, request: OfflineRequest): Off
     groupBy ? `Grouped by \`[${groupBy}]\`${totals.length ? ', with a total under each group' : ''}.` : 'Not grouped.',
     totals.length ? `A grand total of ${totals.map((t) => captionOf(t)).join(', ')} ends the report.` : '',
     '',
-    'Bind real data in the Data tab, or describe a change and add an AI provider to have it redesigned.',
+    'Bind real data in the Data tab, or describe a change in the chat to have it redesigned.',
   ]
     .filter((line, i, all) => line !== '' || all[i - 1] !== '')
     .join('\n');

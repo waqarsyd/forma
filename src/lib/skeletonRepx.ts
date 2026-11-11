@@ -272,8 +272,8 @@ export const placeKey = (band: number, control: number, row = -1, cell = -1) => 
 
 /**
  * The report a skeleton describes, its words from `texts` where they were read.
- * `title` names the report when no title was read. `readBy` names what read
- * the layout, for the spec: the vision model unless said otherwise. `given`
+ * `title` names the report when no title was read. `readBy` named what read
+ * the layout, for the spec, until 2026-11-11; it is accepted and unused. `given`
  * says words, fields, groups and colours outright, over the reading
  * (2026-11-05). `version` is the DevExpress version to write, 20.1 unless said.
  */
@@ -515,21 +515,23 @@ export function skeletonToDesign(
     if (r.applied) repx = r.xml;
   }
 
+  // The Spec says what the report is, in the user's terms (2026-11-11, the
+  // full audit, PL-07): it said which part of Forma read the picture and how
+  // many captions "took their words from the page's text" until then, which
+  // is machinery nobody asked about. `readBy` is still accepted and no longer
+  // written.
   const controlCount = k.bands.reduce((s, b) => s + b.controls.length, 0);
+  const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   const markdown = [
     `# ${title}`,
     '',
-    `Read from the picture by ${options.readBy ?? "Forma's vision model"}: ${k.paper}${k.landscape ? ' landscape' : ''}, ${k.bands.length} bands, ${controlCount} controls.`,
-    '',
-    texts.length
-      ? `${read} of ${read + placeholders} titles and captions took their words from the page's text; ${placeholders ? `${placeholders} kept a placeholder to replace.` : 'none kept a placeholder.'}`
-      : `No text was read from the page, so its ${placeholders} titles and captions are placeholders to replace.`,
+    `${k.paper}${k.landscape ? ' landscape' : ''}, ${count(k.bands.length, 'band')}, ${count(controlCount, 'part')}.` +
+      (placeholders ? ` ${placeholders === 1 ? '1 caption still needs its words' : `${placeholders} captions still need their words`}.` : '') +
+      ' Check the figures and fonts against the page in the Preview.',
     '',
     fields.length ? '| Field | Printed as |\n| --- | --- |\n' + fields.map((f) => `| \`[${f}]\` | a value |`).join('\n') : 'No field is bound.',
     '',
-    options.readBy
-      ? 'Bind real data in the Data tab. The bands and roles are a reading of the picture; check them in the Preview.'
-      : 'Bind real data in the Data tab. The positions are the model\'s reading of the picture; check them in the Preview.',
+    'Bind real data in the Data tab.',
   ].join('\n');
 
   const usedFields = new Map(places.filter((p) => fieldOf.has(key(p))).map((p) => [key(p), fieldOf.get(key(p))!] as const));

@@ -155,7 +155,13 @@ export function memoryFrom(message: string, source: Memory['source'] = 'chat', n
   };
 }
 
-/** What the thread says when a memory is kept. */
+/**
+ * What the thread says when a memory is kept: what it means for the next
+ * report, and where to change it (2026-11-11, the full audit's CV-06). It
+ * said "Forma's own model will apply A4 paper from now on, and any AI you
+ * use is told it before each report and each reply" until then, which named
+ * the parts of Forma and promised it for Batch, which is not told it.
+ */
 export function rememberedReply(m: Memory): string {
   const applied = [
     m.hints.paper && `${m.hints.paper} paper`,
@@ -163,11 +169,9 @@ export function rememberedReply(m: Memory): string {
     m.hints.fontFamily,
     ...Object.entries(m.hints.sizes ?? {}).map(([role, pt]) => `${pt}pt ${role}s`),
   ].filter(Boolean);
-  return (
-    `I'll remember that: "${m.text}". ` +
-    (applied.length ? `Forma's own model will apply ${applied.join(', ')} from now on, and ` : 'From now on ') +
-    'any AI you use is told it before each report and each reply. See or change your memories in Settings, under Memory.'
-  );
+  return applied.length
+    ? `Got it: ${applied.join(', ')} from now on. You can change it in Settings, under Memory.`
+    : "Got it, I'll keep that in mind for every report. You can change it in Settings, under Memory.";
 }
 
 /** The style a kept report leaves, or null when it cannot be read. */

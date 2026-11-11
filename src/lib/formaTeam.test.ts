@@ -135,22 +135,36 @@ describe('the replies', () => {
     expect(line).not.toContain('Gemini');
   });
 
-  it('says why the AI did not answer in a few words, and what the draft was made from', () => {
-    expect(failureReason('429 RESOURCE_EXHAUSTED: You exceeded your current quota.')).toBe('its free quota is used up for now');
+  it('says why the AI did not answer in a few plain words', () => {
+    expect(failureReason('429 RESOURCE_EXHAUSTED: You exceeded your current quota.')).toBe('its free limit is used up for now');
     expect(failureReason('TypeError: Failed to fetch')).toBe('it could not be reached');
-    expect(failureReason('503 The model is overloaded. Try later.')).toBe('it is overloaded right now');
-    expect(failureReason('The model returned no report. Something else.')).toBe('The model returned no report.');
+    expect(failureReason('503 The model is overloaded. Try later.')).toBe('it is busy right now');
+    // Anything else is no answer, never the provider's own sentence (2026-11-11, CV-07).
+    expect(failureReason('The model returned no report. Something else.')).toBe('it gave no answer');
+    expect(failureReason('The local AI spent its answer on reasoning and wrote none.')).toBe('it gave no answer');
     // Agent audit item 15: the words a local model's failure and the classified ones use.
     expect(failureReason('You are offline. Forma needs a connection.')).toBe('you are offline');
-    expect(failureReason("Google's servers are busy and could not take this request")).toBe('it is overloaded right now');
+    expect(failureReason("Google's servers are busy and could not take this request")).toBe('it is busy right now');
     expect(failureReason('Forma could not reach the local AI at http://localhost:11434/v1.')).toBe('it could not be reached');
-    expect(failureReason("The local AI read only 2,048 of about 10,000 tokens of the request: qwen3's context window is too small")).toBe('its context window is too small for the request');
-    // The draft is handed over in the user's terms, with no OCR or model named (2026-11-10).
+    expect(failureReason("The local AI read only 2,048 of about 10,000 tokens of the request: qwen3's context window is too small")).toBe('the request was too long for it');
+    expect(failureReason('400 API key not valid. Please pass a valid API key.')).toBe('it did not accept the key');
+  });
+
+  // The full audit (2026-11-11, CV-07): a quicker version, in the user's terms, naming no part of Forma.
+  it('hands over a quicker version, or a first draft of a description, naming no part of Forma', () => {
     expect(fallbackReply('Gemini', '429 quota')).toBe(
-      "Gemini could not answer (its free quota is used up for now), so this is Forma's own draft of the page. " +
-        'Check its figures and fonts against the source, and send the request again when Gemini is available to have it designed in full.',
+      "Gemini couldn't take this one (its free limit is used up for now), so here is a quicker version of the page. " +
+        'Check the figures and fonts against your source, and send the request again later for the full design.',
     );
-    expect(fallbackReply('OpenRouter', 'Failed to fetch')).toContain('OpenRouter could not answer (it could not be reached)');
-    expect(fallbackReply('Gemini', '503')).not.toMatch(/OCR|box reader|vision model/);
+    expect(fallbackReply('OpenRouter', 'Failed to fetch')).toContain("OpenRouter couldn't take this one (it could not be reached)");
+    expect(fallbackReply('Gemini', '503', true)).toBe(
+      "Gemini couldn't take this one (it is busy right now), so this is a first draft from your description. Send it again later to have it designed in full.",
+    );
+    const errors = ['429', '503', 'Failed to fetch', 'offline', 'context window is too small', 'spent it reasoning and wrote none', 'The model returned no report.', 'Something odd'];
+    for (const e of errors) {
+      for (const described of [false, true]) {
+        expect(fallbackReply('Gemini', e, described)).not.toMatch(/own draft|OCR|box reader|vision model|context window|reasoning|the model/i);
+      }
+    }
   });
 });

@@ -121,15 +121,9 @@ const RepxViewer = ({
               {usage.short}
             </span>
           )}
-          {coverage && coverage.captions > 0 && (
-            <span
-              className="text-[11px] text-on-surface-variant font-mono"
-              data-readout="kept"
-              title={`The report kept ${coverage.kept} of the ${coverage.captions} captions and titles Forma read on the page, ${coverage.sameBand} in the band the page shows them in.`}
-            >
-              kept {coverage.kept}/{coverage.captions} read
-            </span>
-          )}
+          {/* "kept 40/45 read", how many of the texts Forma read the report
+              kept, sat here until 2026-11-11 (the full audit's CV-12): a count
+              of the reading, not of the report. What is missing is named below. */}
           <button
             onClick={handleCopy}
             className="u-tap u-transition-fast u-press u-focus-ring flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest text-[11px] font-semibold text-on-surface-variant rounded-full cursor-pointer"
@@ -182,7 +176,7 @@ const RepxViewer = ({
       {coverage && coverage.missing.length > 0 && (
         <details className="wb-audit rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3" data-missing>
           <summary className="text-[11.5px] font-semibold cursor-pointer text-on-surface-variant">
-            {coverage.missing.length} {coverage.missing.length > 1 ? 'texts' : 'text'} Forma read on the page {coverage.missing.length > 1 ? 'are' : 'is'} not in the report
+            {coverage.missing.length} {coverage.missing.length > 1 ? 'texts' : 'text'} on your page {coverage.missing.length > 1 ? 'are' : 'is'} not in the report
           </summary>
           <ul className="flex flex-col gap-1.5 mt-2">
             {coverage.missing.map((text, i) => (

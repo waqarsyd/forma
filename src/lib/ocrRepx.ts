@@ -237,11 +237,14 @@ export function ocrSummary(layout: DetectedLayout, options: Pick<OcrRepxOptions,
   const tables = pages.flat().filter((c) => c.kind === 'table').length;
   const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
   const plural = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
+  // In the user's terms (2026-11-11, the full audit, PL-07): it said "read by
+  // OCR in the browser, with no model involved" and gave each unsure word's
+  // confidence until then. What it found and what to check is what is said.
   const out = [
     `# ${options.title || 'Report read from the page'}`,
     '',
-    `Built from the text of ${plural(layout.pages.length, 'page')} read by OCR in the browser, with no model involved: ` +
-      `${plural(labels, 'label')} and ${plural(tables, 'table')}, on the report header${layout.pages.length > 1 ? ', a page break before each page after the first' : ''}.`,
+    `Built from your ${plural(layout.pages.length, 'page')}: ${plural(labels, 'text')} and ${plural(tables, 'table')}, each where the page printed it` +
+      `${layout.pages.length > 1 ? ', and each page after the first on a page of its own' : ''}.`,
     '',
   ];
   const flagged = layout.pages.flatMap((p, i) =>
@@ -250,23 +253,22 @@ export function ocrSummary(layout: DetectedLayout, options: Pick<OcrRepxOptions,
       .map((t) => ({ page: i + 1, t })),
   );
   if (flagged.length) {
+    const one = flagged.length === 1;
     out.push(
       options.dropFlagged
-        ? `**${plural(flagged.length, 'text')} held a word read at low confidence and ${flagged.length === 1 ? 'was' : 'were'} left out.** What ${flagged.length === 1 ? 'it' : 'they'} read, to add by hand if needed:`
-        : `**${plural(flagged.length, 'text')} ${flagged.length === 1 ? 'holds' : 'hold'} a word read at low confidence**, named \`lowConfidence…\` in the report so the designer's report explorer finds ${flagged.length === 1 ? 'it' : 'them'}. Check each against the source:`,
+        ? `**Check these against the page.** ${plural(flagged.length, 'text')} ${one ? 'was' : 'were'} hard to make out and ${one ? 'was' : 'were'} left out; add ${one ? 'it' : 'them'} by hand if needed:`
+        : `**Check these against the page.** ${plural(flagged.length, 'text')} ${one ? 'holds a word that was' : 'hold words that were'} hard to make out, named \`lowConfidence…\` in the report so the designer's report explorer finds ${one ? 'it' : 'them'}:`,
       '',
-      '| Page | Text | Confidence |',
-      '| --- | --- | --- |',
-      ...flagged.map(({ page, t }) => `| ${page} | ${cell(t.text)} | ${Math.round(t.confidence)} |`),
+      '| Page | Text |',
+      '| --- | --- |',
+      ...flagged.map(({ page, t }) => `| ${page} | ${cell(t.text)} |`),
       '',
     );
-  } else {
-    out.push('Every word was read at or above the confidence threshold.', '');
   }
   if (layout.ignored) {
-    out.push(`${plural(layout.ignored, 'reading was', 'readings were')} set aside as pictures, such as a chart's bars or a logo, and ${layout.ignored === 1 ? 'is' : 'are'} not in the report.`, '');
+    out.push(`${plural(layout.ignored, 'mark')} on the page, such as a chart's bars or a logo, ${layout.ignored === 1 ? 'is' : 'are'} not in the report.`, '');
   }
-  out.push('Borders, fills, images and charts are not read by OCR. Describe them in the chat, or generate from the same page to have the model draw them.');
+  out.push('Borders, fills, pictures and charts are not in this version. Describe them in the chat to have them drawn, and check the figures and fonts against the page in the Preview.');
   return out.join('\n');
 }
 /** What the app can tell about a written file before export: whether it opens, and the audit's errors. */

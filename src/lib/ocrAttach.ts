@@ -127,10 +127,11 @@ export function buildWithReader(
   }
   const skeleton = mergePageSkeletons(skeletons[0], ...skeletons.slice(1));
   const texts = pageTextsOf(first);
+  // No `readBy` since 2026-11-11 (the full audit, PL-07): the Spec says what
+  // the report is, not which part of Forma read the page.
   const design = skeletonToDesign(skeleton, {
     texts,
     title: pages[0].meta.file.replace(/\.[^.]+$/, '') || 'Report read from the page',
-    readBy: "Forma's box reader, from the text OCR read",
   });
   return {
     title: design.title,

@@ -28,7 +28,8 @@
  * - **Forma's own draft is the backup.** When the AI cannot answer (a quota,
  *   the network, a local server that is off), the user gets the draft built
  *   from the vision model and OCR, OCR alone, or Forma's own model for a
- *   description, instead of an error. The reply says which and why.
+ *   description, instead of an error. The reply says why, in plain words,
+ *   and calls it a quicker version, never a draft of Forma's (2026-11-11).
  *
  * The briefs are hints rather than instructions on purpose. Version 2 of the
  * vision model placed only 11.6% of controls where they belong
@@ -40,12 +41,11 @@ import type { ReportSkeleton, SkeletonRole } from './reportSkeleton';
 import type { ReportElement, ReportLayout } from './reportTypes';
 import { unitsPerInch } from './reportGeometry';
 
-/**
- * The parts of Forma a request can draw on, in the order they act. Since
- * 2026-11-05 the AI either designs the report (`ai`) or corrects Forma's
- * draft (`corrector`), and in the second case Forma builds it (`builder`).
+/*
+ * `TeamMember`, the list of parts that took part in a request, went on
+ * 2026-11-11 (the full audit's RH-08): it existed for a reply that named
+ * them, and since 2026-11-10 the reply is the result and names nobody.
  */
-export type TeamMember = 'ocr' | 'vision' | 'reader' | 'house' | 'memory' | 'ai' | 'corrector' | 'builder' | 'checks';
 
 /** Who read a draft's layout: the vision model from the picture, or the box reader from OCR's texts (boxReader.ts). */
 export type LayoutReader = 'vision' | 'reader';
@@ -185,25 +185,32 @@ export type DraftSource = 'vision' | 'reader' | 'ocr' | 'offline';
  * quoted a whole sentence about Google for a local model.
  */
 export function failureReason(message: string): string {
+  /*
+   * Six reasons, each in plain words (2026-11-11, the full audit's CV-07).
+   * Until then a local model's failure was "its context window is too small
+   * for the request" or "it spent its whole answer reasoning", and anything
+   * else was quoted as the provider wrote it ("The model returned no
+   * report."): how a model works, not why the person got a quicker version.
+   */
   if (/offline/i.test(message)) return 'you are offline';
-  if (/quota|\b429\b|RESOURCE_EXHAUSTED|rate limit/i.test(message)) return 'its free quota is used up for now';
-  if (/\b503\b|overloaded|UNAVAILABLE|\bbusy\b|high demand/i.test(message)) return 'it is overloaded right now';
+  if (/quota|\b429\b|RESOURCE_EXHAUSTED|rate limit|free limit/i.test(message)) return 'its free limit is used up for now';
+  if (/\b503\b|overloaded|UNAVAILABLE|\bbusy\b|high demand/i.test(message)) return 'it is busy right now';
   if (/Failed to fetch|NetworkError|ECONNREFUSED|Load failed|could not reach|could not be reached/i.test(message)) return 'it could not be reached';
-  if (/context window/i.test(message)) return 'its context window is too small for the request';
-  if (/reasoning and wrote none/i.test(message)) return 'it spent its whole answer reasoning';
-  const first = message.trim().split(/(?<=\.)\s/)[0] || 'it returned an error';
-  return first.length > 160 ? `${first.slice(0, 159)}…` : first;
+  if (/context window|too long|too large|token limit|maximum context/i.test(message)) return 'the request was too long for it';
+  // A seventh, beside the audit's six: a key refused is something the person can act on.
+  if (/api[ _-]?key|API_KEY_INVALID|\b401\b|\b403\b|PERMISSION_DENIED|unauthori[sz]ed/i.test(message)) return 'it did not accept the key';
+  return 'it gave no answer';
 }
 
 /**
- * The reply when the AI could not answer and Forma's own draft stands in:
- * why, and what the draft is, in the user's terms (2026-11-10; it named the
- * vision model and OCR until the full audit).
+ * The reply when the AI could not answer and a quicker version made by Forma
+ * stands in: why, and what to do, in the user's terms (2026-11-11, the full
+ * audit's CV-07; it said "Forma's own draft of the page" until then). A
+ * report described in words gets a first draft from the description.
  */
-export function fallbackReply(aiName: string, errorMessage: string): string {
-  const reason = failureReason(errorMessage).replace(/\.$/, '');
-  return (
-    `${aiName} could not answer (${reason}), so this is Forma's own draft of the page. ` +
-    `Check its figures and fonts against the source, and send the request again when ${aiName} is available to have it designed in full.`
-  );
+export function fallbackReply(aiName: string, errorMessage: string, described = false): string {
+  const reason = failureReason(errorMessage);
+  return described
+    ? `${aiName} couldn't take this one (${reason}), so this is a first draft from your description. Send it again later to have it designed in full.`
+    : `${aiName} couldn't take this one (${reason}), so here is a quicker version of the page. Check the figures and fonts against your source, and send the request again later for the full design.`;
 }

@@ -82,7 +82,7 @@ import type {
 import { loadGemini, isMissingApiKey } from './lib/geminiClient';
 import { answeringModel, effectiveProvider, isVisionOnly, pageReaderOf, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
 import type { SettingsSection } from './components/SettingsDialog';
-import type { DraftSource, TeamMember } from './lib/formaTeam';
+import type { DraftSource } from './lib/formaTeam';
 import type { JobPlan } from './lib/jobPlan';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
 import { clearCachedModel, onModelCacheChange, readCachedModel, readCachedModelSet, readDailyModel } from './lib/modelCache';
@@ -127,7 +127,6 @@ import {
   tickSimulated,
   applyStreamProgress,
   finishProgress,
-  stepLabel,
   IDLE_PROGRESS,
   STEP_INTERVAL_MS,
   type GenerationProgress,
@@ -610,24 +609,13 @@ async function ingestFile(file: File, uploadId: string, reportUnit?: string): Pr
         const extracted = await extractPdfPageText(page, n, reportUnit);
         if (extracted) {
           out.texts.push({ id: `${Date.now()}-${name}-p${n}`, uploadId, file: name, page: n, text: extracted.text });
-          // The per-page string cap used to drop the tail of a dense page in
-          // silence, so missing accuracy at the bottom of a busy page looked
-          // like a model failure. Say it out loud instead.
-          if (extracted.omitted > 0) {
-            out.notices.push(
-              `"${name}" page ${n} has more text than can be read exactly — ${extracted.omitted} ` +
-              `${extracted.omitted === 1 ? 'string was' : 'strings were'} left out, and that part of the page ` +
-              `will be read from the image instead.`
-            );
-          }
-        } else if (n === 1) {
-          out.notices.push(
-            // When it is sent, behind the scenes (2026-11-03); the chip that
-            // showed how far it had got went then, and this note with it on
-            // 2026-11-06 (the workspace audit).
-            `"${name}" looks like a scan, with no text layer: its pages are read as pictures when you send it.`
-          );
+          // A dense page's tail past the per-page string cap is read from the
+          // image instead. A notice said so, with a count of the strings left
+          // out, until 2026-11-11 (the full audit, CV-12): it told how the page
+          // was read and changed nothing the user could do.
         }
+        // A scan, with no text layer, is read as pictures when it is sent. A
+        // notice said that too until 2026-11-11 (CV-25), for the same reason.
       }
 
       if (pageCount > readable) {
@@ -961,10 +949,14 @@ type TeamInput = {
   described?: ReportDescriptionRequest;
 };
 
-/** What the team brought to a run: the brief the AI is told, who took part, and the draft that stands in if the AI fails. */
+/**
+ * What the team brought to a run: the brief the AI is told and the quicker
+ * version that stands in if the AI fails. Who took part is not kept
+ * (2026-11-11, the full audit's RH-08): the reply is the result, and names
+ * nobody.
+ */
 type TeamPlan = {
   brief: string;
-  members: TeamMember[];
   draft: (() => Promise<{ result: DesignResult; source: DraftSource } | null>) | null;
   /**
    * OCR's own layout of the source, which the audit checks the AI's REPX
@@ -979,7 +971,7 @@ type TeamPlan = {
   correct?: DraftRequest | null;
 };
 
-const NO_TEAM: TeamPlan = { brief: '', members: [], draft: null };
+const NO_TEAM: TeamPlan = { brief: '', draft: null };
 
 /**
  * The staged pages Forma's vision model reads, by index (2026-11-04): the
@@ -1949,8 +1941,12 @@ export default function App() {
   const [projectQuery, setProjectQuery] = useState<string | null>(null);
   /** The description the last run was started from, which Test data describes the report by. */
   const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
-  /** What a part of Forma's team is doing before the AI is asked, for the progress card; null when nothing. */
-  const [teamStage, setTeamStage] = useState<string | null>(null);
+  /*
+   * `teamStage`, what a part of Forma's team was doing before the AI was
+   * asked ("Forma's vision model is reading the layout"), went on 2026-11-11
+   * (the full audit's WS-06 and WS-08): the progress bar's value text was its
+   * last reader, and it says "Designing the report" and how far it has got.
+   */
   /**
    * AI-generated sample rows for the Preview, keyed by bound field. Null is
    * the one-placeholder-record preview. Cleared whenever the set of bound
@@ -2956,16 +2952,20 @@ export default function App() {
       usage: null,
     };
     setResult(newResult);
-    recordRevision('Read from the page', newResult);
+    // Labelled and said by result, not by the part that read the page
+    // (2026-11-11, the full audit's WS-05 and CV-11). This is the page's text
+    // where it printed, the same copy handleReaderBuild keeps before its build,
+    // so it carries the same label (and RevisionsPanel reads the old one,
+    // "Read from the page", as this).
+    recordRevision('Your page as printed', newResult);
     setActiveTab('ui');
     const unsure = built.flagged
-      ? ` ${built.flagged} ${built.flagged === 1 ? 'text holds a word' : 'texts hold words'} read at low confidence, ` +
-        `named lowConfidence… in the report: check ${built.flagged === 1 ? 'it' : 'them'} against the source.`
+      ? ' A few words were hard to make out; they are marked in the report, so check them against your page.'
       : '';
     setMessages(prev => [...prev, {
       id: nextMessageId(),
       role: 'assistant',
-      text: `Built "${built.title}" from the page's text, every line where it was printed.${unsure}`,
+      text: `Here is "${built.title}", built from the text of your page, every line where it was printed.${unsure}`,
       result: newResult,
       standalone: true,
     }]);
@@ -2979,18 +2979,20 @@ export default function App() {
    * before it, so either is one click away in Revisions.
    */
   const handleReaderBuild = (built: ReaderBuiltReport, copy: OcrBuiltReport | null) => {
-    if (copy) recordRevision('Read from the page', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: asConfigured(copy.repxContent), usage: null });
+    // Labelled by result (2026-11-11, the full audit's WS-05): the copy is the
+    // page as it printed, the build the report made from it.
+    if (copy) recordRevision('Your page as printed', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: asConfigured(copy.repxContent), usage: null });
     const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: asConfigured(built.repxContent), usage: null };
     setResult(newResult);
-    recordRevision("Forma's box reader", newResult);
+    recordRevision('From your page', newResult);
     setActiveTab('ui');
-    const bands = built.skeleton.bands.filter((b) => b.controls.length).length;
     setMessages(prev => [...prev, {
       id: nextMessageId(),
       role: 'assistant',
       text:
-        `Built "${built.title}" from the page: ${bands} ${bands === 1 ? 'band' : 'bands'}, with the records printing from bound fields.` +
-        (copy ? ' The page exactly as it was read is the revision before this one.' : ''),
+        `Here is "${built.title}", built from your page, with its records printing from fields.` +
+        (built.placeholders ? ' A few captions still need their words; they are marked in the report.' : '') +
+        (copy ? ' Your page exactly as it printed is the version before this one, in Revisions.' : ''),
       result: newResult,
       standalone: true,
     }]);
@@ -3976,13 +3978,11 @@ export default function App() {
     if (!input) return NO_TEAM;
     // The settings worked out for this request, not the stored ones (lib/autoConfig.ts).
     const config = effectiveConfig();
-    const members: TeamMember[] = [];
     let brief = '';
     let draft: TeamPlan['draft'] = null;
     let evidence: ReportLayout | null = null;
     let correct: DraftRequest | null = null;
     if (input.read.length) {
-      members.push('ocr');
       // OCR's own picture of the source, every row it read, for the audit
       // to check the AI's REPX against (2026-11-05, lib/ocrAttach.ts).
       const { sourceLayoutOf } = await import('./lib/ocrAttach');
@@ -4000,14 +4000,13 @@ export default function App() {
           import('./lib/formaTeam'),
         ]);
         const first = input.firstImage.meta;
-        setTeamStage("Forma's vision model is reading the layout");
         // The first page, and the upload's last when it has more (2026-11-04),
         // whose footers and totals the first does not show.
         const [firstReading, lastReading] = await (async () => {
           const one = await readSkeleton(vision, input.firstImage!.src, signal);
           const two = input.lastImage ? await readSkeleton(vision, input.lastImage.src, signal).catch(() => null) : null;
           return [one, two] as const;
-        })().finally(() => setTeamStage(null));
+        })();
         if (!firstReading.skeleton) throw new Error('its answer had no page line');
         const reading = { skeleton: mergePageSkeletons(firstReading.skeleton, ...(lastReading?.skeleton ? [lastReading.skeleton] : [])) };
         const paper = reading.skeleton.paper === 'Custom' ? config.pageSize : reading.skeleton.paper;
@@ -4019,7 +4018,6 @@ export default function App() {
         brief = draftBrief(reading.skeleton, design.layout, config.unit);
         const { draftToText } = await import('./lib/draftText');
         correct = { text: draftToText(reading.skeleton, design.used), texts, title: design.title, readBy: "Forma's vision model, corrected by the AI" };
-        members.push('vision');
         const visionResult: DesignResult = { content: design.markdown, timestamp: new Date(), title: design.title, layout: design.layout, repxContent: design.repx, usage: null };
         draft = async () => ({ result: visionResult, source: 'vision' });
       } catch (err) {
@@ -4036,7 +4034,6 @@ export default function App() {
         const [{ draftBrief }, { draftToText }] = await Promise.all([import('./lib/formaTeam'), import('./lib/draftText')]);
         brief = draftBrief(built.skeleton, built.layout, config.unit, 'reader');
         correct = { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title, readBy: "Forma's box reader, corrected by the AI" };
-        members.push('reader');
         const readerResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
         draft = async () => ({ result: readerResult, source: 'reader' });
       }
@@ -4061,13 +4058,12 @@ export default function App() {
         const [{ loadFormaModel }, { houseStyleBrief }] = await Promise.all([import('./lib/formaModel'), import('./lib/formaTeam')]);
         const model = await loadFormaModel();
         brief = houseStyleBrief(model.style, model.reports, config.unit);
-        if (brief) members.push('house');
       } catch (err) {
         console.warn("Forma's own model could not be loaded; the AI designs without its house style.", err);
       }
       draft = async () => ({ result: (await offlineDesign(described, described.description)).result, source: 'offline' });
     }
-    return { brief, members, draft, evidence, correct };
+    return { brief, draft, evidence, correct };
   };
 
   const runGeneration = async (
@@ -4146,7 +4142,6 @@ export default function App() {
       // The user's remembered preferences (lib/memory.ts), as their own block
       // ahead of the request, never mixed into the words they typed.
       const remembered = await import('./lib/memory').then(m => m.instructionsOf(m.readMemory())).catch(() => '');
-      if (remembered && team.members.length) team.members.push('memory');
       // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE).
       const db = databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
       const database = db ? db.designSection(activeDatabase!, { query: activeQuery, words: [currentPrompt, team.brief, ...currentTexts.map((t) => t.text)].join('\n') }) : undefined;
@@ -4320,19 +4315,18 @@ export default function App() {
       recordRevision(open ? 'Refined' : 'Generated', newResult);
       setActiveTab('ui');
 
-      // Add assistant message, with who took part when more than the AI did.
-      // Who did what is not said (2026-11-10, the full audit, the owner's
-      // rule): the reply is the result. Mock mode alone says a canned report
+      // The reply is the result (2026-11-10, the full audit, the owner's
+      // rule): who did what is not said. Mock mode alone says a canned report
       // stood in, so nobody reads a mock as the AI's work (agent audit item 96).
-      const credits = team.members.length ? await import('./lib/formaTeam').then(m => m.teamLine(MOCK_MODE)).catch(() => '') : '';
+      const credits = MOCK_MODE ? await import('./lib/formaTeam').then(m => m.teamLine(true)).catch(() => '') : '';
       // A redesign says what it changed and can be undone, as an edit in
-      // place can, and what the REPX checks found (2026-11-05,
-      // lib/agentEdit.ts): an agent reports its own checking.
+      // place can, and what is wrong with the file, errors only and in plain
+      // words (2026-11-11, the full audit's CV-05; lib/agentEdit.ts).
       const [changed, checked] = newResult.repxContent
         ? await Promise.all([import('./lib/agentEdit'), import('./lib/repxAudit')])
             .then(([m, a]) => [
               open?.repxContent ? m.changesMarkdown(m.describeChanges(open.repxContent, newResult.repxContent!)) : '',
-              m.checksMarkdown(a.auditRepx(newResult.repxContent, newResult.layout).findings),
+              m.checksMarkdown(a.auditRepx(newResult.repxContent, newResult.layout).findings.filter((f) => f.severity === 'error')),
             ])
             .catch(() => ['', ''])
         : ['', ''];
@@ -4396,8 +4390,8 @@ export default function App() {
         friendlyMessage = 'Network error. Please check your internet connection.';
       }
 
-      // Forma's own draft stands in for the AI that could not answer
-      // (lib/formaTeam.ts), rather than the request ending in an error. Not
+      // A quicker version Forma makes stands in for the AI that could not
+      // answer (lib/formaTeam.ts), rather than the request ending in an error. Not
       // over an open report (2026-11-07, agent audit item 21): a refinement
       // that failed replaced the report the person had with an OCR draft of
       // the picture they sent to change it.
@@ -4409,13 +4403,15 @@ export default function App() {
             if (signal.aborted) return;
             const drafted = { ...made.result, repxContent: asConfigured(made.result.repxContent ?? '') };
             setResult(drafted);
-            recordRevision("Forma's own draft", drafted);
+            // Named by what it is to the person (2026-11-11, the full audit's CV-07): "Forma's own draft" until then.
+            recordRevision('First version', drafted);
             setActiveTab('ui');
             setMessages(prev => [...prev, {
               id: nextMessageId(),
               role: 'assistant',
-              // The provider's own words when the error carries them (agent audit item 15).
-              text: fallbackReply(aiName, err?.cause?.message || err?.message || friendlyMessage),
+              // The provider's own words when the error carries them (agent
+              // audit item 15), read for one of a few plain reasons.
+              text: fallbackReply(aiName, err?.cause?.message || err?.message || friendlyMessage, made.source === 'offline'),
               result: drafted,
             }]);
             return;
@@ -4937,37 +4933,39 @@ export default function App() {
         usage: null,
       };
       setResult(newResult);
-      recordRevision("Forma's vision model", newResult);
+      // Labelled and said by result (2026-11-11, the full audit's WS-05 and
+      // WS-08): the label and the reply named the vision model, and the reply
+      // counted the captions it read, the lines of its answer it could not
+      // read and the pages it looked at, until then.
+      recordRevision('From your page', newResult);
       setActiveTab('ui');
-      const skipped = reading.problems.length
-        ? ` ${reading.problems.length} ${reading.problems.length === 1 ? 'line of its answer could not be read and was' : 'lines of its answer could not be read and were'} left out.`
-        : '';
-      const more = staged.length > pagesToRead.length
-        ? pagesToRead.length > 1
-          ? ` Its first and last pages were read, of ${staged.length}.`
-          : ` Only the first of the ${staged.length} pages was read.`
-        : '';
+      if (reading.problems.length) console.debug(`${reading.problems.length} line(s) of the page's reading were not understood and were left out.`, reading.problems);
+      // With no text read at all every caption is a placeholder, and "a few"
+      // would understate it, so that case says what handleReaderBuild says.
       say(
-        `Read "${design.title}" with Forma's vision model: ${design.read} of ${design.read + design.placeholders} titles and captions took their words from the page.${skipped}${more}`,
+        !design.placeholders
+          ? `Here is "${design.title}", built from your page.`
+          : design.read
+            ? `Here is "${design.title}". A few words were hard to make out; they are marked in the report, so check them against your page.`
+            : `Here is "${design.title}", built from your page. Its captions still need their words; they are marked in the report.`,
         newResult,
       );
     } catch (err: any) {
       if (turn.signal.aborted) return;
-      const why = err?.message || 'it did not answer';
+      console.warn('The page could not be read for its layout.', err);
       if (read.length) {
         const { buildFromRead } = await import('./lib/ocrAttach');
         const { unit, pageSize } = effectiveConfig();
         const built = buildFromRead(read, unit, pageSize);
         const banded = await readerBuild(read);
         if (turn.signal.aborted) return;
-        if (banded || built) {
-          say(`The page could not be read the usual way (${why}), so this report was built from its text alone.`);
-          if (banded) handleReaderBuild(banded, built);
-          else if (built) handleOcrBuild(built);
-          return;
-        }
+        // Built from the page's text: the build says "Here is ..." itself, so
+        // nothing more is said here (it said the page "could not be read the
+        // usual way" and why until 2026-11-11).
+        if (banded) return handleReaderBuild(banded, built);
+        if (built) return handleOcrBuild(built);
       }
-      say(`Forma's vision model could not read the page: ${why}.`);
+      say("I couldn't read that page. Try a sharper picture or a PDF.");
     } finally {
       if (!turn.signal.aborted) {
         setIsChatting(false);
@@ -6024,7 +6022,9 @@ export default function App() {
         return;
       }
       if (!done.changed) {
-        say(`Nothing changed: the texts are already in ${language}.`);
+        // Said as it is (2026-11-11, the full audit's WS-29): the texts came
+        // back unchanged, which is not proof they were already in the language.
+        say('Nothing changed: the texts came back as they were. Try naming the language differently.');
         return;
       }
       const next: DesignResult = { ...open, repxContent: asConfigured(done.xml), timestamp: new Date() };
@@ -6113,11 +6113,11 @@ export default function App() {
   /** Shared by both exits. Returns true when the caller should stop. */
   const blockedByInvalidRepx = (): boolean => {
     if (!repxCheck || repxCheck.ok) return false;
-    setError(
-      `This generation produced REPX that no designer will open — ${repxCheck.message} ` +
-      `That is a bad generation rather than something to repair by hand: generate again, ` +
-      `and simplify the design if it keeps happening. The spec and the mockup are still fine to read.`
-    );
+    // In plain words (2026-11-11, the full audit's WS-40): it said "This
+    // generation produced REPX that no designer will open" and quoted the
+    // parser. What failed is in the console for whoever looks.
+    console.warn('The report file does not open:', repxCheck.message);
+    setError("This report's file is incomplete, so the designer can't open it. Send the request again.");
     return true;
   };
 
@@ -6350,7 +6350,8 @@ export default function App() {
     if (!now?.repxContent) return null;
     const done = agent.applyEdits(now.repxContent, make(agent, now.repxContent));
     if (!done.changed) {
-      setSaveNotice(done.declined[0] ?? 'Nothing needed changing');
+      // Without the edit's name (2026-11-11, the full audit's CV-15).
+      setSaveNotice(done.declined[0] ? agent.plainDeclined(done.declined[0]) : 'Nothing needed changing');
       return null;
     }
     setResult({ ...now, repxContent: done.xml });
@@ -7003,8 +7004,12 @@ export default function App() {
                     layout: revision.snapshot.layout,
                   } as DesignResult;
                   setResult(restored);
-                  recordRevision(`Restored "${revision.label}"`, restored);
-                  setSaveNotice(`Restored the version from ${new Date(revision.at).toLocaleTimeString()}.`);
+                  // By its time, as the notice says it (2026-11-11, the full
+                  // audit's WS-05): by its label until then, which could be
+                  // the name of a part of Forma.
+                  const at = new Date(revision.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  recordRevision(`Restored the ${at} version`, restored);
+                  setSaveNotice(`Restored the ${at} version.`);
                 }}
               />
             </Suspense>
@@ -7143,7 +7148,9 @@ export default function App() {
                 />
               </Suspense>
             )}
-            {result && <span className="wb-rev">{result.layout?.sections?.length ?? 0} bands</span>}
+            {/* A count of the report's bands sat beside the title until
+                2026-11-11 (the full audit's WS-25): a readout of how the
+                report is built, beside its name. */}
             {/* The project's pin, the list's own (2026-11-06); the thumbs are the
                 reply's, under it, as ChatGPT's and Gemini's are. */}
             {result && openProjectId && savedReports.some((r) => r.id === openProjectId) && (
@@ -7375,7 +7382,7 @@ export default function App() {
                         if (!now?.repxContent || !bindTarget.length) return;
                         const done = agent.applyEdits(now.repxContent, bindTarget.map((control) => ({ op: 'bind' as const, control, field })));
                         if (!done.changed) {
-                          setSaveNotice(done.declined[0] ?? 'Nothing needed changing');
+                          setSaveNotice(done.declined[0] ? agent.plainDeclined(done.declined[0]) : 'Nothing needed changing');
                           return;
                         }
                         const bound = { ...now, repxContent: done.xml };
@@ -7699,7 +7706,10 @@ export default function App() {
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={Math.round(progress.percent)}
-                        aria-valuetext={teamStage ?? stepLabel(progress)}
+                        /* The task and how far it has got, never its steps
+                           (2026-11-11, the full audit's WS-06): it read
+                           "Constructing DevExpress XML..." until then. */
+                        aria-valuetext={`Designing the report, ${Math.round(progress.percent)}%`}
                       >
                         <WorkingDots />
                         {/* The task, never its steps (2026-11-06), as Stitch's "Creating prototype…". */}
@@ -7981,7 +7991,7 @@ export default function App() {
                       setFullScreenImage(null);
                       setOcrReview(uploadId);
                     }}
-                    title="See the text read on this page, and build a report from it with no model"
+                    title="See the text read on this page, and build a report from it"
                   >
                     Text read
                   </button>

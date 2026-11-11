@@ -172,7 +172,18 @@ describe('skeletonToDesign', () => {
     const design = skeletonToDesign(skeleton, { texts });
     expect(design.layout.sections.map((s) => s.name)).toEqual(['Report header', 'Page header', 'Group header', 'Detail', 'Group footer', 'Report footer', 'Page footer']);
     expect(design.layout.sections[1].elements[0].rows?.[0].cells.map((c) => c.content)).toEqual(['Item', 'Quantity']);
-    expect(design.markdown).toContain('3 of 4 titles and captions');
+    expect(design.markdown).toContain('1 caption still needs its words.');
+    expect(design.markdown).toContain('Check the figures and fonts against the page in the Preview.');
+  });
+
+  // The full audit (2026-11-11, PL-07): the Spec says what the report is, never which part of Forma read it.
+  it('writes a Spec in plain words, whoever read the page', () => {
+    for (const readBy of [undefined, "Forma's box reader, from the text OCR read", "Forma's vision model"]) {
+      const { markdown } = skeletonToDesign(skeleton, { texts, readBy });
+      expect(markdown).toMatch(/^# /);
+      expect(markdown).not.toMatch(/OCR|box reader|own model|vision model|learned from|no model|AI service|the model/i);
+    }
+    expect(skeletonToDesign(skeleton).markdown).toMatch(/4 captions still need their words\./);
   });
 });
 

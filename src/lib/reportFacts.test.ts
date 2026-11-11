@@ -77,7 +77,21 @@ describe('a question answered with no AI', () => {
   it('answers what the report prints, and what its data has besides', () => {
     const answer = answerFromFacts('Which fields does this report use?', f)!;
     expect(answer).toMatch(/^It prints 5 fields: \[Region\], \[CompanyName\], \[City\], \[CustomerID\], \[Credit\]\. Its data has 6 fields; not printed: \[Phone\]\./);
-    expect(answer).toMatch(/Counted from the report file by Forma, with no AI\._$/);
+    // The answer alone (2026-11-11, the full audit's CV-08): no "Counted ... by Forma, with no AI".
+    expect(answer).toMatch(/\[Phone\]\.$/);
+    expect(answer).not.toMatch(/Counted|with no AI|by Forma/);
+  });
+
+  it('counts the parts by kind in plain names, and says a blank total plainly', () => {
+    const many = reportFacts(REPORT);
+    expect(answerFromFacts('How many controls are there?', { ...many, controls: 7, byType: { XRLabel: 6, XRPageInfo: 1 } })).toBe('It has 7 parts: 6 texts and a page number.');
+    expect(answerFromFacts('How many elements?', { ...many, controls: 4, byType: { XRLabel: 1, XRTable: 2, XRLine: 1 } })).toBe('It has 4 parts: 2 tables, a text and a line.');
+    // The two kinds whose plural is not an added "s".
+    expect(answerFromFacts('How many elements?', { ...many, controls: 3, byType: { XRTableOfContents: 2, XRCharacterComb: 1 } })).toBe('It has 3 parts: 2 tables of contents and a set of character boxes.');
+    expect(answerFromFacts('How many elements?', { ...many, controls: 3, byType: { XRCharacterComb: 2, XRTableOfContents: 1 } })).toBe('It has 3 parts: 2 sets of character boxes and a table of contents.');
+    const blank = { ...many, totals: [{ control: 'labelTotal', band: 'ReportFooter', func: 'Sum', field: 'Credit', scope: null }] };
+    expect(answerFromFacts('What totals are there?', blank)).toBe('One total: the sum of [Credit] in the report footer, but it is not set to add anything up, so it prints blank.');
+    expect(answerFromFacts('How many controls are there?', many)).not.toMatch(/XR|Label\b|PageInfo|running scope/);
   });
 
   it('answers its totals, groups, bands, parameters, controls and paper', () => {
@@ -85,7 +99,7 @@ describe('a question answered with no AI', () => {
     expect(answerFromFacts('Is it grouped?', f)).toMatch(/^It is grouped by \[Region\]\./);
     expect(answerFromFacts('how many bands are there', f)).toMatch(/^It has 6 bands:/);
     expect(answerFromFacts('Does it have parameters?', f)).toMatch(/^It has no parameters\./);
-    expect(answerFromFacts('How many labels are on it?', f)).toMatch(/^It has 5 controls: 5 Label\./);
+    expect(answerFromFacts('How many labels are on it?', f)).toMatch(/^It has 5 parts: 5 texts\./);
     expect(answerFromFacts('What paper is it on?', f)).toMatch(/^It prints on A4, landscape\./);
   });
 

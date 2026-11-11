@@ -103,12 +103,20 @@ describe('layoutToReport and ocrSummary', () => {
   it('lists the unsure text in the spec, to check against the source, or says it was left out', () => {
     const md = ocrSummary(layout, { title: 'Scan' });
     expect(md).toMatch(/^# Scan\n/);
-    expect(md).toMatch(/2 pages read by OCR in the browser, with no model involved: 3 labels and 1 table/);
-    expect(ocrSummary(layout, { dropFlagged: true })).toMatch(/2 labels and 1 table/);
-    expect(md).toContain('| 1 | Smudge | 40 |');
+    expect(md).toMatch(/Built from your 2 pages: 3 texts and 1 table, each where the page printed it/);
+    expect(ocrSummary(layout, { dropFlagged: true })).toMatch(/2 texts and 1 table/);
+    expect(md).toContain('**Check these against the page.** 1 text holds a word that was hard to make out');
+    expect(md).toContain('| 1 | Smudge |');
     const dropped = ocrSummary(layout, { dropFlagged: true });
     // Left out of the report, not out of sight: the spec still says what it read.
-    expect(dropped).toMatch(/1 text held a word read at low confidence and was left out\.\*\* What it read, to add by hand if needed:/);
-    expect(dropped).toContain('| 1 | Smudge | 40 |');
+    expect(dropped).toMatch(/\*\*Check these against the page\.\*\* 1 text was hard to make out and was left out; add it by hand if needed:/);
+    expect(dropped).toContain('| 1 | Smudge |');
+  });
+
+  // The full audit (2026-11-11, PL-07): the Spec names no part of Forma and no confidence.
+  it('writes the spec in plain words', () => {
+    for (const md of [ocrSummary(layout, { title: 'Scan' }), ocrSummary(layout, { dropFlagged: true })]) {
+      expect(md).not.toMatch(/OCR|box reader|own model|vision model|learned from|no model|AI service|\bconfidence\b/i);
+    }
   });
 });

@@ -68,6 +68,16 @@ describe('generateOffline', () => {
     expect(text).toEqual(expect.arrayContaining(['Ann', 'Bob', 'Cy', 'Sales', 'Stores', 'Net Pay', '300.00', '50.00', '350.00', '35.00', 'Grand total']));
   });
 
+  // The full audit (2026-11-11, PL-07): the Spec says what the report is, never what made it.
+  it('writes its Spec in plain words', () => {
+    for (const description of ['A payroll report grouped by department, with totals', 'an invoice', 'Price labels for the shop']) {
+      const { markdown, title } = generateOffline(model, { description });
+      expect(markdown.startsWith(`# ${title}\n`)).toBe(true);
+      expect(markdown).toMatch(/^Laid out as an? [a-z ]+ on \w+/m);
+      expect(markdown).not.toMatch(/OCR|box reader|own model|vision model|learned from|no model|AI service|AI provider/i);
+    }
+  });
+
   it('takes a pasted schema over the words, and a title when given one', () => {
     const design = generateOffline(model, {
       description: 'an invoice',

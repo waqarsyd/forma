@@ -278,12 +278,15 @@ describe('a report from a page OCR read', () => {
   const ocr: OcrPage = { width: 827, height: 1169, dpi: 100, lines: linesOf(boxes).map((l) => lineOfWords(l.boxes.map((k) => boxes[k]))) };
   const read = (o: OcrPage) => [{ meta: { uploadId: 'u1', file: 'sales.png' }, read: { ocr: o, flagged: 0, lines: o.lines.length } }];
 
-  it("puts the texts OCR read in bands, records bound to fields, as Forma's box reader", () => {
+  it('puts the texts OCR read in bands, records bound to fields', () => {
     const built = buildWithReader(read(ocr), model, 'A4')!;
     expect(built.skeleton.bands.map((b) => b.kind)).toContain('Detail');
     expect(built.repxContent).toMatch(/ControlType="DetailBand"[^>]*><Controls>/);
     expect(built.repxContent).toMatch(/Expression="\[\w+\]"/);
-    expect(built.markdown).toContain("Read from the picture by Forma's box reader, from the text OCR read: A4");
+    // The Spec names the paper and counts the report's parts, never which part
+    // of Forma read the page (2026-11-11, the full audit, PL-07).
+    expect(built.markdown).toMatch(/^# .+\n\nA4, \d+ bands?, \d+ parts?\./);
+    expect(built.markdown).not.toMatch(/OCR|box reader/);
     expect(built.read).toBeGreaterThan(0);
   });
 

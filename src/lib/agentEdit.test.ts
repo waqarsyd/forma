@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, askedFor, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, parsesSoFar, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, toolSentence, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, askedFor, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, parsesSoFar, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, toolSentence, plainFinding, plainDeclined, colourWords, MAX_EDITS, PLAIN_FINDINGS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -292,10 +292,39 @@ describe('the new edits, and edits that do what they say', () => {
       { op: 'format', control: 'title', format: '{0:N0}' },
     ]).xml;
     const lines = describeChanges(before, after);
-    expect(lines).toContain('recoloured **title** (text Red)');
+    expect(lines).toContain('made **title** red');
     expect(lines).toContain('formatted **title** as "{0:N0}"');
-    expect(lines).toContain('recoloured row 1, cell 1 of **grid2** (fill Yellow)');
+    expect(lines).toContain('filled row 1, cell 1 of **grid2** with yellow');
     expect(lines.some((l) => l.startsWith('restyled'))).toBe(false);
+  });
+
+  // The full audit (2026-11-11, CV-15): colours in words, a row or column one line, declines without the edit's name.
+  it('says a colour by its name, else its hex, and never the numbers the file writes', () => {
+    expect(colourWords('0, 0, 255')).toBe('blue');
+    expect(colourWords('255, 255, 0, 0')).toBe('red');
+    expect(colourWords('0, 0, 0, 0')).toBe('transparent');
+    expect(colourWords('DarkBlue')).toBe('dark blue');
+    expect(colourWords('LightGray')).toBe('light grey');
+    expect(colourWords('18, 52, 86')).toBe('#123456');
+  });
+
+  it("merges a table's cells changed alike into one line for the row, the column or the table", () => {
+    const header = applyEdits(doc(grid), [{ op: 'color', control: 'grid', row: 1, foreColor: 'Blue' }]).xml;
+    expect(describeChanges(doc(grid), header)).toEqual(['made row 1 of **grid** blue']);
+    const column = applyEdits(doc(grid), [{ op: 'color', control: 'grid', cell: 2, backColor: '#eeeeee' }]).xml;
+    expect(describeChanges(doc(grid), column)).toEqual(['filled column 2 of **grid** with #EEEEEE']);
+    const all = applyEdits(doc(grid), [{ op: 'font', control: 'grid', bold: true }]).xml;
+    const lines = describeChanges(doc(grid), all);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^restyled every cell of \*\*grid\*\* \(/);
+    for (const line of [...lines, ...describeChanges(doc(grid), header)]) expect(line).not.toMatch(/\d+, \d+, \d+|cell \d of/);
+  });
+
+  it('says a declined edit without its name', () => {
+    expect(plainDeclined('color labelX: no control is named "labelX"')).toBe('I couldn\'t find a part called "labelX".');
+    expect(plainDeclined('move title: that part changed a moment ago; try again')).toBe('That part has changed since; try again.');
+    expect(plainDeclined('"spin": not an edit Forma can make')).toBe("That isn't something I can change in place.");
+    expect(plainDeclined('data: there is no table or view "dbo.X" in the database Shop')).toBe('There is no table or view "dbo.X" in the database Shop.');
   });
 
   // Agent audit item 16: a model with no schema writes "false" in quotes, and "false" is true.
@@ -606,6 +635,18 @@ describe('describeChanges: what the reply says changed', () => {
     ]);
   });
 
+  // The full audit (2026-11-11, CV-15): a control with no name was said by its class, "added label XRLabel".
+  it('says a control with no name by its kind, never its class', () => {
+    const unnamed = (x: number) => `<Item3 Ref="9" ControlType="XRLabel" Text="Note" LocationFloat="${x},5" SizeF="100,15" />`;
+    const added = report.replace('</Item2>\n      </Controls>\n    </Item3>', `</Item2>\n        ${unnamed(10)}\n      </Controls>\n    </Item3>`);
+    expect(added).not.toBe(report);
+    const said = describeChanges(report, added);
+    expect(said[0]).toMatch(/^added a label to the detail band/);
+    expect(describeChanges(added, report)).toEqual(['removed a label']);
+    expect(describeChanges(added, added.replace(unnamed(10), unnamed(40)))).toEqual(['moved the label to 40, 5']);
+    expect([...said, ...describeChanges(added, report)].join('\n')).not.toMatch(/XR[A-Z]/);
+  });
+
   it('says nothing for no change, and counts what is past the limit', () => {
     expect(describeChanges(report, report)).toEqual([]);
     const out = edit({ op: 'move', control: 'title', x: 1 }, { op: 'move', control: 'subtitle', x: 1 }, { op: 'move', control: 'customer', x: 1 });
@@ -613,26 +654,51 @@ describe('describeChanges: what the reply says changed', () => {
   });
 
   // The checks said aloud (2026-11-05).
-  it('says what the checks found after a redesign, or that they found nothing', () => {
+  it('says what the checks found after a redesign, errors only and in plain words', () => {
     // Nothing found is nothing said (2026-11-10, the full audit).
     expect(checksMarkdown([])).toBe('');
-    const found = Array.from({ length: 6 }, (_, i) => ({ severity: i ? 'warning' : 'error', message: `problem ${i + 1}` }));
+    const codes = ['truncated', 'summary-no-running', 'duplicate-ref', 'no-detail-band', 'crosstab-no-layout', 'not-a-known-code'];
+    const found = codes.map((code, i) => ({ severity: 'error', code, message: `problem ${i + 1}` }));
     expect(checksMarkdown(found)).toBe(
-      '**6 things worth checking**\n- error: problem 1\n- problem 2\n- problem 3\n- problem 4\n- and 2 more, listed in the REPX pane',
+      '**6 things to fix**\n' +
+        '- The file stops part-way, so the designer will not open it. Send the request again.\n' +
+        '- A total is not set to add anything up, so it prints blank.\n' +
+        '- Some parts of the file share a number, so the designer may leave them out.\n' +
+        '- The report has no section for its records, so no rows will print.\n' +
+        '- and 2 more, listed in the REPX view',
+    );
+    // An unknown code has the general sentence, and one sentence is said once.
+    expect(checksMarkdown([{ severity: 'error', code: 'x', message: 'a' }, { severity: 'error', code: 'y', message: 'b' }])).toBe(
+      '**1 thing to fix**\n- Something in the file will not print as drawn; the REPX view lists it.',
     );
   });
 
+  // The full audit (2026-11-11, CV-05): text under 12pt warned under nearly every reply, in WCAG and AYXRE terms.
+  it('says nothing of warnings, which stay in the REPX pane', () => {
+    const warnings = [
+      { severity: 'warning', code: 'a11y-text-size', message: '14 of 16 text control(s) are below 12pt (AYXRE010, WCAG 1.4.4).' },
+      { severity: 'warning', code: 'a11y-alt-text', message: '1 visual control(s) carry no AccessibleDescription (AYXRE300).' },
+      { severity: 'warning', code: 'band-taller-than-page', message: 'Detail is taller than the page.' },
+    ];
+    expect(checksMarkdown(warnings)).toBe('');
+    const withError = checksMarkdown([...warnings, { severity: 'error', code: 'expression-invalid', message: 'bad (AYXRE999)' }]);
+    expect(withError).toContain('cannot be read');
+    expect(withError).not.toMatch(/AYXRE|WCAG|control\(s\)/);
+    for (const sentence of Object.values(PLAIN_FINDINGS)) expect(sentence).not.toMatch(/AYXRE|WCAG|control\(s\)|REPX|XR[A-Z]/);
+    expect(plainFinding('band-taller-than-page')).toBe('One section is taller than the page, so each record prints on its own sheet.');
+  });
+
   it('says only what an edit brought, and nothing when it brought nothing', () => {
-    const before = [{ severity: 'warning', message: 'old one' }];
+    const before = [{ severity: 'error', code: 'truncated', message: 'old one' }];
     expect(checksMarkdown(before, before)).toBe('');
-    expect(checksMarkdown([...before, { severity: 'error', message: 'A control is outside the page.' }], before)).toBe(
-      '**This change left 1 thing worth checking**\n- error: A control is outside the page.',
+    expect(checksMarkdown([...before, { severity: 'error', code: 'summary-no-running', message: 'A total prints blank.' }], before)).toBe(
+      '**This change left 1 thing to fix**\n- A total is not set to add anything up, so it prints blank.',
     );
   });
 
   it('writes the reply part as a Markdown list, with what was not done', () => {
     expect(changesMarkdown(['moved **title** to 1, 20'], ['delete nope: no control is named "nope"'])).toBe(
-      '**Changed**\n- moved **title** to 1, 20\n\n**Not changed**\n- delete nope: no control is named "nope"',
+      '**Changed**\n- moved **title** to 1, 20\n\n**Not changed**\n- I couldn\'t find a part called "nope".',
     );
   });
 });

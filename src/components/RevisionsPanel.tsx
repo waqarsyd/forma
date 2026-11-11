@@ -16,6 +16,27 @@ import { diffReports, describeDiff, type Revision } from '../lib/revisions';
 import { MAX_PERSISTED_REVISIONS } from '../lib/revisionStore';
 import { formatSessionStamp } from '../lib/datetime';
 
+/**
+ * The labels revisions were given by the part of Forma that made them, until
+ * 2026-11-11 (the full audit's WS-05), as the person reads them now. A saved
+ * project keeps its revisions' labels, so the old ones are read here rather
+ * than left to say "Forma's box reader" in a list of versions.
+ */
+const OLD_LABELS: readonly [RegExp, string][] = [
+  [/Forma's box reader|Forma's vision model/g, 'From your page'],
+  [/Forma's own draft/g, 'First version'],
+  [/Read from the page/g, 'Your page as printed'],
+];
+
+/**
+ * A revision's label as shown. Not exported, so this module exports its
+ * component alone and React's fast refresh can swap it in place; the mapping
+ * is tested through the rendered panel (workspaceVoice.test.ts).
+ */
+function shownLabel(label: string): string {
+  return OLD_LABELS.reduce((said, [old, now]) => said.replace(old, now), label);
+}
+
 interface Props {
   revisions: readonly Revision[];
   /** The REPX on screen, so the newest row can say whether it is still current. */
@@ -91,7 +112,7 @@ export default function RevisionsPanel({ revisions, current, persisted, onRestor
 
       {revisions.length === 0 ? (
         <p className="rv-empty">
-          Every generation, refinement and binding pass is kept here, with what it changed —
+          Every report, redesign and data binding is kept here, with what it changed —
           so a refinement that made the report worse is one click from being undone.
           <br /><br />
           Nudging a control is not a revision; Undo at the corner of the report takes it back.
@@ -104,17 +125,16 @@ export default function RevisionsPanel({ revisions, current, persisted, onRestor
         <ul className="rv-list">
           {rows.map(({ revision, change, first }, i) => (
             <li className="rv-row" key={revision.id}>
-              <span className="rv-label">{revision.label}</span>
+              <span className="rv-label">{shownLabel(revision.label)}</span>
               <span>
                 {i === 0 && currentIsNewest
                   ? <span className="rv-current">current</span>
                   : <button className="rv-mini" disabled={busy} title={busy ? 'After Forma finishes' : undefined} onClick={() => onRestore(revision)}>Restore</button>}
               </span>
-              <span className="rv-meta">
-                {formatSessionStamp(revision.at)}
-                {' · '}
-                {revision.snapshot.repxContent.length.toLocaleString()} chars
-              </span>
+              {/* The time alone: the file's length in characters followed it
+                  until 2026-11-11 (the full audit's WS-33), a readout of the
+                  file, not of the report. */}
+              <span className="rv-meta">{formatSessionStamp(revision.at)}</span>
               {(change || first) && (
                 <span className="rv-change">{first ? 'the first version of this report' : change}</span>
               )}

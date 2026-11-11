@@ -48,7 +48,15 @@ describe('what a message asks Forma to remember', () => {
     expect(m.hints).toEqual({ paper: 'A4', landscape: true, fontFamily: 'Tahoma', sizes: { title: 14, value: 8 } });
     expect(memoryFrom('Always use portrait').text).toBe('Always use portrait');
     expect(memoryFrom('remember: never use Letter').text).toBe('Never use Letter');
-    expect(rememberedReply(m)).toContain('A4 paper, landscape, Tahoma, 14pt titles, 8pt values');
+    expect(rememberedReply(m)).toBe('Got it: A4 paper, landscape, Tahoma, 14pt titles, 8pt values from now on. You can change it in Settings, under Memory.');
+  });
+
+  // The full audit (2026-11-11, CV-06): what it means for the next report, never which part of Forma applies it.
+  it('says what is kept in plain words, and where to change it', () => {
+    expect(rememberedReply(memoryFrom('remember: always use A4'))).toBe('Got it: A4 paper from now on. You can change it in Settings, under Memory.');
+    const plain = rememberedReply(memoryFrom('remember that our client is Contoso'));
+    expect(plain).toBe("Got it, I'll keep that in mind for every report. You can change it in Settings, under Memory.");
+    expect(plain).not.toMatch(/own model|any AI|told it/);
   });
 
   // Agent audit item 14: a name said as not wanted is not a hint, and the first wanted wins.

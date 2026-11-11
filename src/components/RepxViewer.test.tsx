@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 /**
  * The REPX pane's account of what the report kept of the page (2026-11-10,
- * the AI accuracy programme, batch AD; lib/readCoverage.ts): a readout beside
- * the usage, and the texts left out, named, silent when nothing was.
+ * the AI accuracy programme, batch AD; lib/readCoverage.ts): the texts on the
+ * page the report left out, named, silent when nothing was. The count of
+ * what was read beside it, "kept 14/16 read", went on 2026-11-11 (the full
+ * audit's CV-12): a readout of the reading, not of the report.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -16,19 +18,25 @@ const XML = `<?xml version="1.0" encoding="utf-8"?>
 </XtraReportsLayoutSerializer>`;
 
 describe('what the report kept of the page', () => {
-  it('reads out the share kept and names each text left out', () => {
+  it('names each text on the page left out, with no count of what was read', () => {
     const { container } = render(<RepxViewer xml={XML} coverage={{ captions: 16, kept: 14, missing: ['Unit Price', 'Total Due'], sameBand: 9 }} />);
-    expect(container.querySelector('[data-readout="kept"]')?.textContent).toBe('kept 14/16 read');
-    expect(screen.getByText('2 texts Forma read on the page are not in the report')).toBeTruthy();
+    expect(container.querySelector('[data-readout="kept"]')).toBeNull();
+    expect(screen.getByText('2 texts on your page are not in the report')).toBeTruthy();
     expect(screen.getByText('Unit Price')).toBeTruthy();
     expect(screen.getByText('Total Due')).toBeTruthy();
+    expect(container.textContent).not.toMatch(/kept \d+\/\d+|Forma read/);
   });
 
-  it('says nothing more when the report kept it all, and nothing at all without a draft', () => {
+  it('says nothing when the report kept it all, and nothing without a draft', () => {
     const { container, rerender } = render(<RepxViewer xml={XML} coverage={{ captions: 5, kept: 5, missing: [], sameBand: 5 }} />);
-    expect(container.querySelector('[data-readout="kept"]')?.textContent).toBe('kept 5/5 read');
     expect(container.querySelector('[data-missing]')).toBeNull();
-    rerender(<RepxViewer xml={XML} />);
     expect(container.querySelector('[data-readout="kept"]')).toBeNull();
+    rerender(<RepxViewer xml={XML} />);
+    expect(container.querySelector('[data-missing]')).toBeNull();
+  });
+
+  it('says one text in the singular', () => {
+    render(<RepxViewer xml={XML} coverage={{ captions: 3, kept: 2, missing: ['Notes'], sameBand: 2 }} />);
+    expect(screen.getByText('1 text on your page is not in the report')).toBeTruthy();
   });
 });

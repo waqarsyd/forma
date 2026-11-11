@@ -53,6 +53,7 @@ import { SUPPORTED_PAGE_SIZES, pageSizeInUnits } from './reportGeometry';
 import { readRepxDataSources } from './repxSqlDataSource';
 import { languageAsked, languageName, namesLanguage } from './repxTranslate';
 import { NOT_FOLLOWED } from './chatTurn';
+import { plainBand, plainKind } from './plainKind';
 
 /**
  * What the model can ask for. Anything else is a redesign. The last seven
@@ -1133,7 +1134,20 @@ function controlsOf(xml: string): Map<string, Seen> {
   return out;
 }
 
-const named = (key: string) => (key.includes('@') ? key.split('@')[0] : `**${key}**`);
+/**
+ * A control in a sentence: its name in bold, or its kind when it has none
+ * ("the label"). An unnamed control's key is `type@band.index`, and its type
+ * was what this said until 2026-11-11 ("moved XRLabel to ..."; the full
+ * audit's CV-15).
+ */
+const named = (key: string, type: string | undefined) => (key.includes('@') ? `the ${plainKind(type)}` : `**${key}**`);
+
+/** A control as a line first mentions it: "label **title**", or "a label" when it has no name. */
+function introduced(key: string, type: string | undefined): string {
+  const kind = plainKind(type);
+  if (!key.includes('@')) return `${kind} ${named(key, type)}`;
+  return `${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind}`;
+}
 
 /** A choice in the selection toolbar's Format menu (2026-11-05). */
 export type FormatAction = 'bold' | 'italic' | 'larger' | 'smaller' | 'left' | 'center' | 'right';
@@ -1198,14 +1212,58 @@ type Look = {
   data?: { expression: string | null; format: string | null };
 };
 
+/** The colours a person names, by the red, green and blue the file writes for them. */
+const COLOUR_WORDS: Record<string, string> = {
+  '0,0,0': 'black',
+  '255,255,255': 'white',
+  '255,0,0': 'red',
+  '0,128,0': 'green',
+  '0,255,0': 'bright green',
+  '0,0,255': 'blue',
+  '255,255,0': 'yellow',
+  '255,165,0': 'orange',
+  '128,0,128': 'purple',
+  '255,192,203': 'pink',
+  '165,42,42': 'brown',
+  '128,128,128': 'grey',
+  '169,169,169': 'dark grey',
+  '211,211,211': 'light grey',
+  '192,192,192': 'silver',
+  '0,0,128': 'navy',
+  '128,0,0': 'maroon',
+  '0,128,128': 'teal',
+  '128,128,0': 'olive',
+  '0,255,255': 'cyan',
+  '255,0,255': 'magenta',
+};
+
+/**
+ * A colour as the file writes it, in words (2026-11-11, the full audit's
+ * CV-15): "0, 0, 255" is blue, `DarkBlue` is dark blue, and a colour with no
+ * common name is its `#RRGGBB`. The reply said "(text 0, 0, 255)" until then,
+ * the numbers the serializer writes.
+ */
+export function colourWords(value: string): string {
+  const v = value.trim();
+  if (/^[a-z]+$/i.test(v)) return v.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().replace(/\bgray\b/g, 'grey');
+  const n = v.split(',').map((p) => Number.parseInt(p.trim(), 10));
+  if (n.length < 3 || n.length > 4 || n.some((x) => !Number.isFinite(x) || x < 0 || x > 255)) return v;
+  // Four numbers are alpha, red, green, blue.
+  const [alpha, r, g, b] = n.length === 4 ? n : [255, ...n];
+  if (alpha === 0) return 'transparent';
+  return COLOUR_WORDS[`${r},${g},${b}`] ?? `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+}
+
 /** What changed in how a control or a cell prints, a line each: font, colour, borders, alignment, format, binding. */
 function lookChanges(name: string, was: Look, now: Look): string[] {
   const out: string[] = [];
   if (fontWords(was) !== fontWords(now)) out.push(`restyled ${name} (${fontWords(now) || 'its default font'})`);
   const [a, b] = [was.appearance, now.appearance];
-  if (a.ForeColor !== b.ForeColor || a.BackColor !== b.BackColor) {
-    const parts = [a.ForeColor !== b.ForeColor && `text ${b.ForeColor ?? 'default'}`, a.BackColor !== b.BackColor && `fill ${b.BackColor ?? 'none'}`].filter(Boolean);
-    out.push(`recoloured ${name} (${parts.join(', ')})`);
+  // A colour in words, a line for the text and one for the fill (CV-15).
+  if (a.ForeColor !== b.ForeColor) out.push(b.ForeColor ? `made ${name} ${colourWords(b.ForeColor)}` : `gave ${name} its default text colour`);
+  if (a.BackColor !== b.BackColor) {
+    const fill = b.BackColor ? colourWords(b.BackColor) : 'transparent';
+    out.push(fill === 'transparent' ? `took the fill off ${name}` : `filled ${name} with ${fill}`);
   }
   if (a.Borders !== b.Borders || a.BorderColor !== b.BorderColor || a.BorderWidth !== b.BorderWidth) out.push(`set the borders of ${name} to ${b.Borders ?? 'None'}`);
   if (was.align !== now.align) out.push(`aligned ${name} ${now.align}`);
@@ -1215,6 +1273,56 @@ function lookChanges(name: string, was: Look, now: Look): string[] {
     out.push(now.field ? `bound ${name} to [${now.field}]` : now.data?.expression ? `bound ${name} to ${clip(now.data.expression)}` : `unbound ${name}`);
   }
   return out;
+}
+
+/** Stands for where a cell's change was made, until it is known whether a row, a column or the cell says it. */
+const AT = '\u0000';
+
+/**
+ * What changed in a table's cells, merged where the change was the same
+ * (2026-11-11, the full audit's CV-15): every cell alike is one line for the
+ * table, a row alike one for the row ("made row 1 of **tableHeader** blue"),
+ * a column alike one for the column, and the rest a line a cell. A header
+ * row made blue read as four lines, "recoloured row 1, cell N of ...", one a
+ * cell. More than six lines are one count.
+ */
+function cellChanges(name: string, was: PreviewControl, now: PreviewControl): string[] {
+  const grid: (string[] | null)[][] = now.rows.map((row, r) =>
+    row.cells.map((cell, k) => {
+      const old = was.rows[r]?.cells[k];
+      if (!old) return null;
+      const out: string[] = [];
+      if (old.text !== cell.text && !cell.field) out.push(`retyped ${AT} to "${clip(cell.text)}"`);
+      out.push(...lookChanges(AT, old, cell));
+      return out.length ? out : null;
+    }),
+  );
+  const changed = grid.flat().filter((c): c is string[] => !!c).length;
+  if (!changed) return [];
+  const say = (said: readonly string[], where: string) => said.map((l) => l.split(AT).join(where));
+  const alike = (list: readonly (string[] | null)[]) => list.length > 1 && list.every((c) => c && c.join('\n') === list[0]!.join('\n'));
+  if (alike(grid.flat())) return say(grid[0][0]!, `every cell of ${name}`);
+  const lines: string[] = [];
+  const done = new Set<string>();
+  grid.forEach((row, r) => {
+    if (!alike(row)) return;
+    lines.push(...say(row[0]!, `row ${r + 1} of ${name}`));
+    row.forEach((_, k) => done.add(`${r},${k}`));
+  });
+  const columns = Math.max(0, ...grid.map((row) => row.length));
+  for (let k = 0; k < columns; k++) {
+    const column = grid.map((row) => row[k] ?? null);
+    if (grid.length < 2 || grid.some((_, r) => done.has(`${r},${k}`)) || !alike(column)) continue;
+    lines.push(...say(column[0]!, `column ${k + 1} of ${name}`));
+    grid.forEach((_, r) => done.add(`${r},${k}`));
+  }
+  grid.forEach((row, r) =>
+    row.forEach((cell, k) => {
+      if (cell && !done.has(`${r},${k}`)) lines.push(...say(cell, `row ${r + 1}, cell ${k + 1} of ${name}`));
+    }),
+  );
+  // A whole table restyled in different ways is one line, not one per cell.
+  return lines.length > 6 ? [`changed ${changed} cells of ${name}`] : lines;
 }
 
 /**
@@ -1229,15 +1337,15 @@ export function describeChanges(before: string, after: string, limit = 10): stri
   const a = controlsOf(before);
   const b = controlsOf(after);
   for (const [key, { c, band }] of b) {
-    if (!a.has(key)) lines.push(`added ${c.type.replace(/^XR/, '').toLowerCase()} ${named(key)} to ${band}${says(c) ? `, ${says(c)}` : ''}`);
+    if (!a.has(key)) lines.push(`added ${introduced(key, c.type)} to ${plainBand(band)}${says(c) ? `, ${says(c)}` : ''}`);
   }
   for (const [key, { c }] of a) {
-    if (!b.has(key)) lines.push(`removed ${c.type.replace(/^XR/, '').toLowerCase()} ${named(key)}`);
+    if (!b.has(key)) lines.push(`removed ${introduced(key, c.type)}`);
   }
   for (const [key, { c: was }] of a) {
     const now = b.get(key)?.c;
     if (!now) continue;
-    const name = named(key);
+    const name = named(key, was.type);
     if (was.text !== now.text && !now.field) lines.push(`retyped ${name} to "${clip(now.text)}"`);
     const [p, q] = [fileBox(was), fileBox(now)];
     if (p.x !== q.x || p.y !== q.y) lines.push(`moved ${name} to ${q.x}, ${q.y}`);
@@ -1247,18 +1355,7 @@ export function describeChanges(before: string, after: string, limit = 10): stri
     // appearance having changed and the font not.
     lines.push(...lookChanges(name, was, now));
     if (was.visible !== now.visible) lines.push(`${now.visible ? 'showed' : 'hid'} ${name}`);
-    const cells: string[] = [];
-    now.rows.forEach((row, r) =>
-      row.cells.forEach((cell, k) => {
-        const old = was.rows[r]?.cells[k];
-        if (!old) return;
-        const where = `row ${r + 1}, cell ${k + 1} of ${name}`;
-        if (old.text !== cell.text && !cell.field) cells.push(`retyped ${where} to "${clip(cell.text)}"`);
-        cells.push(...lookChanges(where, old, cell));
-      }),
-    );
-    // A whole table restyled is one line, not one per cell.
-    lines.push(...(cells.length > 6 ? [`changed ${cells.length} cells of ${name}`] : cells));
+    lines.push(...cellChanges(name, was, now));
   }
   const [ra, rb] = [ROOT.exec(before)?.[1] ?? '', ROOT.exec(after)?.[1] ?? ''];
   const paper = (attrs: string) => `${attrOf(attrs, 'PaperKind') ?? 'Letter'}${(attrOf(attrs, 'Landscape') ?? '').toLowerCase() === 'true' ? ' landscape' : ''}`;
@@ -1283,21 +1380,80 @@ export function describeChanges(before: string, after: string, limit = 10): stri
 }
 
 /**
- * What the REPX checks found, said in the reply (2026-11-05), as an agent
- * reports its own checking rather than leaving it to a pane nobody opened.
- * After a redesign, everything found; after an edit (`before` given), only
- * what the edit brought. Nothing when nothing was found (2026-11-10, the
- * full audit: "Checked: the REPX checks found nothing wrong" under every
- * report was machinery, not news). Four lines, then a count of the rest.
+ * What an audit error means for the person, by its `code` (2026-11-11, the
+ * full audit's CV-05): what will go wrong when the report prints or opens,
+ * and what to do, with no audit code, standard or control count in it.
+ * Exported for the other places a finding reaches the thread.
  */
-export function checksMarkdown(after: readonly { severity: string; message: string }[], before?: readonly { message: string }[]): string {
+export const PLAIN_FINDINGS: Readonly<Record<string, string>> = {
+  empty: 'No report file came back. Send the request again.',
+  truncated: 'The file stops part-way, so the designer will not open it. Send the request again.',
+  'item-numbering': 'Some parts of the file are numbered out of order, so the designer may leave them out.',
+  'duplicate-ref': 'Some parts of the file share a number, so the designer may leave them out.',
+  'report-has-scripts': 'The report carries code that runs when it prints. Open it in the designer only if you trust where it came from.',
+  'expression-invalid': 'A value in the report is worked out by an expression that cannot be read, so it will not print.',
+  'no-detail-band': 'The report has no section for its records, so no rows will print.',
+  'calculated-field-empty': 'A calculated field says nothing to work out, so it prints blank.',
+  'calculated-field-duplicate': 'Two calculated fields share a name, so the designer keeps only one.',
+  'summary-no-running': 'A total is not set to add anything up, so it prints blank.',
+  'summary-group-in-report-footer': 'A total at the end of the report adds up each group instead of the whole report, so it prints blank.',
+  'formatting-rule-link-dangling': 'A formatting rule points at nothing, so it does not apply.',
+  'crosstab-no-layout': 'A cross-tab has no layout, so it will not print.',
+  'connection-has-credentials': "The report keeps a database password inside it. Keep only the connection's name.",
+  'query-param-unbound': 'A query needs a value the report never asks for, so it cannot run.',
+  'datamember-unknown': 'The report reads a table its data source does not have, so no rows will print.',
+  'band-taller-than-page': 'One section is taller than the page, so each record prints on its own sheet.',
+};
+
+/** A finding in the person's words: its plain sentence, or the general one. */
+export function plainFinding(code: string | undefined): string {
+  return (code && PLAIN_FINDINGS[code]) || 'Something in the file will not print as drawn; the REPX view lists it.';
+}
+
+/**
+ * What the checks found, said in the reply (2026-11-05), as an agent reports
+ * what is wrong rather than leaving it to a pane nobody opened. After a
+ * redesign, everything found; after an edit (`before` given), only what the
+ * edit brought. Nothing when nothing was found (2026-11-10, the full audit).
+ *
+ * Errors only, each in plain words (2026-11-11, the full audit's CV-05):
+ * the warnings went into the reply too, and one of them, text under 12pt,
+ * fires on nearly every business report, so "1 thing worth checking - 14 of
+ * 16 text control(s) are below 12pt ... (AYXRE010 ...)" sat under most
+ * replies. Warnings stay in the REPX pane, where they are listed in full.
+ * One line for each different sentence, four at most.
+ */
+export function checksMarkdown(
+  after: readonly { severity: string; message: string; code?: string }[],
+  before?: readonly { message: string }[],
+): string {
   const seen = new Set(before?.map((f) => f.message));
-  const found = before ? after.filter((f) => !seen.has(f.message)) : after;
-  if (!found.length) return '';
-  const lines = found.slice(0, 4).map((f) => `- ${f.severity === 'error' ? 'error: ' : ''}${f.message}`);
-  if (found.length > 4) lines.push(`- and ${found.length - 4} more, listed in the REPX pane`);
-  const count = `${found.length} ${found.length === 1 ? 'thing' : 'things'}`;
-  return `**${before ? `This change left ${count} worth checking` : `${count.charAt(0).toUpperCase()}${count.slice(1)} worth checking`}**\n${lines.join('\n')}`;
+  const found = after.filter((f) => f.severity === 'error' && !seen.has(f.message));
+  const said = [...new Set(found.map((f) => plainFinding(f.code)))];
+  if (!said.length) return '';
+  const lines = said.slice(0, 4).map((s) => `- ${s}`);
+  if (said.length > 4) lines.push(`- and ${said.length - 4} more, listed in the REPX view`);
+  const count = `${said.length} ${said.length === 1 ? 'thing' : 'things'}`;
+  return `**${before ? `This change left ${count} to fix` : `${count.charAt(0).toUpperCase()}${count.slice(1)} to fix`}**\n${lines.join('\n')}`;
+}
+
+/**
+ * A declined edit as the person reads it (2026-11-11, the full audit's
+ * CV-15): without the edit's name, which `applyEdits` puts first for the
+ * model's second pass ("color labelX: no control is named "labelX""), and
+ * in a sentence of its own. `declined` itself is kept as it is: the model is
+ * told it, and the op tells it which edit to make again.
+ */
+export function plainDeclined(line: string): string {
+  const op = new RegExp(`^(?:${EDIT_OPS.join('|')})(?: \\S+)?: (.+)$`).exec(line);
+  const reason = (op?.[1] ?? line).trim();
+  const missing = /^no control is named "(.+)"$/.exec(reason);
+  if (missing) return `I couldn't find a part called "${missing[1]}".`;
+  if (/^no control was named$/.test(reason)) return "I couldn't tell which part you meant.";
+  if (/changed a moment ago|changed underneath|changed since/i.test(reason)) return 'That part has changed since; try again.';
+  if (/not an edit Forma can make/.test(reason)) return "That isn't something I can change in place.";
+  const sentence = `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`;
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
 }
 
 /**
@@ -1308,7 +1464,7 @@ export function checksMarkdown(after: readonly { severity: string; message: stri
 export function changesMarkdown(changes: readonly string[], declined: readonly string[] = [], doing: readonly string[] = []): string {
   const parts: string[] = [];
   if (changes.length) parts.push(`**Changed**\n${changes.map((c) => `- ${c}`).join('\n')}`);
-  if (declined.length) parts.push(`**Not changed**\n${declined.map((d) => `- ${d}`).join('\n')}`);
+  if (declined.length) parts.push(`**Not changed**\n${declined.map((d) => `- ${plainDeclined(d)}`).join('\n')}`);
   if (doing.length) parts.push(doing.join(' '));
   return parts.join('\n\n');
 }

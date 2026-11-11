@@ -221,4 +221,12 @@ describe('stepLabel', () => {
       expect(stepLabel({ stepIndex, percent: 0, streamChars: 0 })).toBeTruthy();
     }
   });
+
+  // The full audit (2026-11-11, WS-06 and CV-21): a screen reader heard "Constructing DevExpress XML...".
+  it('names each step in plain words, never the machinery', () => {
+    expect(ANALYZING_STEPS).toContain('Reading your page...');
+    expect(ANALYZING_STEPS).toContain('Laying out the report...');
+    expect(ANALYZING_STEPS).toContain('Writing the report file...');
+    for (const step of ANALYZING_STEPS) expect(step).not.toMatch(/XML|spatial|boundaries|DevExpress|mega|model|OCR|token/i);
+  });
 });

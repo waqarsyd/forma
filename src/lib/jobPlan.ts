@@ -11,9 +11,10 @@
  * - **What to make:** one report from all of them, as the box has always
  *   meant, or a report for each, which goes to Batch, one at a time.
  * - **What it costs:** the pages OCR reads in the browser, and the requests
- *   the AI is sent, counted from how a design is asked (one, and one more
- *   when the report leaves out text it should have kept).
- * Nothing is read or sent until Start, or a typed yes.
+ *   the AI is sent. Said until 2026-11-11, when the full audit took the
+ *   counts out of the steps: what a step costs is machinery.
+ * Nothing was read or sent until Start, or a typed yes; since 2026-11-10 the
+ * plan starts at once.
  *
  * Heavy is three files or more, or nine pages or more: one PDF is at most
  * eight (`MAX_PDF_PAGES`), so one document never asks first.
@@ -73,18 +74,25 @@ export const keptFiles = (plan: JobPlan) => plan.files.filter((f) => !plan.skip.
 
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** The plan's steps, in words, for what is ticked now; `ai` names the AI that designs. */
+/**
+ * The plan's steps, in words, for the files it keeps; `ai` names the AI that
+ * designs. What each step is, never what it costs or how it is done
+ * (2026-11-11, the full audit, the owner's rule): the steps said "1 request,
+ * 2 if the report leaves out text it should keep", "N to 2N requests" and
+ * "Read N pages with OCR" until then, and "Nothing is ticked, so nothing
+ * would be made." for a plan nobody ticks any more, since it starts at once.
+ * The reading of the pages is no step of its own now, and a plan that keeps
+ * no file has no steps.
+ */
 export function planSteps(plan: JobPlan, ai: string): string[] {
   const kept = keptFiles(plan);
-  const pages = kept.reduce((n, f) => n + f.pages, 0);
-  if (!kept.length) return ['Nothing is ticked, so nothing would be made.'];
-  const read = pages ? `Read ${count(pages, 'page')} with OCR, in this browser; nothing leaves it for this.` : '';
+  if (!kept.length) return [];
   if (plan.mode === 'one' || kept.length === 1) {
-    return [read, `Design one report from ${kept.length === 1 ? kept[0].file : count(kept.length, 'file')} with ${ai}: 1 request, 2 if the report leaves out text it should keep.`].filter(Boolean);
+    return [`Design one report from ${kept.length === 1 ? kept[0].file : count(kept.length, 'file')} with ${ai}.`];
   }
   return [
     `Open Batch with the ${count(kept.length, 'file')}, each its own report.`,
-    `Design them one at a time with ${ai}: ${kept.length} to ${kept.length * 2} requests. A limit pauses the batch, and it carries on from where it stopped.`,
+    `Design them one at a time with ${ai}. A limit pauses the batch, and it carries on from where it stopped.`,
   ];
 }
 

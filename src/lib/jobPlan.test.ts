@@ -37,26 +37,28 @@ describe('the plan, as it is changed', () => {
     const each = planFor(plan.files, 'a report per file')!;
     expect(each.mode).toBe('each');
     expect(planReply(each)).toBe("That is 3 files and 6 pages: I'm making a report from each, in Batch. Stop pauses it.");
-    expect(planSteps(plan, 'Gemini')).toEqual([
-      'Read 6 pages with OCR, in this browser; nothing leaves it for this.',
-      'Design one report from 3 files with Gemini: 1 request, 2 if the report leaves out text it should keep.',
-    ]);
+    expect(planSteps(plan, 'Gemini')).toEqual(['Design one report from 3 files with Gemini.']);
   });
 
-  it('leaves a file out, and counts again', () => {
+  it('leaves a file out, and says the steps again', () => {
     const fewer = toggleFile(plan, '3');
     expect(keptFiles(fewer).map((f) => f.file)).toEqual(['invoice.pdf', 'statement.png']);
-    expect(planSteps(fewer, 'Gemini')[0]).toBe('Read 5 pages with OCR, in this browser; nothing leaves it for this.');
+    expect(planSteps(fewer, 'Gemini')).toEqual(['Design one report from 2 files with Gemini.']);
     expect(keptFiles(toggleFile(fewer, '3')).length).toBe(3);
-    expect(planSteps({ ...plan, skip: ['1', '2', '3'] }, 'Gemini')).toEqual(['Nothing is ticked, so nothing would be made.']);
+    // Nothing kept is no steps: "Nothing is ticked" went with the ticks (2026-11-11).
+    expect(planSteps({ ...plan, skip: ['1', '2', '3'] }, 'Gemini')).toEqual([]);
   });
 
-  it('makes a report for each in Batch, with what that costs', () => {
+  it('makes a report for each in Batch', () => {
     const each = { ...plan, mode: 'each' as const };
     expect(planSteps(each, 'OpenRouter')).toEqual([
       'Open Batch with the 3 files, each its own report.',
-      'Design them one at a time with OpenRouter: 3 to 6 requests. A limit pauses the batch, and it carries on from where it stopped.',
+      'Design them one at a time with OpenRouter. A limit pauses the batch, and it carries on from where it stopped.',
     ]);
+    // The full audit (2026-11-11): what a step is, never what it costs or how it is done.
+    for (const p of [plan, each, toggleFile(plan, '3')]) {
+      for (const step of planSteps(p, 'Gemini')) expect(step).not.toMatch(/\brequests?\b|\bOCR\b|\bticked\b/);
+    }
     expect(planOutcome(each, true)).toBe('Started: 3 reports in Batch.');
     expect(planOutcome(plan, true)).toBe('Started: one report from 3 files.');
     expect(planOutcome(plan, false)).toBe('Not started.');

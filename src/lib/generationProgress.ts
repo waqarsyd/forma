@@ -25,14 +25,21 @@
  * moment, which is why they are pinned by tests instead.
  */
 
-/** What the user is told is happening, in order. */
+/**
+ * What is happening, in order, in the person's words (2026-11-11, the full
+ * audit's WS-06 and CV-21). They were "Generating spatial map...",
+ * "Constructing DevExpress XML..." until then: a screen reader announced the
+ * machinery, as nothing else in the workspace does. The progress bar itself
+ * now says "Designing the report" and a percentage; these are for any other
+ * reader of the step.
+ */
 export const ANALYZING_STEPS = [
-  'Analyzing input request and images...',
-  'Extracting layout boundaries and sections...',
-  'Generating spatial map...',
-  'Constructing DevExpress XML...',
-  'Refining mockup layout...',
-  'Finalizing result...',
+  'Reading your page...',
+  'Finding its sections...',
+  'Laying out the report...',
+  'Writing the report file...',
+  'Drawing the mockup...',
+  'Finishing...',
 ] as const;
 
 /**

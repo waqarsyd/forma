@@ -24,6 +24,7 @@
  */
 import { parseReportStructure, type PreviewControl } from './reportPreview';
 import { readRepxDataSources } from './repxSqlDataSource';
+import { plainKind } from './plainKind';
 
 /** One total the report prints. */
 export interface TotalFact {
@@ -150,7 +151,34 @@ const list = (names: readonly string[], max = 30) =>
   names.length > max ? `${names.slice(0, max).map((n) => `[${n}]`).join(', ')} and ${names.length - max} more` : names.map((n) => `[${n}]`).join(', ');
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const SCOPE: Record<string, string> = { Group: 'each group', Report: 'the whole report', Page: 'each page' };
-const totalWords = (t: TotalFact) => `${t.func === 'Count' ? 'the count' : `the ${t.func.toLowerCase()}`}${t.field ? ` of [${t.field}]` : ''} in the ${bandWords(t.band)}${t.scope ? `, over ${SCOPE[t.scope] ?? t.scope.toLowerCase()}` : ', with no running scope (it prints blank)'}`;
+// A total with no running scope in plain words (2026-11-11, the full audit's
+// CV-08): "with no running scope (it prints blank)" until then.
+const totalWords = (t: TotalFact) => `${t.func === 'Count' ? 'the count' : `the ${t.func.toLowerCase()}`}${t.field ? ` of [${t.field}]` : ''} in the ${bandWords(t.band)}${t.scope ? `, over ${SCOPE[t.scope] ?? t.scope.toLowerCase()}` : ', but it is not set to add anything up, so it prints blank'}`;
+
+/** The kinds whose one and many the rule below gets wrong ("a character boxes", "2 table of contentses"). */
+const ODD_COUNTS: Readonly<Record<string, readonly [string, string]>> = {
+  'character boxes': ['a set of character boxes', 'sets of character boxes'],
+  'table of contents': ['a table of contents', 'tables of contents'],
+};
+
+/**
+ * The parts of a report by kind, as a person counts them (2026-11-11, the
+ * full audit's CV-08): "6 texts and a page number", where it said "6 Label,
+ * 1 PageInfo", DevExpress's class names. A label is a text here, as the
+ * person reads it on the page; every other kind is `plainKind`'s.
+ */
+function partsWords(byType: Readonly<Record<string, number>>): string {
+  const kinds = Object.entries(byType)
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, n]) => {
+      const kind = type.replace(/^DevExpress\.XtraReports\.UI\./, '') === 'XRLabel' ? 'text' : plainKind(type);
+      const odd = ODD_COUNTS[kind];
+      if (odd) return n === 1 ? odd[0] : `${n} ${odd[1]}`;
+      if (n === 1) return `${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind}`;
+      return `${n} ${/(s|x|ch|sh)$/.test(kind) ? (/es$/.test(kind) ? kind : `${kind}es`) : `${kind}s`}`;
+    });
+  return kinds.length > 1 ? `${kinds.slice(0, -1).join(', ')} and ${kinds[kinds.length - 1]}` : kinds.join('');
+}
 const bandWords = (kind: string) => kind.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
 
 /** Bands by kind, as "a report header, 2 group headers, the detail band, ...". */
@@ -215,12 +243,13 @@ export function answerFromFacts(message: string, f: ReportFacts): string | null 
   if (about(/\b(bands|sections)\b/i, /(bands?|sections?)/)) parts.push(`It has ${plural(f.bands.length, 'band')}: ${bandList(f.bands)}.`);
   if (about(/\bparameters\b/i, /parameters?/)) parts.push(f.parameters.length ? `${plural(f.parameters.length, 'parameter')}: ${f.parameters.join(', ')}.` : 'It has no parameters.');
   if (/\b(controls?|labels?|tables?|elements?|pictures?|images?)\b/i.test(text) && /\bhow many\b/i.test(text)) {
-    const kinds = Object.entries(f.byType).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${n} ${t.replace(/^XR/, '')}`);
-    parts.push(`It has ${plural(f.controls, 'control')}: ${kinds.join(', ')}.`);
+    parts.push(`It has ${plural(f.controls, 'part')}: ${partsWords(f.byType)}.`);
   }
   if (/\b(paper|page size|landscape|portrait|orientation)\b/i.test(text)) parts.push(`It prints on ${f.paper}, ${f.landscape ? 'landscape' : 'portrait'}.`);
   if (!parts.length) return null;
-  return `${parts.join(' ')}\n\n_Counted from the report file by Forma, with no AI._`;
+  // The answer alone (2026-11-11, the full audit's CV-08): it ended "Counted
+  // from the report file by Forma, with no AI." until then.
+  return parts.join(' ');
 }
 
 /**
