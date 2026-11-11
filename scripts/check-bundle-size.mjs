@@ -187,7 +187,8 @@ const BUDGETS = [
   { prefix: 'ReportPreview-', ext: '.js', max: 105_000, note: 'the Preview pane, lazy (98,725 B at 94.0%)' },
   { prefix: 'DocsPage-', ext: '.js', max: 80_000, note: 'the Docs page, lazy (75,105 B at 93.9%)' },
   { prefix: 'reportPreview-', ext: '.js', max: 69_000, note: 'the Preview engine, lazy (64,916 B at 94.1%)' },
-  { prefix: 'releases-', ext: '.js', max: 50_500, note: 'the changelog and What\'s new, lazy (47,436 B at 93.9%)' },
+  // Raised to 55,500 on 2026-11-12, at 51,921 B (102.8%): the 1.6.0 entry, the full audit's release note, in a visitor's words (DOCS, dc85c04). 93.6%.
+  { prefix: 'releases-', ext: '.js', max: 55_500, note: 'the changelog and What\'s new, lazy (51,921 B at 93.6%)' },
   { prefix: 'FeaturesPage-', ext: '.js', max: 47_000, note: 'the Features page, lazy (44,081 B at 93.8%)' },
   { prefix: 'DatabasePanel-', ext: '.js', max: 37_700, note: 'the Data tab\'s database, lazy (35,468 B at 94.1%)' },
   // The workspace itself (2026-11-08), lazy since the cut above, budgeted so
@@ -756,10 +757,20 @@ const isPaddle = (f) => f.path.startsWith(PADDLE_DIR) || f.name.startsWith('padd
  * Copy a visitor reads, not drift. The cap was first breached by the page's own
  * batch (WG, f3b5d77), whose check run was read with its last lines cut off;
  * this is the raise that batch should have carried. 93.9%.
+ *
+ * Raised to 907,000 on 2026-11-12, at 852,999 B (102.0%, over): the full
+ * audit's public pages said what the waves built (FIX2D: Compare with the
+ * original, two-language reports, SSRS and FastReport import, Word and Excel
+ * templates, straightened scans, the print check, learning from kept reports,
+ * Batch made like single reports, exports in one .zip, the write limits) on
+ * the Features, Docs, FAQ and info pages, the privacy policy named every
+ * stored item and what a kept report sends (LG, FIX2D), and PPUB's font
+ * preload and module-preload links went into every page's head. Copy a
+ * visitor reads and two lines per page, not drift. 94.0%.
  */
 const isPage = (f) => f.name.endsWith('.html') && dirname(f.path) === DIST;
 const pagesTotal = files.filter(isPage).reduce((a, f) => a + f.size, 0);
-const PAGES_TOTAL_MAX = 836_000;
+const PAGES_TOTAL_MAX = 907_000;
 const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPaddle(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
 const paddleTotal = files.filter(isPaddle).reduce((a, f) => a + f.size, 0);
 // 13,082,453 B with the models (2026-11-10), so 94.0%.

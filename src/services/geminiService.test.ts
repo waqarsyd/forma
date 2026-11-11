@@ -29,14 +29,6 @@ vi.mock('../lib/genai', () => ({
   }),
   resetGenAIForTests: () => {},
 }));
-// Forma Designer, answering or not, for the inspection after an answer (R2-07); the rest of the bridge is its own.
-const bridge = vi.hoisted(() => ({ answered: false, inspect: null as null | ((xml: string) => Promise<unknown>) }));
-vi.mock('../lib/designerBridge', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../lib/designerBridge')>()),
-  designerAnswered: () => bridge.answered,
-  inspectInDesigner: (xml: string) => bridge.inspect?.(xml) ?? Promise.resolve(null),
-}));
-
 /*
  * Forma Designer, as the generation asks it once the report is on screen
  * (2026-11-11, the full audit's cleanup after PERF): the real module, but for
@@ -55,6 +47,13 @@ vi.mock('../lib/designerBridge', async (importOriginal) => {
     inspectInDesigner: (repx: string) => (designer.inspect ? designer.inspect(repx) : real.inspectInDesigner(repx, null)),
   };
 });
+/*
+ * The same switches under the name the re-audit's R2-07 tests use. Two batches
+ * of 2026-11-11 each mocked this module (FIX2B as `bridge`, the cleanup as
+ * `designer`), and Vitest keeps only one vi.mock per module, so the tests that
+ * set the other were asking a mock nobody read. One mock, two names.
+ */
+const bridge = designer;
 
 import { forgetInspectionsForTests, inspectionOf } from '../lib/designerBridge';
 import {

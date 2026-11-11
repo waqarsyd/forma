@@ -600,10 +600,19 @@ export default defineConfig(() => {
            * tesseract-core-*.wasm.js builds of about 3.9 MB in dist/ocr/, which
            * its 17 kB budget would have failed on every build.
            */
-          chunkFileNames(chunk: { facadeModuleId: string | null }) {
+          chunkFileNames(chunk: { facadeModuleId: string | null; moduleIds?: readonly string[] }) {
             const facade = chunk.facadeModuleId ?? '';
             if (/node_modules[\\/]@google[\\/]genai[\\/]/.test(facade)) return 'assets/gemini-sdk-[hash].js';
-            if (/node_modules[\\/]tesseract\.js[\\/]/.test(facade)) return 'assets/ocr-engine-[hash].js';
+            // tesseract.js's chunk is known by what it holds, not its facade:
+            // measured in a real build (2026-11-12, after check:size reported
+            // MISSING ocr-engine-*.js once the cleanup merged), it is a
+            // CommonJS chunk with no facade at all ("" here), holding
+            // tesseract.js/src/*, regenerator-runtime and Rollup's own helpers,
+            // and it came out as a second index-*.js under the entry's budget.
+            // Only lib/ocr.ts's dynamic import reaches tesseract.js, so no
+            // other chunk holds one of its modules.
+            const tesseract = (id: string) => /node_modules[\\/]tesseract\.js[\\/]src[\\/]/.test(id);
+            if (/node_modules[\\/]tesseract\.js[\\/]/.test(facade) || (chunk.moduleIds ?? []).some(tesseract)) return 'assets/ocr-engine-[hash].js';
             return 'assets/[name]-[hash].js';
           },
         },
