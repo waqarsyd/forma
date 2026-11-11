@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a" Name="QuarterlySalesByRegion" DisplayName="Quarterly Sales by Region" ReportUnit="HundredthsOfAnInch" PaperKind="Letter" Landscape="true" PageWidth="1100" PageHeight="850" Margins="50, 50, 50, 30" Font="Calibri, 7.2pt" ForeColor="255,27,27,27" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />
+    <Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="56.67">
+      <Controls>
+        <Item1 Ref="4" ControlType="XRLabel" Name="lblTitle" Text="Quarterly Sales by Region" LocationFloat="0, 0" SizeF="600, 24.4" Font="Calibri, 14.4pt, style=Bold" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+        <Item2 Ref="5" ControlType="XRLabel" Name="lblSubtitle" Text="Third quarter 2026 &#183; all figures in thousands &#183; run 2 Oct 2026" LocationFloat="0, 27.07" SizeF="600, 12.2" Font="Calibri, 7.2pt" ForeColor="255,85,85,85" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+      </Controls>
+    </Item2>
+    <Item3 Ref="6" ControlType="PageHeaderBand" Name="PageHeader" HeightF="20.67">
+      <Controls>
+        <Item1 Ref="7" ControlType="XRTable" Name="tblHeader" LocationFloat="0, 0" SizeF="1000, 20.67" BackColor="255,46,93,75" ForeColor="White">
+          <Rows>
+            <Item1 Ref="8" ControlType="XRTableRow" Name="rowHeader" Weight="1">
+              <Cells>
+                <Item1 Ref="9" ControlType="XRTableCell" Name="cellHeadRegion" Text="Region" Weight="123.33" Font="Calibri, 6.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="5,5,0,0,100" />
+                <Item2 Ref="10" ControlType="XRTableCell" Name="cellHeadProductLine" Text="Product Line" Weight="261.33" Font="Calibri, 6.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="5,5,0,0,100" />
+                <Item3 Ref="11" ControlType="XRTableCell" Name="cellHeadSalesRep" Text="Sales Rep" Weight="165.33" Font="Calibri, 6.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="5,5,0,0,100" />
+                <Item4 Ref="12" ControlType="XRTableCell" Name="cellHeadUnits" Text="Units" Weight="146.67" Font="Calibri, 6.75pt, style=Bold" TextAlignment="MiddleRight" Padding="5,5,0,0,100" />
+                <Item5 Ref="13" ControlType="XRTableCell" Name="cellHeadRevenue" Text="Revenue" Weight="146" Font="Calibri, 6.75pt, style=Bold" TextAlignment="MiddleRight" Padding="5,5,0,0,100" />
+                <Item6 Ref="14" ControlType="XRTableCell" Name="cellHeadMargin" Text="Margin %" Weight="157.33" Font="Calibri, 6.75pt, style=Bold" TextAlignment="MiddleRight" Padding="5,5,0,0,100" />
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item1>
+      </Controls>
+    </Item3>
+    <Item4 Ref="15" ControlType="GroupHeaderBand" Name="GroupHeaderRegion" HeightF="26.33">
+      <GroupFields>
+        <Item1 Ref="16" FieldName="Region" />
+      </GroupFields>
+      <Controls>
+        <Item1 Ref="17" ControlType="XRLabel" Name="lblRegion" LocationFloat="0, 0" SizeF="1000, 26.33" Font="Calibri, 7.7pt, style=Bold" ForeColor="255,46,93,75" Borders="Bottom" BorderColor="255,46,93,75" BorderWidth="0.64" TextAlignment="BottomLeft" Padding="5,5,0,3,100">
+          <ExpressionBindings>
+            <Item1 Ref="18" EventName="BeforePrint" PropertyName="Text" Expression="'Region: ' + [Region]" />
+          </ExpressionBindings>
+        </Item1>
+      </Controls>
+    </Item4>
+    <Item5 Ref="19" ControlType="DetailBand" Name="Detail" HeightF="18.87">
+      <Controls>
+        <Item1 Ref="20" ControlType="XRTable" Name="tblDetail" LocationFloat="0, 0" SizeF="1000, 18.87">
+          <Rows>
+            <Item1 Ref="21" ControlType="XRTableRow" Name="rowDetail" Weight="1">
+              <Cells>
+                <Item1 Ref="22" ControlType="XRTableCell" Name="cellRegion" Weight="123.33" Font="Calibri, 7.2pt" TextAlignment="MiddleLeft" Padding="5,5,0,0,100" />
+                <Item2 Ref="23" ControlType="XRTableCell" Name="cellProductLine" Weight="261.33" Font="Calibri, 7.2pt" TextAlignment="MiddleLeft" Padding="5,5,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="24" EventName="BeforePrint" PropertyName="Text" Expression="[ProductLine]" />
+                  </ExpressionBindings>
+                </Item2>
+                <Item3 Ref="25" ControlType="XRTableCell" Name="cellSalesRep" Weight="165.33" Font="Calibri, 7.2pt" TextAlignment="MiddleLeft" Padding="5,5,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="26" EventName="BeforePrint" PropertyName="Text" Expression="[SalesRep]" />
+                  </ExpressionBindings>
+                </Item3>
+                <Item4 Ref="27" ControlType="XRTableCell" Name="cellUnits" Weight="146.67" Font="Calibri, 7.2pt" TextAlignment="MiddleRight" TextFormatString="{0:n0}" Padding="5,5,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="28" EventName="BeforePrint" PropertyName="Text" Expression="[Units]" />
+                  </ExpressionBindings>
+                </Item4>
+                <Item5 Ref="29" ControlType="XRTableCell" Name="cellRevenue" Weight="146" Font="Calibri, 7.2pt" TextAlignment="MiddleRight" TextFormatString="{0:n1}" Padding="5,5,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="30" EventName="BeforePrint" PropertyName="Text" Expression="[Revenue]" />
+                  </ExpressionBindings>
+                </Item5>
+                <Item6 Ref="31" ControlType="XRTableCell" Name="cellMargin" Weight="157.33" Font="Calibri, 7.2pt" TextAlignment="MiddleRight" TextFormatString="{0:n1}" Padding="5,5,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="32" EventName="BeforePrint" PropertyName="Text" Expression="[MarginPct]" />
+                  </ExpressionBindings>
+                </Item6>
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item1>
+      </Controls>
+    </Item5>
+    <Item6 Ref="33" ControlType="GroupFooterBand" Name="GroupFooterRegion" HeightF="19.33">
+      <Controls>
+        <Item1 Ref="34" ControlType="XRTable" Name="tblSubtotal" LocationFloat="0, 0" SizeF="1000, 19.33" BackColor="255,238,244,241" Borders="Top" BorderColor="255,153,153,153" BorderWidth="0.64">
+          <Rows>
+            <Item1 Ref="35" ControlType="XRTableRow" Name="rowSubtotal" Weight="1">
+              <Cells>
+                <Item1 Ref="36" ControlType="XRTableCell" Name="cellSubtotalBlank1" Weight="123.33" Font="Calibri, 7.2pt, style=Bold" Padding="5,5,0,0,100" />
+                <Item2 Ref="37" ControlType="XRTableCell" Name="cellSubtotalCaption" Weight="261.33" Font="Calibri, 7.2pt, style=Bold" TextAlignment="MiddleLeft" Padding="5,5,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="38" EventName="BeforePrint" PropertyName="Text" Expression="'Subtotal ' + [Region]" />
+                  </ExpressionBindings>
+                </Item2>
+                <Item3 Ref="39" ControlType="XRTableCell" Name="cellSubtotalBlank2" Weight="165.33" Font="Calibri, 7.2pt, style=Bold" Padding="5,5,0,0,100" />
+                <Item4 Ref="40" ControlType="XRTableCell" Name="cellSubtotalUnits" Weight="146.67" Font="Calibri, 7.2pt, style=Bold" TextAlignment="MiddleRight" TextFormatString="{0:n0}" Padding="5,5,0,0,100">
+                  <Summary Ref="41" Running="Group" />
+                  <ExpressionBindings>
+                    <Item1 Ref="42" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Units])" />
+                  </ExpressionBindings>
+                </Item4>
+                <Item5 Ref="43" ControlType="XRTableCell" Name="cellSubtotalRevenue" Weight="146" Font="Calibri, 7.2pt, style=Bold" TextAlignment="MiddleRight" TextFormatString="{0:n1}" Padding="5,5,0,0,100">
+                  <Summary Ref="44" Running="Group" />
+                  <ExpressionBindings>
+                    <Item1 Ref="45" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Revenue])" />
+                  </ExpressionBindings>
+                </Item5>
+                <Item6 Ref="46" ControlType="XRTableCell" Name="cellSubtotalMargin" Weight="157.33" Font="Calibri, 7.2pt, style=Bold" TextAlignment="MiddleRight" TextFormatString="{0:n1}" Padding="5,5,0,0,100">
+                  <Summary Ref="47" Running="Group" />
+                  <ExpressionBindings>
+                    <Item1 Ref="48" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Revenue] * [MarginPct]) / sumSum([Revenue])" />
+                  </ExpressionBindings>
+                </Item6>
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item1>
+      </Controls>
+    </Item6>
+    <Item7 Ref="49" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="25">
+      <Controls>
+        <Item1 Ref="50" ControlType="XRTable" Name="tblGrandTotal" LocationFloat="0, 0" SizeF="1000, 25" Borders="Top" BorderWidth="1.92" BorderDashStyle="Double">
+          <Rows>
+            <Item1 Ref="51" ControlType="XRTableRow" Name="rowGrandTotal" Weight="1">
+              <Cells>
+                <Item1 Ref="52" ControlType="XRTableCell" Name="cellGrandBlank1" Weight="123.33" Font="Calibri, 7.7pt, style=Bold" Padding="5,5,0,0,100" />
+                <Item2 Ref="53" ControlType="XRTableCell" Name="cellGrandCaption" Text="Grand Total" Weight="261.33" Font="Calibri, 7.7pt, style=Bold" TextAlignment="BottomLeft" Padding="5,5,0,3,100" />
+                <Item3 Ref="54" ControlType="XRTableCell" Name="cellGrandBlank2" Weight="165.33" Font="Calibri, 7.7pt, style=Bold" Padding="5,5,0,0,100" />
+                <Item4 Ref="55" ControlType="XRTableCell" Name="cellGrandUnits" Weight="146.67" Font="Calibri, 7.7pt, style=Bold" TextAlignment="BottomRight" TextFormatString="{0:n0}" Padding="5,5,0,3,100">
+                  <Summary Ref="56" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="57" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Units])" />
+                  </ExpressionBindings>
+                </Item4>
+                <Item5 Ref="58" ControlType="XRTableCell" Name="cellGrandRevenue" Weight="146" Font="Calibri, 7.7pt, style=Bold" TextAlignment="BottomRight" TextFormatString="{0:n1}" Padding="5,5,0,3,100">
+                  <Summary Ref="59" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="60" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Revenue])" />
+                  </ExpressionBindings>
+                </Item5>
+                <Item6 Ref="61" ControlType="XRTableCell" Name="cellGrandMargin" Weight="157.33" Font="Calibri, 7.7pt, style=Bold" TextAlignment="BottomRight" TextFormatString="{0:n1}" Padding="5,5,0,3,100">
+                  <Summary Ref="62" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="63" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Revenue] * [MarginPct]) / sumSum([Revenue])" />
+                  </ExpressionBindings>
+                </Item6>
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item1>
+      </Controls>
+    </Item7>
+    <Item8 Ref="64" ControlType="PageFooterBand" Name="PageFooter" HeightF="20">
+      <Controls>
+        <Item1 Ref="65" ControlType="XRLabel" Name="lblFooter" Text="Sales Operations &#183; confidential" LocationFloat="0, 10.27" SizeF="500, 9.73" Font="Calibri, 5.75pt" ForeColor="255,85,85,85" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+        <Item2 Ref="66" ControlType="XRPageInfo" Name="pageInfo" PageInfo="NumberOfTotal" TextFormatString="Page {0} of {1}" LocationFloat="700, 10.27" SizeF="300, 9.73" Font="Calibri, 5.75pt" ForeColor="255,85,85,85" TextAlignment="MiddleRight" Padding="0,0,0,0,100" />
+      </Controls>
+    </Item8>
+    <Item9 Ref="67" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="30" />
+  </Bands>
+</XtraReportsLayoutSerializer>

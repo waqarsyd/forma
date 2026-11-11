@@ -37,10 +37,11 @@ import { ensureUniqueRefs } from './repxRefs';
 import { repairDpi } from './repxDpi';
 import { repairPaper } from './repxPaper';
 import { wholeMargins } from './repxMargins';
-import { formatFor, isPlain, saysRatio } from './formatFromText';
+import { formatFor, isPlain, saysRatio, valueOfText } from './formatFromText';
 import { pointsToUnits } from './reportGeometry';
 import type { DetectedLayout } from './ocrLayout';
-import type { BandKind } from './reportPreview';
+import { decodeXmlText, parseReportStructure, type BandKind } from './reportPreview';
+import type { PageRows } from './pageRows';
 import type { ReportSkeleton, SkeletonControl, SkeletonFont, SkeletonRole } from './reportSkeleton';
 import type { ReportElement, ReportLayout, ReportSection } from './reportTypes';
 
@@ -637,4 +638,92 @@ export function skeletonToDesign(
     placeholders,
     used: { words, fields: usedFields, groups: usedGroups, colours: given.colours },
   };
+}
+
+/**
+ * Two of the page's values in order, each read as the data would hold it
+ * (`valueOfText`): "$5" and "1,200" as the numbers 5 and 1200, a printed date
+ * as its ISO form, which sorts as text; words as text, case aside. Compared as
+ * printed, "$5" came after "1,200".
+ */
+function compareValues(a: string, b: string): number {
+  const va = valueOfText(a);
+  const vb = valueOfText(b);
+  const x = Number(va);
+  const y = Number(vb);
+  if (va !== '' && vb !== '' && Number.isFinite(x) && Number.isFinite(y)) return x - y;
+  return va.localeCompare(vb, 'en', { sensitivity: 'base' });
+}
+
+/**
+ * The order one field's values run in within every group the page shows, or
+ * null when they run both ways in any group, or the page shows too few steps
+ * to say: three at least, so two records that happen to be in order are not
+ * taken for a sort.
+ */
+function orderOf(field: string, page: PageRows): 'Ascending' | 'Descending' | null {
+  let up = 0;
+  let down = 0;
+  for (const group of page.groups) {
+    const values = group.map((i) => page.rows[i]?.[field] ?? '').filter((v) => v.trim() !== '');
+    for (let i = 1; i < values.length; i++) {
+      const c = compareValues(values[i - 1], values[i]);
+      if (c < 0) up++;
+      else if (c > 0) down++;
+    }
+    if (up && down) return null;
+  }
+  if (up >= 3 && !down) return 'Ascending';
+  if (down >= 3 && !up) return 'Descending';
+  return null;
+}
+
+/**
+ * The page's record order kept inside its groups (2026-11-11, the full
+ * audit's CC-12). The Claude Code reference fed its FastReport list twenty
+ * products in no order and wrote `<SortFields>` on Detail, so each letter's
+ * products printed in order, as the page shows them; Forma wrote the
+ * grouping and never the sort, and its answer printed in whatever order the
+ * data came. When the page's records (`pageRows.ts`) run in one direction of
+ * one column within every group, the Detail band sorts by it, in the
+ * serializer's own form (`RepxProbe emit-sort`: inside Detail, before its
+ * controls; ascending writes no `SortOrder`). The leftmost column only, which
+ * is the one a reader sorts by; never a group's own field, and never over a
+ * Detail band that sorts already, or a report with no group, whose records
+ * print in the order the data gives them as the page's did.
+ */
+export function keepPageOrder(xml: string, page: PageRows | null): { xml: string; applied: boolean; reason: string } {
+  const no = (reason: string) => ({ xml, applied: false, reason });
+  if (!page || page.rows.length < 4) return no('too few records on the page to read an order from');
+  const structure = parseReportStructure(xml);
+  const detail = structure.bands.find((b) => b.kind === 'Detail');
+  if (!detail) return no('the report has no Detail band');
+  if (detail.fields.length) return no('the Detail band sorts already');
+  const grouped = new Set(structure.bands.filter((b) => b.kind === 'GroupHeader').flatMap((b) => b.fields.map((f) => decodeXmlText(f.field))));
+  if (!grouped.size) return no('the report has no group to keep an order inside');
+  /*
+   * The leftmost column alone (2026-11-11, the review of CC-12). Trying each
+   * column in turn took a figure such as Units or Amount that happened to
+   * rise across a small page for the sort, and the sort is then applied to
+   * the person's real data; a reader sorts a list by its leftmost column.
+   */
+  const field = page.columns.find((f): f is string => Boolean(f) && !grouped.has(f!));
+  if (field) {
+    const order = orderOf(field, page);
+    if (!order) return no(`the records do not run in one order of ${field}, the leftmost column, within every group`);
+    const open = /<Item\d+\b[^>]*\sControlType="DetailBand"[^>]*?(\/?)>/.exec(xml);
+    if (!open) return no('the Detail band could not be found in the file');
+    const refs = [...xml.matchAll(/\sRef="(\d+)"/g)].map((m) => Number(m[1]));
+    const ref = Math.max(0, ...refs) + 1;
+    const sort = `<SortFields><Item1 Ref="${ref}" FieldName="${attr(field)}"${order === 'Descending' ? ' SortOrder="Descending"' : ''} /></SortFields>`;
+    const tag = open[0];
+    const opened = open[1] ? `${tag.slice(0, -2).trimEnd()}>` : tag;
+    const close = open[1] ? `</${/^<(Item\d+)/.exec(tag)![1]}>` : '';
+    return {
+      xml: xml.slice(0, open.index) + opened + sort + close + xml.slice(open.index + tag.length),
+      applied: true,
+      reason: `kept the page's order of the records by ${field}${order === 'Descending' ? ', descending' : ''}, inside each group`,
+    };
+  }
+  return no('no column of the page is bound to a field');
 }

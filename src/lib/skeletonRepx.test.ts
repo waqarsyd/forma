@@ -6,9 +6,80 @@
 import { describe, expect, it } from 'vitest';
 import { checkRepx } from './repx';
 import { auditRepx } from './repxAudit';
-import { parseReportStructure } from './reportPreview';
+import { paginate, parseReportStructure } from './reportPreview';
 import { skeletonOf, type ReportSkeleton, type SkeletonControl } from './reportSkeleton';
-import { fieldFromCaption, mergePageSkeletons, skeletonToDesign, type PageText } from './skeletonRepx';
+import { fieldFromCaption, keepPageOrder, mergePageSkeletons, skeletonToDesign, type PageText } from './skeletonRepx';
+import type { PageRows } from './pageRows';
+
+// CC-12: the page's record order kept inside its groups, over records that arrive in no order.
+describe('keepPageOrder', () => {
+  const report = (detailInner = '') =>
+    '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="Products" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PaperKind="Letter" PageWidth="850" PageHeight="1100" Version="20.1"><Bands>' +
+    '<Item1 Ref="1" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />' +
+    '<Item2 Ref="2" ControlType="GroupHeaderBand" Name="GroupHeader1" HeightF="25"><GroupFields><Item1 Ref="3" FieldName="FirstLetter" /></GroupFields></Item2>' +
+    `<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="25">${detailInner}<Controls><Item1 Ref="5" ControlType="XRLabel" Name="name" LocationFloat="0,0" SizeF="300,25"><ExpressionBindings><Item1 Ref="6" EventName="BeforePrint" PropertyName="Text" Expression="[ProductName]" /></ExpressionBindings></Item1><Item2 Ref="7" ControlType="XRLabel" Name="units" LocationFloat="300,0" SizeF="100,25"><ExpressionBindings><Item1 Ref="8" EventName="BeforePrint" PropertyName="Text" Expression="[Units]" /></ExpressionBindings></Item2></Controls></Item3>` +
+    '<Item4 Ref="9" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" />' +
+    '</Bands></XtraReportsLayoutSerializer>';
+  /** The page: products sorted by name inside each letter, their units in no order. */
+  const page = (names: string[][]): PageRows => {
+    const rows = names.flat().map((name, i) => ({ FirstLetter: name[0], ProductName: name, Units: String([30, 5, 12, 40, 7, 21][i % 6]) }));
+    let at = 0;
+    return { rows, samples: {}, totals: [], groups: names.map((g) => g.map(() => at++)), pages: 1, columns: ['ProductName', 'Units'] };
+  };
+  const SORTED = page([['Camembert Pierrot', 'Carnarvon Tigers', 'Chai', 'Chang'], ['Geitost', 'Gnocchi di nonna Alice']]);
+
+  it("sorts the Detail band by the column the page's records run in, in the serializer's own form", () => {
+    const out = keepPageOrder(report(), SORTED);
+    expect(out.applied).toBe(true);
+    expect(out.xml).toContain('<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="25"><SortFields><Item1 Ref="10" FieldName="ProductName" /></SortFields><Controls>');
+    const structure = parseReportStructure(out.xml);
+    expect(structure.bands.find((b) => b.kind === 'Detail')!.fields).toEqual([{ field: 'ProductName', order: 'Ascending' }]);
+    // Printed over the same records in no order, each letter's products come out as the page shows them.
+    const shuffled = [...SORTED.rows].reverse();
+    const printed = paginate(structure, shuffled.length, { rows: shuffled }).pages[0].bands.filter((b) => b.band.kind === 'Detail').map((b) => b.controls[0].text);
+    expect(printed).toEqual(['Camembert Pierrot', 'Carnarvon Tigers', 'Chai', 'Chang', 'Geitost', 'Gnocchi di nonna Alice']);
+  });
+
+  it('writes a descending order as DevExpress does, and a self-closed Detail band opens for it', () => {
+    const down = page([['Chang', 'Chai', 'Carnarvon Tigers', 'Camembert Pierrot'], ['Gnocchi di nonna Alice', 'Geitost']]);
+    const out = keepPageOrder(report(), down);
+    expect(out.xml).toContain('FieldName="ProductName" SortOrder="Descending"');
+    const closed = report().replace(/(<Item3 [^>]*HeightF="25")>.*?<\/Item3>/, '$1 />');
+    const opened = keepPageOrder(closed, SORTED);
+    expect(opened.xml).toContain('<Item3 Ref="4" ControlType="DetailBand" Name="Detail" HeightF="25"><SortFields><Item1 Ref="10" FieldName="ProductName" /></SortFields></Item3>');
+  });
+
+  it('leaves the order alone where the page shows none, a sort is already there, or nothing groups', () => {
+    const mixed = page([['Chai', 'Camembert Pierrot', 'Chang', 'Carnarvon Tigers'], ['Geitost', 'Gnocchi di nonna Alice']]);
+    // Names out of order, units 30, 5, 12, 40 then 7, 21: neither column runs one way.
+    expect(keepPageOrder(report(), mixed).applied).toBe(false);
+    expect(keepPageOrder(report('<SortFields><Item1 Ref="99" FieldName="Units" /></SortFields>'), SORTED).reason).toBe('the Detail band sorts already');
+    expect(keepPageOrder(report().replace(/<GroupFields>.*?<\/GroupFields>/, ''), SORTED).applied).toBe(false);
+    expect(keepPageOrder(report(), null).applied).toBe(false);
+  });
+
+  it('reads only the leftmost column, so a figure that rises by chance is not taken for the sort', () => {
+    // Names in no order, units rising in both groups: the sort would reorder the real data by Units.
+    const names = [['Chai', 'Camembert Pierrot', 'Chang', 'Carnarvon Tigers'], ['Geitost', 'Gnocchi di nonna Alice']];
+    let n = 0;
+    const units = [3, 8, 20, 41, 2, 9];
+    const rows = names.flat().map((name) => ({ FirstLetter: name[0], ProductName: name, Units: String(units[n++]) }));
+    let at = 0;
+    const rising: PageRows = { rows, samples: {}, totals: [], groups: names.map((g) => g.map(() => at++)), pages: 1, columns: ['ProductName', 'Units'] };
+    expect(keepPageOrder(report(), rising).applied).toBe(false);
+  });
+
+  it('orders figures as numbers, whatever prints around them', () => {
+    // "$5" < "$40" < "$1,200" < "$15,000" as money; as text "$1,200" would come first.
+    const prices = [['$5', '$40', '$1,200', '$15,000'], ['$7', '$90']];
+    let at = 0;
+    const rows = prices.flat().map((p, i) => ({ FirstLetter: i < 4 ? 'A' : 'B', Units: p, ProductName: `P${i}` }));
+    const money: PageRows = { rows, samples: {}, totals: [], groups: prices.map((g) => g.map(() => at++)), pages: 1, columns: ['Units', 'ProductName'] };
+    const out = keepPageOrder(report(), money);
+    expect(out.applied).toBe(true);
+    expect(out.xml).toContain('<SortFields><Item1 Ref="10" FieldName="Units" /></SortFields>');
+  });
+});
 
 const font = (size: number, bold = false) => ({ family: 'Arial', size, bold, italic: false });
 const label = (over: Partial<SkeletonControl>): SkeletonControl => ({

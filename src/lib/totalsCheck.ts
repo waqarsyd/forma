@@ -9,8 +9,11 @@
  * is in OCR's reading of the page.
  *
  * - **`sum-of-ratio`** (a warning, with or without records): a `sumSum` in a
- *   footer under a caption that names a ratio (`%`, margin, rate, percent,
- *   ratio, average), or over a field named so.
+ *   footer under a caption that says it is a ratio (`%`, percent, pct, ratio,
+ *   average), or over a field named so. `saysRatio`, not the wider `isRatio`
+ *   (2026-11-11, wave 6): a sales report's "Gross Margin" is money beside
+ *   Revenue and Cost, and summing it is right, so "margin" and "rate" alone
+ *   draw no warning, exactly as the builder does not average them.
  * - **`total-disagrees-with-page`** (with the page's records, `pageRows.ts`):
  *   each total evaluated by `criteria.ts` over its scope's records, the
  *   group's for a group footer and the report's for the report footer, and
@@ -31,7 +34,7 @@
 import { parseReportStructure, type PreviewBand, type PreviewControl } from './reportPreview';
 import { aggregate, rowEnv, typeRows, type TypedRow } from './reportData';
 import { evaluateText, toNumber, type Value } from './criteria';
-import { isRatio, valueOfText } from './formatFromText';
+import { saysRatio, valueOfText } from './formatFromText';
 import { escapeXmlAttribute, unescapeXml } from './xmlEscape';
 import type { PageRows } from './pageRows';
 import type { RepxFinding } from './repxAudit';
@@ -98,7 +101,7 @@ function totalsOf(xml: string) {
 export function sumOfRatio(xml: string): RepxFinding[] {
   const found = totalsOf(xml).filter((t) => {
     const field = SUM_OF_FIELD.exec(t.place.expression!.trim())?.[1];
-    return field && (isRatio(t.caption) || isRatio(field));
+    return field && (saysRatio(t.caption) || saysRatio(field));
   });
   if (!found.length) return [];
   const named = [...new Set(found.map((t) => t.caption || SUM_OF_FIELD.exec(t.place.expression!.trim())![1]))];
@@ -106,7 +109,7 @@ export function sumOfRatio(xml: string): RepxFinding[] {
     {
       severity: 'warning',
       code: 'sum-of-ratio',
-      message: `${named.map((n) => `"${n}"`).join(', ')} ${named.length === 1 ? 'is' : 'are'} totalled as a sum, but a percentage, rate or average is never added up. ` +
+      message: `${named.map((n) => `"${n}"`).join(', ')} ${named.length === 1 ? 'is' : 'are'} totalled as a sum, but a percentage, ratio or average is never added up. ` +
         'Use its average (sumAvg) or an average weighted by the amount it is a share of.',
     },
   ];
@@ -178,7 +181,7 @@ function judge(xml: string, page: PageRows): Judged[] {
 /**
  * `total-disagrees-with-page`: a total that works out differently from the
  * page's own figure. An error, which sends the report back, only when it is
- * plainly the wrong kind of total: a percentage, rate or average column whose
+ * plainly the wrong kind of total: a percentage, ratio or average column whose
  * total falls outside the smallest and largest of the values it totals, as a
  * sum of percentages does and an average cannot (CC-05's own measure). Any
  * other difference is a warning: a figure OCR misread, or a page whose
@@ -199,7 +202,7 @@ export function checkTotals(xml: string, page: PageRows | null): RepxFinding[] {
         return got !== null && values.length > 0 && (got < Math.min(...values) - 1e-9 || got > Math.max(...values) + 1e-9);
       });
       return {
-        severity: (isRatio(j.caption) || isRatio(j.column)) && outside ? ('error' as const) : ('warning' as const),
+        severity: (saysRatio(j.caption) || saysRatio(j.column)) && outside ? ('error' as const) : ('warning' as const),
         code: 'total-disagrees-with-page',
         message: `The total under "${j.caption || j.column}" prints ${printed === null ? 'nothing' : round(printed, decimalsOf(j.scopes[k].figure))} where the page shows ${j.scopes[k].figure}.`,
       };

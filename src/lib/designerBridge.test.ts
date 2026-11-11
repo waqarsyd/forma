@@ -40,11 +40,11 @@ describe('the website and the companion (2026-11-09)', () => {
     expect(designerLocalOrigin('https://openforma.web.app')).toBe(false);
   });
 
-  it('names the same sites as the companion, which answers them on /health and /open alone', () => {
+  it('names the same sites as the companion, which answers them on /health, /open and the read-only /inspect and /render, never /sql/', () => {
     const program = readFileSync('tools/RepxDesigner/Program.cs', 'utf8');
     const list = /SiteOrigins = \{([^}]*)\}/.exec(program)![1];
     expect([...list.matchAll(/"([^"]+)"/g)].map((m) => m[1])).toEqual([...DESIGNER_SITE_ORIGINS]);
-    expect(program).toContain('route == "/health" || route == "/open"');
+    expect(program).toContain('route == "/health" || route == "/open" || route == "/inspect" || route == "/render"');
     expect(program).toContain('HandleSql(stream, method, target, headers, body, IsLocalOrigin(origin) ? origin : null)');
   });
 
@@ -416,6 +416,10 @@ describe('what the companion says on /health', () => {
     });
     expect(readDesignerHealth({ app: 'Something else' })).toBeNull();
     expect(readDesignerHealth('nope')).toBeNull();
+    // Only a companion with /inspect says so, and only true counts.
+    expect(readDesignerHealth({ app: 'RepxDesigner', designerVersion: '20.1.3.0', inspects: true })?.inspects).toBe(true);
+    expect(readDesignerHealth({ app: 'RepxDesigner', designerVersion: '20.1.3.0', inspects: 'yes' })).not.toHaveProperty('inspects');
+    expect(readFileSync('tools/RepxDesigner/Program.cs', 'utf8')).toContain('b.Append(",\\"inspects\\":true");');
   });
 });
 
@@ -496,5 +500,127 @@ describe('the Open in designer steps', () => {
     expect(designerStep({ ...base, health: healthy, sent: { ok: true } })).toEqual({ kind: 'opened', version: '1.0.0', newer: null });
     expect(designerStep({ ...base, health: healthy, sent: { ok: true }, latest: '1.1.0' })).toEqual({ kind: 'opened', version: '1.0.0', newer: '1.1.0' });
     expect(designerStep({ ...base, health: { ...healthy, version: null }, sent: { ok: true } })).toEqual({ kind: 'opened', version: null, newer: '1.0.0' });
+  });
+});
+
+/*
+ * CC-10 (2026-11-11): the installed DevExpress asked what it makes of a report.
+ * The answers below are Forma Designer's own, from its /inspect and /render on
+ * the Claude Code reference's FastReport v1 (fractional margins) with its 20
+ * records: DevExpress kept sides of 100 and printed 4 pages.
+ */
+describe('what DevExpress makes of a report (CC-10)', () => {
+  const INSPECT = {
+    declared: 14,
+    loaded: 14,
+    lost: [],
+    dropped: [
+      { attribute: 'Margins', declared: '39.37, 39.37, 39.37, 39.37', loaded: '100, 100, 39, 39' },
+      { attribute: 'PageWidth', declared: '826.77', loaded: '827' },
+    ],
+    margins: [100, 100, 39, 39],
+  };
+  const RENDER = { pages: 4, records: 20, margins: [100, 100, 39, 39] };
+  const HEALTH = { app: 'RepxDesigner', version: '1.1.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1', inspects: true };
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  /** A fresh copy of the module, which has not heard from Forma Designer yet. */
+  const fresh = async () => {
+    vi.resetModules();
+    return import('./designerBridge');
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('asks nothing until Forma Designer has answered in this page', async () => {
+    const bridge = await fresh();
+    const fetchMock = vi.fn(async () => json(INSPECT));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(bridge.designerAnswered()).toBe(false);
+    expect(await bridge.inspectInDesigner('<XtraReportsLayoutSerializer />', [])).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('then sends the report to /inspect and, with the records, to /render, behind the client header', async () => {
+    const bridge = await fresh();
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      if (url.endsWith('/health')) return json(HEALTH);
+      return json(url.endsWith('/inspect') ? INSPECT : RENDER);
+    }));
+    expect(await bridge.askDesigner()).not.toBeNull();
+    expect(bridge.designerAnswered()).toBe(true);
+    const seen = await bridge.inspectInDesigner('<XtraReportsLayoutSerializer />', [{ ProductName: 'Chai' }]);
+    expect(seen).toEqual({ lost: [], dropped: INSPECT.dropped, margins: [100, 100, 39, 39], pages: 4 });
+    const [inspect, render] = calls.slice(1);
+    expect(inspect.url).toBe(`${bridge.DESIGNER_ORIGIN}/inspect`);
+    expect(new Headers(inspect.init?.headers).get(DESIGNER_CLIENT_HEADER)).toBe('1');
+    expect(inspect.init?.body).toBe('<XtraReportsLayoutSerializer />');
+    expect(render.url).toBe(`${bridge.DESIGNER_ORIGIN}/render`);
+    expect(JSON.parse(String(render.init?.body))).toEqual({ repx: '<XtraReportsLayoutSerializer />', rows: [{ ProductName: 'Chai' }] });
+  });
+
+  it('stops asking once Forma Designer has gone, until it answers again', async () => {
+    const bridge = await fresh();
+    vi.stubGlobal('fetch', vi.fn(async () => json(HEALTH)));
+    expect(await bridge.askDesigner()).not.toBeNull();
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    expect(await bridge.inspectInDesigner('<x />', null)).toBeNull();
+    expect(bridge.designerAnswered()).toBe(false);
+  });
+
+  it('never asks a Forma Designer released before /inspect, which the website cannot reach', async () => {
+    // 1.0.0, the one in the 1.4.x zips: its /health says nothing of /inspect.
+    const bridge = await fresh();
+    const fetchMock = vi.fn(async () => json({ ...HEALTH, version: '1.0.0', inspects: undefined }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await bridge.askDesigner()).not.toBeNull();
+    expect(await bridge.pingDesigner()).toBe(true);
+    expect(bridge.designerAnswered()).toBe(false);
+    expect(await bridge.inspectInDesigner('<x />', [{ A: '1' }])).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('takes an answer that is not JSON as unreadable, not as Forma Designer gone', async () => {
+    const bridge = await fresh();
+    vi.stubGlobal('fetch', vi.fn(async () => json(HEALTH)));
+    await bridge.askDesigner();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>', { status: 200 })));
+    expect(await bridge.inspectInDesigner('<x />', null)).toBeNull();
+    expect(bridge.designerAnswered()).toBe(true);
+  });
+
+  it('prints only when the page gave records to print with', async () => {
+    const bridge = await fresh();
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      urls.push(url);
+      return json(url.endsWith('/health') ? HEALTH : INSPECT);
+    }));
+    await bridge.askDesigner();
+    expect(await bridge.inspectInDesigner('<x />', [])).toEqual({ lost: [], dropped: INSPECT.dropped, margins: [100, 100, 39, 39], pages: null });
+    expect(urls.map((u) => u.slice(bridge.DESIGNER_ORIGIN.length))).toEqual(['/health', '/inspect']);
+  });
+
+  it('says what DevExpress did not keep and printed, in plain words', async () => {
+    const bridge = await fresh();
+    const seen = bridge.readInspection(INSPECT, RENDER)!;
+    const found = bridge.inspectionFindings(seen, { pagesShown: 2 });
+    expect(found.map((f) => [f.severity, f.code])).toEqual([
+      ['warning', 'designer-dropped'],
+      ['error', 'designer-extra-pages'],
+    ]);
+    expect(found[0].message).toBe('DevExpress did not keep the margins as 39.37, 39.37, 39.37, 39.37 (it uses 100, 100, 39, 39), the page width as 826.77 (it uses 827).');
+    expect(found[1].message).toBe("Printed in DevExpress with the page's records, the report runs to 4 pages where the page has 2.");
+    // A part it could not build is an error; nothing else is said when all is kept.
+    expect(bridge.inspectionFindings({ lost: ['tableHead'], dropped: [], margins: null, pages: null })[0]).toMatchObject({ severity: 'error', code: 'designer-lost-controls' });
+    expect(bridge.inspectionFindings({ lost: [], dropped: [], margins: [39, 39, 39, 39], pages: 2 }, { pagesShown: 2 })).toEqual([]);
+    expect(bridge.readInspection({ nothing: true }, null)).toBeNull();
+  });
+
+  it('is answered by the companion behind the same guards as /open', () => {
+    const program = readFileSync('tools/RepxDesigner/Program.cs', 'utf8');
+    const block = program.slice(program.indexOf('route == "/inspect" || route == "/render"))'));
+    expect(block).toMatch(/if \(allowed == null\)[\s\S]*ClientHeader[\s\S]*Installed == null/);
+    expect(readFileSync('tools/RepxDesigner/RepxDesigner.csproj', 'utf8')).toContain('<Compile Include="Probe.cs" />');
   });
 });

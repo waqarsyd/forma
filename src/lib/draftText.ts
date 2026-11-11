@@ -318,7 +318,7 @@ WHAT A GOOD DRAFT IS:
 - A page number or a printed date is a pageInfo in PageFooter.
 - Keep OCR's words where they are right and correct what it misread from the picture. Leave out text the page does not show.
 - Add what OCR cannot see: rules as line, boxed areas as BORDERS, shaded areas as fill=, coloured text as ink=, logos, stamps and signatures as picture.
-- FONT is the em size in points, not the height of the ink: capitals stand about 70% of it. Body text in a printed business document is usually 9 to 11pt.
+- FONT is the em size in points, not the height of the ink. The draft's sizes were measured from the letters' widths; keep them unless the picture plainly disagrees.
 - Every control fits inside its band and the printable width, and every band is as tall as what it holds.`;
 
 /** How many controls a skeleton holds, tables counted once. */

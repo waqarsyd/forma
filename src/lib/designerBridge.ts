@@ -23,6 +23,7 @@
  */
 
 import { DESIGNER_RELEASE, designerIsOlder } from './designerRelease';
+import type { RepxFinding } from './repxAudit';
 
 /** Loopback only. `--port` on the companion moves both sides; keep them equal. */
 export const DESIGNER_ORIGIN = 'http://127.0.0.1:7317';
@@ -165,6 +166,7 @@ export async function pingDesigner(timeoutMs = 1200): Promise<boolean> {
       method: 'GET',
       signal: controller.signal,
     });
+    if (response.ok) answered = true;
     return response.ok;
   } catch {
     return false;
@@ -274,14 +276,14 @@ export async function sendToDesigner(repxContent: string, fileName: string): Pro
       body: repxContent,
       signal: controller.signal,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Distinguish "it never answered" from "it could not be reached": the first
     // means the companion is running and stuck, and the remedy is to look at
     // it; the second means it stopped between /health and /open. Both in the
     // product's name and plain words (2026-11-11, the full audit, SD-18): the
     // dialog showed "The designer companion did not respond within 15
     // seconds" and, for the second, the browser's own "Failed to fetch".
-    if (error?.name === 'AbortError') throw new Error(DESIGNER_STUCK);
+    if ((error as { name?: string } | null)?.name === 'AbortError') throw new Error(DESIGNER_STUCK);
     throw new Error(DESIGNER_GONE);
   } finally {
     clearTimeout(timer);
@@ -327,6 +329,8 @@ export interface DesignerHealth {
   found: string[];
   /** The oldest DevExpress it runs on. */
   oldest: string;
+  /** It answers /inspect and /render (2026-11-11, CC-10); absent from every release before. */
+  inspects?: true;
 }
 
 /**
@@ -352,6 +356,7 @@ export function readDesignerHealth(body: unknown): DesignerHealth | null {
     devexpress,
     found: Array.isArray(b.found) ? b.found.filter((v): v is string => typeof v === 'string') : devexpress ? [devexpress.version] : [],
     oldest: typeof b.oldest === 'string' ? b.oldest : '20.1',
+    ...(b.inspects === true ? { inspects: true as const } : {}),
   };
 }
 
@@ -377,7 +382,12 @@ export async function askDesigner(timeoutMs = HEALTH_WAIT_MS): Promise<DesignerH
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${DESIGNER_ORIGIN}/health`, { ...LOOPBACK_FETCH, method: 'GET', signal: controller.signal });
-    return response.ok ? readDesignerHealth(await response.json()) : null;
+    const health = response.ok ? readDesignerHealth(await response.json()) : null;
+    if (health) {
+      answered = true;
+      inspects = health.inspects === true;
+    }
+    return health;
   } catch {
     return null;
   } finally {
@@ -450,4 +460,161 @@ export function designerStep(f: DesignerFacts): DesignerStep {
   }
   if (f.sent.status === 424) return { kind: 'no-devexpress', found: f.health.found, oldest: f.health.oldest };
   return { kind: 'error', message: f.sent.message };
+}
+
+/* ------------------------------------------------------------------ *
+ * The installed DevExpress asked what it makes of a report (2026-11-11,
+ * the full audit's CC-10): Forma Designer's read-only /inspect and
+ * /render (tools/RepxDesigner/Probe.cs). Every rule Forma checks a report
+ * by was learned by putting files through DevExpress by hand, and the last
+ * one (Margins must be four whole numbers) was found by chance, nine
+ * probes deep; a person running Forma Designer has the real loader on
+ * their PC, so it is asked after a generation instead.
+ *
+ * Asked only once Forma Designer has answered in this page, from the Open
+ * in designer dialog: nothing knocks on 127.0.0.1 unasked, which would
+ * fill the console of everyone without it with refused connections (the
+ * probe removed on 2026-11-09, above) and could put the browser's
+ * question about reaching apps on the PC in front of someone who never
+ * started Forma Designer.
+ * ------------------------------------------------------------------ */
+
+/** Whether Forma Designer has answered in this page. */
+let answered = false;
+/**
+ * Whether the one that answered /health said it has /inspect. Every Forma
+ * Designer released before 2026-11-11 (1.0.0, in the 1.4.x zips) has not:
+ * from the website its preflight is refused, so asking it anyway cost each
+ * generation after an Open in designer one certain failure and a CORS error
+ * in the console. Only askDesigner reads the body that says so.
+ */
+let inspects = false;
+
+/** Whether a generation may ask Forma Designer about its report: only once one that can has answered here. */
+export function designerAnswered(): boolean {
+  return answered && inspects;
+}
+
+/** What DevExpress made of a report. */
+export interface DesignerInspection {
+  /** Controls and bands the file declares that DevExpress did not build, by name. */
+  lost: string[];
+  /** The report's attributes DevExpress did not keep as written, with what it uses instead. */
+  dropped: { attribute: string; declared: string; loaded: string | null }[];
+  /** The margins DevExpress prints with, left, right, top, bottom; null when it did not say. */
+  margins: number[] | null;
+  /** The pages DevExpress printed with the records sent; null when it did not print. */
+  pages: number | null;
+}
+
+const numbers = (v: unknown): number[] | null => (Array.isArray(v) && v.every((n) => typeof n === 'number') ? (v as number[]) : null);
+
+/** /inspect's and /render's answers as one; null when /inspect said nothing readable. */
+export function readInspection(inspect: unknown, render: unknown): DesignerInspection | null {
+  if (!inspect || typeof inspect !== 'object') return null;
+  const i = inspect as Record<string, unknown>;
+  if (!Array.isArray(i.lost) || !Array.isArray(i.dropped)) return null;
+  const r = render && typeof render === 'object' ? (render as Record<string, unknown>) : {};
+  return {
+    lost: i.lost.filter((n): n is string => typeof n === 'string'),
+    dropped: i.dropped.flatMap((d) => {
+      const o = d && typeof d === 'object' ? (d as Record<string, unknown>) : null;
+      return o && typeof o.attribute === 'string' && typeof o.declared === 'string'
+        ? [{ attribute: o.attribute, declared: o.declared, loaded: typeof o.loaded === 'string' ? o.loaded : null }]
+        : [];
+    }),
+    margins: numbers(r.margins) ?? numbers(i.margins),
+    pages: typeof r.pages === 'number' ? r.pages : null,
+  };
+}
+
+/** How long DevExpress has to load and print a report: it loads its assemblies on the first. */
+const INSPECT_TIMEOUT_MS = 20_000;
+
+/**
+ * Forma Designer's account of a report, printed with `rows` (the page's own
+ * records, each value as text); null when it has not answered in this page,
+ * or does not answer now, or answers something unreadable. A connection it
+ * refuses stops the asking until it answers again.
+ */
+export async function inspectInDesigner(
+  repxContent: string,
+  rows: readonly Readonly<Record<string, string>>[] | null,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<DesignerInspection | null> {
+  if (!designerAnswered() || typeof fetch === 'undefined' || !repxContent) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? INSPECT_TIMEOUT_MS);
+  const stop = () => controller.abort();
+  options.signal?.addEventListener('abort', stop, { once: true });
+  const post = async (route: string, type: string, body: string) => {
+    const response = await fetch(`${DESIGNER_ORIGIN}${route}`, {
+      ...LOOPBACK_FETCH,
+      method: 'POST',
+      headers: { 'Content-Type': type, [DESIGNER_CLIENT_HEADER]: '1' },
+      body,
+      signal: controller.signal,
+    });
+    // A body that is not JSON is an unreadable answer, not Forma Designer gone:
+    // left to throw, its SyntaxError would stop the asking as a refusal does.
+    return response.ok ? ((await response.json().catch(() => null)) as unknown) : null;
+  };
+  try {
+    const inspect = await post('/inspect', 'application/xml', repxContent);
+    if (!inspect) return null;
+    // With no records from the page there is no page count to hold the print
+    // to, and the second load is time the reply waits for; /inspect's margins stand.
+    const render = rows?.length
+      ? await post('/render', 'application/json', JSON.stringify({ repx: repxContent, rows })).catch(() => null)
+      : null;
+    return readInspection(inspect, render);
+  } catch (error: unknown) {
+    // Not running any more (a refused connection, not a timeout): ask again only once it answers.
+    if ((error as { name?: string } | null)?.name !== 'AbortError') answered = false;
+    return null;
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', stop);
+  }
+}
+
+/** The attributes' own names, as a person reads them. */
+const ATTRIBUTE_WORDS: Record<string, string> = {
+  Margins: 'margins',
+  PaperKind: 'paper',
+  PageWidth: 'page width',
+  PageHeight: 'page height',
+  Landscape: 'orientation',
+  ReportUnit: 'unit',
+};
+
+/**
+ * What DevExpress made of a report, said plainly, beside the print's own
+ * findings: a part it could not build (an error), the report's settings it
+ * did not keep as written (a warning), and more pages than the page shows
+ * when it printed the page's records (an error), each of which the report
+ * would show when it is opened there.
+ */
+export function inspectionFindings(seen: DesignerInspection, options: { pagesShown?: number } = {}): RepxFinding[] {
+  const out: RepxFinding[] = [];
+  if (seen.lost.length) {
+    const named = `${seen.lost.slice(0, 4).join(', ')}${seen.lost.length > 4 ? ', ...' : ''}`;
+    out.push({
+      severity: 'error',
+      code: 'designer-lost-controls',
+      message: `DevExpress could not build ${seen.lost.length === 1 ? 'one part' : `${seen.lost.length} parts`} of the report (${named}), so ${seen.lost.length === 1 ? 'it is' : 'they are'} missing when it opens.`,
+    });
+  }
+  if (seen.dropped.length) {
+    const said = seen.dropped.map((d) => `the ${ATTRIBUTE_WORDS[d.attribute] ?? d.attribute} as ${d.declared}${d.loaded !== null ? ` (it uses ${d.loaded})` : ''}`);
+    out.push({ severity: 'warning', code: 'designer-dropped', message: `DevExpress did not keep ${said.join(', ')}.` });
+  }
+  if (options.pagesShown && seen.pages !== null && seen.pages > options.pagesShown) {
+    out.push({
+      severity: 'error',
+      code: 'designer-extra-pages',
+      message: `Printed in DevExpress with the page's records, the report runs to ${seen.pages} pages where the page has ${options.pagesShown}.`,
+    });
+  }
+  return out;
 }

@@ -869,6 +869,36 @@ namespace RepxDesigner
                 return;
             }
 
+            if (method == "POST" && (route == "/inspect" || route == "/render"))
+            {
+                // What the installed DevExpress makes of a report (2026-11-11, the full
+                // audit's CC-10, Probe.cs): read-only, no window, nothing written to disk,
+                // behind the same guards as /open.
+                if (allowed == null) { Respond(stream, 403, "text/plain", "", null); return; }
+                if (!headers.ContainsKey(ClientHeader)) { Respond(stream, 400, "text/plain", "Missing " + ClientHeader, allowed); return; }
+                if (Installed == null) { Respond(stream, 424, "application/json", MissingDevExpress.Json(Found), allowed); return; }
+                if (string.IsNullOrEmpty(body)) { Respond(stream, 400, "text/plain", "Empty body", allowed); return; }
+                try
+                {
+                    if (route == "/inspect")
+                    {
+                        Respond(stream, 200, "application/json", ReportProbe.Inspect(body), allowed);
+                    }
+                    else
+                    {
+                        int status;
+                        string json = ReportProbe.Render(body, out status);
+                        Respond(stream, status, "application/json", json, allowed);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // DevExpress's own words for a report it cannot load or print.
+                    Respond(stream, 422, "application/json", "{\"error\":" + SqlCompanion.Json(ex.GetType().Name + ": " + ex.Message.Split('\n')[0]) + "}", allowed);
+                }
+                return;
+            }
+
             if (target.StartsWith("/sql/"))
             {
                 // A page served from this PC only, whatever AllowedFor said (2026-11-09).
@@ -980,7 +1010,8 @@ namespace RepxDesigner
 
         /// <summary>
         /// Forma's own website (2026-11-09, the owner's decision in the download
-        /// programme): /health and /open only, never /sql/. Its page sends the first
+        /// programme): /health and /open, and the read-only /inspect and /render since
+        /// 2026-11-11 (CC-10), never /sql/. Its page sends the first
         /// request only when the person clicks Open in designer, which is when the
         /// browser asks them, once, whether the site may reach programs on this PC.
         /// Kept equal to DESIGNER_SITE_ORIGINS in src/lib/designerBridge.ts by a test.
@@ -992,11 +1023,15 @@ namespace RepxDesigner
             return !string.IsNullOrEmpty(origin) && Array.IndexOf(SiteOrigins, origin) >= 0;
         }
 
-        /// <summary>The origin to grant for this route, or null: the website reaches /health and /open alone.</summary>
+        /// <summary>
+        /// The origin to grant for this route, or null: the website reaches /health and
+        /// /open, and since 2026-11-11 (CC-10) the read-only /inspect and /render, which
+        /// answer about the report sent and nothing else on this PC. Never /sql/.
+        /// </summary>
         private static string AllowedFor(string origin, string route)
         {
             if (IsLocalOrigin(origin)) return origin;
-            if (IsSiteOrigin(origin) && (route == "/health" || route == "/open")) return origin;
+            if (IsSiteOrigin(origin) && (route == "/health" || route == "/open" || route == "/inspect" || route == "/render")) return origin;
             return null;
         }
 
@@ -1161,6 +1196,7 @@ namespace RepxDesigner
                 case 403: return "Forbidden";
                 case 409: return "Conflict";
                 case 413: return "Payload Too Large";
+                case 422: return "Unprocessable Entity";
                 case 424: return "Failed Dependency";
                 case 502: return "Bad Gateway";
                 default: return "Not Found";
@@ -1183,6 +1219,10 @@ namespace RepxDesigner
             b.Append(",\"found\":[").Append(string.Join(",", Found.Select(i => SqlCompanion.Json(i.Version)))).Append("]");
             b.Append(",\"oldest\":").Append(SqlCompanion.Json(DevExpressLocator.Oldest.ToString(2)));
             b.Append(",\"compiled\":").Append(SqlCompanion.Json(DevExpressLocator.Compiled));
+            // Since 2026-11-11 (CC-10): this program answers /inspect and /render.
+            // Every Forma Designer released before it has neither, and from the
+            // website its preflight is refused, so Forma asks only one that says so.
+            b.Append(",\"inspects\":true");
             return b.Append("}").ToString();
         }
 

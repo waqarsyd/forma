@@ -88,6 +88,21 @@ describe('sumOfRatio', () => {
     expect(sumOfRatio(salesReport('sumAvg([MarginPct])'))).toEqual([]);
     expect(sumOfRatio(salesReport(WEIGHTED))).toEqual([]);
   });
+
+  it('reads as two sentences: the message is shown to people as written', () => {
+    // 2026-11-11: an edit dropped the space between the two halves and the
+    // finding read "...never added up.Use its average"; nothing caught it.
+    const message = sumOfRatio(salesReport())[0]?.message ?? '';
+    expect(message).toContain('never added up. Use its average');
+    expect(message).not.toMatch(/\.[A-Z]/);
+  });
+
+  it('leaves a money column called a margin or a rate alone: only a word that means ratio warns', () => {
+    // "Gross Margin" is money beside Revenue and Cost; summing it is right.
+    expect(sumOfRatio(salesReport('sumSum([GrossMargin])', 'Gross Margin'))).toEqual([]);
+    expect(sumOfRatio(salesReport('sumSum([Rate])', 'Rate'))).toEqual([]);
+    expect(sumOfRatio(salesReport('sumSum([GrossMargin])', 'Margin %'))[0]?.code).toBe('sum-of-ratio');
+  });
 });
 
 describe('checkTotals', () => {

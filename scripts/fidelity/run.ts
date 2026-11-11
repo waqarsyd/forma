@@ -11,7 +11,17 @@
  *   --runs <n>        generate each case n times, to see variance (default 1)
  *   --out <dir>       where results go (default fidelity-results/<timestamp>)
  *   --replay <dir>    re-score the saved outputs in that results directory
- *                     against the CURRENT case files, calling nothing
+ *                     against the CURRENT case files, calling nothing.
+ *                     scripts/fidelity/replay/reference-2026-11-11 is one kept
+ *                     in the repository (2026-11-11, the full audit's CC-01):
+ *                     Forma's AI answers of 2026-11-10 (run 1) and the Claude
+ *                     Code reference's v2 (run 2) for invoice-ruled,
+ *                     sales-grouped and fastreport-groups, each a report and
+ *                     nothing else, so the print expectations replay with no
+ *                     results folder from elsewhere. The summary is written
+ *                     beside the saved outputs, except for a folder kept in
+ *                     the repository, whose goes to fidelity-results/ so the
+ *                     tracked one stays as committed; --out names another
  *   --model <name>    pin a model instead of letting the app auto-detect one
  *   --thinking <n>    set ReportConfig.thinkingBudget for every case
  *   --rerender        re-render every .html source even if its .png exists
@@ -121,7 +131,7 @@
  * to a real leak.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, extname, join, resolve } from 'node:path';
+import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { analyzeReportDesign, type DraftRequest, type ReportConfig } from '../../src/services/geminiService';
 import type { AnalysisResponse, AttachmentPart, ReportLayout } from '../../src/lib/reportTypes';
@@ -154,6 +164,29 @@ import {
 } from '../../src/lib/fidelity';
 import { layoutFromRepx } from '../../src/lib/repxViews';
 import { paperInches } from '../../src/lib/reportGeometry';
+import { repairRepx } from '../../src/lib/repairChain';
+import { parseTrueType } from '../../src/lib/trueType';
+import { faceWidthsFrom, measureFacesWith } from '../../src/lib/ocrLayout';
+
+/*
+ * Text measured in its face's own widths, as the browser's canvas measures it
+ * (2026-11-11, the full audit's CC-08 and CC-07): a page's sizes read from the
+ * letters' widths, and a print where text grows. Node has no canvas, so the
+ * Liberation files the PDF export embeds stand in, metric-compatible with
+ * Arial and Times New Roman. Without this every size here came from the rough
+ * width table the browser no longer uses.
+ */
+{
+  const face = (file: string) => parseTrueType(new Uint8Array(readFileSync(join('assets/pdf-fonts', file))));
+  measureFacesWith(
+    faceWidthsFrom([
+      { face: { family: 'Arial', bold: false }, font: face('LiberationSans-Regular.ttf') },
+      { face: { family: 'Arial', bold: true }, font: face('LiberationSans-Bold.ttf') },
+      { face: { family: 'Times New Roman', bold: false }, font: face('LiberationSerif-Regular.ttf') },
+      { face: { family: 'Times New Roman', bold: true }, font: face('LiberationSerif-Bold.ttf') },
+    ]),
+  );
+}
 
 /** The browser downsizes anything longer than this on its long edge (App.tsx). */
 const MAX_IMAGE_EDGE = 2048;
@@ -510,11 +543,27 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
     // Forma's own draft, no AI (--forma, 2026-11-10).
     if (opts.forma) {
       const team = await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir);
-      record.response = team.own ?? null;
       record.log.push(`[runner] Forma's own draft: ${team.own ? (team.draft ? 'the box reader' : 'OCR\'s copy') : 'none (not a picture)'}`);
       if (!team.own) record.error = 'Forma makes no draft without a picture';
       record.elapsedMs = Date.now() - startedAt.getTime();
       record.model = 'forma-draft';
+      /*
+       * Through the repair chain, as App's asConfigured puts every report Forma
+       * builds itself since 2026-11-11 (ARCH-1b, lib/repairChain.ts), and
+       * scored before and after it, so the chain's effect on Forma's own
+       * drafts is measured rather than assumed (the CCC batch of wave 6).
+       */
+      if (team.own) {
+        const raw: RunRecord = { ...record, response: team.own };
+        score(raw, c);
+        const s = scoreChecks(raw.checks);
+        const failed = raw.checks.filter((k) => !k.pass).map((k) => k.id);
+        record.log.push(`[runner] before the repair chain: ${s.passed}/${s.total}${failed.length ? ` (failed ${failed.join(', ')})` : ''}`);
+        console.log(`[${c.name}] Forma's own draft before the repair chain: ${s.passed}/${s.total}${failed.length ? `, failed ${failed.join(', ')}` : ''}`);
+        // The layout read again off the repaired file, as the app reads its views: the draft's own was read before the chain.
+        const repaired = repairRepx(team.own.repxContent, { version: config.version }).xml;
+        record.response = { ...team.own, repxContent: repaired, layout: layoutFromRepx(repaired) };
+      }
       score(record, c);
       return record;
     }
@@ -927,12 +976,17 @@ async function main(): Promise<number> {
   }
 
   if (opts.replay) {
-    outDir = opts.out || opts.replay;
+    // A replay kept under scripts/ is tracked: its summary and coverage go to fidelity-results/, not into it.
+    const fromScripts = relative(resolve('scripts'), resolve(opts.replay));
+    const kept = !fromScripts.startsWith('..') && !isAbsolute(fromScripts);
+    outDir = opts.out || (kept ? join('fidelity-results', `replay-${timestamp()}`) : opts.replay);
     const byName = new Map(cases.map((c) => [c.name, c]));
     for (const file of readdirSync(opts.replay).filter((f) => /^run-.*\.json$/.test(f))) {
       const record = JSON.parse(readFileSync(join(opts.replay, file), 'utf8')) as RunRecord;
       const c = byName.get(record.case);
       if (!c) continue;
+      // A record kept with its report alone (scripts/fidelity/replay) has its layout read off the file, as the app reads one.
+      if (record.response?.repxContent && !record.response.layout) record.response = { ...record.response, layout: layoutFromRepx(record.response.repxContent) };
       score(record, c);
       record.coverage = await coverageFor(c, record, outDir);
       if (opts.probe) record.probe = probeRecord(c, record, outDir);

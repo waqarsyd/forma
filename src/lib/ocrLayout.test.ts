@@ -1,6 +1,19 @@
-import { describe, expect, it } from 'vitest';
-import { detectLayout, fontFromInk, fontFromWidth, layoutText } from './ocrLayout';
+import { readFileSync } from 'node:fs';
+import { afterEach, describe, expect, it } from 'vitest';
+import { detectLayout, faceWidthsFrom, fontFromFaces, fontFromInk, fontFromWidth, layoutText, measureFacesWith, type FaceWidth } from './ocrLayout';
+import { parseTrueType } from './trueType';
 import type { OcrLine, OcrPage } from './ocr';
+
+/** Arial and Times New Roman as Node measures them: the Liberation files the PDF export embeds. */
+const liberation = (() => {
+  const face = (file: string) => parseTrueType(new Uint8Array(readFileSync(`assets/pdf-fonts/${file}`)));
+  return faceWidthsFrom([
+    { face: { family: 'Arial', bold: false }, font: face('LiberationSans-Regular.ttf') },
+    { face: { family: 'Arial', bold: true }, font: face('LiberationSans-Bold.ttf') },
+    { face: { family: 'Times New Roman', bold: false }, font: face('LiberationSerif-Regular.ttf') },
+    { face: { family: 'Times New Roman', bold: true }, font: face('LiberationSerif-Bold.ttf') },
+  ]);
+})();
 
 /** A line of words, each `[text, x0, x1, confidence]`, at a height of 13 pixels from `y`. */
 function line(y: number, ...words: [string, number, number, number?][]): OcrLine {
@@ -175,6 +188,52 @@ describe('fontFromInk', () => {
     expect(fontFromWidth('1000', 27.08, 'HundredthsOfAnInch')).toBe(9);
     expect(fontFromWidth('Region', 40, 'HundredthsOfAnInch')).toBe(9.5);
     expect(fontFromWidth('', 40, 'HundredthsOfAnInch')).toBe(48);
+  });
+});
+
+// CC-08: the size from the faces' own widths, words at the invoice case's PaddleOCR boxes, 150 dpi.
+describe('fontFromFaces', () => {
+  afterEach(() => measureFacesWith(null));
+  const inches = (px: number) => (px / 150) * 100;
+
+  it("reads the invoice's 6.72 pt body from the letters' widths, where the grown box's height says 9.8", () => {
+    const body = fontFromFaces('2721 Harbor Avenue, Suite 400', inches(306 - 114), 'HundredthsOfAnInch', 9.8, liberation);
+    expect(body).toBe(6.5);
+    expect(Math.abs(body! - 6.72) / 6.72).toBeLessThan(0.1);
+    expect(fontFromFaces('billing@northwind.example', inches(278 - 111), 'HundredthsOfAnInch', 9.8, liberation)).toBe(6.75);
+  });
+
+  it('takes the face the height agrees with, and Arial when it agrees with none', () => {
+    // 'Northwind Traders' is 10.26 pt by Arial Bold, 11.09 by Arial, 11.94 by Times New Roman.
+    expect(fontFromFaces('Northwind Traders', inches(304 - 114), 'HundredthsOfAnInch', 10.5, liberation)).toBe(10.25);
+    expect(fontFromFaces('Northwind Traders', inches(304 - 114), 'HundredthsOfAnInch', 12, liberation)).toBe(12);
+    expect(fontFromFaces('Northwind Traders', inches(304 - 114), 'HundredthsOfAnInch', 16, liberation)).toBe(11);
+  });
+
+  it('measures nothing where no face can be measured, or from one character', () => {
+    expect(fontFromFaces('Total', 40, 'HundredthsOfAnInch', 9)).toBeNull(); // Node, no canvas, nothing set
+    expect(fontFromFaces('X', 10, 'HundredthsOfAnInch', 9, liberation)).toBeNull();
+    expect(fontFromFaces('Total', 0, 'HundredthsOfAnInch', 9, liberation)).toBeNull();
+  });
+
+  it("sizes a page's text by its width when a measurer is set, the grown box's height notwithstanding", () => {
+    // PaddleOCR's box: 167 px of words 18.5 px tall at 150 dpi, a 10 pt line by its height.
+    const box = { x0: 111, y0: 189, x1: 278, y1: 207.5 };
+    const grown: OcrPage = {
+      width: 1275,
+      height: 1650,
+      dpi: 150,
+      lines: [{ text: 'billing@northwind.example', box, confidence: 99, words: [{ text: 'billing@northwind.example', box, confidence: 99 }] }],
+    };
+    const sized = (widthOf?: FaceWidth) =>
+      detectLayout([{ ocr: grown, page: { width: 850, height: 1100 } }], widthOf ? { widthOf } : {}).pages[0].labels[0].fontSize;
+    // The rough table: 7 pt. The faces' own widths: 6.75, as the page's 6.72 pt.
+    expect(sized()).toBe(7);
+    measureFacesWith(liberation);
+    expect(sized()).toBe(6.75);
+    expect(sized(() => null)).toBe(7);
+    measureFacesWith(null);
+    expect(sized()).toBe(7);
   });
 });
 

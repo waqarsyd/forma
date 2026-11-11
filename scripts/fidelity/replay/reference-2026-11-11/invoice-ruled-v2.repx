@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a" Name="InvoiceRuled" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" PaperKind="Letter" PageWidth="850" PageHeight="1100" Margins="75, 75, 75, 75" Font="Arial, 6.75pt" ForeColor="255,17,17,17" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="75" />
+    <Item2 Ref="3" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="227">
+      <Controls>
+        <Item1 Ref="4" ControlType="XRLabel" Name="lblCompanyName" Text="Northwind Traders" LocationFloat="0, 0" SizeF="300, 21.27" Font="Arial, 10.5pt, style=Bold" TextAlignment="TopLeft" Padding="0,0,0,0,100" />
+        <Item2 Ref="5" ControlType="XRLabel" Name="lblCompanyAddress1" Text="2721 Harbor Avenue, Suite 400" LocationFloat="0, 23.93" SizeF="300, 13.53" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+        <Item3 Ref="6" ControlType="XRLabel" Name="lblCompanyAddress2" Text="Seattle, WA 98126" LocationFloat="0, 37.47" SizeF="300, 13.53" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+        <Item4 Ref="7" ControlType="XRLabel" Name="lblCompanyEmail" Text="billing@northwind.example" LocationFloat="0, 51" SizeF="300, 13.53" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+        <Item5 Ref="8" ControlType="XRLabel" Name="lblTitle" Text="INVOICE" LocationFloat="400, 0" SizeF="300, 30.67" Font="Arial, 19.25pt, style=Bold" TextAlignment="TopRight" Padding="0,0,0,0,100" />
+        <Item6 Ref="9" ControlType="XRTable" Name="tblMeta" LocationFloat="571.67, 37.33" SizeF="128.33, 59.72">
+          <Rows>
+            <Item1 Ref="10" ControlType="XRTableRow" Name="rowInvoiceNo" Weight="1">
+              <Cells>
+                <Item1 Ref="11" ControlType="XRTableCell" Name="cellInvoiceNoCaption" Text="Invoice No" Weight="73.33" Font="Arial, 6.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+                <Item2 Ref="12" ControlType="XRTableCell" Name="cellInvoiceNo" Weight="55" Font="Arial, 6.75pt" TextAlignment="MiddleRight" Padding="0,0,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="13" EventName="BeforePrint" PropertyName="Text" Expression="[InvoiceNo]" />
+                  </ExpressionBindings>
+                </Item2>
+              </Cells>
+            </Item1>
+            <Item2 Ref="14" ControlType="XRTableRow" Name="rowInvoiceDate" Weight="1">
+              <Cells>
+                <Item1 Ref="15" ControlType="XRTableCell" Name="cellInvoiceDateCaption" Text="Invoice Date" Weight="73.33" Font="Arial, 6.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+                <Item2 Ref="16" ControlType="XRTableCell" Name="cellInvoiceDate" Weight="55" Font="Arial, 6.75pt" TextAlignment="MiddleRight" TextFormatString="{0:dd MMM yyyy}" Padding="0,0,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="17" EventName="BeforePrint" PropertyName="Text" Expression="[InvoiceDate]" />
+                  </ExpressionBindings>
+                </Item2>
+              </Cells>
+            </Item2>
+            <Item3 Ref="18" ControlType="XRTableRow" Name="rowDueDate" Weight="1">
+              <Cells>
+                <Item1 Ref="19" ControlType="XRTableCell" Name="cellDueDateCaption" Text="Due Date" Weight="73.33" Font="Arial, 6.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+                <Item2 Ref="20" ControlType="XRTableCell" Name="cellDueDate" Weight="55" Font="Arial, 6.75pt" TextAlignment="MiddleRight" TextFormatString="{0:dd MMM yyyy}" Padding="0,0,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="21" EventName="BeforePrint" PropertyName="Text" Expression="[DueDate]" />
+                  </ExpressionBindings>
+                </Item2>
+              </Cells>
+            </Item3>
+            <Item4 Ref="22" ControlType="XRTableRow" Name="rowTerms" Weight="1">
+              <Cells>
+                <Item1 Ref="23" ControlType="XRTableCell" Name="cellTermsCaption" Text="Terms" Weight="73.33" Font="Arial, 6.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+                <Item2 Ref="24" ControlType="XRTableCell" Name="cellTerms" Weight="55" Font="Arial, 6.75pt" TextAlignment="MiddleRight" Padding="0,0,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="25" EventName="BeforePrint" PropertyName="Text" Expression="[Terms]" />
+                  </ExpressionBindings>
+                </Item2>
+              </Cells>
+            </Item4>
+          </Rows>
+        </Item6>
+        <Item7 Ref="26" ControlType="XRLabel" Name="lblBillToCaption" Text="BILL TO" LocationFloat="0, 126.4" SizeF="200, 12" Font="Arial, 5.75pt, style=Bold" ForeColor="255,68,68,68" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+        <Item8 Ref="27" ControlType="XRLabel" Name="lblBillToName" LocationFloat="0, 141.06" SizeF="350, 14" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="0,0,0,0,100">
+          <ExpressionBindings>
+            <Item1 Ref="28" EventName="BeforePrint" PropertyName="Text" Expression="[BillToName]" />
+          </ExpressionBindings>
+        </Item8>
+        <Item9 Ref="29" ControlType="XRLabel" Name="lblBillToAddress1" LocationFloat="0, 155.06" SizeF="350, 14" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="0,0,0,0,100">
+          <ExpressionBindings>
+            <Item1 Ref="30" EventName="BeforePrint" PropertyName="Text" Expression="[BillToAddress1]" />
+          </ExpressionBindings>
+        </Item9>
+        <Item10 Ref="31" ControlType="XRLabel" Name="lblBillToAddress2" LocationFloat="0, 169.06" SizeF="350, 14" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="0,0,0,0,100">
+          <ExpressionBindings>
+            <Item1 Ref="32" EventName="BeforePrint" PropertyName="Text" Expression="[BillToAddress2]" />
+          </ExpressionBindings>
+        </Item10>
+        <Item11 Ref="33" ControlType="XRLabel" Name="lblBillToAttn" LocationFloat="0, 183.06" SizeF="350, 14" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="0,0,0,0,100">
+          <ExpressionBindings>
+            <Item1 Ref="34" EventName="BeforePrint" PropertyName="Text" Expression="'Attn: ' + [BillToAttn]" />
+          </ExpressionBindings>
+        </Item11>
+      </Controls>
+    </Item2>
+    <Item3 Ref="35" ControlType="PageHeaderBand" Name="PageHeader" HeightF="22.73">
+      <Controls>
+        <Item1 Ref="36" ControlType="XRTable" Name="tblLinesHeader" LocationFloat="0, 0" SizeF="700, 22.73" Borders="Bottom" BorderWidth="1.28">
+          <Rows>
+            <Item1 Ref="37" ControlType="XRTableRow" Name="rowLinesHeader" Weight="1">
+              <Cells>
+                <Item1 Ref="38" ControlType="XRTableCell" Name="cellHeadItem" Text="Item" Weight="84" Font="Arial, 6.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="4,4,0,0,100" />
+                <Item2 Ref="39" ControlType="XRTableCell" Name="cellHeadDescription" Text="Description" Weight="322" Font="Arial, 6.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="4,4,0,0,100" />
+                <Item3 Ref="40" ControlType="XRTableCell" Name="cellHeadQty" Text="Qty" Weight="70" Font="Arial, 6.75pt, style=Bold" TextAlignment="MiddleRight" Padding="4,4,0,0,100" />
+                <Item4 Ref="41" ControlType="XRTableCell" Name="cellHeadUnitPrice" Text="Unit Price" Weight="112" Font="Arial, 6.75pt, style=Bold" TextAlignment="MiddleRight" Padding="4,4,0,0,100" />
+                <Item5 Ref="42" ControlType="XRTableCell" Name="cellHeadAmount" Text="Amount" Weight="112" Font="Arial, 6.75pt, style=Bold" TextAlignment="MiddleRight" Padding="4,4,0,0,100" />
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item1>
+      </Controls>
+    </Item3>
+    <Item4 Ref="43" ControlType="DetailBand" Name="Detail" HeightF="22.67">
+      <Controls>
+        <Item1 Ref="44" ControlType="XRTable" Name="tblLines" LocationFloat="0, 0" SizeF="700, 22.67">
+          <Rows>
+            <Item1 Ref="45" ControlType="XRTableRow" Name="rowLine" Weight="1">
+              <Cells>
+                <Item1 Ref="46" ControlType="XRTableCell" Name="cellItem" Weight="84" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="4,4,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="47" EventName="BeforePrint" PropertyName="Text" Expression="[Item]" />
+                  </ExpressionBindings>
+                </Item1>
+                <Item2 Ref="48" ControlType="XRTableCell" Name="cellDescription" Weight="322" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="4,4,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="49" EventName="BeforePrint" PropertyName="Text" Expression="[Description]" />
+                  </ExpressionBindings>
+                </Item2>
+                <Item3 Ref="50" ControlType="XRTableCell" Name="cellQty" Weight="70" Font="Arial, 6.75pt" TextAlignment="MiddleRight" Padding="4,4,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="51" EventName="BeforePrint" PropertyName="Text" Expression="[Qty]" />
+                  </ExpressionBindings>
+                </Item3>
+                <Item4 Ref="52" ControlType="XRTableCell" Name="cellUnitPrice" Weight="112" Font="Arial, 6.75pt" TextAlignment="MiddleRight" TextFormatString="{0:n2}" Padding="4,4,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="53" EventName="BeforePrint" PropertyName="Text" Expression="[UnitPrice]" />
+                  </ExpressionBindings>
+                </Item4>
+                <Item5 Ref="54" ControlType="XRTableCell" Name="cellAmount" Weight="112" Font="Arial, 6.75pt" TextAlignment="MiddleRight" TextFormatString="{0:n2}" Padding="4,4,0,0,100">
+                  <ExpressionBindings>
+                    <Item1 Ref="55" EventName="BeforePrint" PropertyName="Text" Expression="[Amount]" />
+                  </ExpressionBindings>
+                </Item5>
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item1>
+      </Controls>
+    </Item4>
+    <Item5 Ref="56" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="157">
+      <Controls>
+        <Item1 Ref="57" ControlType="XRTable" Name="tblTotals" LocationFloat="460, 16" SizeF="240, 52">
+          <Rows>
+            <Item1 Ref="58" ControlType="XRTableRow" Name="rowSubtotal" Weight="1">
+              <Cells>
+                <Item1 Ref="59" ControlType="XRTableCell" Name="cellSubtotalCaption" Text="Subtotal" Weight="1" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="4,4,0,0,100" />
+                <Item2 Ref="60" ControlType="XRTableCell" Name="cellSubtotal" Weight="1" Font="Arial, 6.75pt" TextAlignment="MiddleRight" TextFormatString="{0:n2}" Padding="4,4,0,0,100">
+                  <Summary Ref="61" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="62" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Amount])" />
+                  </ExpressionBindings>
+                </Item2>
+              </Cells>
+            </Item1>
+            <Item2 Ref="63" ControlType="XRTableRow" Name="rowTax" Weight="1">
+              <Cells>
+                <Item1 Ref="64" ControlType="XRTableCell" Name="cellTaxCaption" Text="Tax (8.5%)" Weight="1" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="4,4,0,0,100" />
+                <Item2 Ref="65" ControlType="XRTableCell" Name="cellTax" Weight="1" Font="Arial, 6.75pt" TextAlignment="MiddleRight" TextFormatString="{0:n2}" Padding="4,4,0,0,100">
+                  <Summary Ref="66" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="67" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Amount]) * 0.085m" />
+                  </ExpressionBindings>
+                </Item2>
+              </Cells>
+            </Item2>
+            <Item3 Ref="68" ControlType="XRTableRow" Name="rowShipping" Weight="1">
+              <Cells>
+                <Item1 Ref="69" ControlType="XRTableCell" Name="cellShippingCaption" Text="Shipping" Weight="1" Font="Arial, 6.75pt" TextAlignment="MiddleLeft" Padding="4,4,0,0,100" />
+                <Item2 Ref="70" ControlType="XRTableCell" Name="cellShipping" Weight="1" Font="Arial, 6.75pt" TextAlignment="MiddleRight" TextFormatString="{0:n2}" Padding="4,4,0,0,100">
+                  <Summary Ref="71" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="72" EventName="BeforePrint" PropertyName="Text" Expression="sumMax([Shipping])" />
+                  </ExpressionBindings>
+                </Item2>
+              </Cells>
+            </Item3>
+          </Rows>
+        </Item1>
+        <Item2 Ref="73" ControlType="XRTable" Name="tblTotalDue" LocationFloat="460, 70.67" SizeF="240, 22.67" Borders="Top" BorderWidth="1.28">
+          <Rows>
+            <Item1 Ref="74" ControlType="XRTableRow" Name="rowTotalDue" Weight="1">
+              <Cells>
+                <Item1 Ref="75" ControlType="XRTableCell" Name="cellTotalDueCaption" Text="Total Due" Weight="1" Font="Arial, 7.75pt, style=Bold" TextAlignment="MiddleLeft" Padding="4,4,4,2,100" />
+                <Item2 Ref="76" ControlType="XRTableCell" Name="cellTotalDue" Weight="1" Font="Arial, 7.75pt, style=Bold" TextAlignment="MiddleRight" TextFormatString="USD {0:n2}" Padding="4,4,4,2,100">
+                  <Summary Ref="77" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="78" EventName="BeforePrint" PropertyName="Text" Expression="sumSum([Amount]) * 1.085m + sumMax([Shipping])" />
+                  </ExpressionBindings>
+                </Item2>
+              </Cells>
+            </Item1>
+          </Rows>
+        </Item2>
+        <Item3 Ref="79" ControlType="XRLabel" Name="lblPayment" Text="&lt;b&gt;Payment&lt;/b&gt;: bank transfer to account 00-1234-5678, reference the invoice number." AllowMarkupText="true" LocationFloat="0, 130.67" SizeF="500, 13" Font="Arial, 6.25pt" ForeColor="255,51,51,51" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+        <Item4 Ref="80" ControlType="XRLabel" Name="lblThanks" Text="Thank you for your business." LocationFloat="0, 143.67" SizeF="500, 13" Font="Arial, 6.25pt" ForeColor="255,51,51,51" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+      </Controls>
+    </Item5>
+    <Item6 Ref="81" ControlType="PageFooterBand" Name="PageFooter" HeightF="16">
+      <Controls>
+        <Item1 Ref="82" ControlType="XRLine" Name="lineFooter" LocationFloat="0, 1" SizeF="700, 2" ForeColor="255,153,153,153" />
+        <Item2 Ref="83" ControlType="XRLabel" Name="lblFooterCompany" Text="Northwind Traders &#183; Registered in Washington No. 601-234-567" LocationFloat="0, 6.33" SizeF="450, 9.67" Font="Arial, 5.75pt" ForeColor="255,85,85,85" TextAlignment="MiddleLeft" Padding="0,0,0,0,100" />
+        <Item3 Ref="84" ControlType="XRPageInfo" Name="pageInfoFooter" PageInfo="NumberOfTotal" TextFormatString="Page {0} of {1}" LocationFloat="500, 6.33" SizeF="200, 9.67" Font="Arial, 5.75pt" ForeColor="255,85,85,85" TextAlignment="MiddleRight" Padding="0,0,0,0,100" />
+      </Controls>
+    </Item6>
+    <Item7 Ref="85" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="75" />
+  </Bands>
+</XtraReportsLayoutSerializer>

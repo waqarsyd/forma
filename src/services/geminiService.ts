@@ -5,7 +5,7 @@ import { classifyGeminiError, dailyLimitOf, isOffline, isOverloadedError, isQuot
 import { parseRepxAnswer, repxOfAnswer, takeQueryInstruction } from "../lib/analysisResponse";
 import { layoutFromRepx, reportTitleOf, specFromRepx } from "../lib/repxViews";
 import { controlCount, CORRECTION_RULES, textToDraft } from "../lib/draftText";
-import { skeletonToDesign, type PageText } from "../lib/skeletonRepx";
+import { keepPageOrder, skeletonToDesign, type PageText } from "../lib/skeletonRepx";
 import {
   cacheModel,
   cacheDailyModel,
@@ -2532,6 +2532,16 @@ export const REQUEST_BUDGET = 6;
  */
 export const RTL_INSTRUCTION = `The report reads right to left. Write every LocationFloat, every TextAlignment and the order of every table's cells exactly as they appear on the page, as you see them from its left edge: a title printed at the right, aligned right, is written at the right with a Right alignment. Do not mirror anything yourself and do not set RightToLeft or RightToLeftLayout: Forma sets both and turns the positions to match.`;
 
+/**
+ * The same rule when a report is the base (2026-11-11, wave 6, the PIPE1
+ * follow-up): an open report being changed, or an attached .repx. App turns
+ * an answer round (`toLogicalRtl`) only when it had no report as its base,
+ * because a report's positions are already written the way DevExpress lays
+ * them out; telling the AI to write what it sees there would have it mirror a
+ * report that App then leaves as written, printing it back to front.
+ */
+export const RTL_ON_REPORT_INSTRUCTION = `The report reads right to left. Keep every LocationFloat, every TextAlignment and the order of every table's cells exactly as the report you were given writes them, and place anything new the same way they are written. Do not mirror anything and do not set RightToLeft or RightToLeftLayout: Forma sets both.`;
+
 /** Forma's draft of a page, as the AI corrects it and Forma builds the report from it. */
 export interface DraftRequest {
   /** The draft in lib/draftText.ts's format. */
@@ -2738,7 +2748,7 @@ export async function analyzeReportDesign(
   - PaperKind: ${pageSize}. The exact PageWidth/PageHeight/ReportUnit values are given in the ROOT STRUCTURE above and are already correct for this paper — use them verbatim rather than recomputing them.
   ${config.rtl ? `
   - LOCALIZATION:
-    - ${RTL_INSTRUCTION}
+    - ${previousState?.repxContent || attachedRepx ? RTL_ON_REPORT_INSTRUCTION : RTL_INSTRUCTION}
   ` : ''}
   ${config.spName && !options?.database ? `
   - DATA SOURCE:
@@ -3026,7 +3036,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
             Every visual property of the source must appear on the matching control. A .repx that has the right boxes in the right places but default styling is a failed reproduction — it is the file the user actually opens and prints.
             - Font: Font="Arial, 9.75pt, style=Bold" as an attribute, never a <Font> child element, which Forma's Preview, Mockup and checks do not read. Styles: style=Bold, style=Italic, style=Bold, Italic. Bold any text visibly heavier than body text — titles, column headings, totals — and use the closest family you can identify.
             - **FONT SIZE IS ALWAYS IN POINTS (1/72"), NEVER IN REPORT UNITS.** It is one of exactly TWO things in the file that do not follow ReportUnit — the other is BorderWidth, below. A size measured in report units converts as points = size * 72 / ${unitsPerInchForReport}: a size of 16 units is ${(unitsToPoints(16, reportUnit)).toFixed(2)}pt, NOT 16pt. Writing a unit number straight into the Font makes every piece of text far too large.
-            - **Measure the EM SIZE, not the ink.** This is the single most common way a reproduction comes out uniformly small. Capital letters stand only about 70% of the em size and lowercase about half of it, so a heading whose capitals measure 21 units is a 30-unit font, not a 21-unit one. Baseline to baseline of two consecutive lines in one paragraph is 1.15-1.25x the font size; or measure a capital and divide by 0.7. Then CHECK THE ANSWER: ordinary body text in a printed business document is 9-11pt (${bodyFontMinUnits}-${bodyFontMaxUnits} units). If the body text you measured comes out below that, you measured the ink and EVERY size is small by the same fraction — scale them all up together, keeping their ratios. A title must be visibly larger than body text.
+            - **Measure the EM SIZE, not the ink.** This is the single most common way a reproduction comes out uniformly small. Capital letters stand only about 70% of the em size and lowercase about half of it, so a heading whose capitals measure 21 units is a 30-unit font, not a 21-unit one. Baseline to baseline of two consecutive lines in one paragraph is 1.15-1.25x the font size; or measure a capital and divide by 0.7. Then CHECK THE ANSWER: ordinary body text in a printed business document is 9-11pt (${bodyFontMinUnits}-${bodyFontMaxUnits} units). If the body text you measured comes out below that, you measured the ink and EVERY size is small by the same fraction — scale them all up together, keeping their ratios. That check is for a size you measured yourself: a size= given beside text read from the page was measured from its letters already, so keep it as given even below 9pt unless the picture plainly disagrees. A title must be visibly larger than body text.
             - ForeColor="Black" or ForeColor="#1A2B3C" for text colour, sampled from the design; BackColor for fills. Omit BackColor entirely when the area is white or transparent — do not paint every control white.
             - TextAlignment="TopLeft" | "MiddleCenter" | "MiddleRight" | "BottomLeft" etc. — it combines the vertical and horizontal alignment into one value. Numeric and currency columns are almost always a *Right variant.
             - Borders="None" | "All" | "Top, Bottom" | "Left, Right" (comma-separated sides), plus BorderColor="#RRGGBB" and BorderWidth="1" when the rule is not a hairline black. A heading underlined by a rule is Borders="Bottom", NOT Borders="All".
@@ -3445,7 +3455,8 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
         const read = rowsFromEvidence(options.evidence, parsed.repxContent);
         if (read) {
           console.log(`Read ${read.rows.length} record(s) off the page, columns as ${JSON.stringify(read.columns)}.`);
-          for (const pass of [(xml: string) => repairTotals(xml, read), (xml: string) => applyFormats(xml, pageFormats(read))]) {
+          // And the records' own order inside each group (CC-12, keepPageOrder).
+          for (const pass of [(xml: string) => repairTotals(xml, read), (xml: string) => applyFormats(xml, pageFormats(read)), (xml: string) => keepPageOrder(xml, read)]) {
             const result = pass(parsed.repxContent);
             if (result.applied) {
               parsed.repxContent = result.xml;
@@ -3456,6 +3467,36 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
         page = read;
       } catch (err) {
         console.warn("The page's records could not be read for the print check.", err);
+      }
+    }
+
+    /*
+     * The geometry fitted to the page by measurement, with no AI (2026-11-11,
+     * the full audit's CC-07, lib/sourceAgreement.ts): the report printed with
+     * the page's records, each text paired with where OCR read it, and a band
+     * or the whole page moved only when that prints closer. A picture run
+     * alone, whose page Forma read (the draft's texts, in hundredths of an
+     * inch, as the box reader wrote them); not over a report the person gave,
+     * whose geometry is theirs, nor one designed from words, which has no page.
+     */
+    const pageTexts = options?.draft?.texts ?? [];
+    if (pageTexts.length && !previousState?.repxContent && !description && !attachedRepx) {
+      try {
+        const [{ fitGeometry }, measure] = await Promise.all([
+          import("../lib/sourceAgreement"),
+          typeof document === "undefined" ? undefined : import("../lib/textMeasure").then((m) => m.canvasMeasurer()).catch(() => null),
+        ]);
+        const scale = unitsPerInch(reportUnit) / 100;
+        const texts = pageTexts.map((t) => ({ ...t, x: t.x * scale, y: t.y * scale, w: t.w * scale, h: t.h * scale }));
+        const fit = fitGeometry(parsed.repxContent, texts, { rows: page?.rows ?? null, ...(measure === undefined ? {} : { measure }) });
+        if (fit.applied) {
+          parsed.repxContent = fit.xml;
+          console.warn(`Repair: ${fit.reason}.`);
+        } else if (fit.before !== null) {
+          console.log(`Matches the page: ${Math.round(fit.before * 100)}% (${fit.reason}).`);
+        }
+      } catch (err) {
+        console.warn("The report could not be compared with the page's positions.", err);
       }
     }
 
@@ -3549,6 +3590,34 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
         for (const finding of printFindings) console[finding.severity === "error" ? "error" : "warn"](`  [print: ${finding.code}] ${finding.message}`);
       } catch (err) {
         console.warn("The report could not be printed with the page's records.", err);
+      }
+    }
+    /*
+     * And the installed DevExpress itself, when Forma Designer has answered in
+     * this page (2026-11-11, the full audit's CC-10, lib/designerBridge.ts):
+     * what it could not build, the report's settings it did not keep as
+     * written, and how many pages it printed with the page's records. Beside
+     * the print's own findings, and never asked unasked: a page where Forma
+     * Designer has not answered sends nothing to 127.0.0.1.
+     */
+    if (!signal?.aborted) {
+      try {
+        const { designerAnswered, inspectInDesigner, inspectionFindings } = await import("../lib/designerBridge");
+        const seen = designerAnswered() ? await inspectInDesigner(parsed.repxContent, page?.rows ?? null, { signal }) : null;
+        if (seen) {
+          const found = inspectionFindings(seen, { pagesShown: page?.pages });
+          printFindings.push(...found);
+          for (const finding of found) console[finding.severity === "error" ? "error" : "warn"](`  [DevExpress: ${finding.code}] ${finding.message}`);
+          // What DevExpress dropped and no audit code foresaw: the next rule to measure.
+          const foreseen = new Set(auditRepx(parsed.repxContent, null, auditOptions).findings.map((f) => f.code));
+          for (const d of seen.dropped) {
+            if (!(d.attribute === "Margins" && foreseen.has("margins-not-whole")) && !(/^Page(Width|Height)$/.test(d.attribute) && foreseen.has("page-size-not-whole"))) {
+              console.info(`DevExpress did not keep ${d.attribute}="${d.declared}" (loaded ${d.loaded ?? "nothing"}), which no audit rule predicts.`);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Forma Designer could not be asked about the report.", err);
       }
     }
     const result: GenerationResult = {

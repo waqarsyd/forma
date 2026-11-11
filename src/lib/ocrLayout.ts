@@ -27,7 +27,9 @@
  * than the report taking it silently.
  */
 import { pixelBoxToUnits, placeImage, unitsPerInch, unitsToPoints, type ImagePlacement, type PixelBox } from './reportGeometry';
+import { lineWidthPt } from './textMeasure';
 import type { OcrPage, OcrWord } from './ocr';
+import type { TrueTypeFont } from './trueType';
 
 /**
  * Text the layout places: a label, or a table's cell. `x`, `y`, `w`, `h` are
@@ -90,6 +92,113 @@ export interface LayoutOptions {
    * misreads begin to dominate.
    */
   minConfidence?: number;
+  /**
+   * How wide a text is in a face (`FaceWidth`), for a size measured from the
+   * letters' own widths (CC-08). By default the browser's canvas, or what a
+   * script set with `measureFacesWith`; where neither measures, the rough
+   * table of `fontFromWidth`.
+   */
+  widthOf?: FaceWidth;
+}
+
+/** A face a text's width is measured in. */
+export interface WidthFace {
+  family: string;
+  bold: boolean;
+  italic?: boolean;
+}
+
+/** A text's advance width in points when set at 1 pt in one face; null where nothing can measure. */
+export type FaceWidth = (text: string, face: WidthFace) => number | null;
+
+/**
+ * The faces a page's size is measured in: Arial and Times New Roman, regular
+ * and bold, the two shapes a business page is set in and the two Forma's
+ * builder and DevExpress's default write. The one whose estimate agrees with
+ * the letters' height is taken (`fontFromFaces`).
+ */
+const FACES: readonly WidthFace[] = [
+  { family: 'Arial', bold: false },
+  { family: 'Arial', bold: true },
+  { family: 'Times New Roman', bold: false },
+  { family: 'Times New Roman', bold: true },
+];
+
+/** Widths from the browser's canvas, unkerned as DevExpress draws; null in Node and under jsdom. */
+export const canvasFaceWidth: FaceWidth = (text, face) => {
+  const at100 = lineWidthPt(text, { family: face.family, sizePt: 100, bold: face.bold, italic: face.italic ?? false });
+  return at100 === null ? null : at100 / 100;
+};
+
+/**
+ * Widths from TrueType files' own advance widths, for Node, where there is no
+ * canvas: `assets/pdf-fonts`'s Liberation Sans and Serif, which are
+ * metric-compatible with Arial and Times New Roman, each given with the face
+ * it stands for. Unkerned, as DevExpress draws. A face not given is measured
+ * in the first one given of the same weight.
+ */
+export function faceWidthsFrom(fonts: readonly { face: WidthFace; font: TrueTypeFont }[]): FaceWidth {
+  const same = (a: WidthFace, b: WidthFace) => a.bold === b.bold && Boolean(a.italic) === Boolean(b.italic);
+  return (text, face) => {
+    const entry =
+      fonts.find((f) => f.face.family.toLowerCase() === face.family.toLowerCase() && same(f.face, face)) ??
+      fonts.find((f) => same(f.face, face)) ??
+      fonts[0];
+    if (!entry) return null;
+    const { font } = entry;
+    let units = 0;
+    for (const ch of text) units += font.advances[Math.min(font.advances.length - 1, font.glyphOf(ch.codePointAt(0)!))] ?? 0;
+    return units / font.unitsPerEm;
+  };
+}
+
+let defaultWidths: FaceWidth = canvasFaceWidth;
+
+/**
+ * Where a page's sizes are measured when the caller names nothing: a script
+ * in Node passes `faceWidthsFrom` over the Liberation files (scripts/fidelity
+ * `--forma`), and null puts the canvas back.
+ */
+export function measureFacesWith(widths: FaceWidth | null): void {
+  defaultWidths = widths ?? canvasFaceWidth;
+}
+
+/** What a text's width is measured with now: what `measureFacesWith` set, else the canvas. */
+export function faceWidths(): FaceWidth {
+  return defaultWidths;
+}
+
+/**
+ * A text's size in points from how wide its ink is in the faces' own advance
+ * widths (2026-11-11, the full audit's CC-08): the ink's width over the
+ * text's width at 1 pt, in the face where that estimate and the height's
+ * (`heightPt`) agree best. "Northwind Traders" is 192 px wide on the invoice
+ * at 150 dpi and DevExpress printed it 193 px wide in Arial Bold 10.5 pt;
+ * the generic table of `fontFromWidth` cannot tell a face, and the AI was
+ * then told to lift every size to 9-11 pt, which printed the page's 6.72 pt
+ * body 34% wider than the page. In quarter points, from 6 to 48; null when
+ * nothing measures or the text is one character, too short to measure by.
+ *
+ * The height picks the face only when it is within a sixth of one: PaddleOCR
+ * grows its boxes past the ink, and on the invoice its heights said 16 pt for
+ * a 10.5 pt name, closest to Times New Roman, a size too large for every line
+ * set in Arial. A height that agrees with no face says nothing of the face,
+ * and the size is then Arial's, the face the report is written in. Measured
+ * so on the invoice's PaddleOCR reading: its 6.72 pt body read 6.6 pt.
+ */
+export function fontFromFaces(text: string, inkWidth: number, unit: string, heightPt: number, widthOf: FaceWidth = defaultWidths): number | null {
+  const trimmed = text.trim();
+  if ([...trimmed.replace(/\s/g, '')].length < 2 || !(inkWidth > 0)) return null;
+  const pt = unitsToPoints(inkWidth, unit);
+  const sizes: number[] = [];
+  for (const face of FACES) {
+    const at1 = widthOf(trimmed, face);
+    if (at1 === null || !(at1 > 0)) return null;
+    sizes.push(pt / at1);
+  }
+  const agreeing = sizes.filter((s) => Math.abs(s - heightPt) <= heightPt / 6).sort((a, b) => Math.abs(a - heightPt) - Math.abs(b - heightPt));
+  const size = agreeing[0] ?? sizes[0];
+  return Math.min(48, Math.max(6, Math.round(size * 4) / 4));
 }
 
 /** One OCR page, and the report page it is a picture of, in report units. */
@@ -169,7 +278,7 @@ export function fontFromWidth(text: string, inkWidth: number, unit: string): num
   return Math.min(48, Math.max(6, Math.round(pt * 2) / 2));
 }
 
-function detected(seg: Segment, at: ImagePlacement, unit: string, minConfidence: number): DetectedText {
+function detected(seg: Segment, at: ImagePlacement, unit: string, minConfidence: number, widthOf: FaceWidth): DetectedText {
   const ink = pixelBoxToUnits(seg.box, at);
   /*
    * The smaller of the height's estimate and the width's, as a table's cells
@@ -180,10 +289,16 @@ function detected(seg: Segment, at: ImagePlacement, unit: string, minConfidence:
    * keeps the height's shape, scaled to the size chosen. Only when the width
    * says a fifth smaller or more: the width's estimate is rough, and on a box
    * that holds the ink alone (Tesseract's) it runs half a point under.
+   *
+   * Where the faces can be measured (CC-08, `fontFromFaces`) the width is no
+   * longer rough, so it wins whenever it is the smaller: a box grown past the
+   * ink only ever makes the height's estimate larger.
    */
   const byHeight = fontFromInk(seg.text, ink.h, unit);
-  const byWidth = fontFromWidth(seg.text, ink.w, unit);
-  const font = byWidth < byHeight.size * 0.8 ? { size: byWidth, em: (byHeight.em * byWidth) / byHeight.size, above: (byHeight.above * byWidth) / byHeight.size } : byHeight;
+  const measured = fontFromFaces(seg.text, ink.w, unit, byHeight.size, widthOf);
+  const byWidth = measured ?? fontFromWidth(seg.text, ink.w, unit);
+  const smaller = measured !== null ? byWidth < byHeight.size : byWidth < byHeight.size * 0.8;
+  const font = smaller ? { size: byWidth, em: (byHeight.em * byWidth) / byHeight.size, above: (byHeight.above * byWidth) / byHeight.size } : byHeight;
   const words = seg.words.map((w) => ({ text: w.text, confidence: Math.round(w.confidence), flagged: w.confidence < minConfidence }));
   return {
     text: seg.text,
@@ -258,14 +373,15 @@ function tableColumns(rows: DetectedText[][]): [number, number][] | null {
   return cols;
 }
 
-function tableFrom(rows: DetectedText[][], cols: [number, number][], unit: string): DetectedTable {
+function tableFrom(rows: DetectedText[][], cols: [number, number][], unit: string, measured: boolean): DetectedTable {
   // One font for the table, the median of its cells'. Each cell's is the
   // smaller of its height's and its width's: where Tesseract's boxes take in
   // the cell borders, as in s23-gen's cross-tab, the height reads far too tall
-  // and the width does not.
+  // and the width does not. Where the faces were measured, each cell's size
+  // already is that smaller one, and the rough table would only pull it under.
   const sizes = rows
     .flat()
-    .map((t) => Math.min(t.fontSize, fontFromWidth(t.text, t.ink.w, unit)))
+    .map((t) => (measured ? t.fontSize : Math.min(t.fontSize, fontFromWidth(t.text, t.ink.w, unit))))
     .sort((a, b) => a - b);
   const size = sizes[Math.floor(sizes.length / 2)];
   rows = rows.map((row) => row.map((t) => ({ ...t, fontSize: size })));
@@ -311,6 +427,8 @@ export function placementFor(ocr: OcrPage, page: { width: number; height?: numbe
 export function detectLayout(sources: readonly LayoutSource[], options: LayoutOptions = {}): DetectedLayout {
   const unit = options.unit ?? 'HundredthsOfAnInch';
   const perInch = unitsPerInch(unit);
+  const widthOf = options.widthOf ?? defaultWidths;
+  const measured = widthOf('Ab', FACES[0]) !== null;
   let total = 0;
   let flagged = 0;
   let ignoredCount = 0;
@@ -319,7 +437,7 @@ export function detectLayout(sources: readonly LayoutSource[], options: LayoutOp
     const fitted = { left: half, right: half, top: half, bottom: half };
     const at = placementFor(ocr, page, unit);
     const minConfidence = options.minConfidence ?? ocr.unsureBelow ?? 60;
-    const read = ocr.lines.flatMap(segmentsOf).map((s) => detected(s, at, unit, minConfidence));
+    const read = ocr.lines.flatMap(segmentsOf).map((s) => detected(s, at, unit, minConfidence, widthOf));
     // A chart's bars and a logo come back as "words" read at almost no
     // confidence, often far taller than any text: in s23-gen's PNG the bars
     // read as "- HB : ||" at 0, 168 units tall. They are pictures, and left in,
@@ -354,7 +472,7 @@ export function detectLayout(sources: readonly LayoutSource[], options: LayoutOp
       const run = rows.slice(i, j + 1);
       const cols = run.length >= 2 ? tableColumns(run) : null;
       if (cols) {
-        tables.push(tableFrom(run, cols, unit));
+        tables.push(tableFrom(run, cols, unit, measured));
         i = j + 1;
       } else {
         labels.push(...rows[i]);
@@ -398,7 +516,7 @@ export function layoutText(page: DetectedPage, pageNumber: number, unit: string,
   const lines = [
     `${file}, page ${pageNumber}: text READ BY OCR from the page image, in the browser. ` +
       `Positions were measured from the image and are in report units (${unit}), origin at the top-left of the paper; ` +
-      `x/y/w/h is each string's control box, from the top of its font to a line's height, and size is its font size in points, estimated from the height of its letters.`,
+      `x/y/w/h is each string's control box, from the top of its font to a line's height, and size is its font size in points, measured from the width and height of its letters.`,
     `Page is ${r(page.width)} x ${r(page.height)} report units.`,
     ...[...page.labels].sort((a, b) => a.y - b.y || a.x - b.x).map(one),
   ];

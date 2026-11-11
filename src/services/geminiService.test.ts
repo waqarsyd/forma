@@ -36,6 +36,7 @@ import {
   fenced,
   DATA_RULE,
   RTL_INSTRUCTION,
+  RTL_ON_REPORT_INSTRUCTION,
   REQUEST_BUDGET,
   testDataValues,
   evidenceFindingsOf,
@@ -585,6 +586,25 @@ describe('the generation service', () => {
     const result = await analyzeReportDesign('Make the title bigger', [attached(MOCK_INVOICE_RESPONSE.repxContent), PICTURE], CONFIG, undefined, undefined, undefined, { draft: DRAFT });
     expect(promptOf(sdk.requests[0])).toMatch(/^You are an expert DevExpress Report Designer/);
     expect(result.fromDraft).toBeUndefined();
+  });
+
+  // The PIPE1 follow-up: App mirrors only an answer that had no report as its base.
+  it('tells a right-to-left report built on a given report to keep its positions as written', async () => {
+    queue(streamed(MOCK_INVOICE_RESPONSE.repxContent));
+    await analyzeReportDesign('Make the title bigger', [attached(MOCK_INVOICE_RESPONSE.repxContent)], { ...CONFIG, rtl: true });
+    const onReport = promptOf(sdk.requests[0]);
+    expect(onReport).toContain(RTL_ON_REPORT_INSTRUCTION);
+    expect(onReport).not.toContain(RTL_INSTRUCTION);
+
+    queue(streamed(MOCK_INVOICE_RESPONSE.repxContent));
+    await analyzeReportDesign('Make the title bigger', [], { ...CONFIG, rtl: true }, { repxContent: MOCK_INVOICE_RESPONSE.repxContent });
+    expect(promptOf(sdk.requests[1])).toContain(RTL_ON_REPORT_INSTRUCTION);
+
+    queue(streamed(MOCK_INVOICE_RESPONSE.repxContent));
+    await analyzeReportDesign('', [PICTURE], { ...CONFIG, rtl: true });
+    const fromPage = promptOf(sdk.requests[2]);
+    expect(fromPage).toContain(RTL_INSTRUCTION);
+    expect(fromPage).not.toContain(RTL_ON_REPORT_INSTRUCTION);
   });
 
   // PL-12: the draft path for every unit.

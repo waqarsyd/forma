@@ -40,6 +40,8 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Data" />
     <Reference Include="System.Security" />
+    <!-- JavaScriptSerializer, for the records POST /render prints with (Probe.cs). -->
+    <Reference Include="System.Web.Extensions" />
     <!--
       Referenced by full path against the installed DevExpress 20.1, which is the
       version the target ERP is built against. CopyLocal is deliberately left on so
@@ -77,6 +79,7 @@
     <Compile Include="MissingDevExpress.cs" />
     <Compile Include="Installer.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Probe.cs" />
     <Compile Include="Sql.cs" />
     <Compile Include="SqlScripts.cs" />
     <Compile Include="ConnectionsForm.cs" />
