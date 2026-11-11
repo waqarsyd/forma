@@ -40,8 +40,17 @@ import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
  * software that has not behaved that way since the launch path was added.
  * Corrected, along with the deletion note, which knew about deleting projects
  * one at a time and not about Clear all.
+ *
+ * 2026-11-11 (the full audit's batch LG, approved by the owner as Owner
+ * decision 4): the policy promised a purpose ("for nothing else") and an
+ * opt-in ("only because you turned it on") that the default-on learning does
+ * not follow, and said deleting an account removed what the operator had
+ * already downloaded. It now says what learning is for, that it is on unless
+ * turned off, what deletion reaches and what it cannot, every name this
+ * browser stores (legalDisclosure.test.ts reads them out of src), reCAPTCHA
+ * among the scripts, and no single host as the one that asks to reach the PC.
  */
-const UPDATED = '10 November 2026';
+const UPDATED = '11 November 2026';
 
 type Section = { heading: string; paragraphs: string[] };
 
@@ -57,7 +66,7 @@ const TERMS: Section[] = [
     paragraphs: [
       'Forma turns a design you already have — a picture, a PDF or an existing .repx file — or a report you describe in words into a DevExpress report file, with a written specification, a mockup and a Preview read off it, and exports from that Preview.',
       'It is offered free of charge and without a support contract. There is no uptime guarantee, and it may change or stop being available at any time.',
-      'One thing the workspace does that is worth stating plainly: when you choose Open in designer, and only then, it asks 127.0.0.1 — your machine, not the internet — whether the optional Forma Designer app is running there. On openforma.web.app your browser first asks whether the site may reach apps on your device. The check sends nothing about you or your work, and if you have not installed Forma Designer it simply fails.',
+      'One thing the workspace does that is worth stating plainly: when you choose Open in designer, and only then, it asks 127.0.0.1 — your machine, not the internet — whether the optional Forma Designer app is running there, and your browser may ask the first time whether this site may reach apps on your device. The check sends nothing about you or your work, and if you have not installed Forma Designer it simply fails.',
       'What that check decides is what Open in designer does next. If Forma Designer is running, the report is handed straight to it, on your computer. If nothing answers, the workspace asks Windows to start it — which your browser asks you to allow the first time — and if it is not installed, says so and links its download page. Forma Designer is a free, open-source Windows program, offered on that page as a file on GitHub. It uses DevExpress Reporting, which is not part of Forma or of the download: DevExpress is a commercial product of Developer Express Inc., licensed by them, and Forma only links their trial. Exporting the .repx works regardless, and never involves any of this.',
     ],
   },
@@ -123,10 +132,11 @@ const PRIVACY: Section[] = [
   {
     heading: 'The short version',
     paragraphs: [
-      'Forma is run by Waqar Sayyed, who is responsible for what this policy describes. It collects as little as it can. There are no analytics, no advertising, no tracking pixels, no third-party scripts watching what you do, and no cookies. Nothing is sold or shared with anyone for marketing.',
+      // reCAPTCHA is named only once App Check has a key, as below (lib/appCheck.ts).
+      `Forma is run by Waqar Sayyed, who is responsible for what this policy describes. It collects as little as it can. There are no analytics or advertising trackers, no tracking pixels, no third-party scripts beyond Google’s sign-in helper${APP_CHECK_SITE_KEY ? ' and, once you sign in or open a shared report, Google’s reCAPTCHA' : ''}, and no cookies of Forma’s. Unless you turn it off, the shape of your reports (never their text) is kept to train Forma’s own model; see Settings → Learning. Nothing is sold or shared with anyone for marketing.`,
       'Opening any page asks Forma’s host for it, as every website does. The host is Firebase Hosting, run by Google, which keeps the ordinary request logs a web host keeps — your IP address, the address asked for and your browser — for as long as Google keeps them. Forma itself keeps no record of visitors.',
       'Beyond the host, signed out, four things leave your machine and no others: what you ask the AI you chose to do, sent to Google with your own Gemini key or to OpenRouter with yours (a local AI stays on your computer); only if you use the contact form, the message you type into it; only if you open a link to a report someone shared, a request to Google’s database for that report; and only if you dictate a message, your voice, to your browser’s speech service. Who receives each of those is set out under “Who else is involved” below.',
-      'Your machine, not your browser, is the boundary that sentence draws, and the difference is deliberate. When you choose Open in designer, and only then, the workspace asks 127.0.0.1 whether the optional Forma Designer app is running — a request that leaves the browser and reaches nothing but your own computer. It carries no information about you; the report you asked to open goes to Forma Designer on your computer and nowhere else; and the terms describe it under “What Forma is”. Forma Designer itself is downloaded from GitHub, under GitHub’s own privacy statement. If you run Forma on your own computer and ask the companion to read your SQL Server, it reads it there with the connection you gave the companion, and what it reads comes back to this browser and goes nowhere else unless you share the database with the AI.',
+      'Your machine, not your browser, is the boundary that sentence draws, and the difference is deliberate. When you choose Open in designer, and only then, the workspace asks 127.0.0.1 whether the optional Forma Designer app is running — a request that leaves the browser and reaches nothing but your own computer. It carries no information about you; the report you asked to open goes to Forma Designer on your computer and nowhere else; and the terms describe it under “What Forma is”. Forma Designer itself is downloaded from GitHub, under GitHub’s own privacy statement. If you run Forma on your own computer and ask Forma Designer to read your SQL Server, it reads it there with the connection you gave Forma Designer, and what it reads comes back to this browser and goes nowhere else unless you share the database with the AI.',
     ],
   },
   {
@@ -145,8 +155,8 @@ const PRIVACY: Section[] = [
       'Your email address and, if you give one, a display name. These are held by Google Firebase Authentication, which runs the sign-in.',
       'Your projects, saved automatically as you work: the report’s title, the conversation, the generated report with its specification and layout, any images you attached, your ratings of replies, and the newest ten revisions. They live in Google Firestore under your account, and the security rules let only your account read or change them through the app. They are not encrypted end to end: they sit in the operator’s Firebase project, which its owner can reach through Firebase’s own console, as with any service built this way.',
       'Reports you choose to share: a copy of the report’s title, layout and XML — not the conversation, and not your images — with the email addresses you add to it. It lives in Google Firestore, and the security rules let it be read by you, by the people you add once they sign in with that address verified, or, if you choose it, by anyone who has the link. It stays until you stop sharing it or delete the project or your account. Forma sends no email to the people you add.',
-      'If you opt in to encrypted sync, an encrypted copy of your Gemini API key. It is encrypted in your browser with a passphrase that never leaves it, so the stored copy is unreadable to anyone who does not know the passphrase — including the operator. It is the one thing Forma stores that the operator cannot read.',
-      'What you let Forma learn from, under Settings → Learning. With “Help Forma learn from the shape of my reports” on, which it is unless you turn it off, each report you make or change in the chat, each translation and each rating of a reply is kept as an event: the report’s structure — its bands, where each control sits, its size, font, alignment and what kind of text it holds — never the text itself, a field name, a query or a picture; the kind of request and which kind of AI answered; the names of the edits; and your rating. With “Share whole reports and what I asked for” on, which it is not unless you turn it on, the complete report file and the words you typed go with each event. Signed in, the events are stored in Google Firestore under your account, where only you and the operator can read them; the operator downloads them to train Forma’s own model and improve how it reads and lays out reports. You can see what was kept and delete it under Settings → Learning, and deleting your account removes it. Signed out, the events stay on your device only.',
+      'If you opt in to encrypted sync, an encrypted copy of your Gemini API key. It is encrypted in your browser with a passphrase that never leaves it, so the stored copy is unreadable without your passphrase, to the operator as to anyone else — so choose one nobody could guess. It is the one thing Forma stores that the operator cannot read.',
+      'What you let Forma learn from, under Settings → Learning. With “Help Forma learn from the shape of my reports” on, which it is unless you turn it off, each report you make or change in the chat, each translation and each rating of a reply is kept as an event: the report’s structure — its bands, where each control sits, its size, font, alignment and what kind of text it holds — never the text itself, a field name, a query or a picture; the kind of request and which kind of AI answered; the names of the edits; and your rating. With it on, Forma also keeps which reports you kept or undid and how long each took, never their words. With “Share whole reports and what I asked for” on, which it is not unless you turn it on, the complete report file and the words you typed go with each event. Signed in, the events are stored in Google Firestore under your account, where only you and the operator can read them; the operator downloads them to train Forma’s own model and improve how it reads and lays out reports. You can see what was kept and delete it under Settings → Learning. Deleting it there, or deleting your account, removes it from Forma’s database. Copies the operator already downloaded for training are deleted at the next download after yours are gone; what a trained model learned from them is averages over many reports and holds none of your text. Signed out, the events stay on your device only.',
     ],
   },
   {
@@ -158,11 +168,12 @@ const PRIVACY: Section[] = [
   {
     heading: 'What is kept in your browser',
     paragraphs: [
-      'Signed out, your projects are saved automatically in your browser’s local storage on that machine only — the conversation, the report, your attachments and your ratings — and Forma asks the browser to keep them rather than clear them to free space. Revisions last only while the tab is open. Settings, under General, downloads every project you saved, signed in or not.',
-      'Local storage also keeps: the theme; the DevExpress version and unit last used; the AI you chose, with its server address and model, never a key; your memories and the style of reports you kept; which projects you pinned or archived; which library reports are your house style, and whether it is used; the workspace’s layout; today’s request counts and the daily limits Google reported; the models your key can reach, with a short fingerprint of the key rather than the key; and the last announcement you saw.',
-      'Session storage, which the browser erases when the tab closes, keeps your keys, the unsent text in the box and any messages waiting in the queue, the open project, the changes a reply’s Undo can take back, and the model in use.',
-      'IndexedDB keeps the report library — the stripped reports you add and their index —, the SQL Server layouts you add with any sample rows, up to five databases, until you forget them on the Data view or sign out, the last five hundred events Forma may learn from (Settings → Learning, above), and, once you sign in, Firebase’s record that you are signed in.',
-      'None of this is a cookie, nothing but Forma in this browser reads it, and all of it is there only to make Forma work, which is why there is no cookie banner. Clearing your browser storage removes it. Signing out clears the workspace — the uploads, the extracted text, the generated report and the database layouts kept on this device — so the next person at that browser does not see your work.',
+      'Signed out, your projects are saved automatically in your browser’s local storage on that machine only — the conversation, the report, your attachments and your ratings — and Forma asks the browser to keep them rather than clear them to free space. Revisions last only while the tab is open. Settings, under General, has Download everything (.zip): every project you saved and what else Forma keeps for you, signed in or not.',
+      'Local storage also keeps: the theme; the DevExpress version and unit last used; the AI you chose, with its server address and model, never a key; whether a new Forma tab may take your keys from one already open; your memories and the style of reports you kept; the Learning switches, with which account they belong to; which projects you pinned or archived; when each account’s project list was last checked, under that account’s id; which library reports are your house style, and whether it is used; whether CSV exports are made safe for spreadsheets; the workspace’s layout; today’s request counts and the daily limits Google reported; the models your key can reach, with a short fingerprint of the key rather than the key; and the last announcement you saw.',
+      'Session storage, which the browser erases when the tab closes, keeps your keys, the unsent text in the box and any messages waiting in the queue, the open project, the changes a reply’s Undo can take back, the model in use, and when Forma last reloaded itself to load a new version.',
+      'IndexedDB keeps the report library — the stripped reports you add and their index —, the SQL Server layouts you add with any sample rows, up to five databases, until you forget them on the Data view or sign out, the last batch you ran — its files and the reports made from them — until you clear it or sign out, the last five hundred events Forma may learn from (Settings → Learning, above), and, once you sign in, Firebase’s record that you are signed in and a copy of your saved projects, so a change made offline is not lost.',
+      'The browser’s cache also keeps a copy of Forma’s own pages and files, so it opens without a connection; it holds nothing of yours.',
+      'None of this is a cookie, nothing but Forma in this browser reads it, and all of it is there only to make Forma work, which is why there is no cookie banner. Clearing your browser storage removes it. Signing out clears the workspace — the uploads, the extracted text and the generated report — and deletes from this browser the database layouts, the last batch, the events kept for learning, the report library, the copy of your saved projects, which projects you pinned or archived, which library reports were your house style and when each account’s project list was last checked, so the next person at that browser does not see your work. Your memories stay, kept under your account, for you to find when you sign back in.',
     ],
   },
   {
@@ -172,7 +183,7 @@ const PRIVACY: Section[] = [
       'OpenRouter answers your requests only if you chose it under Settings → AI, with your own key.',
       // Said only once App Check is on (lib/appCheck.ts, site audit item 56).
       ...(APP_CHECK_SITE_KEY
-        ? ['Google reCAPTCHA checks that requests to the database come from this site, through Firebase App Check. It runs only when the database is used — once you are signed in, or when you open a shared report — and Google sees your browser and the page while it does.']
+        ? ['Google reCAPTCHA checks that requests to the database come from this site, through Firebase App Check. It runs only when the database is used — once you are signed in, or when you open a shared report — and Google sees your browser and the page while it does, and may set its own cookies on google.com.']
         : []),
       'The contact form is delivered by FormSubmit, which receives the name, email address, subject and message you type into that form and forwards them on as email — only when you press send, only from that one page, and nothing else about you goes with it.',
       'Dictation uses your browser’s own speech recognition. Forma receives only the text; the audio goes wherever your browser sends it, which in Chrome is Google and in Edge is Microsoft.',
@@ -184,13 +195,13 @@ const PRIVACY: Section[] = [
     heading: 'Where it is kept, and for how long',
     paragraphs: [
       'Firebase keeps your account and projects on Google’s servers, which may be in another country than yours; Google’s data processing terms for Firebase cover that transfer.',
-      'Your account and projects stay until you delete them, or the account. A shared copy stays until you stop sharing it or delete its project or your account. Revisions are the newest ten of each project. A contact message stays in the maintainer’s inbox only as long as it takes to answer it. The host’s request logs last as long as Google keeps them.',
+      'Your account and projects stay until you delete them, or the account. A shared copy stays until you stop sharing it or delete its project or your account. Revisions are the newest ten of each project, and go with it. What Forma learned from your use stays until you delete it under Settings → Learning, or the account; the copies the operator downloaded for training go at the next download after that. A contact message stays in the maintainer’s inbox only as long as it takes to answer it. The host’s request logs last as long as Google keeps them.',
     ],
   },
   {
     heading: 'Why it is used',
     paragraphs: [
-      'Your account, projects and shares are kept to give you the service you asked for, and for nothing else. A contact message is used only to answer it. Everything optional — the encrypted key, memories, the library, sharing, dictation — is there only because you turned it on, and you can turn it off.',
+      'Your account, projects and shares are kept to give you the service you asked for. What Forma learns from your use (Settings → Learning) is kept to train Forma’s own model and improve how it reads and lays out reports; it is on unless you turn it off, and it never holds your words or pictures unless you turn on the second switch. A contact message is used only to answer it. Everything else optional — the encrypted key, memories, the library, sharing, dictation — is there only because you turned it on, and you can turn it off.',
     ],
   },
   {
@@ -204,8 +215,8 @@ const PRIVACY: Section[] = [
   {
     heading: 'Deleting your data',
     paragraphs: [
-      'Account settings in the workspace has a Delete account action. It removes your saved projects with their revisions, every report you shared and the encrypted copy of your key along with the account itself. It cannot be undone.',
-      'Individual projects can be deleted from Saved projects, one at a time or all at once with Clear all, which asks you to confirm first. Deleting a project also stops sharing it, and Stop sharing in the Share dialog removes the shared copy on its own. Settings → Memory forgets your memories and kept reports, and the Report library removes a report from this browser.',
+      'Account settings in the workspace has a Delete account action. It removes your saved projects with their revisions, every report you shared, what you let Forma learn from and the encrypted copy of your key along with the account itself, from Forma’s database. Copies the operator already downloaded for training are deleted at the next download after yours are gone; what a trained model learned from them is averages over many reports and holds none of your text. It cannot be undone.',
+      'Individual projects can be deleted from Saved projects, one at a time or all at once with Clear all, which asks you to confirm first. Deleting a project also stops sharing it, and Stop sharing in the Share dialog removes the shared copy on its own. Settings → Memory forgets your memories and kept reports, Settings → Learning deletes what Forma learned from your use, and the Report library removes a report from this browser.',
     ],
   },
   {

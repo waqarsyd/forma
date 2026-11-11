@@ -22,9 +22,13 @@ import './markdown.css';
  *
  * **No `rehype-raw`, deliberately.** This renders model output, and
  * `react-markdown` escapes raw HTML unless that plugin is added. That escaping
- * is the app's XSS defence on generated content — there is no CSP behind it
- * yet — so adding it here would be the single most dangerous line in the
- * project. See `audit/05a-security.md`.
+ * is the app's first XSS defence on generated content, and adding the plugin
+ * here would be the single most dangerous line in the project. The CSP behind
+ * it (since 2026-08-30, src/server/securityHeaders.ts) blocks inline and
+ * foreign script but cannot stop script that does run from leaving by
+ * navigation, so it narrows the damage rather than replacing this (2026-11-11,
+ * the full audit's SE-21: this said there was no CSP yet and cited a report
+ * that has since been deleted).
  */
 export default function Markdown({ children }: { children: string }) {
   return (

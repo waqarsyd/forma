@@ -632,7 +632,8 @@ export default function DocsPage({
                 <Def t="Deleting the account">
                   Type <strong className="font-semibold text-on-surface">DELETE</strong> and, on a password account,
                   your password. Removes your saved projects with their revision history, every report you shared
-                  (its link stops opening), and the encrypted copy of your key. Reports kept only in this browser
+                  (its link stops opening), what Forma learned from your use, and the encrypted copy of your key.
+                  Reports kept only in this browser
                   are not touched. It cannot be undone.
                 </Def>
                 <Def t="Signed in somewhere you should not be">
@@ -840,7 +841,7 @@ y_top = pageHeight − (baseline + height)`}
                   <a href="#batch" className={LINK}>many files at once</a>, and{' '}
                   <a href="#memory" className={LINK}>reports whose style to match</a>.
                 </Def>
-                <Def t="Configure">Opens Settings: General, AI, Gemini key and Memory.</Def>
+                <Def t="Configure">Opens Settings: General, AI, Gemini key, Memory and Learning.</Def>
                 <Def t="Your account">
                   The disc at the foot: Account settings and Sign out, or Sign in. Ctrl+B shows or hides the
                   sidebar; on a phone it is a drawer.
@@ -1325,6 +1326,20 @@ report.ExportToPdf("report.pdf");`}
                   With <em className="not-italic text-on-surface">Learn the style of reports I keep</em> on, a
                   report you export or save counts as kept, and from two of them Forma learns your house style.
                   The newest thirty are kept; Forget kept reports and Forget everything ask before they act.
+                </Def>
+                {/* Learning is on by default, so it is documented where a
+                    visitor and the chat's Docs knowledge look (2026-11-11, the
+                    full audit's PS-06 and LM-19). */}
+                <Def t="Learning from use">
+                  Settings → Learning. With{' '}
+                  <em className="not-italic text-on-surface">Help Forma learn from the shape of my reports</em> on,
+                  which it is unless you turn it off, each report you make or change is kept as its shape: where
+                  each control sits, its size, font and alignment, never its words, a field name or a picture.
+                  Signed in, that goes to your account, where Forma&apos;s maintainer uses it to train Forma&apos;s own
+                  model; signed out, it stays in this browser.{' '}
+                  <em className="not-italic text-on-surface">Share whole reports and what I asked for</em>, off
+                  until you turn it on, sends the full file and your words too. The section shows what was kept and
+                  deletes it.
                 </Def>
               </dl>
 

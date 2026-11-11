@@ -61,4 +61,9 @@ describe('DOCS_SECTIONS keys', () => {
     expect(keys('designer')).toContain('forma designer');
     for (const word of ['limit', 'page reader', 'chain']) expect(keys('ai')).toContain(word);
   });
+
+  it('find the Learning section, which the Memory article describes (2026-11-11, PS-06)', () => {
+    const memory = DOCS_SECTIONS.find((s) => s.id === 'memory')!;
+    for (const query of ['learning', 'train', 'learning switch']) expect(articleMatches(query, memory), query).toBe(true);
+  });
 });

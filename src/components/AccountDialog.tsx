@@ -466,8 +466,9 @@ export default function AccountDialog({
           <div className="wb-set-text">
             <span className="wb-set-label">Delete your account</span>
             <p>
-              <b className="wb-set-strong">This cannot be undone.</b> Your saved projects, every report you shared and the encrypted copy of your API
-              key are deleted with the account. Reports kept only in this browser are not touched.
+              {/* Everything deleteAccountData removes (2026-11-11, the full audit's SA-06b): learning was missing. */}
+              <b className="wb-set-strong">This cannot be undone.</b> Your projects with their revisions, every report you shared, what you let Forma
+              learn from, and the encrypted copy of your API key are deleted with the account. Reports kept only in this browser are not touched.
             </p>
           </div>
           {withPassword && (

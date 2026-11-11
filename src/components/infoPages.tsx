@@ -64,7 +64,8 @@ export const SECURITY: InfoDoc = {
             Forma ships with no API key and has no quota of its own. You supply your Gemini key, and your browser calls
             Google directly with it. It is held in your open Forma tabs, never written to disk in readable form, and
             gone when the last tab closes. An encrypted copy is kept in your account only if you ask, encrypted in your
-            browser under a passphrase that never leaves it, so not even the operator can read it.
+            browser under a passphrase that never leaves it, so it is unreadable without your passphrase, the
+            operator’s view included; choose one nobody could guess.
           </p>
         </>
       ),
@@ -73,12 +74,19 @@ export const SECURITY: InfoDoc = {
       heading: 'Where the page may send anything',
       body: (
         <>
+          {/* Stated as what it is (2026-11-11, the full audit's PS-09, SE-03 and
+              SE-21): the policy names where the page may talk, but those
+              services are shared by everyone and a script can still navigate
+              away, so it narrows what injected script could do rather than
+              promising that nothing could leave; and reCAPTCHA's scripts run
+              since App Check, which the old list left out. */}
           <p className={P}>
-            Every page carries a Content Security Policy whose <code className="doc-code">connect-src</code> lists the
-            only places it may talk to: Google’s Gemini, sign-in and database, the contact form’s relay, OpenRouter, a
-            local AI on your own computer and Forma Designer on it. So even a script that got into the page could
-            not send your key anywhere else. Scripts load only from this site and Google’s sign-in helper; nothing can
-            frame the page; and the browser is told to keep it isolated from other sites’ windows.
+            Every page carries a Content Security Policy: scripts load only from this site, Google’s sign-in helper
+            and, once you sign in or open a shared report, Google’s reCAPTCHA, and the page may talk only to the
+            services Forma uses: Google’s Gemini, sign-in and database, the contact form’s relay, OpenRouter, a local
+            AI on your own computer and Forma Designer on it. That narrows what injected script could do; it is not a
+            promise that nothing could leave. Nothing can frame the page, and the browser is told to keep it isolated
+            from other sites’ windows.
           </p>
         </>
       ),
@@ -88,7 +96,8 @@ export const SECURITY: InfoDoc = {
       body: (
         <>
           <p className={P}>
-            The database’s rules let an account read and write only its own projects, revisions and key. A shared report
+            The database’s rules let an account read and write only its own projects, revisions and key, and the
+            learning events it shares; the operator reads those to improve Forma. A shared report
             is a copy, readable by the people you add once they sign in with that address verified, or by anyone with
             the link if you choose it; making one needs a verified address and a project of your own, and an account can
             share up to {MAX_SHARES}. The rules are tested against Google’s emulator on every change.
@@ -100,7 +109,9 @@ export const SECURITY: InfoDoc = {
       heading: 'No tracking',
       body: (
         <p className={P}>
-          No analytics, no advertising, no tracking pixels and no cookies. The{' '}
+          No analytics, no advertising, no tracking pixels and no cookies of Forma’s (reCAPTCHA sets its own on
+          google.com once you sign in or open a shared report). Forma learns from the shape of the reports you make, never their words unless
+          you choose to share whole reports, and that reaches Forma only through your account once you sign in; Settings → Learning turns it off and deletes what was kept. The{' '}
           <a href="/privacy" className={A}>privacy policy</a> lists everything that is stored and everything that is
           sent, and where.
         </p>

@@ -47,7 +47,8 @@ export const DOCS_SECTIONS: ReadonlyArray<{ id: string; n: string; title: string
   { id: 'config', n: '13', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
   { id: 'saving', n: '14', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
   { id: 'share', n: '15', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
-  { id: 'memory', n: '16', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting' },
+  // 'learning learn train switch' since 2026-11-11 (the full audit's PS-06): the Learning section is described here.
+  { id: 'memory', n: '16', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting learning train switch' },
   /* Batch and Revisions are two of the five rail panels and both shipped on
      2026-09-05, and neither appeared anywhere on this page or on Features
      until 2026-09-08 — on a page whose sibling is titled "Everything it does".

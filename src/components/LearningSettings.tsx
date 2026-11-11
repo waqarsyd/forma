@@ -143,8 +143,9 @@ export default function LearningSettings({ user }: LearningSettingsProps) {
           <label className="wb-set-label" htmlFor="wb-set-learn-structure">Help Forma learn from the shape of my reports</label>
           <p>
             The structure of each report you make or change: its bands, where each control sits, its size, font and alignment, and what
-            kind of text it holds. Never the text itself, a field name, a query or a picture. With this on, Forma&apos;s own model gets
-            better at laying out reports like yours.
+            kind of text it holds. Never the text itself, a field name, a query or a picture. With this on, the shape of your reports
+            helps Forma&apos;s maintainer improve how Forma lays out reports{user ? '' : ' once you sign in'}.
+            {/* Signed out, nothing is sent: flushLearning sends no event made signed out (2026-11-11, LG review). */}
           </p>
         </div>
         <input
@@ -181,7 +182,10 @@ export default function LearningSettings({ user }: LearningSettingsProps) {
           <p>
             {keptLine}
             {sharedLine}
-            {user ? ' What was shared is in your account, where only you and Forma’s maintainer can read it; deleting your account removes it.' : ' Sign in to share it; signed out, it stays on this device.'}
+            {/* What deletion reaches, as the privacy policy says it (2026-11-11, the full audit's LM-03 and SE-10). */}
+            {user
+              ? ' What was shared is in your account, where only you and Forma’s maintainer can read it. Deleting it here, or deleting your account, removes it from Forma’s database; copies already downloaded for training are deleted at the next download.'
+              : ' Sign in to share it; signed out, it stays on this device.'}
           </p>
         </div>
         {confirming ? (

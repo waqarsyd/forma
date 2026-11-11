@@ -95,6 +95,11 @@ describe('the public pages do not claim what Forma no longer does', () => {
     ['accuracy no one measured', /Accurate down to|most common single correction|two or three passes/i],
     ['a slogan where the next step goes', /Let.s build something precise|Ready when you are|The application is the portfolio/i],
     ['a second label for the workspace or for sign-up', /Launch the workspace|\bSign up\b/],
+    // Batch LG (2026-11-11, PS-09, SE-03): a CSP narrows where script may post; it does not stop a key leaving.
+    ['a CSP that keeps a stolen key in', /could not send your key anywhere else/i],
+    ['the old name of Settings’ Download everything button', /has Download all\b/],
+    // Encrypted sync keeps a copy of the key in the account, so "never" needs its condition.
+    ['the key never reaching Forma, whatever is switched on', /Your key, never:/],
   ])('no longer claims %s', (_what, pattern) => {
     // On one line, so a sentence the source wraps between two words is still found (2026-11-11).
     expect(all.replace(/\s+/g, ' ')).not.toMatch(pattern);
@@ -244,6 +249,20 @@ describe('what the pages state, the code answers', () => {
     expect(version(docs)).toBe(version(hero));
     const title = /const TITLE = \{ x: (\d+), y: (\d+)/.exec(hero)!;
     expect(landing).toContain(`{ label: 'INVOICE', guess: '~208, ~44', exact: '${title[1]}, ${title[2]}' }`);
+  });
+
+  /*
+   * Learning is on by default, so every page that says what Forma keeps
+   * names where to turn it off (2026-11-11, batch LG: PS-02, LM-19, PS-06).
+   */
+  it('names Settings → Learning on /faq, on /security and in the Docs', () => {
+    const start = info.indexOf('export const SECURITY');
+    const security = info.slice(start, info.indexOf('/* ---', start));
+    expect(start).toBeGreaterThan(0);
+    for (const [name, src] of [['/faq', faqs], ['/security', security], ['Docs', docs]] as const) {
+      expect(prose(src), name).toContain('Settings → Learning');
+    }
+    expect(prose(docs)).toContain('Opens Settings: General, AI, Gemini key, Memory and Learning.');
   });
 
   it('counts the examples it offers', () => {

@@ -26,10 +26,22 @@
  * one compromised transitive dependency, and it is gone.
  *
  * **`connect-src` is the directive that matters** and the reason this exists.
- * Everything else is hardening; `connect-src` is what makes exfiltration fail
- * even if injection succeeds, because a stolen key is worthless to script that
- * cannot post it anywhere. Read any change to that list as a change to the
- * app's central security claim, and add an origin to it only knowing that.
+ * Everything else is hardening; `connect-src` narrows where injected script
+ * could post a stolen key to the services Forma uses. Read any change to that
+ * list as a change to the app's central security claim, and add an origin to
+ * it only knowing that.
+ *
+ * Narrows, not stops (2026-11-11, the full audit's SE-03 and PS-09; the
+ * public Security page says the same since then). A CSP does not govern
+ * navigation, so script can still leave with `location.href` or
+ * `window.open`; formsubmit.co accepts any recipient, so script could mail
+ * the key anywhere (Owner decision 24 is the alias that closes that); and
+ * Firestore, Gemini and OpenRouter are shared by everyone, so script could
+ * hand the key to an attacker's own project or account there. The real
+ * defence is that nothing injects script: React's escaping, no `rehype-raw`
+ * (Markdown.tsx), and the Trusted Types trial below. `script-src` also names
+ * reCAPTCHA's two origins once App Check has a key (lib/appCheck.ts), which
+ * the public pages state.
  *
  * `script-src` carries no `'unsafe-inline'` in production. `index.html` has
  * exactly one inline script -- the pre-paint theme resolver, which must stay
@@ -61,7 +73,8 @@ import { OWN_AUTH_HOSTS } from '../lib/authDomain';
 export const THEME_SCRIPT_HASH = "'sha256-RswoUqjMy7el2m555ElIwd42BKWUQv8ssqXpJL6feXQ='";
 
 /**
- * Where the browser is allowed to send data. The exfiltration boundary.
+ * Where the browser is allowed to send data: the exfiltration boundary for
+ * `fetch` and its kin, not for navigation (see the header comment).
  *
  *   generativelanguage  the browser-side Gemini call -- the whole point of the
  *                       bring-your-own-key design is that the key goes here and

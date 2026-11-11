@@ -22,9 +22,11 @@
  * this test fight every future rewording.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
+import { FIRESTORE_CACHE_PREFIX, SIGNED_OUT_DATABASES, SIGNED_OUT_LOCAL_KEYS, SIGNED_OUT_LOCAL_PREFIXES } from '../lib/signOut';
+import { DEFAULT_LEARNING_SETTINGS, MAX_LOCAL } from '../lib/learning';
 
 /** Vitest runs with the repo root as cwd — see the same note in routes.test.ts. */
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -234,6 +236,220 @@ describe('privacy policy discloses every third party in the path', () => {
   });
 });
 
+/** The policy's source on one line, so a sentence the file wraps is still found. */
+const policy = legal.replace(/\s+/g, ' ');
+
+/*
+ * What this browser stores, held to the code (2026-11-11, the full audit's
+ * PS-08 and SA-23). The policy says it lists everything stored, and it had
+ * drifted three ways in three days: the batch kept in IndexedDB, the Learning
+ * switches, whether keys reach a new tab and when each account's project list
+ * was checked were all stored and none was named. So the names are read out
+ * of src, every one has to be in this table, and every row's phrase has to be
+ * in the policy. A new key fails here until it is both described and listed.
+ */
+const STORED: Record<string, RegExp> = {
+  // Local storage.
+  savedReports: /saved automatically in your browser’s local storage/,
+  darkMode: /keeps: the theme;/,
+  reportConfig: /the DevExpress version and unit last used/,
+  'forma.aiProvider': /the AI you chose, with its server address and model, never a key/,
+  'forma:keyAcrossTabs': /whether a new Forma tab may take your keys from one already open/,
+  'forma.memory': /your memories and the style of reports you kept/,
+  'forma.memoryRetired': /your memories and the style of reports you kept/,
+  // The signed-in account's own memory (lib/memory.ts, memoryKey).
+  'forma.memory:': /your memories and the style of reports you kept/,
+  'forma:learning': /the Learning switches, with which account they belong to/,
+  'forma:pinnedProjects': /which projects you pinned or archived/,
+  'forma:archivedProjects': /which projects you pinned or archived/,
+  'forma:indexCheckedAt:': /when each account’s project list was last checked, under that account’s id/,
+  libraryCanonical: /which library reports are your house style/,
+  houseStyle: /which library reports are your house style, and whether it is used/,
+  'forma.csvSafeForSpreadsheets': /whether CSV exports are made safe for spreadsheets/,
+  reviewWidth: /the workspace’s layout/,
+  reviewWidthEpoch: /the workspace’s layout/,
+  reviewCollapsed: /the workspace’s layout/,
+  railExpanded: /the workspace’s layout/,
+  'forma:requestsToday': /today’s request counts/,
+  'forma:dailyLimits': /the daily limits Google reported/,
+  'geminiModel:day': /the models your key can reach, with a short fingerprint of the key rather than the key/,
+  announcementsSeenId: /the last announcement you saw/,
+  // Session storage.
+  'geminiApiKey:session': /Session storage, which the browser erases when the tab closes, keeps your keys/,
+  'openRouterKey:session': /Session storage, which the browser erases when the tab closes, keeps your keys/,
+  'forma:drafts': /the unsent text in the box/,
+  'forma:draft': /the unsent text in the box/,
+  'forma:queue': /any messages waiting in the queue/,
+  'forma:openProject': /the open project/,
+  'forma:replyChanges': /the changes a reply’s Undo can take back/,
+  'geminiModel:session': /the model in use/,
+  'geminiModels:session': /the model in use/,
+  'forma:staleReloadAt': /when Forma last reloaded itself to load a new version/,
+  // The channel a new tab takes the keys through (lib/keyHandoff.ts): not storage, but where they go.
+  'forma-keys': /a Forma tab you open while another is open gets them from it, inside this browser/,
+  // IndexedDB.
+  'forma-databases': /the SQL Server layouts you add with any sample rows/,
+  'forma-batch': /the last batch you ran — its files and the reports made from them —/,
+  'forma-learning': /the last five hundred events Forma may learn from/,
+  'forma-library': /IndexedDB keeps the report library/,
+};
+
+/** Names the scan finds that are not stored at all, with why. */
+const NOT_STORED: Record<string, string> = {
+  // keyVault.ts reads it once, only to erase a key an old version kept in plain text.
+  customGeminiApiKey: 'read once to erase',
+  // App.tsx removes what an old model dropdown stored; nothing writes it.
+  selectedAiModel: 'erased only',
+  // lib/designerBridge.ts: the link scheme that starts Forma Designer.
+  'forma-repx': 'a link scheme',
+  // lib/router.ts: the event a route change dispatches in the page.
+  'forma:routechange': 'an event name',
+};
+
+/** Every source file under src but the tests, as text. */
+const sources = (readdirSync(resolve(process.cwd(), 'src'), { recursive: true }) as string[])
+  .map((p) => p.replace(/\\/g, '/'))
+  .filter((p) => /\.tsx?$/.test(p) && !/\.test\.tsx?$/.test(p) && !p.endsWith('.d.ts'))
+  .map((p) => ({ path: p, text: read(`src/${p}`) }));
+
+/**
+ * The names this browser keeps things under, read out of the code: a constant
+ * named for a key, a setting or a database; a literal handed to a storage
+ * call, on `localStorage`, `sessionStorage` or a storage passed in (a
+ * template's fixed start, for a key per account); and any constant spelling
+ * Forma's own prefix.
+ *
+ * What it cannot find is a key built only inside a helper and never spelled
+ * at a storage call or in a constant: `memoryKey` builds `forma.memory:<uid>`
+ * that way, and it is found only because lib/signOut.ts removes it by its
+ * spelling. A new per-account key needs the same, or a row added by hand.
+ */
+function storedNames(): Map<string, string> {
+  const found = new Map<string, string>();
+  const add = (name: string, path: string) => {
+    if (/^https?:/.test(name)) return; // a URL, not a key
+    if (!found.has(name)) found.set(name, path);
+  };
+  for (const { path, text } of sources) {
+    for (const m of text.matchAll(/\bconst\s+([A-Z][A-Z0-9_]*)\s*=\s*(['"])([^'"\n]+)\2/g)) {
+      if (/SITE_KEY/.test(m[1])) continue; // App Check's public site key: a value, not a name
+      if (/KEY|SETTING|_DB$|DB_NAME$/.test(m[1])) add(m[3], path);
+    }
+    for (const m of text.matchAll(/\b\w*[sS]torage\??\.(?:getItem|setItem|removeItem)\(\s*(['"`])([^'"`$\n]+)/g)) add(m[2], path);
+    for (const m of text.matchAll(/\bconst\s+\w+\s*=\s*(['"])(forma[.:-][^'"\n]*)\1/g)) add(m[2], path);
+  }
+  return found;
+}
+
+describe('the privacy policy names everything this browser stores', () => {
+  const found = storedNames();
+
+  it('finds the names it is meant to find, so a scan that stopped matching cannot pass empty', () => {
+    for (const name of ['forma-batch', 'forma:learning', 'forma:keyAcrossTabs', 'forma:indexCheckedAt:', 'forma.memory:', 'geminiApiKey:session']) {
+      expect(found.has(name), name).toBe(true);
+    }
+  });
+
+  it('describes every name the code stores under', () => {
+    const missing = [...found].filter(([name]) => !(name in STORED) && !(name in NOT_STORED)).map(([name, path]) => `${name} (src/${path})`);
+    expect(
+      missing,
+      'These are stored by the code and not described: add a phrase for each to the privacy policy ' +
+        '(LegalPage.tsx, "What is kept in your browser") and a row to STORED here.',
+    ).toEqual([]);
+  });
+
+  it.each(Object.entries(STORED))('says what %s holds', (_name, phrase) => {
+    expect(policy).toMatch(phrase);
+  });
+
+  it('names every database a sign-out deletes', () => {
+    for (const name of SIGNED_OUT_DATABASES) expect(STORED[name], name).toBeTruthy();
+  });
+
+  // Not named by a constant the scan reads: Firestore's cache is matched by
+  // prefix (lib/signOut.ts) and the offline worker's by build (lib/serviceWorker.ts).
+  it("names Firestore's copy of the projects and the offline copy of the site", () => {
+    if (read('src/lib/firebaseClient.ts').includes('persistentLocalCache(')) {
+      expect(policy).toMatch(/a copy of your saved projects, so a change made offline is not lost/);
+    }
+    if (read('src/lib/serviceWorker.ts').includes('caches.open(')) {
+      expect(policy).toMatch(/a copy of Forma’s own pages and files, so it opens without a connection; it holds nothing of yours/);
+    }
+  });
+});
+
+describe('the policy says what a sign-out clears, as lib/signOut.ts clears it', () => {
+  const start = policy.indexOf('Signing out clears the workspace');
+  const said = policy.slice(start, policy.indexOf("',", start));
+  const PHRASE: Record<string, string> = {
+    'forma-databases': 'the database layouts',
+    'forma-batch': 'the last batch',
+    'forma-learning': 'the events kept for learning',
+    'forma-library': 'the report library',
+    'forma:pinnedProjects': 'which projects you pinned or archived',
+    'forma:archivedProjects': 'which projects you pinned or archived',
+    libraryCanonical: 'which library reports were your house style',
+    'forma:indexCheckedAt:': 'when each account’s project list was last checked',
+    [FIRESTORE_CACHE_PREFIX]: 'the copy of your saved projects',
+  };
+
+  it.each([...SIGNED_OUT_DATABASES, ...SIGNED_OUT_LOCAL_KEYS, ...SIGNED_OUT_LOCAL_PREFIXES, FIRESTORE_CACHE_PREFIX])('names %s', (name) => {
+    expect(start).toBeGreaterThan(0);
+    expect(PHRASE[name], `add a phrase for ${name}, which a sign-out now removes`).toBeTruthy();
+    expect(said).toContain(PHRASE[name]);
+  });
+});
+
+/*
+ * Learning, held to lib/learning.ts and scripts/model/pull-learning.ts
+ * (2026-11-11, the full audit's LM-27b, LM-03 and SE-10, D6). The policy
+ * states numbers, defaults and a deletion promise that the code decides.
+ */
+describe('the policy says of learning what the code does', () => {
+  const learning = read('src/lib/learning.ts');
+
+  it('gives the number of events kept on the device', () => {
+    const WORDS: Record<number, string> = { 100: 'one hundred', 200: 'two hundred', 250: 'two hundred and fifty', 500: 'five hundred', 1000: 'one thousand' };
+    expect(WORDS[MAX_LOCAL], `MAX_LOCAL is ${MAX_LOCAL}: add its words here and in the policy`).toBeTruthy();
+    expect(policy).toContain(`the last ${WORDS[MAX_LOCAL]} events Forma may learn from`);
+  });
+
+  it('says which switch is on until turned off and which is off until turned on', () => {
+    expect(DEFAULT_LEARNING_SETTINGS).toEqual({ structure: true, full: false });
+    expect(policy).toMatch(/“Help Forma learn from the shape of my reports” on, which it is unless you turn it off/);
+    expect(policy).toMatch(/“Share whole reports and what I asked for” on, which it is not unless you turn it on/);
+    expect(policy).toMatch(/Unless you turn it off, the shape of your reports \(never their text\) is kept/);
+  });
+
+  it('says what deleting reaches, while the pull removes the copies of what was deleted', () => {
+    const pull = read('scripts/model/pull-learning.ts');
+    const reconciles = /Deletion reaches these copies/.test(pull) && /applyReconcile\(/.test(pull);
+    const promise = /Copies the operator already downloaded for training are deleted at the next download after yours are gone/;
+    if (reconciles) {
+      expect(policy).toMatch(promise);
+      expect(policy).toMatch(/Deleting it there, or deleting your account, removes it from Forma’s database/);
+    } else {
+      expect(policy, 'pull-learning.ts no longer removes deleted events: the policy must stop promising it').not.toMatch(promise);
+    }
+    expect(policy).not.toMatch(/deleting your account removes it\./);
+  });
+
+  it('names what learning is for, and does not say the account is kept for nothing else', () => {
+    expect(policy).toMatch(/kept to train Forma’s own model and improve how it reads and lays out reports; it is on unless you turn it off/);
+    expect(policy).not.toMatch(/the service you asked for, and for nothing else/);
+  });
+
+  // One-directional, as the hosts above: a signal the code records obliges the
+  // sentence. The policy may say it before the code does (batch LRN adds it in
+  // the same wave), never after.
+  it('says the kept and undone reports and the time each took once events record them', () => {
+    if (/'kept'|'undo'/.test(learning.slice(learning.indexOf('export type LearningKind'), learning.indexOf(';', learning.indexOf('export type LearningKind')))) || /\n\s+ms\??:\s*number/.test(learning)) {
+      expect(policy).toMatch(/Forma also keeps which reports you kept or undid and how long each took, never their words/);
+    }
+  });
+});
+
 /**
  * The "Last updated" date must move when the words above it do.
  *
@@ -326,14 +542,26 @@ describe('the legal copy and its date change together', () => {
      Forma Designer download the same day (batch WH): the workspace asks
      127.0.0.1 only when Open in designer is chosen, the website too after the
      browser asks, the download from GitHub, and DevExpress named as Developer
-     Express Inc.'s product, not Forma's. Substantive, and that day's date.      Moved again on 2026-11-10 (the full audit, batch FD): what a person lets
+     Express Inc.'s product, not Forma's. Substantive, and that day's date.
+
+     Moved again on 2026-11-10 (the full audit, batch FD): what a person lets
      Forma learn from (Settings > Learning, lib/learning.ts) is a new thing
      stored under the account and on the device, with two switches and the
      operator's use of it, so the policy says so in its own paragraph and
-     the IndexedDB list names the store. Substantive, so the date moved. 
+     the IndexedDB list names the store. Substantive, so the date moved.
+
+     Moved again on 2026-11-11 (the full audit's batch LG, the wording the
+     owner approved as Owner decision 4): learning's purpose and its default
+     in the short version and in "Why it is used", what deletion reaches and
+     what it cannot, every name this browser stores and what a sign-out
+     clears, reCAPTCHA among the scripts and its cookies, the passphrase's
+     condition, and no single host as the one that asks to reach the PC.
+     Substantive, so the date moved. Its review the same day made that
+     browser's question one it "may" ask, since only some browsers ask: the
+     hash moved, and the date is already that day's.
      */
-  const EXPECTED_COPY_HASH = 'dcfb3ec1419d';
-  const EXPECTED_UPDATED = '10 November 2026';
+  const EXPECTED_COPY_HASH = '78c6eba0dab0';
+  const EXPECTED_UPDATED = '11 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);

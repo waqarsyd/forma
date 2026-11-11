@@ -22,9 +22,10 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
     q: 'How do I take all my projects with me?',
     a: (
       <p>
-        Settings, under General, has Download all: every project you saved, in one .zip, each as its conversation
-        and report and as a .repx to open in the designer. Signed out, it is also the copy to keep, since a browser
-        may clear what a site stores to free space.
+        Settings, under General, has Download everything (.zip): every project you saved, each as its conversation
+        and report and as a .repx to open in the designer, and what Forma remembers, in one .zip; signed in, also
+        each project&apos;s earlier versions, the reports you share and what you shared for learning. Signed out, it
+        is also the copy to keep, since a browser may clear what a site stores to free space.
       </p>
     ),
   },
@@ -98,11 +99,20 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
   },
   {
     q: "Is my design or my key sent to Forma's servers?",
+    // Says what the database holds (2026-11-11, the full audit's PS-02 and
+    // LM-19): a plain "No" left out the projects and the learning events the
+    // operator can read, which the privacy policy says. The key's sentence
+    // carries encrypted sync's condition, as the policy and /security do: with
+    // it on, an encrypted copy is in the account, so "never" alone was false.
     a: (
       <p>
-        No. Generation runs entirely in your browser and talks to Google directly — there is no generation
-        endpoint on Forma's server to route through. Signed in, your projects are saved to your own account
-        as you work; the key is never part of them.
+        Your key, never in a form anyone can read: it goes only to the AI it belongs to, and only if you turn on
+        encrypted sync is a copy kept in your account, encrypted in your browser with your passphrase. Your design
+        goes from your browser to the AI you
+        chose, not through a Forma server. Signed in, your projects, with the files you attached, are saved in
+        Forma&apos;s database under your account, and so is the shape of each report you make (no text and no
+        pictures, unless you choose to share whole reports), which trains Forma&apos;s own model; Settings → Learning
+        turns that off or deletes it. Signed out, Forma keeps nothing of yours anywhere but this browser.
       </p>
     ),
   },

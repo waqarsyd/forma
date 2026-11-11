@@ -281,6 +281,11 @@ describe('deleting the account', () => {
     open('Delete account');
     expect(screen.getByText(/cannot be undone/i)).toBeTruthy();
     expect(screen.getByText(/kept only in this browser are not touched/i)).toBeTruthy();
+    // Everything the deletion removes, learning included (2026-11-11, the full audit's SA-06b).
+    const said = screen.getByText(/kept only in this browser are not touched/i).closest('p')!.textContent!.replace(/\s+/g, ' ');
+    for (const part of ['projects with their revisions', 'every report you shared', 'what you let Forma learn from', 'encrypted copy of your API key']) {
+      expect(said).toContain(part);
+    }
   });
 
   it('needs the word typed exactly', () => {
