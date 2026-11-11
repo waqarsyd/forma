@@ -1962,6 +1962,69 @@ describe('layoutBand and splitInstance, the rules on their own', () => {
     expect(inst.height).toBeCloseTo(100 + growthA + growthB, 6);
   });
 
+  // The 2026-11-11 audit, PR-04: the push-down tested every control between
+  // every pair, 1.3 s per paginate on a band of 1,021 labels. A band of 1,000
+  // growing and shrinking labels gets the shifts the direct test gives, here
+  // written out as it stood, and in well under a frame budget's worth of time.
+  // A grid of labels, `rows` by 10, mixing growing, fixed and shrinking cells.
+  const pushDownBand = (rows: number) => {
+    const cells: string[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < 10; c++) {
+        const n = r * 10 + c + 1;
+        const text = 'L'.repeat((r * 7 + c * 3) % 4);
+        const shrink = (r + c) % 5 === 0 ? ' CanShrink="true"' : '';
+        cells.push(`<Item${n} Ref="${10 + n}" ControlType="XRLabel" Name="c${n}" Text="${text}" Font="Arial, 10pt" CanGrow="${(r + c) % 3 ? 'true' : 'false'}"${shrink} LocationFloat="${c * 80},${r * 25 + (c % 3) * 4}" SizeF="80,${18 + (c % 4) * 2}" />`);
+      }
+    }
+    return band(cells.join(''), '', rows * 26);
+  };
+
+  // Speed and correctness are two tests (2026-11-11): the direct test below is
+  // O(n^3), and over 1,000 controls under v8 coverage it alone took 16 s, past
+  // the 5 s limit CI's test:coverage runs with. Correctness is the same claim
+  // on 200 controls; speed is measured on 1,000. The bound is half of what the
+  // old algorithm took uninstrumented (about 1,300 ms): measured here at under
+  // 150 ms plain and 160 ms under coverage, it leaves a slow CI runner room.
+  it('pushes a band of 1,000 controls down fast', () => {
+    const big = pushDownBand(100);
+    layoutBand(big, 1, null, ctx); // warm the measurer
+    const started = performance.now();
+    const inst = layoutBand(big, 1, null, ctx);
+    const took = performance.now() - started;
+    expect(inst.controls).toHaveLength(1000);
+    expect(took).toBeLessThan(650);
+  }, 30_000);
+
+  it('pushes a band of 200 controls down as the direct test does', () => {
+    const inst = layoutBand(pushDownBand(20), 1, null, ctx);
+    expect(inst.controls).toHaveLength(200);
+
+    // The direct test, as it was written before the change.
+    const placed = [...inst.controls].sort((a, b) => a.control.y - b.control.y);
+    const at = (pc: PlacedControl) => pc.control.y;
+    const ends = (pc: PlacedControl) => at(pc) + pc.control.height;
+    const shifts = new Map<PlacedControl, number>();
+    for (let i = 0; i < placed.length; i++) {
+      const top = at(placed[i]);
+      let shift: number | null = null;
+      for (let j = 0; j < i; j++) {
+        const above = placed[j];
+        if (ends(above) > top + 1e-6) continue;
+        if (placed.some((b, k) => k !== i && k !== j && at(b) >= ends(above) - 1e-6 && ends(b) <= top + 1e-6)) continue;
+        const moved = shifts.get(above)! + above.height - above.control.height;
+        shift = shift === null ? moved : Math.max(shift, moved);
+      }
+      shifts.set(placed[i], shift ?? 0);
+    }
+    let moved = 0;
+    for (const pc of placed) {
+      expect(pc.y).toBeCloseTo(at(pc) + shifts.get(pc)!, 6);
+      if (Math.abs(shifts.get(pc)!) > 1e-6) moved++;
+    }
+    expect(moved).toBeGreaterThan(100);
+  });
+
   // Parity row 52, s38d, record by record: a growing label, a shrinking one
   // under it and a label under both. The bottom label moves with the
   // shrinking one alone, the shrink less the growth, and the band follows.

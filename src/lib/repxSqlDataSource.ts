@@ -13,6 +13,7 @@
  * in the browser alike, and the decoded document's shape is fixed.
  */
 import type { SqlColumn, SqlObject, SqlParameter, SqlProcedure, SqlSchema } from './sqlSchema';
+import { unescapeXml as decodeEntities } from './xmlEscape';
 
 export interface RepxQueryParameter {
   name: string;
@@ -74,17 +75,12 @@ export interface RepxDataSource {
   views: RepxView[];
 }
 
-/** XML's five entities, back to characters. */
-export function decodeEntities(text: string): string {
-  return text
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
-    .replace(/&amp;/g, '&');
-}
+/**
+ * XML's entities and character references, back to characters: since the
+ * 2026-11-11 audit (RH-04) the one decoder in `xmlEscape.ts`, under the name
+ * this module's callers know it by.
+ */
+export { decodeEntities };
 
 /** Base64 to text, as UTF-8: DevExpress writes the decoded document in UTF-8. */
 export function decodeBase64(b64: string): string {
@@ -317,17 +313,22 @@ function appendItems(xml: string, block: string, items: string[], before: RegExp
  * something, and was counted as the new report's source until then, so the
  * old one was never carried and the report opened bound to nothing. A source
  * that says neither is removed, with anything that pointed at it pointed at
- * the source carried instead.
+ * the source carried instead. So is one beside a source of the new report's
+ * own (the 2026-11-11 audit's follow-up to SD-16): that one is kept, and
+ * what pointed at the garbled one points at it.
  */
 export function carryDataSource(before: string, after: string): { xml: string; applied: boolean; reason: string } {
-  const old = readRepxDataSources(before);
-  if (!old.length) return { xml: after, applied: false, reason: 'the report had no data source' };
-  if (!/<XtraReportsLayoutSerializer\b/.test(after)) return { xml: after, applied: false, reason: 'there is no new report' };
-  if (readRepxDataSources(after).some((ds) => ds.connectionName && ds.queries.length)) return { xml: after, applied: false, reason: 'the new report has a data source of its own' };
+  if (!/<XtraReportsLayoutSerializer\b/.test(after)) {
+    return { xml: after, applied: false, reason: readRepxDataSources(before).length ? 'there is no new report' : 'the report had no data source' };
+  }
+  const own = readRepxDataSources(after).filter((ds) => ds.connectionName && ds.queries.length);
+  const ownRefs = new Set(own.map((ds) => ds.ref));
   const garbled: string[] = [];
-  after = after.replace(/<ComponentStorage>([\s\S]*?)<\/ComponentStorage>/, (_whole, inner: string) => {
+  const cleaned = after.replace(/<ComponentStorage>([\s\S]*?)<\/ComponentStorage>/, (_whole, inner: string) => {
     const kept = inner.replace(/\s*<Item\d+\s[^>]*?ObjectType="DevExpress\.DataAccess\.Sql\.SqlDataSource[^>]*?(?:\/>|>[\s\S]*?<\/Item\d+>)/g, (item: string) => {
-      garbled.push(/\sRef="(\d+)"/.exec(item)?.[1] ?? '');
+      const ref = /\sRef="(\d+)"/.exec(item)?.[1] ?? '';
+      if (ownRefs.has(ref)) return item;
+      garbled.push(ref);
       return '';
     });
     // What is left numbered Item1, Item2... again, as the serializer reads a collection; only flat items, the kind it holds.
@@ -335,6 +336,18 @@ export function carryDataSource(before: string, after: string): { xml: string; a
     const flat = !/<\/Item\d+>/.test(kept);
     return `<ComponentStorage>${flat ? kept.replace(/<Item\d+(?=\s)/g, () => `<Item${++n}`) : kept}</ComponentStorage>`;
   });
+  if (own.length) {
+    if (!garbled.length) return { xml: after, applied: false, reason: 'the new report has a data source of its own' };
+    // The report's own pointer, where it names one of its sources, else the first.
+    const pointer = /\sDataSource="#Ref-(\d+)"/.exec(/<XtraReportsLayoutSerializer\b[^>]*>/.exec(cleaned)?.[0] ?? '')?.[1];
+    const main = pointer && ownRefs.has(pointer) ? pointer : own[0].ref;
+    let xml = cleaned;
+    for (const ref of garbled) if (ref) xml = xml.split(`DataSource="#Ref-${ref}"`).join(`DataSource="#Ref-${main}"`);
+    return { xml, applied: true, reason: 'removed a damaged copy of the data source beside the report\'s own' };
+  }
+  const old = readRepxDataSources(before);
+  if (!old.length) return { xml: after, applied: false, reason: 'the report had no data source' };
+  after = cleaned;
   let next = Math.max(maxRefIn(after), maxRefIn(before)) + 1;
   const remap = new Map<string, string>();
   const fresh = (ref: string) => {

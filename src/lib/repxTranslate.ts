@@ -17,13 +17,16 @@
  * (`services/translate.ts`); `applyTranslations` puts them back by exact
  * match, escaped as the file writes them, and counts what it changed.
  */
-import { escapeXmlAttribute } from './xmlEscape';
+import { escapeXmlAttribute, unescapeXml } from './xmlEscape';
 
 const TEXT_CONTROLS = /<(Item\d+)\b([^>]*\bControlType="(?:XRLabel|XRTableCell|XRCheckBox|XRRichText)"[^>]*)>/g;
 const TEXT_ATTR = /\sText="([^"]*)"/;
 const BOUND = /<ExpressionBindings>[\s\S]*?PropertyName="Text"/;
 
-const unescape = (v: string) => v.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+// Character references too (the 2026-11-11 audit, RH-04): a two-line caption
+// went to the AI as "Total&#xD;&#xA;due", and its translation came back to
+// print those characters, or on one line.
+const unescape = unescapeXml;
 
 /** Whether the control's own children bind its Text: a self-closing tag has none, an open one is read to its closing tag. */
 function boundText(xml: string, item: string, attrs: string, end: number): boolean {

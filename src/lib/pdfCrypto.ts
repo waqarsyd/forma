@@ -21,6 +21,7 @@
  * synchronously as each object is written. SHA-256, -384 and -512, which only
  * AES-256's key derivation needs, come from the platform's WebCrypto.
  */
+import { unescapeXml } from './xmlEscape';
 
 /** What a report's `PasswordSecurityOptions` asks for. */
 export interface PdfSecurity {
@@ -35,7 +36,7 @@ export function pdfSecurityOf(xml: string | null | undefined): PdfSecurity | nul
   if (!tag) return null;
   const attr = (name: string) => {
     const m = new RegExp(`\\s${name}="([^"]*)"`).exec(tag);
-    return m ? m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/&amp;/g, '&') : '';
+    return m ? unescapeXml(m[1]) : '';
   };
   const openPassword = attr('OpenPassword');
   const permissionsPassword = attr('PermissionsPassword');

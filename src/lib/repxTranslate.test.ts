@@ -59,6 +59,16 @@ describe('what is translated', () => {
     expect(xml.replace(/Text="[^"]*"/g, '')).toBe(REPX.replace(/Text="[^"]*"/g, ''));
   });
 
+  // The 2026-11-11 audit, RH-04: the caption went to the AI as
+  // "Total&#xD;&#xA;due", and its translation printed those characters.
+  it('reads a two-line caption as two lines, and writes its translation back as the file writes a line break', () => {
+    const two = '<Item1 Ref="4" ControlType="XRLabel" Name="labelTotal" Text="Total&#xD;&#xA;due" SizeF="200,30" Dpi="100" />';
+    expect(collectTexts(two)).toEqual([{ text: 'Total\r\ndue', count: 1 }]);
+    const { xml, changed } = applyTranslations(two, new Map([['Total\r\ndue', 'Gesamt\r\nfällig']]));
+    expect(changed).toBe(1);
+    expect(xml).toContain('Text="Gesamt&#xD;&#xA;fällig"');
+  });
+
   it('reads the language a request names', () => {
     expect(languageAsked('Translate this report into German.')).toBe('German');
     expect(languageAsked('translate it to Brazilian Portuguese please')).toBe('Brazilian Portuguese');

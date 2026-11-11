@@ -49,6 +49,37 @@ describe('reportToCsv, as DevExpress exports it', () => {
     expect(csv.charCodeAt(0)).not.toBe(0xfeff);
   });
 
+  // The 2026-11-11 audit, PX-18: Excel reads a CSV without a byte-order mark
+  // in the machine's code page. DevExpress's measured cases above, all ASCII,
+  // keep theirs byte for byte; a file with anything past ASCII starts with one.
+  it('starts a file holding a character past ASCII with a byte-order mark, and only such a file', () => {
+    const csv = reportToCsv(parseReportStructure(C04), 1, { rows: [{ Customer: 'Café', Amount: '1' }] });
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    expect(csv.slice(1).split('\r\n')[2]).toBe('Café,$1.00,');
+    const ascii = reportToCsv(parseReportStructure(C04), 1, { rows: [{ Customer: 'Cafe', Amount: '1' }] });
+    expect(ascii.startsWith('SALES REGISTER,,\r\n')).toBe(true);
+  });
+
+  // The 2026-11-11 audit, SE-18: "Safe for spreadsheets", off unless asked for.
+  it('keeps a cell that starts like a formula as text only when asked to be safe for spreadsheets', () => {
+    const rows = [
+      { Customer: '=HYPERLINK("http://x","y")', Amount: '1' },
+      { Customer: '+1+1', Amount: '2' },
+      { Customer: '@SUM(A1)', Amount: '3' },
+      { Customer: '-12.50', Amount: '4' },
+    ];
+    const plain = reportToCsv(parseReportStructure(C04), rows.length, { rows }, { safeForSpreadsheets: false }).split('\r\n');
+    expect(plain.slice(2, 6)).toEqual(['"=HYPERLINK(""http://x"",""y"")",$1.00,', '+1+1,$2.00,', '@SUM(A1),$3.00,', '-12.50,$4.00,']);
+    const safe = reportToCsv(parseReportStructure(C04), rows.length, { rows }, { safeForSpreadsheets: true }).split('\r\n');
+    expect(safe.slice(2, 6)).toEqual(['"\'=HYPERLINK(""http://x"",""y"")",$1.00,', "'+1+1,$2.00,", "'@SUM(A1),$3.00,", '-12.50,$4.00,']);
+    // Unless the browser asked for it, DevExpress's file, byte for byte.
+    expect(reportToCsv(parseReportStructure(C04), rows.length, { rows }).split('\r\n').slice(2, 6)).toEqual(plain.slice(2, 6));
+    // A leading tab is on OWASP's list too: a spreadsheet can strip it and run the rest.
+    const tabbed = [{ Customer: '\t=1+1', Amount: '5' }];
+    const line = reportToCsv(parseReportStructure(C04), 1, { rows: tabbed }, { safeForSpreadsheets: true }).split('\r\n')[2];
+    expect(line.replace(/^"/, '').startsWith("'")).toBe(true);
+  });
+
   it('names the file after the report, as the .repx download does', () => {
     expect(exportFileName('Sales Register', 'csv')).toBe('Sales_Register.csv');
     expect(exportFileName('  a/b: c  ', 'csv')).toBe('ab_c.csv');

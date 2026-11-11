@@ -9,9 +9,12 @@
  * button shuts it; choosing a row runs it and shuts it. See *The
  * conversation floats over the report* in docs/notes/app-shell.md.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconClose, IconDownload, IconExternal } from './landing/icons';
+import { csvSafetyPreferred, preferCsvSafety } from '../lib/csvExport';
 import './overlays.css';
+// For the switch's look, the one Settings uses (`.wb-set-switch`).
+import './dialogs.css';
 import { useLayer } from './useLayer';
 import { useReturnFocus } from './useMenuKeys';
 
@@ -60,6 +63,13 @@ export default function ExportPanel({ onRepx, onDesigner, onPrint, onClose }: Pr
     onClose();
     action();
   };
+  // CSV safe for spreadsheets (2026-11-11, the full audit's SE-18): off by
+  // default, so the file stays DevExpress's; kept in this browser once set.
+  const [safeCsv, setSafeCsv] = useState(csvSafetyPreferred);
+  const toggleSafeCsv = (on: boolean) => {
+    setSafeCsv(on);
+    preferCsvSafety(on);
+  };
   return (
     <section className="wb-export" ref={box} role="dialog" aria-label="Export">
       <div className="wb-export-head">
@@ -95,6 +105,13 @@ export default function ExportPanel({ onRepx, onDesigner, onPrint, onClose }: Pr
           </button>
         ))}
       </div>
+      <label className="wb-export-row">
+        <input type="checkbox" role="switch" className="wb-set-switch" checked={safeCsv} onChange={(e) => toggleSafeCsv(e.target.checked)} />
+        <span>
+          <b>Safe for spreadsheets</b>
+          <small>In a CSV, a cell that starts like a formula is kept as text</small>
+        </span>
+      </label>
     </section>
   );
 }

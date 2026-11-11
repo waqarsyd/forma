@@ -16,6 +16,7 @@
  * group footer is left alone: its totals sum a value, not the group field.
  */
 import { escapeXmlAttribute, type EditResult } from './repxEdit';
+import { unescapeXml } from './xmlEscape';
 
 /** A group header as the chooser lists it: its name and the field it breaks on, or null. */
 export interface GroupHeaderField {
@@ -40,7 +41,7 @@ interface HeaderSpan {
 
 const TAG = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/g;
 const attrOf = (attrs: string, name: string): string | null => new RegExp(`\\s${name}\\s*=\\s*"([^"]*)"`).exec(attrs)?.[1] ?? null;
-const decode = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const decode = unescapeXml;
 
 /** Every group header in the file, in file order, with where its parts are. */
 function headerSpans(xml: string): HeaderSpan[] {

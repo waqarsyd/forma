@@ -10,8 +10,10 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { deflateSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
 import { paginate, parseReportStructure } from './reportPreview';
-import { reportOutline, winAnsiHex, writePdf, type OutlineEntry } from './pdfWriter';
+import { fitsWinAnsi, reportOutline, unprintableReason, winAnsiHex, writePdf, type OutlineEntry } from './pdfWriter';
+import { parseTrueType } from './trueType';
 
 const S54A = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s54a-bookmarks\" Bookmark=\"Sales by region\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"40\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" Bookmark=\"Title\" SizeF=\"400,30\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"5\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"6\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"7\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /><Item2 Ref=\"8\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"9\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"10\" ControlType=\"XRLabel\" Name=\"customer\" BookmarkParent=\"#Ref-6\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"11\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /><Item2 Ref=\"12\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"13\" ControlType=\"ReportFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"14\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" Bookmark=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /></Controls></Item5><Item6 Ref=\"15\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
 // DevExpress's outline of s54a, read from its PDF: depth by leading space, title@page,top in hundredths of an inch.
@@ -115,4 +117,97 @@ describe('the PDF writer', () => {
       await doc.destroy();
     }
   });
+
+  // The 2026-11-11 audit, PX-14: "PDF with outline" printed Polish, Greek and
+  // the rest beyond Windows-1252 as "?". The Liberation faces hold them.
+  it('writes Polish and Greek in the embedded faces, and they read back as written', async () => {
+    const face = (file: string) => parseTrueType(new Uint8Array(readFileSync(`assets/pdf-fonts/${file}`)));
+    const fonts = { Helvetica: face('LiberationSans-Regular.ttf'), 'Times-Bold': face('LiberationSerif-Bold.ttf') };
+    const pages = [{
+      width: 612,
+      height: 792,
+      ops: [
+        { kind: 'text' as const, x: 36, y: 50, size: 12, font: 'Helvetica' as const, colour: [0, 0, 0] as [number, number, number], text: 'Zażółć gęślą jaźń', scale: 1 },
+        { kind: 'text' as const, x: 36, y: 80, size: 12, font: 'Times-Bold' as const, colour: [0, 0, 0] as [number, number, number], text: 'Καλημέρα κόσμε', scale: 1 },
+      ],
+    }];
+    expect(fitsWinAnsi('Zażółć')).toBe(false);
+    expect(fitsWinAnsi('Café €5')).toBe(true);
+    expect(unprintableReason(pages, fonts)).toBeNull();
+    const bytes = await writePdf({ title: 'Test', pages, fonts });
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const doc = await pdfjs.getDocument({ data: bytes, disableFontFace: true, useSystemFonts: false }).promise;
+    const text = (await (await doc.getPage(1)).getTextContent()).items.map((i) => ('str' in i ? i.str : '')).join('|');
+    expect(text).toContain('Zażółć gęślą jaźń');
+    expect(text).toContain('Καλημέρα κόσμε');
+    await doc.destroy();
+  });
+
+  // The review of PX-14 (2026-11-11): embedding faces without PDF/A made an
+  // encrypted file with embedded faces possible for the first time, and the
+  // CIDSystemInfo strings were still written in the clear, which a reader
+  // decrypts into nonsense. Every string is under its object's key now.
+  it('embeds the faces in a password-protected file too, every string encrypted', async () => {
+    const face = (file: string) => parseTrueType(new Uint8Array(readFileSync(`assets/pdf-fonts/${file}`)));
+    const fonts = { Helvetica: face('LiberationSans-Regular.ttf') };
+    const pages = [{
+      width: 612,
+      height: 792,
+      ops: [{ kind: 'text' as const, x: 36, y: 50, size: 12, font: 'Helvetica' as const, colour: [0, 0, 0] as [number, number, number], text: 'Zażółć gęślą jaźń', scale: 1 }],
+    }];
+    const bytes = await writePdf({ title: 'Test', pages, fonts, security: { openPassword: 'test-open', permissionsPassword: '', level: 'AES128' } });
+    const raw = new TextDecoder('latin1').decode(bytes);
+    expect(raw).toContain('/CIDFontType2');
+    expect(raw).not.toContain('(Adobe)');
+    expect(raw).not.toContain('(Identity)');
+    // Unencrypted, the same strings are written as they always were.
+    expect(new TextDecoder('latin1').decode(await writePdf({ title: 'Test', pages, fonts }))).toContain('/Registry (Adobe) /Ordering (Identity) /Supplement 0');
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    await expect(pdfjs.getDocument({ data: bytes.slice(), verbosity: 0 }).promise).rejects.toMatchObject({ name: 'PasswordException' });
+    const doc = await pdfjs.getDocument({ data: bytes.slice(), password: 'test-open', disableFontFace: true, useSystemFonts: false, verbosity: 0 }).promise;
+    const text = (await (await doc.getPage(1)).getTextContent()).items.map((i) => ('str' in i ? i.str : '')).join('');
+    expect(text).toContain('Zażółć gęślą jaźń');
+    await doc.destroy();
+  }, 60_000);
+
+  it('refuses a script the faces do not hold, in words the person reads, and not a symbol', () => {
+    const face = parseTrueType(new Uint8Array(readFileSync('assets/pdf-fonts/LiberationSans-Regular.ttf')));
+    const page = (text: string) => [{ width: 612, height: 792, ops: [{ kind: 'text' as const, x: 0, y: 10, size: 10, font: 'Helvetica' as const, colour: [0, 0, 0] as [number, number, number], text, scale: 1 }] }];
+    expect(unprintableReason(page('الإجمالي 100'), { Helvetica: face })).toBe('This report has Arabic text that PDF with outline cannot hold; PDF keeps it as shown.');
+    expect(unprintableReason(page('कुल'), { Helvetica: face })).toBe('This report has Hindi text that PDF with outline cannot hold; PDF keeps it as shown.');
+    expect(unprintableReason(page('合计'), { Helvetica: face })).toBe('This report has Chinese text that PDF with outline cannot hold; PDF keeps it as shown.');
+    // A symbol the font lacks still prints as "?", not a refused file.
+    expect(unprintableReason(page('Done ✓ \u{1F600}'), { Helvetica: face })).toBeNull();
+    // Without faces, a letter beyond Windows-1252 is what asks for them.
+    expect(unprintableReason(page('Zażółć'), null)).toMatch(/cannot hold/);
+    expect(unprintableReason(page('Café'), null)).toBeNull();
+  });
+
+  // PX-15: a watermark at 20% and 45 degrees came out solid and level.
+  it('draws a faded mark under an opacity, and turned text turned', async () => {
+    const pages = [{
+      width: 612,
+      height: 792,
+      ops: [
+        { kind: 'text' as const, x: 100, y: 400, size: 48, font: 'Helvetica' as const, colour: [0.6, 0.6, 0.6] as [number, number, number], text: 'DRAFT', scale: 1, angle: -Math.PI / 4, alpha: 0.2 },
+        { kind: 'fill' as const, x: 0, y: 0, w: 10, h: 10, colour: [0, 0, 1] as [number, number, number], alpha: 0.5 },
+        { kind: 'fill' as const, x: 20, y: 0, w: 10, h: 10, colour: [0, 0, 1] as [number, number, number] },
+      ],
+    }];
+    const raw = new TextDecoder('latin1').decode(await writePdf({ title: 'T', pages }));
+    expect(raw).toContain('/ExtGState << /GA0 << /Type /ExtGState /ca 0.2 /CA 0.2 >> /GA1 << /Type /ExtGState /ca 0.5 /CA 0.5 >> >>');
+    expect(raw).toMatch(/q \/GA0 gs BT \/F0 48 Tf 100 Tz 0\.6 0\.6 0\.6 rg 0\.707 0\.707 -0\.707 0\.707 100 392 Tm <[0-9a-f]+> Tj ET Q/);
+    expect(raw).toContain('q /GA1 gs 0 0 1 rg 0 782 10 10 re f Q');
+    expect(raw).toContain('\n0 0 1 rg 20 782 10 10 re f');
+    // PDF/A-1 allows no transparency: the faded mark is its colour on white.
+    const flat = writePdfA1(pages);
+    await expect(flat).resolves.toContain('0.5 0.5 1 rg 0 782 10 10 re f');
+  });
 });
+
+/** The same pages as PDF/A-1b, its streams left uncompressed, read as text. */
+async function writePdfA1(pages: Parameters<typeof writePdf>[0]['pages']): Promise<string> {
+  const face = parseTrueType(new Uint8Array(readFileSync('assets/pdf-fonts/LiberationSans-Regular.ttf')));
+  const bytes = await writePdf({ title: 'T', pages, pdfa: { part: 1, fonts: { Helvetica: face }, date: new Date(0) } });
+  return new TextDecoder('latin1').decode(bytes);
+}

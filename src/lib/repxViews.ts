@@ -40,6 +40,7 @@ import { pageInfoText, parseReportStructure, type BandKind, type PreviewBand, ty
 import { pointsToUnits } from './reportGeometry';
 import type { ReportCell, ReportElement, ReportLayout, ReportRow, ReportSection } from './reportTypes';
 import { connectionStringsSnippet, readRepxDataSources } from './repxSqlDataSource';
+import { unescapeXml } from './xmlEscape';
 
 const SECTION_TYPE: Record<BandKind, ReportSection['type'] | null> = {
   TopMargin: null,
@@ -244,9 +245,7 @@ export function reportTitleOf(xml: string | undefined | null): string {
   return decode(attr('Name')) || 'Report';
 }
 
-function decode(s: string): string {
-  return s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-}
+const decode = unescapeXml;
 
 const round = (v: number) => Math.round(v * 10) / 10;
 

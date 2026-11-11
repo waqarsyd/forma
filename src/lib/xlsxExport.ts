@@ -28,10 +28,13 @@ import { unitsPerInch } from './reportGeometry';
 import { layoutContinuous } from './csvExport';
 import { argb, reportItems, type ExportItem } from './exportItems';
 import { paginate, type PaginateOptions, type ReportStructure } from './reportPreview';
+import { unescapeXml, xmlSafeText } from './xmlEscape';
 
 type Item = ExportItem;
 
-const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// A character XML cannot hold is dropped first (PX-12): one CHAR(11) in a
+// row made Excel offer to repair the workbook.
+const xml = (s: string) => xmlSafeText(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ------------------------------------------------------------- formats
 
@@ -141,7 +144,7 @@ export function xlsxOptionsOf(repx: string | null | undefined): XlsxOptions {
   const tag = /<Xlsx\b[^>]*>/.exec(repx ?? '')?.[0] ?? '';
   const attr = (name: string) => {
     const m = new RegExp(`\\s${name}="([^"]*)"`).exec(tag);
-    return m ? m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/&amp;/g, '&') : null;
+    return m ? unescapeXml(m[1]) : null;
   };
   const mode = attr('ExportMode');
   return {
@@ -150,6 +153,19 @@ export function xlsxOptionsOf(repx: string | null | undefined): XlsxOptions {
     sheetName: attr('SheetName') || 'Sheet',
     gridLines: (attr('ShowGridLines') ?? '').toLowerCase() === 'true',
   };
+}
+
+/**
+ * A sheet name Excel opens (the 2026-11-11 audit, PX-25): the report's
+ * `SheetName` without the characters Excel refuses in one (`\ / ? * [ ] :`),
+ * an apostrophe at either end, or a control character, cut so that with the
+ * page's number it is at most 31 characters; "Sheet" when nothing is left.
+ * Written as it stood, "Q1/Q2 [draft]" made a workbook Excel would not open.
+ */
+export function excelSheetName(name: string, page?: number | string): string {
+  const suffix = page === undefined ? '' : String(page);
+  const clean = xmlSafeText(name).replace(/[\u0000-\u001F\\/?*[\]:]/g, '').trim().replace(/^'+|'+$/g, '').trim() || 'Sheet';
+  return clean.slice(0, 31 - suffix.length).trimEnd() + suffix;
 }
 
 /** The items of each sheet: the continuous layout's, or each printed page's. */
@@ -228,12 +244,45 @@ function workbook(structure: ReportStructure, sheets: { name: string; items: Ite
     const rows: Map<number, string[]> = new Map();
     const merges: string[] = [];
     const links: { ref: string; url: string }[] = [];
-    for (const item of items) {
+    /*
+     * Each cell is written once and belongs to at most one merge (the
+     * 2026-11-11 audit, PX-03). Overlapping controls -- a report read off a
+     * picture keeps its overlaps, and Add label lands at the band's corner --
+     * gave two `A1` cells and crossing merges, which Excel offers to repair
+     * and then drops the merges. As the HTML export does, a control starting
+     * in a cell already taken is left out; one whose range runs into a taken
+     * cell keeps the part before it, first across, then down.
+     */
+    const taken = new Set<string>();
+    const free = (r: number, c: number) => !taken.has(`${r},${c}`);
+    /*
+     * Controls with something to show claim their cells before empty ones (the
+     * PXA review): a text-less coloured bar earlier in item order would
+     * otherwise take the cell a real label starts in and drop the label. The
+     * claims are made in that order, the cells still written in item order,
+     * so a report with no overlap writes the same bytes as before.
+     */
+    const spans = new Map<Item, { r0: number; r1: number; c0: number; c1: number }>();
+    const shows = (i: Item) => !!i.text || i.value !== undefined;
+    for (const item of [...items.filter(shows), ...items.filter((i) => !shows(i))]) {
       const r0 = ys.indexOf(key(item.top));
-      const r1 = ys.indexOf(key(item.bottom)) - 1;
+      let r1 = ys.indexOf(key(item.bottom)) - 1;
       const c0 = xs.indexOf(key(item.left));
-      const c1 = xs.indexOf(key(item.right)) - 1;
-      if (r1 < r0 || c1 < c0) continue;
+      let c1 = xs.indexOf(key(item.right)) - 1;
+      if (r1 < r0 || c1 < c0 || !free(r0, c0)) continue;
+      for (let c = c0 + 1; c <= c1; c++) if (!free(r0, c)) { c1 = c - 1; break; }
+      for (let r = r0 + 1; r <= r1; r++) {
+        let clear = true;
+        for (let c = c0; c <= c1 && clear; c++) clear = free(r, c);
+        if (!clear) { r1 = r - 1; break; }
+      }
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) taken.add(`${r},${c}`);
+      spans.set(item, { r0, r1, c0, c1 });
+    }
+    for (const item of items) {
+      const span = spans.get(item);
+      if (!span) continue;
+      const { r0, r1, c0, c1 } = span;
       const ref = `${columnName(c0)}${r0 + 1}`;
       if (r1 > r0 || c1 > c0) merges.push(`${ref}:${columnName(c1)}${r1 + 1}`);
       const value = item.value;
@@ -353,7 +402,18 @@ function workbook(structure: ReportStructure, sheets: { name: string; items: Ite
  */
 export function reportToXlsx(structure: ReportStructure, recordCount: number, options: PaginateOptions = {}, xlsx: XlsxOptions = DEFAULT_XLSX): Uint8Array {
   const paged = xlsx.mode !== 'SingleFile';
-  const sheets = sheetItems(structure, recordCount, options, paged).map((items, i) => ({ name: paged ? `${xlsx.sheetName}${i + 1}` : xlsx.sheetName, items }));
+  /*
+   * Excel refuses two sheets of one name, case aside, and the cut can make
+   * two (the PXA review): a 30-character name ending in "1" gives page 1
+   * "...11", which page 11 also is. A clash takes a dash before the number.
+   */
+  const used = new Set<string>();
+  const sheets = sheetItems(structure, recordCount, options, paged).map((items, i) => {
+    let name = excelSheetName(xlsx.sheetName, paged ? i + 1 : undefined);
+    for (let n = 1; used.has(name.toLowerCase()); n++) name = excelSheetName(xlsx.sheetName, `-${i + 1}${n > 1 ? `-${n}` : ''}`);
+    used.add(name.toLowerCase());
+    return { name, items };
+  });
   return workbook(structure, sheets, xlsx);
 }
 
@@ -371,6 +431,6 @@ export function reportToXlsxFiles(
   if (xlsx.mode !== 'DifferentFiles') return [{ number: '', bytes: reportToXlsx(structure, recordCount, options, xlsx) }];
   return sheetItems(structure, recordCount, options, true).map((items, i) => ({
     number: String(i + 1),
-    bytes: workbook(structure, [{ name: `${xlsx.sheetName}${i + 1}`, items }], xlsx),
+    bytes: workbook(structure, [{ name: excelSheetName(xlsx.sheetName, i + 1), items }], xlsx),
   }));
 }

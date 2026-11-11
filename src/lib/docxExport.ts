@@ -13,8 +13,12 @@ import { buildZip } from './zip';
 import { unitsPerInch } from './reportGeometry';
 import { argb, reportItems, rgbHex, type ExportItem, type ExportPicture } from './exportItems';
 import type { PaginatedReport, ReportStructure } from './reportPreview';
+import { pictureDescription } from './csvExport';
+import { xmlSafeText } from './xmlEscape';
 
-const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// A character XML cannot hold is dropped first (the 2026-11-11 audit, PX-12):
+// one CHAR(11) in a row of data made Word refuse to open the whole document.
+const xml = (s: string) => xmlSafeText(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -55,9 +59,13 @@ export function reportToDocx(report: PaginatedReport, structure: ReportStructure
     const id = rel('image', name);
     const cx = emu(picture.right - picture.left);
     const cy = emu(picture.bottom - picture.top);
+    // Its control's AccessibleDescription as the drawing's description, the
+    // alternative text Word reads out (2026-11-11, CP-14).
+    const said = pictureDescription(report, picture);
+    const descr = said ? ` descr="${xml(said)}"` : '';
     return (
       `<w:p><w:pPr>${framePr(picture.left, picture.top, picture.right, picture.bottom)}${tight}</w:pPr><w:r><w:drawing>` +
-      `<wp:inline><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${n}" name="Picture ${n}"/>` +
+      `<wp:inline><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${n}" name="Picture ${n}"${descr}/>` +
       '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
       `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${n}" name="Picture ${n}"/><pic:cNvPicPr/></pic:nvPicPr>` +
       `<pic:blipFill><a:blip r:embed="${id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +

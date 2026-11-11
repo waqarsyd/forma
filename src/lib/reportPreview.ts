@@ -46,6 +46,7 @@ import { isTrue, parseCriteria, type Value } from './criteria';
 import { crossTabFacts } from './repxCrossTabs';
 import { printedPaper } from './repxPaper';
 import { NetDecimal } from './netDecimal';
+import { unescapeXml as decodeXmlText } from './xmlEscape';
 
 /** The bands that carry content, in the order XtraReports prints them. */
 export type BandKind =
@@ -316,6 +317,12 @@ export interface PreviewControl {
   name: string;
   /** Its `Ref`, which a band's `DrillDownControl` names it by; absent when none was written. */
   ref?: string;
+  /**
+   * Its `AccessibleDescription`, what a screen reader is told it shows (the
+   * chat's `describe` writes it); absent when it has none. The HTML and Word
+   * exports give a picture it as its alternative text (2026-11-11, CP-14).
+   */
+  description?: string;
   /** Under a right-to-left report (s63): its text runs right to left, its alignment already flipped. */
   rtl?: true;
   /**
@@ -975,22 +982,11 @@ function pairAttr(attrs: string, name: string): { a: number; b: number } {
 }
 
 /**
- * XML entities, in the order that keeps `&amp;lt;` reading as a literal
- * `&lt;` rather than a `<`. Ampersand last on the way out, as always.
- * Character references come decimal or hexadecimal: DevExpress's serializer
- * writes a line break as `&#xD;&#xA;`, which the Preview showed as those
- * characters until parity row 58 (s37, s42).
+ * XML entities decoded, character references included (parity row 58). Since
+ * the 2026-11-11 audit (RH-04) this is `unescapeXml` in `xmlEscape.ts`, the
+ * one decoder every module uses; the name stays for the Preview's callers.
  */
-export function decodeXmlText(text: string): string {
-  return text
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
-    .replace(/&amp;/g, '&');
-}
+export { decodeXmlText };
 
 /**
  * The CSS text decoration a resolved `Font` asks for: `style=Underline`,
@@ -1656,7 +1652,7 @@ function parseSeries(inner: string, controlStart: number, controlEnd: number): P
 /** An XRChart's title, axis titles and legend, in the same bounded window; see `PreviewChartText`. */
 function parseChartText(inner: string, controlStart: number, controlEnd: number): PreviewChartText {
   const slice = inner.slice(controlStart, controlEnd);
-  const decode = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const decode = decodeXmlText;
   const titlesBlock = /<Titles>([\s\S]*?)<\/Titles>/.exec(slice);
   const titles = titlesBlock ? collectionItems(titlesBlock[1]).map((item) => decode(attrOf(item.attrs, 'Text') ?? '')).filter(Boolean) : [];
   const axis = (name: string) => {
@@ -1757,9 +1753,11 @@ function parseControls(
     const look = resolveAppearance(item.attrs, ownPart(inner.slice(item.start, extent)), styles, parentLook, type);
     const font = parseFont(look.Font ?? null);
     const alignment = parseAlignment(look.TextAlignment ?? null);
+    const description = decodeXmlText(attrOf(item.attrs, 'AccessibleDescription') ?? '').trim();
     controls.push({
       type,
       name: attrOf(item.attrs, 'Name') || '',
+      ...(description ? { description } : {}),
       x: loc.a,
       y: loc.b,
       width: size.a,
@@ -2760,17 +2758,33 @@ export function layoutBand(
    * nothing above, a control stays where it is. `at` is a control's top
    * within its container. Returns the container's designed and placed
    * bottoms.
+   *
+   * "Something wholly between j and i" is a control k, not i or j, ending at
+   * or above i's top and starting at or below j's bottom; so for each i it is
+   * enough to know the two highest-starting controls that end above i, and
+   * test j against the higher of them unless that one is j itself. The
+   * direct test of every k for every pair cost 1.3 s per paginate on a band
+   * of 1,021 labels (the 2026-11-11 audit, PR-04); this gives the same shifts
+   * in O(n^2).
    */
   const pushDown = (group: Item[], at: (it: Item) => number) => {
-    const ends = (it: Item) => at(it) + it.designHeight;
+    const tops = group.map(at);
+    const ends = group.map((it, k) => tops[k] + it.designHeight);
     for (let i = 0; i < group.length; i++) {
-      const top = at(group[i]);
+      const top = tops[i];
+      let a1 = -Infinity;
+      let a2 = -Infinity;
+      let k1 = -1;
+      for (let k = 0; k < group.length; k++) {
+        if (k === i || ends[k] > top + EPS) continue;
+        if (tops[k] > a1) { a2 = a1; a1 = tops[k]; k1 = k; } else if (tops[k] > a2) a2 = tops[k];
+      }
       let shift: number | null = null;
       for (let j = 0; j < i; j++) {
-        const above = group[j];
-        if (ends(above) > top + EPS) continue;
-        const between = group.some((b, k) => k !== i && k !== j && at(b) >= ends(above) - EPS && ends(b) <= top + EPS);
+        if (ends[j] > top + EPS) continue;
+        const between = (j === k1 ? a2 : a1) >= ends[j] - EPS;
         if (between) continue;
+        const above = group[j];
         const moved = above.shift + above.height - above.designHeight;
         shift = shift === null ? moved : Math.max(shift, moved);
       }

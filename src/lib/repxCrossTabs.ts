@@ -60,6 +60,7 @@
  * `Ref` values above the document's highest, because this runs after
  * `ensureUniqueRefs` and a duplicate `Ref` makes the loader discard content.
  */
+import { unescapeXml } from './xmlEscape';
 
 export interface CrossTabCell {
   column: number;
@@ -140,8 +141,7 @@ const TAG = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/
 const attrOf = (attrs: string, name: string): string | null =>
   new RegExp(`\\s${name}\\s*=\\s*"([^"]*)"`).exec(attrs)?.[1] ?? null;
 
-const decode = (s: string) =>
-  s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const decode = unescapeXml;
 const encode = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 

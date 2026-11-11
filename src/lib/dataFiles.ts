@@ -13,6 +13,7 @@
  * document, enough for the AI to know the fields and how the values look
  * without spending the free tier on a whole export.
  */
+import { unescapeXml } from './xmlEscape';
 
 /** The extensions taken as data. */
 export const DATA_FILE_EXTENSIONS = ['.csv', '.tsv', '.json', '.txt', '.sql', '.xlsx', '.docx'] as const;
@@ -177,12 +178,6 @@ export async function unzip(bytes: Uint8Array, wanted: (name: string) => boolean
   }
   return out;
 }
-
-const XML_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
-const unescapeXml = (s: string) =>
-  s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (_, e: string) =>
-    e[0] === '#' ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : XML_ENTITIES[e.toLowerCase()],
-  );
 
 /** A column's letters as its index: A is 0, Z 25, AA 26. */
 const columnIndex = (letters: string) => [...letters].reduce((n, c) => n * 26 + (c.charCodeAt(0) - 64), 0) - 1;

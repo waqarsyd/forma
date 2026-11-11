@@ -20,8 +20,12 @@
 import { unitsPerInch } from './reportGeometry';
 import { argb, reportItems, rgbHex, type ExportItem, type ExportPicture } from './exportItems';
 import type { PaginatedReport, ReportStructure } from './reportPreview';
+import { pictureDescription } from './csvExport';
+import { xmlSafeText } from './xmlEscape';
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// A control character in the data is dropped, as in the Word and Excel files
+// (the 2026-11-11 audit, PX-12): a page is no place for one either.
+const esc = (s: string) => xmlSafeText(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function base64(bytes: Uint8Array): string {
   let binary = '';
@@ -104,7 +108,9 @@ export function reportToHtml(report: PaginatedReport, structure: ReportStructure
       const h = ys[r + start.rowspan] - ys[r];
       const span = `${start.colspan > 1 ? ` colspan="${start.colspan}"` : ''}${start.rowspan > 1 ? ` rowspan="${start.rowspan}"` : ''}`;
       if (start.p.picture) {
-        cells.push(`<td${span} style="width:${w}px;height:${h}px;"><img alt="" src="data:image/png;base64,${base64(start.p.picture.png)}" style="width:${w}px;height:${h}px;display:block;"/></td>`);
+        // Its control's AccessibleDescription, or empty for a drawing that has none (CP-14).
+        const alt = esc(pictureDescription(report, start.p.picture));
+        cells.push(`<td${span} style="width:${w}px;height:${h}px;"><img alt="${alt}" src="data:image/png;base64,${base64(start.p.picture.png)}" style="width:${w}px;height:${h}px;display:block;"/></td>`);
       } else {
         cells.push(`<td${span} style="${cellStyle(start.p.item!, w, h)}">${content(start.p.item!)}</td>`);
       }

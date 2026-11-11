@@ -68,4 +68,25 @@ describe('a redesign whose data source came back garbled', () => {
     const own = writeSqlDataSource(BASE, { connectionName: 'Other', schema, query: { kind: 'table', object: 'dbo.Orders', columns: [], joins: [] } }).xml;
     expect(carryDataSource(report, own)).toMatchObject({ applied: false, reason: 'the new report has a data source of its own', xml: own });
   });
+
+  // The 2026-11-11 audit's follow-up: the early return for a source of the
+  // redesign's own kept a garbled second source beside it.
+  it('removes a garbled source beside the redesign\'s own, and points what named it at the own one', () => {
+    const own = writeSqlDataSource(BASE, { connectionName: 'Other', schema, query: { kind: 'table', object: 'dbo.Orders', columns: [], joins: [] } }).xml;
+    const ownRef = readRepxDataSources(own)[0].ref;
+    const junk = `<Item9 Ref="77" ObjectType="DevExpress.DataAccess.Sql.SqlDataSource,DevExpress.DataAccess.v20.1" Name="sqlDataSource2" Base64="${encodeBase64('garbage')}" />`;
+    const both = own
+      .replace('</ComponentStorage>', `${junk}</ComponentStorage>`)
+      .replace(`DataSource="#Ref-${ownRef}"`, 'DataSource="#Ref-77"');
+    expect(sqlItems(both)).toHaveLength(2);
+    const kept = carryDataSource(report, both);
+    expect(kept.applied).toBe(true);
+    expect(sqlItems(kept.xml)).toHaveLength(1);
+    expect(kept.xml).not.toContain('Ref="77"');
+    expect(kept.xml).not.toContain('#Ref-77');
+    expect(kept.xml).toMatch(new RegExp(`<XtraReportsLayoutSerializer [^>]*DataSource="#Ref-${ownRef}"`));
+    expect(readRepxDataSources(kept.xml)).toEqual(readRepxDataSources(own));
+    const storage = /<ComponentStorage>([\s\S]*?)<\/ComponentStorage>/.exec(kept.xml)![1];
+    expect([...storage.matchAll(/<(Item\d+) /g)].map((m) => m[1])).toEqual(['Item1']);
+  });
 });

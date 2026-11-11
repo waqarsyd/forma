@@ -27,6 +27,7 @@ import { findObject, queryFields, type ReportQuery } from './sqlQuery';
 import { readRepxDataSources } from './repxSqlDataSource';
 import { evaluate, isTrue, parseCriteria } from './criteria';
 import { expandMultiValue, rowEnv, typeRows } from './reportData';
+import { unescapeXml } from './xmlEscape';
 
 export type RecordValues = Record<string, string>;
 
@@ -167,7 +168,7 @@ export function relatedRows(schema: SqlSchema, repx: string): ((dataMember: stri
 
 const attrOf = (tag: string, name: string) => {
   const m = new RegExp(`\\s${name}="([^"]*)"`).exec(tag);
-  return m ? m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/&amp;/g, '&') : undefined;
+  return m ? unescapeXml(m[1]) : undefined;
 };
 
 /** A parameter's lookup list, as `DynamicListLookUpSettings` names it (batch DD). */

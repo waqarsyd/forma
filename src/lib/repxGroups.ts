@@ -38,6 +38,7 @@
  * report's own `<Bands>` is a separate list, so a detail report's groups are
  * numbered on their own.
  */
+import { unescapeXml } from './xmlEscape';
 
 export interface GroupLevelRepair {
   xml: string;
@@ -52,8 +53,7 @@ const TAG = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/
 const attrOf = (attrs: string, name: string): string | null =>
   new RegExp(`\\s${name}\\s*=\\s*"([^"]*)"`).exec(attrs)?.[1] ?? null;
 
-const decode = (s: string) =>
-  s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const decode = unescapeXml;
 
 interface GroupBand {
   kind: 'header' | 'footer';

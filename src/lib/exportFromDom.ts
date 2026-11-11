@@ -14,6 +14,7 @@
 import { pageOps } from './pdfFromDom';
 import type { ExportPicture } from './exportItems';
 import type { PdfImage, PdfOp } from './pdfWriter';
+import { buildZip } from './zip';
 
 const PX_PER_PT = 4 / 3;
 
@@ -94,24 +95,36 @@ function extent(op: PdfOp, measure: CanvasRenderingContext2D): [number, number, 
 }
 
 /**
- * A page drawn to a PNG at 96 dpi, cropped to its controls' boxes, as
- * DevExpress crops: s54a's image was its 400-unit title's 384 pixels wide
- * though the title's text is far narrower, and ran to the bottom of its last
- * label's box. Without a control, to what it draws.
+ * The tallest canvas a browser draws: past 32,767 pixels Chrome encodes
+ * nothing, and the export said only that the browser could not encode the
+ * picture (the 2026-11-11 audit, PX-24: about 31 pages of content).
  */
-export async function pageToPng(page: HTMLElement): Promise<Blob> {
-  const images: PdfImage[] = [];
-  const ops = await pageOps(page, images);
-  const origin = page.getBoundingClientRect();
-  const controls = [...page.querySelectorAll<HTMLElement>('.rp-band > *:not(.rp-band-label):not(.rp-band-rule):not(.rp-drill)')].map((el) => el.getBoundingClientRect());
-  const measure = document.createElement('canvas').getContext('2d')!;
-  const boxes: [number, number, number, number][] = controls.length
-    ? controls.map((r) => [r.left - origin.left, r.top - origin.top, r.right - origin.left, r.bottom - origin.top].map((v) => Math.round(v) / PX_PER_PT) as [number, number, number, number])
-    : ops.map((op) => extent(op, measure)).filter((b): b is [number, number, number, number] => !!b);
-  const left = Math.min(...boxes.map((b) => b[0]));
-  const top = Math.min(...boxes.map((b) => b[1]));
-  const right = Math.max(...boxes.map((b) => b[2]));
-  const bottom = Math.max(...boxes.map((b) => b[3]));
+export const MAX_CANVAS_PX = 32_767;
+
+/**
+ * Where a picture from `top` to `bottom` (points) is cut so that no part is
+ * taller than `maxPt`: one part when it fits. Each cut falls in a gap between
+ * the boxes (`[left, top, right, bottom]`), the lowest one that keeps the part
+ * short enough, so no control is cut through; where no gap will do, at the
+ * limit itself.
+ */
+export function pictureParts(top: number, bottom: number, boxes: readonly (readonly [number, number, number, number])[], maxPt: number): [number, number][] {
+  const parts: [number, number][] = [];
+  let start = top;
+  while (bottom - start > maxPt) {
+    const limit = start + maxPt;
+    const straddles = (y: number) => boxes.some((b) => b[1] < y - 1e-6 && b[3] > y + 1e-6);
+    const gaps = boxes.flatMap((b) => [b[1], b[3]]).filter((y) => y > start + 1e-6 && y <= limit && !straddles(y));
+    const cut = gaps.length ? Math.max(...gaps) : limit;
+    parts.push([start, cut]);
+    start = cut;
+  }
+  parts.push([start, bottom]);
+  return parts;
+}
+
+/** Draws `ops` onto a canvas covering the region given in points, at 96 dpi, as a PNG. */
+async function regionPng(ops: readonly PdfOp[], images: readonly PdfImage[], left: number, top: number, right: number, bottom: number): Promise<Uint8Array> {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round((right - left) * PX_PER_PT));
   canvas.height = Math.max(1, Math.round((bottom - top) * PX_PER_PT));
@@ -122,6 +135,8 @@ export async function pageToPng(page: HTMLElement): Promise<Blob> {
   c.translate(-left, -top);
   const colour = (rgb: number[]) => `rgb(${rgb.map((v) => Math.round(v * 255)).join(',')})`;
   for (const op of ops) {
+    // Faded as the Preview drew it (PX-15), a watermark at its opacity.
+    if ('alpha' in op) c.globalAlpha = op.alpha ?? 1;
     switch (op.kind) {
       case 'fill':
         c.fillStyle = colour(op.colour);
@@ -137,12 +152,15 @@ export async function pageToPng(page: HTMLElement): Promise<Blob> {
         c.stroke();
         break;
       case 'text':
-        // In the font the Preview drew it in, so no stretching is needed.
+        // In the font the Preview drew it in, so no stretching is needed;
+        // turned about its start as the Preview turned it.
         c.font = op.css ?? `${op.size * PX_PER_PT}px sans-serif`;
         c.save();
+        c.translate(op.x, op.y);
+        if (op.angle) c.rotate(op.angle);
         c.scale(1 / PX_PER_PT, 1 / PX_PER_PT);
         c.fillStyle = colour(op.colour);
-        c.fillText(op.text, op.x * PX_PER_PT, op.y * PX_PER_PT);
+        c.fillText(op.text, 0, 0);
         c.restore();
         break;
       case 'image': {
@@ -169,6 +187,63 @@ export async function pageToPng(page: HTMLElement): Promise<Blob> {
       case 'link':
         break;
     }
+    c.globalAlpha = 1;
   }
-  return new Blob([await canvasPng(canvas)], { type: 'image/png' });
+  return canvasPng(canvas);
+}
+
+/** A page's drawing operations, and the region the export crops it to, in points. */
+async function cropped(page: HTMLElement) {
+  const images: PdfImage[] = [];
+  const ops = await pageOps(page, images);
+  const origin = page.getBoundingClientRect();
+  const controls = [...page.querySelectorAll<HTMLElement>('.rp-band > *:not(.rp-band-label):not(.rp-band-rule):not(.rp-drill)')].map((el) => el.getBoundingClientRect());
+  const measure = document.createElement('canvas').getContext('2d')!;
+  const boxes: [number, number, number, number][] = controls.length
+    ? controls.map((r) => [r.left - origin.left, r.top - origin.top, r.right - origin.left, r.bottom - origin.top].map((v) => Math.round(v) / PX_PER_PT) as [number, number, number, number])
+    : ops.map((op) => extent(op, measure)).filter((b): b is [number, number, number, number] => !!b);
+  return {
+    ops,
+    images,
+    boxes,
+    left: Math.min(...boxes.map((b) => b[0])),
+    top: Math.min(...boxes.map((b) => b[1])),
+    right: Math.max(...boxes.map((b) => b[2])),
+    bottom: Math.max(...boxes.map((b) => b[3])),
+  };
+}
+
+/** What a report too tall for one picture is said to have become. */
+export const PICTURE_PARTS_NOTE = 'This report is too long for one picture, so it was saved as several, top to bottom, in one .zip.';
+
+/**
+ * A page drawn to a PNG at 96 dpi, cropped to its controls' boxes, as
+ * DevExpress crops: s54a's image was its 400-unit title's 384 pixels wide
+ * though the title's text is far narrower, and ran to the bottom of its last
+ * label's box. Without a control, to what it draws. A page taller than a
+ * canvas can be is refused in plain words (PX-24); `pageToPictures` writes
+ * it as several pictures instead.
+ */
+export async function pageToPng(page: HTMLElement): Promise<Blob> {
+  const { ops, images, boxes, left, top, right, bottom } = await cropped(page);
+  if (pictureParts(top, bottom, boxes, MAX_CANVAS_PX / PX_PER_PT).length > 1) throw new Error('the report is too long for one picture.');
+  return new Blob([await regionPng(ops, images, left, top, right, bottom)], { type: 'image/png' });
+}
+
+/**
+ * The page as one PNG, or, when it is taller than a canvas can be (PX-24),
+ * as several cut between controls, in a .zip named after `base`, with a note
+ * that says so for the person who asked.
+ */
+export async function pageToPictures(page: HTMLElement, base: string): Promise<{ blob: Blob; extension: 'png' | 'zip'; note: string | null }> {
+  const { ops, images, boxes, left, top, right, bottom } = await cropped(page);
+  const parts = pictureParts(top, bottom, boxes, MAX_CANVAS_PX / PX_PER_PT);
+  if (parts.length === 1) return { blob: new Blob([await regionPng(ops, images, left, top, right, bottom)], { type: 'image/png' }), extension: 'png', note: null };
+  const entries: { name: string; content: Uint8Array }[] = [];
+  for (const [i, [from, to]] of parts.entries()) {
+    entries.push({ name: `${base}-${i + 1}.png`, content: await regionPng(ops, images, left, from, right, to) });
+  }
+  const zip = buildZip(entries, new Date(), { keepPaths: true });
+  if (!zip.bytes) throw new Error(`the pictures could not be packed: ${zip.reason}.`);
+  return { blob: new Blob([zip.bytes as BlobPart], { type: 'application/zip' }), extension: 'zip', note: PICTURE_PARTS_NOTE };
 }

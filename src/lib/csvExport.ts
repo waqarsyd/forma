@@ -15,7 +15,8 @@
  * - **The printed text**, formatted: `$1,001.07`, not 1001.07. A control that
  *   prints nothing still makes its line, as `,,`.
  * - Fields are quoted only when they hold a comma, a quote or a line break.
- *   Lines end CRLF, the last one too, and there is no byte-order mark.
+ *   Lines end CRLF, the last one too, and there is no byte-order mark (unless
+ *   the text holds a character outside ASCII; see `reportToCsv`).
  */
 import {
   pageInfoText,
@@ -57,6 +58,31 @@ export function placedControls(report: PaginatedReport): { page: PreviewPage; ba
   };
   for (const page of report.pages) for (const band of page.bands) walk(page, band.left, band.top, band.controls);
   return out;
+}
+
+/**
+ * What a picture an export places shows, for its alternative text: the
+ * `AccessibleDescription` of the smallest control on its page whose box holds
+ * the picture's centre, or '' when that control has none (2026-11-11, CP-14).
+ * Until then the HTML export wrote every picture `alt=""` and the Word export
+ * no description, though the chat's `describe` writes one into the file.
+ */
+export function pictureDescription(
+  report: PaginatedReport,
+  picture: { page: number; left: number; top: number; right: number; bottom: number },
+): string {
+  const cx = (picture.left + picture.right) / 2;
+  const cy = (picture.top + picture.bottom) / 2;
+  let best: { area: number; description: string } | null = null;
+  for (const { page, bandLeft, bandTop, pc } of placedControls(report)) {
+    if (page.number - 1 !== picture.page) continue;
+    const left = bandLeft + pc.control.x + pc.control.offsetX;
+    const top = bandTop + pc.y;
+    if (cx < left || cx > left + pc.control.width || cy < top || cy > top + pc.height) continue;
+    const area = pc.control.width * pc.height;
+    if (!best || area < best.area) best = { area, description: pc.control.description ?? '' };
+  }
+  return best?.description ?? '';
 }
 
 /** Every printed text of a laid-out report with its page-absolute position. */
@@ -132,14 +158,74 @@ export function layoutContinuous(structure: ReportStructure, recordCount: number
   return report;
 }
 
-/** Lay the report out on one continuous page and write it as CSV. */
-export function reportToCsv(structure: ReportStructure, recordCount: number, options: PaginateOptions = {}): string {
+/**
+ * How the CSV is written beyond DevExpress's form. `safeForSpreadsheets`
+ * (the Export panel's "Safe for spreadsheets", off by default so the file
+ * stays DevExpress's byte for byte; 2026-11-11, the full audit's SE-18) puts
+ * an apostrophe before a cell that starts with `=`, `+`, `-`, `@`, a tab or a
+ * carriage return, which a
+ * spreadsheet would otherwise run as a formula when the file is opened: data
+ * from a database can hold one. A plain number, "-12.50", is left alone.
+ */
+export interface CsvOptions {
+  safeForSpreadsheets?: boolean;
+}
+
+/*
+ * The choice is the viewer's own, kept in this browser like a remembered tab:
+ * the Export panel sets it, and every CSV written here follows it, whether
+ * the panel or the chat asked for the file. Unreadable storage means off.
+ */
+const SAFE_KEY = 'forma.csvSafeForSpreadsheets';
+
+/** Whether this browser asked for CSV safe for spreadsheets. */
+export function csvSafetyPreferred(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(SAFE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Remember, in this browser, whether CSV is written safe for spreadsheets. */
+export function preferCsvSafety(on: boolean): void {
+  try {
+    if (on) globalThis.localStorage?.setItem(SAFE_KEY, '1');
+    else globalThis.localStorage?.removeItem(SAFE_KEY);
+  } catch {
+    // Storage refused (a private window): the switch holds for this visit only.
+  }
+}
+
+// A tab or carriage return first is on OWASP's list beside the four signs: a
+// spreadsheet can strip it and then run what follows (the PXA review).
+const FORMULA_START = /^[=+\-@\t\r]/;
+const PLAIN_NUMBER = /^[-+]?\d[\d,]*(?:\.\d+)?%?$/;
+const neutralise = (field: string) => (FORMULA_START.test(field) && !PLAIN_NUMBER.test(field) ? `'${field}` : field);
+
+/**
+ * Lay the report out on one continuous page and write it as CSV.
+ *
+ * A file holding any character outside ASCII starts with a byte-order mark
+ * (2026-11-11, the full audit's PX-18): without one Excel reads a CSV in the
+ * machine's ANSI code page, and "Café" opened with its last letter as two
+ * wrong ones. DevExpress wrote
+ * none, and its measured cases were all ASCII, so those stay byte for byte.
+ */
+export function reportToCsv(
+  structure: ReportStructure,
+  recordCount: number,
+  options: PaginateOptions = {},
+  csv: CsvOptions = { safeForSpreadsheets: csvSafetyPreferred() },
+): string {
   const cells = cellsOf(layoutContinuous(structure, recordCount, options));
   const xs = [...new Set(cells.map((c) => key(c.x)))].sort((a, b) => a - b);
   const ys = [...new Set(cells.map((c) => key(c.y)))].sort((a, b) => a - b);
   const grid = ys.map(() => xs.map(() => [] as string[]));
   for (const c of cells) grid[ys.indexOf(key(c.y))][xs.indexOf(key(c.x))].push(c.text);
-  return grid.map((row) => row.map((parts) => quote(parts.join(' '))).join(',')).join('\r\n') + '\r\n';
+  const field = (text: string) => quote(csv.safeForSpreadsheets ? neutralise(text) : text);
+  const text = grid.map((row) => row.map((parts) => field(parts.join(' '))).join(',')).join('\r\n') + '\r\n';
+  return /[^\x00-\x7F]/.test(text) ? `\uFEFF${text}` : text;
 }
 
 /** The file name for a report's export: its title, whitespace collapsed to underscores, as the .repx download names it. */

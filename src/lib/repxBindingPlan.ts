@@ -76,7 +76,7 @@
 import { deriveFieldNames, fieldExpression, inferTextFormat, type DerivedField } from './repxBindings';
 // From its own module, not repxEdit: that one brings the Preview engine into
 // the entry chunk with it (2026-11-07, lib/xmlEscape.ts).
-import { escapeXmlAttribute } from './xmlEscape';
+import { escapeXmlAttribute, unescapeXml } from './xmlEscape';
 
 /** One complete `<Tag …>`, `</Tag>` or `<Tag … />`, as repxTruncation reads them. */
 const TAG = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/g;
@@ -117,19 +117,10 @@ function attr(attrs: string, name: string): string {
  * name from the raw attribute would turn `R&amp;D` into `RAmpD`, because the
  * entity's letters survive sanitisation as an ordinary token. Unescaping first
  * turns it into `RD`, which is what a person reading the page would write.
+ * The decoder itself is `xmlEscape.ts`'s, the one every module uses since the
+ * 2026-11-11 audit (RH-04); it is re-exported here for this module's callers.
  */
-export function unescapeXml(text: string): string {
-  return text
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#([0-9]+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    // Last, so that an escaped entity like &amp;lt; survives as the text
-    // "&lt;" rather than decoding twice into "<".
-    .replace(/&amp;/g, '&');
-}
+export { unescapeXml };
 
 /**
  * Every element in the document, with its span.

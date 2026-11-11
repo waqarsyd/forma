@@ -27,6 +27,7 @@ import { resultTypeOf, writeSqlDataSource, type DataSourceSpec } from './repxSql
 import { parseParameters } from './repxParameters';
 import { renameField, scoreMatch } from './fieldMatch';
 import { checkSqlAgainstSchema } from './databaseAi';
+import { unescapeXml } from './xmlEscape';
 
 const full = (o: { schema: string; name: string }) => `${o.schema}.${o.name}`;
 const qualified = (name: string) => (name.includes('.') ? name : `dbo.${name}`);
@@ -91,7 +92,8 @@ export function specFor(repx: string, schema: SqlSchema, query: ReportQuery): Da
     const valueColumn = item ? /\sValueMember="([^"]*)"/.exec(item)?.[1] : undefined;
     if (!parameter || !table || !valueColumn) continue;
     const obj = findObject(schema, table);
-    const filter = /\sFilterString="([^"]*)"/.exec(item!)?.[1]?.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const raw = /\sFilterString="([^"]*)"/.exec(item!)?.[1];
+    const filter = raw === undefined ? undefined : unescapeXml(raw);
     lookups.push({ parameter, object: obj ? full(obj) : qualified(table), valueColumn, displayColumn: /\sDisplayMember="([^"]*)"/.exec(item!)?.[1], ...(filter ? { filter } : {}) });
   }
   return {

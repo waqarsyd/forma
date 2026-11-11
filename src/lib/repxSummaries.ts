@@ -35,6 +35,7 @@
  * they are and `repxAudit` reports them, rather than guessed at and printed
  * confidently wrong.
  */
+import { unescapeXml } from './xmlEscape';
 
 export type BandScope = 'Group' | 'Report';
 
@@ -73,8 +74,7 @@ const TAG = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/
 const attrOf = (attrs: string, name: string): string | null =>
   new RegExp(`\\s${name}\\s*=\\s*"([^"]*)"`).exec(attrs)?.[1] ?? null;
 
-const decode = (s: string) =>
-  s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const decode = unescapeXml;
 
 /**
  * Whether an expression aggregates over records.

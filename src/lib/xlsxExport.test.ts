@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import { inflateRawSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { DEFAULT_XLSX, excelFormat, reportToXlsx, reportToXlsxFiles, xlsxOptionsOf } from './xlsxExport';
+import { DEFAULT_XLSX, excelFormat, excelSheetName, reportToXlsx, reportToXlsxFiles, xlsxOptionsOf } from './xlsxExport';
 import { parseReportStructure } from './reportPreview';
 
 /** The parts of a zip, by name. */
@@ -236,5 +236,83 @@ const S62_DX: Record<string, { tag: string; files: Record<string, { name: string
     expect(xlsxOptionsOf(S62_DX.s62g.tag)).toEqual({ mode: 'SingleFilePageByPage', text: false, sheetName: 'Sales', gridLines: false });
     expect(xlsxOptionsOf(S62_DX.s62f.tag)).toMatchObject({ gridLines: true });
     expect(xlsxOptionsOf('<XlsxExportSomething ExportMode="DifferentFiles" />').mode).toBe('SingleFile');
+  });
+});
+
+describe('a workbook Excel opens without repairing it (the 2026-11-11 audit)', () => {
+  const report = (controls: string) =>
+    parseReportStructure(
+      '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer Ref="1" Name="R" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100">' +
+        `<Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>${controls}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`,
+    );
+  const label = (n: number, text: string, x: number, y: number, w = 100, h = 20) =>
+    `<Item${n} Ref="${10 + n}" ControlType="XRLabel" Name="l${n}" Text="${text}" LocationFloat="${x},${y}" SizeF="${w},${h}" />`;
+  /** A cell reference as its column and row numbers, 0-based. */
+  const at = (ref: string) => {
+    const m = /^([A-Z]+)(\d+)$/.exec(ref)!;
+    return [[...m[1]].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1, Number(m[2]) - 1];
+  };
+
+  // PX-03: two labels at the same corner and one across them gave two A1 cells
+  // and crossing merges.
+  it('writes each cell once and no two merges over one cell, for overlapping controls', () => {
+    const sheet = unzip(reportToXlsx(report(label(1, 'a', 0, 0) + label(2, 'b', 0, 0) + label(3, 'c', 50, 10) + label(4, 'd', 20, 5, 200, 40)), 1))['xl/worksheets/sheet1.xml'];
+    const refs = [...sheet.matchAll(/<c r="([A-Z]+\d+)"/g)].map((m) => m[1]);
+    expect(refs.length).toBeGreaterThan(0);
+    expect(new Set(refs).size).toBe(refs.length);
+    const merges = [...sheet.matchAll(/<mergeCell ref="([A-Z]+\d+):([A-Z]+\d+)"\/>/g)].map((m) => [at(m[1]), at(m[2])]);
+    const covered = new Set<string>();
+    for (const [[c0, r0], [c1, r1]] of merges) {
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          expect(covered.has(`${r},${c}`)).toBe(false);
+          covered.add(`${r},${c}`);
+        }
+      }
+    }
+    // Nor does a cell written sit inside another's merge.
+    for (const ref of refs) {
+      const [c, r] = at(ref);
+      const owner = merges.find(([[c0, r0], [c1, r1]]) => c >= c0 && c <= c1 && r >= r0 && r <= r1);
+      if (owner) expect([c, r]).toEqual(owner[0]);
+    }
+  });
+
+  // PX-12: a control character in the data made Excel offer to repair the file.
+  it('drops a character XML cannot hold from the shared strings', () => {
+    const parts = unzip(reportToXlsx(report(label(1, 'Caf&#233; A&#xB;B', 0, 0, 300)), 1));
+    expect(parts['xl/sharedStrings.xml']).toContain('>Café AB</t>');
+    for (const part of Object.values(parts)) expect(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(part)).toBe(false);
+  });
+
+  // PX-25: Excel refuses a sheet name with \ / ? * [ ] : or over 31 characters.
+  it('names a sheet as Excel accepts, the page number kept within 31 characters', () => {
+    expect(excelSheetName('Q1/Q2 [draft]: *final?*')).toBe('Q1Q2 draft final');
+    expect(excelSheetName("'Sales'")).toBe('Sales');
+    expect(excelSheetName('A very long sheet name that runs past Excel', 12)).toBe('A very long sheet name that r12');
+    expect(excelSheetName('A very long sheet name that runs past Excel', 12)).toHaveLength(31);
+    expect(excelSheetName('[]:', 1)).toBe('Sheet1');
+    expect(excelSheetName('Sales', 2)).toBe('Sales2');
+    const options = { ...DEFAULT_XLSX, sheetName: 'Q1/Q2 [draft]' };
+    const workbook = unzip(reportToXlsx(report(label(1, 'a', 0, 0)), 1, {}, options))['xl/workbook.xml'];
+    expect(workbook).toContain('<sheet name="Q1Q2 draft" ');
+  });
+
+  // The PXA review: the cut made page 1 and page 11 of a 30-character name
+  // ending in "1" the same sheet, which Excel refuses.
+  it('never names two sheets of one workbook alike', () => {
+    const options = { ...DEFAULT_XLSX, mode: 'SingleFilePageByPage' as const, sheetName: 'Quarterly sales by region 2021' };
+    const workbook = unzip(reportToXlsx(report(label(1, 'a', 0, 0)), 120, {}, options))['xl/workbook.xml'];
+    const names = [...workbook.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1].toLowerCase());
+    expect(names.length).toBeGreaterThanOrEqual(11);
+    expect(new Set(names).size).toBe(names.length);
+    for (const name of names) expect(name.length).toBeLessThanOrEqual(31);
+  });
+
+  // The PXA review: an empty control earlier in item order took the cell a
+  // label started in, and the label was left out of the workbook.
+  it('gives a cell to the control with text before an empty one over it', () => {
+    const parts = unzip(reportToXlsx(report(label(1, '', 0, 0, 200, 40) + label(2, 'Total', 0, 0)), 1));
+    expect(parts['xl/sharedStrings.xml']).toContain('>Total</t>');
   });
 });

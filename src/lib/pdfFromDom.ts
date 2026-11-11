@@ -14,14 +14,20 @@
  *   New Roman as Times, Courier New as Courier), stretched to the width the
  *   browser measured, so a line lands where the Preview drew it;
  * - pictures and drawings (an image, or an SVG such as a chart) as pixels;
- * - a box that clips its content, as a clip; and a link, as a link.
+ * - a box that clips its content, as a clip, and a band's `clip-path` inset,
+ *   which is how the pane clips a band at the margins (parity row 64);
+ * - an element's opacity, carried to what it draws, and the text of a turned
+ *   element (a turned label, a diagonal watermark) turned with it; and a
+ *   link, as a link.
  *
- * What it does not: turned text prints level, at its box, and a character
- * outside Windows-1252 prints as "?" (in a PDF/A file, a character outside
- * the Liberation faces: they also hold Latin Extended, Greek and Cyrillic).
- * The browser's print path keeps doing both exactly.
+ * Text Windows-1252 cannot hold (Polish, Greek, Russian) is written in the
+ * Liberation faces, embedded; a script they do not hold either (Arabic,
+ * Hindi, Chinese) writes no file, and the reason says the print path keeps
+ * it (2026-11-11, the full audit's PX-14). Until then it printed as "?", and
+ * the clip, the opacity and the turn were dropped (PX-15): a 20% "DRAFT" at
+ * 45 degrees came out as solid grey letters in a staircase.
  */
-import { platformDeflate, reportOutline, writePdf, type PdfImage, type PdfOp, type Rgb, type StandardFont } from './pdfWriter';
+import { fitsWinAnsi, platformDeflate, reportOutline, unprintableReason, writePdf, type PdfImage, type PdfOp, type Rgb, type StandardFont } from './pdfWriter';
 import type { PaginatedReport } from './reportPreview';
 import type { PdfSecurity } from './pdfCrypto';
 import { PDFA_WITH_PASSWORD, type PdfAPart } from './pdfA';
@@ -137,6 +143,29 @@ function textLines(node: Text): { text: string; left: number; top: number; right
     .filter((l) => l.text.trim());
 }
 
+/**
+ * A `clip-path: inset(...)` as its four insets in pixels, or null for any
+ * other clip. The pane writes a band's in pixels (`ReportPreview`), so
+ * lengths in other units are not read; `round` corners are ignored.
+ */
+export function insetOf(clipPath: string | null | undefined): { top: number; right: number; bottom: number; left: number } | null {
+  const m = /^inset\(([^)]*)\)$/.exec((clipPath ?? '').trim());
+  if (!m) return null;
+  const values = m[1].split(/\s+round\s+/)[0].trim().split(/\s+/);
+  if (!values.length || values.length > 4 || values.some((v) => !/^-?[\d.]+(px)?$/.test(v))) return null;
+  const [top, right = top, bottom = top, left = right] = values.map((v) => Number.parseFloat(v));
+  return { top, right, bottom, left };
+}
+
+/** An element's own turn, the linear part of its computed transform, or null when it is not turned. */
+export function turnOf(transform: string | null | undefined): { a: number; b: number; c: number; d: number } | null {
+  const m = /^matrix\(([^)]*)\)$/.exec((transform ?? '').trim());
+  if (!m) return null;
+  const [a, b, c, d] = m[1].split(',').map((v) => Number(v));
+  if (![a, b, c, d].every(Number.isFinite) || (Math.abs(b) < 1e-6 && Math.abs(c) < 1e-6)) return null;
+  return { a, b, c, d };
+}
+
 /** The drawing operations of one page element, in points from its top left corner. */
 export async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<PdfOp[]> {
   const origin = page.getBoundingClientRect();
@@ -148,20 +177,71 @@ export async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<Pd
     h: r.height * PT_PER_PX,
   });
 
-  const walk = async (el: Element) => {
+  /*
+   * The text of a turned element, each of its lines one turned run (PX-15).
+   * Read character by character, a turned line came out as a staircase of
+   * level ones. The element's layout box, before the turn, is its offset
+   * size, and the turn is about its centre, which is where the browser's
+   * bounding box of the turned element is centred too.
+   */
+  const turnedText = (node: Text, el: HTMLElement, style: CSSStyleDeclaration, turn: { a: number; b: number; c: number; d: number }, alpha: number) => {
+    const r = el.getBoundingClientRect();
+    const cx = (r.left + r.right) / 2 - origin.left;
+    const cy = (r.top + r.bottom) / 2 - origin.top;
+    const { font, metricFamily } = standardFont(style);
+    const sizePx = Number.parseFloat(style.fontSize);
+    const colour = colourOf(style.color)?.rgb ?? [0, 0, 0];
+    const c = context();
+    const css = `${style.fontStyle} ${style.fontWeight} ${sizePx}px ${style.fontFamily}`;
+    c.font = css;
+    const metrics = c.measureText('Hg');
+    const ascent = metrics.fontBoundingBoxAscent;
+    const lineHeight = Number.parseFloat(style.lineHeight) || (ascent + metrics.fontBoundingBoxDescent);
+    const halfLeading = (lineHeight - (ascent + metrics.fontBoundingBoxDescent)) / 2;
+    const angle = Math.atan2(turn.b, turn.a);
+    node.data.split('\n').forEach((raw, i) => {
+      const text = raw.replace(/\s+$/, '');
+      if (!text.trim()) return;
+      c.font = css;
+      const drawn = c.measureText(text).width;
+      c.font = `${style.fontStyle} ${style.fontWeight} ${sizePx}px "${metricFamily}"`;
+      const standard = c.measureText(text).width;
+      const lx = style.textAlign === 'center' ? -drawn / 2 : style.textAlign === 'right' || style.textAlign === 'end' ? el.offsetWidth / 2 - drawn : -el.offsetWidth / 2;
+      const ly = -el.offsetHeight / 2 + i * lineHeight + halfLeading + ascent;
+      ops.push({
+        kind: 'text',
+        x: (cx + turn.a * lx + turn.c * ly) * PT_PER_PX,
+        y: (cy + turn.b * lx + turn.d * ly) * PT_PER_PX,
+        size: sizePx * PT_PER_PX,
+        font,
+        colour,
+        text,
+        scale: standard > 0 && drawn > 0 ? Math.min(2, Math.max(0.5, drawn / standard)) : 1,
+        css,
+        angle,
+        ...(alpha < 1 ? { alpha } : {}),
+      });
+    });
+  };
+
+  const walk = async (el: Element, inherited: number) => {
     if (SKIPPED.some((c) => el.classList.contains(c))) return;
     const style = getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return;
+    const opacity = Number.parseFloat(style.opacity);
+    if (style.display === 'none' || style.visibility === 'hidden' || opacity === 0) return;
+    // How opaque what it draws is: its own opacity times every ancestor's.
+    const alpha = inherited * (Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : 1);
+    const faded = alpha < 1 ? { alpha } : {};
     const r = el.getBoundingClientRect();
     const b = box(r);
 
     if (el !== page && !el.classList.contains('rp-band')) {
       const fill = colourOf(style.backgroundColor);
-      if (fill && fill.alpha > 0.5 && b.w > 0 && b.h > 0) ops.push({ kind: 'fill', ...b, colour: fill.rgb });
+      if (fill && fill.alpha > 0.5 && b.w > 0 && b.h > 0) ops.push({ kind: 'fill', ...b, colour: fill.rgb, ...faded });
     }
     if (el instanceof HTMLImageElement || el instanceof SVGSVGElement) {
       const image = await rasterize(el, r.width, r.height);
-      if (image) ops.push({ kind: 'image', ...b, image: images.push(image) - 1 });
+      if (image) ops.push({ kind: 'image', ...b, image: images.push(image) - 1, ...faded });
       return;
     }
     const sides = [
@@ -188,6 +268,7 @@ export async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<Pd
         width: w,
         colour: colour.rgb,
         ...(line === 'dashed' ? { dash: [w * 3, w * 2] } : line === 'dotted' ? { dash: [w, w] } : {}),
+        ...faded,
       });
     }
     if (el instanceof HTMLAnchorElement && el.href && /^(https?|mailto):/i.test(el.href)) {
@@ -196,8 +277,23 @@ export async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<Pd
 
     const clips = el !== page && (style.overflow === 'hidden' || style.overflowX === 'hidden' || style.overflowY === 'hidden');
     if (clips) ops.push({ kind: 'clip', ...b });
+    // A band clipped at the margins as the pane clips it (PX-15): without this,
+    // what ran past the right margin printed on its page and again on the
+    // page parity row 64 adds for it.
+    const inset = el !== page ? insetOf(style.getPropertyValue('clip-path') || style.clipPath) : null;
+    if (inset) {
+      ops.push({
+        kind: 'clip',
+        x: b.x + inset.left * PT_PER_PX,
+        y: b.y + inset.top * PT_PER_PX,
+        w: Math.max(0, b.w - (inset.left + inset.right) * PT_PER_PX),
+        h: Math.max(0, b.h - (inset.top + inset.bottom) * PT_PER_PX),
+      });
+    }
+    const turn = el instanceof HTMLElement ? turnOf(style.transform) : null;
     for (const child of [...el.childNodes]) {
-      if (child instanceof Element) await walk(child);
+      if (child instanceof Element) await walk(child, alpha);
+      else if (child instanceof Text && child.data.trim() && turn) turnedText(child, el as HTMLElement, style, turn, alpha);
       else if (child instanceof Text && child.data.trim()) {
         const { font, metricFamily } = standardFont(style);
         const sizePx = Number.parseFloat(style.fontSize);
@@ -221,16 +317,21 @@ export async function pageOps(page: HTMLElement, images: PdfImage[]): Promise<Pd
             text: line.text,
             scale,
             css,
+            ...faded,
           });
         }
       }
     }
+    if (inset) ops.push({ kind: 'restore' });
     if (clips) ops.push({ kind: 'restore' });
   };
 
-  await walk(page);
+  await walk(page, 1);
   return ops;
 }
+
+/** What the Preview shows when the faces this PDF needs could not be loaded. */
+export const FACES_UNAVAILABLE = 'The letters this PDF needs could not be loaded. Check the connection and try again.';
 
 /** The Liberation faces fetched so far this session, by file. */
 const faces = new Map<string, Promise<TrueTypeFont>>();
@@ -272,12 +373,33 @@ export async function pagesToPdf(
     const r = page.getBoundingClientRect();
     pdfPages.push({ width: r.width * PT_PER_PX, height: r.height * PT_PER_PX, ops: await pageOps(page, images) });
   }
-  let embedded: Partial<Record<StandardFont, TrueTypeFont>> = {};
-  if (pdfa) {
-    const used = new Set<StandardFont>();
-    for (const page of pdfPages) for (const op of page.ops) if (op.kind === 'text' && op.text) used.add(op.font);
-    embedded = Object.fromEntries(await Promise.all([...used].map(async (font) => [font, await loadFace(LIBERATION_FACE[font])] as const)));
+  // The Liberation faces are embedded for PDF/A, and for text Windows-1252
+  // cannot hold (PX-14); a letter they lack too means no file, and the reason.
+  const used = new Set<StandardFont>();
+  let beyond = false;
+  for (const page of pdfPages) {
+    for (const op of page.ops) {
+      if (op.kind !== 'text' || !op.text) continue;
+      used.add(op.font);
+      if (!beyond && !fitsWinAnsi(op.text)) beyond = true;
+    }
   }
+  const embed = !!pdfa || beyond;
+  let embedded: Partial<Record<StandardFont, TrueTypeFont>> = {};
+  if (embed) {
+    try {
+      embedded = Object.fromEntries(await Promise.all([...used].map(async (font) => [font, await loadFace(LIBERATION_FACE[font])] as const)));
+    } catch {
+      // Since PX-14 an ordinary Polish or Greek report reaches this fetch, so
+      // offline or a failed load must not show a file name and a status code
+      // (the PXA review, 2026-11-11): the person is told what to do instead.
+      throw new Error(FACES_UNAVAILABLE);
+    }
+  }
+  // Only text beyond Windows-1252 can be refused: without it every letter is
+  // one the standard fonts and the faces both hold, so the scan is skipped.
+  const refused = beyond ? unprintableReason(pdfPages, embedded) : null;
+  if (refused) throw new Error(refused);
   const outline = reportOutline(report, rootTitle);
   const bytes = await writePdf({
     title,
@@ -287,6 +409,7 @@ export async function pagesToPdf(
     deflate: platformDeflate(),
     security,
     pdfa: pdfa ? { part: pdfa, fonts: embedded } : null,
+    fonts: !pdfa && beyond ? embedded : null,
   });
   return new Blob([bytes], { type: 'application/pdf' });
 }
