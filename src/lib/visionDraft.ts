@@ -13,6 +13,53 @@
 import type { PreviewMeta } from './attachments';
 import type { ReadPage } from './ocrAttach';
 import type { DraftRequest, ReportConfig, ReportLayout } from '../services/geminiService';
+import type { readSkeleton } from '../services/formaVision';
+import type { skeletonToDesign } from './skeletonRepx';
+
+type Reading = Awaited<ReturnType<typeof readSkeleton>>;
+
+/**
+ * The report built from the vision model's readings of a picture sent on its
+ * own (App's designFromVision, 2026-11-03), with the reply that says it.
+ * `readings` are the first page's and, when the upload has more, the last's;
+ * `read` is what OCR read of the pages, whose words go into the boxes.
+ * Throws when the first reading has no page line, as visionDraft does.
+ *
+ * Out of App.tsx on 2026-11-11 (the full audit, after batch BW2 left the App
+ * chunk 608 B over its budget): nothing here reads App's state.
+ */
+export async function designFromReadings(
+  readings: readonly Reading[],
+  read: readonly { meta: PreviewMeta; read: ReadPage }[],
+  first: PreviewMeta | undefined,
+  pageSize: ReportConfig['pageSize'],
+): Promise<{ design: ReturnType<typeof skeletonToDesign>; problems: string[]; reply: string }> {
+  const [{ skeletonToDesign: toDesign, pageTextsOf, mergePageSkeletons }, { detectLayout }, { pageForImage }] = await Promise.all([
+    import('./skeletonRepx'),
+    import('./ocrLayout'),
+    import('./reportGeometry'),
+  ]);
+  const [firstReading, ...laterReadings] = readings;
+  if (!firstReading?.skeleton) throw new Error('its answer had no page line');
+  const skeleton = mergePageSkeletons(firstReading.skeleton, ...laterReadings.flatMap((r) => (r.skeleton ? [r.skeleton] : [])));
+  // The words OCR read on the same page, in the skeleton's unit and on its paper.
+  const page = read.find(({ meta }) => meta.uploadId === first?.uploadId && (meta.page ?? 0) === (first?.page ?? 0));
+  const paper = skeleton.paper === 'Custom' ? pageSize : skeleton.paper;
+  const texts = page
+    ? pageTextsOf(detectLayout([{ ocr: page.read.ocr, page: pageForImage(page.read.ocr, 'HundredthsOfAnInch', paper) }], { unit: 'HundredthsOfAnInch' }))
+    : [];
+  const design = toDesign(skeleton, { texts, title: first?.file.replace(/\.[^.]+$/, '') });
+  // Said by result (2026-11-11, the full audit's WS-08): the reply counted the
+  // captions read and the pages looked at until then. With no text read at all
+  // every caption is a placeholder, and "a few" would understate it, so that
+  // case says what handleReaderBuild says.
+  const reply = !design.placeholders
+    ? `Here is "${design.title}", built from your page.`
+    : design.read
+      ? `Here is "${design.title}". A few words were hard to make out; they are marked in the report, so check them against your page.`
+      : `Here is "${design.title}", built from your page. Its captions still need their words; they are marked in the report.`;
+  return { design, problems: readings.flatMap((r) => r.problems), reply };
+}
 
 type Page = { src: string; meta: PreviewMeta };
 

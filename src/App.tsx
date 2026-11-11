@@ -4930,12 +4930,7 @@ export default function App() {
     turnAbortRef.current = turn;
     let read: { meta: PreviewMeta; read: ReadPage }[] = [];
     try {
-      const [{ readSkeleton }, { skeletonToDesign, pageTextsOf }, { detectLayout }, { pageForImage }] = await Promise.all([
-        import('./services/formaVision'),
-        import('./lib/skeletonRepx'),
-        import('./lib/ocrLayout'),
-        import('./lib/reportGeometry'),
-      ]);
+      const { readSkeleton } = await import('./services/formaVision');
       const vision = visionModelOf(config);
       // The pages' layout and their text are read at the same time, behind the
       // scenes, the message already in the thread (2026-11-03). The model's
@@ -4959,22 +4954,11 @@ export default function App() {
       const looked = await looking;
       if (turn.signal.aborted) return;
       if ('failed' in looked) throw looked.failed;
-      const [firstReading, ...laterReadings] = looked.readings;
-      if (!firstReading?.skeleton) throw new Error('its answer had no page line');
-      const { mergePageSkeletons } = await import('./lib/skeletonRepx');
+      // The design and its reply (lib/visionDraft.ts); it throws when the
+      // answer has no page line, and the catch below builds from the text.
+      const { designFromReadings } = await import('./lib/visionDraft');
+      const { design, problems, reply } = await designFromReadings(looked.readings, read, stagedMeta[0], effectiveConfig().pageSize);
       if (turn.signal.aborted) return;
-      const reading = {
-        skeleton: mergePageSkeletons(firstReading.skeleton, ...laterReadings.flatMap((r) => (r.skeleton ? [r.skeleton] : []))),
-        problems: looked.readings.flatMap((r) => r.problems),
-      };
-      // The words OCR read on the same page, in the skeleton's unit and on its paper.
-      const first = stagedMeta[0];
-      const page = read.find(({ meta }) => meta.uploadId === first?.uploadId && (meta.page ?? 0) === (first?.page ?? 0));
-      const paper = reading.skeleton.paper === 'Custom' ? effectiveConfig().pageSize : reading.skeleton.paper;
-      const texts = page
-        ? pageTextsOf(detectLayout([{ ocr: page.read.ocr, page: pageForImage(page.read.ocr, 'HundredthsOfAnInch', paper) }], { unit: 'HundredthsOfAnInch' }))
-        : [];
-      const design = skeletonToDesign(reading.skeleton, { texts, title: first?.file.replace(/\.[^.]+$/, '') });
       const newResult: DesignResult = {
         content: design.markdown,
         timestamp: new Date(),
@@ -4991,17 +4975,8 @@ export default function App() {
       // read and the pages it looked at, until then.
       recordRevision('From your page', newResult);
       if (!result) setActiveTab('print');
-      if (reading.problems.length) console.debug(`${reading.problems.length} line(s) of the page's reading were not understood and were left out.`, reading.problems);
-      // With no text read at all every caption is a placeholder, and "a few"
-      // would understate it, so that case says what handleReaderBuild says.
-      say(
-        !design.placeholders
-          ? `Here is "${design.title}", built from your page.`
-          : design.read
-            ? `Here is "${design.title}". A few words were hard to make out; they are marked in the report, so check them against your page.`
-            : `Here is "${design.title}", built from your page. Its captions still need their words; they are marked in the report.`,
-        newResult,
-      );
+      if (problems.length) console.debug(`${problems.length} line(s) of the page's reading were not understood and were left out.`, problems);
+      say(reply, newResult);
     } catch (err: any) {
       if (turn.signal.aborted) return;
       console.warn('The page could not be read for its layout.', err);
