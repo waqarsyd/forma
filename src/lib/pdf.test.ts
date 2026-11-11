@@ -29,13 +29,42 @@ vi.mock('pdfjs-dist/build/pdf.worker.mjs?url', () => {
   return { default: '/assets/pdf.worker.mjs' };
 });
 
-import { loadPdfjs, resetPdfjsForTests } from './pdf';
+import { loadPdfjs, resetPdfjsForTests, withPdfDocument } from './pdf';
 
 beforeEach(() => {
   resetPdfjsForTests();
   loadCount.pdfjs = 0;
   loadCount.worker = 0;
   delete globalWorkerOptions.workerSrc;
+  getDocument.mockReset();
+});
+
+/*
+ * Every PDF's worker is released (2026-11-11, the full audit's PL-05): each
+ * getDocument starts a worker of its own, and the intake never destroyed one.
+ */
+describe('withPdfDocument', () => {
+  const task = (doc: Promise<unknown>) => ({ promise: doc, destroy: vi.fn(async () => undefined) });
+
+  it('destroys the document once it has been read', async () => {
+    const t = task(Promise.resolve({ numPages: 3 }));
+    getDocument.mockReturnValue(t);
+    const pages = await withPdfDocument(new Uint8Array([1]), async (pdf) => (pdf as unknown as { numPages: number }).numPages);
+    expect(pages).toBe(3);
+    expect(t.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('destroys it when reading a page fails, and when the file is not a PDF at all', async () => {
+    const reading = task(Promise.resolve({ numPages: 1 }));
+    getDocument.mockReturnValue(reading);
+    await expect(withPdfDocument(new Uint8Array([1]), async () => { throw new Error('page 1 would not render'); })).rejects.toThrow('page 1');
+    expect(reading.destroy).toHaveBeenCalledTimes(1);
+
+    const broken = task(Promise.reject(new Error('Invalid PDF structure')));
+    getDocument.mockReturnValue(broken);
+    await expect(withPdfDocument(new Uint8Array([1]), async () => 0)).rejects.toThrow('Invalid PDF');
+    expect(broken.destroy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('loadPdfjs', () => {

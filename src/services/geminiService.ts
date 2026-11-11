@@ -2540,8 +2540,9 @@ export interface DraftRequest {
   texts: PageText[];
   /** The report's name when no title is read. */
   title: string;
-  /** What read the layout, for the spec. */
-  readBy: string;
+  /* `readBy`, naming the part of Forma that read the layout for the Spec, went
+     on 2026-11-11 (the full audit's PL-07 follow-up): the Spec stopped saying
+     it, so nothing read it. */
 }
 
 /**
@@ -3386,7 +3387,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       });
       console.warn(`Correction read with ${reading.problems.length} line(s) skipped:\n  ${quoted.join('\n  ')}`);
     }
-    const design = skeletonToDesign(reading.skeleton, { texts: request.texts, title: request.title, readBy: request.readBy, given: reading.given, version: targetVersion });
+    const design = skeletonToDesign(reading.skeleton, { texts: request.texts, title: request.title, given: reading.given, version: targetVersion });
     console.log(`Built the report from the corrected draft: ${controlCount(reading.skeleton)} controls in ${reading.skeleton.bands.length} bands.`);
     // Built in hundredths of an inch, then written in the unit asked for (2026-11-11, PL-12),
     // before the repairs, so repairDpi writes the Dpi that unit needs.

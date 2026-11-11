@@ -168,8 +168,12 @@ describe('classifyGeminiError', () => {
       expect(e.message).toMatch(/published somewhere public/i);
     });
 
-    it('404 means no model this key can reach', () => {
-      expect(classifyGeminiError(sdkError(404, 'NOT_FOUND')).message).toMatch(/no gemini model/i);
+    it('404 means no model this key can reach, said without naming one', () => {
+      const message = classifyGeminiError(sdkError(404, 'NOT_FOUND')).message;
+      expect(message).toMatch(/did not answer with this key/i);
+      expect(message).not.toMatch(/gemini model|model available/i);
+      // The free chain reads "quota" to ask the next AI (fallbackChain.isLimit).
+      expect(message).toMatch(/quota/);
     });
 
     it('503 says the fault is Google\'s, not the user\'s', () => {

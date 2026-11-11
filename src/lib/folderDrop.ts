@@ -22,19 +22,47 @@ export const MAX_BATCH_FILES = 500;
 /** Folders deeper than this are not opened. */
 const MAX_DEPTH = 8;
 
-/** The sources the batch takes: images, PDFs and .repx files, by type or, where the browser gave none, by name. */
+/**
+ * The sources the batch takes: images, PDFs, .repx files and, since
+ * 2026-11-11 (the full audit's CP-01a), SSRS report definitions (.rdl,
+ * .rdlc), which are read as text the way a .repx is. By type or, where the
+ * browser gave none, by name.
+ */
 export function acceptsForBatch(name: string, type: string): boolean {
   const base = name.split('/').pop() ?? name;
   if (base.startsWith('.')) return false;
-  return type.startsWith('image/') || type === 'application/pdf' || /\.(repx|pdf|png|jpe?g|gif|webp|bmp|tiff?)$/i.test(base);
+  return type.startsWith('image/') || type === 'application/pdf' || /\.(repx|rdlc?|pdf|png|jpe?g|gif|webp|bmp|tiff?)$/i.test(base);
 }
 
-/** What a drop or a picker holds that the batch can take, in path order, with a count of what it left. */
-export function forBatch(given: readonly GivenFile[]): { files: GivenFile[]; skipped: number; truncated: boolean } {
+/** Whether a file is a Crystal Reports file, which only Crystal Reports reads: its PDF is the way in. */
+export function isCrystalReport(name: string): boolean {
+  const base = name.split('/').pop() ?? name;
+  return !base.startsWith('.') && /\.rpt$/i.test(base);
+}
+
+/** What the batch says of the Crystal Reports files it was given, as the chat box says of one. */
+export function crystalNote(count: number): string {
+  return count === 1
+    ? '1 Crystal Reports file: export it from Crystal Reports as a PDF (File > Export) and add the PDF.'
+    : `${count} Crystal Reports files: export each from Crystal Reports as a PDF (File > Export) and add the PDFs.`;
+}
+
+/**
+ * What a drop or a picker holds that the batch can take, in path order, with
+ * a count of what it left (`skipped`) and, of those, how many are Crystal
+ * Reports files (`crystal`), which are reports the batch is for and have a
+ * way in (`crystalNote`). `crystal` is a part of `skipped`, not apart from
+ * it (2026-11-11, the full audit's PIPE1 review): the batch panel says
+ * `skipped` and not yet `crystal`, and a .rpt taken out of the one count
+ * before the other was said would have been left out with nothing said.
+ */
+export function forBatch(given: readonly GivenFile[]): { files: GivenFile[]; skipped: number; crystal: number; truncated: boolean } {
   const accepted = given.filter((g) => acceptsForBatch(g.path, g.file.type)).sort((a, b) => a.path.localeCompare(b.path));
+  const crystal = given.filter((g) => isCrystalReport(g.path)).length;
   return {
     files: accepted.slice(0, MAX_BATCH_FILES),
     skipped: given.length - accepted.length,
+    crystal,
     truncated: accepted.length > MAX_BATCH_FILES,
   };
 }

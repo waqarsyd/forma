@@ -272,14 +272,15 @@ export const placeKey = (band: number, control: number, row = -1, cell = -1) => 
 
 /**
  * The report a skeleton describes, its words from `texts` where they were read.
- * `title` names the report when no title was read. `readBy` named what read
- * the layout, for the spec, until 2026-11-11; it is accepted and unused. `given`
+ * `title` names the report when no title was read. (`readBy` named what read
+ * the layout, for the spec, until 2026-11-11, and went once nothing passed
+ * it.) `given`
  * says words, fields, groups and colours outright, over the reading
  * (2026-11-05). `version` is the DevExpress version to write, 20.1 unless said.
  */
 export function skeletonToDesign(
   k: ReportSkeleton,
-  options: { texts?: readonly PageText[]; title?: string; readBy?: string; given?: DraftGiven; version?: string } = {},
+  options: { texts?: readonly PageText[]; title?: string; given?: DraftGiven; version?: string } = {},
 ): SkeletonDesign {
   const texts = options.texts ?? [];
   const places = placesOf(k);
@@ -518,8 +519,7 @@ export function skeletonToDesign(
   // The Spec says what the report is, in the user's terms (2026-11-11, the
   // full audit, PL-07): it said which part of Forma read the picture and how
   // many captions "took their words from the page's text" until then, which
-  // is machinery nobody asked about. `readBy` is still accepted and no longer
-  // written.
+  // is machinery nobody asked about.
   const controlCount = k.bands.reduce((s, b) => s + b.controls.length, 0);
   const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   const markdown = [

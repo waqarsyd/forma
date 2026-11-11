@@ -207,12 +207,56 @@ async function readByPaddle(
   }
 }
 
-/** Stop the engine, for a cancelled run; the next run loads it again. */
-export async function stopOcr(): Promise<void> {
+/** End the engines, for a stopped run or an idle one; the next reading loads them again. */
+async function stopEngines(): Promise<void> {
   paddle?.stopPaddle();
   const running = engine;
   engine = null;
+  engineLanguages = '';
   if (running) await (await running.catch(() => null))?.terminate();
+}
+
+/*
+ * Readings, one at a time and each stopped on its own (2026-11-11, the full
+ * audit's PL-01 and PL-21). The engine is one worker, so the OCR dialog and a
+ * chat turn reading at once took turns inside it, and either one stopping
+ * terminated it under the other: closing the dialog failed the turn's page.
+ * And a terminated Tesseract worker never settles what it was doing, so a
+ * stopped reading was left waiting for good, and the turn with it.
+ *
+ * Now a reading waits its turn in `queue`; one stopped while it waits never
+ * starts, and one stopped while it reads rejects at once and ends the engines,
+ * which then belong to it alone. Every reading not yet settled has its
+ * rejecter in `pending`, for `stopOcr`.
+ */
+let queue: Promise<void> = Promise.resolve();
+const pending = new Set<(reason: unknown) => void>();
+
+const stoppedError = () => new DOMException('OCR was stopped.', 'AbortError');
+
+/** Stop every reading, waiting or under way, and end the engines. */
+export async function stopOcr(): Promise<void> {
+  for (const reject of [...pending]) reject(stoppedError());
+  pending.clear();
+  await stopEngines();
+}
+
+/**
+ * How long the engines are kept after the last reading (2026-11-11, the full
+ * audit's PR-16): loaded, Tesseract and PaddleOCR hold well over a hundred
+ * megabytes between them, which a session that read one picture an hour ago
+ * kept for good. A reading after this loads them again, from the browser's
+ * cache.
+ */
+export const OCR_IDLE_MS = 60_000;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function idleLater(): void {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    idleTimer = null;
+    if (!pending.size) void stopEngines();
+  }, OCR_IDLE_MS);
 }
 
 /**
@@ -223,25 +267,76 @@ const ENLARGE_BELOW = 1600;
 
 /**
  * OCR one page image, given as a data URL or a canvas; `dpi` when it is a
- * rendered PDF page. A signal that aborts stops the engine, since a running
- * recognition cannot otherwise be interrupted.
+ * rendered PDF page. A signal that aborts rejects at once with an AbortError
+ * and, when this reading is the one under way, ends the engines, since a
+ * running recognition cannot otherwise be interrupted; another caller's
+ * reading is not touched.
  */
-export async function recognizePage(
+export function recognizePage(
   image: string | HTMLCanvasElement,
   dpi: number | null,
   options: { onProgress?: OcrProgress; signal?: AbortSignal } = {},
 ): Promise<OcrPage> {
+  const { signal } = options;
+  if (signal?.aborted) return Promise.reject(stoppedError());
+  return new Promise<OcrPage>((resolve, reject) => {
+    let settled = false;
+    let running = false;
+    /** Lets the queue go on: when the reading ends, or when it is stopped. */
+    let release = () => {};
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      pending.delete(fail);
+      signal?.removeEventListener('abort', onAbort);
+      fn();
+      release();
+    };
+    const fail = (reason: unknown) => settle(() => reject(reason));
+    const onAbort = () => {
+      const mine = running;
+      fail(stoppedError());
+      if (mine) void stopEngines();
+    };
+    pending.add(fail);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    queue = queue.then(
+      () =>
+        new Promise<void>((done) => {
+          release = done;
+          // Stopped while it waited: it never starts.
+          if (settled) return done();
+          if (idleTimer) clearTimeout(idleTimer);
+          running = true;
+          readOne(image, dpi, options).then(
+            (page) => settle(() => resolve(page)),
+            (err) => fail(err),
+          ).finally(() => {
+            running = false;
+            done();
+            idleLater();
+          });
+        }),
+    );
+  });
+}
+
+/** One reading of one page, the engines to itself: `recognizePage`'s turn. */
+async function readOne(
+  image: string | HTMLCanvasElement,
+  dpi: number | null,
+  options: { onProgress?: OcrProgress; signal?: AbortSignal },
+): Promise<OcrPage> {
   const source = typeof image === 'string' ? await imageCanvas(image) : image;
   const scale = source.width < ENLARGE_BELOW ? 2 : 1;
   const input = scale === 1 ? source : enlarge(source, scale);
-  const abort = () => void stopOcr();
-  options.signal?.addEventListener('abort', abort, { once: true });
   const stopped = () => {
-    if (options.signal?.aborted) throw new DOMException('OCR was stopped.', 'AbortError');
+    if (options.signal?.aborted) throw stoppedError();
   };
+  const mine = options.onProgress ?? null;
   try {
     stopped();
-    listener = options.onProgress ?? null;
+    listener = mine;
     const image = { width: source.width, height: source.height, dpi };
     const started = performance.now();
     const took: string[] = [];
@@ -250,6 +345,9 @@ export async function recognizePage(
     // serves it (since 2026-11-10) and Tesseract otherwise; then the page's own
     // language, worked out from that reading (lib/ocrScript.ts).
     const byPaddle = await readByPaddle(input, image, scale, options.signal);
+    // Stopped while PaddleOCR was waited for, a reading must not go on to
+    // Tesseract: by then the engine may be the next reading's (the PIPE1 review).
+    if (!byPaddle) stopped();
     let page = byPaddle ?? (await readWith('eng', input, image, scale));
     lap(byPaddle ? 'PaddleOCR' : 'English', started);
     stopped();
@@ -274,6 +372,7 @@ export async function recognizePage(
         const from = performance.now();
         listener?.('working out the language', 0);
         const png = await pngOf(source);
+        stopped();
         const english = await probeWith('eng', png, boxes);
         const scores: Record<string, number[]> = {};
         for (const script of OTHER_SCRIPTS) {
@@ -306,8 +405,8 @@ export async function recognizePage(
       return page;
     }
   } finally {
-    listener = null;
-    options.signal?.removeEventListener('abort', abort);
+    // A reading stopped while the next one runs must not take its listener.
+    if (listener === mine) listener = null;
   }
 }
 

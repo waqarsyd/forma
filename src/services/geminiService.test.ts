@@ -536,7 +536,7 @@ const DRAFT_TEXT = [
   'label caption 450 5 100 20 Arial:9b r 0 9 "Total Due"',
   'label total 560 5 140 20 Arial:9b r 0 0 [Amount]',
 ].join('\n');
-const DRAFT: DraftRequest = { text: DRAFT_TEXT, texts: [], title: 'Invoice', readBy: 'test' };
+const DRAFT: DraftRequest = { text: DRAFT_TEXT, texts: [], title: 'Invoice' };
 const PICTURE = { inlineData: { mimeType: 'image/png', data: 'iVBORw0KGgo=' } };
 
 /** A small complete report of labels, one per text, in the bands named. */

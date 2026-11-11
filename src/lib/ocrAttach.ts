@@ -24,15 +24,21 @@ export interface ReadPage {
   lines: number;
 }
 
-/** OCR one attached page, at its resolution when it is a rendered PDF page. */
+/**
+ * OCR one attached page, at its resolution when it is a rendered PDF page.
+ * `signal` stops it (2026-11-11, the full audit's PL-01): the reading ends,
+ * and this rejects, as soon as it aborts.
+ */
 export async function readPage(
   src: string,
   meta: PreviewMeta,
   unit: string,
   paper: string,
   onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
 ): Promise<ReadPage> {
   const read = await recognizePage(src, null, {
+    signal,
     onProgress: (stage, progress) => {
       // The engine's loading stages say nothing a reader needs; the reading does.
       if (/recogniz/i.test(stage)) onProgress?.(progress);

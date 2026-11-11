@@ -43,6 +43,26 @@ export function loadPdfjs(): Promise<Pdfjs> {
   return pending;
 }
 
+type PdfDocument = Awaited<ReturnType<Pdfjs['getDocument']>['promise']>;
+
+/**
+ * Open a PDF, hand it to `use`, and release it however `use` ends
+ * (2026-11-11, the full audit's PL-05). Each `getDocument` starts a worker of
+ * its own when none is given, and the intake never destroyed one: every PDF
+ * attached in a session kept its worker and the whole parsed file alive until
+ * the tab closed. `destroy` ends both, and it is awaited so a failure to read
+ * the file still frees them.
+ */
+export async function withPdfDocument<T>(data: ArrayBuffer | Uint8Array, use: (pdf: PdfDocument) => Promise<T>): Promise<T> {
+  const pdfjs = await loadPdfjs();
+  const task = pdfjs.getDocument({ data });
+  try {
+    return await use(await task.promise);
+  } finally {
+    await task.destroy();
+  }
+}
+
 /** Test seam. Not for application use — the memo is deliberate at runtime. */
 export function resetPdfjsForTests(): void {
   pending = null;

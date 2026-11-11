@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { acceptsForBatch, filesFromDrop, filesFromPicker, forBatch, MAX_BATCH_FILES, type GivenFile } from './folderDrop';
+import { acceptsForBatch, crystalNote, filesFromDrop, filesFromPicker, forBatch, MAX_BATCH_FILES, type GivenFile } from './folderDrop';
 
 const file = (name: string, type = 'image/png') => new File(['x'], name, { type });
 const given = (path: string, type = 'image/png'): GivenFile => ({ file: file(path.split('/').pop()!, type), path });
@@ -54,6 +54,18 @@ describe('forBatch', () => {
     expect(out.files.map((f) => f.path)).toEqual(['a/1.pdf', 'b/2.png']);
     expect(out.skipped).toBe(1);
     expect(out.truncated).toBe(false);
+  });
+
+  // 2026-11-11, the full audit's CP-01a: an SSRS definition is read as a .repx is; a Crystal file has its own way in.
+  // `crystal` is counted within `skipped`, so a panel that says only `skipped` still names them (the PIPE1 review).
+  it('takes SSRS report definitions, and counts Crystal Reports files among what it skips', () => {
+    expect(acceptsForBatch('ssrs/Sales.rdl', '')).toBe(true);
+    expect(acceptsForBatch('Local.RDLC', '')).toBe(true);
+    const out = forBatch([given('Sales.rdl', ''), given('Old.rpt', ''), given('Older.RPT', 'application/octet-stream'), given('notes.txt', 'text/plain')]);
+    expect(out.files.map((f) => f.path)).toEqual(['Sales.rdl']);
+    expect([out.crystal, out.skipped]).toEqual([2, 3]);
+    expect(crystalNote(2)).toBe('2 Crystal Reports files: export each from Crystal Reports as a PDF (File > Export) and add the PDFs.');
+    expect(crystalNote(1)).toMatch(/^1 Crystal Reports file: export it/);
   });
 
   it('stops at the most a batch takes, and says it did', () => {

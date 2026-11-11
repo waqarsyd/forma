@@ -120,7 +120,6 @@ import {
   writeIdList,
   toggleId,
 } from './lib/savedReport';
-import { loadPdfjs } from './lib/pdf';
 import { toAttachmentParts } from './lib/attachmentParts';
 import {
   startProgress,
@@ -201,7 +200,7 @@ import { TIP_INTERVAL_MS, WORKING_TIPS, forPlatform, tipAt } from './lib/working
 /* App.tsx's own view state, extracted so it can be tested — see the header of
    each for the failure it was carrying while it lived here. */
 import { plateFor, stateForPlate, type Plate, type ActiveTab, type SpecView } from './lib/workspaceView';
-import { countStagedUploads, admitFiles, MAX_ATTACHMENTS, MAX_FILE_BYTES, MAX_PDF_PAGES } from './lib/attachmentBudget';
+import { countStagedUploads, admitFiles, MAX_ATTACHMENTS } from './lib/attachmentBudget';
 import { pushRevision, type Revision } from './lib/revisions';
 /* The report library: filling it, using it, and listing what it holds.
    docs/proposals/rag.md carries the reasoning; this file only wires it up.
@@ -226,7 +225,7 @@ import {
 // whole app (and pdf.js, and Firebase) into a test run.
 import { checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
-import type { RepxAudit } from './lib/repxAudit';
+import type { RepxAudit, RepxFinding } from './lib/repxAudit';
 import type { AgentTool, FormatAction } from './lib/agentEdit';
 import {
   describedRequest,
@@ -241,7 +240,6 @@ import { addUsage, summariseUsage, describeUsage, type TokenUsage } from './lib/
 import type { ReadCoverage } from './lib/readCoverage';
 import { designerFileName } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
-import { makeRightToLeft } from './lib/repxRtl';
 import {
   buildChatHistory,
   isGenerationTurn,
@@ -267,7 +265,6 @@ import { copyText } from './lib/clipboard';
 import { DRAFTS_KEY, keepQueue, keptQueueFor, LEGACY_DRAFT_KEY, movedDraft, NEW_DRAFT, parseDrafts, QUEUE_KEY, queuedFiles, withDraft, withoutFiles, type Drafts } from './lib/composerStore';
 import { firstReply, isPlainBuild, isRememberMessage, isVagueReportAsk, needsRowsConsent, pendingQuestions, pendingReplyKind, queueStep, resumed, steered, turnBase, turnEnding, vagueReportReply, vagueReportWord, withSelection, type ReplyKind } from './lib/chatTurn';
 import { formatSessionStamp } from './lib/datetime';
-import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
 // LogoPulse, the progress ring of the generation card, went with the card on
 // 2026-11-04 (the minimal workspace). Find that commit with
 // git log --diff-filter=D -- src/components/LogoPulse.tsx, and recover the file
@@ -301,6 +298,7 @@ import type { OcrBuiltReport } from './components/OcrDialog';
 import type { ReaderBuiltReport } from './lib/ocrAttach';
 import type { ReadPage } from './lib/ocrAttach';
 import type { DatabaseText, SqlSchema } from './lib/sqlSchema';
+import type { TextAttachment } from './lib/repxIntake';
 import type { ReportQuery } from './lib/sqlQuery';
 import type { DataField } from './lib/dataSource';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
@@ -341,6 +339,13 @@ interface DesignResult {
    * request carried no draft, and on a restored report.
    */
   coverage?: ReadCoverage | null;
+  /**
+   * What Forma's own reading of the page found the report lacks (2026-11-11,
+   * the full audit's PL-11b; `evidenceFindingsOf` in geminiService.ts), and
+   * the key of the file it was found in (`pictureKey`), so the REPX pane lists
+   * them until the report is changed and not after.
+   */
+  evidence?: { findings: RepxFinding[]; on: string } | null;
 }
 
 /**
@@ -370,29 +375,12 @@ type ChatMessage = ChatSessionMessage<DesignResult, PreviewMeta>;
 /* ------------------------------------------------------------------ *
  * File intake
  *
- * One path for the picker and for drag-and-drop. These were two near-identical
- * copies that had to be edited in lockstep; everything below is shared so they
- * cannot drift again.
+ * One path for the picker and for drag-and-drop, `ingestFile`, in
+ * lib/repxIntake.ts since 2026-11-11 (the full audit's PIPE1), loaded when a
+ * file arrives. MAX_ATTACHMENTS and the other limits live in
+ * lib/attachmentBudget.ts, where the public pages' tests read them.
  * ------------------------------------------------------------------ */
-
-// MAX_ATTACHMENTS, MAX_FILE_BYTES and MAX_PDF_PAGES live in
-// lib/attachmentBudget.ts since 2026-11-08, where the public pages' tests read them.
-/**
- * ~250 DPI. The previous 1.5 (~150 DPI) left small footers and dense table
- * figures soft, and soft text becomes wrong Text= values and wrong coordinates
- * in the generated REPX.
- */
-const PDF_RENDER_SCALE = 2.5;
-/**
- * PDF points are 1/72"; the report grid is whatever `ReportUnit` says.
- *
- * Was a `100 / 72` constant, which hardcoded hundredths-of-an-inch into the one
- * part of the pipeline whose output the prompt tells the model to use verbatim
- * as `LocationFloat`. `pointsToUnits` in `src/lib/reportGeometry.ts` replaces
- * it, and unlike the constant it is under test.
- */
-/** Cap on extracted strings per page, so a dense page cannot flood the prompt. */
-const MAX_TEXT_ITEMS_PER_PAGE = 400;
+const loadIntake = () => import('./lib/repxIntake');
 
 /**
  * Firestore's hard ceiling is 1,048,576 bytes per document. This leaves headroom
@@ -422,367 +410,11 @@ function cloudPayload(draft: SavedReport, uid: string): { payload: ReturnType<ty
   return fits(lighter) ? { payload: lighter, imagesDropped: true } : null;
 }
 
-/**
- * A non-visual attachment: a PDF's text layer, or the contents of a .repx.
- *
- * `uploadId` is the same id the upload's page images carry in `PreviewMeta`,
- * and it is what ties the two lists back together. Without it the composer had
- * no way to tell that eight "page N text" entries and eight page images were
- * one file the user dropped, so it drew sixteen chips for one PDF.
- */
-interface TextAttachment {
-  id: string;
-  uploadId: string;
-  /** Source filename. Display is derived from this, never stored pre-formatted. */
-  file: string;
-  /** 1-based page number, for text recovered page by page. */
-  page?: number;
-  text: string;
-}
-
-interface IngestResult {
-  images: string[];
-  /**
-   * One entry per image in `images`, same order, same length: which upload it
-   * came from and which page of it.
-   *
-   * Kept parallel rather than folded into `images` because that array's shape is
-   * depended on all the way downstream — the request parts, `sourceRect`
-   * cropping, and the `images` persisted on a saved report all expect bare data
-   * URLs. Provenance is presentation, and it stops at the composer.
-   */
-  imageMeta: PreviewMeta[];
-  texts: TextAttachment[];
-  /**
-   * A database's layout or sample rows (2026-11-08, the SQL Server programme):
-   * read here, kept on the device and summarised for the AI by `ingestFiles`,
-   * which knows the database already in use.
-   */
-  database?: DatabaseText & { file: string; uploadId: string };
-  /** User-facing warnings: skipped files, dropped pages, invalid XML. */
-  notices: string[];
-}
-
-/**
- * Pull a PDF page's real text with real coordinates.
- *
- * This is the whole reason a digital PDF beats a photograph: the file already
- * knows every string and where it sits, so the model should never have to read
- * that back out of pixels. Coordinates are converted here into the same
- * hundredths-of-an-inch grid the REPX uses, with the origin flipped to
- * top-left, so the model can use them directly rather than re-deriving them.
- */
-async function extractPdfPageText(
-  page: any,
-  pageNumber: number,
-  reportUnit?: string
-): Promise<{ text: string; omitted: number } | null> {
-  const toUnits = (points: number) => Math.round(pointsToUnits(points, reportUnit));
-  try {
-    const base = page.getViewport({ scale: 1 });
-    const pageHeightPt = base.height;
-    const content = await page.getTextContent();
-    const items: any[] = content?.items || [];
-
-    const lines: string[] = [];
-    // Counted rather than inferred from items.length: blank items are skipped
-    // above and would otherwise be reported to the user as dropped strings.
-    let omitted = 0;
-    for (const item of items) {
-      const str = (item.str || '').trim();
-      if (!str) continue;
-
-      if (lines.length >= MAX_TEXT_ITEMS_PER_PAGE) {
-        omitted++;
-        continue;
-      }
-
-      // transform = [scaleX, skewX, skewY, scaleY, x, y]; y is the baseline,
-      // measured up from the bottom of the page.
-      const x = item.transform?.[4] ?? 0;
-      const baselineY = item.transform?.[5] ?? 0;
-      // pdf.js sets a text item's height to hypot(trm[2], trm[3]) — the text
-      // transform's vertical scale, which is the font's EM SIZE in points, not
-      // the height of the ink. So this one number is both the box height and
-      // the exact font size, and the prompt is told to use it as both. It is 0
-      // only for vertical fonts, which the same code path leaves unsized.
-      const h = item.height || 0;
-      const yTop = pdfTopFromBaseline(baselineY, h, pageHeightPt);
-
-      lines.push(
-        `"${str.replace(/"/g, "'")}" x=${toUnits(x)} ` +
-        `y=${toUnits(yTop)} ` +
-        `w=${toUnits(item.width || 0)} ` +
-        `h=${toUnits(h)}`
-      );
-    }
-
-    // A scanned PDF is pixels in a wrapper — no text layer to recover.
-    if (lines.length === 0) return null;
-
-    const truncated = omitted > 0
-      ? `\n(${omitted} further strings omitted.)`
-      : '';
-
-    const text = (
-      `PDF page ${pageNumber} — text layer extracted from the file itself. ` +
-      `These strings and coordinates are EXACT and take priority over anything read from the page image.\n` +
-      `Page is ${toUnits(base.width)} x ${toUnits(pageHeightPt)} report units. ` +
-      `Coordinates are already in report units (${reportUnit || 'HundredthsOfAnInch'}), origin at the top-left of the paper.\n` +
-      `h is the font's em size taken from the file, so it is each string's EXACT font size as well as its height — ` +
-      `use it rather than estimating a size from the page image.\n` +
-      lines.join('\n') + truncated
-    );
-
-    return { text, omitted };
-  } catch (err) {
-    console.warn(`Could not read the text layer of page ${pageNumber}:`, err);
-    return null;
-  }
-}
-
-/** Render one PDF page to a white-backed JPEG at PDF_RENDER_SCALE. */
-async function renderPdfPage(page: any): Promise<string | null> {
-  const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  if (!context) return null;
-
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-
-  // pdf.js draws onto transparency; JPEG has no alpha, so an unpainted page
-  // would come out black.
-  context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  await page.render({ canvasContext: context, viewport, canvas: canvas as any }).promise;
-
-  // Route through the same optimiser as uploaded images — at this scale a page
-  // can exceed the edge cap, which it never did at 1.5.
-  return optimizeImageDataUrl(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
-}
-
-/**
- * Turn one dropped or picked file into the parts that get sent. Unsupported
- * and oversized files produce a notice rather than being silently ignored —
- * previously dropping a .docx did nothing at all, with no feedback.
- */
-async function ingestFile(file: File, uploadId: string, reportUnit?: string): Promise<IngestResult> {
-  const out: IngestResult = { images: [], imageMeta: [], texts: [], notices: [] };
-  const name = file.name || 'file';
-
-  if (file.size > MAX_FILE_BYTES) {
-    out.notices.push(`"${name}" is larger than ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB and was skipped.`);
-    return out;
-  }
-
-  if (file.type.startsWith('image/')) {
-    out.images.push(await optimizeImageDataUrl(await readAsDataUrl(file)));
-    out.imageMeta.push({ uploadId, file: name });
-    return out;
-  }
-
-  if (file.type === 'application/pdf') {
-    try {
-      // Loaded here rather than imported at the top: pdf.js is the largest
-      // dependency in the project and this is the only place it is used, so a
-      // static import put a PDF engine in front of every visitor to the landing
-      // page. See src/lib/pdf.ts.
-      const pdfjs = await loadPdfjs();
-      const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
-      const pageCount = pdf.numPages;
-      const readable = Math.min(pageCount, MAX_PDF_PAGES);
-
-      for (let n = 1; n <= readable; n++) {
-        const page = await pdf.getPage(n);
-        const image = await renderPdfPage(page);
-        if (image) {
-          out.images.push(image);
-          // Same uploadId for every page, so the composer shows one attachment
-          // for the file the user actually dropped rather than one per page.
-          // Its size in points too, so OCR can read the image at its resolution.
-          const points = page.getViewport({ scale: 1 });
-          out.imageMeta.push({ uploadId, file: name, page: n, pagePoints: { width: points.width, height: points.height } });
-        }
-
-        const extracted = await extractPdfPageText(page, n, reportUnit);
-        if (extracted) {
-          out.texts.push({ id: `${Date.now()}-${name}-p${n}`, uploadId, file: name, page: n, text: extracted.text });
-          // A dense page's tail past the per-page string cap is read from the
-          // image instead. A notice said so, with a count of the strings left
-          // out, until 2026-11-11 (the full audit, CV-12): it told how the page
-          // was read and changed nothing the user could do.
-        }
-        // A scan, with no text layer, is read as pictures when it is sent. A
-        // notice said that too until 2026-11-11 (CV-25), for the same reason.
-      }
-
-      if (pageCount > readable) {
-        out.notices.push(`"${name}" has ${pageCount} pages; the first ${readable} were read and the rest skipped.`);
-      }
-    } catch (err) {
-      console.error('Error reading PDF:', err);
-      out.notices.push(`"${name}" could not be read as a PDF.`);
-    }
-    return out;
-  }
-
-  if (name.toLowerCase().endsWith('.repx')) {
-    // Read as real text rather than shipping an opaque base64 blob: base64 is
-    // 33% larger, and a string can actually be validated before it is sent.
-    const xml = (await file.text()).trim();
-    if (!xml) {
-      out.notices.push(`"${name}" is empty.`);
-      return out;
-    }
-    const verdict = checkRepx(xml);
-    if (!verdict.ok) {
-      out.notices.push(`"${name}": ${verdict.message}`);
-    }
-    out.texts.push({
-      id: `${Date.now()}-${name}`,
-      uploadId,
-      file: name,
-      text: `Existing DevExpress report (${name}). Use this as the base structure and preserve it unless asked to change it:\n\n${xml}`,
-    });
-    return out;
-  }
-
-  // A data file (2026-11-05, lib/dataFiles.ts): a table's columns are the
-  // report's fields; a document is the person's words. Read in the browser,
-  // by a module loaded only when such a file arrives: imported statically it
-  // put 8 kB on the entry chunk every landing-page visitor downloads.
-  const data = await import('./lib/dataFiles');
-  if (data.isDataFile(name)) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    // A database's layout or sample rows, from Forma's scripts or an SSMS
-    // "Generate Scripts" file (2026-11-08, lib/sqlSchema.ts): recognised before
-    // it is read as plain data, and loaded only when such a file arrives.
-    if (/\.(json|sql|txt)$/i.test(name)) {
-      const { readDatabaseText } = await import('./lib/sqlSchema');
-      const found = readDatabaseText(new TextDecoder().decode(bytes).replace(/^﻿/, ''), name.replace(/\.[^.]+$/, ''));
-      if (found) {
-        out.database = { ...found, file: name, uploadId };
-        return out;
-      }
-    }
-    const read = await data.readDataFile(name, bytes);
-    if (read.note) out.notices.push(read.note);
-    if (read.text) out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text });
-    return out;
-  }
-
-  out.notices.push(`"${name}" is not a supported type. Use an image, a PDF, a .repx, or data (CSV, TSV, JSON, text, SQL, Excel or Word).`);
-  return out;
-}
-
-/**
- * Longest edge of an uploaded image, in pixels.
- *
- * **This buys upload time and browser memory. It does not buy tokens, and the
- * obvious assumption that it does is wrong.** Recorded here because it was
- * measured on 2026-09-06 and is the kind of thing that gets re-derived, or
- * worse, tuned in the belief that a smaller number is cheaper.
- *
- * Gemini bills an image by TILES, and the tile grid comes from the image's
- * shape rather than its size: the crop unit is `floor(min(w, h) / 1.5)`, so it
- * scales with the image and the tile count cancels out. The arithmetic on a
- * real upload, from the token log of that day:
- *
- *     2400x1500  crop unit 1000  ->  3 x 2 = 6 tiles = 1,548 tokens
- *     2048x1280  crop unit  853  ->  3 x 2 = 6 tiles = 1,548 tokens
- *
- * Identical. In practice the count reduces to `2 * ceil(1.5 * aspect)` tiles at
- * 258 tokens each, which depends on aspect ratio ALONE above the small-image
- * threshold. A portrait page is 4 tiles; a 16:9 screenshot is 6.
- *
- * The one resize that would save tokens is dropping BOTH dimensions to 384px or
- * under, which Google bills as a single 258-token tile -- a 6x cut, and an
- * invoice nobody can read. Accuracy is the product here, so that trade is not
- * available.
- *
- * What does reduce the image bill is a tighter CROP, because it can change the
- * aspect ratio and it puts more of the document inside each 768px tile. That is
- * a win on both counts and the only one worth chasing on this side; the prompt
- * was ~90% of that request's input, and the five behavioural sections that no
- * image can evidence are dropped from it automatically -- see BEHAVIOURAL in
- * `lib/promptSections.ts`.
- */
-const MAX_IMAGE_EDGE = 2048;
-const JPEG_QUALITY = 0.92;
 /* PLAIN_BUILD and REMEMBER_WORDS went to lib/chatTurn.ts on 2026-11-07 (the
    agent audit's batch B), as `isPlainBuild` and `isRememberMessage`: the
    second was a copy of memory.ts's rule that had already drifted from it. */
-/** Below this, re-encoding is not worth the quality risk. */
-const REENCODE_THRESHOLD_BYTES = 1_200_000;
-
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-/**
- * Shrink an oversized image, leaving small ones exactly as they are. Returns
- * the original on any failure, and never returns something larger than it was
- * given — so this can only ever help.
- */
-async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
-  try {
-    if (!dataUrl?.startsWith('data:image/')) return dataUrl;
-
-    const img = new Image();
-    img.src = dataUrl;
-    await img.decode();
-
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
-    if (!w || !h) return dataUrl;
-
-    const longest = Math.max(w, h);
-    const oversized = longest > MAX_IMAGE_EDGE;
-
-    // Already modest in both dimensions and weight — leave it completely alone.
-    if (!oversized && dataUrl.length < REENCODE_THRESHOLD_BYTES) return dataUrl;
-
-    const ratio = oversized ? MAX_IMAGE_EDGE / longest : 1;
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(w * ratio);
-    canvas.height = Math.round(h * ratio);
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return dataUrl;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-
-    // JPEG carries no alpha, so paint the sheet white first — otherwise a
-    // transparent screenshot background would come out black.
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-    const out = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
-    if (out.length >= dataUrl.length) return dataUrl;
-
-    console.debug(
-      `Optimised upload: ${w}x${h} ${Math.round(dataUrl.length / 1024)}KB -> ` +
-      `${canvas.width}x${canvas.height} ${Math.round(out.length / 1024)}KB.`
-    );
-    return out;
-  } catch {
-    return dataUrl; // Never let optimisation block an upload.
-  }
-}
 
 /* The REPX viewer and the Mockup moved to components/RepxViewer.tsx and components/ReportMockup.tsx on 2026-11-06, lazy, to make room in the entry chunk. */
-
-// The PDF.js worker used to be configured here, at module scope, which is what
-// forced the engine into the eager bundle. loadPdfjs() now does it on the way
-// past — see src/lib/pdf.ts.
 
 export interface SavedReport {
   id: string;
@@ -947,6 +579,12 @@ type TeamInput = {
   lastImage?: { src: string; meta: PreviewMeta };
   /** A report described in words: the house style is told, and Forma's own model drafts. */
   described?: ReportDescriptionRequest;
+  /**
+   * The pages not read yet, read and given as texts when the AI designs the
+   * report rather than correcting Forma's draft (2026-11-11, the full audit's
+   * PL-23): the draft is written from the first page and the last alone.
+   */
+  readRest?: (signal: AbortSignal) => Promise<TextAttachment[]>;
 };
 
 /**
@@ -2413,6 +2051,7 @@ export default function App() {
 
     setIsIngesting(true);
     try {
+      const { ingestFile } = await loadIntake();
       for (const [i, file] of accepted.entries()) {
         // Identifies this drop for the life of the staged attachment. Two files
         // can share a name, so the name cannot be the key — see attachments.ts.
@@ -2433,7 +2072,9 @@ export default function App() {
       setIsIngesting(false);
       setUploadNotices(notices);
     }
-  }, [stagedUploads, takeDatabase]);
+    // config.unit too (2026-11-11, PL-18): without it a unit changed in Settings
+    // reached the next attachment only after some other dependency changed.
+  }, [stagedUploads, takeDatabase, config.unit]);
 
   /**
    * One file, one report — the batch panel's unit of work.
@@ -2767,6 +2408,14 @@ export default function App() {
     return detected;
   };
   const effectiveConfig = (): ReportConfig => (detectedRef.current ? applyDetected(config, detectedRef.current) : config);
+  /**
+   * The fields the report's data has, when a database is in use and a query
+   * chosen on the Data tab (2026-11-11, the full audit's CP-07): the audit
+   * names a field an expression spells and the data lacks. No caller passed
+   * them, so that finding never reached anyone.
+   */
+  const dataFields = (): string[] | undefined =>
+    activeDatabase && queryFieldList.fields.length ? queryFieldList.fields.map((f) => f.name) : undefined;
   /** Pages OCR read, as detection takes them: their shape, and their words for the direction. */
   const readSources = (read: readonly { meta: PreviewMeta; read: ReadPage }[]) => ({
     pages: read.map(({ meta, read: r }) => ({ width: r.ocr.width, height: r.ocr.height, pagePoints: meta.pagePoints })),
@@ -2775,12 +2424,14 @@ export default function App() {
 
   const batchResults = useRef<Map<string, DesignResult>>(new Map());
   const runOneBatchFile = useCallback(async (file: File, signal: AbortSignal, id: string) => {
+    const { ingestFile, inUnit } = await loadIntake();
     const ingested = await ingestFile(file, `batch-${id}`, config.unit);
-    const parts = toAttachmentParts(ingested.images, ingested.texts);
     const { analyzeReportDesign } = await loadGemini();
     // Worked out per file and not kept, since up to three files run at once,
     // and from the file alone: the report open on the bench is not its source.
     const fileConfig = applyDetected(config, detectSettings(detectionInput({ texts: ingested.texts, metas: ingested.imageMeta }, false)));
+    // A PDF's strings in the unit worked out for it (2026-11-11, PL-18).
+    const parts = toAttachmentParts(ingested.images, inUnit(ingested.texts, fileConfig.unit));
     // On a limit the next AI set up designs it (2026-11-10, batch AG item 23, lib/fallbackChain.ts);
     // when every one gives out, the batch pauses on that error and is kept.
     const { askWithChain } = await import('./lib/fallbackChain');
@@ -2862,21 +2513,30 @@ export default function App() {
   const ocrRead = useRef<Record<string, ReadPage | null>>({});
   const ocrKey = (meta: PreviewMeta) => `${meta.uploadId}#${meta.page ?? 0}`;
 
-  /** Read the pages' text, reporting which page is being read and how far it has got. */
+  /**
+   * Read the pages' text, reporting which page is being read and how far it
+   * has got. Stopped by `signal` (2026-11-11, the full audit's PL-01): Stop
+   * during an eight-page read let the other pages read on, one after another,
+   * with the box already free; now the page being read ends at once and the
+   * rest are not started. A page stopped is not kept as unreadable.
+   */
   const readPages = async (
     pages: readonly { src: string; meta: PreviewMeta }[],
     onProgress?: (page: number, of: number, progress: number) => void,
+    signal?: AbortSignal,
   ): Promise<{ meta: PreviewMeta; read: ReadPage }[]> => {
     const out: { meta: PreviewMeta; read: ReadPage }[] = [];
     for (const [i, { src, meta }] of pages.entries()) {
+      if (signal?.aborted) break;
       const key = ocrKey(meta);
       let read = ocrRead.current[key];
       if (read === undefined) {
         try {
           const { readPage } = await import('./lib/ocrAttach');
           const settings = effectiveConfig();
-          read = await readPage(src, meta, settings.unit, settings.pageSize, (progress) => onProgress?.(i, pages.length, progress));
+          read = await readPage(src, meta, settings.unit, settings.pageSize, (progress) => onProgress?.(i, pages.length, progress), signal);
         } catch (err) {
+          if (signal?.aborted) break;
           // The image still goes with the message; only its text does not.
           console.warn(`The text of ${meta.file} could not be read:`, err);
           read = null;
@@ -2907,8 +2567,11 @@ export default function App() {
    * "Reading the text on your pages (1 of 3)… 45%", the one place a step and
    * a percentage still reached the chat after the owner asked for every step
    * to stay behind the scenes (2026-11-04).
+   *
+   * `only` reads some of them now (2026-11-11, the full audit's PL-23): every
+   * page is kept for the review, which reads the rest itself when it opens.
    */
-  const readSentPages = async (pages: readonly { src: string; meta: PreviewMeta }[], signal?: AbortSignal) => {
+  const readSentPages = async (pages: readonly { src: string; meta: PreviewMeta }[], signal?: AbortSignal, only?: readonly { src: string; meta: PreviewMeta }[]) => {
     if (!pages.length) return [];
     setSentPages((prev) => {
       const next = { ...prev };
@@ -2918,7 +2581,7 @@ export default function App() {
     setIsChatting(true);
     setStreamingReply('');
     try {
-      return await readPages(pages);
+      return await readPages(only ?? pages, undefined, signal);
     } finally {
       // Stopped, the composer is already back and another turn may be running.
       if (!signal?.aborted) {
@@ -2938,17 +2601,29 @@ export default function App() {
    * wherever a report reaches the bench, because the prompt is the only other
    * thing that knows the direction and most of the ways Forma makes a report
    * use no prompt.
+   *
+   * `asSeen` (2026-11-11, the full audit's PL-04b): the report was written as
+   * its page is seen, by the AI (told so by the prompt) or by one of Forma's
+   * readers, so it is turned round first (`toLogicalRtl`); with both
+   * attributes set over it as it was, DevExpress printed the page mirrored.
+   * Checked with RepxProbe render: the turned report printed every string
+   * where the page as seen printed it. A report already laid out right to
+   * left is left as it is. Loaded when needed, off the workspace's chunk.
    */
-  const asConfigured = (xml: string): string => (effectiveConfig().rtl && xml ? makeRightToLeft(xml) : xml);
+  const asConfigured = async (xml: string, asSeen = false): Promise<string> => {
+    if (!effectiveConfig().rtl || !xml) return xml;
+    const { makeRightToLeft, toLogicalRtl } = await import('./lib/repxRtl');
+    return makeRightToLeft(asSeen ? toLogicalRtl(xml) : xml);
+  };
 
   /** A report built from OCR alone: every pane, a revision, and a line in the thread. */
-  const handleOcrBuild = (built: OcrBuiltReport) => {
+  const handleOcrBuild = async (built: OcrBuiltReport) => {
     const newResult: DesignResult = {
       content: built.markdown,
       timestamp: new Date(),
       title: built.title,
       layout: built.layout,
-      repxContent: asConfigured(built.repxContent),
+      repxContent: await asConfigured(built.repxContent, true),
       usage: null,
     };
     setResult(newResult);
@@ -2978,11 +2653,11 @@ export default function App() {
    * page as OCR read it, every text where it printed, is kept as the revision
    * before it, so either is one click away in Revisions.
    */
-  const handleReaderBuild = (built: ReaderBuiltReport, copy: OcrBuiltReport | null) => {
+  const handleReaderBuild = async (built: ReaderBuiltReport, copy: OcrBuiltReport | null) => {
     // Labelled by result (2026-11-11, the full audit's WS-05): the copy is the
     // page as it printed, the build the report made from it.
-    if (copy) recordRevision('Your page as printed', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: asConfigured(copy.repxContent), usage: null });
-    const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: asConfigured(built.repxContent), usage: null };
+    if (copy) recordRevision('Your page as printed', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: await asConfigured(copy.repxContent, true), usage: null });
+    const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: await asConfigured(built.repxContent, true), usage: null };
     setResult(newResult);
     recordRevision('From your page', newResult);
     setActiveTab('ui');
@@ -3016,7 +2691,7 @@ export default function App() {
     const { ocrTexts } = await import('./lib/ocrAttach');
     const stamp = Date.now();
     const { unit, pageSize } = effectiveConfig();
-    return ocrTexts(read, unit, pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}` }));
+    return ocrTexts(read, unit, pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}`, readByOcr: true as const }));
   };
 
   /**
@@ -4017,7 +3692,7 @@ export default function App() {
         const design = skeletonToDesign(reading.skeleton, { texts, title: first.file.replace(/\.[^.]+$/, '') });
         brief = draftBrief(reading.skeleton, design.layout, config.unit);
         const { draftToText } = await import('./lib/draftText');
-        correct = { text: draftToText(reading.skeleton, design.used), texts, title: design.title, readBy: "Forma's vision model, corrected by the AI" };
+        correct = { text: draftToText(reading.skeleton, design.used), texts, title: design.title };
         const visionResult: DesignResult = { content: design.markdown, timestamp: new Date(), title: design.title, layout: design.layout, repxContent: design.repx, usage: null };
         draft = async () => ({ result: visionResult, source: 'vision' });
       } catch (err) {
@@ -4033,7 +3708,7 @@ export default function App() {
       if (built && !signal.aborted) {
         const [{ draftBrief }, { draftToText }] = await Promise.all([import('./lib/formaTeam'), import('./lib/draftText')]);
         brief = draftBrief(built.skeleton, built.layout, config.unit, 'reader');
-        correct = { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title, readBy: "Forma's box reader, corrected by the AI" };
+        correct = { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title };
         const readerResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
         draft = async () => ({ result: readerResult, source: 'reader' });
       }
@@ -4100,12 +3775,36 @@ export default function App() {
     try {
       team = await prepareTeam(teamInput, signal);
       if (signal.aborted) return;
+      // No draft to correct, so the AI designs the report from every page:
+      // the pages between the first and the last are read now (PL-23).
+      if (teamInput?.readRest && (open || !team.correct)) {
+        const more = await teamInput.readRest(signal);
+        if (signal.aborted) return;
+        currentTexts = [...currentTexts, ...more];
+      }
       // Text before images, and malformed previews dropped rather than thrown
       // on — see src/lib/attachmentParts.ts.
       const attachmentParts = toAttachmentParts(currentPreviews, currentTexts);
 
       console.debug(copy.request);
-      const { analyzeReportDesign } = await loadGemini();
+      const { analyzeReportDesign, REQUEST_BUDGET } = await loadGemini();
+      /*
+       * What else the user attached, for the AI that corrects Forma's draft
+       * (2026-11-11, the full audit's PL-02b): a data file's columns, a
+       * document, a PDF's text, a page reader's reading. The correction was
+       * sent the draft and the pictures alone, so "this picture, bound to this
+       * CSV" lost the CSV. Not OCR's texts, which the draft is written from.
+       */
+      const extras = toAttachmentParts([], currentTexts.filter((t) => !t.readByOcr));
+      // The Data tab's fields, for the audit's misspelt-field check (CP-07).
+      const fields = dataFields();
+      /*
+       * The requests this click may make (2026-11-11, the full audit's PL-20),
+       * shared by the service's own retries and repeats and the fix attempts
+       * below. One per AI the chain asks: a limit on the first is no reason to
+       * give the next nothing to answer with.
+       */
+      let budget = { left: REQUEST_BUDGET };
 
       /**
        * House style, retrieved only on a refinement and only from files the
@@ -4145,8 +3844,9 @@ export default function App() {
       // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE).
       const db = databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
       const database = db ? db.designSection(activeDatabase!, { query: activeQuery, words: [currentPrompt, team.brief, ...currentTexts.map((t) => t.text)].join('\n') }) : undefined;
-      const askAi = (asked: ReportConfig) =>
-        analyzeReportDesign(
+      const askAi = (asked: ReportConfig) => {
+        budget = { left: REQUEST_BUDGET };
+        return analyzeReportDesign(
           // Passed through empty when the user typed nothing. It used to become
           // "Generate a professional DevExpress report layout based on these
           // visuals." here, which handed the model an instruction nobody gave and
@@ -4166,8 +3866,12 @@ export default function App() {
             // picture (2026-11-05); the service designs as before otherwise.
             draft: open ? null : team.correct ?? null,
             database,
+            extras,
+            fields,
+            budget,
           },
         );
+      };
       /*
        * The free chain (2026-11-10, the AI accuracy programme, batch AF;
        * lib/fallbackChain.ts): when the AI chosen has reached its limit, the
@@ -4204,8 +3908,13 @@ export default function App() {
       if (describeRequest) {
         const { auditRepx } = await import('./lib/repxAudit');
         let attempt = 1;
-        let audit = auditRepx(response.repxContent, response.layout);
+        let audit = auditRepx(response.repxContent, response.layout, { fields });
         while (shouldRetryForErrors(audit, attempt)) {
+          // From the same allowance as the request that wrote it (PL-20).
+          if (budget.left <= 0) {
+            console.warn(`Report has ${audit.errors} structural error(s), and this request's allowance is spent; keeping it as it is.`);
+            break;
+          }
           attempt += 1;
           console.warn(`Report has ${audit.errors} structural error(s) after repairs; asking for a fix (attempt ${attempt}).`);
           /*
@@ -4223,7 +3932,7 @@ export default function App() {
               { repxContent: response.repxContent },
               signal,
               handleStreamProgress,
-              { description: describeRequest, database },
+              { description: describeRequest, database, fields, budget },
             );
           } catch (fixError) {
             if (signal.aborted) throw fixError;
@@ -4235,7 +3944,7 @@ export default function App() {
             return;
           }
           spent = addUsage(spent, fixed.usage);
-          const next = auditRepx(fixed.repxContent, fixed.layout);
+          const next = auditRepx(fixed.repxContent, fixed.layout, { fields });
           // Keep the better of the two; a repair that made things worse is not applied.
           if (next.errors <= audit.errors) {
             // The query the first answer named stands unless the repair names another (batch DE).
@@ -4298,15 +4007,25 @@ export default function App() {
         response = { ...response, repxContent: translated.xml, markdown: views.specFromRepx(translated.xml, title), layout: views.layoutFromRepx(translated.xml, title) };
       }
 
+      // The prompt asks for right to left, positions as the page shows them;
+      // this turns them and makes sure of it (PL-04b). Only for a report made
+      // from pages or words: one the AI changed from a report (the open one,
+      // or a .repx attached) keeps that report's positions, which are already
+      // laid out right to left, and turning them again would print it back
+      // to front if the answer left out RightToLeftLayout (the PIPE1 review).
+      const fromAReport = Boolean(open?.repxContent) || currentTexts.some((t) => isReportFile({ file: t.file ?? '' }));
+      const repxContent = await asConfigured(response.repxContent, !fromAReport);
+      if (signal.aborted) return;
+      const found = response.evidenceFindings ?? [];
       const newResult = {
         content: response.markdown,
         timestamp: new Date(),
         title: response.layout.title,
         layout: response.layout,
-        // The prompt asks for right to left; this makes sure of it.
-        repxContent: asConfigured(response.repxContent),
+        repxContent,
         usage: spent,
         coverage: response.coverage ?? null,
+        ...(found.length ? { evidence: { findings: found, on: (await loadIntake()).pictureKey(repxContent) } } : {}),
       };
 
       setResult(newResult);
@@ -4321,15 +4040,21 @@ export default function App() {
       const credits = MOCK_MODE ? await import('./lib/formaTeam').then(m => m.teamLine(true)).catch(() => '') : '';
       // A redesign says what it changed and can be undone, as an edit in
       // place can, and what is wrong with the file, errors only and in plain
-      // words (2026-11-11, the full audit's CV-05; lib/agentEdit.ts).
-      const [changed, checked] = newResult.repxContent
-        ? await Promise.all([import('./lib/agentEdit'), import('./lib/repxAudit')])
-            .then(([m, a]) => [
+      // words (2026-11-11, the full audit's CV-05; lib/agentEdit.ts). With
+      // them what Forma's own reading of the page found the report lacks
+      // (PL-11b): a table drawn as loose texts, rows with no section to
+      // repeat in. Only that reading can see those, and it was in the console.
+      // Said in sentences of their own (`evidenceMarkdown`), since the
+      // general list's fallback said something untrue of them.
+      const [changed, checked, compared] = newResult.repxContent
+        ? await Promise.all([import('./lib/agentEdit'), import('./lib/repxAudit'), loadIntake()])
+            .then(([m, a, intake]) => [
               open?.repxContent ? m.changesMarkdown(m.describeChanges(open.repxContent, newResult.repxContent!)) : '',
-              m.checksMarkdown(a.auditRepx(newResult.repxContent, newResult.layout).findings.filter((f) => f.severity === 'error')),
+              m.checksMarkdown(a.auditRepx(newResult.repxContent, newResult.layout, { fields }).findings.filter((f) => f.severity === 'error')),
+              intake.evidenceMarkdown(found),
             ])
-            .catch(() => ['', ''])
-        : ['', ''];
+            .catch(() => ['', '', ''])
+        : ['', '', ''];
       // What was made, and from what (2026-11-11, the full audit's UI2, `firstReply`).
       const kind: ReplyKind = describeRequest
         ? 'description'
@@ -4341,7 +4066,7 @@ export default function App() {
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
         role: 'assistant',
-        text: [switched, credits ? `${said} ${credits}` : said, dataNote, changed, checked].filter(Boolean).join('\n\n'),
+        text: [switched, credits ? `${said} ${credits}` : said, dataNote, changed, checked, compared].filter(Boolean).join('\n\n'),
         result: newResult
       };
       // The two imports above are a wait: a session left meanwhile is not this one.
@@ -4401,7 +4126,9 @@ export default function App() {
           if (made && !signal.aborted) {
             const { fallbackReply } = await import('./lib/formaTeam');
             if (signal.aborted) return;
-            const drafted = { ...made.result, repxContent: asConfigured(made.result.repxContent ?? '') };
+            // A draft from the page is written as the page is seen; one from a description is not (PL-04b).
+            const drafted = { ...made.result, repxContent: await asConfigured(made.result.repxContent ?? '', made.source !== 'offline') };
+            if (signal.aborted) return;
             setResult(drafted);
             // Named by what it is to the person (2026-11-11, the full audit's CV-07): "Forma's own draft" until then.
             recordRevision('First version', drafted);
@@ -4929,9 +4656,10 @@ export default function App() {
         timestamp: new Date(),
         title: design.title,
         layout: design.layout,
-        repxContent: asConfigured(design.repx),
+        repxContent: await asConfigured(design.repx, true),
         usage: null,
       };
+      if (turn.signal.aborted) return;
       setResult(newResult);
       // Labelled and said by result (2026-11-11, the full audit's WS-05 and
       // WS-08): the label and the reply named the vision model, and the reply
@@ -4962,8 +4690,8 @@ export default function App() {
         // Built from the page's text: the build says "Here is ..." itself, so
         // nothing more is said here (it said the page "could not be read the
         // usual way" and why until 2026-11-11).
-        if (banded) return handleReaderBuild(banded, built);
-        if (built) return handleOcrBuild(built);
+        if (banded) return await handleReaderBuild(banded, built);
+        if (built) return await handleOcrBuild(built);
       }
       say("I couldn't read that page. Try a sharper picture or a PDF.");
     } finally {
@@ -5083,8 +4811,11 @@ export default function App() {
     const base = resend?.base !== undefined ? resend.base : result;
     if (resend?.base && resend.base.repxContent !== result?.repxContent) setResult(resend.base);
     const stagedImages = again ? resend?.images ?? [] : previews;
+    // A picture sent again with no upload id is known by its content (2026-11-11,
+    // the full audit's PL-31b): as `again-0`, a second one read as the first's text.
+    const keyOf = again && stagedImages.some((_, i) => !resend?.imageMeta?.[i]) ? (await loadIntake()).pictureKey : null;
     const stagedImageMeta: PreviewMeta[] = again
-      ? stagedImages.map((_, i) => resend?.imageMeta?.[i] ?? { uploadId: `again-${i}`, file: 'image' })
+      ? stagedImages.map((src, i) => resend?.imageMeta?.[i] ?? { uploadId: keyOf ? keyOf(src) : `again-${i}`, file: 'image' })
       : previewMeta;
     const stagedTexts = again ? resend?.texts ?? [] : attachmentTexts;
     // Sent again, a page whose text came with it (a queued PDF's text layer) is not read twice.
@@ -5276,18 +5007,33 @@ export default function App() {
     // message already in the thread (2026-11-03).
     // The page reader, when one is set up, reads the same pages on the local
     // server while OCR reads them in the browser (2026-11-10, batch AF).
+    /*
+     * Only what Forma's draft needs is read before the request (2026-11-11,
+     * the full audit's PL-23): a first report from pictures is a draft the AI
+     * corrects, and the draft is written from the first page and the last.
+     * An eight-page scan was read page by page, a few seconds each, before
+     * anything was asked; the pages between are read only when the AI designs
+     * the report instead (`readRest`), and the review reads them when opened.
+     */
+    const draftFirst = !base && stagedForOcr.length > 2 && !stagedTexts.some(isReportFile);
+    const restPages = draftFirst ? stagedForOcr.slice(1, -1) : [];
     const pageReading = pageReaderAttachments(stagedForOcr, turn.signal);
-    const read = await readSentPages(stagedForOcr, turn.signal);
+    const read = await readSentPages(stagedForOcr, turn.signal, draftFirst ? [stagedForOcr[0], stagedForOcr[stagedForOcr.length - 1]] : undefined);
     if (turn.signal.aborted) return;
     const fromPages = readSources(read);
     detectFor({ texts: stagedTexts, metas: stagedMeta, pages: fromPages.pages, words: [currentPrompt, fromPages.words].join('\n') });
     const readByOcr = await ocrAttachments(read);
     const readByReader = await pageReading;
+    // A PDF's strings in the unit worked out just above (2026-11-11, the full
+    // audit's PL-18): attached, they were written in the stored unit, and a
+    // report worked out as millimetres was told inch positions.
+    const { inUnit } = await loadIntake();
     if (turn.signal.aborted) return;
-    const currentTexts = [...stagedTexts, ...readByOcr, ...readByReader];
+    const currentTexts = [...inUnit(stagedTexts, effectiveConfig().unit), ...readByOcr, ...readByReader];
     if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
     if (readByReader.length) console.debug(`Including the text of ${readByReader.length} page(s) read by the page reader.`);
-    const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage, lastImage } : undefined;
+    const readRest = restPages.length ? async (signal: AbortSignal) => ocrAttachments(await readPages(restPages, undefined, signal)) : undefined;
+    const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage, lastImage, ...(readRest ? { readRest } : {}) } : undefined;
 
     /*
      * A reply to the questions a description is waiting on. Typed into the
@@ -5410,7 +5156,8 @@ export default function App() {
         const database = dbAi ? dbAi.chatSection(activeDatabase!, { query: activeQuery, words: currentPrompt, repx: open!.repxContent }) : undefined;
         // Never a field the report's data lacks, read off the report as each edit leaves it (batch AG item 24).
         const hooks = {
-          ...(dbAi ? { data: dbAi.dataEditHook(activeDatabase!, config.version, setActiveQuery) } : {}),
+          // The version worked out for this request, not the stored one (2026-11-11, SD-25).
+          ...(dbAi ? { data: dbAi.dataEditHook(activeDatabase!, effectiveConfig().version, setActiveQuery) } : {}),
           ...(factsLib ? { fields: (xml: string) => factsLib.dataFieldsOf(xml) } : {}),
         };
         /*
@@ -5622,6 +5369,19 @@ export default function App() {
           }
           const id = nextMessageId();
           if (done.changed) {
+            /*
+             * The structural repairs a generation gets, on the chat's edits
+             * too (2026-11-11, the full audit's ARCH-2), in the same Undo step:
+             * a row or a column added can leave an item misnumbered or a Ref
+             * repeated, and the designer drops content over either with no
+             * error. Neither pass moves anything.
+             */
+            const [{ normalizeItemNames }, { ensureUniqueRefs }] = await Promise.all([import('./lib/repxItems'), import('./lib/repxRefs')]);
+            if (turn.signal.aborted) return;
+            for (const pass of [normalizeItemNames, ensureUniqueRefs]) {
+              const fixed = pass(done.xml);
+              if (fixed.applied) done = { ...done, xml: fixed.xml };
+            }
             const next: DesignResult = { ...now, repxContent: done.xml };
             setResult(next);
             recordRevision('Changed in the chat', next);
@@ -6027,7 +5787,7 @@ export default function App() {
         say('Nothing changed: the texts came back as they were. Try naming the language differently.');
         return;
       }
-      const next: DesignResult = { ...open, repxContent: asConfigured(done.xml), timestamp: new Date() };
+      const next: DesignResult = { ...open, repxContent: await asConfigured(done.xml), timestamp: new Date() };
       setResult(next);
       recordRevision(`Translated into ${language}`, next);
       // The Undo goes on the reply that asked, back to before its edits too when it made some.
@@ -6072,6 +5832,11 @@ export default function App() {
    * a report with none.
    */
   const [repxAudit, setRepxAudit] = useState<RepxAudit | null>(null);
+  /*
+   * With the Data tab's fields (CP-07), and with what Forma's own reading of
+   * the page found while the report is the one it was found in (PL-11b).
+   */
+  const fieldsKey = dataFields()?.join('\n') ?? '';
   useEffect(() => {
     const xml = result?.repxContent;
     if (!xml) {
@@ -6079,13 +5844,27 @@ export default function App() {
       return;
     }
     let current = true;
-    void import('./lib/repxAudit').then(({ auditRepx }) => {
-      if (current) setRepxAudit(auditRepx(xml, result?.layout));
+    const evidence = result?.evidence;
+    void Promise.all([import('./lib/repxAudit'), evidence ? loadIntake() : null]).then(([{ auditRepx }, intake]) => {
+      if (!current) return;
+      const audit = auditRepx(xml, result?.layout, { fields: fieldsKey ? fieldsKey.split('\n') : undefined });
+      const extra = evidence && intake && intake.pictureKey(xml) === evidence.on ? evidence.findings.filter((f) => !audit.findings.some((g) => g.code === f.code)) : [];
+      setRepxAudit(extra.length
+        ? {
+            ...audit,
+            findings: [...audit.findings, ...extra],
+            errors: audit.errors + extra.filter((f) => f.severity === 'error').length,
+            warnings: audit.warnings + extra.filter((f) => f.severity !== 'error').length,
+            ok: false,
+            // Counted in words, not named by code (the PIPE1 review).
+            summary: intake ? intake.evidenceSummary(audit.summary, extra.length) : audit.summary,
+          }
+        : audit);
     });
     return () => {
       current = false;
     };
-  }, [result?.repxContent, result?.layout]);
+  }, [result?.repxContent, result?.layout, result?.evidence, fieldsKey]);
 
   /**
    * Escape closes the attachment viewer. The backdrop already closes on a click,
@@ -7397,7 +7176,8 @@ export default function App() {
                         const now = reportNow.current;
                         if (!now?.repxContent || !activeDatabase || !activeQuery) return 'Open a report and choose what it reads first.';
                         const { writeSqlDataSource } = await import('./lib/repxSqlWriter');
-                        const done = writeSqlDataSource(now.repxContent, { ...options, schema: activeDatabase, query: activeQuery }, config.version);
+                        // The version worked out for the report, not the stored one (2026-11-11, SD-25).
+                        const done = writeSqlDataSource(now.repxContent, { ...options, schema: activeDatabase, query: activeQuery }, effectiveConfig().version);
                         if (!done.applied) return `Not written: ${done.reason}.`;
                         const written = { ...now, repxContent: done.xml };
                         setResult(written);

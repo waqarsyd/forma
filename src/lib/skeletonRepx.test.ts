@@ -178,8 +178,9 @@ describe('skeletonToDesign', () => {
 
   // The full audit (2026-11-11, PL-07): the Spec says what the report is, never which part of Forma read it.
   it('writes a Spec in plain words, whoever read the page', () => {
-    for (const readBy of [undefined, "Forma's box reader, from the text OCR read", "Forma's vision model"]) {
-      const { markdown } = skeletonToDesign(skeleton, { texts, readBy });
+    // There is no `readBy` to pass any more (2026-11-11): the Spec cannot name a reader.
+    for (const title of [undefined, 'Invoice']) {
+      const { markdown } = skeletonToDesign(skeleton, { texts, title });
       expect(markdown).toMatch(/^# /);
       expect(markdown).not.toMatch(/OCR|box reader|own model|vision model|learned from|no model|AI service|the model/i);
     }

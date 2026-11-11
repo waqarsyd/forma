@@ -19,7 +19,6 @@ const draft: DraftRequest = {
   text: 'page Letter portrait 850 1100 75 75 75 75\nband ReportHeader 60 0\nlabel title 0 0 300 30 Arial:18b l 0 9 "| NVO | C E"',
   texts: [],
   title: 'invoice',
-  readBy: "Forma's box reader, corrected by the AI",
 };
 
 const CORRECTED = [

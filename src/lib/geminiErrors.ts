@@ -329,9 +329,12 @@ function classifyGemini(error: any, context: FailureContext): Error {
     return new Error('That Gemini API key is not valid. Check for a typo or paste it again in Settings.');
   }
 
+  // In plain words (2026-11-11, the full audit's PIPE1 follow-up): it named
+  // "Gemini model"s and their availability. "quota" stays in the words,
+  // because fallbackChain's isLimit reads it and asks the next AI.
   if (status === 404 || message.includes('NOT_FOUND')) {
     return new Error(
-      'No Gemini model available to this API key could complete the request. Your key may be too new, or every model may be over quota.'
+      "Google's AI did not answer with this key: a key made in the last few minutes may not reach it yet, or its free quota is used up for now. Wait a little and send it again, or pick another AI in Settings."
     );
   }
 
