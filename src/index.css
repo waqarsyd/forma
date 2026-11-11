@@ -159,6 +159,51 @@
   src: url('./fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
+
+/* The faces drawn until the real ones arrive (2026-11-11, full audit PR-21):
+   Arial, scaled and given the real face's ascent and descent, so the swap that
+   `font-display: swap` asks for moves almost nothing. Without them the 82px
+   hero heading was first set in the system sans and reflowed when Hanken
+   Grotesk landed. Each family's stack names its fallback straight after it.
+
+   Measured from the files, not guessed. `size-adjust` is the ratio of the two
+   faces' average advance over English text (letters weighted by frequency,
+   with the space), read from each font's `cmap` and `hmtx`: Inter 0.4804 em,
+   Hanken Grotesk 0.4546 em (its default instance, 400), Arial 0.4470 em. The
+   overrides are the real face's hhea ascent and descent over its units per em,
+   divided by that ratio: Inter 1984 / -494 of 2048, Hanken Grotesk 1000 / -303
+   of 1000, both with no line gap. Hanken Grotesk is only painted at 700 and
+   800, so its fallback is Arial Bold, on the assumption that both families
+   widen alike from regular to bold. JetBrains Mono has none: a monospace
+   fallback is already the same width per character, and its text is small.
+   The preloads that make the swap early are written by vite.config.ts. */
+@font-face {
+  font-family: 'Inter Fallback';
+  font-weight: 100 599;
+  src: local('Arial'), local('ArialMT');
+  size-adjust: 107.47%;
+  ascent-override: 90.14%;
+  descent-override: 22.44%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Inter Fallback';
+  font-weight: 600 900;
+  src: local('Arial Bold'), local('Arial-BoldMT');
+  size-adjust: 107.47%;
+  ascent-override: 90.14%;
+  descent-override: 22.44%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Hanken Grotesk Fallback';
+  font-weight: 700 800;
+  src: local('Arial Bold'), local('Arial-BoldMT');
+  size-adjust: 101.70%;
+  ascent-override: 98.33%;
+  descent-override: 29.79%;
+  line-gap-override: 0%;
+}
 @source "../index.html";
 @source "./";
 
@@ -186,7 +231,7 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-user-msg: var(--user-msg);
   --color-user-msg-border: var(--user-msg-border);
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", "Inter Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   /* ------------------------------------------------------------------
@@ -270,14 +315,14 @@
   --spacing-base: 8px;
 
   /* Fonts */
-  --font-title-md: "Hanken Grotesk", sans-serif;
-  --font-headline-lg-mobile: "Hanken Grotesk", sans-serif;
+  --font-title-md: "Hanken Grotesk", "Hanken Grotesk Fallback", sans-serif;
+  --font-headline-lg-mobile: "Hanken Grotesk", "Hanken Grotesk Fallback", sans-serif;
   --font-code-sm: "JetBrains Mono", monospace;
-  --font-body-lg: "Inter", sans-serif;
-  --font-body-sm: "Inter", sans-serif;
-  --font-headline-lg: "Hanken Grotesk", sans-serif;
+  --font-body-lg: "Inter", "Inter Fallback", sans-serif;
+  --font-body-sm: "Inter", "Inter Fallback", sans-serif;
+  --font-headline-lg: "Hanken Grotesk", "Hanken Grotesk Fallback", sans-serif;
   --font-label-caps: "JetBrains Mono", monospace;
-  --font-display-lg: "Hanken Grotesk", sans-serif;
+  --font-display-lg: "Hanken Grotesk", "Hanken Grotesk Fallback", sans-serif;
 
   /* Font Sizes and line heights */
   --text-title-md: 20px;
@@ -500,7 +545,7 @@
 }
 
 body {
-  font-family: "Inter", sans-serif;
+  font-family: "Inter", "Inter Fallback", sans-serif;
   background-color: var(--background);
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
@@ -1034,15 +1079,37 @@ body {
    ==================================================================== */
 
 /* The blueprint sheet behind the page. 96px is one CSS inch, which is the
-   whole conceit — Forma's unit is hundredths of an inch. */
+   whole conceit — Forma's unit is hundredths of an inch.
+
+   The grid stays put while the page scrolls, drawn on a fixed layer behind the
+   content rather than with `background-attachment: fixed` (2026-11-11, full
+   audit PR-07). A fixed background on anything but the root cannot be
+   composited in Chromium, so every frame of a scroll repainted it on the main
+   thread, and iOS ignores `fixed` there altogether. A fixed pseudo-element is
+   a layer the compositor moves for nothing.
+
+   `clip-path: inset(0)` keeps that layer inside the element: a fixed box is
+   placed against the viewport, so without the clip the grid would be drawn
+   over the footer, which paints below this stacking context. It also makes
+   the stacking context `z-index: -1` needs. Deliberately no `position` here:
+   LoginPage's scrolling overlay is `sheet-grid fixed`, and this rule, outside
+   Tailwind's layers, would beat the utility. */
 .sheet-grid {
+    isolation: isolate;
+    clip-path: inset(0);
+}
+.sheet-grid::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background-image:
       linear-gradient(var(--sheet-line) 1px, transparent 1px),
       linear-gradient(90deg, var(--sheet-line) 1px, transparent 1px),
       linear-gradient(var(--sheet-line-fine) 1px, transparent 1px),
       linear-gradient(90deg, var(--sheet-line-fine) 1px, transparent 1px);
     background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
-    background-attachment: fixed;
 }
 
 /* Tailwind's preflight rewrites <sub> to position:relative with line-height:0,
@@ -1070,24 +1137,36 @@ body {
     background-size: 13px 13px;
 }
 
-/* The scan line. One pass, driven by the component mounting it. */
+/* The scan line. One pass, driven by the component mounting it.
+
+   The track, the size of the page, is what moves, and by transform
+   (2026-11-11, full audit PR-20): the line's `top` was animated until then,
+   which is layout and paint on every frame. A percentage in `translateY` is of
+   the track's own height, the page's, so 100% still ends the pass at the
+   bottom edge, and the page's `overflow: hidden` clips the track there. */
+.hero-sweep-track {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+    animation: hero-sweep 1900ms var(--ease-standard) 480ms both;
+}
 .hero-sweep {
     position: absolute;
     left: -2%;
     width: 104%;
     height: 2px;
-    top: -4px;
+    top: 0;
     background: var(--brand, var(--color-secondary-container));
     box-shadow:
       0 0 16px 3px color-mix(in srgb, var(--brand, var(--color-secondary-container)) 34%, transparent),
       0 0 44px 8px color-mix(in srgb, var(--brand, var(--color-secondary-container)) 12%, transparent);
-    animation: hero-sweep 1900ms var(--ease-standard) 480ms both;
 }
 @keyframes hero-sweep {
-    0%   { top: -4px; opacity: 0; }
+    0%   { transform: translateY(-4px); opacity: 0; }
     6%   { opacity: 1; }
     92%  { opacity: 1; }
-    100% { top: 100%; opacity: 0; }
+    100% { transform: translateY(100%); opacity: 0; }
 }
 
 .hero-caret {

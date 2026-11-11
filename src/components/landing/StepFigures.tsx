@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 import { transition } from '../../lib/motion';
 
 /**
@@ -34,7 +34,7 @@ export function FigureIngest() {
         // The tilt is a pose, not motion — it belongs on a static wrapper so
         // reduced motion drops the fall-in without also squaring up the stack.
         <div key={f.k} className="absolute top-4" style={{ left: f.left, transform: `rotate(${f.rotate}deg)` }}>
-          <motion.div
+          <m.div
             className={`relative h-[54px] w-[42px] ${SHEET}`}
             initial={{ opacity: 0, y: -26 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -45,10 +45,10 @@ export function FigureIngest() {
             <span className="absolute inset-x-0 bottom-1.5 text-center font-code-sm text-[6.5px] leading-[1.62] font-medium tracking-[0.04em] text-secondary">
               {f.k}
             </span>
-          </motion.div>
+          </m.div>
         </div>
       ))}
-      <motion.span
+      <m.span
         className={CAPTION}
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
@@ -56,7 +56,7 @@ export function FigureIngest() {
         transition={{ ...transition.slow, delay: reduce ? 0 : 0.55 }}
       >
         3 files staged
-      </motion.span>
+      </m.span>
     </div>
   );
 }
@@ -71,7 +71,7 @@ export function FigureStream() {
   const reduce = useReducedMotion();
   return (
     <div className={`${FRAME} flex flex-col justify-center gap-3 px-[22px] pb-6`}>
-      <motion.span
+      <m.span
         className="ml-auto block h-[7px] w-[58%] origin-right rounded-full bg-[color:var(--ground-2)]"
         initial={{ scaleX: 0 }}
         whileInView={{ scaleX: 1 }}
@@ -80,13 +80,16 @@ export function FigureStream() {
       />
       <div className="flex items-center gap-[6px]" aria-hidden="true">
         {[0, 1, 2].map((i) => (
-          <motion.span
+          <m.span
             key={i}
             className="block h-[7px] w-[7px] rounded-full bg-secondary-container"
             initial={{ opacity: 0.25 }}
             whileInView={reduce ? { opacity: 1 } : { opacity: [0.25, 1, 0.25] }}
             viewport={view}
-            transition={reduce ? { duration: 0 } : { duration: 1.2, repeat: Infinity, delay: 0.4 + i * 0.2 }}
+            // Three pulses, then still (2026-11-11, full audit PR-19): a blink
+            // that never stops has to be pausable (WCAG 2.2.2), and the hero's
+            // rule is that nothing on these pages loops.
+            transition={reduce ? { duration: 0 } : { duration: 1.2, repeat: 3, delay: 0.4 + i * 0.2 }}
           />
         ))}
         <span className="ml-auto inline-flex items-center gap-[6px] rounded-full border border-outline-variant px-2.5 py-[3px] font-code-sm text-[10px] leading-[1.62] font-medium text-on-surface-variant">
@@ -94,7 +97,7 @@ export function FigureStream() {
           Stop
         </span>
       </div>
-      <motion.span
+      <m.span
         className={CAPTION}
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
@@ -102,7 +105,7 @@ export function FigureStream() {
         transition={{ ...transition.slow, delay: reduce ? 0 : 0.55 }}
       >
         working · Stop aborts the request
-      </motion.span>
+      </m.span>
     </div>
   );
 }
@@ -119,7 +122,7 @@ export function FigureExport() {
 
   return (
     <div className={`${FRAME} grid place-items-center pb-4`}>
-      <motion.div
+      <m.div
         className={`relative h-[58px] w-[46px] ${SHEET}`}
         initial={{ opacity: 0, y: 10 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -127,7 +130,7 @@ export function FigureExport() {
         transition={{ ...transition.snap, delay: reduce ? 0 : 0.1 }}
       >
         {lines.map((l, i) => (
-          <motion.span
+          <m.span
             key={l.top}
             className={`absolute left-[7px] h-0.5 origin-left ${l.accent ? 'bg-secondary-container' : 'bg-outline-variant'}`}
             style={{ top: l.top, right: l.right }}
@@ -137,7 +140,7 @@ export function FigureExport() {
             transition={{ ...transition.slow, delay: reduce ? 0 : 0.35 + i * 0.12 }}
           />
         ))}
-        <motion.span
+        <m.span
           className="absolute -bottom-2 -right-2 grid h-[19px] w-[19px] place-items-center rounded-full bg-success text-[11px] leading-none text-white ring-[3px] ring-surface-container-lowest dark:ring-card"
           initial={{ opacity: 0, scale: 0.4 }}
           whileInView={{ opacity: 1, scale: 1 }}
@@ -146,9 +149,9 @@ export function FigureExport() {
           aria-hidden="true"
         >
           ✓
-        </motion.span>
-      </motion.div>
-      <motion.span
+        </m.span>
+      </m.div>
+      <m.span
         className={CAPTION}
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
@@ -156,7 +159,7 @@ export function FigureExport() {
         transition={{ ...transition.slow, delay: reduce ? 0 : 0.55 }}
       >
         Invoice_2026_0431.repx
-      </motion.span>
+      </m.span>
     </div>
   );
 }

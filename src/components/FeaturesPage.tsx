@@ -454,7 +454,7 @@ export default function FeaturesPage({
         <section id="top" className="relative overflow-hidden pt-24">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute -right-[10%] -top-[14%] h-[940px] w-[940px] max-w-[120vw] rounded-full opacity-50 blur-[40px]"
+            className="pointer-events-none absolute -right-[10%] -top-[14%] h-[940px] w-[940px] max-w-[120vw] rounded-full opacity-50"
             style={{
               background:
                 'radial-gradient(circle, color-mix(in srgb, var(--color-secondary-container) 20%, transparent), transparent 58%)',
@@ -462,11 +462,13 @@ export default function FeaturesPage({
           />
           <div className="relative max-w-container-max mx-auto px-margin-desktop">
             <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,468px)]">
+              {/* The hero is `eager` (2026-11-11, full audit PR-01): it is on
+                  screen from the first paint, so it is drawn, not faded in. */}
               <div>
-                <Reveal>
+                <Reveal eager>
                   <Eyebrow>Capability</Eyebrow>
                 </Reveal>
-                <Reveal delay={0.06}>
+                <Reveal eager>
                   <h1 className="mt-[22px] font-display-lg text-display-lg md:text-[70px] font-extrabold leading-[1.0] tracking-[-0.042em] text-on-surface">
                     <span className="inline-block">Everything it does,</span>{' '}
                     <span className="relative inline-block text-secondary">
@@ -478,7 +480,7 @@ export default function FeaturesPage({
                     </span>
                   </h1>
                 </Reveal>
-                <Reveal delay={0.14}>
+                <Reveal eager>
                   <p className="mt-6 font-body-lg text-[clamp(17px,1.45vw,19.5px)] leading-[1.55] tracking-[-0.008em] text-on-surface-variant max-w-[62ch]">
                     A page of capabilities is easy to write and hard to trust. So everything below is read out of
                     the code that actually runs — and where Forma stops short, it says so in the same table where
@@ -486,7 +488,7 @@ export default function FeaturesPage({
                     bottom.
                   </p>
                 </Reveal>
-                <Reveal delay={0.2}>
+                <Reveal eager>
                   <div className="mt-[34px] flex flex-wrap gap-3">
                     <button
                       onClick={onEnterWorkspace}
@@ -505,7 +507,7 @@ export default function FeaturesPage({
                 </Reveal>
               </div>
 
-              <Reveal delay={0.1}>
+              <Reveal eager>
                 <PipelineCard />
               </Reveal>
             </div>

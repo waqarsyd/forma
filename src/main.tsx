@@ -1,6 +1,6 @@
 import {StrictMode, lazy, Suspense, useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {MotionConfig} from 'motion/react';
+import {LazyMotion, MotionConfig, domAnimation} from 'motion/react';
 import PublicSite from './PublicSite';
 import OfflineBanner from './components/OfflineBanner';
 import UpdateBanner, {checkForUpdates} from './components/UpdateBanner';
@@ -9,6 +9,7 @@ import {watchForStaleChunks} from './lib/staleChunks';
 import {watchInputModality} from './lib/inputModality';
 import ErrorBoundary from './components/ErrorBoundary';
 import {currentPath, onRouteChange} from './lib/router';
+import {preloadPublicRoute} from './components/publicPages';
 
 /*
  * The workspace loads when it is opened, not before (2026-11-08, the site
@@ -81,15 +82,35 @@ watchInputModality();
 // content still arrives without sliding. The CSS media query in index.css only
 // reaches CSS transitions — Framer drives inline styles and needs this. It also
 // covers ContactPage and DocsPage, which never called useReducedMotion at all.
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <MotionConfig reducedMotion="user">
-      {/* The whole app's last resort; each workspace area has its own (site audit item 64). */}
-      <ErrorBoundary area="Forma" layout="page">
-        <Root />
-      </ErrorBoundary>
-      <OfflineBanner />
-      <UpdateBanner />
-    </MotionConfig>
-  </StrictMode>,
-);
+//
+// LazyMotion with `domAnimation` (2026-11-11, full audit PR-23): the public
+// pages fade, slide and reveal on scroll, and nothing more, but every `motion.*`
+// element carried motion's whole feature set into the entry, layout animation
+// and dragging included. `m.*` elements take their features from here instead;
+// `strict` makes a `motion.*` that slips back in an error rather than a silent
+// return of the weight.
+const draw = () =>
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <LazyMotion features={domAnimation} strict>
+        <MotionConfig reducedMotion="user">
+          {/* The whole app's last resort; each workspace area has its own (site audit item 64). */}
+          <ErrorBoundary area="Forma" layout="page">
+            <Root />
+          </ErrorBoundary>
+          <OfflineBanner />
+          <UpdateBanner />
+        </MotionConfig>
+      </LazyMotion>
+    </StrictMode>,
+  );
+
+// The page's own chunk first, then the first draw (2026-11-11, full audit
+// PR-02). The built page is on screen already, and the first draw replaces
+// it; drawn before the chunk had come, /docs and the rest went white until it
+// did. The build names that chunk in the page's head as a modulepreload
+// (vite.config.ts), so the wait is usually nothing. A chunk that fails to come
+// is drawn as before, and the stale-chunk watcher above takes it from there.
+const firstPage = isWorkspace() ? null : preloadPublicRoute(currentPath());
+if (firstPage) firstPage.then(draw, draw);
+else draw();

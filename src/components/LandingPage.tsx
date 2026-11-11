@@ -212,7 +212,7 @@ const LandingPage = ({
         <section id="top" className="relative overflow-hidden pt-24">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute -right-[10%] -top-[14%] h-[940px] w-[940px] max-w-[120vw] rounded-full opacity-50 blur-[40px]"
+            className="pointer-events-none absolute -right-[10%] -top-[14%] h-[940px] w-[940px] max-w-[120vw] rounded-full opacity-50"
             style={{
               background:
                 'radial-gradient(circle, color-mix(in srgb, var(--color-secondary-container) 20%, transparent), transparent 58%)',
@@ -226,11 +226,13 @@ const LandingPage = ({
                 drew /docs and /features past the right edge on phones. Applied
                 to every stacked-then-split grid here for the same reason. */}
             <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,548px)]">
+              {/* The hero is `eager` (2026-11-11, full audit PR-01): it is on
+                  screen from the first paint, so it is drawn, not faded in. */}
               <div>
-                <Reveal>
+                <Reveal eager>
                   <Eyebrow>Report designer</Eyebrow>
                 </Reveal>
-                <Reveal delay={0.06}>
+                <Reveal eager>
                   {/* Each phrase is inline-block so a line can only break
                       between them — "Show it. Build / it. Ship it." reads as a
                       mistake. */}
@@ -246,7 +248,7 @@ const LandingPage = ({
                     </span>
                   </h1>
                 </Reveal>
-                <Reveal delay={0.14}>
+                <Reveal eager>
                   <p className="mt-6 font-body-lg text-[clamp(17px,1.45vw,19.5px)] leading-[1.55] tracking-[-0.008em] text-on-surface-variant max-w-[62ch]">
                     Upload a report design — a photo, a PDF, or an existing{' '}
                     <span className="font-code-sm">.repx</span> — or describe the report you want. Forma reads what
@@ -254,7 +256,7 @@ const LandingPage = ({
                     mockup and a written specification read off it. Three artifacts, one request.
                   </p>
                 </Reveal>
-                <Reveal delay={0.2}>
+                <Reveal eager>
                   <div className="mt-[34px] flex flex-wrap gap-3">
                     {/* .btn.lg: 13px/24px at 14.5px, and a 1px transparent
                         border so the filled and outlined buttons are the same
@@ -277,7 +279,7 @@ const LandingPage = ({
                     </a>
                   </div>
                 </Reveal>
-                <Reveal delay={0.26}>
+                <Reveal eager>
                   <p className="mt-[22px] flex max-w-[54ch] items-baseline gap-[9px] font-code-sm text-[12px] leading-[1.7] text-[color:var(--ink-faint)]">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-secondary-container ring-[3px] ring-secondary-container/10" />
                     Bring your own Gemini key — Forma ships with none, and keeps yours in your open Forma tabs, gone when the last one closes, unless you ask it to save an encrypted copy.
@@ -285,7 +287,7 @@ const LandingPage = ({
                 </Reveal>
               </div>
 
-              <Reveal delay={0.1}>
+              <Reveal eager>
                 <HeroScanner />
               </Reveal>
             </div>

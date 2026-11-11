@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { m, AnimatePresence } from 'motion/react';
 import { ANNOUNCEMENTS, SEEN_KEY, unseenCount } from '../../lib/announcements';
 import { transition } from '../../lib/motion';
 import { IconBell, IconClose } from './icons';
@@ -89,7 +89,7 @@ export default function AnnouncementDock() {
     <div className="fixed bottom-5 right-5 z-50">
       <AnimatePresence>
         {open && (
-          <motion.div
+          <m.div
             ref={panelRef}
             role="dialog"
             aria-label="Announcements"
@@ -153,7 +153,7 @@ export default function AnnouncementDock() {
                 Read the changelog
               </a>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 

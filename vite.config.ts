@@ -4,7 +4,7 @@ import {createServer, defineConfig, type Plugin} from 'vite';
 import {createReadStream, existsSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execSync} from 'node:child_process';
-import {resolve} from 'node:path';
+import {relative, resolve} from 'node:path';
 import {atomFeed, RELEASES} from './src/lib/releases';
 import {headFor, llmsTxt, pageFile, robotsTxt, securityTxt, sitemapXml, softwareJsonLd, withHead} from './src/lib/seo';
 import {ROUTES} from './src/lib/router';
@@ -206,19 +206,35 @@ const CRAWLER_FILES = (): Record<string, { type: string; body: string }> => ({
  * After the bundle is written, the built index.html, its developer comments
  * taken out (item 73: 5 kB every visitor downloaded), is the template for
  * every page: `withHead` writes each route's title, description, preview,
- * canonical address and robots into it (src/lib/seo.ts), and the seven
- * marketing pages are rendered into their `<div id="root">` by
- * src/prerender.tsx through Vite's SSR loader, so a crawler and a link
- * preview read the page itself (item 54). The app replaces that markup with
- * the same page when its bundle runs. `pageFile` names each file, and
- * firebase.json and `npm start` serve them by it: `features.html` for
- * /features, `share.html` for /s/{id}, `404.html` for anything else.
+ * canonical address and robots into it (src/lib/seo.ts), and the public pages
+ * named in `PRERENDERED` (src/prerender.tsx; sixteen of them as of
+ * 2026-11-11, where this said "the seven marketing pages" from before the
+ * info pages joined) are rendered into their `<div id="root">` through Vite's
+ * SSR loader, so a crawler and a link preview read the page itself (item 54).
+ * The app replaces that markup with the same page when its bundle runs.
+ * `pageFile` names each file, and firebase.json and `npm start` serve them by
+ * it: `features.html` for /features, `share.html` for /s/{id}, `404.html` for
+ * anything else.
+ *
+ * Each public page's head also names what its first draw needs (2026-11-11,
+ * full audit PR-02 and PR-21): the chunk its page component is in, as a
+ * modulepreload, and the two typefaces it is set in, as font preloads, both
+ * found by name in the bundle (`pageModuleOf`, `PRELOADED_FONTS` and
+ * `withPreloads` in src/prerender.tsx). The fingerprinted names are why this
+ * is done here and not written into index.html.
  */
 function pagesAndCrawlers(): Plugin {
   let outDir = 'dist';
+  let root = process.cwd();
+  // From the bundle, for closeBundle: each chunk by the module it was made
+  // from, with the chunks it imports that the entry has not loaded already,
+  // and each asset's file by its source's name.
+  const chunksOf = new Map<string, string[]>();
+  const assetsByName = new Map<string, string>();
   return {
     name: 'forma-pages-and-crawlers',
     configResolved(config) {
+      root = config.root;
       outDir = resolve(config.root, config.build.outDir);
     },
     configureServer(server) {
@@ -229,8 +245,22 @@ function pagesAndCrawlers(): Plugin {
         });
       }
     },
-    generateBundle() {
+    generateBundle(_options, bundle) {
       for (const [name, file] of Object.entries(CRAWLER_FILES())) this.emitFile({ type: 'asset', fileName: name, source: file.body });
+      chunksOf.clear();
+      assetsByName.clear();
+      const entry = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry);
+      const loaded = new Set(entry?.type === 'chunk' ? [entry.fileName, ...entry.imports] : []);
+      for (const output of Object.values(bundle)) {
+        if (output.type === 'chunk') {
+          if (!output.facadeModuleId || output.isEntry) continue;
+          const id = relative(root, output.facadeModuleId).replace(/\\/g, '/');
+          chunksOf.set(id, [output.fileName, ...output.imports].filter((f) => !loaded.has(f)).map((f) => `/${f}`));
+        } else {
+          const names = (output as { names?: string[] }).names ?? (output.name ? [output.name] : []);
+          for (const name of names) assetsByName.set(name, `/${output.fileName}`);
+        }
+      }
     },
     async closeBundle() {
       const index = resolve(outDir, 'index.html');
@@ -253,21 +283,34 @@ function pagesAndCrawlers(): Plugin {
         appType: 'custom',
         define: { __FORMA_ASSETS__: 'undefined', __FORMA_BUILD__: 'undefined' },
       });
+      let notFoundShell = shell;
       try {
-        const { PRERENDERED, renderRoute } = (await ssr.ssrLoadModule('/src/prerender.tsx')) as {
+        const { PRERENDERED, renderRoute, pageModuleOf, PRELOADED_FONTS, withPreloads } = (await ssr.ssrLoadModule('/src/prerender.tsx')) as {
           PRERENDERED: readonly string[];
           renderRoute: (route: string) => string;
+          pageModuleOf: (route: string) => string | null;
+          PRELOADED_FONTS: readonly string[];
+          withPreloads: (html: string, preloads: { modules?: readonly string[]; fonts?: readonly string[] }) => string;
         };
+        const fonts = PRELOADED_FONTS.map((name) => assetsByName.get(name)).filter((f): f is string => !!f);
+        if (fonts.length !== PRELOADED_FONTS.length) this.warn(`Only ${fonts.length} of the ${PRELOADED_FONTS.length} preloaded typefaces were found in the bundle.`);
+        notFoundShell = withPreloads(shell, { fonts });
         for (const route of ROUTES) {
           const body = PRERENDERED.includes(route) ? renderRoute(route) : undefined;
-          const page = withHead(shell, headFor(route), { body, extraHead: route === '/' ? softwareJsonLd() : undefined });
+          const pageModule = pageModuleOf(route);
+          const modules = pageModule ? chunksOf.get(pageModule) : undefined;
+          if (pageModule && !modules) this.warn(`No chunk was found for ${pageModule}, so ${route} names none to preload.`);
+          // Not the workspace's page: it is set in its own faces, and a
+          // preload the page never uses is a warning in its console.
+          const head = route === '/workspace' ? shell : withPreloads(shell, { modules, fonts });
+          const page = withHead(head, headFor(route), { body, extraHead: route === '/' ? softwareJsonLd() : undefined });
           writeFileSync(resolve(outDir, pageFile(route)), page);
         }
       } finally {
         await ssr.close();
       }
       writeFileSync(resolve(outDir, 'share.html'), withHead(shell, headFor(`/s/${'x'.repeat(16)}`)));
-      writeFileSync(resolve(outDir, '404.html'), withHead(shell, headFor('/404')));
+      writeFileSync(resolve(outDir, '404.html'), withHead(notFoundShell, headFor('/404')));
     },
   };
 }

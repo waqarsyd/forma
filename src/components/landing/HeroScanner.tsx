@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, useInView, useReducedMotion } from 'motion/react';
+import { m, useInView, useReducedMotion } from 'motion/react';
 import { tokenizeXml } from '../../lib/repx';
 import { transition } from '../../lib/motion';
 import { IconReplay } from './icons';
@@ -442,7 +442,14 @@ export default function HeroScanner() {
                 no coordinate captions over the page. The coordinates are still
                 what the figure is about — they are in the XML beside it, and
                 the page is laid out from the same numbers. */}
-            {running && animating && <div className="hero-sweep" aria-hidden="true" />}
+            {/* The line rides a track the size of the page, which moves by
+                transform (2026-11-11, full audit PR-20): animating the line's
+                `top` laid out and painted every frame of the pass. */}
+            {running && animating && (
+              <div className="hero-sweep-track" aria-hidden="true">
+                <div className="hero-sweep" />
+              </div>
+            )}
           </div>
         </div>
 
@@ -479,7 +486,7 @@ export default function HeroScanner() {
 
           <div className="flex flex-wrap gap-1.5">
             {CHIPS.map((chip, i) => (
-              <motion.span
+              <m.span
                 key={chip}
                 className="rounded-full border border-[color:var(--code-rule)] px-[9px] py-[3px] font-code-sm text-[8.5px] leading-[1.62] font-medium tracking-[0.09em] uppercase text-[#9db4cd]"
                 initial={{ opacity: 0, y: 6 }}
@@ -487,7 +494,7 @@ export default function HeroScanner() {
                 transition={{ ...transition.slow, delay: animating ? i * 0.09 : 0 }}
               >
                 {chip}
-              </motion.span>
+              </m.span>
             ))}
           </div>
         </div>

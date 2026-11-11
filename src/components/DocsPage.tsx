@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useDeferredValue, useEffect, useRef, useState, type ReactNode } from 'react';
 import { User } from 'firebase/auth';
 import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
@@ -160,6 +160,20 @@ function Article({
   );
 }
 
+/**
+ * Draws `render()` again only when `deps` changes (2026-11-11, full audit
+ * PR-25). The thirty articles were re-drawn on every keystroke in the search
+ * and every time the section being read changed, though all they depend on is
+ * which of them a search hides. `render` is new on every draw of the page, so
+ * when `deps` does change it is the current one that runs.
+ */
+const Kept = memo(
+  function Kept({ render }: { deps: string; render: () => ReactNode }) {
+    return <>{render()}</>;
+  },
+  (before, after) => before.deps === after.deps,
+);
+
 /* ----------------------------------------------------------------- page */
 
 export default function DocsPage({
@@ -181,7 +195,11 @@ export default function DocsPage({
   const [comment, setComment] = useState('');
   const docRef = useRef<HTMLDivElement>(null);
 
-  const q = query.trim().toLowerCase();
+  // The search filters a step behind the typing (2026-11-11, full audit
+  // PR-25): every keystroke re-drew all thirty articles before the box
+  // showed the letter, so a fast typist waited on the page.
+  const deferredQuery = useDeferredValue(query);
+  const q = deferredQuery.trim().toLowerCase();
   /*
    * Each article's own words, read once it has drawn (2026-11-08, site audit
    * item 87, lib/docsSearch.ts): search matched titles and keywords only, so
@@ -223,6 +241,8 @@ export default function DocsPage({
 
   const visible = SECTIONS.filter((s) => matches(s.id));
   const nothingFound = q.length > 0 && visible.length === 0;
+  // What the articles depend on, and all they depend on: which are hidden.
+  const hiddenKey = SECTIONS.filter((s) => !matches(s.id)).map((s) => s.id).join(' ');
 
   return (
     <div className="landing font-body-lg text-[16px] leading-[1.62] bg-surface text-on-surface min-h-screen flex flex-col">
@@ -373,6 +393,8 @@ export default function DocsPage({
               than being cut off — verified: applying this takes the count of
               clipped, non-scrollable elements to zero as well. */}
           <div ref={docRef} className="grid grid-cols-[minmax(0,1fr)] gap-7 [&>*]:min-w-0">
+            {/* Drawn again only when a search hides or shows an article (PR-25). */}
+            <Kept deps={hiddenKey} render={() => (<>
             <Article id="start" kicker="Guide" title="Getting started" hidden={!matches('start')}>
               <p className={PROSE}>
                 Forma turns a report design you already have, or one you describe in words, into a DevExpress{' '}
@@ -1514,6 +1536,7 @@ report.ExportToPdf("report.pdf");`}
                 ))}
               </div>
             </Article>
+            </>)} />
 
             {nothingFound && (
               <div className="rounded-2xl border border-dashed border-outline-variant px-8 py-14 text-center">

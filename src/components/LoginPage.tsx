@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { m, AnimatePresence, useReducedMotion } from 'motion/react';
 import { transition, modalVariants } from '../lib/motion';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, sendPasswordReset } from '../services/firebase';
 import Logo from './Logo';
@@ -172,6 +172,13 @@ export default function LoginPage({
   setIsDarkMode,
 }: LoginPageProps) {
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
+  // An error or a notice grows into place, unless the person has asked their
+  // system for less motion (2026-11-11, full audit PR-19): then it only fades.
+  // MotionConfig's reducedMotion="user" drops transforms and layout, not a
+  // height, so this one has to ask.
+  const reduceMotion = useReducedMotion();
+  const noticeShut = reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0 };
+  const noticeOpen = reduceMotion ? { opacity: 1 } : { opacity: 1, height: 'auto' };
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -381,7 +388,7 @@ export default function LoginPage({
   const signup = mode === 'signup';
 
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -446,7 +453,7 @@ export default function LoginPage({
 
       {/* ---------------------------------------------------------- card */}
       <div className="flex flex-1 items-center justify-center px-4 pb-16 pt-2 sm:px-margin-desktop">
-        <motion.div id="sign-in-card" tabIndex={-1} variants={modalVariants} initial="hidden" animate="visible" className="w-full max-w-[468px] outline-none">
+        <m.div id="sign-in-card" tabIndex={-1} variants={modalVariants} initial="hidden" animate="visible" className="w-full max-w-[468px] outline-none">
           <div className="rounded-2xl border border-outline-variant bg-surface-container-lowest dark:bg-card p-[30px] shadow-[var(--shadow-lg),var(--inset-hi)] sm:px-[38px] sm:py-9">
             <h1 className="font-display-lg text-[27px] font-extrabold leading-[1.15] tracking-[-0.03em] text-on-surface">
               {signup ? 'Create your account' : 'Sign in to Forma'}
@@ -490,10 +497,10 @@ export default function LoginPage({
 
             <AnimatePresence>
               {error && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
+                <m.div
+                  initial={noticeShut}
+                  animate={noticeOpen}
+                  exit={noticeShut}
                   transition={transition.fast}
                   role="alert"
                   className="overflow-hidden"
@@ -502,16 +509,16 @@ export default function LoginPage({
                     <IconWarn size={17} className="mt-0.5 shrink-0 text-error" />
                     <span>{error}</span>
                   </div>
-                </motion.div>
+                </m.div>
               )}
             </AnimatePresence>
 
             <AnimatePresence>
               {notice && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
+                <m.div
+                  initial={noticeShut}
+                  animate={noticeOpen}
+                  exit={noticeShut}
                   transition={transition.fast}
                   role="status"
                   className="overflow-hidden"
@@ -520,7 +527,7 @@ export default function LoginPage({
                     <IconInfo size={17} className="mt-0.5 shrink-0 text-[color:var(--ink-faint)]" />
                     <span>{notice}</span>
                   </div>
-                </motion.div>
+                </m.div>
               )}
             </AnimatePresence>
 
@@ -817,7 +824,7 @@ export default function LoginPage({
               </li>
             </ul>
           </div>
-        </motion.div>
+        </m.div>
       </div>
 
       {/* ---------------------------------------------------------- footer
@@ -837,6 +844,6 @@ export default function LoginPage({
           scrolling flex column: without it a short viewport compresses the
           footer instead of scrolling to it. */}
       <SiteFooter className="shrink-0" />
-    </motion.div>
+    </m.div>
   );
 }

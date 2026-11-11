@@ -74,6 +74,17 @@ export const staggerContainer = (stagger = 0.05): Variants => ({
 });
 
 /**
+ * The `behavior` for a scroll the code asks for (2026-11-11, full audit
+ * PR-19): smooth, unless the person has asked their system for less motion.
+ * The `scroll-behavior: auto !important` in index.css's reduced-motion block
+ * reaches CSS only; a `scrollTo` or `scrollIntoView` that names
+ * `behavior: 'smooth'` still glides. Read at the call, so a change of the
+ * setting applies to the next scroll.
+ */
+export const scrollBehavior = (): ScrollBehavior =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+
+/**
  * Collapses any variants object to a no-op when the user prefers reduced
  * motion: elements still mount, they just arrive at their final state.
  * The CSS media query in index.css covers everything else.

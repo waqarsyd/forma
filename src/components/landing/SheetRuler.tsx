@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * The drafting rule down the left margin: tick marks every 12px with a labelled
@@ -98,9 +98,28 @@ const HEADER_CLEARANCE = 76;
 
 export default function SheetRuler() {
   const [height, setHeight] = useState(0);
-  const [scrollY, setScrollY] = useState(0);
+  /*
+   * The ruler draws again only when a major tick crosses the top edge
+   * (2026-11-11, full audit PR-25). It re-drew all ninety-odd ticks on every
+   * frame of a scroll. Now the ticks are laid out from `base`, the last major
+   * at or above the top edge, and the scroll in between moves the track by
+   * transform: `place` writes it straight onto the element, and only a new
+   * `base` costs a render. The fade under the header, which was each tick's
+   * own opacity and so changed every frame, is a mask on the strip instead,
+   * fixed to the window as the header is.
+   */
+  const [base, setBase] = useState(0);
   const [overDark, setOverDark] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLDivElement>(null);
+  const scrolled = useRef(0);
+  const drawnBase = useRef(0);
+
+  const shift = () => {
+    if (track.current) track.current.style.transform = `translateY(${-(scrolled.current % MAJOR_EVERY)}px)`;
+  };
+  // A new base and the shift that goes with it reach the screen together.
+  useLayoutEffect(shift, [base, height]);
 
   useEffect(() => {
     /*
@@ -117,11 +136,24 @@ export default function SheetRuler() {
     // The document offset at the top edge of the viewport. That is the only
     // thing the rule needs: every tick's coordinate is this plus its own screen
     // position, so there is one input and one scale.
+    const place = () => {
+      const y = Math.max(0, window.scrollY);
+      scrolled.current = y;
+      const next = y - (y % MAJOR_EVERY);
+      // Within the same inch the track only slides; across one, the layout
+      // effect above slides it once the new ticks are drawn.
+      if (next === drawnBase.current) {
+        shift();
+      } else {
+        drawnBase.current = next;
+        setBase(next);
+      }
+    };
     const onScroll = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        setScrollY(window.scrollY);
+        place();
       });
     };
 
@@ -131,7 +163,7 @@ export default function SheetRuler() {
       listening = on;
       if (on) {
         measure();
-        setScrollY(window.scrollY);
+        place();
         window.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', measure);
       } else {
@@ -164,16 +196,17 @@ export default function SheetRuler() {
   /**
    * The ticks, in DOCUMENT coordinates.
    *
-   * The grid is anchored to the document, not the viewport: `firstTick` is the
-   * first multiple of `TICK_GAP` at or below the top edge, so as the page
-   * scrolls the ticks slide upward and a major always lands on a round hundred.
-   * That is what makes a label mean something — `800` marks the point 8 inches
-   * down the page, on every viewport size, rather than 8 inches down the window.
+   * The grid is anchored to the document, not the viewport: `base` is the
+   * last major at or above the top edge, the ticks are laid out from it, and
+   * the track slides up by the rest of the scroll, so a major always lands on a
+   * round hundred. That is what makes a label mean something — `800` marks the
+   * point 8 inches down the page, on every viewport size, rather than 8 inches
+   * down the window.
    *
-   * One extra tick is drawn so the strip stays filled as the grid slides.
+   * An inch more than the window is drawn, so the strip stays filled however
+   * far within the inch the track has slid.
    */
-  const firstTick = Math.ceil(scrollY / TICK_GAP) * TICK_GAP;
-  const count = height ? Math.ceil(height / TICK_GAP) + 1 : 0;
+  const count = height ? Math.ceil((height + MAJOR_EVERY) / TICK_GAP) + 1 : 0;
 
   return (
     <div
@@ -183,33 +216,40 @@ export default function SheetRuler() {
         overDark ? 'opacity-0' : 'opacity-100'
       }`}
     >
-      {Array.from({ length: count }, (_, i) => {
-        const docY = firstTick + i * TICK_GAP;
-        const screenY = docY - scrollY;
-        const major = docY % MAJOR_EVERY === 0;
-
-        // See HEADER_CLEARANCE. Everything now travels under the header rather
-        // than sitting still below it, so each tick carries its own fade in and
-        // nothing solid is left to smear through the blur.
-        const fade = Math.max(0, Math.min(1, screenY / HEADER_CLEARANCE));
-
-        return (
-          <div key={docY} style={{ opacity: fade }}>
-            <span
-              className={`absolute right-0 h-px ${major ? 'w-3 bg-on-surface-variant/90' : 'w-1.5 bg-outline-variant'}`}
-              style={{ top: screenY }}
-            />
-            {major && docY > 0 && (
-              <span
-                className="absolute right-4 -translate-y-1/2 font-code-sm text-[8.5px] tabular-nums text-on-surface-variant/70"
-                style={{ top: screenY }}
-              >
-                {toSheetUnits(docY)}
-              </span>
-            )}
-          </div>
-        );
-      })}
+      {/* See HEADER_CLEARANCE. Everything travels under the header rather
+          than sitting still below it, so the ticks fade in over its height
+          and nothing solid is left to smear through the blur. */}
+      <div
+        className="absolute inset-0 overflow-hidden"
+        style={{
+          maskImage: `linear-gradient(to bottom, transparent 0, #000 ${HEADER_CLEARANCE}px)`,
+          WebkitMaskImage: `linear-gradient(to bottom, transparent 0, #000 ${HEADER_CLEARANCE}px)`,
+        }}
+      >
+        <div ref={track} className="absolute inset-0 will-change-transform">
+          {Array.from({ length: count }, (_, i) => {
+            const docY = base + i * TICK_GAP;
+            const top = docY - base;
+            const major = docY % MAJOR_EVERY === 0;
+            return (
+              <div key={docY}>
+                <span
+                  className={`absolute right-0 h-px ${major ? 'w-3 bg-on-surface-variant/90' : 'w-1.5 bg-outline-variant'}`}
+                  style={{ top }}
+                />
+                {major && docY > 0 && (
+                  <span
+                    className="absolute right-4 -translate-y-1/2 font-code-sm text-[8.5px] tabular-nums text-on-surface-variant/70"
+                    style={{ top }}
+                  >
+                    {toSheetUnits(docY)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

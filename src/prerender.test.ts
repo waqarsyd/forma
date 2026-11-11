@@ -11,8 +11,8 @@
  * reads exactly.
  */
 import { describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
-import { PRERENDERED, renderRoute } from './prerender';
+import { existsSync, readFileSync } from 'node:fs';
+import { PRELOADED_FONTS, PRERENDERED, pageModuleOf, renderRoute, withPreloads } from './prerender';
 import { ROUTES } from './lib/router';
 import { COPYRIGHT } from './components/SiteFooter';
 
@@ -71,5 +71,76 @@ describe.each([...PRERENDERED])('%s, as the build draws it', (route) => {
   it('opens every link to another site safely, and gives every image a text alternative', () => {
     for (const a of tags(html, 'a').filter((t) => /target="_blank"/.test(t))) expect(a).toMatch(/rel="[^"]*noopener/);
     for (const img of tags(html, 'img')) expect(img).toMatch(/\salt="/);
+  });
+
+  /*
+   * Visible before any script runs (2026-11-11, full audit PR-01 and PS-13):
+   * the built home page carried 75 blocks at `opacity:0`, its h1 among them,
+   * waiting for an animation only the bundle could start.
+   */
+  it('hides nothing behind an animation that only script would start', () => {
+    // One exception, by name: the hero's demonstration ends by showing the
+    // three files it made, and the built page draws the demonstration at its
+    // start, as the app's first draw does, so the page does not blink from a
+    // finished figure to an empty one. index.html's <noscript> style shows
+    // them to a reader whose browser runs no script.
+    const rest = html.replace(/<span[^>]*style="opacity:0;[^"]*">(report\.repx|mockup|spec\.md)<\/span>/g, '');
+    expect(rest).not.toMatch(/opacity:\s*0(?![.\d])/);
+  });
+
+  it('names the chunk of its page, which the build preloads', () => {
+    const pageModule = pageModuleOf(route);
+    if (route === '/') expect(pageModule).toBeNull();
+    else expect(pageModule && existsSync(pageModule)).toBeTruthy();
+  });
+});
+
+/*
+ * The stat strips say their figures in the built page (PS-13): each Stat
+ * counted up from a 0 in state, effects do not run in a build, and every
+ * figure on the home page and Features was written as 0.
+ */
+describe('the stat strips, as the build draws them', () => {
+  // A Stat's figure is the only 28px tabular number in the secondary colour.
+  const figures = (html: string) => [...html.matchAll(/text-\[28px\][^"]*tabular-nums text-secondary">(\d+)/g)].map((m) => Number(m[1]));
+  const authored = (file: string) => [...readFileSync(file, 'utf8').matchAll(/<Stat to=\{(\d+)\}/g)].map((m) => Number(m[1]));
+
+  it.each([
+    ['/', 'src/components/LandingPage.tsx'],
+    ['/features', 'src/components/FeaturesPage.tsx'],
+  ])('%s shows the figures its source gives', (route, file) => {
+    const want = authored(file);
+    expect(want.filter((n) => n > 0).length).toBeGreaterThan(0);
+    expect(figures(pages.get(route)!)).toEqual(want);
+  });
+});
+
+/*
+ * What a page's head asks for ahead of its script (2026-11-11, full audit
+ * PR-02 and PR-21): vite.config.ts writes these with the bundle's names, so
+ * what is held here is the writer and the names it is given.
+ */
+describe('the preloads the build writes into a page head', () => {
+  const shell = '<html><head><title>x</title></head><body><div id="root"></div></body></html>';
+
+  it('puts a modulepreload for /docs before the head closes', () => {
+    expect(pageModuleOf('/docs')).toBe('src/components/DocsPage.tsx');
+    const html = withPreloads(shell, { modules: ['/assets/DocsPage-abc12345.js'] });
+    expect(html).toContain('<link rel="modulepreload" crossorigin href="/assets/DocsPage-abc12345.js">');
+    expect(html.indexOf('modulepreload')).toBeLessThan(html.indexOf('</head>'));
+  });
+
+  it('preloads the two typefaces the first paint sets, as fonts fetched in CORS mode', () => {
+    const css = readFileSync('src/index.css', 'utf8');
+    for (const name of PRELOADED_FONTS) {
+      expect(existsSync(`src/fonts/${name}`)).toBe(true);
+      expect(css).toContain(`./fonts/${name}`);
+    }
+    const html = withPreloads(shell, { fonts: ['/assets/inter-latin-AbCd1234.woff2'] });
+    expect(html).toContain('<link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/inter-latin-AbCd1234.woff2">');
+  });
+
+  it('leaves a page with nothing to preload as it was', () => {
+    expect(withPreloads(shell, {})).toBe(shell);
   });
 });

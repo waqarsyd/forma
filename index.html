@@ -25,6 +25,12 @@
        hosts that serve the site (site audit item 37), and robots is per page. -->
   <link rel="canonical" href="https://openforma.web.app/" />
   <meta name="robots" content="index, follow" />
+  <!-- For a reader whose browser runs no script (2026-11-11, full audit PS-13):
+       anything the built page still draws at the start of an animation is shown
+       at its end. The build draws Reveal's blocks visible already
+       (src/prerender.tsx); this catches whatever else starts hidden. A style,
+       not a script, so the theme script's CSP hash is untouched. -->
+  <noscript><style>.landing [style*="opacity:0"]{opacity:1!important;transform:none!important}</style></noscript>
   <script>
     // Resolve the theme before first paint so a dark-mode user never sees a
     // flash of the light theme. Mirrors the resolution order in App.tsx:
@@ -99,9 +105,11 @@
        There is deliberately nothing to replace them with. The @font-face rules
        live in src/index.css, which is already loaded by the bundle, so the
        fonts need no markup here and no preconnect: they come from this origin,
-       on the connection that fetched the page. A preload hint would be the one
-       arguable addition, and it is left out on purpose — it would have to name
-       a Vite-fingerprinted filename that changes every build.
+       on the connection that fetched the page. A preload hint is the one
+       addition worth having, and it is not written here because it has to name
+       a Vite-fingerprinted filename that changes every build: since 2026-11-11
+       (full audit PR-21) the build writes it into each public page's head
+       instead (vite.config.ts, `pagesAndCrawlers`).
 
        The reasoning that used to sit here, including the measured weight lists
        and why they are what they are, moved to src/index.css next to the rules

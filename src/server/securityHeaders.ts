@@ -93,6 +93,20 @@ export const THEME_SCRIPT_HASH = "'sha256-RswoUqjMy7el2m555ElIwd42BKWUQv8ssqXpJL
  *                       anywhere to send a stolen key, which this list exists
  *                       to prevent.
  */
+/**
+ * The Firebase emulators, for the development policy alone (2026-11-11, the
+ * full audit's follow-up from SAAS): with `VITE_FIREBASE_EMULATORS=true`
+ * (.env.example, lib/firebaseClient.ts) sign-in goes to the Auth emulator and
+ * every read and write, the Firestore channel included, to the Firestore
+ * emulator, and the development policy refused both, so the switch did
+ * nothing but fail. The Auth emulator also frames its own page to carry a
+ * sign-in back, hence `frame-src`. Both are loopback ports on the developer's
+ * own machine; production never names them, and `firebase.json`, which
+ * mirrors production, does not either. The addresses are firebaseClient.ts's
+ * `AUTH_EMULATOR_URL` and `FIRESTORE_EMULATOR`, which the test holds them to.
+ */
+export const FIREBASE_EMULATOR_ORIGINS = ['http://127.0.0.1:9099', 'http://127.0.0.1:8181'] as const;
+
 const CONNECT_SRC = [
   "'self'",
   'https://generativelanguage.googleapis.com',
@@ -196,6 +210,7 @@ function directives(development: boolean): Record<string, string[]> {
       'https://*.firebaseapp.com',
       'https://accounts.google.com',
       ...(APP_CHECK_SITE_KEY ? APP_CHECK_ORIGINS.frame : []),
+      ...(development ? [FIREBASE_EMULATOR_ORIGINS[0]] : []),
     ],
     // The HMR socket is NOT on the server's port. Vite in middleware mode opens
     // its own listener -- 24678 by default -- and `vite.config.ts` passes `hmr`
@@ -207,7 +222,7 @@ function directives(development: boolean): Record<string, string[]> {
     // So the port is wildcarded rather than guessed. Still loopback, still
     // development only, and now immune to Vite moving its default.
     'connect-src': [
-      ...(development ? [...CONNECT_SRC, 'ws://localhost:*', 'ws://127.0.0.1:*'] : CONNECT_SRC),
+      ...(development ? [...CONNECT_SRC, 'ws://localhost:*', 'ws://127.0.0.1:*', ...FIREBASE_EMULATOR_ORIGINS] : CONNECT_SRC),
       // App Check's token exchange, only once it has a key (item 56).
       ...(APP_CHECK_SITE_KEY ? APP_CHECK_ORIGINS.connect : []),
     ],

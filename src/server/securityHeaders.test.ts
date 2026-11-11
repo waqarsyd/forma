@@ -23,7 +23,9 @@ import {
   securityHeadersFor,
   buildContentSecurityPolicy,
   THEME_SCRIPT_HASH,
+  FIREBASE_EMULATOR_ORIGINS,
 } from './securityHeaders';
+import { AUTH_EMULATOR_URL, FIRESTORE_EMULATOR } from '../lib/firebaseClient';
 
 /** Parse a policy string back into directive -> sources, for asserting on. */
 const parse = (csp: string): Record<string, string[]> =>
@@ -237,6 +239,26 @@ describe('buildContentSecurityPolicy', () => {
       // Loopback only -- a wildcard port must not come with a wildcard host.
       expect(s).toMatch(/^ws:\/\/(localhost|127\.0\.0\.1):/);
     }
+  });
+
+  /**
+   * `VITE_FIREBASE_EMULATORS=true` sends sign-in and the database to the local
+   * emulators, and the development policy refused both (2026-11-11, the full
+   * audit's follow-up from SAAS). Development only: production, and
+   * firebase.json, which hostingConfig.test.ts holds to it, name neither.
+   */
+  it('lets the dev server reach the Firebase emulators, and production never', () => {
+    const [auth, firestore] = FIREBASE_EMULATOR_ORIGINS;
+    expect(auth).toBe(AUTH_EMULATOR_URL);
+    expect(firestore).toBe(`http://${FIRESTORE_EMULATOR.host}:${FIRESTORE_EMULATOR.port}`);
+    for (const origin of FIREBASE_EMULATOR_ORIGINS) {
+      expect(dev['connect-src']).toContain(origin);
+      expect(prod['connect-src']).not.toContain(origin);
+      expect(origin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    }
+    expect(dev['frame-src']).toContain(auth);
+    expect(prod['frame-src']).not.toContain(auth);
+    expect(prod['frame-src'].join(' ')).not.toContain('127.0.0.1');
   });
 
   it('forbids plugins and rebasing, and refuses to be framed', () => {

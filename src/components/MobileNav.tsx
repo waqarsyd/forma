@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { m, AnimatePresence } from 'motion/react';
 import { backdropVariants, transition } from '../lib/motion';
 import { IconMenu, IconClose, IconGitHub } from './landing/icons';
 import { useFocusTrap } from './useFocusTrap';
@@ -39,7 +39,7 @@ function MenuSheet({ active, signedIn, onClose }: { active?: string; signedIn?: 
   useFocusTrap(ref, onClose);
 
   return (
-    <motion.div
+    <m.div
       variants={backdropVariants}
       initial="hidden"
       animate="visible"
@@ -47,7 +47,7 @@ function MenuSheet({ active, signedIn, onClose }: { active?: string; signedIn?: 
       onClick={onClose}
       className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm"
     >
-      <motion.div
+      <m.div
         ref={ref}
         role="dialog"
         aria-modal="true"
@@ -141,8 +141,8 @@ function MenuSheet({ active, signedIn, onClose }: { active?: string; signedIn?: 
             </a>
           </div>
         )}
-      </motion.div>
-    </motion.div>
+      </m.div>
+    </m.div>
   );
 }
 

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import LandingPage from './components/LandingPage';
-import { publicPageFor } from './components/publicPages';
+import { preloadPublicRoute, publicPageFor } from './components/publicPages';
 import { useTheme } from './components/useTheme';
 import { useLinkNavigation } from './components/useLinkNavigation';
 import { currentPath, migrateLegacyHashUrl, navigate, onRouteChange, scrollToHash } from './lib/router';
@@ -13,6 +13,26 @@ import { forgetSession } from './lib/signOut';
 const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 const SharedReportPage = lazy(() => import('./components/SharedReportPage'));
 const LoginPage = lazy(() => import('./components/LoginPage'));
+
+/** Runs `task` when the browser is idle, or after `fallbackMs` where it cannot say; returns the cancel. */
+function whenIdle(task: () => void, fallbackMs: number): () => void {
+  const w = window as unknown as {
+    requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+  if (w.requestIdleCallback) {
+    const id = w.requestIdleCallback(task, { timeout: fallbackMs });
+    return () => w.cancelIdleCallback?.(id);
+  }
+  const id = window.setTimeout(task, fallbackMs);
+  return () => window.clearTimeout(id);
+}
+
+/** Whether the visitor's connection asked to save data, or is 2G (Chromium's Network Information API). */
+function savingData(): boolean {
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  return !!connection?.saveData || /2g/.test(connection?.effectiveType ?? '');
+}
 
 /**
  * The public site without the workspace (2026-11-08, the site audit's batch
@@ -65,17 +85,40 @@ export default function PublicSite() {
   }, []);
 
   // Who is signed in, for the header. Auth alone, never the database.
+  //
+  // Once the page is idle, or after three seconds at most, rather than at
+  // mount (2026-11-11, full audit PR-22): its chunk is 171 kB, fetched and run
+  // by every visitor before the page they came to read had settled, for an
+  // avatar in the header. At once when the sign-in card is what is open, and
+  // the moment it opens.
   const [auth, setAuth] = useState<AuthClient | null>(null);
-  useEffect(() => {
-    let alive = true;
+  const authStarted = useRef(false);
+  const alive = useRef(true);
+  const startAuth = useCallback(() => {
+    if (authStarted.current) return;
+    authStarted.current = true;
     loadAuth().then(
-      (client) => alive && setAuth(client),
+      (client) => alive.current && setAuth(client),
       (err) => console.warn('Firebase could not be loaded; staying local-only.', err),
     );
-    return () => {
-      alive = false;
-    };
   }, []);
+  useEffect(() => {
+    alive.current = true;
+    if (viewForRoute(currentPath()).showLogin) {
+      startAuth();
+      return () => {
+        alive.current = false;
+      };
+    }
+    const idle = whenIdle(startAuth, 3000);
+    return () => {
+      alive.current = false;
+      idle();
+    };
+  }, [startAuth]);
+  useEffect(() => {
+    if (showLogin) startAuth();
+  }, [showLogin, startAuth]);
   const previousUid = useRef<string | null>(null);
   useEffect(() => {
     if (!auth) return;
@@ -98,22 +141,19 @@ export default function PublicSite() {
     forgetSession();
   }, []);
 
-  // The other pages' chunks, fetched while the visitor reads this one.
+  // The other pages' chunks, fetched while the visitor reads this one, through
+  // the same promises the pages draw from (components/publicPages.tsx), so a
+  // page fetched here is drawn at once when it is opened. The eight info pages
+  // too (2026-11-11, full audit PS-33): the header's Pricing and the footer
+  // link them. Not on a connection that asked to save data, or a 2G one
+  // (PR-22): a guess at the next page is not worth that visitor's bytes.
   useEffect(() => {
-    const warm = () => {
-      void import('./components/FeaturesPage').catch(() => {});
-      void import('./components/DocsPage').catch(() => {});
-      void import('./components/ContactPage').catch(() => {});
-      void import('./components/LegalPage').catch(() => {});
-      void import('./components/ChangelogPage').catch(() => {});
-    };
-    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
-    if (ric) {
-      const id = ric(warm);
-      return () => (window as unknown as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(id);
-    }
-    const id = window.setTimeout(warm, 2000);
-    return () => window.clearTimeout(id);
+    if (savingData()) return;
+    return whenIdle(() => {
+      for (const route of ['/features', '/docs', '/contact', '/terms', '/changelog', '/pricing']) {
+        void preloadPublicRoute(route)?.catch(() => {});
+      }
+    }, 2000);
   }, []);
 
   const common = {

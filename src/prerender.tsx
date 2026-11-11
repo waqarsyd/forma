@@ -10,7 +10,7 @@
  * through to: a page here is words and links, not state.
  */
 import { renderToString } from 'react-dom/server';
-import { MotionConfig } from 'motion/react';
+import { AnimatePresence, LazyMotion, MotionConfig, domAnimation } from 'motion/react';
 import LandingPage from './components/LandingPage';
 import FeaturesPage from './components/FeaturesPage';
 import DocsPage from './components/DocsPage';
@@ -19,6 +19,7 @@ import ChangelogPage from './components/ChangelogPage';
 import LegalPage from './components/LegalPage';
 import InfoRoutePage from './components/InfoRoutePage';
 import { INFO_ROUTES } from './components/publicPages';
+import { PrerenderContext } from './components/landing/sections';
 import type { InfoRoute } from './components/infoPages';
 
 const noop = () => {};
@@ -39,5 +40,71 @@ export function renderRoute(route: (typeof PRERENDERED)[number]): string {
                 : route === '/accessibility' ? <LegalPage doc="accessibility" {...common} />
                   : (INFO_ROUTES as readonly string[]).includes(route) ? <InfoRoutePage route={route as InfoRoute} {...common} />
                     : <LandingPage {...common} />;
-  return renderToString(<MotionConfig reducedMotion="user">{page}</MotionConfig>);
+  // Every Reveal drawn at its final state (2026-11-11, full audit PR-01): the
+  // page here is read before any script runs, so nothing may wait for one.
+  // The figures' own motion elements too: under `AnimatePresence
+  // initial={false}` a motion element is drawn as its `animate` names, and
+  // one that only reveals on scroll (`whileInView`) as its plain style.
+  return renderToString(
+    <PrerenderContext.Provider value>
+      <LazyMotion features={domAnimation} strict>
+        <MotionConfig reducedMotion="user">
+          <AnimatePresence initial={false}>{page}</AnimatePresence>
+        </MotionConfig>
+      </LazyMotion>
+    </PrerenderContext.Provider>,
+  );
+}
+
+/**
+ * The module a route's page comes from in the app, by its path from the
+ * project root (2026-11-11, full audit PR-02). The build finds the chunk Rollup
+ * made of it and names that chunk in the route's head as a modulepreload, so
+ * the browser fetches it alongside the entry rather than after it has run,
+ * and `main.tsx`, which waits for it before drawing, waits for nothing. The
+ * home page is not here: it is part of the entry.
+ */
+export function pageModuleOf(route: string): string | null {
+  switch (route) {
+    case '/features':
+      return 'src/components/FeaturesPage.tsx';
+    case '/docs':
+      return 'src/components/DocsPage.tsx';
+    case '/contact':
+      return 'src/components/ContactPage.tsx';
+    case '/changelog':
+      return 'src/components/ChangelogPage.tsx';
+    case '/terms':
+    case '/privacy':
+    case '/accessibility':
+      return 'src/components/LegalPage.tsx';
+  }
+  return (INFO_ROUTES as readonly string[]).includes(route) ? 'src/components/InfoRoutePage.tsx' : null;
+}
+
+/**
+ * The two faces the first paint of a public page sets text in (2026-11-11,
+ * full audit PR-21), as their files are named in src/fonts: Inter for the body
+ * and Hanken Grotesk for the headings. The stylesheet names them, so the
+ * browser found them only once it had fetched and parsed the CSS; preloaded,
+ * they are fetched beside it. JetBrains Mono is set small and late, and the
+ * latin-ext files load only for a page that needs them, so neither is here.
+ */
+export const PRELOADED_FONTS = ['inter-latin.woff2', 'hanken-grotesk-latin.woff2'] as const;
+
+/**
+ * `html` with a preload for each of `modules` (script chunks) and `fonts`
+ * (woff2 files) before its `</head>`. `crossorigin` on both, as Vite writes it
+ * on the entry: a module and a font are fetched in CORS mode, and a preload
+ * made in another mode is not reused, so the file would be fetched twice.
+ */
+export function withPreloads(html: string, { modules = [], fonts = [] }: { modules?: readonly string[]; fonts?: readonly string[] }): string {
+  const links = [
+    ...fonts.map((href) => `<link rel="preload" as="font" type="font/woff2" crossorigin href="${href}">`),
+    ...modules.map((href) => `<link rel="modulepreload" crossorigin href="${href}">`),
+  ];
+  if (!links.length) return html;
+  const at = html.indexOf('</head>');
+  if (at < 0) return html;
+  return `${html.slice(0, at)}${links.map((l) => `  ${l}\n`).join('')}${html.slice(at)}`;
 }

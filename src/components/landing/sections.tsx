@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { motion, useInView, useReducedMotion } from 'motion/react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { m, useInView, useReducedMotion } from 'motion/react';
 import { fadeInUpVariants, respectReducedMotion, staggerContainer } from '../../lib/motion';
 import { toSheetUnits } from './SheetRuler';
 
@@ -27,52 +27,77 @@ export const BODY = 'font-body-lg text-[15.5px] leading-[1.65] text-on-surface-v
    was `'font-body-lg text-[13.5px] leading-[1.55] text-[color:var(--ink-faint)]'`;
    recover it from `ea37ed0~1` if a small-print style is wanted again. */
 
-/** Reveals its children once, on scroll into view. */
+/**
+ * True while src/prerender.tsx draws a page into the built HTML (2026-11-11,
+ * full audit PR-01 and PS-13). Every Reveal started at `opacity:0`, and the
+ * build wrote that state into the page: dist/index.html carried 75 hidden
+ * blocks, the hero's h1 among them, so the first paint was a header over an
+ * empty page until the bundle ran, and a reader with no script never saw the
+ * words at all. Drawn inside this, a Reveal renders its final state.
+ */
+export const PrerenderContext = createContext(false);
+
+/**
+ * Reveals its children once, on scroll into view. `eager` is for a block above
+ * the fold (the hero), which is on screen from the first paint and so has
+ * nothing to wait for: it renders as it is, with no fade, in the built page
+ * and in the app alike, so the page the bundle draws over the built one does
+ * not blink.
+ */
 export function Reveal({
   children,
   className = '',
   delay = 0,
+  eager = false,
 }: {
   children: ReactNode;
   className?: string;
   delay?: number;
+  eager?: boolean;
 }) {
   const prefersReduced = useReducedMotion();
+  const prerendering = useContext(PrerenderContext);
   return (
-    <motion.div
+    <m.div
       className={className}
       variants={respectReducedMotion(fadeInUpVariants, prefersReduced)}
-      initial="hidden"
+      initial={eager || prerendering ? false : 'hidden'}
       whileInView="visible"
       viewport={{ once: true, amount: 0.15 }}
       transition={{ delay: prefersReduced ? 0 : delay }}
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }
 
-/** A list whose items arrive one after another. */
+/**
+ * A list whose items arrive one after another. `eager` as on Reveal; its
+ * items take the group's `initial`, so they need no flag of their own.
+ */
 export function RevealGroup({
   children,
   className = '',
   stagger = 0.06,
+  eager = false,
 }: {
   children: ReactNode;
   className?: string;
   stagger?: number;
+  eager?: boolean;
 }) {
   const prefersReduced = useReducedMotion();
+  const prerendering = useContext(PrerenderContext);
   return (
-    <motion.div
+    <m.div
       className={className}
       variants={respectReducedMotion(staggerContainer(prefersReduced ? 0 : stagger), prefersReduced)}
-      initial="hidden"
+      initial={eager || prerendering ? false : 'hidden'}
       whileInView="visible"
       viewport={{ once: true, amount: 0.1 }}
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -80,9 +105,9 @@ export function RevealGroup({
 export function RevealItem({ children, className = '' }: { children: ReactNode; className?: string }) {
   const prefersReduced = useReducedMotion();
   return (
-    <motion.div className={className} variants={respectReducedMotion(fadeInUpVariants, prefersReduced)}>
+    <m.div className={className} variants={respectReducedMotion(fadeInUpVariants, prefersReduced)}>
       {children}
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -90,12 +115,19 @@ export function RevealItem({ children, className = '' }: { children: ReactNode; 
  * One figure in the stat strip. Counts up once on scroll into view; a target of
  * zero and reduced motion both land on the value immediately — "0 API keys" is
  * the point, and animating up to nothing is silly.
+ *
+ * It starts at its value, not at 0 (2026-11-11, full audit PS-13): effects do
+ * not run when the build draws the page, so a count that began at 0 wrote
+ * "0 export formats" and "0 pages / PDF" into every built page, which is all a
+ * crawler, a link preview or a reader without script ever saw. The count drops
+ * to 0 on the first frame of its animation instead, so the built page and the
+ * app's first draw both say the real figure.
  */
 export function Stat({ to, unit, label }: { to: number; unit?: string; label: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, amount: 0.5 });
   const prefersReduced = useReducedMotion();
-  const [n, setN] = useState(0);
+  const [n, setN] = useState(to);
 
   useEffect(() => {
     if (!inView) return;
@@ -104,8 +136,14 @@ export function Stat({ to, unit, label }: { to: number; unit?: string; label: st
       return;
     }
     let raf = 0;
-    const t0 = performance.now();
+    let t0 = -1;
     const tick = (now: number) => {
+      if (t0 < 0) {
+        t0 = now;
+        setN(0);
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       const p = Math.min(1, (now - t0) / 900);
       setN(Math.round(to * (1 - Math.pow(1 - p, 3))));
       if (p < 1) raf = requestAnimationFrame(tick);
