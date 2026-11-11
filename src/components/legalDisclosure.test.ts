@@ -473,6 +473,63 @@ describe('the policy says of learning what the code does', () => {
   });
 });
 
+/*
+ * The learning loop and Forma Designer, held to the code (2026-11-11, the
+ * re-audit's R4-01 and R4-02). The policy said the library was there "only
+ * because you turned it on" and that 127.0.0.1 was asked "only then", when
+ * Open in designer was chosen; LRN2 made kept reports join the library on
+ * their own and go, stripped, with a first report, and CC-10 hands each new
+ * report to a Forma Designer that has answered. One-directional like the rest
+ * of this file: what the code does obliges the sentence.
+ *
+ * Unlike the older cases above, these assert the code's shape directly rather
+ * than behind an `if (/regex/.test(source))` (the review of 2026-11-11): a
+ * guard turns a reworded source into a silent pass, and the point of each case
+ * is to fail when the code stops matching what the policy says of it.
+ */
+describe('the policy says what kept reports and Forma Designer are used for', () => {
+  const source = (path: string) => read(path);
+  const WORDS: Record<number, string> = { 10: 'ten', 20: 'twenty', 30: 'thirty', 50: 'fifty' };
+
+  it('says the style of kept reports is learned unless turned off, as lib/memory.ts defaults it', () => {
+    expect(source('src/lib/memory.ts')).toMatch(/const EMPTY: MemoryState = \{[^}]*learnFromKept: true/);
+    expect(policy).toMatch(/Learning the style of the reports you keep \(Settings → Memory\) is on unless you turn it off/);
+    expect(policy).not.toMatch(/memories, the library, sharing, dictation — is there only because you turned it on/);
+  });
+
+  it('names the kept reports in the library, as many as services/library.ts keeps', () => {
+    const max = Number(/export const MAX_KEPT_REPORTS = (\d+);/.exec(source('src/services/library.ts'))?.[1]);
+    expect(WORDS[max], `MAX_KEPT_REPORTS is ${max}: add its word here and in the policy`).toBeTruthy();
+    expect(policy).toContain(`the newest ${WORDS[max]} reports you kept, stripped the same way`);
+  });
+
+  it('says a kept report goes with a first report to the AI, once lib/learningLoop.ts sends one', () => {
+    expect(source('src/lib/learningLoop.ts')).toContain('keptExampleBlock(');
+    expect(policy).toMatch(/the parts of the kept report most like it go too, with every text, name, field, data source, expression and link in them replaced/);
+  });
+
+  it('names the count of changes behind "Learned from your changes", never their words', () => {
+    expect(source('src/lib/memory.ts')).toMatch(/ledger\?: Correction\[\]/);
+    expect(policy).toMatch(/with what you changed in the reports Forma made, as the kind of change and the value you gave it, never a word of the report/);
+  });
+
+  /*
+   * The trigger is /health answering, not a report opening: askDesigner sets
+   * both flags designerAnswered() reads before /open is sent, and whether or
+   * not it succeeds (the review of 2026-11-11 caught "has opened a report").
+   */
+  it('says each new report goes to Forma Designer once it has answered, and never "only then"', () => {
+    const bridge = source('src/lib/designerBridge.ts');
+    expect(bridge).toMatch(/post\('\/inspect'/);
+    expect(bridge).toMatch(/answered = true;\s*\n\s*inspects = health\.inspects === true;/);
+    expect(policy).toMatch(/once it has answered in a tab, whether or not that report then opened, so does each new report you make in that tab, with the records read off your page/);
+    expect(policy).toMatch(/Once Forma Designer has answered in a tab — which it does when you choose Open in designer while it is running, whether or not the report then opens — the workspace in that tab also hands it each new report you make, with the records read off your page/);
+    expect(policy).not.toMatch(/Open in designer, and only then/);
+    expect(policy).not.toMatch(/has opened a report in a tab|once it has opened one/);
+    expect(policy).not.toMatch(/nothing on the page reaches your computer that way/);
+  });
+});
+
 /**
  * The "Last updated" date must move when the words above it do.
  *
@@ -587,8 +644,21 @@ describe('the legal copy and its date change together', () => {
      in IndexedDB, local storage only where a browser has none, and a
      sign-out leaves them; and what deleting an account leaves of learning,
      a day's count with no ids. Substantive, and already that day's date.
+
+     Moved again the same day (the re-audit's batch FIX2D, R4-01 and R4-02):
+     a kept report joins the library on its own and goes, stripped, with a
+     first report to the AI; learning the style of kept reports is on unless
+     turned off; what a person changes in Forma's reports is counted, never
+     its words; and after one Open in designer each new report in that tab
+     goes to Forma Designer on the computer. Substantive, and already that
+     day's date. Its review the same day corrected the trigger: Forma
+     Designer gets each new report once it has answered in a tab, whether or
+     not the report then opened, not once it has opened one; and "nothing on
+     the page reaches your computer" became "nothing asks Forma Designer
+     anything", naming the SQL Server reading on a self-run Forma. The hash
+     moved, and the date is already that day's.
      */
-  const EXPECTED_COPY_HASH = 'd4864a4a0d7b';
+  const EXPECTED_COPY_HASH = 'b724946186a3';
   const EXPECTED_UPDATED = '11 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

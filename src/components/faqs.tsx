@@ -14,7 +14,8 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
       <p>
         Its own words are English for now. Dates follow your browser&apos;s language; OCR reads English, Arabic,
         Urdu, Hindi, French, German and Spanish; and a report in a right-to-left language comes out right to
-        left.
+        left. Your reports can be in another language: ask for one translated (&quot;translate it into German&quot;), or
+        in two (&quot;in English and German&quot;), and the Preview&apos;s Language list shows each.
       </p>
     ),
   },
@@ -45,7 +46,11 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
     a: (
       <p>
         Pictures (PNG, JPG and the like), PDF documents, existing DevExpress <code className="doc-code">.repx</code>{' '}
-        files, and data files (CSV, TSV, JSON, text, SQL, Excel and Word), several at once, and you can mix them.
+        files, SQL Server Reporting Services (<code className="doc-code">.rdl</code>,{' '}
+        <code className="doc-code">.rdlc</code>) and FastReport (<code className="doc-code">.frx</code>) reports,
+        which open as DevExpress reports, and data files (CSV, TSV, JSON, text, SQL, Excel and Word, whose layout
+        is followed when you ask for a report from one as a template), several at once, and you can mix them. A
+        Crystal Reports file is answered with how to export it as a PDF.
       </p>
     ),
   },

@@ -100,6 +100,20 @@ describe('the public pages do not claim what Forma no longer does', () => {
     ['the old name of Settings’ Download everything button', /has Download all\b/],
     // Encrypted sync keeps a copy of the key in the account, so "never" needs its condition.
     ['the key never reaching Forma, whatever is switched on', /Your key, never:/],
+    /*
+     * The re-audit (2026-11-11, batch FIX2D): what the waves changed under
+     * sentences that stayed. A kept report joins the library on its own and
+     * goes with a first report (R4-01); Forma Designer is asked about each new
+     * report after one Open in designer (R4-02); a reply after a change says
+     * what it left to fix, and Retry runs stopped files too (R4-11); Forma
+     * opens SSRS reports itself (R4-04).
+     */
+    ['a library used only once a report is ticked', /nothing is used until you do/i],
+    ['a report kept only by export or save', /report you export or save counts as kept/i],
+    ['Forma Designer asked only when Open in designer is chosen', /whether it is there, and only then/i],
+    ['the checks described as an audit', /structural audit|The audit runs after|how many the checks found/i],
+    ['a Retry that runs only what failed', /Retry requeues only what failed/i],
+    ['SSRS reports converted elsewhere before Forma opens them', /convert with Reporting\.Import, then bring the \.repx/i],
   ])('no longer claims %s', (_what, pattern) => {
     // On one line, so a sentence the source wraps between two words is still found (2026-11-11).
     expect(all.replace(/\s+/g, ' ')).not.toMatch(pattern);
@@ -324,5 +338,145 @@ describe('the Docs page covers the workspace as it is', () => {
   it('prints the shortcuts from the list the workspace dialog uses, not a copy', () => {
     expect(docs).toContain("import { shortcutGroups } from '../lib/shortcuts'");
     expect(readFileSync('src/components/ShortcutsDialog.tsx', 'utf8')).toContain("import { shortcutGroups } from '../lib/shortcuts'");
+  });
+});
+
+/*
+ * What the fix waves built, said where a person and the chat look for it
+ * (2026-11-11, the re-audit's R4-01, R4-02, R4-04, R4-11 to R4-13, batch
+ * FIX2D). The chat answers "how do I" from the Docs page (docsCorpus.tsx), so
+ * a feature the Docs leave out is one the chat cannot tell anyone about. Each
+ * claim is held to the code that does it, read as source where importing it
+ * would pull Firestore or the library's IndexedDB into a test of prose.
+ */
+describe('the public pages say what the waves built', () => {
+  const prose = (src: string) => visible(src).replace(/\{' '\}/g, ' ').replace(/<[^>]+>/g, '').replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ');
+  const source = (path: string) => readFileSync(path, 'utf8');
+  const constant = (path: string, name: string) => Number(new RegExp(`export const ${name} = ([\\d_]+);`).exec(source(path))![1].replace(/_/g, ''));
+  const WORDS: Record<number, string> = { 2: 'twice', 20: 'twenty', 30: 'thirty' };
+  const security = () => {
+    const start = info.indexOf('export const SECURITY');
+    return info.slice(start, info.indexOf('/* ---', start));
+  };
+
+  it('names SSRS and FastReport reports wherever the uploads are listed, as the intake opens them', () => {
+    const intake = source('src/lib/repxIntake.ts');
+    expect(intake).toMatch(/\/\\\.\(rdlc\?\|frx\)\$\/i/);
+    for (const [name, src] of [['Docs upload', article('upload')], ['FAQ', faqs], ['Features', features], ['home', landing]] as const) {
+      expect(prose(src), name).toMatch(/FastReport/);
+    }
+    for (const ext of ['.rdl', '.rdlc', '.frx']) {
+      expect(prose(article('upload')), ext).toContain(ext);
+      expect(prose(faqs), ext).toContain(ext);
+    }
+    // A Crystal file is answered with how to export a PDF, which the pages say rather than promise it opens.
+    expect(intake).toMatch(/is a Crystal Reports file\. Export it from Crystal Reports as a PDF/);
+    expect(prose(article('upload'))).toMatch(/Crystal Reports \.rpt cannot be read in a browser/);
+  });
+
+  it('says a Word or Excel template is followed when asked, and a crooked page straightened', () => {
+    expect(source('src/lib/repxIntake.ts')).toContain('export function templateCorrection');
+    expect(article('upload')).toContain('<Def t="Word and Excel templates">');
+    expect(prose(article('upload'))).toMatch(/its page, margins, table and fonts are followed/);
+    expect(prose(article('upload'))).toMatch(/straightened before it is read/);
+    expect(source('src/lib/deskew.ts')).toMatch(/straightened once at intake/);
+  });
+
+  it('describes Compare with the original and the Language list, as the Preview draws them', () => {
+    expect(source('src/components/PreviewRail.tsx')).toContain('aria-label="Compare with the original"');
+    expect(source('src/lib/shortcuts.ts')).toMatch(/key === 'o'.*'compare'/);
+    expect(article('workspace')).toContain('<Def t="Compare with the original">');
+    expect(prose(article('workspace'))).toMatch(/Compare \(or O\)/);
+    expect(prose(features)).toMatch(/Compare with the original/);
+    expect(source('src/components/ReportPreview.tsx')).toMatch(/Language\{' '\}\s*<select/);
+    expect(prose(article('run'))).toMatch(/Ask for both languages/);
+    expect(prose(article('run'))).toMatch(/Language list/);
+    expect(prose(faqs)).toMatch(/Language list/);
+  });
+
+  it('says several exports asked at once are saved as one .zip, and the print with the page’s rows', () => {
+    expect(source('src/lib/exportJob.ts')).toMatch(/saved as one\s+\*\s+\.zip/);
+    expect(prose(article('run'))).toMatch(/saved together as one \.zip/);
+    expect(source('src/lib/printCheck.ts')).toMatch(/prints-extra-pages/);
+    expect(prose(article('run'))).toMatch(/printed before you see it, with the rows that page shows/);
+  });
+
+  it('says what a reply after a change says, and lists the errors the checks added', () => {
+    expect(source('src/lib/agentEdit.ts')).toMatch(/This change left \$\{count\} to fix/);
+    const repx = prose(article('repx'));
+    expect(repx).toMatch(/a reply after a change says what it left to fix/);
+    const audit = source('src/lib/repxAudit.ts');
+    for (const [code, said] of [
+      ['report-has-scripts', 'code that runs when the report is previewed'],
+      ['expression-invalid', 'an expression DevExpress cannot read'],
+      ['margins-not-whole', 'margins or a custom page size written with a fraction'],
+      ['field-unknown', 'a group or sort on a field the data does not have'],
+      ['expression-field-unknown', 'a field an expression names that the data does not have'],
+    ] as const) {
+      expect(audit, code).toContain(`'${code}'`);
+      expect(repx, code).toContain(said);
+    }
+  });
+
+  it('says Retry runs the failed and the stopped files, as the queue does', () => {
+    expect(source('src/lib/batchQueue.ts')).toMatch(/item\.status === 'failed' \|\| item\.status === 'cancelled'/);
+    expect(prose(features)).toMatch(/Retry runs the failed and stopped files again/);
+  });
+
+  it('states the write limits the rules hold, where a person reads about saving', () => {
+    const projects = constant('src/lib/accountData.ts', 'MAX_REPORTS');
+    const events = constant('src/lib/accountData.ts', 'MAX_EVENTS_A_DAY');
+    const rules = source('firestore.rules');
+    expect(rules).toContain(`after.reports <= ${projects}`);
+    expect(rules).toContain(`after.events <= ${events}`);
+    const n = projects.toLocaleString('en-US');
+    expect(prose(article('saving'))).toContain(`keeps up to ${n} projects`);
+    expect(prose(security())).toContain(`keeps up to ${n} projects and sends at most ${events} learning events a day`);
+  });
+
+  it('says what the kept reports do, with the numbers the code keeps', () => {
+    const memory = prose(article('memory'));
+    expect(source('src/lib/memory.ts')).toMatch(/const EMPTY: MemoryState = \{[^}]*learnFromKept: true/);
+    expect(memory).toMatch(/which it is unless you turn it off in Settings → Memory/);
+    expect(memory).toContain(`the styles of the newest ${WORDS[constant('src/lib/memory.ts', 'MAX_KEPT')]} are kept`);
+    expect(memory).toContain(`the newest ${WORDS[constant('src/services/library.ts', 'MAX_KEPT_REPORTS')]}`);
+    expect(memory).toMatch(/a report you export, save or open in the designer counts as kept/);
+    expect(memory).toMatch(/the kept report most like it goes to the AI with your request, every word in it replaced/);
+    expect(memory).toContain(`The same change made ${WORDS[constant('src/lib/corrections.ts', 'LEARN_AFTER')]} becomes a memory`);
+    expect(memory).toMatch(/Learned from your changes/);
+    expect(source('src/components/MemorySettings.tsx')).toContain('A report is kept when you export it, save it or open it in the designer.');
+  });
+
+  /*
+   * "Answered", not "opened a report" (the review of 2026-11-11): askDesigner
+   * sets both flags designerAnswered() reads as soon as /health answers,
+   * before /open is sent. If that ever moves after a successful open, this
+   * fails and the sentence can say "opened" again.
+   */
+  it('says Forma Designer is handed each new report once it has answered, as designerBridge.ts decides', () => {
+    const bridge = source('src/lib/designerBridge.ts');
+    expect(bridge).toMatch(/post\('\/inspect'/);
+    expect(bridge).toMatch(/answered = true;\s*\n\s*inspects = health\.inspects === true;/);
+    const designer = prose(article('designer'));
+    expect(designer).toMatch(/Once Forma Designer has answered in a tab, which it does when you choose Open in designer while it is running, whether or not the report then opens, Forma also hands it each new report you make in the same tab/);
+    expect(designer).not.toMatch(/has opened a report/);
+    expect(designer).not.toMatch(/nothing on the page reaches your PC/);
+  });
+
+  it('says on Features that a kept report goes with a first report, not that all of it stays in the browser', () => {
+    expect(source('src/lib/learningLoop.ts')).toContain('keptExampleBlock(');
+    const features = source('src/components/FeaturesPage.tsx');
+    expect(features).toContain('With a first report, the kept report most like it goes to the AI you chose as formatting to follow');
+    expect(features).not.toMatch(/a memory you can see and forget, all in this browser/);
+  });
+
+  it('opens SSRS reports itself on /compare, and credits handwriting only with its condition on /about', () => {
+    const compare = prose(info.slice(info.indexOf('export const COMPARE'), info.indexOf('export const ABOUT')));
+    expect(compare).toMatch(/Forma opens RDL and RDLC reports itself, and FastReport’s \.frx too/);
+    const about = prose(info.slice(info.indexOf('export const ABOUT'), info.indexOf('/* ---', info.indexOf('export const ABOUT'))));
+    // Built in only with --with-handwriting (scripts/deploy.mjs); Owner decision 27 is still open.
+    if (/--with-handwriting/.test(source('scripts/deploy.mjs'))) {
+      expect(about).toContain('where the site is built with it, Transformers.js for handwriting');
+    }
   });
 });

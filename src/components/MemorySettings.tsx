@@ -143,7 +143,7 @@ export default function MemorySettings() {
               ? `Learned from ${kept.reports} kept reports: ${kept.paper}${kept.landscape ? ' landscape' : ''}, ${kept.fontFamily}${Object.keys(kept.sizes ?? {}).length ? `; ${Object.entries(kept.sizes ?? {}).map(([role, pt]) => `${role}s ${pt}pt`).join(', ')}` : ''}.`
               : state.kept.length
                 ? `${state.kept.length} kept report${state.kept.length === 1 ? '' : 's'} so far; Forma learns a style from two.`
-                : 'A report is kept when you export or save it. None yet.'}
+                : 'A report is kept when you export it, save it or open it in the designer. None yet.'}
           </p>
         </div>
         <input id="wb-set-learn" type="checkbox" role="switch" className="wb-set-switch" checked={state.learnFromKept} onChange={(e) => save({ ...state, learnFromKept: e.target.checked })} />

@@ -111,7 +111,7 @@ const STEPS = [
       </>
     ),
     points: [
-      'Pictures, PDF, .repx and data files, several at once',
+      'Pictures, PDF, .repx, SSRS and FastReport reports and data files, several at once',
       'Multi-page PDFs read and text-extracted, up to 8 pages',
       'Every file you add is confirmed on screen before it is sent',
     ],

@@ -66,4 +66,27 @@ describe('DOCS_SECTIONS keys', () => {
     const memory = DOCS_SECTIONS.find((s) => s.id === 'memory')!;
     for (const query of ['learning', 'train', 'learning switch']) expect(articleMatches(query, memory), query).toBe(true);
   });
+
+  // What the waves built, by the words a person searches with (2026-11-11, the re-audit's R4-04).
+  it('find the waves’ features by their own names, the article that describes each', () => {
+    const section = (id: string) => DOCS_SECTIONS.find((s) => s.id === id)!;
+    const cases: Array<[string, string]> = [
+      ['rdl', 'upload'],
+      ['ssrs', 'upload'],
+      ['fastreport frx', 'upload'],
+      ['crystal rpt', 'upload'],
+      ['word template', 'upload'],
+      ['crooked', 'upload'],
+      ['bilingual', 'run'],
+      ['zip', 'run'],
+      ['compare original', 'workspace'],
+      ['learned changes', 'memory'],
+      ['limit', 'saving'],
+      // 'storage' kept when 'local storage' went, so a search for it still finds Saving (review, 2026-11-11).
+      ['storage', 'saving'],
+    ];
+    for (const [query, id] of cases) expect(articleMatches(query, section(id)), `${query} -> ${id}`).toBe(true);
+    // The signed-out projects are in the browser's own database, not local storage, since PR-15.
+    expect(section('saving').keys).not.toMatch(/local storage/);
+  });
 });

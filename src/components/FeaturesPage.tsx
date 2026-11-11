@@ -44,7 +44,7 @@ const FORMATS = [
     Icon: IconImage,
     kind: 'PNG · JPG',
     title: 'Screenshots, photos and scans',
-    body: 'Resized and re-encoded in your browser before anything is sent, so a phone photo of a printed form uploads as fast as a screenshot. Its words are read by OCR in your browser too, and go with the picture as exact text.',
+    body: 'Resized and re-encoded in your browser before anything is sent, so a phone photo of a printed form uploads as fast as a screenshot. A crooked photo or a page scanned on its side is straightened first. Its words are read by OCR in your browser too, and go with the picture as exact text.',
   },
   {
     Icon: IconDoc,
@@ -54,9 +54,10 @@ const FORMATS = [
   },
   {
     Icon: IconCode,
-    kind: '.repx',
+    // SSRS and FastReport since 2026-11-11 (the re-audit's R4-04; lib/importForeign.ts).
+    kind: '.repx · .rdl · .frx',
     title: 'Reports you already have',
-    body: 'Read as text, then parsed and validated as XML in your browser before a request is spent. It goes up as exact markup, so a refinement edits what is actually there.',
+    body: 'A .repx is read as text, then parsed and validated as XML in your browser before a request is spent, and goes up as exact markup, so a refinement edits what is actually there. A SQL Server Reporting Services report (.rdl, .rdlc) or a FastReport one (.frx) is opened as a DevExpress report in your browser first, its bands, positions, fields and totals as written. A Crystal Reports file is answered with how to export it as a PDF to bring instead.',
   },
   {
     Icon: IconStack,
@@ -68,7 +69,7 @@ const FORMATS = [
     Icon: IconGrid,
     kind: 'CSV · XLSX · JSON',
     title: 'The data it will print',
-    body: 'A CSV, TSV, JSON, text, SQL, Excel or Word file is read in your browser for its columns and first rows, so the report is bound to the fields you actually have.',
+    body: 'A CSV, TSV, JSON, text, SQL, Excel or Word file is read in your browser for its columns and first rows, so the report is bound to the fields you actually have. Ask for a report from a Word or Excel template and its page, margins, table and fonts are followed too.',
   },
   {
     Icon: IconGrid,
@@ -830,11 +831,11 @@ export default function FeaturesPage({
                 },
                 {
                   k: 'A verdict on every row',
-                  d: 'Each finished file carries the structural audit’s answer in the words the REPX pane uses: clean, N warnings, or N errors and content will be lost. The point of running forty is knowing which of the forty are worth opening.',
+                  d: 'Each file is made the way a single report is, and each finished one says whether it came out clean or what is still wrong with it. The point of running forty is knowing which of the forty are worth opening.',
                 },
                 {
                   k: 'Stop and retry mean what they say',
-                  d: 'Stop cancels what has not started and leaves the request in flight alone, since it counts against your key’s allowance either way. Retry requeues only what failed. A limit or a key failure halts the run rather than producing forty identical errors; a limit pauses the batch, kept in this browser, and Retry carries on from where it stopped.',
+                  d: 'Stop cancels what has not started and leaves the request in flight alone, since it counts against your key’s allowance either way. Retry runs the failed and stopped files again and keeps what succeeded. A limit or a key failure halts the run rather than producing forty identical errors; a limit pauses the batch, kept in this browser, and Retry carries on from where it stopped.',
                 },
                 {
                   k: 'Out in one archive',
@@ -883,11 +884,11 @@ export default function FeaturesPage({
                 },
                 {
                   k: 'In another language',
-                  d: 'Ask for it in German and every caption and title is translated, the layout kept, as a revision you can undo.',
+                  d: 'Ask for it in German and every caption and title is translated, the layout kept, as a revision you can undo. Ask for English and German and the report carries both, with a Language list on the Preview to see each.',
                 },
                 {
                   k: 'It remembers',
-                  d: 'Start a message with “remember” and Forma keeps it for later reports; it can learn your house style from reports you keep.',
+                  d: 'Start a message with “remember” and Forma keeps it for later reports. Unless you turn it off, the reports you keep teach it your house style, and a change you make twice becomes a memory you can see and forget, kept in this browser. With a first report, the kept report most like it goes to the AI you chose as formatting to follow, its words and data replaced.',
                 },
               ].map((c) => (
                 <RevealItem
@@ -937,12 +938,12 @@ export default function FeaturesPage({
                     {
                       Icon: IconShieldCheck,
                       t: 'The XML, parsed and checked',
-                      d: 'Syntax-coloured with line numbers and a copy action. Before you download, it is parsed, asserted to have the right root element and a Bands section, and audited for what DevExpress would drop or print wrong.',
+                      d: 'Syntax-coloured with line numbers and a copy action. Before you download, it is parsed, asserted to have the right root element and a Bands section, and checked for what DevExpress would drop or print wrong. A report made from a page is printed first with the rows that page shows, and what would print wrong, an extra page, text cut off, a blank field, a total that does not match, is put right as far as it can be.',
                     },
                     {
                       Icon: IconDoc,
                       t: 'The Preview, and every export',
-                      d: 'The Preview pages the report as DevExpress prints it, over test data Forma can make, and exports it as PDF (with an outline, a password, or as PDF/A), Excel, CSV, Word, RTF, HTML or a picture, all in your browser. Open in designer hands the file to the DevExpress designer on Windows, through Forma Designer, a free download.',
+                      d: 'The Preview pages the report as DevExpress prints it, over test data Forma can make, and Compare with the original draws the page you brought under it. It exports as PDF (with an outline, a password, or as PDF/A), Excel, CSV, Word, RTF, HTML or a picture, all in your browser, and several asked for at once are saved as one .zip. Open in designer hands the file to the DevExpress designer on Windows, through Forma Designer, a free download.',
                     },
                     {
                       Icon: IconDownload,

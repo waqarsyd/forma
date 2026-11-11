@@ -667,7 +667,8 @@ export default function DocsPage({
                 <Def t="PNG · JPG">
                   Screenshots, exports and phone photos. Large images are downscaled to a{' '}
                   <strong className="font-semibold text-on-surface">2048px</strong> long edge and re-encoded;
-                  anything already smaller is passed through untouched.
+                  anything already smaller is passed through untouched. A photo or a scan taken crooked, or on
+                  its side, is straightened before it is read.
                 </Def>
                 <Def t="PDF">
                   Up to <strong className="font-semibold text-on-surface">8 pages</strong> per file. Each page
@@ -679,9 +680,26 @@ export default function DocsPage({
                   Read as text and validated as XML in your browser before a request is spent, then sent as
                   exact markup so a refinement edits what is really there.
                 </Def>
+                {/* What the waves added to the intake (2026-11-11, the re-audit's
+                    R4-04): SSRS and FastReport converted in the browser
+                    (lib/importForeign.ts), a Crystal file answered with how to
+                    export a PDF, a Word or Excel file's layout followed
+                    (lib/docxLayout.ts, xlsxLayout.ts), a crooked page
+                    straightened (lib/deskew.ts). The chat answers from this page. */}
+                <Def t=".rdl · .rdlc · .frx">
+                  A report from SQL Server Reporting Services (.rdl, .rdlc) or FastReport (.frx) is opened as a
+                  DevExpress report in your browser, its bands, positions, fields and totals as written, and what
+                  you ask for is built on it. A Crystal Reports .rpt cannot be read in a browser: export it from
+                  Crystal Reports as a PDF and attach that.
+                </Def>
                 <Def t="Data files">
                   CSV, TSV, JSON, text, SQL, Excel or Word, read for their columns; and your{' '}
                   <a href="#sql" className={LINK}>SQL Server layout script</a>.
+                </Def>
+                <Def t="Word and Excel templates">
+                  Ask for a report from a .docx or .xlsx (&quot;make the report from this template&quot;, &quot;laid
+                  out like the Word document&quot;) and its page, margins, table and fonts are followed, and a Word
+                  file&apos;s header and footer too; otherwise it is read for its columns like any data file.
                 </Def>
                 <Def t="Per request">
                   Up to <strong className="font-semibold text-on-surface">12 attachments</strong>, each up to{' '}
@@ -780,9 +798,16 @@ y_top = pageHeight − (baseline + height)`}
                 <Def t="The Preview">
                   The report paged as DevExpress prints it, over test data Forma can make. Drag or retype a
                   control here, and export it as PDF (with an outline, a password, or as PDF/A), Excel, CSV,
-                  Word, RTF, HTML or a picture, all in your browser.
+                  Word, RTF, HTML or a picture, all in your browser. Ask the chat for several at once (&quot;a PDF
+                  and an Excel file&quot;) and they are saved together as one .zip.
                 </Def>
               </dl>
+              <p className={`mt-4 ${PROSE}`}>
+                A report made from a page you brought is printed before you see it, with the rows that page
+                shows, and what would print wrong is put right as far as it can be: pages the page does not have,
+                text cut off at the margin, a field that prints blank, groups that run together, a total that does
+                not match the page, or a number or date not written the way the page writes it.
+              </p>
 
               <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
                 Asking for changes
@@ -794,7 +819,10 @@ y_top = pageHeight − (baseline + height)`}
                 height), or, where an edit cannot reach, a redesign that starts straight away. Each reply lists
                 what changed, with Undo and Redo, and "undo that" takes the last change back. Ask for the report
                 in another language ("translate it into German") and it is translated: every typed caption and
-                title, the layout as it was, kept as a revision beside the original. A question about the data
+                title, the layout as it was, kept as a revision beside the original. Ask for both languages ("in
+                English and German", "add German") and the report keeps its own words and carries the second
+                language beside them, as DevExpress's own localisation does; the Preview's Language list shows
+                each. A question about the data
                 (which row is highest, what the amounts add up to) is held the first time while Forma asks whether the rows the Preview prints may go to the
                 AI; nothing of them goes until you say so, and the reply says when they went. Right-click a control on
                 the Preview and choose Describe for the AI to say in a sentence what it is for; the AI reads it with
@@ -892,6 +920,11 @@ y_top = pageHeight − (baseline + height)`}
                   On the Preview, the rail at the right holds Select and Mark an area. Mark (or M) lets you
                   drag a box over the report: every control in it is selected and goes to the box as one chip, to ask
                   the chat about or to change with the toolbar. V goes back to selecting one at a time.
+                </Def>
+                <Def t="Compare with the original">
+                  For a report made from a picture or a PDF, the rail also holds Compare (or O): the page you
+                  brought, drawn under the report, with one slider for how much of it shows and another for how far
+                  across the page it reaches, so a line or a total out of place stands out.
                 </Def>
                 <Def t="Search, download and fold">
                   The panel's search marks every match and Enter goes to the next; its download saves the whole
@@ -1110,7 +1143,7 @@ report.ExportToPdf("report.pdf");`}
               <p className={`mt-4 ${PROSE}`}>
                 Before you can download it, Forma parses the XML and checks that it has the right root element
                 and a <code className="doc-code">&lt;Bands&gt;</code> section. A malformed generation therefore
-                surfaces in the browser rather than when the designer refuses the file. It is also audited for
+                surfaces in the browser rather than when the designer refuses the file. It is also checked for
                 what DevExpress would drop or print wrong. A generation that ends without a complete file is
                 repaired where it can be, and otherwise marked as failed with Try again, never handed to you
                 as a broken file.
@@ -1118,19 +1151,26 @@ report.ExportToPdf("report.pdf");`}
 
               <h3 className={H3}>What the checks find</h3>
               <p className={`mt-2 ${PROSE}`}>
-                The audit runs after Forma's own repairs, so what it lists is what is still wrong. It blocks
-                nothing. An <strong className="font-semibold text-on-surface">error</strong> means DevExpress will
+                Forma fixes what it can first, so what is listed is what is still wrong, and nothing is held back
+                for it. An <strong className="font-semibold text-on-surface">error</strong> means DevExpress will
                 lose content or refuse part of the file; a{' '}
                 <strong className="font-semibold text-on-surface">warning</strong> means it will print differently
-                from how it looks. The REPX view lists them under a count, and a reply after a change says how many
-                the checks found.
+                from how it looks. The REPX view lists them under a count, and a reply after a change says what it
+                left to fix.
               </p>
+              {/* The errors the waves added (2026-11-11, the re-audit's R4-11;
+                  lib/repxAudit.ts): code in the report, an expression that
+                  cannot be read, margins or a page size with a fraction, and a
+                  group on a field the data does not have. */}
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="Errors">
                   A file that stops before its end; a reused <code className="doc-code">Ref</code>, which makes the
                   designer drop content without a word; a total with no running scope, which prints blank; a detail
                   report with no Detail band; a calculated field with no expression or a duplicate name; a cross-tab
-                  with no layout; a formatting rule that points at nothing.
+                  with no layout; a formatting rule that points at nothing; code that runs when the report is
+                  previewed (Forma never writes any); an expression DevExpress cannot read; margins or a custom page
+                  size written with a fraction, which DevExpress drops; a group or sort on a field the data does not
+                  have, once the data&apos;s fields are known.
                 </Def>
                 <Def t="Layout">
                   Controls that overlap, leave the page or fall below their band; a band taller than the page; a
@@ -1138,7 +1178,9 @@ report.ExportToPdf("report.pdf");`}
                 </Def>
                 <Def t="Data">
                   A parameter used but not declared, or declared and unused; a group with no fields; a sort on the
-                  wrong band; a chart with no series; a subreport with no source.
+                  wrong band; a chart with no series; a subreport with no source; a field an expression names that
+                  the data does not have; an expression typed as plain text, which prints its brackets; a field
+                  named after the report&apos;s words rather than its data.
                 </Def>
                 <Def t="Accessibility">
                   Text too small, contrast too low, a picture with no description: the three checks DevExpress's
@@ -1167,10 +1209,26 @@ report.ExportToPdf("report.pdf");`}
 
               <h3 className={H3}>What happens when you choose it</h3>
               <p className={`mt-2 ${PROSE}`}>
-                Forma asks Forma Designer on your PC whether it is there, and only then. On the website your
-                browser asks the first time whether this site may reach apps on your device: allow it. If Forma
-                Designer is installed but not running, Forma asks Windows to start it; if your browser asks to open
-                Forma Designer, choose Open. Then the report opens in the designer.
+                Forma asks Forma Designer on your PC whether it is there; until you choose it, nothing on the page
+                asks Forma Designer anything, unless you run Forma on your own PC and ask it to read your SQL
+                Server. On the website your browser asks the first time whether this site may reach apps
+                on your device: allow it. If Forma Designer is installed but not running, Forma asks Windows to
+                start it; if your browser asks to open Forma Designer, choose Open. Then the report opens in the
+                designer.
+              </p>
+              {/* Said since 2026-11-11 (the re-audit's R4-02): once Forma Designer
+                  has answered in a tab, each new report is put through it
+                  (lib/designerBridge.ts, inspectInDesigner), which "and only
+                  then" no longer covered. The privacy policy says the same.
+                  "Answered", not "opened a report": designerAnswered() turns
+                  true when /health answers in the dialog, before /open is sent
+                  and whether or not it succeeds (the review of 2026-11-11). */}
+              <p className={`mt-4 ${PROSE}`}>
+                Once Forma Designer has answered in a tab, which it does when you choose Open in designer while it is
+                running, whether or not the report then opens, Forma also hands it each new report you make in the
+                same tab, with the rows read off your page, if your copy of Forma Designer can take them, to ask how
+                DevExpress loads and prints it; what it finds is listed in the REPX view. It all stays on your
+                computer.
               </p>
 
               <h3 className={H3}>If something is missing</h3>
@@ -1250,7 +1308,8 @@ report.ExportToPdf("report.pdf");`}
                   a message is sent. Save above the report saves at once.
                 </Def>
                 <Def t="Signed in">
-                  Projects are saved to your account and appear on every device you sign in from.
+                  Projects are saved to your account and appear on every device you sign in from. An account
+                  keeps up to 1,000 projects; delete one to save another.
                 </Def>
                 <Def t="Signed out">
                   Projects stay in this browser. Reload the page and they are still there — they simply do not
@@ -1322,10 +1381,25 @@ report.ExportToPdf("report.pdf");`}
                   Settings → Memory lists every memory, with a switch to pause it, Edit and Forget; Remember adds
                   one by hand.
                 </Def>
+                {/* Said as the code does it since 2026-11-11 (the re-audit's
+                    R4-01, lib/learningLoop.ts): on unless turned off, kept
+                    reports join the library, the nearest goes with a first
+                    report, and repeated changes become memories. */}
                 <Def t="Learning your style">
-                  With <em className="not-italic text-on-surface">Learn the style of reports I keep</em> on, a
-                  report you export or save counts as kept, and from two of them Forma learns your house style.
-                  The newest thirty are kept; Forget kept reports and Forget everything ask before they act.
+                  With <em className="not-italic text-on-surface">Learn the style of reports I keep</em> on, which
+                  it is unless you turn it off in Settings → Memory, a report you export, save or open in the
+                  designer counts as kept, and from two of them Forma learns your house style; the styles of the
+                  newest thirty are kept. A kept report also joins your report library in this browser, stripped as
+                  below, the newest twenty. When you ask for a first report while the box&apos;s house style is on,
+                  the kept report most like it goes to the AI with your request, every word in it replaced, as
+                  formatting to follow. Forget kept reports and Forget everything ask before they act, and take
+                  them out of the library too.
+                </Def>
+                <Def t="Learned from your changes">
+                  With the same switch on, Forma counts what you change in the reports it made: a font, a size,
+                  bold, an alignment, a colour or a margin, and the value you gave it, never a word of the report.
+                  The same change made twice becomes a memory, listed in Settings → Memory under Learned from your
+                  changes with a switch and Forget; undoing what Forma did counts against it.
                 </Def>
                 {/* Learning is on by default, so it is documented where a
                     visitor and the chat's Docs knowledge look (2026-11-11, the
@@ -1346,11 +1420,12 @@ report.ExportToPdf("report.pdf");`}
               <h3 className={H3}>The report library</h3>
               <p className={`mt-2 ${PROSE}`}>
                 <strong className="font-semibold text-on-surface">Report library</strong> in the sidebar holds
-                reports you have already published, so Forma can match their formatting. Add .repx files, several
-                at once; before anything is stored, every text, name, field, data source, expression and link in
-                them is replaced, keeping only positions, fonts, colours and formats. A report is used only once
-                you tick it as house style — nothing is used until you do. The library lives in this browser, and
-                adding to it uses your Gemini key.
+                reports whose formatting Forma can match: the ones you add, and the ones you keep. Add .repx files,
+                several at once; before anything is stored, every text, name, field, data source, expression and
+                link in them is replaced, keeping only positions, fonts, colours and formats, and a report you keep
+                is stripped the same way. A report you add is used only once you tick it as house style; a report
+                you keep is marked You kept this and needs no tick. Remove takes either out. The library lives in
+                this browser; adding a report to it uses your Gemini key, and keeping one does not.
               </p>
             </Article>
 
@@ -1368,10 +1443,14 @@ report.ExportToPdf("report.pdf");`}
                   requests turn a slow success into a fast 429; a key whose quota allows it can run two or
                   three at once.
                 </Def>
+                <Def t="Each made as one report is">
+                  Every file is made the way a single report is: its pages read, its paper, unit and direction
+                  worked out from it, and the language or anything else your words ask for carried out.
+                </Def>
                 <Def t="A verdict per row">
-                  Each finished row carries the structural audit's answer in the same words the REPX pane
-                  uses — clean, N warnings, or N errors and content will be lost — because the point of
-                  running forty files is knowing which of the forty are worth opening.
+                  Each finished row says whether the report came out clean or what is still wrong with it, as
+                  the REPX view would, because the point of running forty files is knowing which of the forty are
+                  worth opening.
                 </Def>
                 <Def t="Stop and retry">
                   Stop cancels what has not started and leaves the request already in flight alone, since it
@@ -1387,7 +1466,8 @@ report.ExportToPdf("report.pdf");`}
               </dl>
               <Note label="Files or a folder">
                 Choose files, as many as you like, or a folder, or drop a folder onto the panel: every report
-                in it is queued with its path.
+                in it is queued with its path. Files handed over while a batch runs are added to it, not put in
+                its place.
               </Note>
             </Article>
 

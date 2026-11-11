@@ -100,7 +100,8 @@ export const SECURITY: InfoDoc = {
             learning events it shares; the operator reads those to improve Forma. A shared report
             is a copy, readable by the people you add once they sign in with that address verified, or by anyone with
             the link if you choose it; making one needs a verified address and a project of your own, and an account can
-            share up to {MAX_SHARES}. The rules are tested against Google’s emulator on every change.
+            share up to {MAX_SHARES}. An account keeps up to 1,000 projects and sends at most 300 learning events a day,
+            so one account cannot fill the database. The rules are tested against Google’s emulator on every change.
           </p>
         </>
       ),
@@ -334,8 +335,8 @@ export const COMPARE: InfoDoc = {
           <li><span className={STRONG}>Free, and in a browser.</span> No subscription and nothing to install; a free Gemini key, a local AI or OpenRouter’s free models.</li>
           <li><span className={STRONG}>Works with the version you have.</span> The .repx Forma writes opens in the DevExpress designer a team already has, back to 20.1, where it was measured; DevExpress’s own AI needs a current subscription.</li>
           <li><span className={STRONG}>Reads a picture without a cloud account.</span> The words on a scan or a photo are read in your browser, with no document service to sign up for; with a local AI, nothing leaves your computer at all.</li>
-          <li><span className={STRONG}>From what you already have.</span> A screenshot, a scan, a PDF or a .repx, read with OCR in your browser, as well as a description.</li>
-          <li><span className={STRONG}>Checked as DevExpress prints.</span> A Preview that pages the report as DevExpress does, exports, and an audit for what the designer would drop.</li>
+          <li><span className={STRONG}>From what you already have.</span> A screenshot, a scan, a PDF, a .repx, an SSRS report (.rdl, .rdlc) or a FastReport one (.frx), or a Word or Excel template, read in your browser, as well as a description.</li>
+          <li><span className={STRONG}>Checked as DevExpress prints.</span> A Preview that pages the report as DevExpress does, with the page you brought drawn under it to compare, exports, and a list of what the designer would drop.</li>
           <li><span className={STRONG}>Your SQL Server database without a connection.</span> DevExpress’s Data Source Wizard connects to the server; Forma reads its layout from a read-only script you run, writes DevExpress’s own SQL data source by connection name, and checks a report against a newer export. <a href="/docs#sql" className={A}>How</a></li>
           <li><span className={STRONG}>Not a designer.</span> Forma writes the .repx; DevExpress’s designer is still where a report is finished, and its subscription is still what runs it in your application.</li>
         </ul>
@@ -353,9 +354,12 @@ export const COMPARE: InfoDoc = {
             <a href="https://github.com/DevExpress/Reporting.Import" className={A} {...ext}>DevExpress/Reporting.Import on GitHub</a>
           </p>
           <p className={P}>
-            The two fit together: convert with Reporting.Import, then bring the .repx to Forma to tidy it, check it in
-            the Preview and the audit, and ask for what the conversion missed. For a report you only have as paper or a
-            PDF, Forma alone is the way in, and <a href="/docs#batch" className={A}>Batch</a> takes a whole folder.
+            Forma opens RDL and RDLC reports itself, and FastReport’s .frx too: bring the file and it becomes a
+            DevExpress report in your browser, ready to check in the Preview and to ask for what did not come across.
+            A Crystal Reports file needs Crystal’s runtime, which a browser does not have, so convert it with
+            Reporting.Import and bring the .repx, or export it from Crystal Reports as a PDF. For a report you only have
+            as paper or a PDF, Forma alone is the way in, and <a href="/docs#batch" className={A}>Batch</a> takes a
+            whole folder.
           </p>
         </>
       ),
@@ -393,7 +397,11 @@ export const ABOUT: InfoDoc = {
         <>
           <ul className={UL}>
             <li>React, Vite, Tailwind CSS and Motion for the app; Firebase for sign-in and saved projects.</li>
-            <li>PaddleOCR's PP-OCRv5 models and Tesseract.js for OCR in your browser, on ONNX Runtime, pdf.js for PDFs, and Transformers.js for handwriting.</li>
+            {/* Handwriting ships only in a build made with --with-handwriting
+                (scripts/deploy.mjs), and whether the live one was is the owner's
+                open decision 27 (2026-11-11, the re-audit's R4-12): said with
+                its condition rather than dropped or claimed. */}
+            <li>PaddleOCR's PP-OCRv5 models and Tesseract.js for OCR in your browser, on ONNX Runtime, pdf.js for PDFs, and, where the site is built with it, Transformers.js for handwriting.</li>
             <li>Inter, Hanken Grotesk and JetBrains Mono for type, and the Liberation fonts inside PDF/A files, all under the SIL Open Font License.</li>
           </ul>
           <p className={P}>

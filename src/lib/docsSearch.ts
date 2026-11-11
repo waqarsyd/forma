@@ -32,9 +32,10 @@ export const DOCS_SECTIONS: ReadonlyArray<{ id: string; n: string; title: string
   { id: 'key', n: '02', title: 'Your API key', keys: 'key api gemini google studio session vault passphrase encrypt security storage' },
   { id: 'ai', n: '03', title: 'Choosing your AI', keys: 'ai provider model automatic gemini local ollama lm studio openrouter free offline private vision limit page reader chain' },
   { id: 'account', n: '04', title: 'Your account', keys: 'account sign in signup register google email password forgot reset sync devices optional verify delete' },
-  { id: 'upload', n: '05', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan ocr photo' },
-  { id: 'run', n: '06', title: 'Running and refining', keys: 'run generate working dots stop escape queue steer resume cancel read result specification mockup preview export refine change edit undo redo changed iterate conversation' },
-  { id: 'workspace', n: '07', title: 'The workspace', keys: 'workspace tour sidebar rail home starting points views panes conversation panel thread search tools house style main menu reply project menu rename duplicate archive delete pin command menu clean screen zoom' },
+  // What the waves built is findable by the words a person uses for it (2026-11-11, the re-audit's R4-04).
+  { id: 'upload', n: '05', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan ocr photo rdl rdlc ssrs reporting services frx fastreport rpt crystal import convert template word excel docx xlsx straighten crooked sideways' },
+  { id: 'run', n: '06', title: 'Running and refining', keys: 'run generate working dots stop escape queue steer resume cancel read result specification mockup preview export refine change edit undo redo changed iterate conversation translate language languages bilingual zip print rows' },
+  { id: 'workspace', n: '07', title: 'The workspace', keys: 'workspace tour sidebar rail home starting points views panes conversation panel thread search tools house style main menu reply project menu rename duplicate archive delete pin command menu clean screen zoom compare original overlay' },
   { id: 'data', n: '08', title: 'Data and binding', keys: 'data tab bind binding fields schema json csv create table map columns expression prompt-to-expression test data rows sample' },
   { id: 'sql', n: '09', title: 'Your SQL Server data', keys: 'sql server database ssms script layout schema sample rows connection name connectionstrings app.config stored procedure query join filter parameter lookup drift renamed column share ai never connects' },
   // xrchart and xrgauge are searchable because both are now written into the
@@ -45,10 +46,10 @@ export const DOCS_SECTIONS: ReadonlyArray<{ id: string; n: string; title: string
   { id: 'repx', n: '11', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download audit warnings errors checks accessibility' },
   { id: 'designer', n: '12', title: 'Open in the DevExpress designer', keys: 'designer devexpress open in designer forma designer download windows install tray trial apps on device blocked local network smartscreen uninstall' },
   { id: 'config', n: '13', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
-  { id: 'saving', n: '14', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
+  { id: 'saving', n: '14', title: 'Saving your work', keys: 'save saved projects account cloud browser storage sign out history limit how many' },
   { id: 'share', n: '15', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
   // 'learning learn train switch' since 2026-11-11 (the full audit's PS-06): the Learning section is described here.
-  { id: 'memory', n: '16', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting learning train switch' },
+  { id: 'memory', n: '16', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting learning train switch learned changes preferences' },
   /* Batch and Revisions are two of the five rail panels and both shipped on
      2026-09-05, and neither appeared anywhere on this page or on Features
      until 2026-09-08 — on a page whose sibling is titled "Everything it does".

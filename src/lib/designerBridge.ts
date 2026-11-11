@@ -14,6 +14,15 @@
  * public Terms, which is why a stale comment here is worth correcting rather
  * than tidying.
  *
+ * **One exception since 2026-11-11 (CC-10):** once Forma Designer has answered
+ * /health in this page and said it answers /inspect, each new report is put
+ * through it, with the page's records (`inspectInDesigner`, below). Nothing is
+ * asked before the dialog has been used, but "only when it is clicked" no
+ * longer holds after it, and the Terms, the privacy policy and the Docs had
+ * gone on saying "only then" (the re-audit's R4-02). They say it now
+ * (LegalPage.tsx, DocsPage.tsx's designer article, legalDisclosure.test.ts),
+ * so a change to when this module reaches 127.0.0.1 is a change to them.
+ *
  * Export .repx remains the path that needs none of this, which is the actual
  * degradation guarantee: a Windows-and-DevExpress-only convenience bolted onto
  * a browser app that must keep working without it.
@@ -476,7 +485,10 @@ export function designerStep(f: DesignerFacts): DesignerStep {
  * fill the console of everyone without it with refused connections (the
  * probe removed on 2026-11-09, above) and could put the browser's
  * question about reaching apps on the PC in front of someone who never
- * started Forma Designer.
+ * started Forma Designer. The public copy says the same, in plain words:
+ * after one Open in designer, each new report and the page's records go to
+ * Forma Designer on the PC, and nowhere else (the re-audit's R4-02, the
+ * header above).
  * ------------------------------------------------------------------ */
 
 /** Whether Forma Designer has answered in this page. */
