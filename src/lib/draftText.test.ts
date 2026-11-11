@@ -169,6 +169,14 @@ describe('what the AI writes back', () => {
     expect(controlCount(back.skeleton)).toBe(1);
     expect(textToDraft('band Detail 20 0').skeleton).toBeNull();
   });
+
+  // The full audit (2026-11-11, PL-25): a page line the AI wrote loosely still carries the draft.
+  it('reads a page line written loosely rather than throwing the answer away', () => {
+    const back = textToDraft('page Tabloid Portrait 1100 1700 50 50\nband Detail 20 0\nlabel title 0 0 100 20 Arial:9 l 0 5 "Hello"');
+    expect(back.problems).toEqual([]);
+    expect(back.skeleton).toMatchObject({ paper: 'Custom', landscape: false, width: 1100, height: 1700, margins: { top: 50, bottom: 50, left: 0, right: 0 } });
+    expect(controlCount(back.skeleton)).toBe(1);
+  });
 });
 
 describe('the report built from a corrected draft', () => {

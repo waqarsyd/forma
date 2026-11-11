@@ -22,6 +22,7 @@ import {
   pixelBoxToUnits,
   pageForImage,
   imageDpi,
+  convertReportUnit,
 } from './reportGeometry';
 
 /**
@@ -406,5 +407,51 @@ describe('placing a page image on the report page', () => {
     expect(placeImage({ width: 1500, height: 900, dpi: null }, page, 'HundredthsOfAnInch')).toEqual({ unitsPerPixel: 727 / 1500, left: 50, top: 50 });
     // Without the page's height there is nothing to compare, and it is fitted as before.
     expect(placeImage({ width: 1654, height: 2338, dpi: null }, { width: 827, margins }, 'HundredthsOfAnInch').left).toBe(50);
+  });
+});
+
+// The full audit (2026-11-11, PL-12): Forma's draft, in hundredths, written in the unit asked for.
+describe('convertReportUnit', () => {
+  const report = `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Ref="0" ControlType="XtraReport" Name="r" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Font="Arial, 9pt">
+  <Bands>
+    <Item1 Ref="1" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="100">
+      <Controls>
+        <Item1 Ref="2" ControlType="XRLabel" Name="title" Text="Total 250, 10" LocationFloat="10,20.5" SizeF="300,40" Font="Arial, 18pt, style=Bold" BorderWidth="2" Padding="2,2,0,0,100" />
+      </Controls>
+    </Item1>
+    <Item2 Ref="3" ControlType="DetailBand" Name="Detail" HeightF="25" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+
+  it('rescales the geometry into tenths of a millimetre and names the unit', () => {
+    const mm = convertReportUnit(report, 'HundredthsOfAnInch', 'TenthsOfAMillimeter');
+    expect(mm).toContain('ReportUnit="TenthsOfAMillimeter"');
+    expect(mm).toContain('Margins="127, 127, 101.6, 101.6"');
+    expect(mm).toContain('PageWidth="2159" PageHeight="2794"');
+    expect(mm).toContain('HeightF="254"');
+    expect(mm).toContain('LocationFloat="25.4,52.07" SizeF="762,101.6"');
+    expect(mm).toContain('HeightF="63.5"');
+  });
+
+  it('leaves fonts, border widths, padding and text alone', () => {
+    const mm = convertReportUnit(report, 'HundredthsOfAnInch', 'TenthsOfAMillimeter');
+    expect(mm).toContain('Font="Arial, 18pt, style=Bold" BorderWidth="2" Padding="2,2,0,0,100"');
+    expect(mm).toContain('Text="Total 250, 10"');
+    expect(mm).toContain('Font="Arial, 9pt"');
+  });
+
+  it('comes back to the same numbers, and changes nothing between equal units', () => {
+    const back = convertReportUnit(convertReportUnit(report, 'HundredthsOfAnInch', 'TenthsOfAMillimeter'), 'TenthsOfAMillimeter', 'HundredthsOfAnInch');
+    expect(back).toBe(report);
+    expect(convertReportUnit(report, 'HundredthsOfAnInch', 'HundredthsOfAnInch')).toBe(report);
+    expect(convertReportUnit(report, 'HundredthsOfAnInch', 'Pixels')).toContain('PageWidth="816" PageHeight="1056"');
+  });
+
+  it('reads an element at its own Dpi and drops it, for repairDpi to write the new one', () => {
+    const at254 = '<XtraReportsLayoutSerializer Ref="0" ReportUnit="TenthsOfAMillimeter"><Item1 Ref="1" ControlType="XRLabel" Dpi="254" LocationFloat="254,0" SizeF="508,50.8" /></XtraReportsLayoutSerializer>';
+    expect(convertReportUnit(at254, 'TenthsOfAMillimeter', 'HundredthsOfAnInch')).toBe(
+      '<XtraReportsLayoutSerializer Ref="0" ReportUnit="HundredthsOfAnInch"><Item1 Ref="1" ControlType="XRLabel" LocationFloat="100,0" SizeF="200,20" /></XtraReportsLayoutSerializer>',
+    );
   });
 });

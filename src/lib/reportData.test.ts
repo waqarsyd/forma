@@ -7,8 +7,12 @@
  * layout tests check end to end.
  */
 import { describe, it, expect } from 'vitest';
-import { ReportData, expandMultiValue, groupRuns, sortCompare, sortedOrder, typeRows, type TextData, type TextScope } from './reportData';
-import { valueText } from './criteria';
+import { ReportData, aggregate, expandMultiValue, groupRuns, plainNumber, sortCompare, sortedOrder, typeRows, type TextData, type TextScope } from './reportData';
+import { parseCriteria, valueText, type Node } from './criteria';
+import { formatComposite } from './netFormat';
+
+/** An aggregate's argument, as the renderer parses it. */
+const parseArgs = (expression: string): Node[] => [parseCriteria(expression) as Node];
 
 type Spec = [name: string, expression: string, x: number, y: number, running?: string, format?: string];
 const SPEC: Record<string, Spec[]> = {
@@ -335,5 +339,37 @@ describe('rows typed from a database and filtered by a list', () => {
     expect(kept.records.map((r) => r.Region)).toEqual(['West', 'South']);
     expect(kept.originOf(0)).toBe(rows[2]);
     expect(kept.originOf(5)).toBeNull();
+  });
+});
+
+/*
+ * Test rows that came formatted (2026-11-11, the full audit, PX-04): one
+ * "1,240.50" made its column text, and every footer total printed NaN.
+ */
+describe('formatted numbers in test rows', () => {
+  const env = () => null;
+  const total = (values: string[]) => {
+    const rows = typeRows(values.map((Amount) => ({ Amount })));
+    return aggregate('sumsum', parseArgs('[Amount]'), rows, rows.length - 1, env);
+  };
+
+  it('reads thousands separators and a currency sign as the number', () => {
+    expect(plainNumber('1,240.50')).toBe('1240.50');
+    expect(plainNumber('$12.00')).toBe('12.00');
+    expect(plainNumber('-€1,000')).toBe('-1000');
+    expect(plainNumber('12,5')).toBe('12,5');
+    expect(plainNumber('ACME-1,000')).toBe('ACME-1,000');
+    expect(formatComposite('{0:c2}', [total(['1,240.50', '$12.00'])])).toBe('$1,252.50');
+    expect(formatComposite('{0:c2}', [total(['$1,240.50', '$12.00'])])).toBe('$1,252.50');
+  });
+
+  it('prints a blank total, never NaN, over a value that is not a number', () => {
+    const t = total(['12.00', 'n/a']);
+    expect(t).toBeNull();
+    const rows = typeRows([{ Amount: '12.00' }, { Amount: 'n/a' }]);
+    expect(aggregate('sumavg', parseArgs('[Amount]'), rows, 1, env)).toBeNull();
+    for (const name of ['sumsum', 'sumavg', 'sumdsum', 'sumdavg', 'summedian']) {
+      expect(String(valueText(aggregate(name, parseArgs('[Amount]'), rows, 1, env)))).not.toContain('NaN');
+    }
   });
 });

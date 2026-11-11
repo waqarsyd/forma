@@ -37,7 +37,24 @@ const DECIMAL = /^-?\d*\.?\d+$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?$/;
 const BOOL = /^(true|false)$/i;
 
-function columnType(values: string[]): ColumnType {
+/**
+ * A number written as it prints: thousands separators, a currency sign, or
+ * both (2026-11-11, the full audit, PX-04). The test-data prompt asked for
+ * values "formatted as it would print" until then, and one "1,240.50" made
+ * its column text, so every footer total over it printed NaN. The prompt now
+ * asks for plain numbers; this reads the ones that still come formatted.
+ */
+const FORMATTED_NUMBER = /^(-)?[$€£¥₹]?\s?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?$/;
+
+/** The plain number a formatted one stands for ("$1,240.50" is "1240.50"); anything else as it was. */
+export function plainNumber(text: string): string {
+  const t = text.trim();
+  const m = FORMATTED_NUMBER.exec(t);
+  return m ? `${m[1] ?? ''}${m[2].replace(/,/g, '')}${m[3] ?? ''}` : t;
+}
+
+function columnType(raw: string[]): ColumnType {
+  const values = raw.map(plainNumber);
   const present = values.map((v) => v.trim()).filter(Boolean);
   if (!present.length) return 'string';
   if (present.every((v) => INT.test(v) && Math.abs(Number(v)) <= 2 ** 31)) return 'int';
@@ -54,8 +71,10 @@ function atScale(text: string, scale: number): string {
   return scale ? `${m[1]}${m[2] || '0'}.${(m[3] ?? '').padEnd(scale, '0')}` : `${m[1]}${m[2] || '0'}`;
 }
 
-function typed(text: string | undefined, type: ColumnType): Value {
-  if (text === undefined || text.trim() === '') return null;
+function typed(raw: string | undefined, type: ColumnType): Value {
+  if (raw === undefined || raw.trim() === '') return null;
+  // A numeric column reads "$1,240.50" as 1240.50 (PX-04); any other keeps its text.
+  const text = type === 'int' || type === 'decimal' || type === 'double' || type.startsWith('decimal:') ? plainNumber(raw) : raw;
   if (type.startsWith('decimal:')) return NetDecimal.parse(atScale(text, Number(type.slice(8))));
   switch (type) {
     // A hinted column can still hold a value of another shape; it is read as what it looks like.
@@ -147,10 +166,17 @@ export function rowEnv(row: TypedRow | null, params: (name: string) => Value, ag
 const isInt = (v: Value): v is bigint => typeof v === 'bigint';
 const isDec = (v: Value): v is NetDecimal => v instanceof NetDecimal;
 
-/** Sum in the values' own type: integers stay integers, any decimal makes a decimal. */
+const isNumeric = (v: Value) => isInt(v) || isDec(v) || (typeof v === 'number' && Number.isFinite(v));
+
+/**
+ * Sum in the values' own type: integers stay integers, any decimal makes a
+ * decimal. A value that is not a number makes the sum null, which prints
+ * blank, never NaN (2026-11-11, the full audit, PX-04).
+ */
 function sum(values: Value[]): Value {
   const nums = values.filter((v) => v !== null);
   if (!nums.length) return null;
+  if (!nums.every(isNumeric)) return null;
   if (nums.every(isInt)) return (nums as bigint[]).reduce((a, b) => a + b, 0n);
   if (nums.every((v) => isInt(v) || isDec(v))) {
     return nums.reduce<NetDecimal>((a, b) => a.add(isDec(b) ? b : NetDecimal.fromInt(b as bigint)), new NetDecimal(0n, 0));
@@ -163,6 +189,7 @@ function average(values: Value[]): Value {
   const nums = values.filter((v) => v !== null);
   if (!nums.length) return null;
   const total = sum(nums);
+  if (total === null) return null;
   if (isInt(total)) return NetDecimal.fromInt(total).div(NetDecimal.fromInt(BigInt(nums.length)));
   if (isDec(total)) return total.div(NetDecimal.fromInt(BigInt(nums.length)));
   return toNumber(total) / nums.length;

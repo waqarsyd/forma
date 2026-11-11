@@ -4,7 +4,7 @@
  * REPX, and when that is little enough to ask the AI once more.
  */
 import { describe, expect, it } from 'vitest';
-import { captionsOfDraft, comparable, missedNote, readCoverage, worthAnotherTry } from './readCoverage';
+import { captionsOfDraft, comparable, editDistance, missedNote, readCoverage, worthAnotherTry } from './readCoverage';
 
 const DRAFT = [
   'page Letter portrait 850 1100 75 75 75 75',
@@ -67,10 +67,27 @@ describe('what the report kept', () => {
     expect(c.missing).toEqual(['Description', 'Unit Price', 'Total Due']);
   });
 
-  it('matches whole words, so a caption is not found inside a longer one', () => {
+  it('matches whole words, so a short caption is not found inside a longer one', () => {
     expect(comparable('  Unit-Price: ')).toBe('unit price');
-    const c = readCoverage([{ text: 'Price', band: 'Detail' }], repx(`<Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="20"><Controls>${label(1, 'Prices')}</Controls></Item1>`));
+    const c = readCoverage([{ text: 'Rate', band: 'Detail' }], repx(`<Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="20"><Controls>${label(1, 'Rates')}</Controls></Item1>`));
     expect(c.kept).toBe(0);
+  });
+
+  // The full audit (2026-11-11, PL-09): the AI correcting OCR is not leaving the caption out.
+  it('forgives a misread character in eight, so a correction of OCR still counts as kept', () => {
+    const read = [
+      { text: 'lnvoice Number', band: 'ReportHeader' as const },
+      { text: 'Tota1 Due', band: 'ReportFooter' as const },
+      { text: 'Customer', band: 'ReportHeader' as const },
+      { text: 'Balance', band: 'ReportFooter' as const },
+    ];
+    const c = readCoverage(read, repx(`<Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="60"><Controls>${label(1, 'Invoice Number:')}${label(2, 'Customer')}</Controls></Item1>
+      <Item2 Ref="3" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="40"><Controls>${label(3, 'Total Due')}${label(4, 'Amount paid')}</Controls></Item2>`));
+    expect(c.kept).toBe(3);
+    expect(c.missing).toEqual(['Balance']);
+    expect(worthAnotherTry(c)).toBe(false);
+    expect(editDistance('lnvoice number', 'invoice number')).toBe(1);
+    expect(editDistance('kitten', 'sitting', 1)).toBe(2);
   });
 });
 

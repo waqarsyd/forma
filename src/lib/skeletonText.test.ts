@@ -7,6 +7,7 @@ import {
   fontToken,
   perturbSkeleton,
   publicFontsOnly,
+  readPage,
   scorePlaces,
   scoreSkeleton,
   skeletonToText,
@@ -328,5 +329,31 @@ describe('publicFontsOnly and strayWords', () => {
 
   it('passes the text of an ordinary skeleton', () => {
     expect(strayWords(skeletonToText(skeleton))).toEqual([]);
+  });
+});
+
+// The full audit (2026-11-11, PL-25): one unexpected word no longer throws the corrected draft away.
+describe('a page line read tolerantly', () => {
+  const tokens = (line: string) => line.split(/\s+/);
+
+  it('reads the line as written', () => {
+    expect(readPage(tokens('page A4 portrait 827 1169 50 50 40 40'))).toEqual({ paper: 'A4', landscape: false, width: 827, height: 1169, margins: { top: 50, bottom: 50, left: 40, right: 40 } });
+  });
+
+  it('reads the orientation and the paper in any case, and a paper it does not list as Custom', () => {
+    expect(readPage(tokens('page letter Landscape 1100 850 75 75 75 75'))).toMatchObject({ paper: 'Letter', landscape: true });
+    expect(readPage(tokens('page Tabloid PORTRAIT 1100 1700 50 50 50 50'))).toMatchObject({ paper: 'Custom', landscape: false, width: 1100, height: 1700 });
+  });
+
+  it('takes margins left off the end as 0', () => {
+    expect(readPage(tokens('page Letter portrait 850 1100 75 60'))?.margins).toEqual({ top: 75, bottom: 60, left: 0, right: 0 });
+    expect(readPage(tokens('page Letter portrait 850 1100 75 60 50'))?.margins).toEqual({ top: 75, bottom: 60, left: 50, right: 0 });
+  });
+
+  it('still refuses a line with no orientation, no size, or words for numbers', () => {
+    expect(readPage(tokens('page Letter 850 1100 75 75 75 75'))).toBeNull();
+    expect(readPage(tokens('page Letter portrait 850 1100'))).toBeNull();
+    expect(readPage(tokens('page Letter portrait 850 tall 75 75 75 75'))).toBeNull();
+    expect(readPage(tokens('band Letter portrait 850 1100 75 75 75 75'))).toBeNull();
   });
 });

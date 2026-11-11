@@ -210,6 +210,53 @@ export function pageSizeInUnits(pageSize?: string, reportUnit?: string): PageSiz
   return { width: Math.round(inches.w * per), height: Math.round(inches.h * per) };
 }
 
+/** The geometry attributes `convertReportUnit` rescales: each a list of numbers in the report's unit. */
+const GEOMETRY_ATTRIBUTES = ['LocationFloat', 'SizeF', 'HeightF', 'Margins', 'PageWidth', 'PageHeight'];
+
+/**
+ * A finished REPX rewritten from one report unit to another (2026-11-11, the
+ * full audit, PL-12).
+ *
+ * Forma's own builder writes hundredths of an inch, so until then the draft
+ * path -- Forma drafts, the AI corrects, at a fifth of the tokens -- ran only
+ * for reports in that unit, and a user whose reports are in tenths of a
+ * millimetre, most of the metric world, never had it. The draft is still built
+ * in hundredths; this turns the file it becomes into the unit asked for.
+ *
+ * Rescaled: `LocationFloat`, `SizeF`, `HeightF`, `Margins`, `PageWidth` and
+ * `PageHeight`, every number in each. Not the font sizes, which are points
+ * whatever the unit, nor `BorderWidth`, which is pixels, nor `Padding`, which
+ * carries its own Dpi as its fifth number. Each element is read at its own
+ * `Dpi` when it has one, as DevExpress reads it, and that `Dpi` is dropped:
+ * `repairDpi` writes the target unit's on exactly the elements that need it,
+ * so the conversion runs before the repairs. `ReportUnit` names the new unit.
+ */
+export function convertReportUnit(xml: string, from: string, to: string): string {
+  const fromUnit = resolveReportUnit(from);
+  const toUnit = resolveReportUnit(to);
+  if (fromUnit === toUnit) return xml;
+  const source = unitsPerInch(fromUnit);
+  const target = unitsPerInch(toUnit);
+  const round = (v: number) => String(Math.round(v * 100) / 100);
+  const converted = xml.replace(/<([A-Za-z_][\w.:-]*)(\s[^<>]*?)?(\/?)>/g, (whole, name: string, attrs: string | undefined, close: string) => {
+    if (!attrs || !/\s(LocationFloat|SizeF|HeightF|Margins|PageWidth|PageHeight|Dpi|ReportUnit)="/.test(attrs)) return whole;
+    const dpi = Number(/\sDpi="([\d.]+)"/.exec(attrs)?.[1]);
+    const scale = target / (Number.isFinite(dpi) && dpi > 0 ? dpi : source);
+    let out = attrs.replace(/\sDpi="[^"]*"/, '');
+    for (const attribute of GEOMETRY_ATTRIBUTES) {
+      out = out.replace(new RegExp(`(\\s${attribute}=")([^"]*)(")`), (_m, open: string, value: string, end: string) =>
+        open + value.replace(/-?\d+(?:\.\d+)?/g, (n) => round(Number(n) * scale)) + end,
+      );
+    }
+    out = out.replace(/(\sReportUnit=")[^"]*(")/, (_m, open: string, end: string) => open + toUnit + end);
+    return `<${name}${out}${close}>`;
+  });
+  // The root names its unit; a file that left it out was in the default.
+  return /<XtraReportsLayoutSerializer\b[^>]*\sReportUnit="/.test(converted)
+    ? converted
+    : converted.replace(/<XtraReportsLayoutSerializer\b/, (open) => `${open} ReportUnit="${toUnit}"`);
+}
+
 /** A box in a page image, in its pixels: left, top, right and bottom. */
 export interface PixelBox {
   x0: number;

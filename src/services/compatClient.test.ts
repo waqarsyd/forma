@@ -6,8 +6,8 @@
  * error keeping the status the quota and overload checks read.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { compatClient, contextTooSmall, listModels, MIN_COMPAT_OUTPUT_TOKENS, refusesFormat, toJsonSchema, toMessages, type CompatEndpoint } from './compatClient';
-import { compatEndpoint } from './geminiService';
+import { compatClient, contextTooSmall, listModels, LOCAL_FIRST_BYTES_MS, MIN_COMPAT_OUTPUT_TOKENS, refusesFormat, STREAM_BETWEEN_PIECES_MS, STREAM_FIRST_BYTES_MS, toJsonSchema, toMessages, type CompatEndpoint } from './compatClient';
+import { compatEndpoint, isTruncatedStream } from './geminiService';
 
 const LOCAL: CompatEndpoint = { kind: 'local', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5vl:7b' };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -106,6 +106,49 @@ describe('compatClient', () => {
     ])));
     const stream = await compatClient(LOCAL).models.generateContentStream({ model: 'm', contents: 'q' });
     await expect((async () => { for await (const c of stream) void c; })()).rejects.toThrow(/spent its whole answer reasoning/);
+  });
+
+  // The full audit (2026-11-11, PL-16): a stream that stops arriving ends, as a stream that ended early.
+  it('ends a stream that says nothing for two minutes (ten for a local server), or for a minute between pieces', async () => {
+    vi.useFakeTimers();
+    try {
+      let cancelled = 0;
+      const silent = (first?: string) =>
+        new Response(new ReadableStream({
+          start(c) { if (first) c.enqueue(new TextEncoder().encode(`${first}\n\n`)); },
+          cancel() { cancelled++; },
+        }), { status: 200 });
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(silent()).mockResolvedValueOnce(silent()).mockResolvedValueOnce(silent('data: {"choices":[{"delta":{"content":"<?xml"}}]}')));
+      const OPENROUTER: CompatEndpoint = { kind: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'x:free' };
+
+      const never = await compatClient(OPENROUTER).models.generateContentStream({ model: 'm', contents: 'q' });
+      const first = (async () => { for await (const c of never) void c; })();
+      const firstFails = expect(first).rejects.toThrow(/network error: the answer stopped arriving for 120 seconds/);
+      await vi.advanceTimersByTimeAsync(STREAM_FIRST_BYTES_MS - 1);
+      await vi.advanceTimersByTimeAsync(1);
+      await firstFails;
+
+      // A local server loading a model and reading a long prompt has ten minutes.
+      let localDone = false;
+      const local = await compatClient(LOCAL).models.generateContentStream({ model: 'm', contents: 'q' });
+      const localRead = (async () => { for await (const c of local) void c; })().catch((e: Error) => { localDone = true; return e; });
+      await vi.advanceTimersByTimeAsync(STREAM_FIRST_BYTES_MS);
+      expect(localDone).toBe(false);
+      await vi.advanceTimersByTimeAsync(LOCAL_FIRST_BYTES_MS - STREAM_FIRST_BYTES_MS);
+      expect(((await localRead) as Error).message).toMatch(/stopped arriving for 600 seconds/);
+
+      const stalls = await compatClient(OPENROUTER).models.generateContentStream({ model: 'm', contents: 'q' });
+      const pieces: string[] = [];
+      const second = (async () => { for await (const c of stalls) pieces.push(c.text); })();
+      const secondFails = expect(second).rejects.toThrow(/stopped arriving for 60 seconds/);
+      await vi.advanceTimersByTimeAsync(STREAM_BETWEEN_PIECES_MS);
+      await secondFails;
+      expect(pieces).toEqual(['<?xml']);
+      expect(cancelled).toBe(3);
+      expect(isTruncatedStream(new Error('network error: the answer stopped arriving for 60 seconds'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Agent audit item 18: Ollama's small default context drops the head of the request.

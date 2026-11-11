@@ -113,14 +113,17 @@ describe('a first generation from a picture with Forma\'s draft', () => {
 });
 
 describe('when the draft is not used', () => {
-  it('designs as before for a refinement, or for a report in another unit than the builder writes', async () => {
-    const cases: Array<[ReportConfig, Parameters<typeof analyzeReportDesign>[3]]> = [
-      [config, { repxContent: REPX }],
-      [{ ...config, unit: 'TenthsOfAMillimeter' }, undefined],
+  // A report in another unit takes the draft since 2026-11-11 (the full audit, PL-12; geminiService.test.ts);
+  // an attached .repx does not, being the base the user asked to keep (PL-02a).
+  it('designs as before for a refinement, or with a .repx attached', async () => {
+    const attachedRepx = { text: `Existing DevExpress report (old.repx). Use this as the base structure and preserve it unless asked to change it:\n\n${REPX}` };
+    const cases: Array<[Parameters<typeof analyzeReportDesign>[1], Parameters<typeof analyzeReportDesign>[3]]> = [
+      [[picture], { repxContent: REPX }],
+      [[attachedRepx, picture], undefined],
     ];
-    for (const [c, previous] of cases) {
+    for (const [parts, previous] of cases) {
       const mock = stub(REPX);
-      const result = await analyzeReportDesign('', [picture], c, previous, undefined, undefined, { draft });
+      const result = await analyzeReportDesign('', parts, config, previous, undefined, undefined, { draft });
       expect(bodyOf(mock).contents[0].parts[0].text).toContain('DEVEXPRESS CHEAT SHEET');
       expect(result.fromDraft).toBeUndefined();
       vi.unstubAllGlobals();

@@ -206,13 +206,47 @@ function thoughtOnly(endpoint: CompatEndpoint): Error {
   );
 }
 
+/**
+ * How long a stream may say nothing (2026-11-11, the full audit, PL-16): two
+ * minutes for OpenRouter's first bytes, ten for a local server's, then one
+ * minute between pieces. A stalled connection or a server that hung showed
+ * the working dots for ever, and the user had to guess to press Stop. A local
+ * server writes nothing while it loads the model and reads the prompt, and a
+ * generation's prompt is some 13,000 tokens, minutes on a computer's own
+ * processor; once it writes, reasoning included, pieces come steadily. On
+ * expiry the read is cancelled and the stream fails with "network error",
+ * which geminiService's retry and fallback already take.
+ */
+export const STREAM_FIRST_BYTES_MS = 120_000;
+export const LOCAL_FIRST_BYTES_MS = 600_000;
+export const STREAM_BETWEEN_PIECES_MS = 60_000;
+
+/** One read of the body, or a stall error once `ms` pass without one. */
+async function readWithin(reader: ReadableStreamDefaultReader<Uint8Array>, ms: number): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      // Rejected before the cancel, which settles the pending read at once as done.
+      reject(new Error(`network error: the answer stopped arriving for ${Math.round(ms / 1000)} seconds`));
+      reader.cancel().catch(() => {});
+    }, ms);
+  });
+  try {
+    return await Promise.race([reader.read(), stalled]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The lines of a server-sent event stream, as they arrive. */
-async function* eventLines(res: Response): AsyncGenerator<string> {
+async function* eventLines(res: Response, firstMs: number): AsyncGenerator<string> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let wait = firstMs;
   for (;;) {
-    const { done, value } = await reader.read();
+    const { done, value } = await readWithin(reader, wait);
+    wait = STREAM_BETWEEN_PIECES_MS;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     let nl: number;
@@ -252,7 +286,7 @@ export function compatClient(endpoint: CompatEndpoint) {
         return (async function* () {
           let wrote = false;
           let thought = false;
-          for await (const line of eventLines(res)) {
+          for await (const line of eventLines(res, endpoint.kind === 'local' ? LOCAL_FIRST_BYTES_MS : STREAM_FIRST_BYTES_MS)) {
             if (!line.startsWith('data:')) continue;
             const data = line.slice(5).trim();
             if (data === '[DONE]') return;

@@ -11,7 +11,9 @@
  *
  * - **Kept** is the share of the draft's captions and titles found in the
  *   report's labels and cells, compared as letters and digits, case and
- *   punctuation aside, so "Total Due:" keeps "Total due".
+ *   punctuation aside, so "Total Due:" keeps "Total due", and since
+ *   2026-11-11 with one character in eight forgiven, so the AI correcting
+ *   OCR's "Tota1 Due" is not counted as leaving it out.
  * - **Same band** is the share of those found whose report band is the
  *   draft's; a page header and the top margin count as one, and a page footer
  *   and the bottom margin, since either prints at the page's edge.
@@ -69,6 +71,46 @@ export const comparable = (s: string) =>
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 
+/** Edits that turn `a` into `b`, stopping early once `limit` is passed. */
+export function editDistance(a: string, b: string, limit = Infinity): number {
+  if (Math.abs(a.length - b.length) > limit) return limit + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      best = Math.min(best, row[j]);
+    }
+    if (best > limit) return limit + 1;
+    prev = row;
+  }
+  return prev[b.length];
+}
+
+/**
+ * How far a report's words may be from Forma's reading and still be the same
+ * caption (2026-11-11, the full audit, PL-09). The reading is OCR's, and the
+ * AI is asked to correct it: "lnvoice Number" written as "Invoice Number" was
+ * counted missing, and the retry then told the AI to put the misreading back.
+ * One edit in eight characters, one at least, for a caption of five or more;
+ * a shorter one is matched exactly, so "Rate" is not found in "Rates".
+ */
+const tolerance = (want: string) => (want.length >= 5 ? Math.max(1, Math.floor(want.length / 8)) : 0);
+
+/** Whether `text` holds `want` as whole words, or as words within its tolerance of them. */
+function holds(text: string, want: string): boolean {
+  if (` ${text} `.includes(` ${want} `)) return true;
+  const allowed = tolerance(want);
+  if (!allowed) return false;
+  const words = text.split(' ');
+  const span = want.split(' ').length;
+  for (let i = 0; i + span <= words.length; i++) {
+    if (editDistance(words.slice(i, i + span).join(' '), want, allowed) <= allowed) return true;
+  }
+  return false;
+}
+
 /** Bands that print at the same edge of a page. */
 const SIDE: Partial<Record<string, string>> = { TopMargin: 'PageHeader', BottomMargin: 'PageFooter' };
 const side = (band: string) => SIDE[band] ?? band;
@@ -89,7 +131,7 @@ export function readCoverage(captions: readonly PageCaption[], repx: string): Re
   for (const caption of captions) {
     const want = comparable(caption.text);
     if (!want) continue;
-    const found = texts.filter((t) => ` ${t.text} `.includes(` ${want} `));
+    const found = texts.filter((t) => holds(t.text, want));
     if (!found.length) {
       missing.push(caption.text);
       continue;

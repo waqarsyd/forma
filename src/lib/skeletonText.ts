@@ -190,11 +190,24 @@ export function readCell(c: string[]): SkeletonCell | null {
   return { role: c[0] as SkeletonRole, weight: Number(c[1]), font, align: ALIGN_BACK[c[3]], chars: Number(c[4]) };
 }
 
-/** A page line's tokens as the skeleton's page, or null; shared with lib/draftText.ts. */
+/**
+ * A page line's tokens as the skeleton's page, or null; shared with
+ * lib/draftText.ts.
+ *
+ * Tolerant since 2026-11-11 (the full audit, PL-25), as a control line already
+ * was: the AI's corrected draft is read with this, and one unexpected word
+ * here threw the whole answer away for Forma's own draft. The orientation is
+ * read in any case, a paper this list does not name is Custom (its size is
+ * on the line), and a line that stops after two or three margins has the rest
+ * as 0.
+ */
 export function readPage(t: string[]): Omit<ReportSkeleton, 'bands'> | null {
-  if (t.length !== 9 || t[0] !== 'page' || !PAPERS.includes(t[1]) || (t[2] !== 'portrait' && t[2] !== 'landscape') || !t.slice(3).every(isNum)) return null;
-  const [w, h, top, bottom, left, right] = t.slice(3).map(Number);
-  return { paper: t[1], landscape: t[2] === 'landscape', width: w, height: h, margins: { top, bottom, left, right } };
+  if (t.length < 7 || t.length > 9 || t[0] !== 'page') return null;
+  const orientation = (t[2] ?? '').toLowerCase();
+  if ((orientation !== 'portrait' && orientation !== 'landscape') || !t.slice(3).every(isNum)) return null;
+  const paper = PAPERS.find((p) => p.toLowerCase() === t[1].toLowerCase()) ?? 'Custom';
+  const [w, h, top = 0, bottom = 0, left = 0, right = 0] = t.slice(3).map(Number);
+  return { paper, landscape: orientation === 'landscape', width: w, height: h, margins: { top, bottom, left, right } };
 }
 
 /** Whether a word is a band kind a skeleton names. */
