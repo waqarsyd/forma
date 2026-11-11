@@ -32,6 +32,9 @@ describe('HomeStart', () => {
     render(<HomeStart projects={[]} archived={[]} onOpen={vi.fn()} onAllProjects={vi.fn()} onPick={onPick} />);
     expect(screen.queryByRole('navigation')).toBeNull();
     expect(screen.getByRole('heading', { name: 'What report shall we make?' })).toBeTruthy();
+    // The box is at the foot of the left panel on a desktop, not below this (the full audit's WS-44).
+    expect(screen.getByText(/in the message box, or describe the report you want/)).toBeTruthy();
+    expect(screen.queryByText(/box below/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Sales by region/ }));
     expect(onPick).toHaveBeenCalledWith(STARTING_POINTS[2]);
   });

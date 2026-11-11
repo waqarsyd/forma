@@ -25,9 +25,44 @@
  * picker filters, and a file that produces no chunks is reported by name rather
  * than silently ignored — `Sample empt report..repx` in the real corpus is exactly
  * that case.
+ *
+ * ## It counts reports, not fragments
+ *
+ * What the panel says counts the files a person added, and says a file whose
+ * pieces are not all searchable yet is still being read (2026-11-11, the full
+ * audit's WS-24). "4 fragment(s) added · 2 still to embed" described the
+ * library's machinery, not the reports the person chose.
  */
 import { useCallback, useRef, useState } from 'react';
 import type { ImportResult, LibrarySource } from '../services/library';
+
+/** "1 report", "3 reports". */
+const reports = (n: number) => `${n} report${n === 1 ? '' : 's'}`;
+
+/**
+ * What an import says: the reports added, and those the library already held,
+ * by file name, since the import's own counts are of fragments.
+ */
+function importNotice(files: readonly string[], held: ReadonlySet<string>, result: Pick<ImportResult, 'empty' | 'added'>): string {
+  const read = files.filter((name) => !result.empty.includes(name));
+  const already = read.filter((name) => held.has(name)).length;
+  const added = read.length - already;
+  // The library keeps pieces by their content, not the file's name, so a held
+  // name whose content changed still adds pieces (2026-11-11, WS-24's review).
+  // When every name was held and something was added, it was an update.
+  if (added === 0 && already > 0 && result.added > 0) return `Updated ${reports(already)}.`;
+  const parts: string[] = [];
+  if (added > 0) parts.push(`Added ${reports(added)}.`);
+  if (already > 0) parts.push(`${already === 1 ? '1 report was' : `${already} reports were`} already in the library.`);
+  return parts.join(' ');
+}
+
+/** The reports whose pieces are not all searchable yet, said once for the whole list; '' when none. */
+function readingNotice(sources: readonly LibrarySource[]): string {
+  const waiting = sources.filter((s) => s.embedded < s.chunks).length;
+  if (!waiting) return '';
+  return `${waiting === 1 ? '1 report is' : `${waiting} reports are`} still being read; ${waiting === 1 ? 'it is' : 'they are'} used once ready.`;
+}
 
 export interface LibraryPanelProps {
   /** One row per file already in the library. */
@@ -68,26 +103,23 @@ export default function LibraryPanel({
       setBusy(true);
       setError('');
       setNotice('');
+      const held = new Set(sources.map((s) => s.name));
       try {
         const result = await onImport(files);
-        const parts = [`${result.added} fragment(s) added`];
-        if (result.skipped) parts.push(`${result.skipped} already held`);
-        if (result.pending) parts.push(`${result.pending} still to embed`);
-        setNotice(parts.join(' · '));
+        setNotice(importNotice(files.map((f) => f.name), held, result));
         if (result.empty.length) {
-          setError(`No report content found in ${result.empty.join(', ')}.`);
+          setError(`Nothing in ${result.empty.join(', ')} could be read as a report.`);
         }
       } catch (failure) {
-        setError(failure instanceof Error ? failure.message : 'The import failed.');
+        setError(failure instanceof Error ? failure.message : 'The reports could not be added.');
       } finally {
         setBusy(false);
       }
     },
-    [onImport],
+    [onImport, sources],
   );
 
-  const total = sources.reduce((n, source) => n + source.chunks, 0);
-  const waiting = sources.reduce((n, source) => n + (source.chunks - source.embedded), 0);
+  const reading = readingNotice(sources);
 
   return (
     <div className="lp-panel">
@@ -100,7 +132,7 @@ export default function LibraryPanel({
           disabled={busy}
           onClick={() => (ready ? input.current?.click() : onNeedKey())}
         >
-          {busy ? 'Importing…' : 'Add .repx files'}
+          {busy ? 'Adding…' : 'Add .repx files'}
         </button>
         <input
           ref={input}
@@ -117,7 +149,7 @@ export default function LibraryPanel({
       </p>
 
       {!ready && (
-        <p className="lp-hint">Importing needs your API key, because each fragment is embedded once.</p>
+        <p className="lp-hint">Adding reports needs your Gemini key.</p>
       )}
       {notice && <p className="lp-notice">{notice}</p>}
       {error && <p className="lp-error">{error}</p>}
@@ -128,10 +160,8 @@ export default function LibraryPanel({
         </p>
       ) : (
         <>
-          <p className="lp-summary">
-            {sources.length} file(s) · {total} fragment(s)
-            {waiting > 0 && ` · ${waiting} not yet embedded`}
-          </p>
+          <p className="lp-summary">{reports(sources.length)}</p>
+          {reading && <p className="lp-hint">{reading}</p>}
           <ul className="lp-list">
             {sources.map((source) => {
               const isCanonical = canonical.has(source.name);
@@ -149,8 +179,7 @@ export default function LibraryPanel({
                     {source.name}
                   </span>
                   <span className="lp-count">
-                    {source.chunks}
-                    {source.embedded < source.chunks && ` (${source.embedded} ready)`}
+                    {source.embedded < source.chunks && 'Being read'}
                   </span>
                   <button className="wb-pill wb-pill--outline" onClick={() => onRemove(source.name)}>
                     Remove

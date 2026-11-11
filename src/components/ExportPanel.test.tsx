@@ -35,7 +35,11 @@ describe('ExportPanel', () => {
   it('greys the designer for a report with no XML, and closes on Escape', () => {
     const onClose = vi.fn();
     render(<ExportPanel onRepx={vi.fn()} onPrint={vi.fn()} onClose={onClose} />);
-    expect((screen.getByRole('button', { name: /Open in the DevExpress designer/ }) as HTMLButtonElement).disabled).toBe(true);
+    const designer = screen.getByRole('button', { name: /Open in the DevExpress designer/ }) as HTMLButtonElement;
+    expect(designer.disabled).toBe(true);
+    // In plain words, not the file's insides (the full audit's PX-22, 2026-11-11).
+    expect(designer.textContent).toContain('There is no report file to open yet');
+    expect(designer.textContent).not.toMatch(/XML/);
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });

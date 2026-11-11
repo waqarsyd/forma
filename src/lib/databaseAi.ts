@@ -26,7 +26,7 @@
  */
 import type { SqlSchema } from './sqlSchema';
 import { AI_SAMPLE_VALUES, schemaForAi, stripComments, typeLabel } from './sqlSchema';
-import { checkCustomSql, describeQuery, findObject, findProcedure, queryFields, suggestJoins, type QueryJoin, type ReportQuery } from './sqlQuery';
+import { checkCustomSql, describeQuery, findObject, findProcedure, queryFields, queryName, suggestJoins, type QueryJoin, type ReportQuery } from './sqlQuery';
 import { readRepxDataSources } from './repxSqlDataSource';
 import { writeSqlDataSource } from './repxSqlWriter';
 import { readBoundFields } from './repxBindingPlan';
@@ -113,6 +113,10 @@ function parseJson(value: unknown): unknown {
  */
 export function queryFromJson(value: unknown, schema: SqlSchema): { query: ReportQuery | null; problems: string[] } {
   const db = `the database ${schema.database || 'shared'}`;
+  // What was dropped is said as "<the part>: <why>", so a reply can open it with
+  // "Left out" (2026-11-11, the full audit's SD-04): the old "..., so it was left
+  // out" read twice over once the reply said it too.
+  const named = schema.database || 'the database';
   const j = parseJson(value) as QueryJson | null;
   if (!j || typeof j !== 'object' || Array.isArray(j)) return { query: null, problems: ['the query was not a JSON object'] };
   const problems: string[] = [];
@@ -140,7 +144,7 @@ export function queryFromJson(value: unknown, schema: SqlSchema): { query: Repor
     const r = (raw ?? {}) as { table?: unknown; type?: unknown; on?: unknown };
     const other = findObject(schema, text(r.table));
     if (!other) {
-      problems.push(`${what} "${text(r.table)}" is not in ${db}, so it was left out`);
+      problems.push(`${what} ${text(r.table)}: ${named} has no such table`);
       return null;
     }
     const pairs = list(r.on)
@@ -152,7 +156,7 @@ export function queryFromJson(value: unknown, schema: SqlSchema): { query: Repor
       : suggestJoins(schema, main).find((s) => s.direction === direction && s.join.table.toLowerCase() === full(other).toLowerCase())?.join.on ?? [];
     const checked = on.map((k) => ({ from: has(base, k.from), to: has(other, k.to) }));
     if (!checked.length || checked.some((k) => !k.from || !k.to)) {
-      problems.push(`${what} ${full(other)} names no columns ${base.name} and ${other.name} share, so it was left out`);
+      problems.push(`${what} ${full(other)}: it names no columns ${base.name} and ${other.name} share`);
       return null;
     }
     const type = /left|outer/i.test(text(r.type)) ? 'LeftOuter' : 'Inner';
@@ -180,7 +184,7 @@ export function queryFromJson(value: unknown, schema: SqlSchema): { query: Repor
   for (const c of list(j.columns)) {
     const hit = resolve(text(c));
     if (hit) columns.push(`${full(hit.table)}.${hit.column}`);
-    else if (text(c)) problems.push(`the column "${text(c)}" is not in the query's tables, so it was left out`);
+    else if (text(c)) problems.push(`the column "${text(c)}": the query's tables have no such column`);
   }
 
   // The filter in the measured form, `[Customers.Region] = ?Region`, or none when it names a column the query lacks.
@@ -193,7 +197,7 @@ export function queryFromJson(value: unknown, schema: SqlSchema): { query: Repor
       return hit ? `[${hit.table.name}.${hit.column}]` : whole;
     });
     if (missing.length) {
-      problems.push(`the filter names ${missing.map((m) => `[${m}]`).join(', ')}, which the query does not have, so it was left out`);
+      problems.push(`the filter: it names ${missing.map((m) => `[${m}]`).join(', ')}, which the query does not have`);
       filter = '';
     }
   }
@@ -202,7 +206,7 @@ export function queryFromJson(value: unknown, schema: SqlSchema): { query: Repor
     .map((s) => {
       const r = (s ?? {}) as { column?: unknown; descending?: unknown };
       const hit = resolve(typeof s === 'string' ? s : text(r.column));
-      if (!hit) problems.push(`the sort on "${typeof s === 'string' ? s : text(r.column)}" names no column of the query, so it was left out`);
+      if (!hit) problems.push(`the sort on "${typeof s === 'string' ? s : text(r.column)}": the query has no such column`);
       return hit ? { column: `${full(hit.table)}.${hit.column}`, ...(r.descending === true ? { descending: true } : {}) } : null;
     })
     .filter((s): s is { column: string; descending?: boolean } => !!s);
@@ -413,7 +417,10 @@ function connectionFor(xml: string, schema: SqlSchema): string {
 /**
  * After a generation (items 22 and 25): the query chosen on the Data tab, or
  * the one the AI named, or the object covering most of what it bound, written
- * into the report as its SQL data source. The note is said in the reply.
+ * into the report as its SQL data source. The note is said in the reply, so
+ * it says what the report reads now and never how that was chosen (2026-11-11,
+ * the full audit's SD-04 and CV-23: "from the query the AI chose" described
+ * the machinery, not the result).
  */
 export function writeFromAnswer(
   xml: string,
@@ -421,26 +428,34 @@ export function writeFromAnswer(
   options: { query?: ReportQuery | null; dataQuery?: unknown; version?: string } = {},
 ): { xml: string; query: ReportQuery | null; note: string } {
   let query = options.query ?? null;
-  let problems: string[] = [];
-  let how = options.query ? 'the query chosen on the Data tab' : '';
+  // "Left out" is said only of parts dropped from a query that was kept. When
+  // the whole query is refused and another object is bound in its place, its
+  // refusal is not news to the person (2026-11-11, SD-04's review: it read
+  // "Left out the query was not a JSON object." after a successful binding).
+  let dropped: string[] = [];
+  let refused: string[] = [];
   if (!query && options.dataQuery !== undefined && options.dataQuery !== null) {
     const read = queryFromJson(options.dataQuery, schema);
     query = read.query;
-    problems = read.problems;
-    how = 'the query the AI chose';
+    if (read.query) dropped = read.problems;
+    else refused = read.problems;
   }
+  if (!query) query = guessQuery(schema, readBoundFields(xml));
+  const db = schema.database || 'the database';
   if (!query) {
-    query = guessQuery(schema, readBoundFields(xml));
-    how = query ? 'the object holding most of the fields the report prints' : '';
+    // Only a missing table, view or procedure is said as the reason: the rest
+    // of a refusal (a SQL keyword, "not a JSON object", "Only a SELECT ...")
+    // is the machinery of the check, and some of it ends in its own full stop.
+    const missing = [...new Set(refused.filter((p) => /^there is no /.test(p)).map((p) => p.replace(/\.+$/, '')))];
+    const why = missing.length ? missing.join('; ') : 'no table or procedure has most of the fields it prints';
+    return { xml, query: null, note: `It is not bound to ${db} yet: ${why}. Choose what it reads on the Data tab.` };
   }
-  if (!query) {
-    const why = problems.length ? problems.join('; ') : 'the AI named no query and no table or procedure holds most of the fields the report prints';
-    return { xml, query: null, note: `No data source was written: ${why}. Choose what the report reads on the Data tab.` };
-  }
-  const done = writeSqlDataSource(xml, { connectionName: connectionFor(xml, schema), schema, query }, options.version);
-  if (!done.applied) return { xml, query: null, note: `No data source was written: ${done.reason}.` };
-  const dropped = problems.length ? ` Left out: ${problems.join('; ')}.` : '';
-  return { xml: done.xml, query, note: `${done.reason}, from ${how}.${dropped}` };
+  const connection = connectionFor(xml, schema);
+  const done = writeSqlDataSource(xml, { connectionName: connection, schema, query }, options.version);
+  if (!done.applied) return { xml, query: null, note: `It is not bound to ${db} yet: ${done.reason}. Choose what it reads on the Data tab.` };
+  const parameters = done.parameters.length ? ` with the parameter${done.parameters.length === 1 ? '' : 's'} ${done.parameters.join(', ')}` : '';
+  const leftOut = dropped.map((p) => ` Left out ${p.replace(/\.+$/, '')}.`).join('');
+  return { xml: done.xml, query, note: `Bound it to ${queryName(query)} on "${connection.trim()}"${parameters}.${leftOut}` };
 }
 
 /**
@@ -456,6 +471,6 @@ export function dataEditHook(schema: SqlSchema, version: string | undefined, onQ
     if (!done.applied) return { xml, applied: false, reason: done.reason };
     onQuery(read.query);
     const said = done.reason.charAt(0).toLowerCase() + done.reason.slice(1);
-    return { xml: done.xml, applied: true, reason: read.problems.length ? `${said} (left out: ${read.problems.join('; ')})` : said };
+    return { xml: done.xml, applied: true, reason: read.problems.length ? `${said} (left out ${read.problems.join('; ')})` : said };
   };
 }

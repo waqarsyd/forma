@@ -11,5 +11,7 @@
   opacity: 0; transition: opacity .15s ease;
 }
 .md-code:hover .md-code-copy, .md-code-copy:focus-visible { opacity: 1; }
-.md-code-copy:focus-visible { outline: 2px solid var(--ink-faint); outline-offset: 1px; }
+/* The ring is the keyboard's alone (2026-11-11): gated as the workspace's
+   other rings are, so a click never draws it, whatever the browser matches. */
+html:not([data-modality='pointer']) .md-code-copy:focus-visible { outline: 2px solid var(--ink-faint); outline-offset: 1px; }
 @media (hover: none) { .md-code-copy { opacity: 1; } }

@@ -72,7 +72,7 @@ describe('asking down the chain', () => {
     expect(answered.value).toBe('designed');
     expect(answered.by).toBe('local');
     expect(answered.config.provider).toBe('local');
-    expect(answered.note).toBe('Gemini had reached its limit, so Local AI (qwen3.5:9b) answered instead.');
+    expect(answered.note).toBe("Gemini's free limit is used up for now, so Local AI answered this one.");
   });
 
   it('throws anything but a limit as it was, asking no one else', async () => {
@@ -84,14 +84,17 @@ describe('asking down the chain', () => {
     expect(ask).toHaveBeenCalledTimes(1);
   });
 
-  it('throws the last AI’s error when none answers, for Forma’s draft to stand in', async () => {
+  // The full audit's PL-27 (2026-11-11): the reply names the limit, not what the next AI said.
+  it('throws the limit that started the chain when none answers, for Forma’s draft to stand in', async () => {
     quiet();
-    const last = new Error('OpenRouter is busy');
-    await expect(
-      askWithChain({ ...base, ...router }, async (c) => {
-        throw c.provider === 'openrouter' ? last : limit();
-      }),
-    ).rejects.toBe(last);
+    const limited = Object.assign(new Error("Today's free daily allowance for this key is used up."), { cause: { status: 429 } });
+    const refused = Object.assign(new Error('OpenRouter rejected the request: this model does not take images.'), { status: 400 });
+    const thrown = await askWithChain({ ...base, ...router }, async (c) => {
+      throw c.provider === 'openrouter' ? refused : limited;
+    }).catch((e: unknown) => e);
+    expect(thrown).toBe(limited);
+    expect((thrown as Error).message).toMatch(/free daily allowance/);
+    expect(isLimit(thrown)).toBe(true);
   });
 
   it('stops at once when the person stops', async () => {
@@ -111,11 +114,17 @@ describe('the switch, as the reply says it', () => {
     expect(configFor(base, 'local').provider).toBe('local');
   });
 
-  it('names both AIs, with their models short', () => {
+  it('names both AIs in the console, with their models short', () => {
     const config = { ...base, ...router, ...local };
     expect(aiLabel('openrouter', config)).toBe('OpenRouter (gemma-4-31b-it)');
     expect(aiLabel('local', config)).toBe('Local AI (qwen3.5:9b)');
     expect(aiLabel('gemini', config)).toBe('Gemini');
-    expect(switchNote('gemini', 'openrouter', config)).toBe('Gemini had reached its limit, so OpenRouter (gemma-4-31b-it) answered instead.');
+  });
+
+  // The full audit's WS-07, CV-09 and PL-29 (2026-11-11): where the words went, never which model.
+  it('says in the reply which AI answered, and no model', () => {
+    expect(switchNote('gemini', 'openrouter')).toBe("Gemini's free limit is used up for now, so OpenRouter answered this one.");
+    expect(switchNote('openrouter', 'gemini')).toBe("OpenRouter's free limit is used up for now, so Gemini answered this one.");
+    expect(switchNote('gemini', 'local')).not.toMatch(/gemma|qwen|\(/);
   });
 });

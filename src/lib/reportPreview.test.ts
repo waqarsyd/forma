@@ -158,23 +158,29 @@ it('does not read a SortFields item as a control of the band', () => {
     expect(footer.controls).toEqual([]);
   });
 
+  // In plain words since 2026-11-11 (the full audit's PX-22): never an element's or a type's name.
   it('reports rather than throws on input it cannot use', () => {
-    for (const [input, fragment] of [
-      ['', 'no REPX'],
-      ['<html><body>nope</body></html>', 'XtraReportsLayoutSerializer'],
-      ['<XtraReportsLayoutSerializer PageWidth="850"></XtraReportsLayoutSerializer>', 'no <Bands>'],
+    for (const [input, said] of [
+      ['', 'There is no report to preview yet.'],
+      ['<html><body>nope</body></html>', 'This file is not a DevExpress report.'],
+      ['<XtraReportsLayoutSerializer PageWidth="850"></XtraReportsLayoutSerializer>', 'This report has no bands to print.'],
+      ['<XtraReportsLayoutSerializer PageWidth="850"><Bands></Bands></XtraReportsLayoutSerializer>', 'This report has no bands to print.'],
     ] as const) {
       const result = parseReportStructure(input);
       expect(result.bands).toEqual([]);
-      expect(result.problems.join(' ')).toContain(fragment);
+      expect(result.problems).toEqual([said]);
+      expect(result.problems.join(' ')).not.toMatch(/REPX|XtraReportsLayoutSerializer|<Bands>/);
     }
   });
 
-  it('names an unrecognised band instead of dropping it silently', () => {
+  it('says an unrecognised band once instead of dropping it silently', () => {
     const odd = banded.replace('ControlType="ReportFooterBand"', 'ControlType="SubBandBand"');
     const result = parseReportStructure(odd);
-    expect(result.problems.join(' ')).toContain('SubBandBand');
+    expect(result.problems).toContain('This report has a section Forma does not know how to draw.');
+    expect(result.problems.join(' ')).not.toContain('SubBandBand');
     expect(result.bands.some((b) => b.kind === 'Unknown')).toBe(true);
+    const twice = odd.replace('ControlType="PageHeaderBand"', 'ControlType="OtherBand"');
+    expect(parseReportStructure(twice).problems.filter((p) => /does not know how to draw/.test(p))).toHaveLength(1);
   });
 
   it('decodes XML entities, ampersand last', () => {
@@ -423,7 +429,7 @@ describe('paginating a real report', () => {
 
   it('carries the parse problems through to the paginated result', () => {
     const result = paginate(parseReportStructure('<XtraReportsLayoutSerializer />'), 3);
-    expect(result.problems.join(' ')).toContain('no <Bands>');
+    expect(result.problems.join(' ')).toContain('no bands to print');
     expect(result.pages).toHaveLength(1);
   });
 });
@@ -3395,7 +3401,7 @@ describe('a detail report under each master record, as DevExpress printed it (ca
     expect(dr.controls).toEqual([]);
     expect(dr.sub!.dataMember).toBe('Orders.OrderLines');
     expect(dr.sub!.bands.map((b) => b.kind)).toEqual(['GroupHeader', 'Detail', 'ReportFooter']);
-    expect(s.problems.join(' ')).not.toMatch(/Unrecognised/);
+    expect(s.problems.join(' ')).not.toMatch(/does not know how to draw/);
   });
 
   it('prints every order\'s lines and own total on the page DevExpress printed them on', () => {

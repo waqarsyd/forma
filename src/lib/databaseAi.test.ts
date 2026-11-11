@@ -112,9 +112,9 @@ describe('the query the AI names', () => {
     expect(read.query).toMatchObject({ object: 'dbo.Orders', joins: [], columns: ['dbo.Orders.OrderID'] });
     expect(read.query).not.toHaveProperty('filter');
     expect(read.problems).toEqual([
-      'the join to "dbo.Invoices" is not in the database ShopDemo, so it was left out',
-      'the column "Nope" is not in the query\'s tables, so it was left out',
-      'the filter names [Orders.Discount], which the query does not have, so it was left out',
+      'the join to dbo.Invoices: ShopDemo has no such table',
+      'the column "Nope": the query\'s tables have no such column',
+      'the filter: it names [Orders.Discount], which the query does not have',
     ]);
     expect(queryFromJson({ table: 'dbo.Invoices' }, schema).problems).toEqual(['there is no table or view "dbo.Invoices" in the database ShopDemo']);
     expect(queryFromJson({ procedure: 'usp_Nothing' }, schema).query).toBeNull();
@@ -149,9 +149,17 @@ describe('custom SQL against the layout', () => {
 });
 
 describe('the data source written from the answer', () => {
+  /** The full audit's SD-04 and CV-23 (2026-11-11): the note is said in the reply, so it names no machinery. */
+  const machinery = /the AI (chose|named)|AI model|gemini-2\.|tried the other models|from the (query|object)/;
+
   it('from the query the AI named, saying what was left out', () => {
     const out = writeFromAnswer(report(['OrderID', 'CompanyName']), schema, { dataQuery: { table: 'dbo.Orders', joins: [{ table: 'dbo.Customers' }], filter: '[Nope] = 1' } });
-    expect(out.note).toBe('Wrote the data source: Orders on connection "ShopDemo", from the query the AI chose. Left out: the filter names [Nope], which the query does not have, so it was left out.');
+    expect(out.note).toBe('Bound it to Orders on "ShopDemo". Left out the filter: it names [Nope], which the query does not have.');
+    expect(out.note).not.toMatch(machinery);
+    const join = writeFromAnswer(report(['OrderID']), schema, { dataQuery: { table: 'dbo.Orders', joins: [{ table: 'Sales' }] } });
+    expect(join.note).toBe('Bound it to Orders on "ShopDemo". Left out the join to Sales: ShopDemo has no such table.');
+    const withParameter = writeFromAnswer(report(['Region', 'Total']), schema, { dataQuery: { procedure: 'dbo.usp_SalesByRegion' } });
+    expect(withParameter.note).toBe('Bound it to SalesByRegion on "ShopDemo" with the parameter Region.');
     expect(out.query).toMatchObject({ object: 'dbo.Orders', joins: [{ table: 'dbo.Customers' }] });
     expect(readRepxDataSources(out.xml)[0]).toMatchObject({ connectionName: 'ShopDemo', fromAppConfig: true });
   });
@@ -161,14 +169,35 @@ describe('the data source written from the answer', () => {
     const named = writeSqlDataSource(report(['CompanyName']), { connectionName: 'ShopLive', schema, query: { kind: 'table', object: 'dbo.Customers', columns: [], joins: [] } }).xml;
     const chosen: ReportQuery = { kind: 'table', object: 'dbo.Suppliers', columns: [], joins: [] };
     const out = writeFromAnswer(named, schema, { query: chosen, dataQuery: { table: 'dbo.Customers' } });
-    expect(out.note).toBe('Replaced the data source: Suppliers on connection "ShopLive", from the query chosen on the Data tab.');
+    expect(out.note).toBe('Bound it to Suppliers on "ShopLive".');
   });
 
   it('from the object holding most of what it bound, or not at all, saying why', () => {
-    expect(writeFromAnswer(report(['CompanyName', 'Phone']), schema).note).toBe('Wrote the data source: Customers on connection "ShopDemo", from the object holding most of the fields the report prints.');
+    expect(writeFromAnswer(report(['CompanyName', 'Phone']), schema).note).toBe('Bound it to Customers on "ShopDemo".');
     const none = writeFromAnswer(report(['Company', 'Balance']), schema, { dataQuery: { table: 'dbo.Invoices' } });
     expect(none.query).toBeNull();
-    expect(none.note).toBe('No data source was written: there is no table or view "dbo.Invoices" in the database ShopDemo. Choose what the report reads on the Data tab.');
+    expect(none.note).toBe('It is not bound to ShopDemo yet: there is no table or view "dbo.Invoices" in the database ShopDemo. Choose what it reads on the Data tab.');
+    const unnamed = writeFromAnswer(report(['Company', 'Balance']), schema);
+    expect(unnamed.note).toBe('It is not bound to ShopDemo yet: no table or procedure has most of the fields it prints. Choose what it reads on the Data tab.');
+    for (const note of [none.note, unnamed.note]) expect(note).not.toMatch(machinery);
+  });
+
+  // SD-04's review (2026-11-11): a refused query is not "left out" of a report bound to something else.
+  it('says nothing of a refused query when another object is bound in its place', () => {
+    const fields = report(['CompanyName', 'Phone']);
+    for (const dataQuery of [{ table: 'dbo.Invoices' }, 'not json', { name: 'Gone', sql: 'DELETE FROM dbo.Customers' }]) {
+      const out = writeFromAnswer(fields, schema, { dataQuery });
+      expect(out.note).toBe('Bound it to Customers on "ShopDemo".');
+      expect(out.note).not.toMatch(/Left out|JSON|SELECT|\.\./);
+    }
+  });
+
+  it('says a refused query plainly when nothing could be bound instead', () => {
+    const fields = report(['Company', 'Balance']);
+    for (const dataQuery of ['not json', { name: 'Gone', sql: 'DELETE FROM dbo.Customers' }]) {
+      const out = writeFromAnswer(fields, schema, { dataQuery });
+      expect(out.note).toBe('It is not bound to ShopDemo yet: no table or procedure has most of the fields it prints. Choose what it reads on the Data tab.');
+    }
   });
 });
 

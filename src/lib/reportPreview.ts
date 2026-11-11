@@ -1877,6 +1877,9 @@ function parseCalculatedFields(text: string): CalculatedField[] {
   return out;
 }
 
+/** A band of a type the Preview cannot place: drawn in file order, and said once. */
+const UNKNOWN_BAND = 'This report has a section Forma does not know how to draw.';
+
 /**
  * Read the page, the margins and every band out of a `.repx`.
  *
@@ -1913,14 +1916,16 @@ export function parseReportStructure(
     problems,
   };
 
+  // The parse's problems are said to the person, so in plain words, never an
+  // element's name (2026-11-11, the full audit's PX-22).
   if (!text.trim()) {
-    problems.push('There is no REPX to preview yet.');
+    problems.push('There is no report to preview yet.');
     return empty;
   }
 
   const rootMatch = /<XtraReportsLayoutSerializer((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)/.exec(text);
   if (!rootMatch) {
-    problems.push('This does not look like a DevExpress report: no XtraReportsLayoutSerializer element.');
+    problems.push('This file is not a DevExpress report.');
     return empty;
   }
   const rootAttrs = rootMatch[1];
@@ -1975,7 +1980,7 @@ export function parseReportStructure(
   const bandsIdx = text.indexOf('<Bands');
   const bandsSpan = bandsIdx === -1 ? null : innerSpan(text, 'Bands', bandsIdx);
   if (!bandsSpan) {
-    problems.push('The report has no <Bands> element, so there is nothing to lay out.');
+    problems.push('This report has no bands to print.');
     return structure;
   }
   const bandsInner = bandsSpan.text;
@@ -1999,9 +2004,8 @@ export function parseReportStructure(
       const controlType = attrOf(item.attrs, 'ControlType');
       if (!controlType || !/Band$/.test(controlType)) continue;
       const kind = bandKind(controlType);
-      if (kind === 'Unknown') {
-        problems.push(`Unrecognised band type "${controlType}" — it is drawn in file order.`);
-      }
+      // Said once, however many such bands there are; the type's name is the file's, not the person's.
+      if (kind === 'Unknown' && !problems.includes(UNKNOWN_BAND)) problems.push(UNKNOWN_BAND);
       const bandSpan = innerSpan(inner, item.tag, item.start);
       const bandLook = resolveAppearance(item.attrs, bandSpan ? ownPart(bandSpan.text) : '', styles, parentLook, controlType);
       let sub: SubReport | null = null;
@@ -2051,7 +2055,7 @@ export function parseReportStructure(
   };
   structure.bands.push(...parseBandList(bandsInner, bandsSpan.start, reportLook));
 
-  if (!structure.bands.length) problems.push('No bands were found inside <Bands>.');
+  if (!structure.bands.length) problems.push('This report has no bands to print.');
 
   // A subreport loaded from a file cannot be drawn here: say which, once.
   const loaded = structure.bands.flatMap((b) => b.controls).filter((c) => c.subreport?.url && !c.subreport.structure);

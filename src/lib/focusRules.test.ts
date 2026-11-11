@@ -106,15 +106,12 @@ const ORANGE = /var\(--accent|var\(--brand|var\(--warn\b|#fe6b00|#ff7d21|#b45309
  * - The public site's ring helper: put on buttons, links and the changelog's select,
  *   none of which Chrome matches `:focus-visible` on a click (measured in the audit),
  *   and turned off inside the workspace by `.wb-root .u-focus-ring:focus-visible`.
- * - A code block's Copy (components/markdown.css): a button, which Chrome does not
- *   match `:focus-visible` on a click, and the pointer reset at the end of index.css
- *   takes the outline off if it ever does. Grey, never orange. Gating it on the
- *   keyboard in that file would retire this entry.
+ * A code block's Copy (components/markdown.css) was a third until its ring was gated
+ * on the keyboard there, later the same day.
  */
 const ALLOWED_FOCUS = new Set([
   '.wb-panel-foot .wb-box:not(.wb-is-locked):focus-within',
   '.u-focus-ring:focus-visible',
-  '.md-code-copy:focus-visible',
 ]);
 
 /** What a focus selector that is not the keyboard's may not declare. */

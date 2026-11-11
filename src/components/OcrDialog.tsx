@@ -269,7 +269,9 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
                 );
               })}
             </ol>
-            {!finished && <p className="wb-set-note">The first read fetches about 7 MB from this site, once. Nothing you attach leaves your browser.</p>}
+            {/* The download's size went on 2026-11-11 (the full audit's WS-43): a
+                figure about the reader, not about the person's pages. */}
+            {!finished && <p className="wb-set-note">Nothing you attach leaves your browser.</p>}
             {finished && failed > 0 && (
               <p className="wb-set-note is-bad" role="alert">
                 {runs.some((r) => r.status === 'failed' && r.error === STOPPED)
@@ -337,7 +339,7 @@ export default function OcrDialog({ pages, unit, pageSize, onBuild, onClose, pre
             type="button"
             onClick={() => build()}
             disabled={!finished || !layout}
-            title="Write the report from the detected layout, with no model involved"
+            title="Write the report from the layout found on the page"
           >
             Build .repx
           </button>

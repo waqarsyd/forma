@@ -53,7 +53,9 @@ export default function HomeStart<P extends Project>({ projects, archived, onOpe
       )}
       <div className="wb-home-main">
         <h2>What report shall we make?</h2>
-        <p>Attach a screenshot, a scan, a PDF or a .repx in the box below, or describe the report you want. Or start from one of these:</p>
+        {/* "In the box below" was wrong on a desktop, where the box sits at the
+            foot of the left panel (the full audit's WS-44, 2026-11-11). */}
+        <p>Attach a screenshot, a scan, a PDF or a .repx in the message box, or describe the report you want. Or start from one of these:</p>
         <div className="wb-home-points">
           {STARTING_POINTS.map((point) => (
             <button key={point.id} type="button" onClick={() => onPick(point)} title={point.text}>

@@ -15,6 +15,9 @@
  * **The picker is cleared after a pick**, because re-choosing the same file is the
  * obvious response to a failed import and a file input will not fire `change` for
  * an unchanged value.
+ *
+ * **It counts reports, in plain words** (2026-11-11, the full audit's WS-24): the
+ * files a person added, never fragments, embedding or an "API key".
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
@@ -22,6 +25,9 @@ import LibraryPanel from './LibraryPanel';
 import type { ImportResult, LibrarySource } from '../services/library';
 
 afterEach(cleanup);
+
+/** The library's machinery, which nothing the panel says may name. */
+const MACHINERY = /fragment|embed|chunk|vector|import|API key/i;
 
 const result = (over: Partial<ImportResult> = {}): ImportResult => ({
   added: 2,
@@ -76,7 +82,7 @@ describe('importing', () => {
     expect(document.querySelector('input[type=file]')?.getAttribute('accept')).toBe('.repx');
   });
 
-  it('hands the chosen files over and reports what happened', async () => {
+  it('hands the chosen files over and says how many reports were added', async () => {
     // Held separately from the props object: the spread in `panel` widens the
     // mock to its plain function type and `tsc` then loses `.mock`.
     const onImport = vi.fn(async (_files: File[]) => result({ added: 7, skipped: 3 }));
@@ -85,20 +91,32 @@ describe('importing', () => {
 
     await waitFor(() => expect(onImport).toHaveBeenCalled());
     expect(onImport.mock.calls[0][0].map((f) => f.name)).toEqual(['a.repx', 'b.repx']);
-    await waitFor(() => expect(screen.getByText(/7 fragment\(s\) added/)).toBeTruthy());
-    expect(screen.getByText(/3 already held/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Added 2 reports.')).toBeTruthy());
+    expect(document.body.textContent).not.toMatch(MACHINERY);
+  });
+
+  it('says a report the library already held, by report, not by its pieces', async () => {
+    panel({ sources: [source('Invoice.repx')], onImport: vi.fn(async () => result({ added: 9, skipped: 4, empty: ['Blank.repx'] })) });
+    choose(['Invoice.repx', 'Orders.repx', 'Stock.repx', 'Blank.repx']);
+    await waitFor(() => expect(screen.getByText('Added 2 reports. 1 report was already in the library.')).toBeTruthy());
+    expect(document.body.textContent).not.toMatch(MACHINERY);
+  });
+
+  // WS-24's review: the library keeps pieces by content, so a held name that changed is an update.
+  it('says a held report whose content changed was updated, and an unchanged one was already there', async () => {
+    panel({ sources: [source('Invoice.repx')], onImport: vi.fn(async () => result({ added: 3, skipped: 1 })) });
+    choose(['Invoice.repx']);
+    await waitFor(() => expect(screen.getByText('Updated 1 report.')).toBeTruthy());
+    cleanup();
+    panel({ sources: [source('Invoice.repx')], onImport: vi.fn(async () => result({ added: 0, skipped: 4 })) });
+    choose(['Invoice.repx']);
+    await waitFor(() => expect(screen.getByText('1 report was already in the library.')).toBeTruthy());
   });
 
   it('names a file that produced no report content', async () => {
     panel({ onImport: vi.fn(async () => result({ empty: ['Sample empt report..repx'] })) });
     choose(['Sample empt report..repx']);
-    await waitFor(() => expect(screen.getByText(/No report content found in Sample empt report/)).toBeTruthy());
-  });
-
-  it('says when fragments are still waiting to be embedded', async () => {
-    panel({ onImport: vi.fn(async () => result({ pending: 5 })) });
-    choose(['a.repx']);
-    await waitFor(() => expect(screen.getByText(/5 still to embed/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Nothing in Sample empt report..repx could be read as a report.')).toBeTruthy());
   });
 
   it('shows the failure instead of pretending the import worked', async () => {
@@ -127,24 +145,31 @@ describe('importing', () => {
     fireEvent.click(screen.getByRole('button', { name: /Add \.repx files/ }));
     expect(props.onNeedKey).toHaveBeenCalled();
     expect(props.onImport).not.toHaveBeenCalled();
-    expect(screen.getByText(/Importing needs your API key/)).toBeTruthy();
+    expect(screen.getByText('Adding reports needs your Gemini key.')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(MACHINERY);
   });
 });
 
 describe('a stocked library', () => {
   const stocked = [source('Invoice.repx'), source('Job_Card_Report.repx', 11, 8)];
 
-  it('lists each file once, with its fragment count', () => {
+  it('lists each file once, and counts reports', () => {
     panel({ sources: stocked });
     expect(screen.getByText('Invoice.repx')).toBeTruthy();
     expect(screen.getByText('Job_Card_Report.repx')).toBeTruthy();
-    expect(screen.getByText(/2 file\(s\) · 15 fragment\(s\)/)).toBeTruthy();
+    expect(document.querySelector('.lp-summary')?.textContent).toBe('2 reports');
   });
 
-  it('says how many are not embedded yet, rather than implying all are usable', () => {
-    panel({ sources: stocked });
-    expect(screen.getByText(/3 not yet embedded/)).toBeTruthy();
-    expect(screen.getByText(/8 ready/)).toBeTruthy();
+  it('says which reports are still being read, rather than implying all are usable', () => {
+    panel({ sources: [...stocked, source('Stock.repx', 3, 0)] });
+    expect(screen.getByText('2 reports are still being read; they are used once ready.')).toBeTruthy();
+    expect([...document.querySelectorAll('.lp-count')].map((e) => e.textContent)).toEqual(['', 'Being read', 'Being read']);
+    expect(document.body.textContent).not.toMatch(MACHINERY);
+  });
+
+  it('says nothing is being read once every report is ready', () => {
+    panel({ sources: [source('Invoice.repx')] });
+    expect(screen.queryByText(/still being read/)).toBeNull();
   });
 
   it('leaves every file un-canonical until someone says otherwise', () => {

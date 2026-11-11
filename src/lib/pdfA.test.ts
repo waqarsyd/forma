@@ -178,6 +178,9 @@ describe('writePdf, PDF/A', () => {
     await expect(
       writePdf({ title: 'x', pages: [{ width: 612, height: 792, ops }], pdfa: { part: 2, fonts: FONTS }, security: { openPassword: 'a', permissionsPassword: '', level: 'AES128' } }),
     ).rejects.toThrow(PDFA_WITH_PASSWORD);
+    // Said in the designer's words, not the property's (the full audit's PX-22, 2026-11-11).
+    expect(PDFA_WITH_PASSWORD).not.toMatch(/PdfACompatibility|encryption/);
+    expect(PDFA_WITH_PASSWORD).toMatch(/Remove the password, or turn PDF\/A off/);
   });
 
   it('leaves a report that does not ask for PDF/A as it was: standard fonts, no metadata', async () => {

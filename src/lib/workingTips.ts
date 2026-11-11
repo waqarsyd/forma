@@ -16,7 +16,8 @@ export const WORKING_TIPS: readonly string[] = [
   'Select controls on Preview, then ask about "these" in the box.',
   'Press ↑ in an empty box to bring back a message you sent.',
   'Export, at the top right, has every format: the .repx, PDF, Excel, Word and more.',
-  "Click the report's title to rename, duplicate or delete the project.",
+  // The title has been plain text since 2026-11-08; the menu beside it acts (the full audit's WS-20, 2026-11-11).
+  "Use the menu beside the report's name to rename, duplicate, archive or delete the project.",
   'Send a message while Forma works and it waits its turn; Steer stops this and sends it.',
   "Attach a CSV, JSON or Excel file and it becomes the report's data.",
   'Start a message with "Remember" and Forma keeps it for every report.',

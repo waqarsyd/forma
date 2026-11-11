@@ -62,16 +62,22 @@ export function configFor(config: ReportConfig, provider: EffectiveProvider): Re
   return { ...config, provider: provider === 'gemini' ? 'auto' : provider };
 }
 
-/** An AI as the reply names it: "OpenRouter (gemma-4-31b-it)", "Local AI (qwen3.5:9b)", "Gemini". */
+/** An AI as the console names it: "OpenRouter (gemma-4-31b-it)", "Local AI (qwen3.5:9b)", "Gemini". */
 export function aiLabel(provider: EffectiveProvider, config: ReportConfig): string {
   const model = provider === 'openrouter' ? config.openRouterModel : provider === 'local' ? config.localModel : '';
   const short = (model ?? '').trim().replace(/^[^/]+\//, '').replace(/:free$/, '');
   return short ? `${PROVIDER_NAMES[provider]} (${short})` : PROVIDER_NAMES[provider];
 }
 
-/** The line a reply carries when another AI answered, naming both. */
-export function switchNote(from: EffectiveProvider, to: EffectiveProvider, config: ReportConfig): string {
-  return `${aiLabel(from, config)} had reached its limit, so ${aiLabel(to, config)} answered instead.`;
+/**
+ * The line a reply carries when another AI answered. It names the two
+ * providers and no model (2026-11-11, the full audit's WS-07, CV-09 and PL-29):
+ * where the person's words went is a privacy fact they are owed, which model
+ * read them is machinery. Whether to say it at all is the owner's decision 2
+ * of that audit; this is its recommended interim.
+ */
+export function switchNote(from: EffectiveProvider, to: EffectiveProvider): string {
+  return `${PROVIDER_NAMES[from]}'s free limit is used up for now, so ${PROVIDER_NAMES[to]} answered this one.`;
 }
 
 /** What answered: the value, the config that asked it, and the switch to say ('' when the AI chosen did). */
@@ -84,9 +90,13 @@ export interface Answered<T> {
 
 /**
  * Ask the AI chosen, and on a limit each other AI set up in turn. Anything
- * but a limit from the AI chosen is thrown as it was; once the chain has
- * begun, the last AI's error is thrown when none answers, and an abort stops
- * it at once. A generation and a chat turn both ask through it (App.tsx).
+ * but a limit from the AI chosen is thrown as it was, and an abort stops the
+ * chain at once. When none answers, the limit that started the chain is
+ * thrown, not the last AI's failure (2026-11-11, the full audit's PL-27): an
+ * OpenRouter model refusing a picture with a 400 used to replace "Gemini's
+ * free limit is used up" in the reply, which sent the person after the wrong
+ * cause. The last failure goes to the console. A generation and a chat turn
+ * both ask through it (App.tsx).
  */
 export async function askWithChain<T>(config: ReportConfig, ask: (asked: ReportConfig) => Promise<T>, signal?: AbortSignal): Promise<Answered<T>> {
   const chosen = effectiveProvider(config);
@@ -95,17 +105,18 @@ export async function askWithChain<T>(config: ReportConfig, ask: (asked: ReportC
   } catch (limited) {
     const others = !signal?.aborted && isLimit(limited) ? fallbacksFor(config) : [];
     if (!others.length) throw limited;
-    let last: unknown = limited;
     for (const next of others) {
       const asked = configFor(config, next);
       console.warn(`${aiLabel(chosen, config)} reached its limit; asking ${aiLabel(next, config)} instead.`);
       try {
-        return { value: await ask(asked), config: asked, by: next, note: switchNote(chosen, next, config) };
+        return { value: await ask(asked), config: asked, by: next, note: switchNote(chosen, next) };
       } catch (err) {
         if (signal?.aborted) throw err;
-        last = err;
+        console.warn(`${aiLabel(next, config)} did not answer either:`, err);
       }
     }
-    throw last;
+    // Thrown as it was, its cause untouched: that cause is the provider's own
+    // error, which is how isLimit, and the batch's pause, know it is a limit.
+    throw limited;
   }
 }

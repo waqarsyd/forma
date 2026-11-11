@@ -88,7 +88,9 @@ describe('the OCR dialog', () => {
     expect(built.repxContent).toMatch(/Name="lowConfidenceLabel\d+" Text="Smudge"/);
     expect(built.repxContent).toMatch(/ControlType="XRTable"/);
     expect(built.layout.sections).toHaveLength(1);
-    expect(built.markdown).toMatch(/Smudge \| 30/);
+    // The spec names the unsure text and no confidence figure since 2026-11-11 (lib/ocrRepx.ts, the full audit's CV-12).
+    expect(built.markdown).toMatch(/\| 1 \| Smudge \|/);
+    expect(built.markdown).not.toMatch(/Smudge \| 30/);
 
     fireEvent.click(screen.getByLabelText('Leave low-confidence text out of the report'));
     fireEvent.click(button('Build .repx'));
@@ -128,6 +130,22 @@ describe('the OCR dialog', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/^Stopped: 1 of 1 page was not read/);
     expect(button('Try again')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+  });
+});
+
+// The full audit's WS-43 (2026-11-11): what the dialog says names no machinery.
+describe('the dialog’s words', () => {
+  it('says nothing of a model or of what the reader downloads', async () => {
+    let finish: (page: OcrPage) => void = () => undefined;
+    recognizePage.mockImplementation(() => new Promise<OcrPage>((resolve) => { finish = resolve; }));
+    const { container } = draw();
+    await waitFor(() => expect(recognizePage).toHaveBeenCalled());
+    const said = () => [container.textContent ?? '', ...[...container.querySelectorAll('[title]')].map((e) => e.getAttribute('title') ?? '')].join('\n');
+    expect(said()).toContain('Nothing you attach leaves your browser.');
+    expect(said()).not.toMatch(/\bmodel\b|\bMB\b|fetches/);
+    finish(scan);
+    await ready();
+    expect(said()).not.toMatch(/\bmodel\b|\bMB\b|fetches/);
   });
 });
 

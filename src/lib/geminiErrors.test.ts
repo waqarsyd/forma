@@ -156,7 +156,7 @@ describe('classifyGeminiError', () => {
     it('429 without a stated delay still reads as a rate limit, not a billing failure', () => {
       const msg = classifyGeminiError(sdkError(429, 'RESOURCE_EXHAUSTED')).message;
       expect(msg).not.toMatch(/try again in about/i);
-      expect(msg).toMatch(/per minute per model/i);
+      expect(msg).toMatch(/a few requests a minute/i);
     });
 
     it('403 is a rejected key', () => {
@@ -223,13 +223,31 @@ describe('classifyGeminiError', () => {
       expect(message).not.toMatch(/has no model/);
     });
 
-    // Item 83: a pinned model's spent allowance does not claim the others were tried.
+    // Item 83: a pinned model's spent allowance says it was the person's choice.
     it('says a chosen model was the only one tried when its daily allowance is spent', () => {
       const daily = sdkError(429, "Quota exceeded for metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' model: gemini-2.5-pro");
-      expect(classifyGeminiError(daily).message).toMatch(/Forma tried the other models/);
+      expect(classifyGeminiError(daily).message).not.toMatch(/model chosen in the box/);
       const pinned = classifyGeminiError(daily, { triedOthers: false }).message;
-      expect(pinned).not.toMatch(/tried the other models/);
-      expect(pinned).toMatch(/only one Forma tries; choose Auto/);
+      expect(pinned).toMatch(/used up for the model chosen in the box; choose Auto to let Forma use the others\./);
+    });
+
+    // The full audit's CV-23 (2026-11-11): what the person reads names no machinery.
+    it('says every failure without a model id, "AI model" or the models Forma tried', () => {
+      const machinery = /the AI (chose|named)|AI model|Gemini model|that model|per model|gemini-2\.|tried the other models|—/;
+      const daily = sdkError(429, "Quota exceeded for metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' model: gemini-2.5-flash");
+      const said = [
+        classifyGeminiError(daily).message,
+        classifyGeminiError(daily, { triedOthers: false }).message,
+        classifyGeminiError(sdkError(429, 'RESOURCE_EXHAUSTED')).message,
+        classifyGeminiError(sdkError(503, 'UNAVAILABLE')).message,
+        classifyGeminiError(sdkError(500, 'Incomplete JSON segment at the end')).message,
+        classifyGeminiError(sdkError(400, 'INVALID_ARGUMENT')).message,
+        classifyGeminiError(sdkError(500, 'something broke')).message,
+        classifyGeminiError(sdkError(500, '')).message,
+      ];
+      for (const message of said) expect(message).not.toMatch(machinery);
+      expect(said[0]).toMatch(/^Today's free daily allowance for this key is used up\. It resets at midnight Pacific time, in about \d+ hours?; meanwhile you can pick another AI in Settings, such as a local AI or OpenRouter\.$/);
+      expect(said[6]).toBe('Something went wrong: something broke');
     });
 
     // Item 44: offline is said as offline.
@@ -272,7 +290,7 @@ describe('which quota a 429 is (2026-11-02)', () => {
 
   it('says a spent daily allowance is daily, and what works meanwhile', () => {
     const e = classifyGeminiError({ status: 429, message: "Quota exceeded for quota metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', model: gemini-2.5-flash" });
-    expect(e.message).toMatch(/daily allowance for gemini-2\.5-flash is used up/);
+    expect(e.message).toMatch(/daily allowance for this key is used up/);
     expect(e.message).toMatch(/midnight Pacific time, in about \d+ hours?/);
     expect(e.message).toContain('a local AI or OpenRouter');
   });

@@ -286,22 +286,29 @@ function classifyGemini(error: any, context: FailureContext): Error {
      */
     if (quotaKind(error) === 'daily') {
       const hours = Math.max(1, Math.round(msUntilPacificMidnight() / 3600000));
-      const model = /model:\s*([\w.-]+)/i.exec(message)?.[1];
-      // A model chosen in the box is the only one tried (agent audit item 83).
-      const others = context.triedOthers === false ? ' The model chosen in the box is the only one Forma tries; choose Auto to let it use the others.' : ', and Forma tried the other models it can use.';
+      /*
+       * Said as the result, not the machinery (2026-11-11, the full audit's
+       * CV-23): the model's id and "Forma tried the other models it can use"
+       * went. A model chosen in the box is still named as the person's own
+       * choice, since only that choice is tried (agent audit item 83).
+       */
+      const pinned = context.triedOthers === false ? ' for the model chosen in the box; choose Auto to let Forma use the others' : '';
       return new Error(
-        `This key's free daily allowance${model ? ` for ${model}` : ''} is used up${context.triedOthers === false ? '.' : ''}${others} ` +
-          `It resets at midnight Pacific time, in about ${hours} hour${hours === 1 ? '' : 's'}. ` +
+        `Today's free daily allowance for this key is used up${pinned}. ` +
+          `It resets at midnight Pacific time, in about ${hours} hour${hours === 1 ? '' : 's'}; ` +
           // Forma Offline went on 2026-11-05; the other AIs Settings offers are what works meanwhile.
-          'Meanwhile a local AI or OpenRouter can design instead: choose one in Settings.',
+          'meanwhile you can pick another AI in Settings, such as a local AI or OpenRouter.',
       );
     }
     const waitMs = parseRetryDelayMs(error);
     const when = waitMs ? ` Try again in about ${Math.max(1, Math.ceil(waitMs / 1000))}s.` : '';
+    // No model named here either (2026-11-11, CV-23's review): the per-minute
+    // limit is the key's to the person, so it is said as the key's. "quota"
+    // stays in the words, because fallbackChain's isLimit reads it.
     return new Error(
-      `You have reached the request quota for this Gemini model.${when} ` +
-      'This is a limit on how often the key may call that model, not a problem with your design or your report — ' +
-      'the free tier allows only a few requests per minute per model.'
+      `This key has used its free quota of requests for the moment.${when} ` +
+      'It is a limit on how often the key may ask, not a problem with your design or your report: ' +
+      'the free tier allows only a few requests a minute.'
     );
   }
 
@@ -331,7 +338,7 @@ function classifyGemini(error: any, context: FailureContext): Error {
   // Reached only after the automatic retries have already been spent.
   if (isOverloadedError(error)) {
     return new Error(
-      "Google's servers are busy and could not take this request, even after retrying. Nothing is wrong with your API key or your design — wait a minute and generate again."
+      "Google's servers are busy and could not take this request, even after retrying. Nothing is wrong with your API key or your design; wait a minute and generate again."
     );
   }
 
@@ -343,7 +350,7 @@ function classifyGemini(error: any, context: FailureContext): Error {
    */
   if (isTruncatedStreamMessage(message)) {
     return new Error(
-      "The connection to Google closed before the answer finished, even after retrying. Nothing is wrong with your API key or your design — check your connection and try again in a minute."
+      "The connection to Google closed before the answer finished, even after retrying. Nothing is wrong with your API key or your design; check your connection and try again in a minute."
     );
   }
 
@@ -355,9 +362,10 @@ function classifyGemini(error: any, context: FailureContext): Error {
   if (status === 400 || message.includes('INVALID_ARGUMENT')) {
     return new Error(
       `Gemini rejected the request: ${readable || 'the request was not valid'}. ` +
-        'This is usually the uploaded file — an unsupported type, or too large. Your API key is fine.'
+        'This is usually the uploaded file: an unsupported type, or too large. Your API key is fine.'
     );
   }
 
-  return new Error(`AI model error: ${readable || 'Unknown error'}`);
+  // "AI model error: ..." named the machinery (2026-11-11, the full audit's CV-23).
+  return new Error(readable ? `Something went wrong: ${readable}` : 'Something went wrong. Try again in a minute.');
 }

@@ -11,6 +11,12 @@ describe('workingTips', () => {
     }
   });
 
+  // The full audit's WS-20 (2026-11-11): the title stopped acting on 2026-11-08, so no tip may send anyone to it.
+  it('points at the project menu, not at the title that no longer acts', () => {
+    expect(WORKING_TIPS.join('\n')).not.toMatch(/Click the report's title/);
+    expect(WORKING_TIPS).toContain("Use the menu beside the report's name to rename, duplicate, archive or delete the project.");
+  });
+
   it('walks the tips from a starting point and wraps round', () => {
     expect(tipAt(0, 0)).toBe(WORKING_TIPS[0]);
     expect(tipAt(2, 1)).toBe(WORKING_TIPS[3]);

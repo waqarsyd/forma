@@ -33,9 +33,13 @@ export function pdfaPartOf(xml: string | null | undefined): PdfAPart | null {
   return m ? (Number(m[1]) as PdfAPart) : null;
 }
 
-/** What Forma says when a report asks for PDF/A and a password, which DevExpress refuses to export (s62a, s62b). */
+/**
+ * What Forma says when a report asks for PDF/A and a password, which DevExpress
+ * refuses to export (s62a, s62b). In the words of the designer's options, not
+ * the property's name (2026-11-11, the full audit's PX-22).
+ */
 export const PDFA_WITH_PASSWORD =
-  "This report asks for PDF/A and a password, and PDF/A forbids encryption, so no PDF is written: DevExpress refuses the same export. Remove the password or set PdfACompatibility to None in the report's export options.";
+  "This report asks for PDF/A and a password, which PDF/A does not allow, so no PDF was written; DevExpress refuses it too. Remove the password, or turn PDF/A off, in the report's PDF export options.";
 
 /* ---------------------------------------------------------------- dates */
 
