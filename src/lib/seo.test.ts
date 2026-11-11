@@ -23,6 +23,22 @@ describe('headFor', () => {
     expect(shell).toContain(`content="${ROUTE_DESCRIPTIONS['/']}"`);
   });
 
+  it('says what Forma is now in one sentence everywhere: index.html, the manifest and the title (full audit PS-10)', () => {
+    const home = ROUTE_DESCRIPTIONS['/'];
+    expect(home).toMatch(/^Turn a picture, a PDF, a \.repx or a few sentences into a DevExpress report/);
+    expect(home).not.toMatch(/screenshot|written spec|mockup/i);
+    // The description appears three times in index.html: the page's, og's and twitter's.
+    expect(shell.split(`content="${home}"`).length - 1).toBe(3);
+    expect(shell.split(`content="${ROUTE_TITLES['/']}"`).length - 1).toBe(2);
+    const manifest = JSON.parse(readFileSync('public/manifest.webmanifest', 'utf8')) as { name: string; description: string };
+    expect(manifest.name).toBe(ROUTE_TITLES['/']);
+    expect(manifest.description).toBe(home);
+    expect(llmsTxt()).toContain(`> ${home} `);
+    expect(softwareJsonLd()).toContain(home);
+    expect(ROUTE_DESCRIPTIONS['/features']).toMatch(/translat/);
+    expect(ROUTE_DESCRIPTIONS['/features']).toMatch(/shar/);
+  });
+
   it('indexes the public pages at their canonical address, and keeps the app, sign-in, shares and missing pages out', () => {
     for (const route of INDEXED_ROUTES) expect(headFor(route)).toMatchObject({ canonical: `${SITE_ORIGIN}${route}`, robots: 'index, follow' });
     for (const path of ['/workspace', '/login', '/signup', '/s/AbCdEfGhIjKlMnOp1234', '/no-such-page']) {
@@ -50,6 +66,20 @@ describe('withHead', () => {
     expect(page).toContain('<meta name="robots" content="index, follow" />');
     expect(page.match(/<meta property="og:title" content="([^"]*)"/)?.[1]).toBe('Docs — Forma');
     expect(page).toContain('<div id="root"><main>How Forma works</main></div>');
+  });
+
+  it("writes a value holding $ patterns as it is, never as a replacement pattern", () => {
+    const head = { title: "Costs $& and $' — Forma", description: "Pay $1 or $` or $$ now", canonical: `${SITE_ORIGIN}/$'x`, robots: 'index, follow' as const };
+    const page = withHead(shell, head, { body: "<p>$' and $&amp;</p>", extraHead: "<meta name=\"x\" content=\"$`\">" });
+    expect(page).toContain("<title>Costs $&amp; and $' — Forma</title>");
+    expect(page.match(/<meta\s+name="description"\s+content="([^"]*)"/)?.[1]).toBe('Pay $1 or $` or $$ now');
+    expect(page.match(/<meta property="og:title" content="([^"]*)"/)?.[1]).toBe("Costs $&amp; and $' — Forma");
+    expect(page).toContain(`<link rel="canonical" href="${SITE_ORIGIN}/$'x" />`);
+    expect(page).toContain("<div id=\"root\"><p>$' and $&amp;</p></div>");
+    expect(page).toContain("<meta name=\"x\" content=\"$`\">\n</head>");
+    // "$'" in a replacement string would have pasted the rest of the page in again.
+    expect(page.match(/<\/head>/g)).toHaveLength(1);
+    expect(page.match(/<div id="root">/g)).toHaveLength(1);
   });
 
   it('takes the canonical address and og:url out of a page not to be indexed', () => {

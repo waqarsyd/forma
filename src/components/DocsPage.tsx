@@ -649,7 +649,8 @@ export default function DocsPage({
                 <Def t="PDF">
                   Up to <strong className="font-semibold text-on-surface">8 pages</strong> per file. Each page
                   is rendered at roughly <strong className="font-semibold text-on-surface">250 DPI</strong>{' '}
-                  and its text layer is extracted in the same pass. Pages beyond the cap are reported.
+                  and its text layer is extracted in the same pass. A longer PDF is read as the first seven pages
+                  and the last, where a report's totals and footer print, and the notice says so.
                 </Def>
                 <Def t=".repx">
                   Read as text and validated as XML in your browser before a request is spent, then sent as
@@ -696,8 +697,8 @@ y_top = pageHeight − (baseline + height)`}
 
             <Article id="run" kicker="Guide" title="Running and refining" hidden={!matches('run')}>
               <p className={PROSE}>
-                Most reports take two or three passes. The first gets the structure, and the ones after it fix the
-                parts that came out wrong. Nothing is thrown away between them.
+                A report often takes a pass or two of changes after the first. The first gets the structure, and the
+                ones after it fix the parts that came out wrong. Nothing is thrown away between them.
               </p>
 
               <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
@@ -788,7 +789,6 @@ y_top = pageHeight − (baseline + height)`}
                 </Def>
                 <Def t="Say it is a table">
                   If a grid came back as separate labels, ask for that region to be one table with rows and cells.
-                  It is the most common single correction.
                 </Def>
                 <Def t="Questions stay questions">
                   A question is answered as a conversation, not with a new report. Asking "what does

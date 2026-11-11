@@ -58,6 +58,27 @@ describe('the pages SJ added', () => {
   });
 
   /*
+   * /compare current (2026-11-11, full audit CP-09): the day it was reviewed
+   * is a real date, not in the future, and the page says the two differences
+   * that matter most and names the other tools, each linked to its vendor.
+   */
+  it('dates its comparison and states what it was missing', () => {
+    const compare = INFO_DOCS['/compare']();
+    expect(compare.reviewed).toMatch(/^\d{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}$/);
+    const when = Date.parse(`${compare.reviewed} UTC`);
+    expect(Number.isNaN(when)).toBe(false);
+    expect(when).toBeLessThanOrEqual(Date.now());
+    expect(when).toBeGreaterThanOrEqual(Date.parse('11 November 2026 UTC'));
+    const src = readFileSync('src/components/infoPages.tsx', 'utf8');
+    const page = src.slice(src.indexOf('export const COMPARE'), src.indexOf('export const ABOUT'));
+    for (const said of ['Works with the version you have.', 'Reads a picture without a cloud account.', 'ActiveReports', 'Telerik', 'Stimulsoft', 'RDL and RDLC']) {
+      expect(page, said).toContain(said);
+    }
+    expect(page).not.toMatch(/still a preview/);
+    expect(page).toContain('https://docs.devexpress.com/XtraReports/405279');
+  });
+
+  /*
    * security.txt (item 110). RFC 9116 makes Contact and Expires required, and
    * an expired file is one a scanner ignores. This fails once the date has
    * passed, on purpose: that is the only way anyone hears it is due. Renew by

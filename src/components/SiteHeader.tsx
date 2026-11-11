@@ -197,7 +197,10 @@ export default function SiteHeader({
           </a>
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
-            className="u-transition u-press u-focus-ring w-[37px] h-[37px] grid place-items-center rounded-full border border-outline-variant bg-surface-container-lowest/60 hover:border-secondary text-on-surface-variant hover:text-secondary cursor-pointer select-none"
+            /* u-tap (2026-11-11, full audit PR-11b): 37px is under the 40px a
+               finger needs, and this is the one header control a phone shows
+               beside the menu button, which already had it. */
+            className="u-tap u-transition u-press u-focus-ring w-[37px] h-[37px] grid place-items-center rounded-full border border-outline-variant bg-surface-container-lowest/60 hover:border-secondary text-on-surface-variant hover:text-secondary cursor-pointer select-none"
             /* Sentence case, like every other label in the app. These two were
                the only Title Case strings in any user-visible control — the
                sign-in dialog's identical toggle already read "Switch to light
@@ -258,7 +261,9 @@ export default function SiteHeader({
                 onClick={onEnterWorkspace}
                 className="hidden lg:inline-block whitespace-nowrap font-label-caps text-on-surface-variant text-body-sm px-4 py-2 hover:text-secondary hover:bg-surface-container-low rounded-full transition-all active:scale-95 cursor-pointer"
               >
-                Workspace
+                {/* One label for the one action, as the footer and the account
+                    menu say it (2026-11-11, full audit PS-23). */}
+                Open the workspace
               </button>
 
               {showProfileMenu && (
@@ -282,7 +287,7 @@ export default function SiteHeader({
                 onClick={onSignUp}
                 className="u-transition u-press u-focus-ring whitespace-nowrap rounded-full border border-transparent bg-secondary-container px-[18px] py-[10px] font-body-lg text-[14px] leading-[1.62] tracking-[-0.005em] font-semibold text-white shadow-[0_1px_2px_rgba(8,24,43,0.1)] hover:bg-[color:var(--accent-deep)] cursor-pointer"
               >
-                Sign up
+                Create account
               </button>
             </div>
           )}

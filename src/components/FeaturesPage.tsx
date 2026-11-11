@@ -267,7 +267,7 @@ const CONTROLS = [
   {
     Icon: IconChat,
     title: 'Say what is wrong, not what to build',
-    body: 'It is a conversation, not a one-shot generator. Point at the part that came out wrong — "the totals block should sit under the table" — and ask again. Most reports take two or three passes, and each one starts from the last.',
+    body: 'It is a conversation, not a one-shot generator. Point at the part that came out wrong — "the totals block should sit under the table" — and ask again. A report often takes a pass or two of changes after the first, and each one starts from the last.',
   },
   {
     Icon: IconRedo,
@@ -861,6 +861,47 @@ export default function FeaturesPage({
           </div>
         </section>
 
+        {/* ------------------------------------------------------ TOGETHER
+
+            Sharing, translation and memory shipped between 2026-11-05 and
+            11-10 and this page, which calls itself everything Forma does, named
+            none of them (2026-11-11, full audit PS-19). */}
+        <section id="together" className="border-t border-outline-variant band-alt py-[108px]">
+          <div className="max-w-container-max mx-auto px-margin-desktop">
+            <SectionHead
+              eyebrow="Together"
+              title="Working with others and in your language."
+              lede="A report rarely stays with the person who made it. Send it to someone, have it in another language, and let Forma keep what you told it for the next one."
+            />
+            <RevealGroup className="grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant sm:grid-cols-3" stagger={0.09}>
+              {[
+                {
+                  k: 'Share by link',
+                  d: 'A copy of the report, read-only with its Preview and .repx, for people you add or anyone with the link. Stop sharing and the link stops.',
+                },
+                {
+                  k: 'In another language',
+                  d: 'Ask for it in German and every caption and title is translated, the layout kept, as a revision you can undo.',
+                },
+                {
+                  k: 'It remembers',
+                  d: 'Start a message with “remember” and Forma keeps it for later reports; it can learn your house style from reports you keep.',
+                },
+              ].map((c) => (
+                <RevealItem
+                  key={c.k}
+                  className="u-transition bg-surface-container-lowest dark:bg-card px-[22px] py-6 hover:bg-surface-container-low"
+                >
+                  <h3 className="font-display-lg text-[17px] font-bold leading-[1.28] tracking-[-0.018em] text-on-surface">
+                    {c.k}
+                  </h3>
+                  <p className="mt-[7px] font-body-lg text-[14px] leading-[1.6] text-on-surface-variant">{c.d}</p>
+                </RevealItem>
+              ))}
+            </RevealGroup>
+          </div>
+        </section>
+
         {/* -------------------------------------------------------- OUTPUT */}
         <section id="output" className="border-t border-outline-variant py-[108px]">
           <div className="max-w-container-max mx-auto px-margin-desktop">
@@ -1178,7 +1219,7 @@ export default function FeaturesPage({
                   onClick={onEnterWorkspace}
                   className="u-transition u-press u-focus-ring group inline-flex cursor-pointer items-center gap-[9px] rounded-full border border-transparent bg-secondary-container px-6 py-[13px] font-body-lg text-[14.5px] leading-[1.62] tracking-[-0.005em] font-semibold text-white shadow-[0_1px_2px_rgba(8,24,43,0.1)] hover:bg-[color:var(--accent-deep)]"
                 >
-                  Launch the workspace
+                  Open the workspace
                   <IconArrowRight size={15} className="u-transition group-hover:translate-x-[3px]" />
                 </button>
                 <a
@@ -1200,6 +1241,7 @@ export default function FeaturesPage({
           ['Fidelity', '#fidelity'],
           ['Control', '#control'],
           ['Scale', '#scale'],
+          ['Together', '#together'],
           ['Output', '#output'],
           ['Custody', '#custody'],
           ['Cost', '#cost'],

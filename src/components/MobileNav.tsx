@@ -106,9 +106,11 @@ function MenuSheet({ active, signedIn, onClose }: { active?: string; signedIn?: 
 
         {/* The header cannot hold the account controls at phone widths —
             nowrap alone pushed them off the right edge — so they live here
-            instead. Signed in, that is Workspace; signed out, Sign in/up.
-            Sign out stays on the avatar menu, which is compact enough to
-            remain in the header at every width. */}
+            instead. Signed in, that is Open the workspace; signed out, Sign
+            in and Create account, the labels the header and the sign-in card
+            use (2026-11-11, full audit PS-23: this said "Workspace" and "Sign
+            up"). Sign out stays on the avatar menu, which is compact enough
+            to remain in the header at every width. */}
         {signedIn && (
           <div className="mt-3 pt-3 border-t border-outline-variant/40 flex flex-col gap-2">
             <a
@@ -116,7 +118,7 @@ function MenuSheet({ active, signedIn, onClose }: { active?: string; signedIn?: 
               onClick={onClose}
               className="u-tap u-transition-fast u-focus-ring flex items-center justify-center rounded-full px-4 py-3 font-label-caps text-body-sm bg-secondary-container text-white shadow-lg shadow-secondary-container/20 hover:bg-[color:var(--accent-deep)]"
             >
-              Workspace
+              Open the workspace
             </a>
           </div>
         )}
@@ -135,7 +137,7 @@ function MenuSheet({ active, signedIn, onClose }: { active?: string; signedIn?: 
               onClick={onClose}
               className="u-tap u-transition-fast u-focus-ring flex items-center justify-center rounded-full px-4 py-3 font-label-caps text-body-sm bg-secondary-container text-white shadow-lg shadow-secondary-container/20 hover:bg-[color:var(--accent-deep)]"
             >
-              Sign up
+              Create account
             </a>
           </div>
         )}

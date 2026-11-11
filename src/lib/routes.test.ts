@@ -51,6 +51,8 @@ describe('ROUTE_TITLES', () => {
 
     expect(title).toBeDefined();
     expect(ROUTE_TITLES['/']).toBe(title);
+    // 2026-11-11 (full audit PS-10): the title names every input, not a screenshot alone.
+    expect(ROUTE_TITLES['/']).toBe('Forma — DevExpress reports from a picture, a PDF or your words');
   });
 
   /* Tab strips truncate the end, so the page name has to lead. */

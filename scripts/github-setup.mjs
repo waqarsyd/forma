@@ -19,7 +19,7 @@
  *    updates on, beside .github/dependabot.yml's version updates.
  * 2. The ruleset in .github/rulesets/main.json, on main (batch SH).
  * 3. Labels. The issue forms' own (bug, idea, output) already exist; this adds
- *    `security` and one `area: ...` label per area the changelog files a
+ *    `security`, the docs form's `documentation`, and one `area: ...` label per area the changelog files a
  *    change under, AREA_LABELS in src/lib/releases.ts, which a test holds this
  *    list to.
  * 4. Milestones, one per item of the roadmap in docs/PRD.md section 6, as it
@@ -50,7 +50,14 @@ const AREA_LABELS = [
   ['area: workspace', 'The workspace around the report: projects, Settings, the sidebar'],
   ['area: site', 'The public pages, the docs and the changelog'],
 ];
-const LABELS = [['security', 'A weakness in how Forma keeps a key or a report safe', 'b60205'], ...AREA_LABELS.map(([n, d]) => [n, d, 'c5def5'])];
+// `documentation` (2026-11-11, full audit PS-15): the docs issue form
+// (.github/ISSUE_TEMPLATE/docs.yml) files under it, and GitHub creates a form's
+// issue without a label the repository does not have.
+const LABELS = [
+  ['security', 'A weakness in how Forma keeps a key or a report safe', 'b60205'],
+  ['documentation', 'The Docs page missed or got something wrong', '0075ca'],
+  ...AREA_LABELS.map(([n, d]) => [n, d, 'c5def5']),
+];
 
 const MILESTONES = [
   ['PDFs past eight pages', 'Raise or remove the 8-page PDF cap (MAX_PDF_PAGES), and support multi-page .repx datasets. docs/PRD.md section 6.'],

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { transition, modalVariants } from '../lib/motion';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, sendPasswordReset } from '../services/firebase';
@@ -11,7 +11,14 @@ import { IconEye, IconEyeOff, IconClose, IconWarn, IconInfo, IconSun, IconMoon }
 
 interface LoginPageProps {
   onClose: () => void;
-  onSuccess: () => void;
+  /**
+   * Signed in. `notice` is what the page should say once the card has gone,
+   * which only an email sign-up has (2026-11-11, full audit PS-17): the
+   * verification link it sent, which sharing needs. Until then the card closed
+   * with nothing said, and people met "verify your address" only when they
+   * tried to share.
+   */
+  onSuccess: (notice?: string) => void;
   initialMode?: 'signin' | 'signup';
   isDarkMode?: boolean;
   setIsDarkMode?: (val: boolean) => void;
@@ -88,11 +95,14 @@ function validate(mode: 'signin' | 'signup', values: FormValues): FieldErrors {
  * fabricates a session when Firebase is misconfigured: a credential-free path
  * into the workspace is a bypass whether or not it is confined to dev builds,
  * and a misconfiguration must be visible rather than silently papered over.
- * The two configuration codes below therefore report the real problem.
+ * The configuration codes below therefore report the real problem, in the
+ * visitor's terms and with somewhere to go (2026-11-11, full audit PS-28):
+ * they told the visitor to edit "the Firebase authorized-domain list", which
+ * only the owner can, and to "contact support", which does not exist.
  */
-const AUTH_MESSAGES: Record<string, string> = {
-  'auth/unauthorized-domain': 'Sign-in is not enabled for this domain. Add it to the Firebase authorized-domain list.',
-  'auth/configuration-not-found': 'Email and password sign-in is not configured for this project.',
+export const AUTH_MESSAGES: Record<string, string> = {
+  'auth/unauthorized-domain': "Sign-in isn't available on this address. Use https://openforma.web.app.",
+  'auth/configuration-not-found': "Email sign-in isn't available right now. Try Google, or write to us from the contact page.",
   'auth/invalid-credential': 'Invalid email or password.',
   'auth/user-not-found': 'Invalid email or password.',
   'auth/wrong-password': 'Invalid email or password.',
@@ -100,10 +110,10 @@ const AUTH_MESSAGES: Record<string, string> = {
   'auth/missing-password': 'Enter your password.',
   'auth/email-already-in-use': 'An account already exists with this email.',
   'auth/weak-password': `Password is too weak — use at least ${MIN_PASSWORD} characters.`,
-  'auth/user-disabled': 'This account has been disabled. Contact support to restore it.',
+  'auth/user-disabled': 'This account has been suspended. Write through the contact page.',
   'auth/too-many-requests': 'Too many attempts. Wait a few minutes before trying again.',
   'auth/network-request-failed': 'Could not reach the sign-in service. Check your connection and try again.',
-  'auth/operation-not-allowed': 'Email and password sign-in is not enabled for this project.',
+  'auth/operation-not-allowed': "Email sign-in isn't available right now. Try Google, or write to us from the contact page.",
   // Google sign-in goes through signInWithPopup, so a popup blocker is one of
   // the likeliest failures here. Without this it fell through to "Google
   // sign-in failed. Please try again." — advice that cannot work, because
@@ -113,11 +123,18 @@ const AUTH_MESSAGES: Record<string, string> = {
     'An account already exists with this email, created with a different sign-in method. Try the other method.',
 };
 
+/** What the page says once an email sign-up has made the account (full audit PS-17). */
+export const signedUpNotice = (email: string) =>
+  `Account made. We sent a link to ${email}: open it to verify the address, which sharing needs.`;
+
 const LABEL =
   'font-code-sm text-[10px] font-medium leading-[1.62] tracking-[0.12em] uppercase text-[color:var(--ink-faint)]';
 
-const fieldClass = (bad: boolean) =>
-  `u-transition h-[46px] w-full rounded-[10px] border px-3.5 font-body-lg text-[14.5px] leading-[normal] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:outline-none focus:ring-4 disabled:opacity-60 ${
+// `max-lg:text-[16px]` (2026-11-11, full audit PR-09b): iOS Safari zooms the
+// page into any field set under 16px when it takes focus, and does not zoom
+// back out; the workspace's fields got the same rule in its own CSS.
+export const fieldClass = (bad: boolean) =>
+  `u-transition h-[46px] w-full rounded-[10px] border px-3.5 font-body-lg text-[14.5px] max-lg:text-[16px] leading-[normal] text-on-surface placeholder:text-[color:var(--ink-faint)] focus:outline-none focus:ring-4 disabled:opacity-60 ${
     bad
       ? 'border-error/50 bg-error/[0.07] focus:ring-error/15'
       : 'border-outline-variant bg-surface-container-low focus:border-secondary focus:bg-surface-container-lowest dark:focus:bg-card focus:ring-[color:var(--accent-wash)]'
@@ -164,6 +181,7 @@ export default function LoginPage({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   /**
    * Switching between sign-in and sign-up is a fresh start: a stale "Passwords
@@ -217,7 +235,10 @@ export default function LoginPage({
       }
       if (e.key !== 'Tab') return;
 
-      const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+      // This card's own element, by ref (2026-11-11, full audit PS-28): it
+      // read the first `[role="dialog"]` in the document, and the home page's
+      // announcement panel is one, so focus could be trapped in the wrong one.
+      const dialog = dialogRef.current;
       if (!dialog) return;
 
       // `offsetParent === null` catches anything hidden — the confirm-password
@@ -305,10 +326,13 @@ export default function LoginPage({
     try {
       if (mode === 'signin') {
         await signInWithEmail(cleanEmail, password);
+        onSuccess();
       } else {
         await signUpWithEmail(cleanEmail, password, cleanName || undefined);
+        // services/firebase.ts sends the verification link with every email
+        // sign-up; say so as the card closes (full audit PS-17).
+        onSuccess(signedUpNotice(cleanEmail));
       }
-      onSuccess();
     } catch (err: any) {
       console.error('Email auth error:', err);
       // Every failure reports itself and stops here. There was once a branch that
@@ -362,11 +386,22 @@ export default function LoginPage({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={transition.base}
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={signup ? 'Create an account' : 'Sign in'}
       className="landing sheet-grid fixed inset-0 z-[100] flex flex-col overflow-y-auto bg-surface font-body-lg text-[16px] leading-[1.62] text-on-surface"
     >
+      {/* The skip link every public page opens with (2026-11-11, full audit
+          PS-31), past the bar to the card. Its target is not id="main": the
+          page this card covers stays mounted behind it, inert, with a <main
+          id="main"> of its own, and two elements may not share an id. */}
+      <a
+        href="#sign-in-card"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-[60] focus:rounded-full focus:bg-secondary-container focus:px-4 focus:py-2 focus:font-body-lg focus:text-[14px] focus:font-semibold focus:text-white"
+      >
+        Skip to content
+      </a>
       {/* ------------------------------------------------------- top bar */}
       <div className="flex shrink-0 items-center justify-between gap-4 px-margin-desktop py-[22px]">
         <div className="flex select-none items-center gap-[11px]">
@@ -411,7 +446,7 @@ export default function LoginPage({
 
       {/* ---------------------------------------------------------- card */}
       <div className="flex flex-1 items-center justify-center px-4 pb-16 pt-2 sm:px-margin-desktop">
-        <motion.div variants={modalVariants} initial="hidden" animate="visible" className="w-full max-w-[468px]">
+        <motion.div id="sign-in-card" tabIndex={-1} variants={modalVariants} initial="hidden" animate="visible" className="w-full max-w-[468px] outline-none">
           <div className="rounded-2xl border border-outline-variant bg-surface-container-lowest dark:bg-card p-[30px] shadow-[var(--shadow-lg),var(--inset-hi)] sm:px-[38px] sm:py-9">
             <h1 className="font-display-lg text-[27px] font-extrabold leading-[1.15] tracking-[-0.03em] text-on-surface">
               {signup ? 'Create your account' : 'Sign in to Forma'}
@@ -423,9 +458,12 @@ export default function LoginPage({
             </p>
 
             {/* Both modes visible at once. Sign-up used to be one sentence at
-                the very bottom of the card, under the Google button. */}
+                the very bottom of the card, under the Google button.
+                Two buttons with aria-pressed since 2026-11-11 (full audit
+                PS-28): they claimed to be tabs, with no tab panel and none of
+                the arrow keys a tab list promises a screen reader. */}
             <div
-              role="tablist"
+              role="group"
               aria-label="Sign in or create an account"
               className="mt-[22px] grid grid-cols-2 gap-1 rounded-full border border-outline-variant bg-surface-container-low p-1"
             >
@@ -436,8 +474,7 @@ export default function LoginPage({
                 <button
                   key={value}
                   type="button"
-                  role="tab"
-                  aria-selected={mode === value}
+                  aria-pressed={mode === value}
                   disabled={loading}
                   onClick={() => switchMode(value)}
                   className={`u-transition cursor-pointer rounded-full px-3 py-[9px] font-body-lg text-[13.5px] font-semibold leading-[normal] disabled:pointer-events-none disabled:opacity-60 ${
@@ -691,7 +728,10 @@ export default function LoginPage({
                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
               </svg>
-              <span>{signup ? 'Sign up with Google' : 'Sign in with Google'}</span>
+              {/* "Continue with Google" when making an account (2026-11-11, full
+                  audit PS-23): one of Google's own button texts, and no second
+                  name for sign-up beside "Create account". */}
+              <span>{signup ? 'Continue with Google' : 'Sign in with Google'}</span>
             </button>
 
             {APP_CHECK_SITE_KEY && (
@@ -730,8 +770,8 @@ export default function LoginPage({
             </div>
             <p className="mt-1.5 font-body-lg text-[13.5px] leading-[1.58] text-on-surface-variant">
               Forma works fully signed out — your projects are kept in this browser and are still there when
-              you come back. An account only adds syncing across machines and the encrypted copy of your API
-              key.{' '}
+              you come back. An account adds three things: your projects follow you to other machines, you can
+              share a report by link, and you can keep an encrypted copy of your API key.{' '}
               {/* Goes to the workspace, which is what it says. It called
                   `onClose`, and that restores the page you came from — so unless
                   you happened to arrive from the workspace, this offered the

@@ -40,7 +40,7 @@ import { ROUTES } from './router';
  * for the same input.
  */
 export const ROUTE_TITLES: Record<string, string> = {
-  '/': 'Forma — Screenshot to DevExpress .repx',
+  '/': 'Forma — DevExpress reports from a picture, a PDF or your words',
   '/features': 'Features — Forma',
   '/docs': 'Docs — Forma',
   '/contact': 'Contact — Forma',

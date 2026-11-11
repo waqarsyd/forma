@@ -32,10 +32,15 @@ export const CONTACT_EMAIL = 'waqarsayyed.official@gmail.com';
 /** The pages a search engine may index: the public ones. */
 export const INDEXED_ROUTES = ['/', '/features', '/pricing', '/docs', '/faq', '/examples', '/compare', '/security', '/self-host', '/download', '/about', '/contact', '/changelog', '/terms', '/privacy', '/accessibility'] as const;
 
-/** One sentence per route, for search results and link previews. The home page's is index.html's own. */
+/**
+ * One sentence per route, for search results and link previews. The home
+ * page's is index.html's own, and the manifest's (2026-11-11, full audit
+ * PS-10: all three said "screenshot to .repx" with a written spec first,
+ * the framing from before a description was an input).
+ */
 export const ROUTE_DESCRIPTIONS: Record<string, string> = {
-  '/': 'Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer.',
-  '/features': 'Everything Forma does: a screenshot, a PDF or a description to a DevExpress .repx, a print preview with exports, a chat that edits the report in place, and OCR in your browser.',
+  '/': 'Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report you can open in the designer, with a print preview, exports and a chat that edits it. Free, in your browser, with your own Gemini key.',
+  '/features': 'Everything Forma does: a picture, a PDF or a description to a DevExpress .repx, a print preview with exports, a chat that edits the report in place and translates it, sharing by link, and text read from pictures in your browser.',
   '/docs': 'How to use Forma: add your own Gemini key, attach a design or describe one, read the checks, edit in the chat, preview and export, and open the result in the DevExpress designer.',
   '/contact': 'Questions, bug reports and security issues for Forma, by email or on GitHub.',
   '/changelog': 'What is new in Forma, release by release, with an Atom feed.',
@@ -45,18 +50,18 @@ export const ROUTE_DESCRIPTIONS: Record<string, string> = {
   '/security': 'How Forma keeps your API key and your reports safe: bring your own key, a strict content policy, owner-only data and how to report a vulnerability.',
   '/pricing': 'Forma is free, with no plans. What the AI costs: Google’s free Gemini tier, a free local AI, or OpenRouter’s free models.',
   '/examples': 'Six example reports to start from in Forma, from an invoice to an inventory report, each opened in the workspace with one click.',
-  '/compare': 'Forma beside DevExpress’s own AI features, and how to move Crystal Reports and SSRS reports to DevExpress for free.',
+  '/compare': 'Forma beside DevExpress’s own AI features and the other report tools with AI, and how to move Crystal Reports and SSRS reports to DevExpress for free.',
   '/about': 'Forma, an open-source AI report designer for DevExpress: who makes it, what it is built with, and a press kit.',
   '/self-host': 'Run Forma yourself: on your own computer, or with your own Firebase project for a team.',
   '/download': 'Download Forma Designer for Windows, free: open your Forma reports in the DevExpress report designer with one click. Version, size, SHA-256 and install steps.',
   '/faq': 'Answers to the questions people ask about Forma: cost, files, privacy, languages and moving your projects.',
   '/login': 'Sign in to Forma to keep your reports in your account.',
   '/signup': 'Create a free Forma account to keep your reports in your account.',
-  '/workspace': 'The Forma workspace: a screenshot, a PDF or a description to a DevExpress report.',
+  '/workspace': 'The Forma workspace: a picture, a PDF or a description to a DevExpress report.',
 };
 
 const SHARED_DESCRIPTION = 'A report designed in Forma and shared by its author.';
-const NOT_FOUND_DESCRIPTION = 'This page does not exist. Forma turns a screenshot, a PDF or a description into a DevExpress report.';
+const NOT_FOUND_DESCRIPTION = 'This page does not exist. Forma turns a picture, a PDF or a description into a DevExpress report.';
 
 export interface Head {
   title: string;
@@ -96,10 +101,19 @@ export function pageFile(path: string): string {
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const escapeText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
-/** Replaces the content of the one `<meta>` naming `key` (name= or property=). */
+/**
+ * Replaces the content of the one `<meta>` naming `key` (name= or property=).
+ *
+ * Every replacement in this file that carries data goes through a replacer
+ * function, never a replacement string (2026-11-11, the full audit's
+ * follow-up to wave 1's XW): in a string, `$&`, `$'`, `` $` `` and `$1` are
+ * patterns, so a description or a page body holding "$'" would have pasted
+ * the rest of the page into itself. A function's return value is taken as
+ * it is.
+ */
 function setMeta(html: string, attr: 'name' | 'property', key: string, value: string): string {
   const re = new RegExp(`(<meta\\s+${attr}="${key.replace(/[.:]/g, '\\$&')}"\\s+content=")[^"]*(")`);
-  return html.replace(re, `$1${escapeAttr(value)}$2`);
+  return html.replace(re, (_m, open: string, close: string) => `${open}${escapeAttr(value)}${close}`);
 }
 
 /**
@@ -110,7 +124,7 @@ function setMeta(html: string, attr: 'name' | 'property', key: string, value: st
  * page drawn at build (src/prerender.tsx), goes inside `<div id="root">`.
  */
 export function withHead(html: string, head: Head, extra: { body?: string; extraHead?: string } = {}): string {
-  let out = html.replace(/<title>[^<]*<\/title>/, `<title>${escapeText(head.title)}</title>`);
+  let out = html.replace(/<title>[^<]*<\/title>/, () => `<title>${escapeText(head.title)}</title>`);
   out = setMeta(out, 'name', 'description', head.description);
   out = setMeta(out, 'property', 'og:title', head.title);
   out = setMeta(out, 'property', 'og:description', head.description);
@@ -118,13 +132,15 @@ export function withHead(html: string, head: Head, extra: { body?: string; extra
   out = setMeta(out, 'name', 'twitter:description', head.description);
   out = setMeta(out, 'name', 'robots', head.robots);
   if (head.canonical) {
-    out = out.replace(/(<link\s+rel="canonical"\s+href=")[^"]*(")/, `$1${escapeAttr(head.canonical)}$2`);
-    out = setMeta(out, 'property', 'og:url', head.canonical);
+    const canonical = head.canonical;
+    out = out.replace(/(<link\s+rel="canonical"\s+href=")[^"]*(")/, (_m, open: string, close: string) => `${open}${escapeAttr(canonical)}${close}`);
+    out = setMeta(out, 'property', 'og:url', canonical);
   } else {
     out = out.replace(/\s*<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/, '').replace(/\s*<meta\s+property="og:url"\s+content="[^"]*"\s*\/?>/, '');
   }
-  if (extra.extraHead) out = out.replace('</head>', `${extra.extraHead}\n</head>`);
-  if (extra.body) out = out.replace('<div id="root"></div>', `<div id="root">${extra.body}</div>`);
+  const { extraHead, body } = extra;
+  if (extraHead) out = out.replace('</head>', () => `${extraHead}\n</head>`);
+  if (body) out = out.replace('<div id="root"></div>', () => `<div id="root">${body}</div>`);
   return out;
 }
 
@@ -225,7 +241,7 @@ export function llmsTxt(): string {
   return [
     `# ${SITE_NAME}`,
     '',
-    `> ${ROUTE_DESCRIPTIONS['/']} Free and open source (Apache-2.0); it runs in the browser with the visitor's own Gemini API key, or a local AI.`,
+    `> ${ROUTE_DESCRIPTIONS['/']} Open source (Apache-2.0); a local AI or OpenRouter's free models can answer instead of Gemini.`,
     '',
     '## Pages',
     '',

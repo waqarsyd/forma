@@ -130,6 +130,12 @@ export default function PublicSite() {
     setShowLogin(false);
   };
 
+  // What the sign-in card hands on as it closes (2026-11-11, full audit PS-17):
+  // after an email sign-up, that a verification link was sent, which sharing
+  // needs. Said in a live region that is always in the page, so a screen
+  // reader announces it when it fills, and kept until it is dismissed.
+  const [afterSignIn, setAfterSignIn] = useState<string | null>(null);
+
   const view = viewForRoute(route);
   const shared = sharedReportId(route);
 
@@ -159,8 +165,9 @@ export default function PublicSite() {
           <LoginPage
             initialMode={loginMode}
             onClose={closeLogin}
-            onSuccess={() => {
+            onSuccess={(notice) => {
               setShowLogin(false);
+              setAfterSignIn(notice ?? null);
               navigate(lastViewPath || '/');
             }}
             isDarkMode={isDarkMode}
@@ -168,6 +175,20 @@ export default function PublicSite() {
           />
         </Suspense>
       )}
+      <div role="status" aria-live="polite" className="landing pointer-events-none fixed inset-x-0 bottom-6 z-[90] flex justify-center px-4">
+        {afterSignIn && (
+          <div className="pointer-events-auto flex max-w-[520px] items-start gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card px-4 py-3.5 font-body-lg text-[13.5px] leading-[1.55] text-on-surface-variant shadow-[var(--shadow-lg)]">
+            <span>{afterSignIn}</span>
+            <button
+              type="button"
+              onClick={() => setAfterSignIn(null)}
+              className="u-focus-ring shrink-0 cursor-pointer rounded-full px-2 font-semibold text-secondary hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
     </>
   );
 }

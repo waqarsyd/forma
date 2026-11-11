@@ -10,8 +10,21 @@
  * stack (file and line, no data), the build (lib/buildInfo.ts), the page's
  * path without its query, and the browser. Not the report, the conversation
  * or the key, which the error boundary never sees.
+ *
+ * Through the bug form since 2026-11-11 (full audit PS-15 and SE-15). A plain
+ * `?title=&body=` link met blank issues being off (.github/ISSUE_TEMPLATE/
+ * config.yml), and GitHub sends anyone who is not a collaborator to the
+ * template chooser with what was prefilled gone. A form named by `template`
+ * fills each field from the parameter of its id, so the parameters below are
+ * bug-report.yml's ids: rename one there and it fills nothing, silently.
+ * Two things may not reach a public issue even though the error boundary
+ * passes them on: a shared report's id, which is the link itself (the path
+ * says `/s/(a shared report)`), and an API key an error message happened to
+ * quote (Gemini's or OpenRouter's, said as "(a key)").
  */
 export const ISSUES_URL = 'https://github.com/waqarsyd/forma/issues/new';
+/** The issue form it opens, and the ids of the fields it fills. */
+export const BUG_TEMPLATE = 'bug-report.yml';
 
 export interface ProblemReport {
   area: string;
@@ -20,6 +33,18 @@ export interface ProblemReport {
   version: string;
   path?: string;
   browser?: string;
+}
+
+const KEYS = /AIza[0-9A-Za-z_-]{35}|sk-or-v1-[0-9a-f]+/g;
+
+/** Text with any Gemini or OpenRouter key in it said as "(a key)". */
+export function withoutKeys(text: string): string {
+  return text.replace(KEYS, () => '(a key)');
+}
+
+/** A page's path for a public issue: no query or fragment, and a shared report's id not named. */
+export function publicPath(path: string): string {
+  return withoutKeys(path.split(/[?#]/)[0]).replace(/^\/s\/[^/]+/, () => '/s/(a shared report)');
 }
 
 /** A stack's first lines, with any query string or fragment cut from its addresses. */
@@ -33,19 +58,19 @@ export function stackHead(stack: string | undefined, lines = 6): string {
 }
 
 export function problemReportUrl(report: ProblemReport): string {
-  const message = report.message.trim().split('\n')[0].slice(0, 120) || 'an error';
-  const body = [
-    'What were you doing when it happened?',
-    '',
-    '',
-    '---',
-    `Where: ${report.area}`,
-    `Error: ${report.message.trim().slice(0, 600)}`,
-    ...(report.stack ? ['', '```', stackHead(report.stack), '```'] : []),
-    '',
-    `Version: ${report.version}`,
-    ...(report.path ? [`Page: ${report.path.split(/[?#]/)[0]}`] : []),
-    ...(report.browser ? [`Browser: ${report.browser}`] : []),
-  ].join('\n');
-  return `${ISSUES_URL}?${new URLSearchParams({ title: `Problem in ${report.area}: ${message}`, body, labels: 'bug' }).toString()}`;
+  const said = withoutKeys(report.message.trim());
+  const message = said.split('\n')[0].slice(0, 120) || 'an error';
+  const where = [`Where: ${report.area}`, ...(report.path ? [`Page: ${publicPath(report.path)}`] : [])].join('\n');
+  const stack = report.stack ? withoutKeys(stackHead(report.stack)) : '';
+  const fields: Record<string, string> = {
+    template: BUG_TEMPLATE,
+    title: `Problem in ${report.area}: ${message}`,
+    // "What happened, and what you expected": the person writes the rest.
+    what: `${where}\n\nWhat were you doing when it happened?\n`,
+    error: said.slice(0, 600),
+    version: report.version,
+  };
+  if (stack) fields.console = stack;
+  if (report.browser) fields.env = report.browser;
+  return `${ISSUES_URL}?${new URLSearchParams(fields).toString()}`;
 }

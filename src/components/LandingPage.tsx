@@ -138,8 +138,11 @@ const STEPS = [
     title: 'Take the file',
     body: (
       <>
+        {/* What shipped from 2026-11-05 to 11-10 and the front page never said
+            (2026-11-11, full audit PS-19): Forma Designer, sharing and SQL Server. */}
         Download the <span className="font-code-sm">.repx</span>, named after the report title, and open it in the
-        DevExpress designer. Or print it from the Preview, which pages it as DevExpress does.
+        DevExpress designer, or let the free Forma Designer open it there for you. Or print it from the Preview, which
+        pages it as DevExpress does. Share it by link, or bind it to your SQL Server database without connecting to it.
       </>
     ),
     points: [
@@ -545,7 +548,9 @@ const LandingPage = ({
           <div className="max-w-container-max mx-auto px-margin-desktop">
             <SectionHead
               eyebrow="Precision"
-              title="Accurate down to the hundredth of an inch."
+              /* What the file stores, not a promise of accuracy the Terms
+                 decline to give (2026-11-11, full audit PS-23). */
+              title="Positions in hundredths of an inch, the unit DevExpress stores by default."
               lede="These are the details Forma carries through from your design into the XML, so the report opens in the designer ready to work with."
             />
             <RevealGroup className="grid border-l border-t border-outline-variant bg-surface-container-lowest/40 sm:grid-cols-2 lg:grid-cols-3">
@@ -635,12 +640,14 @@ const LandingPage = ({
               {/* The eyebrow's trailing rule is suppressed here — centred text
                   with a rule running off one side reads as a mistake. */}
               <div className="font-code-sm text-[11px] font-medium leading-[1.62] tracking-[0.15em] uppercase text-white/[0.46]">
-                Ready when you are
+                Try it on your own file
               </div>
             </Reveal>
             <Reveal delay={0.06}>
+              {/* Said plainly (2026-11-11, full audit PS-23): "Let's build
+                  something precise." was a slogan, not what to do next. */}
               <h2 className="mt-5 font-display-lg text-[clamp(29px,3.5vw,45px)] font-extrabold leading-[1.08] tracking-[-0.032em] text-white text-balance">
-                Let's build something precise.
+                Bring a report you already have.
               </h2>
             </Reveal>
             <Reveal delay={0.12}>
@@ -657,7 +664,7 @@ const LandingPage = ({
                   onClick={onEnterWorkspace}
                   className="u-transition u-press u-focus-ring group inline-flex cursor-pointer items-center gap-[9px] rounded-full border border-transparent bg-secondary-container px-6 py-[13px] font-body-lg text-[14.5px] leading-[1.62] tracking-[-0.005em] font-semibold text-white shadow-[0_1px_2px_rgba(8,24,43,0.1)] hover:bg-[color:var(--accent-deep)]"
                 >
-                  Launch the workspace
+                  Open the workspace
                   <IconArrowRight size={15} className="u-transition group-hover:translate-x-[3px]" />
                 </button>
                 <a

@@ -16,6 +16,8 @@ import { DATA_FILE_EXTENSIONS } from '../lib/dataFiles';
 import { SUPPORTED_PAGE_SIZES } from '../lib/reportGeometry';
 import { BATCH_PARALLEL } from '../lib/batchQueue';
 import { MAX_ATTACHMENTS, MAX_FILE_BYTES, MAX_PDF_PAGES } from '../lib/attachmentBudget';
+import { pdfPagesToRead } from '../lib/repxIntake';
+import { fallbackReply } from '../lib/formaTeam';
 import { MIN_PASSWORD } from '../lib/passwordPolicy';
 import { MAX_PERSISTED_REVISIONS } from '../lib/revisionStore';
 import { STARTING_POINTS } from '../lib/startingPoints';
@@ -38,7 +40,11 @@ const faqs = readFileSync('src/components/faqs.tsx', 'utf8');
 const info = readFileSync('src/components/infoPages.tsx', 'utf8');
 // And the hero's drawn file, whose pane label was a variable name (2026-11-11, full audit PS-22).
 const hero = readFileSync('src/components/landing/HeroScanner.tsx', 'utf8');
-const all = [landing, features, docs, figures, faqs, info, hero].map(visible).join('\n');
+// And the header, the phone menu and the contact page, whose labels and lines
+// batch PSB set (2026-11-11, PS-23), and the sign-in card, whose Google
+// button said "Sign up" beside a tab saying "Create account".
+const chrome = ['SiteHeader', 'MobileNav', 'ContactPage', 'SiteFooter', 'LoginPage'].map(page);
+const all = [landing, features, docs, figures, faqs, info, hero, ...chrome].map(visible).join('\n');
 /** One Docs article's source, from its opening tag to its close. */
 const article = (id: string) => {
   const start = docs.indexOf(`<Article id="${id}"`);
@@ -85,6 +91,10 @@ describe('the public pages do not claim what Forma no longer does', () => {
     ['the key kept in one tab', /\bin this tab\b/i],
     ['a bill for a free-tier request', /\bbilled\b/i],
     ['the code’s own names as copy', /analyzeReportDesign|repxContent|temperature['",\s]+0/],
+    // Batch PSB (2026-11-11, PS-23): claims nobody measured, and one label per action.
+    ['accuracy no one measured', /Accurate down to|most common single correction|two or three passes/i],
+    ['a slogan where the next step goes', /Let.s build something precise|Ready when you are|The application is the portfolio/i],
+    ['a second label for the workspace or for sign-up', /Launch the workspace|\bSign up\b/],
   ])('no longer claims %s', (_what, pattern) => {
     // On one line, so a sentence the source wraps between two words is still found (2026-11-11).
     expect(all.replace(/\s+/g, ' ')).not.toMatch(pattern);
@@ -134,6 +144,14 @@ describe('what the pages state, the code answers', () => {
       expect(said.length, name).toBeGreaterThan(0);
       for (const n of said) expect(n, name).toBe(MAX_PDF_PAGES);
     }
+  });
+
+  // Batch PSB (2026-11-11, CP-04c): a longer PDF keeps its last page, where totals print.
+  it('says which pages of a longer PDF are read, as the intake chooses them', () => {
+    const pages = pdfPagesToRead(MAX_PDF_PAGES + 12);
+    expect(pages).toHaveLength(MAX_PDF_PAGES);
+    expect(pages[pages.length - 1]).toBe(MAX_PDF_PAGES + 12);
+    expect(numbers(docs, /the first (\w+) pages and the last/gi)).toEqual([MAX_PDF_PAGES - 1]);
   });
 
   it('gives the attachment count and file size the intake enforces', () => {
@@ -205,6 +223,11 @@ describe('what the pages state, the code answers', () => {
     expect(ai).toContain('<Def t="Page reader">');
     expect(article('trouble')).toContain(`<Def t={'"So here is a quicker version of the page"'}>`);
     expect(article('trouble')).toContain('<Def t="A model was retired">');
+    // The quoted words are the reply's own (batch PSB, 2026-11-11): someone
+    // searching the docs for what the chat said finds this heading.
+    const quoted = /<Def t=\{'"([^"]+)"'\}>/.exec(article('trouble'))![1];
+    const reply = fallbackReply('Gemini', 'quota exceeded', false);
+    expect(reply.toLowerCase()).toContain(quoted.toLowerCase());
   });
 
   it('lists every article in the footer, from the list the sidebar draws', () => {

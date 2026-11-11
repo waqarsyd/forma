@@ -50,14 +50,30 @@ const mailAddress = () => `${MAIL_USER}${String.fromCharCode(64)}${MAIL_HOST}`;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-const TOPICS = [
+/*
+ * 'A security issue' was a topic here until 2026-11-11 (full audit PS-27),
+ * while the paragraph above the form says not to send one through it: the
+ * form goes through a third-party relay, and SECURITY.md's two private routes
+ * are where a vulnerability belongs. A line under the select points there
+ * instead. In its place, the topic a shared report's "Report this link" opens
+ * with (`?topic=shared`, SharedReportPage), so a link that shares what it
+ * should not reaches the inbox labelled as such.
+ */
+export const SHARED_LINK_TOPIC = 'A shared link that should not be public';
+
+export const TOPICS = [
   'A layout came out wrong',
   'The designer will not open the file',
   'An error message',
-  'A security issue',
+  SHARED_LINK_TOPIC,
   'An idea or feature request',
   'Something else',
 ];
+
+/** The topic a link preselects: `?topic=shared` for a shared report's "Report this link". */
+export function topicFromSearch(search: string): string {
+  return new URLSearchParams(search).get('topic') === 'shared' ? SHARED_LINK_TOPIC : '';
+}
 
 const ROUTES: Array<[string, ReactNode]> = [
   ['A wrong layout', 'The file you uploaded, and what came back. The original PDF beats a screenshot of it — that is usually the whole explanation.'],
@@ -249,6 +265,14 @@ export default function ContactPage({
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [revealed]);
+
+  // The topic a link names (2026-11-11, full audit PS-27), read after the
+  // first render rather than in the initial state: the page is drawn at build
+  // with no address, and the form has to match that drawing when it hydrates.
+  useEffect(() => {
+    const topic = topicFromSearch(window.location.search);
+    if (topic) setValues((p) => (p.topic ? p : { ...p, topic }));
+  }, []);
 
   const set = (k: FieldKey) => (value: string) => {
     setValues((p) => ({ ...p, [k]: value }));
@@ -574,7 +598,7 @@ export default function ContactPage({
                           aria-invalid={!!errors.topic}
                         required
                         aria-required="true"
-                          aria-describedby={describedBy('topic', !!errors.topic)}
+                          aria-describedby={[describedBy('topic', !!errors.topic), 'topic-hint'].filter(Boolean).join(' ')}
                           className={`${fieldClass(!!errors.topic)} cursor-pointer appearance-none pr-10`}
                         >
                           <option value="">Choose one</option>
@@ -587,6 +611,9 @@ export default function ContactPage({
                           className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[color:var(--ink-faint)]"
                         />
                       </div>
+                      <span id="topic-hint" className="font-body-lg text-[12.5px] leading-[1.5] text-on-surface-variant">
+                        Security issue? Use one of the private routes on this page instead.
+                      </span>
                     </Field>
 
                     <Field id="message" label="Message" error={errors.message}>
@@ -714,8 +741,10 @@ export default function ContactPage({
                   API key and the decision to keep generation out of the server — all of it is one person's
                   work, and the reasoning behind each choice is written down in the open.
                 </p>
+                {/* "The application is the portfolio." went on 2026-11-11 (full
+                    audit PS-23): a line for a recruiter, not for someone writing in. */}
                 <p className="mt-4 max-w-[54ch] font-body-lg text-[15.5px] leading-[1.66] text-on-surface-variant">
-                  The application is the portfolio. Everything else is linked here.
+                  Everything else is linked here.
                 </p>
               </div>
 

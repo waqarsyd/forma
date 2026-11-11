@@ -66,4 +66,20 @@ describe('SharedReportPage', () => {
     await waitFor(() => expect(screen.getByText(/signed in as bob@example.com/)).toBeTruthy());
     expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
   });
+
+  // The full audit, 2026-11-11: the skip link the accessibility statement
+  // promises on every public page (PS-31), and a report of the link that
+  // arrives on the contact form with its topic chosen (PS-27).
+  it('opens with a skip link to its content, and reports the link under its own topic', async () => {
+    getDoc.mockResolvedValue({ data: () => ({ name: 'Invoice', result: '{"title":"Invoice","repxContent":"<x/>"}' }) });
+    page();
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Invoice' })).toBeTruthy());
+    const links = screen.getAllByRole('link');
+    expect(links[0].textContent).toBe('Skip to content');
+    expect(links[0].getAttribute('href')).toBe('#main');
+    const main = document.getElementById('main')!;
+    expect(main.tagName).toBe('MAIN');
+    expect(main.getAttribute('tabindex')).toBe('-1');
+    expect(screen.getByRole('link', { name: 'Report this link' }).getAttribute('href')).toBe('/contact?topic=shared#form');
+  });
 });

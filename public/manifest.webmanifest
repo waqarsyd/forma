@@ -1,7 +1,7 @@
 {
-  "name": "Forma — Screenshot to DevExpress .repx",
+  "name": "Forma — DevExpress reports from a picture, a PDF or your words",
   "short_name": "Forma",
-  "description": "Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer.",
+  "description": "Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report you can open in the designer, with a print preview, exports and a chat that edits it. Free, in your browser, with your own Gemini key.",
   "id": "/",
   "start_url": "/workspace",
   "scope": "/",

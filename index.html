@@ -47,10 +47,16 @@
        header lockup. These slots carry the *descriptor* instead: they are read by
        search engines and link-preview scrapers, neither of which has the hero's
        lede underneath to explain what "show it" means. Keep the wording in sync
-       with LandingPage's lede, which is where it was lifted from. -->
-  <title>Forma — Screenshot to DevExpress .repx</title>
+       with LandingPage's lede, which is where it was lifted from. Rewritten on
+       2026-11-11 (full audit PS-10): it still said "screenshot to .repx" and put
+       a written spec first, months after a description became an input and the
+       .repx the one thing the AI writes. The same sentence is the manifest's,
+       ROUTE_DESCRIPTIONS['/'] in src/lib/seo.ts (the JSON-LD and llms.txt read
+       it there) and the title is ROUTE_TITLES['/'], which routes.test holds to
+       this file. -->
+  <title>Forma — DevExpress reports from a picture, a PDF or your words</title>
   <meta name="description"
-    content="Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer." />
+    content="Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report you can open in the designer, with a print preview, exports and a chat that edits it. Free, in your browser, with your own Gemini key." />
 
   <!-- Link previews. og:image is an absolute URL, as the Open Graph spec asks
        (2026-11-08, site audit item 37). It was root-relative until then, on the
@@ -68,23 +74,23 @@
        ratio to fill it. -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Forma" />
-  <meta property="og:title" content="Forma — Screenshot to DevExpress .repx" />
+  <meta property="og:title" content="Forma — DevExpress reports from a picture, a PDF or your words" />
   <meta property="og:description"
-    content="Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer." />
+    content="Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report you can open in the designer, with a print preview, exports and a chat that edits it. Free, in your browser, with your own Gemini key." />
   <meta property="og:url" content="https://openforma.web.app/" />
   <meta property="og:image" content="https://openforma.web.app/og-card.png" />
   <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt"
-    content="Forma — Show it. Build it. Ship it. Screenshot, PDF or .repx to DevExpress .repx." />
+    content="Forma — Show it. Build it. Ship it. Picture, PDF, .repx or words to DevExpress .repx." />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Forma — Screenshot to DevExpress .repx" />
+  <meta name="twitter:title" content="Forma — DevExpress reports from a picture, a PDF or your words" />
   <meta name="twitter:description"
-    content="Upload a screenshot, a PDF, or an existing .repx. Forma returns a written spec, a live mockup, and valid DevExpress XML you can open in the designer." />
+    content="Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report you can open in the designer, with a print preview, exports and a chat that edits it. Free, in your browser, with your own Gemini key." />
   <meta name="twitter:image" content="https://openforma.web.app/og-card.png" />
   <meta name="twitter:image:alt"
-    content="Forma — Show it. Build it. Ship it. Screenshot, PDF or .repx to DevExpress .repx." />
+    content="Forma — Show it. Build it. Ship it. Picture, PDF, .repx or words to DevExpress .repx." />
   <!-- Font Families: Hanken Grotesk, Inter, JetBrains Mono. Three <link> tags
        lived here — two preconnects and a render-blocking stylesheet on
        fonts.googleapis.com — until 2026-08-30, when the faces were self-hosted

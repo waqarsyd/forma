@@ -251,11 +251,20 @@ export const EXAMPLES: InfoDoc = {
 export const COMPARE: InfoDoc = {
   eyebrow: 'Compare and migrate',
   title: 'Forma beside DevExpress’s own AI, and moving reports in.',
-  reviewed: '9 November 2026',
+  /*
+   * Brought up to date on 2026-11-11 (full audit CP-09): it described
+   * Prompt-to-Report as a preview after DevExpress 26.1 dropped the label,
+   * named none of the other report tools with AI features, and said nowhere
+   * the two differences that matter most to someone with an older DevExpress
+   * or no cloud account. Each claim is what the vendor's own page said that
+   * day, read again before writing it, and linked.
+   */
+  reviewed: '11 November 2026',
   lede: (
     <p>
-      Forma writes DevExpress reports, so the honest comparison is with DevExpress’s own AI features, and the useful
-      question is how to bring reports from another tool. Both answers, with links to DevExpress’s own pages.
+      Forma writes DevExpress reports, so the honest comparison is with DevExpress’s own AI features, then with the
+      other report tools that have added AI, and the useful question is how to bring reports from another tool. Each
+      answer links to the vendor’s own page.
     </p>
   ),
   sections: [
@@ -264,10 +273,19 @@ export const COMPARE: InfoDoc = {
       body: (
         <>
           <p className={P}>
-            DevExpress Reporting has its own AI features in its designers, among them Prompt-to-Report (a report from a
-            description, still a preview) and an expression written from a sentence. Its documentation lists two things
-            they need: an <span className={STRONG}>active DevExpress subscription</span>, and an account with an AI
-            service of your choosing, such as OpenAI, Azure OpenAI or a self-hosted Ollama.{' '}
+            DevExpress Reporting 26.1 (June 2026) has its own AI features in its designers. Prompt-to-Report builds a
+            report from a description, no longer marked as a preview, and asks clarifying questions when the
+            description leaves something out. A chat that changes an open report ships in the WinForms designer only,
+            and a chat for the web designer is on DevExpress’s roadmap. It also localizes a report, fills the preview
+            with test data, writes an expression from a sentence, and summarizes or translates a report in its viewers.{' '}
+            <a href="https://docs.devexpress.com/XtraReports/405279" className={A} {...ext}>
+              DevExpress: v26.1 release notes
+            </a>
+          </p>
+          <p className={P}>
+            Its documentation lists what they need: an <span className={STRONG}>active DevExpress subscription</span>,
+            .NET 8 or .NET Framework 4.7.2, and an account with an AI service of your choosing, such as OpenAI, Azure
+            OpenAI or a self-hosted Ollama; DevExpress ships no AI of its own.{' '}
             <a href="https://docs.devexpress.com/XtraReports/405211/ai-powered-functionality/ai-for-devexpress-reporting" className={A} {...ext}>
               DevExpress: AI-powered extensions
             </a>
@@ -276,10 +294,35 @@ export const COMPARE: InfoDoc = {
       ),
     },
     {
+      heading: 'Other report tools with AI',
+      body: (
+        <ul className={UL}>
+          <li>
+            <span className={STRONG}>ActiveReports.NET (MESCIUS), March 2026.</span> Image to Report builds a report from a screenshot
+            or a photo, read by Microsoft’s Azure Document Intelligence, so it needs your Azure credentials.{' '}
+            <a href="https://developer.mescius.com/blogs/image-to-report-features-in-c-sharp-net-applications" className={A} {...ext}>MESCIUS: Image to Report</a>
+          </li>
+          <li>
+            <span className={STRONG}>Telerik Reporting 2026 Q3 (August 2026).</span> Its AI Report Generator, in the web
+            designer, creates and edits tables, crosstabs and lists from a sentence, with an Undo Changes; it takes no
+            picture or document.{' '}
+            <a href="https://www.telerik.com/support/whats-new/reporting/release-history/progress-telerik-reporting-2026-q3-(20-2-26-812)" className={A} {...ext}>Telerik: 2026 Q3 release history</a>
+          </li>
+          <li>
+            <span className={STRONG}>Stimulsoft 2026.3.</span> A built-in AI assistant in the Standalone Designer creates,
+            changes and deletes a report’s components from plain words.{' '}
+            <a href="https://www.stimulsoft.com/en/blog/news/stimulsoft-reports-and-dashboards-2026-3-released" className={A} {...ext}>Stimulsoft: 2026.3 released</a>
+          </li>
+        </ul>
+      ),
+    },
+    {
       heading: 'Where Forma differs',
       body: (
         <ul className={UL}>
           <li><span className={STRONG}>Free, and in a browser.</span> No subscription and nothing to install; a free Gemini key, a local AI or OpenRouter’s free models.</li>
+          <li><span className={STRONG}>Works with the version you have.</span> The .repx Forma writes opens in the DevExpress designer a team already has, back to 20.1, where it was measured; DevExpress’s own AI needs a current subscription.</li>
+          <li><span className={STRONG}>Reads a picture without a cloud account.</span> The words on a scan or a photo are read in your browser, with no document service to sign up for; with a local AI, nothing leaves your computer at all.</li>
           <li><span className={STRONG}>From what you already have.</span> A screenshot, a scan, a PDF or a .repx, read with OCR in your browser, as well as a description.</li>
           <li><span className={STRONG}>Checked as DevExpress prints.</span> A Preview that pages the report as DevExpress does, exports, and an audit for what the designer would drop.</li>
           <li><span className={STRONG}>Your SQL Server database without a connection.</span> DevExpress’s Data Source Wizard connects to the server; Forma reads its layout from a read-only script you run, writes DevExpress’s own SQL data source by connection name, and checks a report against a newer export. <a href="/docs#sql" className={A}>How</a></li>
@@ -294,8 +337,8 @@ export const COMPARE: InfoDoc = {
           <p className={P}>
             DevExpress publishes a free tool for this: <span className={STRONG}>Reporting.Import</span>, open source
             under the MIT licence, a console program that converts Crystal Reports (.rpt) and SQL Server Reporting
-            Services (RDL, RDLC) reports into .repx files. It needs the other tool’s own libraries installed, and says
-            plainly that not everything converts.{' '}
+            Services (RDL, RDLC) reports into .repx files. Crystal Reports needs Crystal’s runtime installed; RDL and RDLC
+            convert without it. It says plainly that not everything converts.{' '}
             <a href="https://github.com/DevExpress/Reporting.Import" className={A} {...ext}>DevExpress/Reporting.Import on GitHub</a>
           </p>
           <p className={P}>

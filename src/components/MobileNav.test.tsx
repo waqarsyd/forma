@@ -30,11 +30,19 @@ describe('MobileNav', () => {
     await waitFor(() => expect(document.activeElement).toBe(opener), { timeout: 3000 });
   });
 
-  it('says Sign in and Sign up in sentence case, and links the repository', () => {
+  // The header's and the sign-in card's labels since 2026-11-11 (full audit PS-23).
+  it('says Sign in and Create account in sentence case, and links the repository', () => {
     render(<MobileNav />);
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Sign up' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Create account' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Sign up' })).toBeNull();
     expect(screen.getByRole('link', { name: 'GitHub' }).getAttribute('href')).toBe('https://github.com/waqarsyd/forma');
+  });
+
+  it('says Open the workspace when signed in', () => {
+    render(<MobileNav signedIn />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    expect(screen.getByRole('link', { name: 'Open the workspace' }).getAttribute('href')).toBe('/workspace');
   });
 });

@@ -30,7 +30,7 @@
 export const DOCS_SECTIONS: ReadonlyArray<{ id: string; n: string; title: string; keys: string }> = [
   { id: 'start', n: '01', title: 'Getting started', keys: 'start begin first steps tutorial upload workflow guide describe prompt words' },
   { id: 'key', n: '02', title: 'Your API key', keys: 'key api gemini google studio session vault passphrase encrypt security storage' },
-  { id: 'ai', n: '03', title: 'Choosing your AI', keys: 'ai provider model automatic gemini local ollama lm studio openrouter free offline private vision' },
+  { id: 'ai', n: '03', title: 'Choosing your AI', keys: 'ai provider model automatic gemini local ollama lm studio openrouter free offline private vision limit page reader chain' },
   { id: 'account', n: '04', title: 'Your account', keys: 'account sign in signup register google email password forgot reset sync devices optional verify delete' },
   { id: 'upload', n: '05', title: 'What you can upload', keys: 'upload file formats png jpg pdf repx size limit pages attachments text extraction scan ocr photo' },
   { id: 'run', n: '06', title: 'Running and refining', keys: 'run generate working dots stop escape queue steer resume cancel read result specification mockup preview export refine change edit undo redo changed iterate conversation' },
@@ -43,7 +43,7 @@ export const DOCS_SECTIONS: ReadonlyArray<{ id: string; n: string; title: string
   // the work that added them.
   { id: 'controls', n: '10', title: 'Supported controls', keys: 'controls xrlabel xrtable xrpicturebox xrbarcode xrline xrpageinfo pageinfo page numbers xrchart xrgauge chart gauge xrcheckbox checkbox xrpanel panel xrshape shape crossband cross-band xrcrosstab cross-tab pivot xrsubreport subreport table of contents elements supported' },
   { id: 'repx', n: '11', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download audit warnings errors checks accessibility' },
-  { id: 'designer', n: '12', title: 'Open in the DevExpress designer', keys: 'designer devexpress open in designer forma designer download windows install companion repxdesigner trial apps on device blocked local network smartscreen uninstall' },
+  { id: 'designer', n: '12', title: 'Open in the DevExpress designer', keys: 'designer devexpress open in designer forma designer download windows install tray trial apps on device blocked local network smartscreen uninstall' },
   { id: 'config', n: '13', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
   { id: 'saving', n: '14', title: 'Saving your work', keys: 'save saved projects account cloud local storage sign out history' },
   { id: 'share', n: '15', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
@@ -71,16 +71,28 @@ export function articleMatches(query: string, article: { title: string; keys: st
 
 /** Where a docs issue is filed. */
 export const DOCS_ISSUES = 'https://github.com/waqarsyd/forma/issues/new';
+/** The issue form it opens, .github/ISSUE_TEMPLATE/docs.yml; its field ids are the parameters below. */
+export const DOCS_TEMPLATE = 'docs.yml';
 
-/** A new GitHub issue about the docs, prefilled with what was typed and where; the person sends it. */
+/**
+ * A new GitHub issue about the docs, prefilled with what was typed and where;
+ * the person sends it.
+ *
+ * Through the docs form since 2026-11-11 (full audit PS-15): a plain
+ * `?title=&body=` link meets blank issues being off, and GitHub sends anyone
+ * who is not a collaborator to the template chooser with what they typed
+ * gone. A form named by `template` fills each field from the parameter of its
+ * id, and sets its own label, so `labels` (which only a triager may set from
+ * a link anyway) is not sent.
+ */
 export function docsIssueUrl(comment: string, section: string): string {
   const said = comment.trim();
   const first = said.split('\n')[0].slice(0, 70);
   const title = `Docs: ${first || 'something was missing'}`;
-  const body = [
-    said || '(what were you looking for?)',
-    '',
-    `Page: https://openforma.web.app/docs${section ? `#${section}` : ''}`,
-  ].join('\n');
-  return `${DOCS_ISSUES}?${new URLSearchParams({ title, body, labels: 'documentation' }).toString()}`;
+  return `${DOCS_ISSUES}?${new URLSearchParams({
+    template: DOCS_TEMPLATE,
+    title,
+    missing: said,
+    page: `https://openforma.web.app/docs${section ? `#${section}` : ''}`,
+  }).toString()}`;
 }

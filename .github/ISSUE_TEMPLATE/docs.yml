@@ -1,0 +1,31 @@
+# The form the Docs page's "What were you looking for?" box opens (2026-11-11,
+# full audit PS-15). Until then the box built /issues/new?title=&body=, and with
+# blank issues off (config.yml) GitHub sends anyone who is not a collaborator to
+# the template chooser, which drops what they typed. A form is reached by name
+# (?template=docs.yml) and fills its fields from query parameters named by their
+# ids, so `missing` and `page` below are what src/lib/docsSearch.ts writes:
+# rename one and the link fills nothing, without an error.
+name: The docs missed something
+description: You looked for something on the Docs page and did not find it
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Say it the way you would have searched for it: the words you
+        typed are the words the next person will type too.
+
+  - type: textarea
+    id: missing
+    attributes:
+      label: What were you looking for?
+    validations:
+      required: true
+
+  - type: input
+    id: page
+    attributes:
+      label: The article you were on
+      placeholder: https://openforma.web.app/docs#start
+    validations:
+      required: false

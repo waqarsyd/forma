@@ -96,6 +96,15 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
     // `sheet` supplies the palette and `wb-root` the type and ground, as on the workspace's shell.
     <div className="sheet wb-root wb-shared">
       <header className="wb-shared-bar">
+        {/* The skip link every public page opens with, as the accessibility
+            statement says (2026-11-11, full audit PS-31): this page draws no
+            SiteHeader, which is where the others get theirs. */}
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-[60] focus:rounded-full focus:bg-secondary-container focus:px-4 focus:py-2 focus:font-body-lg focus:text-[14px] focus:font-semibold focus:text-white"
+        >
+          Skip to content
+        </a>
         <button type="button" className="wb-shared-home" onClick={onHome} aria-label="Forma home">
           <Logo />
         </button>
@@ -106,7 +115,7 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
           </>
         )}
       </header>
-      <main id="main" className="wb-shared-body">
+      <main id="main" tabIndex={-1} className="wb-shared-body outline-none">
         {/* A heading in every state (item 84): until the report arrived the
             page had none, so a screen reader landed on an untitled page. */}
         {(state.kind === 'loading' || state.kind === 'failed') && <h1 className="sr-only">Shared report</h1>}
@@ -157,7 +166,8 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
         <nav aria-label="About this page">
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
-          <a href="/contact#form">Report this link</a>
+          {/* With its topic chosen on the form (2026-11-11, full audit PS-27). */}
+          <a href="/contact?topic=shared#form">Report this link</a>
         </nav>
         {/* reCAPTCHA's notice in place of its hidden badge (2026-11-08): App
             Check runs when a shared report is read, as LoginPage says. */}
