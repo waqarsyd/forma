@@ -1,3 +1,5 @@
+import { closeFirebase } from './firebaseClient';
+
 /**
  * What a sign-out takes out of the tab's session storage (2026-11-08, the site
  * audit's batch SG). Signing out clears the workspace, not only the
@@ -65,8 +67,22 @@ export function forgetLocal(storage: Pick<Storage, 'removeItem' | 'key' | 'lengt
   }
 }
 
+/**
+ * The start of every IndexedDB name Firestore's own cache uses (2026-11-11,
+ * the full audit's SA-18): `firestore/<app>/<project>[.<database>]/...`, as
+ * the SDK builds it. Signed in, the account's projects are kept there so a
+ * change made offline survives a closed tab (lib/firebaseClient.ts); a
+ * sign-out closes the database and clears it (`closeFirebase`, run by
+ * `forgetSession`), and this deletes it by name as well, for a copy left by
+ * a tab that is no longer open and for one whose clearing failed. Matched by prefix, not named, since the
+ * names carry the project and database ids.
+ */
+export const FIRESTORE_CACHE_PREFIX = 'firestore/';
+
 /** Deletes them; a browser without IndexedDB, or one that refuses, keeps nothing to delete. */
-export function forgetDevice(idb: Pick<IDBFactory, 'deleteDatabase'> | null = typeof indexedDB === 'undefined' ? null : indexedDB): void {
+export function forgetDevice(
+  idb: (Pick<IDBFactory, 'deleteDatabase'> & Partial<Pick<IDBFactory, 'databases'>>) | null = typeof indexedDB === 'undefined' ? null : indexedDB,
+): void {
   if (!idb) return;
   for (const name of SIGNED_OUT_DATABASES) {
     try {
@@ -75,13 +91,71 @@ export function forgetDevice(idb: Pick<IDBFactory, 'deleteDatabase'> | null = ty
       /* IndexedDB blocked: nothing kept there */
     }
   }
+  // Listing is a promise, and a browser without it (Firefox before 126) leaves
+  // the cache to closeFirebase, which clears it through the SDK.
+  try {
+    void idb
+      .databases?.()
+      .then((found) => {
+        for (const { name } of found) {
+          if (name?.startsWith(FIRESTORE_CACHE_PREFIX)) {
+            try {
+              idb.deleteDatabase(name);
+            } catch {
+              /* refused: closeFirebase cleared it, or nothing more can */
+            }
+          }
+        }
+      })
+      .catch(() => undefined);
+  } catch {
+    /* IndexedDB blocked */
+  }
 }
 
-/** Removes the signed-out person's session keys, and what `forgetDevice` and `forgetLocal` remove; storage that throws is left as it is. */
+/**
+ * What this browser kept for one account, when the account itself is
+ * deleted (2026-11-11, the full audit; a wave-4 follow-up): its memory,
+ * `forma.memory:<uid>`, the time its projects were last checked, and the
+ * learning switches when they name it. A plain sign-out leaves the memory,
+ * which is the person's to find again on signing back in; a deleted account
+ * will never sign back in. The rest of the browser's copy goes with the
+ * sign-out that follows the deletion.
+ */
+export function forgetAccountLocally(
+  uid: string,
+  storage: Pick<Storage, 'getItem' | 'removeItem'> | null = typeof localStorage === 'undefined' ? null : localStorage,
+): void {
+  if (!storage || !uid) return;
+  try {
+    storage.removeItem(`forma.memory:${uid}`); // lib/memory.ts, memoryKey
+    storage.removeItem(`forma:indexCheckedAt:${uid}`); // App.tsx, the projects index
+    const learning = storage.getItem('forma:learning'); // lib/learning.ts, SETTINGS_KEY
+    if (learning && (JSON.parse(learning) as { uid?: unknown } | null)?.uid === uid) storage.removeItem('forma:learning');
+  } catch {
+    /* storage blocked, or a copy that is not JSON: nothing of the account readable there */
+  }
+}
+
+/**
+ * Removes the signed-out person's session keys, and what `forgetDevice` and
+ * `forgetLocal` remove; storage that throws is left as it is.
+ *
+ * And closes the database this tab opened (`closeFirebase`), on the public
+ * site as in App (2026-11-11, the SA-18 review). Deleting Firestore's stores
+ * while they are open makes the SDK terminate that client, and only App
+ * closed it: someone signed in on a shared report (/s/{id}) who signed out
+ * from the public header, signed back in and went on to /workspace in the
+ * same tab was handed the terminated client by `loadFirebase`, and every
+ * read and save failed until a reload. Closing it here clears the memo, so
+ * the next sign-in opens a fresh one; App's own close then finds nothing
+ * left to do.
+ */
 export function forgetSession(
   storage: Pick<Storage, 'removeItem'> | null = typeof sessionStorage === 'undefined' ? null : sessionStorage,
   local: Pick<Storage, 'removeItem' | 'key' | 'length'> | null = typeof localStorage === 'undefined' ? null : localStorage,
 ): void {
+  void closeFirebase();
   forgetDevice();
   forgetLocal(local);
   if (!storage) return;

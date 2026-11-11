@@ -93,6 +93,30 @@ export function memoryKey(uid: string | null = account): string {
   return uid ? `${STORAGE_KEY}:${uid}` : STORAGE_KEY;
 }
 
+/** Set once the signed-out memory has been cleared of what came from before it was per account. */
+const RETIRED_KEY = 'forma.memoryRetired';
+
+/**
+ * Clears `forma.memory` once, at the first sign-out after a signed-in
+ * session (2026-11-11, the full audit, a wave-4 follow-up). Until the memory
+ * was kept per account, everyone wrote that one key, signed in or out, so on
+ * a shared browser it may still hold an account's "remember" lines and kept
+ * style; now that it is the signed-out memory, the next person to use Forma
+ * signed out would be read them. Whose they were cannot be known, so they go,
+ * once: what is kept signed out after that stays. True when it cleared.
+ */
+export function retireLegacyMemory(storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): boolean {
+  if (!storage) return false;
+  try {
+    if (storage.getItem(RETIRED_KEY)) return false;
+    storage.removeItem(STORAGE_KEY);
+    storage.setItem(RETIRED_KEY, '1');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function readMemory(uid: string | null = account): MemoryState {
   try {
     const s = JSON.parse(localStorage.getItem(memoryKey(uid)) || 'null') as Partial<MemoryState> | null;

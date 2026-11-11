@@ -38,4 +38,17 @@ describe('HomeStart', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sales by region/ }));
     expect(onPick).toHaveBeenCalledWith(STARTING_POINTS[2]);
   });
+
+  // The full audit's SA-05 (2026-11-11): with no key the box is locked, so the home says so first.
+  it('says first that a free key is needed, with the way to add it, and still hands back a starting point', () => {
+    const onAddKey = vi.fn();
+    const onPick = vi.fn();
+    render(<HomeStart projects={[]} archived={[]} onOpen={vi.fn()} onAllProjects={vi.fn()} onPick={onPick} needsKey onAddKey={onAddKey} />);
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Add a free Gemini key to start');
+    expect(screen.queryByRole('heading', { name: 'What report shall we make?' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Add your free key' }));
+    expect(onAddKey).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /Sales by region/ }));
+    expect(onPick).toHaveBeenCalledWith(STARTING_POINTS[2]);
+  });
 });

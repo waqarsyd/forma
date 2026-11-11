@@ -122,6 +122,44 @@ export function mergeIndexed<M, R>(rows: ReadonlyArray<SavedReportLike<M, R>>, b
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }
 
+/**
+ * What the Projects panel says, signed in, while projects made in this
+ * browser before signing in are kept here and not in the account
+ * (2026-11-11, the full audit's SA-04). Adding them is
+ * `copyProjectsToAccount` in lib/projectExport.ts, which loads when asked.
+ */
+export function deviceProjectsLine(count: number): string {
+  return count === 1
+    ? '1 project is saved in this browser, not in your account.'
+    : `${count} projects are saved in this browser, not in your account.`;
+}
+
+/**
+ * A database refusal in words the person can act on (2026-11-11, the full
+ * audit's SA-21), or null for any other failure, which keeps the caller's
+ * own sentence. Every save failure said "try again in a moment", which is
+ * untrue for both of these: the free plan's daily allowance does not come
+ * back in a moment, and a refused sign-in does not get better by retrying.
+ * `permission-denied` is read on the person's own paths only, which are the
+ * callers of this, where the rules refuse only a sign-in the database no
+ * longer accepts (a token from before App Check, or one gone stale).
+ *
+ * `saving` is the open project's own save, the one call that retries with
+ * the next change; every other caller (the list, opening, renaming,
+ * deleting, sharing) is told to try again after the reset instead
+ * (2026-11-11, the SA-21 review: they were all told their project saves).
+ */
+export function plainFirestoreRefusal(err: unknown, { saving = false }: { saving?: boolean } = {}): string | null {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code === 'resource-exhausted') {
+    return saving
+      ? "Forma's free database allowance for today is used up. Your project is still open here, and it saves with your next change once the allowance resets at midnight Pacific time."
+      : "Forma's free database allowance for today is used up; try again after midnight Pacific time.";
+  }
+  if (code === 'permission-denied') return 'Your sign-in needs refreshing; sign out and in again.';
+  return null;
+}
+
 /** A report as Firestore stores it — the exact shape `firestore.rules` allows. */
 export interface StoredReportDocument {
   id: string;

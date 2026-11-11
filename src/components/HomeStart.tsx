@@ -29,9 +29,17 @@ interface Props<P extends Project> {
    * workspace audit): the two lists of the same projects stood side by side.
    */
   showRecent?: boolean;
+  /**
+   * There is no Gemini key yet (2026-11-11, the full audit's SA-05): the home
+   * says first that one is needed and free, with the way to add it, since the
+   * box below is locked until then. A starting point picked meanwhile is App's
+   * to keep in the box while Settings opens at the key.
+   */
+  needsKey?: boolean;
+  onAddKey?: () => void;
 }
 
-export default function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick, showRecent = true }: Props<P>) {
+export default function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick, showRecent = true, needsKey = false, onAddKey }: Props<P>) {
   const recent = showRecent ? recentProjects(projects, archived) : [];
   return (
     <section className={`wb-home${recent.length ? ' has-recent' : ''}`} aria-label="Start a report">
@@ -52,10 +60,27 @@ export default function HomeStart<P extends Project>({ projects, archived, onOpe
         </nav>
       )}
       <div className="wb-home-main">
-        <h2>What report shall we make?</h2>
-        {/* "In the box below" was wrong on a desktop, where the box sits at the
-            foot of the left panel (the full audit's WS-44, 2026-11-11). */}
-        <p>Attach a screenshot, a scan, a PDF or a .repx in the message box, or describe the report you want. Or start from one of these:</p>
+        {needsKey ? (
+          <>
+            <h2>Add a free Gemini key to start</h2>
+            <p>
+              Forma designs with a Gemini key of your own. It is free, needs no card and takes a minute to get. Then attach a screenshot,
+              a scan, a PDF or a .repx, or describe the report you want, or start from one of these:
+            </p>
+            <p>
+              <button type="button" className="wb-pill wb-pill--go" onClick={onAddKey}>
+                Add your free key
+              </button>
+            </p>
+          </>
+        ) : (
+          <>
+            <h2>What report shall we make?</h2>
+            {/* "In the box below" was wrong on a desktop, where the box sits at the
+                foot of the left panel (the full audit's WS-44, 2026-11-11). */}
+            <p>Attach a screenshot, a scan, a PDF or a .repx in the message box, or describe the report you want. Or start from one of these:</p>
+          </>
+        )}
         <div className="wb-home-points">
           {STARTING_POINTS.map((point) => (
             <button key={point.id} type="button" onClick={() => onPick(point)} title={point.text}>

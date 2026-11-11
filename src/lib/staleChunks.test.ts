@@ -5,7 +5,17 @@
  * the tab forever.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isStaleChunkError, reloadForStaleChunk, RELOAD_WINDOW_MS, shouldReload, watchForStaleChunks } from './staleChunks';
+import {
+  isStaleChunkError,
+  isStaleWaiting,
+  onStaleWaiting,
+  reloadForStaleChunk,
+  reloadIfStaleWaiting,
+  RELOAD_WINDOW_MS,
+  setStaleBusyCheck,
+  shouldReload,
+  watchForStaleChunks,
+} from './staleChunks';
 
 /** A window whose reload is counted rather than done. */
 function fakeWindow() {
@@ -57,5 +67,34 @@ describe('reloading for a stale chunk', () => {
     window.dispatchEvent(new Event('vite:preloadError', { cancelable: true }));
     expect(reload).toHaveBeenCalledTimes(1);
     stop();
+  });
+
+  // The full audit's SA-16 (2026-11-11): a deploy found during a turn does not reload the tab under it.
+  it('reloads nothing while a turn runs, says a new version waits, and reloads once the turn has ended', () => {
+    const { win, reload } = fakeWindow();
+    let turn = true;
+    const stopBusy = setStaleBusyCheck(() => turn);
+    const onWaiting = vi.fn();
+    const stopWaiting = onStaleWaiting(onWaiting);
+    const stop = watchForStaleChunks(win);
+    const event = new Event('vite:preloadError', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(reload).not.toHaveBeenCalled();
+    // The failed load takes its own way while the reload waits.
+    expect(event.defaultPrevented).toBe(false);
+    expect(isStaleWaiting()).toBe(true);
+    expect(onWaiting).toHaveBeenCalledTimes(1);
+    expect(reloadForStaleChunk(win)).toBe(false);
+    expect(onWaiting).toHaveBeenCalledTimes(1);
+    // Still running: nothing yet.
+    expect(reloadIfStaleWaiting(win)).toBe(false);
+    turn = false;
+    expect(reloadIfStaleWaiting(win)).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(isStaleWaiting()).toBe(false);
+    expect(reloadIfStaleWaiting(win)).toBe(false);
+    stop();
+    stopWaiting();
+    stopBusy();
   });
 });

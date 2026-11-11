@@ -53,6 +53,47 @@ const SECTIONS: DialogSection<SettingsSection>[] = [
 
 type Notice = { tone: 'ok' | 'error'; text: string };
 
+/** Where a Gemini key is made, free (2026-11-11, the full audit's SA-05). */
+const GET_KEY_URL = 'https://aistudio.google.com/apikey';
+
+/*
+ * The stored key's passphrase (2026-11-11, the full audit's SE-16a). It asked
+ * for 8 characters, and anyone holding the encrypted copy can try passwords
+ * against it as fast as their computer allows: an 8-character word from a
+ * list falls quickly even at 310,000 rounds. So 12 characters or three words,
+ * and none of the passwords everybody tries first. The list is short on
+ * purpose and lives here, in Settings' own chunk, which loads only when
+ * Settings opens: a common word with digits or symbols around it, a word
+ * repeated, a row of the keyboard, a number, or a famous phrase.
+ */
+const COMMON_WORDS = new Set([
+  'password', 'passw0rd', 'passphrase', 'qwerty', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm', 'qazwsx', 'zaq12wsx', '1q2w3e4r', '1q2w3e4r5t6y',
+  'iloveyou', 'loveyou', 'letmein', 'welcome', 'admin', 'administrator', 'monkey', 'dragon', 'football', 'baseball', 'soccer', 'sunshine',
+  'princess', 'master', 'shadow', 'superman', 'batman', 'trustno1', 'starwars', 'whatever', 'freedom', 'computer', 'internet', 'secret',
+  'changeme', 'default', 'login', 'hello', 'helloworld', 'test', 'abc', 'abcdef', 'abcdefgh', 'abcdefghijkl', 'forma', 'gemini', 'google',
+  'apikey', 'mypassword', 'mykey', 'pokemon', 'cricket', 'india', 'pakistan', 'michael', 'jennifer', 'charlie', 'jordan', 'hunter',
+]);
+const COMMON_PHRASES = ['correct horse battery staple', 'the quick brown fox', 'i love you', 'open sesame', 'let me in', 'this is my password', 'my password is'];
+
+/** Why a passphrase will not do, in the person's words, or null when it will. */
+export function passphraseProblem(passphrase: string): string | null {
+  const words = passphrase.trim().split(/\s+/).filter(Boolean);
+  if (passphrase.length < 12 && words.length < 3) return 'Use a passphrase of at least 12 characters, or three words or more.';
+  const flat = passphrase.toLowerCase().replace(/\s+/g, ' ').trim();
+  const letters = flat.replace(/[^a-z0-9]/g, '');
+  // The word with any digits or symbols around it taken off, and a repeat taken as once.
+  const core = flat.replace(/^[^a-z]+|[^a-z]+$/g, '').replace(/[^a-z0-9]/g, '');
+  const unit = /^(.+?)\1+$/.exec(core)?.[1] ?? core;
+  const common =
+    !core ||
+    new Set(letters).size < 5 ||
+    COMMON_WORDS.has(core) ||
+    COMMON_WORDS.has(unit) ||
+    COMMON_WORDS.has(letters) ||
+    COMMON_PHRASES.some((phrase) => flat.includes(phrase));
+  return common ? 'That passphrase is one of the first anyone would try. Choose one nobody could guess.' : null;
+}
+
 export interface SettingsDialogProps {
   config: ReportConfig;
   onChange: (changes: Partial<ReportConfig>) => void;
@@ -179,7 +220,8 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
   const storeKey = async () => {
     setVaultNote(null);
     if (!key.trim()) return setVaultNote({ tone: 'error', text: 'Enter your API key first.' });
-    if (passphrase.length < 8) return setVaultNote({ tone: 'error', text: 'Use a passphrase of at least 8 characters.' });
+    const weak = passphraseProblem(passphrase);
+    if (weak) return setVaultNote({ tone: 'error', text: weak });
     if (passphrase !== passphraseConfirm) return setVaultNote({ tone: 'error', text: 'The two passphrases do not match.' });
     if (!uid) return;
     setVaultBusy(true);
@@ -268,9 +310,11 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
                 <div className="wb-set-row is-stack">
                   <div className="wb-set-text">
                     <h4 className="wb-set-label">Your projects</h4>
+                    {/* Everything, not the projects alone (2026-11-11, the full audit's SA-10). */}
                     <p>
-                      Every project you have saved{user ? ' to your account' : ' on this device'}, in one .zip: each conversation and
-                      report, and the .repx to open in the designer.{' '}
+                      Everything Forma keeps for you{user ? ' in your account' : ' in this browser'}, in one .zip: each conversation and
+                      report with the .repx to open in the designer{user ? ', earlier versions, the reports you share, what Forma learned from your use' : ''}, and
+                      what Forma remembers.{' '}
                       {user
                         ? 'They are kept in your account.'
                         : storageKept
@@ -280,7 +324,7 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
                   </div>
                   <div className="wb-set-actions">
                     <button type="button" className="wb-pill wb-pill--outline" disabled={exporting} onClick={() => void exportProjects()}>
-                      {exporting ? 'Packing…' : 'Download all (.zip)'}
+                      {exporting ? 'Packing…' : 'Download everything (.zip)'}
                     </button>
                   </div>
                   {exportNote && <Note notice={exportNote} />}
@@ -313,6 +357,15 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
               <div className="wb-set-row is-stack">
                 <div className="wb-set-text">
                   <label className="wb-set-label" htmlFor="cfg-key">API key</label>
+                  {/* Where to get one (2026-11-11, the full audit's SA-05): the
+                      most common first visit ended here, at a field asking for
+                      a key the person did not have, with no way to one. */}
+                  <p>
+                    <a href={GET_KEY_URL} target="_blank" rel="noopener noreferrer">
+                      Get a free key from Google AI Studio (takes a minute)
+                    </a>
+                    . Free; no card needed.
+                  </p>
                   <p id="cfg-key-note">
                     Required, whichever AI designs. It goes from this browser straight to Google, is held for this tab only, and is never
                     written to disk.
@@ -397,7 +450,10 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
                   <div className="wb-set-row is-stack">
                     <div className="wb-set-text">
                       <span className="wb-set-label">Keep it in your account</span>
-                      <p>Store the key encrypted with a passphrase of your own, and unlock it with that passphrase on any device.</p>
+                      <p>
+                        Store the key encrypted with a passphrase of your own, and unlock it with that passphrase on any device. It is
+                        unreadable without your passphrase, so choose one nobody could guess.
+                      </p>
                     </div>
                     <div className="wb-set-pair">
                       <input
@@ -405,7 +461,7 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
                         id="cfg-pass"
                         type="password"
                         aria-label="Passphrase"
-                        placeholder="Passphrase, at least 8 characters"
+                        placeholder="Passphrase, 12 characters or three words"
                         value={passphrase}
                         onChange={(e) => setPassphrase(e.target.value)}
                         /* `new-password` rather than `off`: this is the one

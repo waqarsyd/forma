@@ -97,13 +97,14 @@ import { askToKeepStorage } from './lib/storagePersist';
 import { useTheme } from './components/useTheme';
 import { useLinkNavigation } from './components/useLinkNavigation';
 import ErrorBoundary from './components/ErrorBoundary';
+import { NoticePill } from './components/OfflineBanner';
 import { forgetSession } from './lib/signOut';
 // @ts-ignore
 /* Firebase arrives on demand — see lib/firebaseClient.ts for why, and for what
    had to move with it. `OperationType` is the one piece that stays eager: it is
    an enum, so referencing a member is a value reference that would pull the SDK
    back into this chunk unaided. */
-import { loadAuth, loadFirebase, type AuthClient, type FirebaseClient } from './lib/firebaseClient';
+import { closeFirebase, loadAuth, loadFirebase, type AuthClient, type FirebaseClient } from './lib/firebaseClient';
 import { OperationType } from './lib/firestoreOps';
 import {
   toFirestoreDocument,
@@ -119,7 +120,10 @@ import {
   readIdList,
   writeIdList,
   toggleId,
+  deviceProjectsLine,
+  plainFirestoreRefusal,
 } from './lib/savedReport';
+import { reloadIfStaleWaiting, setStaleBusyCheck } from './lib/staleChunks';
 import { toAttachmentParts } from './lib/attachmentParts';
 import {
   startProgress,
@@ -1474,17 +1478,30 @@ export default function App() {
    */
   const exportAllProjects = async (): Promise<number> => {
     let projects: SavedReport[];
+    // Everything the account holds, not the projects alone (2026-11-11, the
+    // full audit's SA-10; lib/projectExport.ts): each project's versions, the
+    // learning events, the shares with their invitees, and the memory.
+    const [{ buildZip }, { projectExportEntries, exportFileName, readAccountExtras }, memory] = await Promise.all([
+      import('./lib/zip'),
+      import('./lib/projectExport'),
+      import('./lib/memory'),
+    ]);
+    let extras: import('./lib/projectExport').AccountExtras = {};
     if (user) {
-      const { sdk, paths, db } = await loadFirebase();
-      const snapshot = await sdk.getDocs(paths.reportsCollectionRef(db, user.uid));
+      const client = await loadFirebase();
+      const snapshot = await client.sdk.getDocs(client.paths.reportsCollectionRef(client.db, user.uid));
       projects = snapshot.docs.map((d) => fromFirestoreDocument<ChatMessage, DesignResult>(d.data()));
+      extras = await readAccountExtras(client, user.uid, projects.map((p) => p.id));
     } else {
       projects = loadReportsLocally<ChatMessage, DesignResult>();
     }
+    const remembered = memory.readMemory(user?.uid ?? null);
+    if (remembered.memories.length || remembered.kept.length) extras.memory = remembered;
     if (!projects.length) return 0;
-    const [{ buildZip }, { projectExportEntries, exportFileName }] = await Promise.all([import('./lib/zip'), import('./lib/projectExport')]);
     const now = new Date();
-    const { bytes, reason } = buildZip(projectExportEntries(projects, now), now);
+    // `keepPaths`: projectExport makes each part of a name safe and distinct
+    // itself, and the versions sit in folders a second pass would flatten.
+    const { bytes, reason } = buildZip(projectExportEntries(projects, now, extras), now, { keepPaths: true });
     if (!bytes) throw new Error(`The projects could not be packed: ${reason}.`);
     const url = URL.createObjectURL(new Blob([bytes.slice()], { type: 'application/zip' }));
     const link = document.createElement('a');
@@ -1495,6 +1512,45 @@ export default function App() {
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return projects.length;
+  };
+
+  /*
+   * The projects made in this browser before signing in (2026-11-11, the full
+   * audit's SA-04; `copyProjectsToAccount` in lib/projectExport.ts). Signed in,
+   * the list is the account's, and they were out of sight until a sign-out;
+   * the Projects panel now says how many wait here and adds them when asked.
+   */
+  const [deviceProjectCount, setDeviceProjectCount] = useState(0);
+  const [addingDeviceProjects, setAddingDeviceProjects] = useState(false);
+  useEffect(() => {
+    setDeviceProjectCount(user ? loadReportsLocally().length : 0);
+  }, [user?.uid]);
+  const addDeviceProjects = async () => {
+    if (!user || addingDeviceProjects) return;
+    const uid = user.uid;
+    setAddingDeviceProjects(true);
+    try {
+      const local = loadReportsLocally<ChatMessage, DesignResult>();
+      const [{ sdk, paths, db }, { copyProjectsToAccount, deviceCopyLine }] = await Promise.all([loadFirebase(), import('./lib/projectExport')]);
+      const inAccount = new Map(savedReportsRef.current.map((r) => [r.id, r.timestamp] as const));
+      const { copied, left } = await copyProjectsToAccount(local, inAccount, async (report) => {
+        const fitted = cloudPayload(report, uid);
+        if (!fitted) return false;
+        await sdk.setDoc(paths.reportDocRef(db, uid, report.id), fitted.payload);
+        // Its entry in the index, as a save writes it; tolerated as there, since the weekly check writes a missing one.
+        await sdk.setDoc(paths.reportIndexDocRef(db, uid, report.id), toIndexDocument(report, uid)).catch(() => undefined);
+        return true;
+      });
+      // A sign-out while this ran leaves the browser's list as it was.
+      if (previousUidRef.current !== uid) return;
+      saveReportsLocally(left);
+      setDeviceProjectCount(left.length);
+      setSaveNotice(deviceCopyLine(copied.length, left.length));
+    } catch (err) {
+      reportFirestoreFailure(err, OperationType.WRITE, `users/${uid}/reports`, 'Those projects could not be added to your account just now. They are still in this browser.');
+    } finally {
+      setAddingDeviceProjects(false);
+    }
   };
 
   /** A listed project with its content, fetched when the list holds only its index entry. */
@@ -2847,7 +2903,9 @@ export default function App() {
     err: unknown,
     operation: OperationType,
     path: string,
-    userMessage: string
+    userMessage: string,
+    /** The open project's own save, which retries with the next change (plainFirestoreRefusal). */
+    { saving = false }: { saving?: boolean } = {}
   ) => {
     /* `loadAuth()` is already resolved wherever this is reached — every
        caller failed a Firestore call to get here, so the module is in memory
@@ -2866,7 +2924,10 @@ export default function App() {
       .catch(() => {
         console.error('Firestore failure, and Firebase could not be loaded to report it:', err);
       });
-    setError(userMessage);
+    // The day's free allowance used up, or a sign-in the database no longer
+    // takes, said as what they are (2026-11-11, the full audit's SA-21); both
+    // were "try again in a moment", which helps with neither.
+    setError(plainFirestoreRefusal(err, { saving }) ?? userMessage);
   };
 
   /**
@@ -3064,7 +3125,7 @@ export default function App() {
         if (quiet && autosaveFailedFor.current === reportId) return false;
         autosaveFailedFor.current = reportId;
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${reportId}`,
-          'That project could not be saved to your account. It is still open here — try again in a moment.');
+          'That project could not be saved to your account. It is still open here — try again in a moment.', { saving: true });
         return false;
       }
     } else {
@@ -3086,7 +3147,10 @@ export default function App() {
       // Ask the browser to keep it (site audit item 60, lib/storagePersist.ts),
       // once a session, now that there is something on this device to keep.
       void askToKeepStorage();
-      if (!quiet) setSaveNotice('Saved on this device. Sign in to sync across devices.');
+      // What signing in does, said as it is (2026-11-11, the full audit's
+      // SA-04): "sync" promised the projects here would follow into the
+      // account, and nothing moved them until the Projects panel's offer.
+      if (!quiet) setSaveNotice('Saved in this browser. Sign in to keep it in your account too.');
       return true;
     }
   };
@@ -3129,6 +3193,20 @@ export default function App() {
     // and the closure scheduled is the latest render's, holding what moved it.
   }, [currentSignature]);
   /*
+   * A new build found while Forma works waits for the work (2026-11-11, the
+   * full audit's SA-16; lib/staleChunks.ts): a turn running, or its result
+   * not yet saved, holds the reload, and the update notice says so. It
+   * reloaded at once until then, and the turn under way was lost. Saved
+   * means the save answered: a signed-in save is a request, and a reload at
+   * the moment the turn ends would cut it off.
+   */
+  const holdReloadRef = useRef(false);
+  holdReloadRef.current = isAnalyzing || isChatting || turnBusy || (messages.length > 0 && currentSignature !== savedSignature);
+  useEffect(() => setStaleBusyCheck(() => holdReloadRef.current || turnBusyRef.current || pendingAutosave.current !== null), []);
+  useEffect(() => {
+    if (!holdReloadRef.current) reloadIfStaleWaiting();
+  }, [isAnalyzing, isChatting, turnBusy, currentSignature, savedSignature]);
+  /*
    * A page closed, reloaded or put away (2026-11-07, agent audit item 33)
    * runs the waiting save and keeps the unsent words at once, rather than
    * losing whatever changed in the last moment: the save waits 1.2 seconds
@@ -3156,23 +3234,14 @@ export default function App() {
     };
   }, []);
   /*
-   * Offline, said when it happens (2026-11-07, agent audit item 44), as Gemini
-   * and ChatGPT say it, and taken away when the connection is back. Until
-   * then a request made offline was retried on every model and failed as a
-   * stream Google had closed. A notice already saying something else stays.
+   * Offline is said once, by the pill main.tsx draws over every page
+   * (components/OfflineBanner.tsx). From 2026-11-07 (agent audit item 44)
+   * this said it as well, as an error over the message box, so the workspace
+   * said it twice in two voices; it went on 2026-11-11 (the full audit's WS-21
+   * and SA-26), and the pill says in the workspace what this added, that what
+   * is typed waits to be sent. A request made offline is still answered as
+   * offline (lib/geminiErrors.ts), not retried on every model.
    */
-  useEffect(() => {
-    const OFFLINE = "You're offline. Forma needs a connection to reach the AI; what you write is kept, and you can send it once you're back.";
-    const offline = () => setError(OFFLINE);
-    const online = () => setError((shown) => (shown === OFFLINE ? null : shown));
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) offline();
-    window.addEventListener('offline', offline);
-    window.addEventListener('online', online);
-    return () => {
-      window.removeEventListener('offline', offline);
-      window.removeEventListener('online', online);
-    };
-  }, []);
 
   /** Runs a waiting automatic save now, before the session it belongs to is replaced. */
   const flushAutosave = () => {
@@ -3588,10 +3657,30 @@ export default function App() {
     setArchivedProjects([]);
     setCanonicalSources(new Set());
     setLibrarySources([]);
+    // The memory everybody wrote before it was kept per account, cleared once
+    // (2026-11-11, the full audit, a wave-4 follow-up; lib/memory.ts).
+    void import('./lib/memory').then((m) => m.retireLegacyMemory()).catch(() => undefined);
   };
   useEffect(() => {
     forgetSignedOutRef.current = forgetSignedOut;
   });
+  /*
+   * The database closed, and its copy in this browser deleted, once nobody is
+   * signed in (2026-11-11, the full audit's SA-18; lib/firebaseClient.ts):
+   * signed in, it keeps the account's projects in IndexedDB so a change made
+   * offline survives a closed tab. `forgetSession` closes it too since the
+   * SA-18 review (it is what the public site's sign-out runs), so after a
+   * sign-out here or in another tab this finds nothing left to close; it
+   * stays as the backstop for a session that ends without forgetSignedOut
+   * running. Terminating before the projects listener's cleanup is harmless: an
+   * unsubscribe on a closed database does nothing. The next sign-in opens a
+   * fresh one.
+   */
+  useEffect(() => {
+    if (user || !firebase) return;
+    setFirebase(null);
+    void closeFirebase();
+  }, [user, firebase]);
 
   const handleLogOut = async () => {
     try {
@@ -3629,8 +3718,16 @@ export default function App() {
    * unrecognised deployment domain) handed the workspace to anyone who clicked
    * the button. That fallback is gone on purpose: a failed sign-in is a failure.
    */
-  const handleLoginSuccess = useCallback(() => {
+  /**
+   * What LoginPage says as its card closes, kept until dismissed: an email
+   * sign-up's "we sent a link" (2026-11-11, the full audit, a wave-4
+   * follow-up). PublicSite showed it and App dropped it, so a sign-up made
+   * from the workspace closed with nothing said about verifying the address.
+   */
+  const [afterSignIn, setAfterSignIn] = useState<string | null>(null);
+  const handleLoginSuccess = useCallback((notice?: string) => {
     setShowLogin(false);
+    setAfterSignIn(notice ?? null);
     /*
      * Back to wherever they were, not into the workspace.
      *
@@ -3667,6 +3764,9 @@ export default function App() {
       />
     </Suspense>
   ) : null;
+  /** The sign-in's closing word: at the foot of a page, at the top of the workspace, clear of the box. */
+  const signInNotice = (inWorkspace: boolean) =>
+    afterSignIn ? <NoticePill text={afterSignIn} onDismiss={() => setAfterSignIn(null)} atTop={inWorkspace} /> : null;
 
   /**
    * `runGeneration`, after `offlineDesign` below: the generation run itself,
@@ -6155,6 +6255,7 @@ export default function App() {
           </Suspense>
         </div>
         {loginModal}
+        {signInNotice(false)}
       </>
     );
   }
@@ -6750,6 +6851,17 @@ export default function App() {
                 </button>
               </div>
             )}
+            {/* Made here before signing in (2026-11-11, the full audit's SA-04):
+                said, and added when asked, never on its own, since a shared
+                browser's projects may be someone else's. */}
+            {user && deviceProjectCount > 0 && (
+              <p className="wb-empty" role="status">
+                {deviceProjectsLine(deviceProjectCount)}{' '}
+                <button type="button" className="wb-mini" disabled={addingDeviceProjects} onClick={() => void addDeviceProjects()}>
+                  {addingDeviceProjects ? 'Adding…' : deviceProjectCount === 1 ? 'Add it to your account' : 'Add them to your account'}
+                </button>
+              </p>
+            )}
             <div className="wb-list">
               {savedReports.length === 0 ? (
                 <div className="wb-empty">No saved projects yet.</div>
@@ -7065,7 +7177,7 @@ export default function App() {
               onClick={handleSaveReport}
               disabled={(!result && messages.length === 0) || savedSignature === currentSignature}
               title={savedSignature === currentSignature && (result || messages.length)
-                ? user ? 'Saved to your projects' : 'Saved on this device. Sign in to sync across devices.'
+                ? user ? 'Saved to your projects' : 'Saved in this browser. Sign in to keep it in your account too.'
                 : 'Save this project'}
             >
               {savedSignature === currentSignature && (result || messages.length) ? <IconCheck size={14} /> : <IconSave size={14} />}
@@ -7376,9 +7488,21 @@ export default function App() {
                   if (report) void handleLoadReport(report);
                 }}
                 onAllProjects={() => showRailPanel('projects')}
+                // No key yet (2026-11-11, the full audit's SA-05): the home says
+                // so first, and a starting point picked waits in the locked box
+                // while Settings opens at the key, where it used to land there
+                // with nothing said.
+                needsKey={!hasApiKey}
+                onAddKey={() => {
+                  setConfigStart('key');
+                  setIsConfigOpen(true);
+                }}
                 onPick={(point) => {
                   addToBox(point.text);
-                  focusBox();
+                  if (!hasApiKey) {
+                    setConfigStart('key');
+                    setIsConfigOpen(true);
+                  } else focusBox();
                 }}
               />
             </Suspense>
@@ -7888,6 +8012,7 @@ export default function App() {
 
     </div>
     {loginModal}
+    {signInNotice(true)}
     </>
   );
 }

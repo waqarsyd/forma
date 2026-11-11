@@ -18,7 +18,7 @@ vi.mock('../lib/geminiClient', () => ({
 // A secure context, so the encrypted copy is offered whatever jsdom provides.
 vi.mock('../services/keyVault', async (actual) => ({ ...(await actual<typeof import('../services/keyVault')>()), isVaultAvailable: () => true }));
 
-import SettingsDialog from './SettingsDialog';
+import SettingsDialog, { passphraseProblem } from './SettingsDialog';
 import { memoryFrom, readMemory, writeMemory } from '../lib/memory';
 
 afterEach(() => {
@@ -122,11 +122,59 @@ describe('SettingsDialog', () => {
     expect(screen.getByRole('button', { name: 'Store encrypted' })).toBeTruthy();
   });
 
+  // The full audit's SA-05 (2026-11-11): a first visit met a field asking for a key and no way to get one.
+  it('says where to get a free key, in a new tab', () => {
+    render(<SettingsDialog {...props({ config: { ...props().config, customApiKey: '' } })} />);
+    const link = screen.getByRole('link', { name: 'Get a free key from Google AI Studio (takes a minute)' });
+    expect(link.getAttribute('href')).toBe('https://aistudio.google.com/apikey');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(screen.getByText(/Free; no card needed\./)).toBeTruthy();
+  });
+
+  // The full audit's SA-10: everything the account holds, not the projects alone.
+  it('offers everything as one .zip', async () => {
+    const onExportProjects = vi.fn().mockResolvedValue(2);
+    render(<SettingsDialog {...props({ onExportProjects })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Download everything (.zip)' }));
+    expect(await screen.findByText('Downloaded 2 projects.')).toBeTruthy();
+  });
+
+  // The full audit's SE-16a: the encrypted copy is only as strong as its passphrase.
+  it('asks for 12 characters or three words, and refuses the passphrases everyone tries first', async () => {
+    sdk.getDoc.mockResolvedValue({ exists: () => false, data: () => undefined });
+    render(<SettingsDialog {...props({ user: { uid: 'alice' } })} />);
+    fireEvent.click(tab('Gemini key'));
+    expect(screen.getByText(/unreadable without your passphrase, so choose one nobody could guess/)).toBeTruthy();
+    const store = await screen.findByRole('button', { name: 'Store encrypted' });
+    const type = (value: string) => {
+      fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value } });
+      fireEvent.change(screen.getByLabelText('Confirm passphrase'), { target: { value } });
+      fireEvent.click(store);
+    };
+    type('hunter22');
+    expect(screen.getByText('Use a passphrase of at least 12 characters, or three words or more.')).toBeTruthy();
+    type('Password1234!');
+    expect(screen.getByText(/one of the first anyone would try/)).toBeTruthy();
+    expect(sdk.setDoc).not.toHaveBeenCalled();
+  });
+
   it('closes from its button and from Escape', () => {
     const p = props();
     render(<SettingsDialog {...p} />);
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(p.onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('passphraseProblem', () => {
+  it('takes a long passphrase or three words, and nothing a list would try first', () => {
+    expect(passphraseProblem('short one')).toMatch(/at least 12 characters/);
+    expect(passphraseProblem('red cat sky')).toBeNull();
+    expect(passphraseProblem('Tr0ub4dor&3xyz')).toBeNull();
+    for (const common of ['password1234', 'Passw0rd2026!', 'passwordpassword', 'qwertyuiop12', '123456789012', 'aaaaaaaaaaaa', 'correct horse battery staple', 'I love you so much']) {
+      expect(passphraseProblem(common), common).toMatch(/one of the first anyone would try/);
+    }
   });
 });

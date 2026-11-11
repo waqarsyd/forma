@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {MotionConfig} from 'motion/react';
 import PublicSite from './PublicSite';
 import OfflineBanner from './components/OfflineBanner';
-import UpdateBanner from './components/UpdateBanner';
+import UpdateBanner, {checkForUpdates} from './components/UpdateBanner';
 import './index.css';
 import {watchForStaleChunks} from './lib/staleChunks';
 import {watchInputModality} from './lib/inputModality';
@@ -54,15 +54,22 @@ document.addEventListener('securitypolicyviolation', (e) => {
 
 // The offline worker (2026-11-08, site audit item 55): the build's own pages
 // and files kept for the next visit and for a lost connection. Production
-// only, so development never serves a cached module.
+// only, so development never serves a cached module. It asks for a newer
+// build every half hour and when the tab is shown again (2026-11-11, the full
+// audit's SA-16): the browser asks only on a navigation, which a workspace
+// left open for days never makes.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('The offline worker did not register.', err));
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => void checkForUpdates(registration))
+      .catch((err) => console.warn('The offline worker did not register.', err));
   });
 }
 
 // A tab open across a deploy reloads once for the new build rather than break
-// on its next lazy load (2026-11-07, site audit item 1; lib/staleChunks.ts).
+// on its next lazy load (2026-11-07, site audit item 1; lib/staleChunks.ts),
+// and never in the middle of a turn, which App reports (2026-11-11, SA-16).
 watchForStaleChunks();
 
 // Pointer or keyboard, on the root (2026-11-10, the full audit): a field

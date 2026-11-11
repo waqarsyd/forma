@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import {
+  connectAuthEmulator,
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
@@ -22,7 +23,8 @@ import {
 import { OperationType, type FirestoreErrorInfo } from '../lib/firestoreOps';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { authDomainFor, canRedirectSignIn } from '../lib/authDomain';
-import { startAppCheck } from '../lib/appCheck';
+import { AUTH_EMULATOR_URL, loadFirebase, usesEmulators } from '../lib/firebaseClient';
+import { forgetAccountLocally } from '../lib/signOut';
 
 /*
  * Auth only: Firestore is not imported here (2026-11-01). It was, with `db`
@@ -42,6 +44,9 @@ export const firestoreDatabaseId = firebaseConfig.firestoreDatabaseId;
 // only happens to be this one because nothing else calls initializeApp — add a
 // second app and the auth instance silently points at the wrong project.
 export const auth = getAuth(app);
+// The local Auth emulator in development when asked (2026-11-11, the full
+// audit's SA-11a; lib/firebaseClient.ts connects Firestore's beside it).
+if (usesEmulators()) connectAuthEmulator(auth, AUTH_EMULATOR_URL, { disableWarnings: true });
 export const googleProvider = new GoogleAuthProvider();
 
 /**
@@ -189,15 +194,19 @@ export const setDisplayName = async (user: User, displayName: string) => {
  */
 export const deleteAccountAndData = async (user: User, password?: string) => {
   await reauthenticate(user, password);
-  // Loaded here rather than at import: see the note on `app` above.
-  const [{ getFirestore }, { deleteAccountData }] = await Promise.all([import('firebase/firestore'), import('../lib/accountData')]);
-  // App Check before the database (2026-11-11, the full audit, SA-25), as
-  // loadFirebase starts it: this path opens Firestore on its own, and once
-  // enforcement is on a deletion run before anything else had loaded the
-  // database would be refused.
-  await startAppCheck(app);
-  await deleteAccountData(getFirestore(app, firestoreDatabaseId), user.uid);
+  // Loaded here rather than at import: see the note on `app` above. The
+  // database the app opens, not one of its own (2026-11-11, the SA-11a
+  // review): `loadFirebase` starts App Check first (SA-25: once enforcement
+  // is on, a deletion run before anything had loaded the database would be
+  // refused), and connects the emulator in development, where a plain
+  // `getFirestore` here deleted from the live database instead.
+  const { db, paths } = await loadFirebase();
+  await paths.deleteAccountData(db, user.uid);
   await deleteUser(user);
+  // And what this browser kept for the account (2026-11-11, the full audit,
+  // a wave-4 follow-up): its memory and its learning switches, which name it.
+  // The sign-out that follows clears the rest, as any sign-out does.
+  forgetAccountLocally(user.uid);
 };
 
 export const signInWithGoogle = async () => {

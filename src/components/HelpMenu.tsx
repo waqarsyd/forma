@@ -11,6 +11,8 @@
  */
 import { useEffect, useRef } from 'react';
 import { IconExternal, IconMonitor, IconMoon, IconSun } from './landing/icons';
+import { problemReportUrl } from '../lib/problemReport';
+import { versionLabel } from '../lib/buildInfo';
 import './overlays.css';
 import { useLayer } from './useLayer';
 import { useReturnFocus } from './useMenuKeys';
@@ -26,6 +28,32 @@ interface Props {
   /** Its keys as this platform writes them, "Ctrl+K" or "⌘K". */
   commandKeys?: string;
   onClose: () => void;
+}
+
+/*
+ * Help that reaches a person (2026-11-11, the full audit's SA-15b and SA-28b).
+ * A problem could be reported only from a crash, through the error boundary,
+ * so a save that failed or a reply that never came reached nobody; and a
+ * person could not tell whether Forma, Gemini or the database was down.
+ * "Report a problem" opens the same prefilled GitHub form the error boundary
+ * does (lib/problemReport.ts), with the build, the page and the browser and
+ * nothing of the report; Send feedback, the contact page, is the way without
+ * a GitHub account. The status rows are Forma's own live checks
+ * (.github/workflows/live.yml) and Google's pages for Gemini and Firebase.
+ */
+export const LIVE_CHECKS_URL = 'https://github.com/waqarsyd/forma/actions/workflows/live.yml';
+export const GEMINI_STATUS_URL = 'https://aistudio.google.com/status';
+export const FIREBASE_STATUS_URL = 'https://status.firebase.google.com/';
+
+/** The prefilled issue for a problem someone met without a crash. */
+export function helpProblemUrl(): string {
+  return problemReportUrl({
+    area: 'the workspace',
+    message: 'something did not work as it should',
+    version: versionLabel(),
+    path: typeof location === 'undefined' ? undefined : location.pathname,
+    browser: typeof navigator === 'undefined' ? undefined : navigator.userAgent,
+  });
 }
 
 const THEMES: [ThemeChoice, string, typeof IconSun][] = [
@@ -108,8 +136,30 @@ export default function HelpMenu({ theme, onTheme, onShortcuts, onCommandMenu, c
         <span>Privacy</span>
         <IconExternal size={13} />
       </a>
+      <a
+        className="wb-help-row"
+        href={helpProblemUrl()}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="On GitHub, with the version and the page filled in. Without a GitHub account, use Send feedback."
+      >
+        <span>Report a problem</span>
+        <IconExternal size={13} />
+      </a>
       <a className="wb-help-row" href="/contact" target="_blank" rel="noopener">
         <span>Send feedback</span>
+        <IconExternal size={13} />
+      </a>
+      <a className="wb-help-row" href={LIVE_CHECKS_URL} target="_blank" rel="noopener noreferrer" title="Forma's own checks of the live site, every few hours">
+        <span>Service status</span>
+        <IconExternal size={13} />
+      </a>
+      <a className="wb-help-row" href={GEMINI_STATUS_URL} target="_blank" rel="noopener noreferrer">
+        <span>Gemini status</span>
+        <IconExternal size={13} />
+      </a>
+      <a className="wb-help-row" href={FIREBASE_STATUS_URL} target="_blank" rel="noopener noreferrer" title="Google's page for sign-in and saved projects">
+        <span>Sign-in and saving status</span>
         <IconExternal size={13} />
       </a>
       <p className="wb-help-note">Forma can make mistakes. Open a report in the DevExpress designer before you rely on it.</p>

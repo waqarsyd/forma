@@ -40,6 +40,8 @@ import {
   fromIndexDocument,
   mergeIndexed,
   SEARCH_TEXT_LIMIT,
+  deviceProjectsLine,
+  plainFirestoreRefusal,
   type SavedReportLike,
 } from './savedReport';
 
@@ -459,5 +461,39 @@ describe('the projects index', () => {
     // A newer save than the one held: the entry, until it is opened again.
     const later = fromIndexDocument({ id: 'a', name: 'A', timestamp: Date.parse('2026-11-07T00:00:00.000Z') });
     expect(mergeIndexed([later], [full])[0].stub).toBe(true);
+  });
+});
+
+/*
+ * The projects made here before signing in (2026-11-11, the full audit's
+ * SA-04): the list showed the account alone, so the work looked lost. Adding
+ * them is projectExport.test.ts's.
+ */
+describe('deviceProjectsLine', () => {
+  it('says how many are kept in this browser and not in the account', () => {
+    expect(deviceProjectsLine(3)).toBe('3 projects are saved in this browser, not in your account.');
+    expect(deviceProjectsLine(1)).toBe('1 project is saved in this browser, not in your account.');
+  });
+});
+
+/* A refusal the person can act on (2026-11-11, the full audit's SA-21). */
+describe('plainFirestoreRefusal', () => {
+  it("says the day's allowance is used up, and that a refused sign-in needs refreshing", () => {
+    expect(plainFirestoreRefusal({ code: 'resource-exhausted' }, { saving: true })).toMatch(/^Forma's free database allowance for today is used up\. Your project is still open here/);
+    expect(plainFirestoreRefusal({ code: 'resource-exhausted' }, { saving: true })).toMatch(/midnight Pacific/);
+    expect(plainFirestoreRefusal({ code: 'permission-denied' })).toBe('Your sign-in needs refreshing; sign out and in again.');
+  });
+
+  // The SA-21 review: a failed list, open, rename, delete or share was told its project saves.
+  it('promises a save with the next change only to the save itself', () => {
+    const other = plainFirestoreRefusal({ code: 'resource-exhausted' });
+    expect(other).toBe("Forma's free database allowance for today is used up; try again after midnight Pacific time.");
+    expect(other).not.toMatch(/saves/);
+  });
+
+  it("leaves any other failure to the caller's own sentence", () => {
+    expect(plainFirestoreRefusal({ code: 'unavailable' })).toBeNull();
+    expect(plainFirestoreRefusal(new Error('x'))).toBeNull();
+    expect(plainFirestoreRefusal(null)).toBeNull();
   });
 });

@@ -52,4 +52,27 @@ describe('HelpMenu', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
+
+  /* Help that reaches a person (2026-11-11, the full audit's SA-15b and SA-28b). */
+  it('reports a problem through the prefilled GitHub form, with the contact page for people without GitHub', () => {
+    render(<HelpMenu theme="light" onTheme={vi.fn()} onShortcuts={vi.fn()} onClose={vi.fn()} />);
+    const report = screen.getByRole('link', { name: /^Report a problem/ });
+    const url = new URL(report.getAttribute('href')!);
+    expect(`${url.origin}${url.pathname}`).toBe('https://github.com/waqarsyd/forma/issues/new');
+    expect(url.searchParams.get('template')).toBe('bug-report.yml');
+    expect(url.searchParams.get('version')).toBeTruthy();
+    expect(report.getAttribute('target')).toBe('_blank');
+    expect(report.getAttribute('title')).toMatch(/Without a GitHub account, use Send feedback/);
+    expect(screen.getByRole('link', { name: /^Send feedback/ }).getAttribute('href')).toBe('/contact');
+  });
+
+  it("links Forma's own live checks and Google's status pages", () => {
+    render(<HelpMenu theme="light" onTheme={vi.fn()} onShortcuts={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole('link', { name: /^Service status/ }).getAttribute('href')).toBe('https://github.com/waqarsyd/forma/actions/workflows/live.yml');
+    expect(screen.getByRole('link', { name: /^Gemini status/ }).getAttribute('href')).toBe('https://aistudio.google.com/status');
+    expect(screen.getByRole('link', { name: /^Sign-in and saving status/ }).getAttribute('href')).toBe('https://status.firebase.google.com/');
+    for (const name of [/^Service status/, /^Gemini status/, /^Sign-in and saving status/]) {
+      expect(screen.getByRole('link', { name }).getAttribute('target')).toBe('_blank');
+    }
+  });
 });

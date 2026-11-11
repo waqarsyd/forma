@@ -31,12 +31,60 @@ export function shouldReload(now: number, last: number | null): boolean {
   return last === null || now - last > RELOAD_WINDOW_MS;
 }
 
+/*
+ * Never in the middle of a turn (2026-11-11, the full audit's SA-16). A lazy
+ * load that failed while Forma was writing a reply or a report reloaded the
+ * page there and then, and the turn was lost: the message was kept and
+ * marked as interrupted, the work was not. Now App says when a turn runs
+ * (`setStaleBusyCheck`), a stale chunk found during one waits, the update
+ * notice says Forma reloads when this finishes, and App calls
+ * `reloadIfStaleWaiting` as the turn ends.
+ */
+let busy: () => boolean = () => false;
+let waiting = false;
+const waitingListeners = new Set<() => void>();
+
+/** App's way of saying a turn is running; returns the way to stop asking. */
+export function setStaleBusyCheck(check: () => boolean): () => void {
+  busy = check;
+  return () => {
+    if (busy === check) busy = () => false;
+  };
+}
+
+/** Whether a new build is waiting for the running turn to end. */
+export function isStaleWaiting(): boolean {
+  return waiting;
+}
+
+/** Calls `onWaiting` when a reload starts waiting for a turn; returns the way to stop. */
+export function onStaleWaiting(onWaiting: () => void): () => void {
+  waitingListeners.add(onWaiting);
+  return () => void waitingListeners.delete(onWaiting);
+}
+
+/** Reloads for the waiting build once nothing runs; true when it reloads. */
+export function reloadIfStaleWaiting(win: Window = window): boolean {
+  if (!waiting || busy()) return false;
+  waiting = false;
+  return reloadForStaleChunk(win);
+}
+
 /**
  * Reloads the page for a stale chunk unless it did so just now; true when it
  * reloads. The error boundary in main.tsx asks this too, for a lazy component
  * whose chunk is gone, which React hands to the boundary, not to a listener.
+ * While a turn runs it reloads nothing and returns false, so the failed load
+ * takes its ordinary way, and the reload waits for the turn to end.
  */
 export function reloadForStaleChunk(win: Window = window): boolean {
+  if (busy()) {
+    if (!waiting) {
+      waiting = true;
+      for (const listener of waitingListeners) listener();
+    }
+    return false;
+  }
   let last: number | null = null;
   try {
     const kept = win.sessionStorage.getItem(KEY);

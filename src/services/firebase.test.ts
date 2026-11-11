@@ -28,6 +28,7 @@ const auth = {
 
 vi.mock('firebase/app', () => ({ initializeApp: () => ({ name: 'app' }) }));
 vi.mock('firebase/auth', () => ({
+  connectAuthEmulator: vi.fn(),
   getAuth: () => ({ currentUser: null }),
   GoogleAuthProvider: class {},
   EmailAuthProvider: { credential: () => ({}) },
@@ -50,15 +51,30 @@ vi.mock('../lib/appCheck', () => ({
     calls.push('appCheck');
   }),
 }));
+/* The database lib/firebaseClient opens, as the rest of the app does (the
+   SA-11a review): deletion no longer opens one of its own. */
 vi.mock('firebase/firestore', () => ({
+  initializeFirestore: () => {
+    calls.push('openDatabase');
+    return {};
+  },
   getFirestore: () => {
     calls.push('getFirestore');
     return {};
   },
+  memoryLocalCache: () => ({}),
+  persistentLocalCache: () => ({}),
+  persistentMultipleTabManager: () => ({}),
+  connectFirestoreEmulator: vi.fn(),
 }));
 vi.mock('../lib/accountData', () => ({
   deleteAccountData: vi.fn(async () => {
     calls.push('deleteAccountData');
+  }),
+}));
+vi.mock('../lib/signOut', () => ({
+  forgetAccountLocally: vi.fn((uid: string) => {
+    calls.push(`forgetAccountLocally:${uid}`);
   }),
 }));
 
@@ -142,8 +158,9 @@ describe('a verification made elsewhere reaches the token (SA-08)', () => {
 });
 
 describe('deleting an account (SA-25)', () => {
-  it('starts App Check before it opens the database, and deletes the user last', async () => {
+  // And, since 2026-11-11 (a wave-4 follow-up), what this browser kept for the account, once it is gone.
+  it('starts App Check before it opens the database, deletes the user after the data, and then what this browser kept for it', async () => {
     await service.deleteAccountAndData(passwordUser({ emailVerified: true }), 'secret');
-    expect(calls).toEqual(['appCheck', 'getFirestore', 'deleteAccountData', 'deleteUser']);
+    expect(calls).toEqual(['appCheck', 'openDatabase', 'deleteAccountData', 'deleteUser', 'forgetAccountLocally:alice']);
   });
 });

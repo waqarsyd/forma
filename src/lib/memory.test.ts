@@ -18,6 +18,7 @@ import {
   REMEMBER,
   rememberedReply,
   rememberKept,
+  retireLegacyMemory,
   writeMemory,
   type KeptStyle,
   type MemoryState,
@@ -134,6 +135,19 @@ describe('whose memory it is', () => {
     setMemoryAccount(null);
     expect(readMemory().memories).toEqual([]);
     expect(readMemory('alice').memories).toHaveLength(1);
+  });
+
+  // A wave-4 follow-up (2026-11-11): the one key everybody wrote before it was per account.
+  it('clears the signed-out memory once, at the first sign-out, and keeps what is written signed out after it', () => {
+    writeMemory(alice, null);
+    writeMemory(alice, 'alice');
+    expect(retireLegacyMemory()).toBe(true);
+    expect(readMemory(null).memories).toEqual([]);
+    expect(readMemory('alice').memories).toHaveLength(1);
+    writeMemory(alice, null);
+    expect(retireLegacyMemory()).toBe(false);
+    expect(readMemory(null).memories).toHaveLength(1);
+    expect(retireLegacyMemory(null)).toBe(false);
   });
 });
 
